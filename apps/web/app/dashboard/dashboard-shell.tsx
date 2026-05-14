@@ -101,7 +101,7 @@ import {
 } from "../dashboard-models";
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspaceView } from "../dashboard-types";
-import { RunWorkspace } from "./components/run-workspace";
+import { RunWorkspace, type RunWorkspaceTabId } from "./components/run-workspace";
 
 type ThemeMode = "light" | "dark";
 type ChartZoomRange = { min: number; max: number } | null;
@@ -253,6 +253,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [loggedObjects, setLoggedObjects] = useState<LoggedObject[]>([]);
   const [objectRowsById, setObjectRowsById] = useState<Record<number, LoggedObjectRow[]>>({});
+  const [runWorkspaceTab, setRunWorkspaceTab] = useState<RunWorkspaceTabId>("summary");
   const [compareArtifactsByRun, setCompareArtifactsByRun] = useState<Record<string, Artifact[]>>({});
   const [sideBySide, setSideBySide] = useState<any>(null);
   const [hover, setHover] = useState<HoverPoint>(null);
@@ -307,6 +308,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       .filter(Boolean) as RunSummary[]
   ), [selectedRunDetails, selectedRunIds, sortedRuns]);
   const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
+  const handleRunWorkspaceTabChange = useCallback((nextTab: RunWorkspaceTabId) => {
+    setRunWorkspaceTab(nextTab);
+  }, []);
   const selectedRunKey = selectedRunIds.join(",");
   const compareRunIds = useMemo(() => selectedRuns.map((run) => run.id).slice(0, COMPARE_RUN_LIMIT), [selectedRuns]);
   const compareRunKey = compareRunIds.join(",");
@@ -433,6 +437,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setMetricKey(value);
   }, [resetRunPagination]);
   const workspacePanelMetrics = useMemo(() => workspaceMetricKeys(workspaceView, panelSearch), [panelSearch, workspaceView]);
+  const workspacePanelMetricKey = useMemo(() => workspacePanelMetrics.join("\u0000"), [workspacePanelMetrics]);
   const availableWorkspaceMetrics = useMemo(() => metricKeysMissingPanels(workspaceView, allMetricOptions), [allMetricOptions, workspaceView]);
   const maxWorkspacePanelRuns = useMemo(() => {
     const values = workspaceView.sections.flatMap((section) => section.panels.map((panel) => panel.settings?.maxRuns ?? section.settings?.maxRuns ?? workspaceView.settings.maxRuns));
@@ -445,6 +450,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
     return sortedRuns.slice(0, maxWorkspacePanelRuns);
   }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
+  const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
   const editingPanelContext = useMemo(() => {
     if (!editingPanelRef) return null;
     const section = workspaceView.sections.find((item) => item.id === editingPanelRef.sectionId);
@@ -602,7 +608,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return current.length ? current : nextSummary.runs.slice(0, 4).map((run) => run.id);
       });
       setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
-      setMessage(nextSummary.runs.length ? `${nextSummary.total} runs loaded` : "No runs match the current filters.");
+      setMessage(runsPageMessage(nextSummary.total, pageOffset, nextSummary.runs.length));
     } catch (error) {
       if (requestId === dashboardRequestRef.current && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load runs.");
     } finally {
@@ -701,7 +707,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setActiveTab(nextTab);
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
       const summaryTotal = summaryTotalRef.current;
-      setMessage(nextTab === "runs" && summaryTotal ? `${summaryTotal} runs loaded` : `Opened ${label}.`);
+      setMessage(nextTab === "runs" && summaryTotal ? runsPageMessage(summaryTotal, 0, 0) : `Opened ${label}.`);
     }
     applyRouteTab();
     window.addEventListener("popstate", applyRouteTab);
@@ -714,9 +720,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     const label = tabs.find((tab) => tab.id === activeTab)?.label ?? activeTab;
-    const expected = activeTab === "runs" && summary.total ? `${summary.total} runs loaded` : `Opened ${label}.`;
+    const expected = activeTab === "runs" && summary.total ? runsPageMessage(summary.total, pageOffset, sortedRuns.length) : `Opened ${label}.`;
     setMessage((current) => current.startsWith("Opened ") && current !== expected ? expected : current);
-  }, [activeTab, summary.total]);
+  }, [activeTab, pageOffset, sortedRuns.length, summary.total]);
 
   useEffect(() => {
     setHover(null);
@@ -765,9 +771,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const storedTheme = localStorage.getItem("rlobs:next:theme");
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
       ? storedTheme
-      : window.matchMedia?.("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
+      : "dark";
     setTheme(nextTheme);
     setThemeReady(true);
   }, []);
@@ -879,10 +883,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [api, primaryRunId, referenceRunId, selectedRunDetails, selectedRunIds, sortedRuns]);
 
   useEffect(() => {
+    setRunWorkspaceTab("summary");
+  }, [primaryRun?.id]);
+
+  useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     async function loadMetricSeries() {
-      const shouldLoad = activeTab === "metrics" || activeTab === "detail";
+      const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
       if (!shouldLoad || !metricKey || !selectedRuns.length) {
         setSeries([]);
         return;
@@ -897,7 +905,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, metricKey, selectedRuns]);
+  }, [activeTab, api, metricKey, runWorkspaceTab, selectedRuns]);
 
   useEffect(() => {
     let cancelled = false;
@@ -944,13 +952,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, workspaceFetchRuns, workspacePanelMetrics]);
+  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey]);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "artifacts" || activeTab === "models";
+      const shouldLoad = (activeTab === "detail" && runWorkspaceTab === "files") || activeTab === "artifacts" || activeTab === "models";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         return;
@@ -974,13 +982,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, primaryRun?.id]);
+  }, [activeTab, api, primaryRun?.id, runWorkspaceTab]);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     async function loadLoggedObjects() {
-      const shouldLoad = activeTab === "detail" || activeTab === "artifacts";
+      const shouldLoad = (activeTab === "detail" && runWorkspaceTab === "files") || activeTab === "artifacts";
       if (!shouldLoad || !primaryRun?.id) {
         setLoggedObjects([]);
         setObjectRowsById({});
@@ -1010,7 +1018,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, primaryRun?.id]);
+  }, [activeTab, api, primaryRun?.id, runWorkspaceTab]);
 
   const tableObjectIds = useMemo(
     () => loggedObjects.filter((object) => object.kind === "table").slice(0, 12).map((object) => object.id),
@@ -1022,7 +1030,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadObjectRows() {
-      if (!(activeTab === "detail" || activeTab === "artifacts") || !tableObjectIds.length) {
+      if (!((activeTab === "detail" && runWorkspaceTab === "files") || activeTab === "artifacts") || !tableObjectIds.length) {
         setObjectRowsById({});
         return;
       }
@@ -1039,7 +1047,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, tableObjectIds, tableObjectKey]);
+  }, [activeTab, api, runWorkspaceTab, tableObjectIds, tableObjectKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1543,7 +1551,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const label = tabs.find((tab) => tab.id === tabId)?.label ?? tabId;
     closeTransientSurfaces();
     setActiveTab(tabId);
-    setMessage(tabId === "runs" && summary.total ? `${summary.total} runs loaded` : `Opened ${label}.`);
+    setMessage(tabId === "runs" && summary.total ? runsPageMessage(summary.total, pageOffset, sortedRuns.length) : `Opened ${label}.`);
     window.history.replaceState(null, "", tabToPath(tabId));
     focusRouteStatus();
   }
@@ -1970,22 +1978,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "detail" ? (
             <>
           <div className="analysis-page detail-analysis">
-            <div className="analysis-toolbar detail-toolbar">
-              <CustomSelect
-                id="detail-metric-select"
-                label="Metric"
-                onChange={setMetricKey}
-                options={metricOptionsForControls.length ? metricOptionsForControls.map((metric) => ({ value: metric, label: metric })) : [{ value: "", label: "No metrics", disabled: true }]}
-                value={metricOptionsForControls.length ? metricKey : ""}
-              />
-              <CustomSelect
-                id="detail-x-mode"
-                label="X axis"
-                onChange={setXMode}
-                options={[{ value: "step", label: "Step" }, { value: "time", label: "Time" }]}
-                value={xMode}
-              />
-            </div>
+            {runWorkspaceTab === "data" ? (
+              <div className="analysis-toolbar detail-toolbar">
+                <CustomSelect
+                  id="detail-metric-select"
+                  label="Metric"
+                  onChange={setMetricKey}
+                  options={metricOptionsForControls.length ? metricOptionsForControls.map((metric) => ({ value: metric, label: metric })) : [{ value: "", label: "No metrics", disabled: true }]}
+                  value={metricOptionsForControls.length ? metricKey : ""}
+                />
+                <CustomSelect
+                  id="detail-x-mode"
+                  label="X axis"
+                  onChange={setXMode}
+                  options={[{ value: "step", label: "Step" }, { value: "time", label: "Time" }]}
+                  value={xMode}
+                />
+              </div>
+            ) : null}
             <RunWorkspace
               activeMetricKey={metricKey}
               api={api}
@@ -2009,9 +2019,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onRunMetadataSave={updateRunTagsAndNotes}
+              onWorkspaceTabChange={handleRunWorkspaceTabChange}
               run={primaryRun}
               selectedCount={selectedRuns.length}
               selectedRuns={selectedRuns}
+              tab={runWorkspaceTab}
               timelineRows={runTimelineRows}
               xMode={xMode}
             />
@@ -2411,6 +2423,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
 function isNotFoundError(error: unknown) {
   return Boolean(error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 404);
+}
+
+function runsPageMessage(total: number, offset: number, visibleCount: number) {
+  if (!total) return "No runs match the current filters.";
+  const start = Math.max(1, offset + 1);
+  const count = visibleCount > 0 ? visibleCount : Math.min(25, Math.max(1, total - offset));
+  const end = Math.min(total, offset + count);
+  return `${formatNumber(start, 0)}-${formatNumber(end, 0)} of ${formatNumber(total, 0)} matching runs`;
 }
 
 const METRIC_SERIES_BATCH_LIMIT = 1000;

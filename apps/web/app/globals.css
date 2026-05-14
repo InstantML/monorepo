@@ -4461,6 +4461,35 @@ small {
   white-space: normal;
 }
 
+.workspace-summary-selection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.workspace-summary-selection span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-summary-selection strong {
+  margin-left: auto;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
 .run-timeline .timeline-dot {
   width: 9px;
   height: 9px;
@@ -5420,6 +5449,14 @@ button.compare-row-head.active {
   color: #1f2f3f;
 }
 
+.copy-button.unavailable,
+.copy-button:disabled {
+  border-color: var(--line-soft);
+  background: var(--surface-soft);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
 @media (max-width: 1360px) {
   .detail-grid {
     grid-template-columns: 1fr;
@@ -5501,27 +5538,31 @@ button.compare-row-head.active {
 
 @media (max-width: 1080px) {
   :root {
-    --topbar-height: 0px;
+    --topbar-height: 58px;
   }
 
   .topbar {
-    position: static;
+    position: sticky;
   }
 
   .topbar-main {
-    align-items: stretch;
-    flex-wrap: wrap;
-    gap: 9px;
+    min-height: var(--topbar-height);
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 7px;
+    overflow-x: auto;
+    padding-block: 7px;
+    scrollbar-width: thin;
   }
 
   .brand {
-    flex-basis: 100%;
+    flex-basis: auto;
   }
 
   .toolbar,
   .action-cluster,
   .utility-icons {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin-left: 0;
   }
 
@@ -5530,7 +5571,7 @@ button.compare-row-head.active {
   .control.compact input,
   .topbar-controls .select-trigger,
   .control.compact .select-trigger {
-    width: 170px;
+    width: 132px;
   }
 
   .action-cluster .control.compact {
@@ -5542,13 +5583,13 @@ button.compare-row-head.active {
   .action-cluster .control.compact input,
   .action-cluster .control.compact select,
   .action-cluster .control.compact .select-trigger {
-    width: 170px;
+    width: 132px;
   }
 
   .status-message {
     flex: 0 0 auto;
     width: auto;
-    max-width: none;
+    max-width: 190px;
   }
 
   .shell {
@@ -5738,6 +5779,10 @@ button.compare-row-head.active {
     --topbar-height: 0px;
   }
 
+  .topbar {
+    position: static;
+  }
+
   .topbar-main,
   .shell {
     padding-right: 12px;
@@ -5748,6 +5793,33 @@ button.compare-row-head.active {
     gap: 8px;
     padding-top: 10px;
     padding-bottom: 10px;
+  }
+
+  .tabs {
+    overflow-x: visible;
+  }
+
+  .tabs::after {
+    display: none;
+  }
+
+  .tab-scroll,
+  .tab-group {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .tab-scroll {
+    padding-right: 0;
+  }
+
+  .tab-group {
+    border-right: 0;
+    padding-right: 0;
+  }
+
+  .tab-button {
+    min-height: 38px;
   }
 
   .brand-mark {
@@ -6270,6 +6342,11 @@ button.compare-row-head.active {
 :root[data-theme="dark"] .detail-row,
 :root[data-theme="dark"] .run-detail-hero,
 :root[data-theme="dark"] .run-detail-note,
+:root[data-theme="dark"] .run-workspace-header,
+:root[data-theme="dark"] .run-workspace-panel,
+:root[data-theme="dark"] .workspace-summary-selection,
+:root[data-theme="dark"] .evidence-tree,
+:root[data-theme="dark"] .evidence-quicklook,
 :root[data-theme="dark"] .artifact-card,
 :root[data-theme="dark"] .summary-row,
 :root[data-theme="dark"] .side-row,
@@ -6679,8 +6756,8 @@ button.compare-row-head.active {
 .run-workspace-tabs {
   grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  overflow-x: auto;
   border-top: 1px solid var(--line);
   padding-top: 8px;
 }
@@ -6713,6 +6790,15 @@ button.compare-row-head.active {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
+}
+
+.run-data-panel .chart-area {
+  max-height: 410px;
+  overflow: hidden;
+}
+
+.run-data-panel .metric-chart {
+  aspect-ratio: 560 / 320;
 }
 
 .compact-panel-head {
@@ -6792,7 +6878,8 @@ button.compare-row-head.active {
 .terminal-scroll {
   position: relative;
   overflow: auto;
-  height: 420px;
+  height: min(420px, 52vh);
+  min-height: 240px;
 }
 
 .terminal-spacer {
@@ -6823,9 +6910,10 @@ button.compare-row-head.active {
 }
 
 .terminal-message {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-x: auto;
+  overflow-y: hidden;
   white-space: pre;
+  scrollbar-width: thin;
 }
 
 .terminal-empty {
@@ -6948,6 +7036,48 @@ button.compare-row-head.active {
   font-size: 0.82rem;
 }
 
+.evidence-quicklook {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.evidence-quicklook div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 12px;
+}
+
+.evidence-quicklook span {
+  color: var(--muted);
+  font-weight: 740;
+}
+
+.evidence-quicklook strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-code-preview {
+  overflow: auto;
+  max-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  padding: 10px;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 .system-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(120px, 1fr));
@@ -6980,6 +7110,16 @@ button.compare-row-head.active {
 
   .terminal-head,
   .terminal-row {
-    grid-template-columns: 112px 52px minmax(0, 1fr);
+    grid-template-columns: 104px 42px minmax(260px, 1fr);
+    min-width: 430px;
+  }
+
+  .terminal-scroll {
+    height: min(340px, 46vh);
+  }
+
+  .run-workspace-tab,
+  .segment-button {
+    min-height: 38px;
   }
 }

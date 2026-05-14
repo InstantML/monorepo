@@ -40,7 +40,7 @@ import type {
   RunTimelineRow,
 } from "../../dashboard-types";
 
-type RunWorkspaceTabId = "summary" | "data" | "logs" | "files" | "system" | "graph";
+export type RunWorkspaceTabId = "summary" | "data" | "logs" | "files" | "system" | "graph";
 type ChartZoomRange = { min: number; max: number } | null;
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;
@@ -85,9 +85,11 @@ export function RunWorkspace({
   onChartPointHover,
   onChartZoomRangeChange,
   onRunMetadataSave,
+  onWorkspaceTabChange,
   run,
   selectedCount,
   selectedRuns,
+  tab,
   timelineRows,
   xMode,
 }: {
@@ -110,16 +112,17 @@ export function RunWorkspace({
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
+  onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   run: RunSummary | null;
   selectedCount: number;
   selectedRuns: RunSummary[];
+  tab: RunWorkspaceTabId;
   timelineRows: RunTimelineRow[];
   xMode: string;
 }) {
-  const [tab, setTab] = useState<RunWorkspaceTabId>("summary");
   useEffect(() => {
-    setTab("summary");
-  }, [run?.id]);
+    onWorkspaceTabChange("summary");
+  }, [onWorkspaceTabChange, run?.id]);
 
   if (!run) return <div className="empty">No run selected.</div>;
   return (
@@ -141,7 +144,7 @@ export function RunWorkspace({
               aria-pressed={tab === item.id}
               className={`run-workspace-tab ${tab === item.id ? "active" : ""}`}
               key={item.id}
-              onClick={() => setTab(item.id)}
+              onClick={() => onWorkspaceTabChange(item.id)}
               type="button"
             >
               {item.label}
@@ -164,6 +167,7 @@ export function RunWorkspace({
           selectedCount={selectedCount}
           selectedRuns={selectedRuns}
           timelineRows={timelineRows}
+          workspaceSummary
         />
       ) : null}
 
@@ -176,6 +180,7 @@ export function RunWorkspace({
           <MetricChart
             domain={chartDomain}
             fullDomain={chartFullDomain}
+            height={320}
             hover={chartHover}
             metricKey={activeMetricKey}
             normalizedSeries={chartNormalizedSeries}
@@ -183,6 +188,7 @@ export function RunWorkspace({
             onMove={onChartMove}
             onPointHover={onChartPointHover}
             onZoomRangeChange={onChartZoomRangeChange}
+            padding={48}
             rangeSeries={chartRangeSeries}
             showRange={false}
             xMode={xMode}
@@ -195,7 +201,7 @@ export function RunWorkspace({
       {tab === "files" ? (
         <RunEvidenceExplorer artifacts={artifacts} objects={loggedObjects} rowsByObjectId={objectRowsById} run={run} />
       ) : null}
-      {tab === "system" ? <RunSystemPanel run={run} metricRows={metricRows} artifacts={artifacts} /> : null}
+      {tab === "system" ? <RunSystemPanel run={run} metricRows={metricRows} /> : null}
       {tab === "graph" ? <RunGraphPanel run={run} /> : null}
     </div>
   );
@@ -380,6 +386,22 @@ function EvidencePreview({ item, rowsByObjectId }: { item: any; rowsByObjectId: 
           </div>
         </div>
         <ArtifactBrowser artifacts={[item.artifact]} />
+        <div className="evidence-quicklook">
+          <div><span>Type</span><strong>{item.artifact.type}</strong></div>
+          <div><span>Size</span><strong>{formatNumber(item.artifact.size_bytes, 0)} bytes</strong></div>
+          <div><span>Step</span><strong>{item.artifact.step === null ? "none" : item.artifact.step}</strong></div>
+          <div><span>URI</span><strong>{item.artifact.uri}</strong></div>
+        </div>
+        <pre className="evidence-code-preview">
+          {JSON.stringify({
+            name: item.artifact.name,
+            type: item.artifact.type,
+            step: item.artifact.step,
+            size_bytes: item.artifact.size_bytes,
+            uri: item.artifact.uri,
+            metadata: item.artifact.metadata ?? {},
+          }, null, 2)}
+        </pre>
       </div>
     );
   }
@@ -389,16 +411,19 @@ function EvidencePreview({ item, rowsByObjectId }: { item: any; rowsByObjectId: 
   return <div className="empty">Select evidence to preview it.</div>;
 }
 
-function RunSystemPanel({ artifacts, metricRows, run }: { artifacts: Artifact[]; metricRows: RunMetricRow[]; run: RunSummary }) {
+function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: RunSummary }) {
   const commit = metadataValue(run.metadata, "git_commit")
     ?? metadataValue(run.metadata, "commit")
     ?? nestedMetadataValue(run.metadata, ["_rlobs", "source", "git", "commit"]);
+  const artifactTotal = Object.values(run.artifact_counts ?? {}).reduce((total, value) => (
+    total + (typeof value === "number" && Number.isFinite(value) ? value : 0)
+  ), 0);
   const rows = [
-    ["Host", run.metadata.hostname ?? run.metadata.host ?? "-"],
-    ["PID", run.metadata.pid ?? "-"],
-    ["Commit", commit ?? "-"],
+    ["Host", run.metadata.hostname ?? run.metadata.host ?? "not logged"],
+    ["PID", run.metadata.pid ?? "not logged"],
+    ["Commit", commit ?? "not logged"],
     ["Metric keys", metricRows.length],
-    ["Artifacts", artifacts.length],
+    ["Artifacts", artifactTotal],
   ];
   return (
     <section className="run-workspace-panel system-panel">
