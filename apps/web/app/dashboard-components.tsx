@@ -27,6 +27,7 @@ import {
   shortValue,
 } from "./dashboard-models";
 import { navGroups } from "./dashboard-config";
+import { InstantMlMark } from "./instantml-mark";
 import type {
   AlertRow,
   ApiRow,
@@ -97,18 +98,18 @@ type DraggedWorkspacePanel = {
 };
 
 const chartPalette = [
+  "#dc5b55",
+  "#5d89dd",
   "var(--accent)",
-  "#f07b2d",
-  "var(--blue)",
-  "#6d7784",
-  "var(--amber)",
-  "#9b7cf3",
+  "var(--warm)",
+  "#8b7cf6",
   "#2ec4b6",
   "#e45f8c",
   "#7bc96f",
-  "#38bdf8",
+  "#14b8a6",
   "#f4a261",
-  "#a3a3a3",
+  "#9ca3af",
+  "#cbd5e1",
 ];
 
 function chartColor(index: number) {
@@ -604,8 +605,8 @@ export function DashboardTopbar({
   return (
     <header className="topbar">
       <div className="topbar-main">
-        <div className="brand" aria-label="Training Observability" title="Training Observability">
-          <div className="brand-mark" aria-hidden="true"><Box size={20} /></div>
+        <div className="brand" aria-label="InstantML" title="InstantML">
+          <div className="brand-mark" aria-hidden="true"><InstantMlMark /></div>
         </div>
         <div className="toolbar topbar-controls">
           <CustomSelect id="project-filter" label="Project" value={project} onChange={onProject} options={[{ value: "", label: "All projects" }, ...projects.map((item) => ({ value: item, label: item }))]} />
@@ -2058,9 +2059,9 @@ export function MetricChart({
                 className={`series-point point-${index % 5}`}
                 cx={point.x}
                 cy={point.y}
-                style={{ fill: chartColor(index), stroke: "var(--surface-raised)" }}
+                style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
                 onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, group: item.group, point, distance: 0 })}
-                r={3.3}
+                r={2.4}
               />
             )) : null}
           </g>

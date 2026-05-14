@@ -801,6 +801,8 @@ try {
   await page.waitForSelector(".tab-pane.active .metric-chart", { timeout: 10000 });
   const metricsData = await page.evaluate(() => ({
     chart: Boolean(document.querySelector(".tab-pane.active .metric-chart")),
+    chartStrokeWidth: getComputedStyle(document.querySelector(".tab-pane.active .series")).strokeWidth,
+    chartPointRadius: document.querySelector(".tab-pane.active .series-point")?.getAttribute("r") ?? "",
     points: document.querySelectorAll(".tab-pane.active .series-point").length,
     axisLabels: [...document.querySelectorAll(".tab-pane.active .axis-label")].map((node) => node.textContent),
     metricCatalogRows: document.querySelectorAll(".tab-pane.active .metric-catalog-row").length,
@@ -840,13 +842,19 @@ try {
   const data = await page.evaluate(() => ({
     title: document.title,
     brandLabel: document.querySelector(".brand")?.getAttribute("aria-label"),
+    brandMark: Boolean(document.querySelector(".instantml-mark-svg")),
+    projectControl: Boolean(document.querySelector("#project-filter")),
     visibleBrandTitle: document.querySelector(".brand h1")?.textContent ?? null,
     navTabs: [...document.querySelectorAll(".tab-button:not(.nav-pin-button)")].map((button) => button.textContent?.trim()),
     savedViews: [...document.querySelectorAll("#saved-view-select option")].map((option) => option.textContent),
   }));
   Object.assign(data, runsData, metricsData, detailData, compareData);
-  assert.equal(data.title, "Training Observability");
-  assert.equal(data.brandLabel, "Training Observability");
+  assert.equal(data.title, "InstantML");
+  assert.equal(data.brandLabel, "InstantML");
+  assert.equal(data.brandMark, true);
+  assert.equal(data.projectControl, true);
+  assert.ok(Number.parseFloat(data.chartStrokeWidth) <= 1.5, `chart lines should stay thin for overlap, got ${data.chartStrokeWidth}`);
+  assert.ok(Number.parseFloat(data.chartPointRadius) <= 2.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
   assert.equal(data.visibleBrandTitle, null);
   assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Run Detail", "Compare", "Alerts", "Datasets", "Artifacts", "Models", "Reports", "Settings", "Integrations", "API"]);
   assert.ok(data.rows >= 6);

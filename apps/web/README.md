@@ -1,6 +1,6 @@
 # Web App
 
-This directory contains the Next/React frontend application for Training Observability. It is responsible for browsing projects, comparing runs, charting metrics, viewing artifacts, and inspecting training-loop debugging panels.
+This directory contains the Next/React frontend application for InstantML. It is responsible for browsing projects, comparing runs, charting metrics, viewing artifacts, and inspecting training-loop debugging panels.
 
 Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by default. The deprecated Node API in `apps/server` remains available for compatibility checks. Keep UI data access on documented REST routes and bounded summary/series endpoints so both backends stay comparable during migration cleanup.
 
@@ -177,6 +177,7 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
 - `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
+- `docs/design/2026-05-14-instantml-rescheme-and-chart-polish.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 
 ## Notes for Future Agents
@@ -185,7 +186,7 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - Keep screens focused and information-dense.
 - Keep the visual language sleek and precise: low-radius controls, flat buttons, restrained shadows, and status chips that read as compact metadata rather than bubbly decoration.
 - Do not make marketing pages before the usable app exists.
-- Use Training Observability for user-facing product language.
+- Use InstantML for user-facing product language.
 - Avoid UI state that cannot be reproduced from URL, query state, or API state when practical.
 - Keep charts responsive with bounded data queries.
 - Render only the active tab body so hidden chart/detail/comparison surfaces do not rerender on every hover or filter update.
