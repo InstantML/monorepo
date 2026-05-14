@@ -23,6 +23,7 @@ Current implemented design sequence:
 - `2026-05-11-rich-logged-objects.md`: first rich logged object slice using attributes/artifacts, paginated table preview rows, SDK wrappers, and Run Detail/Artifacts previews.
 - `2026-05-11-landing-auth-onboarding.md`: landing page, Google-style local auth, browser sessions, org seats, copy-once SDK key onboarding, and real dashboard routes.
 - `2026-05-14-instantml-rescheme-and-chart-polish.md`: InstantML frontend rescheme, public brand-token reference, chart density polish, and project/saved-view acceptance criteria.
+- `2026-05-14-hosted-clickhouse-query-benchmarks.md`: hosted ClickHouse demo benchmark protocol for 100,000-run dashboard query latency, response validation, budgets, and sanitized result reporting.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

@@ -493,6 +493,58 @@ impl MetricStore {
             .map_err(clickhouse_read_error)
     }
 
+    pub async fn query_top_series_for_project_key(
+        &self,
+        org_id: Uuid,
+        project: &str,
+        key: &str,
+        mode: SeriesSortMode,
+        limit: i64,
+    ) -> AppResult<Vec<SeriesReadRow>> {
+        let order_clause = match mode {
+            SeriesSortMode::Latest => "latest DESC",
+            SeriesSortMode::BestMax => "max DESC",
+            SeriesSortMode::BestMin => "min ASC",
+        };
+        let sql = format!(
+            "SELECT \
+               run_id, key, \
+               count, min, max, sum, sum_sq, latest, latest_step, best_step \
+             FROM ( \
+               SELECT \
+                 run_id, key, \
+                 toUInt64(countMerge(count)) AS count, \
+                 minMerge(min) AS min, \
+                 maxMerge(max) AS max, \
+                 sumMerge(sum) AS sum, \
+                 sumMerge(sum_sq) AS sum_sq, \
+                 argMaxMerge(latest) AS latest, \
+                 maxMerge(latest_step) AS latest_step, \
+                 argMaxMerge(best_step) AS best_step \
+               FROM metric_series \
+               WHERE org_id = ? AND key = ? AND run_id IN ( \
+                 SELECT toUUID(entity_id) \
+                 FROM operational_records \
+                 WHERE org_id = ? AND kind = 'run' \
+                   AND JSONExtractString(payload, 'project') = ? \
+               ) \
+               GROUP BY run_id, key \
+             ) \
+             ORDER BY {order_clause}, run_id \
+             LIMIT ?"
+        );
+        self.client
+            .query(&sql)
+            .bind(org_id)
+            .bind(key)
+            .bind(org_id)
+            .bind(project)
+            .bind(limit)
+            .fetch_all::<SeriesReadRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
     pub async fn query_keys_for_runs(
         &self,
         org_id: Uuid,
@@ -528,6 +580,28 @@ impl MetricStore {
             .client
             .query("SELECT count() FROM metric_points WHERE org_id = ?")
             .bind(org_id)
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(count as i64)
+    }
+
+    pub async fn count_points_for_project(&self, org_id: Uuid, project: &str) -> AppResult<i64> {
+        let count: u64 = self
+            .client
+            .query(
+                "SELECT count() \
+                 FROM metric_points \
+                 WHERE org_id = ? AND run_id IN ( \
+                   SELECT toUUID(entity_id) \
+                   FROM operational_records \
+                   WHERE org_id = ? AND kind = 'run' \
+                     AND JSONExtractString(payload, 'project') = ? \
+                 )",
+            )
+            .bind(org_id)
+            .bind(org_id)
+            .bind(project)
             .fetch_one::<u64>()
             .await
             .map_err(clickhouse_read_error)?;

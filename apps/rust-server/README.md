@@ -146,6 +146,8 @@ RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
 
 This command reads the local `.env`, signs in as `hello@instantml.ai`, creates or reuses the `InstantML Demo` cloud-service tenant route, seeds the hosted 100,000-run benchmark only when that project is absent, restarts its temporary Rust API for tenant replay, and prints hosted ClickHouse latency timings. The explicit `RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1` guard is required because the command can create/use paid ClickHouse Cloud services; do not run it from CI or against an account where that would be surprising.
 
+The hosted benchmark now validates and times the dashboard's critical 100,000-run query shapes: newest run pages, larger pages, name/tag/config/notes search, failed/running/finished filters, combined search+filter, selected-metric sort, project overview, and a bounded chart series. Set `RLOBS_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-benchmark.json` to save the sanitized JSON result, and `RLOBS_HOSTED_DEMO_ENFORCE=1` to fail if hosted p95 budgets are missed.
+
 In `cloud-service` hosted mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse service, not in the User Data database.
 
 ## Coverage Expectations
@@ -191,6 +193,7 @@ Coverage exception:
 - `docs/design/2026-05-14-clickhouse-only-storage.md`
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
 - `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
+- `docs/design/2026-05-14-hosted-clickhouse-query-benchmarks.md`
 - `docs/design/2026-05-10-run-tags-notes-editing.md`
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
