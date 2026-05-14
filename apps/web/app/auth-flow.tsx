@@ -166,7 +166,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 <small>No invitations are sent yet; this only reserves org seats.</small>
               </label>
             ) : null}
-            <button disabled={busy || !config.dev_auth_enabled} type="submit">
+            <button className="primary-button" disabled={busy || !config.dev_auth_enabled} type="submit">
               <UserPlus size={15} /> Continue with Dev Google <ArrowRight size={15} />
             </button>
           </form>
@@ -179,7 +179,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 <span>{session?.user?.primary_email ?? "Signed in"} · {session?.membership?.role ?? "owner"}</span>
               </div>
             </div>
-            <button disabled={busy || !session?.organization?.id} onClick={createKey} type="button">
+            <button className="primary-button" disabled={busy || !session?.organization?.id} onClick={createKey} type="button">
               <KeyRound size={15} /> Create SDK API key
             </button>
             {apiKey ? (

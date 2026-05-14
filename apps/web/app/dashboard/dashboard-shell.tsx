@@ -101,6 +101,7 @@ import {
 } from "../dashboard-models";
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspaceView } from "../dashboard-types";
+import { RunWorkspace } from "./components/run-workspace";
 
 type ThemeMode = "light" | "dark";
 type ChartZoomRange = { min: number; max: number } | null;
@@ -954,8 +955,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         setArtifacts([]);
         return;
       }
-      const artifactPayload = await api.get(`/api/runs/${primaryRun.id}/artifacts${queryString({ limit: ARTIFACT_PAGE_LIMIT })}`, { signal: controller.signal });
-      if (!cancelled) setArtifacts((artifactPayload.artifacts ?? []).slice(0, ARTIFACT_PAGE_LIMIT));
+      try {
+        const artifactPayload = await api.get(`/api/runs/${primaryRun.id}/artifacts${queryString({ limit: ARTIFACT_PAGE_LIMIT })}`, { signal: controller.signal });
+        if (!cancelled) setArtifacts((artifactPayload.artifacts ?? []).slice(0, ARTIFACT_PAGE_LIMIT));
+      } catch (error) {
+        if (isAbortError(error)) return;
+        if (isNotFoundError(error)) {
+          if (!cancelled) setArtifacts([]);
+          return;
+        }
+        throw error;
+      }
     }
     loadArtifacts().catch((error) => {
       if (!cancelled && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load artifacts.");
@@ -1960,18 +1970,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "detail" ? (
             <>
           <div className="analysis-page detail-analysis">
-            <header className="analysis-header">
-              <div className="analysis-title-block">
-                <span className="analysis-eyebrow">Run Detail</span>
-                <h2 title={primaryRun?.name}>{primaryRun?.name ?? "No run selected"}</h2>
-                <p>{primaryRun ? `${primaryRun.project} · ${selectedRuns.length || 1} runs selected · inspecting ${metricKey}` : "Select a run to inspect source, metrics, artifacts, and notes."}</p>
-              </div>
-              <div className="analysis-stat-strip">
-                <div className="analysis-stat"><span>Status</span><strong>{primaryRun?.status ?? "-"}</strong></div>
-                <div className="analysis-stat"><span>Artifacts</span><strong>{formatNumber(visibleArtifacts.length, 0)}</strong></div>
-                <div className="analysis-stat"><span>Metrics</span><strong>{formatNumber(runMetricRows.length, 0)}</strong></div>
-              </div>
-            </header>
             <div className="analysis-toolbar detail-toolbar">
               <CustomSelect
                 id="detail-metric-select"
@@ -1988,40 +1986,35 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 value={xMode}
               />
             </div>
-            <div className="detail-grid">
-              <section className="chart-card analysis-card run-detail-chart">
-                <div className="panel-head">
-                  <h2>{shortMetricName(metricKey)} Curve</h2>
-                  <span className="chart-kind"><BarChart3 size={15} /> Single run</span>
-                </div>
-                <MetricChart
-                  domain={primaryDomain}
-                  fullDomain={primaryFullDomain}
-                  hover={hover}
-                  metricKey={metricKey}
-                  normalizedSeries={primaryNormalizedSeries}
-                  onMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
-                  onPointHover={(point) => {
-                    setHoverMetricKey(metricKey);
-                    setHover(point);
-                  }}
-                  onLeave={() => setHover(null)}
-                  onZoomRangeChange={setPrimaryChartZoomRange}
-                  rangeSeries={primaryRangeSeries}
-                  showRange={false}
-                  xMode={xMode}
-                  zoomRange={primaryChartZoomRange}
-                />
-              </section>
-              <section className="panel analysis-card detail-dossier-card">
-                <div className="panel-body"><RunDetail activeMetricKey={metricKey} elementId="run-detail" run={primaryRun} selectedCount={selectedRuns.length} selectedRuns={selectedRuns} hover={inspectedPoint} artifacts={visibleArtifacts} loggedObjects={loggedObjects} objectRowsById={objectRowsById} metricRows={runMetricRows} timelineRows={runTimelineRows} onRunMetadataSave={updateRunTagsAndNotes} /></div>
-              </section>
-            </div>
-            <section className="artifact-grid detail-artifact-grid">
-              <ArtifactPanel title="Checkpoints" items={visibleArtifacts.filter((artifact) => artifact.type === "checkpoint")} />
-              <ArtifactPanel title="Rollouts" items={visibleArtifacts.filter((artifact) => artifact.type === "rollout")} />
-              <ArtifactPanel title="Artifacts" items={visibleArtifacts.filter((artifact) => artifact.type === "file")} />
-            </section>
+            <RunWorkspace
+              activeMetricKey={metricKey}
+              api={api}
+              artifacts={visibleArtifacts}
+              chartDomain={primaryDomain}
+              chartFullDomain={primaryFullDomain}
+              chartHover={hover}
+              chartNormalizedSeries={primaryNormalizedSeries}
+              chartRangeSeries={primaryRangeSeries}
+              chartZoomRange={primaryChartZoomRange}
+              elementId="run-detail"
+              hover={inspectedPoint}
+              loggedObjects={loggedObjects}
+              metricRows={runMetricRows}
+              objectRowsById={objectRowsById}
+              onChartLeave={() => setHover(null)}
+              onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
+              onChartPointHover={(point) => {
+                setHoverMetricKey(metricKey);
+                setHover(point);
+              }}
+              onChartZoomRangeChange={setPrimaryChartZoomRange}
+              onRunMetadataSave={updateRunTagsAndNotes}
+              run={primaryRun}
+              selectedCount={selectedRuns.length}
+              selectedRuns={selectedRuns}
+              timelineRows={runTimelineRows}
+              xMode={xMode}
+            />
           </div>
             </>
           ) : null}

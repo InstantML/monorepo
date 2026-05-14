@@ -118,6 +118,48 @@ async function runContract(root) {
   });
   assert.equal(validation.status, 400);
   assert.equal((await expectStatus(root, "POST", `/runs/${run.id}/metrics`, 403, { step: 1, metrics: { reward: 2 } }, usageAuth)).error, "api key requires sdk:ingest");
+  if (backendMode !== "node") {
+    const logPayload = {
+      stream: "stdout",
+      lines: [
+        { line_number: 1, message: "Epoch 1 loss=1.25", timestamp: "2026-05-09T00:00:00Z" },
+        { line_number: 2, message: "\u001b[32mcheckpoint saved\u001b[0m", timestamp: "2026-05-09T00:00:01Z" },
+      ],
+    };
+    assert.equal(
+      (await request(root, "POST", `/api/runs/${run.id}/logs`, logPayload, { ...auth, "Idempotency-Key": "contract-log-1" })).inserted,
+      2,
+    );
+    assert.equal(
+      (await request(root, "POST", `/api/runs/${run.id}/logs`, logPayload, { ...auth, "Idempotency-Key": "contract-log-1" })).inserted,
+      2,
+    );
+    assert.match(
+      (await expectStatus(root, "POST", `/api/runs/${run.id}/logs`, 409, {
+        stream: "stdout",
+        lines: [{ line_number: 3, message: "different", timestamp: "2026-05-09T00:00:02Z" }],
+      }, { ...auth, "Idempotency-Key": "contract-log-1" })).error,
+      /idempotency key/,
+    );
+    assert.equal((await expectStatus(root, "POST", `/api/runs/${run.id}/logs`, 403, logPayload, usageAuth)).error, "api key requires sdk:ingest");
+    assert.match(
+      (await expectStatus(root, "POST", `/api/runs/${run.id}/logs`, 400, {
+        stream: "stdout",
+        lines: [{ message: "missing line number" }],
+      }, auth)).error,
+      /line_number/,
+    );
+    const firstLogPage = await request(root, "GET", `/api/runs/${run.id}/logs?stream=stdout&limit=1`, undefined, auth);
+    assert.equal(firstLogPage.lines.length, 1);
+    assert.equal(firstLogPage.lines[0].message, "Epoch 1 loss=1.25");
+    assert.ok(firstLogPage.next_cursor);
+    const secondLogPage = await request(root, "GET", `/api/runs/${run.id}/logs?stream=stdout&limit=10&cursor=${encodeURIComponent(firstLogPage.next_cursor)}`, undefined, auth);
+    assert.equal(secondLogPage.lines[0].line_number, 2);
+    const searchedLogs = await request(root, "GET", `/api/runs/${run.id}/logs?stream=stdout&q=checkpoint&limit=10`, undefined, auth);
+    assert.equal(searchedLogs.lines.length, 1);
+    assert.match(searchedLogs.lines[0].message, /checkpoint/);
+    assert.match((await expectStatus(root, "GET", `/api/runs/${run.id}/logs?cursor=${"a".repeat(300)}`, 400, undefined, auth)).error, /cursor/);
+  }
   const tooLarge = await fetch(`${root}/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...auth },

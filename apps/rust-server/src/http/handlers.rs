@@ -39,6 +39,7 @@ pub(super) async fn openapi_json() -> Json<Value> {
             "/runs": { "get": {}, "post": {} },
             "/runs/{run_id}/metrics": { "get": {}, "post": {} },
             "/api/metrics/series": { "post": {} },
+            "/api/runs/{run_id}/logs": { "get": {}, "post": {} },
             "/api/runs/{run_id}/objects": { "get": {}, "post": {} },
             "/api/objects/{object_id}/rows": { "get": {} },
             "/api/runs/summary": { "get": {} }
@@ -335,6 +336,39 @@ pub(super) async fn get_metrics(
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         store::get_metrics(&state.store, &ctx, run_id, &query).await?,
+    ))
+}
+
+pub(super) async fn log_console_logs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) = read_json_with_raw::<CreateConsoleLogsRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    let inserted =
+        store::log_console_logs(&state.store, &ctx, run_id, raw, input, idempotency_key).await?;
+    Ok(Json(json!({ "inserted": inserted })))
+}
+
+pub(super) async fn list_console_logs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(
+        store::list_console_logs(&state.store, &ctx, run_id, &query).await?,
     ))
 }
 

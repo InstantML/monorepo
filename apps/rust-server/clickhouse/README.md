@@ -7,10 +7,11 @@ schema version tracking built in.
 
 ## Layout
 
-- `0001_initial.sql` — `metric_points` (raw time series), `metric_series`
-  (aggregated summary via `AggregatingMergeTree`), and `metric_series_mv` (the
-  materialized view that populates `metric_series` from `metric_points` on
-  insert).
+- `0001_initial.sql` — `operational_records` (low-volume replay log),
+  `metric_points` (raw time series), `console_log_lines` (bounded stdout/stderr
+  reads by run/stream/cursor), `metric_series` (aggregated summary via
+  `AggregatingMergeTree`), and `metric_series_mv` (the materialized view that
+  populates `metric_series` from `metric_points` on insert).
 
 ## Read patterns
 
@@ -36,3 +37,8 @@ GROUP BY org_id, run_id, key;
 `mean = sum / count` and `variance = sum_sq/count - (sum/count)^2` are computed
 on read. `best = max` (matches the prior summary behavior, which always tracked
 max regardless of metric direction).
+
+Console log reads query one `(org_id, run_id, stream)` at a time from
+`console_log_lines`, ordered by `(line_number, ingest_id)`. Clients provide
+line numbers; the API returns opaque cursors so the UI can page stdout/stderr
+without loading entire logs.

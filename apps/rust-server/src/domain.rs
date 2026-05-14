@@ -15,6 +15,10 @@ pub const MAX_METRIC_LIMIT: i64 = 5_000;
 pub const DEFAULT_RUN_LIMIT: i64 = 100;
 pub const MAX_RUN_LIMIT: i64 = 500;
 pub const MAX_METRIC_SERIES_RUN_IDS: usize = 500;
+pub const DEFAULT_CONSOLE_LOG_LIMIT: i64 = 250;
+pub const MAX_CONSOLE_LOG_LIMIT: i64 = 1_000;
+pub const MAX_CONSOLE_LOG_LINES_PER_BATCH: usize = 50;
+pub const MAX_CONSOLE_LOG_MESSAGE_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct RequestContext {
@@ -256,6 +260,29 @@ pub struct LogMetricsRequest {
     pub timestamp: Option<String>,
     pub preview: Option<bool>,
     pub preview_completion: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConsoleLogInput {
+    pub line_number: Option<u64>,
+    pub message: Option<String>,
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateConsoleLogsRequest {
+    pub stream: Option<String>,
+    pub lines: Option<Vec<ConsoleLogInput>>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ConsoleLogLine {
+    pub run_id: Uuid,
+    pub stream: String,
+    pub line_number: u64,
+    pub message: String,
+    pub timestamp: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Clone)]

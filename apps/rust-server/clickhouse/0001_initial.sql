@@ -31,6 +31,21 @@ PARTITION BY toYYYYMM(created_at)
 ORDER BY (org_id, run_id, key, step)
 SETTINGS index_granularity = 8192;
 
+CREATE TABLE IF NOT EXISTS console_log_lines (
+    org_id      UUID,
+    run_id      UUID,
+    stream      LowCardinality(String),
+    ingest_id   UUID,
+    line_number UInt64 CODEC(Delta, ZSTD(3)),
+    message     String CODEC(ZSTD(3)),
+    logged_at   DateTime64(6, 'UTC') CODEC(Delta, ZSTD(3)),
+    created_at  DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (org_id, run_id, stream, line_number, ingest_id)
+SETTINGS index_granularity = 8192;
+
 CREATE TABLE IF NOT EXISTS metric_series (
     org_id           UUID,
     run_id           UUID,

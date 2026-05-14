@@ -135,7 +135,7 @@ def _request_with_optional_idempotency(
     body: dict[str, Any],
     event_id: Any,
 ) -> None:
-    if isinstance(event_id, str) and path.endswith("/metrics"):
+    if isinstance(event_id, str) and (path.endswith("/metrics") or path.endswith("/logs")):
         try:
             client._request(method, path, body, idempotency_key=event_id)
             return

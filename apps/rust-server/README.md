@@ -101,6 +101,12 @@ Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key au
 
 In `RLOBS_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
 
+Console logs are stored in tenant ClickHouse through `console_log_lines`.
+`POST /api/runs/:run_id/logs` requires `sdk:ingest`, accepts client-supplied
+stdout/stderr line batches of up to 50 lines with idempotency keys, and
+`GET /api/runs/:run_id/logs` returns one bounded run/stream page at a time for
+the frontend terminal.
+
 ## Testing
 
 Rust unit tests:
@@ -163,6 +169,7 @@ Coverage exception:
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.
 - `src/store/mod.rs`: ClickHouse-backed operational index core and module re-exports.
 - `src/store/auth.rs`: users, organizations, sessions, API keys, and admin authorization helpers.
+- `src/store/console_logs.rs`: stdout/stderr validation, idempotent writes, cursor encoding, and read response shaping.
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, scalar metric writes, and metric read endpoints.
 - `src/store/objects.rs`: typed attributes, rich objects, table rows, artifacts, and local artifact upload metadata.
 - `src/store/imports.rs`: Neptune, W&B, and MLflow import normalization and import records.
@@ -177,12 +184,13 @@ Coverage exception:
 - `src/domain.rs`: DTOs and validation helpers.
 - `src/artifact_store.rs`: local staged artifact byte storage and root-confined reads.
 - `src/managed_auth.rs`: provider-neutral managed-auth adapter boundary.
-- `clickhouse/0001_initial.sql`: operational record log, metric points, metric series, and materialized view schema.
+- `clickhouse/0001_initial.sql`: operational record log, metric points, console log lines, metric series, and materialized view schema.
 
 ## Design Docs
 
 - `docs/design/2026-05-14-clickhouse-only-storage.md`
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
+- `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
 - `docs/design/2026-05-10-run-tags-notes-editing.md`
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
