@@ -1,6 +1,6 @@
 # Web App
 
-This directory contains the Next/React frontend application for Training Observability. It is responsible for browsing projects, comparing runs, charting metrics, viewing artifacts, and inspecting training-loop debugging panels.
+This directory contains the Next/React frontend application for InstantML. It is responsible for browsing projects, comparing runs, charting metrics, viewing artifacts, and inspecting training-loop debugging panels.
 
 Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by default. The deprecated Node API in `apps/server` remains available for compatibility checks. Keep UI data access on documented REST routes and bounded summary/series endpoints so both backends stay comparable during migration cleanup.
 
@@ -22,10 +22,13 @@ Current navigation and comparison controls:
 - Route-backed navigation for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark so filters and saved-view controls have more room.
 - Unauthenticated visitors land on `/`, can sign in or sign up through the explicitly labeled local dev Google-style flow, reserve business seats, create a copy-once SDK API key, and then enter `/dashboard/runs`. The shared demo action signs in as `hello@instantml.ai` and reuses the `InstantML Demo` org/service. In hosted ClickHouse mode, that same local/dev flow writes users/orgs/sessions/API keys to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
-- Light/dark mode toggle with a persisted local preference. Dark mode uses a neon-navy palette: near-black blue canvas, graphite/navy raised surfaces, electric blue accents, and subdued blue selection states.
+- Light/dark mode toggle with a persisted local preference. Dark mode uses neutral dark surfaces with explicit accent states; primary button styling is opt-in via `.primary-button` instead of a broad global button selector.
 - Refresh/loading experience: the root layout applies the saved theme before paint and the app shows a branded loading shell during the first dashboard API load instead of flashing an empty white page.
 - Desktop `Runs` workspace with a top filter rectangle, left run selector, searchable panel canvas, collapsible sections, add-panel drawer, edit drawer, and fullscreen panel inspection.
 - Metrics, Run Detail, and Compare now share the analysis-suite layout: compact header stats, responsive toolbars, chart-first metric inspection, a Run Detail metric picker/dossier, and row-first comparison evidence that visually matches the Runs workspace.
+- Run Detail now contains a local Pluto-style Run Workspace with a sticky run header and Summary, Data, Logs, Files, System, and Graph sections. These are intentionally local run tabs, not new global dashboard tabs.
+- Logs fetch `GET /api/runs/:id/logs` only when the local Logs section is opened, render stdout/stderr through a virtualized terminal with safe ANSI spans, and keep search bounded to the selected run/stream.
+- Files is an evidence explorer over the selected run's existing artifact and rich-object endpoints. It previews checkpoints, uploaded files, media objects, table objects, and histograms without introducing a separate file storage layer.
 - Compare workspace with selected-run caps, reference switching, Diff-only filtering, row-first and column matrix layouts, addable metric columns, clickable table-column sorting, evidence/run/config sorting, full metric/config/artifact labels, tags/notes/artifact context, a compact best-run/delta summary, and saved-view restore that prunes stale run IDs after data resets.
 - Keyboard workflow MVP: `Cmd/Ctrl+K` quick search, `?` shortcut help, `Esc` top-overlay dismissal, `Cmd/Ctrl+Z` undo, `Cmd+Shift+Z` / `Ctrl+Y` redo, `Cmd/Ctrl+.` Runs selector collapse, `Cmd/Ctrl+J` Runs/canvas focus handoff, and Left/Right Arrow fullscreen panel traversal.
 - Runs rail bulk-selection: the rail header has a tri-state master checkbox that selects or clears every run on the current page, shift-clicking a run extends the selection from the last interacted run, and a banner offers "Select all N matching filter" (capped at `MAX_SELECTED_RUNS = 500`) when more runs match the filter than fit on the visible page. Workspace and Metrics panels load all selected-run series through a single batched `POST /api/metrics/series` call (with `{ key, run_ids, limit }` JSON body) per panel/metric instead of fanning out N per-run requests, so the rail can drive 500-run selections without saturating browser connection limits or hitting the dev proxy's request-header byte ceiling.
@@ -144,6 +147,7 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - `app/signup/page.tsx`
 - `app/onboarding/page.tsx`
 - `app/dashboard/[[...tab]]/page.tsx`
+- `app/dashboard/components/run-workspace.tsx`
 - `app/dashboard/dashboard-shell.tsx`
 - `app/dashboard-components.tsx`
 - `app/dashboard-config.tsx`
@@ -153,9 +157,11 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - `app/icon.svg`
 - `src/api.js`
 - `src/charts.js`
+- `src/evidence.js`
 - `src/routes.js`
 - `src/shortcuts.js`
 - `src/state.js`
+- `src/terminal.js`
 - `next.config.mjs`
 
 ## Relevant Design Docs
@@ -170,6 +176,8 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
+- `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
+- `docs/design/2026-05-14-instantml-rescheme-and-chart-polish.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 
 ## Notes for Future Agents
@@ -178,7 +186,7 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - Keep screens focused and information-dense.
 - Keep the visual language sleek and precise: low-radius controls, flat buttons, restrained shadows, and status chips that read as compact metadata rather than bubbly decoration.
 - Do not make marketing pages before the usable app exists.
-- Use Training Observability for user-facing product language.
+- Use InstantML for user-facing product language.
 - Avoid UI state that cannot be reproduced from URL, query state, or API state when practical.
 - Keep charts responsive with bounded data queries.
 - Render only the active tab body so hidden chart/detail/comparison surfaces do not rerender on every hover or filter update.

@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  HOSTED_BENCHMARK_BUDGETS_MS,
+  budgetFailures,
+  budgetForCase,
+  sanitizeHostedBenchmarkResult,
+  summarizeTimings,
+  validateBenchmarkPayload,
+} from "./hosted-benchmark-utils.mjs";
 import { clickhousePost } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
@@ -19,6 +27,9 @@ const project = process.env.RLOBS_HOSTED_DEMO_PROJECT || "instantml-demo-100k";
 const demoEmail = process.env.RLOBS_HOSTED_DEMO_EMAIL || "hello@instantml.ai";
 const demoOrg = process.env.RLOBS_HOSTED_DEMO_ORG || "InstantML Demo";
 const existingApiBase = process.env.RLOBS_HOSTED_DEMO_API_BASE;
+const resultPath = process.env.RLOBS_HOSTED_DEMO_RESULT_PATH || "";
+const enforceBudgets = process.env.RLOBS_HOSTED_DEMO_ENFORCE === "1";
+const metricKey = process.env.RLOBS_HOSTED_DEMO_METRIC_KEY || "eval/return_mean";
 const userDataUrl = clickhouseUrlFromEnv(
   "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT",
   "CLICKHOUSE_INSTANTML_USER_DATA_USERNAME",
@@ -80,34 +91,71 @@ try {
     server = await startServer(apiPort);
   }
 
+  const seededRuns = await seededRunCount(tenantUrl, orgId);
+  const seededMetricPoints = await seededMetricPointCount(tenantUrl, orgId);
+  const statusCounts = await seededStatusCounts(tenantUrl, orgId);
+  assertSeedPreflight({ seededRuns, statusCounts });
+
   const firstPage = await getJson(
-    `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`,
+    `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "created", metric_key: metricKey })}`,
     cookie,
   );
   const firstRunId = firstPage.runs?.[0]?.id;
   if (!firstRunId) throw new Error("hosted demo seed did not produce a visible run");
 
-  const measurements = {
-    summary_newest_project: await measureEndpoint("summary_newest_project", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, cookie),
-    summary_search_seed_13: await measureEndpoint("summary_search_seed_13", `/api/runs/summary?${new URLSearchParams({ project, q: "seed 13", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, cookie),
-    summary_sort_metric_best: await measureEndpoint("summary_sort_metric_best", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "metric-best", metric_key: "eval/return_mean" })}`, cookie),
-    chart_series: await measureEndpoint("chart_series", `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: "eval/return_mean", limit: "5000" })}`, cookie),
-  };
+  const cases = benchmarkCases(firstRunId);
+  await preflightCases(cases, cookie);
+  const measurements = [];
+  for (const caseDefinition of cases) {
+    measurements.push(await measureEndpoint(caseDefinition, cookie));
+  }
+  const routeLocation = inferCloudLocation(route.endpoint);
 
-  console.log(JSON.stringify({
+  const result = sanitizeHostedBenchmarkResult({
     status: "ok",
-    demo_email: demoEmail,
-    org_id: orgId,
-    project,
+    generated_at: new Date().toISOString(),
+    git: gitMetadata(),
+    environment: {
+      platform: os.platform(),
+      arch: os.arch(),
+      node_version: process.version,
+      api_mode: existingApiBase ? "existing-api" : "temporary-rust",
+      warmed: true,
+    },
+    measurement_protocol: {
+      warmups,
+      samples,
+      p95: "nearest-rank",
+      endpoint_order: "fixed",
+    },
+    dataset: {
+      project,
+      configured_runs: runCount,
+      seeded_runs: seededRuns,
+      seeded_metric_points: seededMetricPoints,
+      long_run_steps: longRunSteps,
+      metric_key: metricKey,
+      status_counts: statusCounts,
+    },
     route: {
       provisioner: route.provisioner,
-      service_id: route.service_id,
-      database: route.database,
       endpoint_host: new URL(route.endpoint).host,
+      clickhouse_provider: routeLocation.provider || cloudProvider,
+      clickhouse_region: routeLocation.region || cloudRegion,
     },
-    seeded_runs: await seededRunCount(tenantUrl, orgId),
+    budgets_ms: HOSTED_BENCHMARK_BUDGETS_MS,
     measurements,
-  }, null, 2));
+  });
+
+  if (resultPath) {
+    fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+    fs.writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`);
+  }
+  console.log(JSON.stringify(result, null, 2));
+  const failures = budgetFailures(result);
+  if (enforceBudgets && failures.length) {
+    throw new Error(`hosted benchmark budget failures:\n${failures.join("\n")}`);
+  }
 } finally {
   await stopServer();
   fs.rmSync(tempDir, { recursive: true, force: true });
@@ -191,7 +239,7 @@ async function seedBenchmarkData(tenantUrl, orgId) {
     metricRows.push({
       org_id: orgId,
       run_id: runId,
-      key: "eval/return_mean",
+      key: metricKey,
       step: 1000,
       value: 150 + (index % 800),
       logged_at: clickhouseDate(new Date(createdAt.getTime() + 60 * 60 * 1000)),
@@ -200,7 +248,7 @@ async function seedBenchmarkData(tenantUrl, orgId) {
     if (metricRows.length >= 5000) await insertMetricPoints(tenantUrl, metricRows.splice(0));
     if (index % 25_000 === 0) console.log(`seeded ${index}/${runCount} runs`);
   }
-  const longRunKeys = ["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"];
+  const longRunKeys = [...new Set([metricKey, "train/loss", "train/reward", "system/tokens_per_second"])];
   for (let step = 1; step <= longRunSteps; step += 1) {
     for (const key of longRunKeys) {
       metricRows.push({
@@ -252,6 +300,43 @@ async function seededRunCount(tenantUrl, orgId) {
   return Number(JSON.parse(text.trim()).count);
 }
 
+async function seededMetricPointCount(tenantUrl, orgId) {
+  const text = await clickhousePost(
+    tenantUrl,
+    `SELECT count() AS count
+     FROM metric_points
+     WHERE org_id = toUUID('${orgId}')
+       AND run_id IN (
+         SELECT toUUID(entity_id)
+         FROM operational_records
+         WHERE org_id = toUUID('${orgId}')
+           AND kind = 'run'
+           AND JSONExtractString(payload, 'project') = ${sqlString(project)}
+       )
+     FORMAT JSONEachRow`,
+  );
+  return Number(JSON.parse(text.trim()).count);
+}
+
+async function seededStatusCounts(tenantUrl, orgId) {
+  const text = await clickhousePost(
+    tenantUrl,
+    `SELECT JSONExtractString(payload, 'status') AS status, count() AS count
+     FROM operational_records
+     WHERE org_id = toUUID('${orgId}')
+       AND kind = 'run'
+       AND JSONExtractString(payload, 'project') = ${sqlString(project)}
+     GROUP BY status
+     FORMAT JSONEachRow`,
+  );
+  const counts = {};
+  for (const line of text.trim().split("\n").filter(Boolean)) {
+    const row = JSON.parse(line);
+    counts[row.status || "unknown"] = Number(row.count);
+  }
+  return counts;
+}
+
 async function latestTenantRoute(orgId) {
   const text = await clickhousePost(
     userDataUrl,
@@ -279,17 +364,89 @@ function tenantBasePassword(route) {
   return new URL(tenantBase).password;
 }
 
-async function measureEndpoint(name, pathSuffix, cookie) {
-  for (let index = 0; index < warmups; index += 1) await getJson(pathSuffix, cookie);
+function benchmarkCases(firstRunId) {
+  const summary = (name, params, options = {}) => ({
+    name,
+    kind: "summary",
+    group: options.group || "search_filter_sort",
+    route_template: "/api/runs/summary",
+    path: `/api/runs/summary?${new URLSearchParams({ project, metric_key: metricKey, limit: "25", sort_by: "created", ...params })}`,
+    limit: Number(params.limit || 25),
+    expect_non_empty: true,
+    ...options,
+  });
+  const latestRunName = `demo-bench-${String(runCount).padStart(6, "0")}`;
+  return [
+    summary("runs_newest_25", { limit: "25", sort_by: "created" }, { group: "summary", require_metric_key: metricKey }),
+    summary("runs_newest_100", { limit: "100", sort_by: "created" }, { group: "summary", require_metric_key: metricKey }),
+    summary("search_name_latest_run", { q: latestRunName }, { query_fixture: "name" }),
+    summary("search_seed_13", { q: "seed 13" }, { query_fixture: "name_tag_config" }),
+    summary("search_tag_config_llm", { q: "llm" }, { query_fixture: "tag_config" }),
+    summary("search_notes_reward_stability", { q: "reward stability" }, { query_fixture: "notes" }),
+    summary("filter_failed", { status: "failed" }, { expected_status: "failed" }),
+    summary("filter_running", { status: "running" }, { expected_status: "running" }),
+    summary("filter_finished", { status: "finished" }, { expected_status: "finished" }),
+    summary("filter_finished_notes", { status: "finished", q: "reward stability" }, { expected_status: "finished" }),
+    summary("sort_metric_best", { sort_by: "metric-best" }, { require_metric_summary_key: metricKey }),
+    {
+      name: "overview_project",
+      kind: "overview",
+      group: "overview",
+      route_template: "/api/overview",
+      path: `/api/overview?${new URLSearchParams({ project, metric_key: metricKey })}`,
+    },
+    {
+      name: "chart_eval_return_5000",
+      kind: "chart",
+      group: "chart",
+      route_template: "/runs/:id/metrics",
+      path: `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: metricKey, limit: "5000" })}`,
+      limit: 5000,
+      expect_non_empty: true,
+    },
+  ].map((caseDefinition) => ({
+    ...caseDefinition,
+    budget_ms: budgetForCase(caseDefinition),
+  }));
+}
+
+function assertSeedPreflight({ seededRuns, statusCounts }) {
+  if (seededRuns < runCount) throw new Error(`${project} has ${seededRuns}/${runCount} seeded runs`);
+  for (const status of ["failed", "running", "finished"]) {
+    if (!statusCounts[status]) throw new Error(`${project} has no ${status} runs for filter benchmarking`);
+  }
+}
+
+async function preflightCases(cases, cookie) {
+  for (const caseDefinition of cases) {
+    const payload = await getJson(caseDefinition.path, cookie);
+    validateBenchmarkPayload(caseDefinition, payload);
+  }
+}
+
+async function measureEndpoint(caseDefinition, cookie) {
+  let stats = null;
+  for (let index = 0; index < warmups; index += 1) {
+    const payload = await getJson(caseDefinition.path, cookie);
+    stats = validateBenchmarkPayload(caseDefinition, payload);
+  }
   const timings = [];
   for (let index = 0; index < samples; index += 1) {
     const started = performance.now();
-    const payload = await getJson(pathSuffix, cookie);
+    const payload = await getJson(caseDefinition.path, cookie);
     timings.push(performance.now() - started);
-    if (name.startsWith("summary") && !Array.isArray(payload.runs)) throw new Error(`${name} returned malformed runs payload`);
-    if (name === "chart_series" && !Array.isArray(payload.metrics)) throw new Error("chart_series returned malformed metrics payload");
+    stats = validateBenchmarkPayload(caseDefinition, payload);
   }
-  return summarize(timings);
+  return {
+    name: caseDefinition.name,
+    kind: caseDefinition.kind,
+    group: caseDefinition.group,
+    route_template: caseDefinition.route_template,
+    limit: caseDefinition.limit,
+    budget_ms: caseDefinition.budget_ms,
+    ...summarizeTimings(timings),
+    stats,
+  };
 }
 
 async function postJson(pathname, body) {
@@ -308,25 +465,13 @@ async function postJson(pathname, body) {
 
 async function getJson(pathname, cookie) {
   const response = await fetch(apiBaseUrl + pathname, { headers: { cookie } });
+  const contentType = response.headers.get("content-type") || "";
   const text = await response.text();
   if (!response.ok) throw new Error(`${pathname} failed with ${response.status}: ${text}`);
+  if (text && !contentType.toLowerCase().includes("application/json")) {
+    throw new Error(`${pathname} returned ${contentType || "unknown content type"}, expected JSON`);
+  }
   return text ? JSON.parse(text) : {};
-}
-
-function summarize(timings) {
-  const sorted = [...timings].sort((a, b) => a - b);
-  return {
-    p50_ms: Math.round(percentile(sorted, 0.5)),
-    p95_ms: Math.round(percentile(sorted, 0.95)),
-    min_ms: Math.round(sorted[0]),
-    max_ms: Math.round(sorted[sorted.length - 1]),
-  };
-}
-
-function percentile(sorted, p) {
-  if (!sorted.length) return 0;
-  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1);
-  return sorted[index];
 }
 
 function longRunMetricValue(key, step) {
@@ -358,6 +503,19 @@ function inferCloudLocation(clickhouseUrl) {
   const host = new URL(clickhouseUrl).hostname;
   const match = host.match(/^[^.]+\.([^.]+)\.([^.]+)\.clickhouse\.cloud$/);
   return match ? { region: match[1], provider: match[2] } : {};
+}
+
+function gitMetadata() {
+  return {
+    commit: gitValue(["rev-parse", "HEAD"]),
+    branch: gitValue(["branch", "--show-current"]),
+  };
+}
+
+function gitValue(args) {
+  const result = spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+  if (result.status !== 0) return undefined;
+  return result.stdout.trim();
 }
 
 function loadDotenv(file) {

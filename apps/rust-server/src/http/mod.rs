@@ -26,10 +26,11 @@ use crate::{
     artifact_store::LocalArtifactStore,
     config::AppConfig,
     domain::{
-        CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest, CreateObjectRequest,
-        CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-        DevGoogleAuthRequest, GoogleAuthRequest, LogMetricsRequest, RequestContext,
-        ReserveSeatRequest, SessionContext, UpdateRunRequest, UploadArtifactRequest,
+        CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
+        CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest,
+        CreateProjectRequest, CreateRunRequest, CreateUserRequest, DevGoogleAuthRequest,
+        GoogleAuthRequest, LogMetricsRequest, RequestContext, ReserveSeatRequest, SessionContext,
+        UpdateRunRequest, UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
     metric_store, store,
@@ -89,6 +90,10 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/:run_id", get(get_run).patch(update_run))
         .route("/runs/:run_id/metrics", post(log_metrics).get(get_metrics))
         .route("/api/metrics/series", post(metrics_series))
+        .route(
+            "/api/runs/:run_id/logs",
+            post(log_console_logs).get(list_console_logs),
+        )
         .route("/api/overview", get(overview))
         .route("/api/runs/summary", get(runs_summary))
         .route("/api/runs/side-by-side", get(side_by_side))

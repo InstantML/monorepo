@@ -14,6 +14,7 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
     data.apply_project_delete(delete);
     let project = ensure_project_locked(store, &mut data, ctx.org_id, "demo").await?;
     let mut points = Vec::new();
+    let mut log_rows = Vec::new();
     for index in 0..DEMO_RUN_COUNT {
         let seed = 7 + ((index as i64 * 37) % 100_000);
         let workload = if index % 10 < 6 { "llm" } else { "rl" };
@@ -121,6 +122,26 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
                 .await?;
             data.insert_attribute(media);
         }
+        for (line_index, message) in demo_console_lines(workload, seed, status)
+            .into_iter()
+            .enumerate()
+        {
+            log_rows.push(ConsoleLogInsertRow {
+                org_id: ctx.org_id,
+                run_id,
+                stream: if status == "failed" && line_index + 1 == 5 {
+                    "stderr"
+                } else {
+                    "stdout"
+                }
+                .to_string(),
+                ingest_id: Uuid::new_v4(),
+                line_number: (line_index + 1) as u64,
+                message,
+                logged_at: Utc::now(),
+                created_at: Utc::now(),
+            });
+        }
         for step in DEMO_STEPS {
             for (key, value) in demo_metrics(workload, index, seed, step) {
                 points.push(ChMetricPointRow {
@@ -139,10 +160,33 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
     for chunk in points.chunks(10_000) {
         metric_store.insert_points(chunk).await?;
     }
+    for chunk in log_rows.chunks(10_000) {
+        metric_store.insert_console_logs(chunk).await?;
+    }
     let mut query = HashMap::new();
     query.insert("project".to_string(), "demo".to_string());
     query.insert("limit".to_string(), "100".to_string());
     runs_summary(store, ctx, &query).await
+}
+
+fn demo_console_lines(workload: &str, seed: i64, status: &str) -> Vec<String> {
+    let model = if workload == "llm" {
+        "transformer-small"
+    } else {
+        "ppo-policy"
+    };
+    let mut lines = vec![
+        format!("[seed={seed}, model={model}] starting training loop"),
+        "Epoch 1/6 | loss: 1.2042 | lr: 3e-4 | throughput: 1820 samples/s".to_string(),
+        "\u{001b}[32mcheckpoint saved\u{001b}[0m at step 80".to_string(),
+        "eval/return_mean improved; scheduling validation sweep".to_string(),
+    ];
+    if status == "failed" {
+        lines.push("\u{001b}[31mRuntimeError: gradient overflow detected\u{001b}[0m".to_string());
+    } else {
+        lines.push("training finished with stable validation metrics".to_string());
+    }
+    lines
 }
 
 fn demo_object(

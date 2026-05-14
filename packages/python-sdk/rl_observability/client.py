@@ -28,6 +28,9 @@ class RlobsError(Exception):
 DEFAULT_PROCESS_SPOOL_DIR = ".rlobs/spool"
 PROCESS_UPLOAD_MODES = {"sync", "spool"}
 SNAPSHOT_KEYS = {"metrics", "metadata"}
+CONSOLE_LOG_STREAMS = {"stdout", "stderr"}
+MAX_CONSOLE_LOG_MESSAGE_BYTES = 16 * 1024
+MAX_CONSOLE_LOG_LINES_PER_BATCH = 50
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,7 @@ class Run:
     spool_dir: str | None = None
     _queue: list[dict[str, Any]] = field(default_factory=list)
     _last_steps: dict[str, float] = field(default_factory=dict)
+    _console_line_numbers: dict[str, int] = field(default_factory=dict)
     _process_sequence: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
@@ -308,6 +312,35 @@ class Run:
             step=step,
             event_timestamp=timestamp,
         )
+
+    def log_console(self, lines: str | list[str] | tuple[str, ...], stream: str = "stdout", timestamp: str | None = None) -> None:
+        stream = _validate_console_stream(stream)
+        messages = _normalize_console_lines(lines)
+        start = self._console_line_numbers.get(stream, 0) + 1
+        self._console_line_numbers[stream] = start + len(messages) - 1
+        event_timestamp = timestamp
+        if self.upload_mode == "spool" and event_timestamp is None:
+            event_timestamp = _utc_timestamp()
+        payload = {
+            "stream": stream,
+            "lines": [
+                {"line_number": start + index, "message": message, "timestamp": event_timestamp}
+                for index, message in enumerate(messages)
+            ],
+        }
+        self._submit(
+            "POST",
+            f"/api/runs/{self.run_id}/logs",
+            payload,
+            data={"logs": {stream: messages}},
+            event_timestamp=event_timestamp,
+        )
+
+    def log_stdout(self, lines: str | list[str] | tuple[str, ...], timestamp: str | None = None) -> None:
+        self.log_console(lines, stream="stdout", timestamp=timestamp)
+
+    def log_stderr(self, lines: str | list[str] | tuple[str, ...], timestamp: str | None = None) -> None:
+        self.log_console(lines, stream="stderr", timestamp=timestamp)
 
     def log_histogram(self, path: str, histogram: dict[str, Any], step: int | float, timestamp: str | None = None) -> None:
         if isinstance(histogram, Histogram):
@@ -720,6 +753,34 @@ def _validate_note_text(notes: str) -> str:
     if len(encoded) > 512:
         raise ValueError("notes must be at most 512 bytes")
     return notes.strip()
+
+
+def _validate_console_stream(stream: str) -> str:
+    if not isinstance(stream, str):
+        raise TypeError("stream must be a string")
+    value = stream.strip()
+    if value not in CONSOLE_LOG_STREAMS:
+        raise ValueError("stream must be stdout or stderr")
+    return value
+
+
+def _normalize_console_lines(lines: str | list[str] | tuple[str, ...]) -> list[str]:
+    if isinstance(lines, str):
+        messages = [lines]
+    elif isinstance(lines, (list, tuple)):
+        messages = list(lines)
+    else:
+        raise TypeError("console lines must be a string or a list of strings")
+    if not messages:
+        raise ValueError("console lines must include at least one line")
+    if len(messages) > MAX_CONSOLE_LOG_LINES_PER_BATCH:
+        raise ValueError(f"console lines must include at most {MAX_CONSOLE_LOG_LINES_PER_BATCH} lines")
+    for message in messages:
+        if not isinstance(message, str):
+            raise TypeError("console lines must contain strings")
+        if len(message.encode("utf-8")) > MAX_CONSOLE_LOG_MESSAGE_BYTES:
+            raise ValueError("console line is too large")
+    return messages
 
 
 def _validate_text(value: str, field: str) -> str:

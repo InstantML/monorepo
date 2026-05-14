@@ -35,6 +35,26 @@ pub struct MetricPointRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// One row in the ClickHouse `console_log_lines` table.
+///
+/// Field order matches the schema in `clickhouse/0001_initial.sql`.
+#[derive(Row, Serialize)]
+pub struct ConsoleLogInsertRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub org_id: Uuid,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    pub stream: String,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub ingest_id: Uuid,
+    pub line_number: u64,
+    pub message: String,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub logged_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
+}
+
 /// One durable operational record in the ClickHouse control/data-plane layer.
 ///
 /// Operational state is intentionally stored as complete JSON payloads in an
@@ -70,6 +90,22 @@ pub struct PointReadRowWithRun {
     pub key: String,
     pub step: f64,
     pub value: f64,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
+}
+
+/// Read shape for a console log window query.
+#[derive(Row, Deserialize, Clone)]
+pub struct ConsoleLogReadRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    pub stream: String,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub ingest_id: Uuid,
+    pub line_number: u64,
+    pub message: String,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub logged_at: DateTime<Utc>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub created_at: DateTime<Utc>,
 }
@@ -155,6 +191,24 @@ impl MetricStore {
             .end()
             .await
             .map_err(|err| AppError::internal(format!("clickhouse insert flush failed: {err}")))?;
+        Ok(())
+    }
+
+    pub async fn insert_console_logs(&self, rows: &[ConsoleLogInsertRow]) -> AppResult<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let mut inserter = self.client.insert("console_log_lines").map_err(|err| {
+            AppError::internal(format!("clickhouse log insert init failed: {err}"))
+        })?;
+        for row in rows {
+            inserter.write(row).await.map_err(|err| {
+                AppError::internal(format!("clickhouse log insert write failed: {err}"))
+            })?;
+        }
+        inserter.end().await.map_err(|err| {
+            AppError::internal(format!("clickhouse log insert flush failed: {err}"))
+        })?;
         Ok(())
     }
 
@@ -255,6 +309,40 @@ impl MetricStore {
             .bind(end_val)
             .bind(limit_per_run)
             .fetch_all::<PointReadRowWithRun>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn query_console_log_window(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+        stream: &str,
+        cursor: Option<(u64, Uuid)>,
+        limit: i64,
+    ) -> AppResult<Vec<ConsoleLogReadRow>> {
+        let (cursor_set, cursor_line, cursor_ingest) = match cursor {
+            Some((line_number, ingest_id)) => (1_u8, line_number, ingest_id),
+            None => (0_u8, 0_u64, Uuid::nil()),
+        };
+        self.client
+            .query(
+                "SELECT run_id, stream, ingest_id, line_number, message, logged_at, created_at \
+                 FROM console_log_lines \
+                 WHERE org_id = ? AND run_id = ? AND stream = ? \
+                   AND (? = 0 OR line_number > ? OR (line_number = ? AND ingest_id > ?)) \
+                 ORDER BY line_number ASC, ingest_id ASC \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .bind(stream)
+            .bind(cursor_set)
+            .bind(cursor_line)
+            .bind(cursor_line)
+            .bind(cursor_ingest)
+            .bind(limit)
+            .fetch_all::<ConsoleLogReadRow>()
             .await
             .map_err(clickhouse_read_error)
     }
@@ -405,6 +493,58 @@ impl MetricStore {
             .map_err(clickhouse_read_error)
     }
 
+    pub async fn query_top_series_for_project_key(
+        &self,
+        org_id: Uuid,
+        project: &str,
+        key: &str,
+        mode: SeriesSortMode,
+        limit: i64,
+    ) -> AppResult<Vec<SeriesReadRow>> {
+        let order_clause = match mode {
+            SeriesSortMode::Latest => "latest DESC",
+            SeriesSortMode::BestMax => "max DESC",
+            SeriesSortMode::BestMin => "min ASC",
+        };
+        let sql = format!(
+            "SELECT \
+               run_id, key, \
+               count, min, max, sum, sum_sq, latest, latest_step, best_step \
+             FROM ( \
+               SELECT \
+                 run_id, key, \
+                 toUInt64(countMerge(count)) AS count, \
+                 minMerge(min) AS min, \
+                 maxMerge(max) AS max, \
+                 sumMerge(sum) AS sum, \
+                 sumMerge(sum_sq) AS sum_sq, \
+                 argMaxMerge(latest) AS latest, \
+                 maxMerge(latest_step) AS latest_step, \
+                 argMaxMerge(best_step) AS best_step \
+               FROM metric_series \
+               WHERE org_id = ? AND key = ? AND run_id IN ( \
+                 SELECT toUUID(entity_id) \
+                 FROM operational_records \
+                 WHERE org_id = ? AND kind = 'run' \
+                   AND JSONExtractString(payload, 'project') = ? \
+               ) \
+               GROUP BY run_id, key \
+             ) \
+             ORDER BY {order_clause}, run_id \
+             LIMIT ?"
+        );
+        self.client
+            .query(&sql)
+            .bind(org_id)
+            .bind(key)
+            .bind(org_id)
+            .bind(project)
+            .bind(limit)
+            .fetch_all::<SeriesReadRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
     pub async fn query_keys_for_runs(
         &self,
         org_id: Uuid,
@@ -440,6 +580,28 @@ impl MetricStore {
             .client
             .query("SELECT count() FROM metric_points WHERE org_id = ?")
             .bind(org_id)
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(count as i64)
+    }
+
+    pub async fn count_points_for_project(&self, org_id: Uuid, project: &str) -> AppResult<i64> {
+        let count: u64 = self
+            .client
+            .query(
+                "SELECT count() \
+                 FROM metric_points \
+                 WHERE org_id = ? AND run_id IN ( \
+                   SELECT toUUID(entity_id) \
+                   FROM operational_records \
+                   WHERE org_id = ? AND kind = 'run' \
+                     AND JSONExtractString(payload, 'project') = ? \
+                 )",
+            )
+            .bind(org_id)
+            .bind(org_id)
+            .bind(project)
             .fetch_one::<u64>()
             .await
             .map_err(clickhouse_read_error)?;

@@ -5,6 +5,7 @@ use std::{
 
 mod access;
 mod auth;
+mod console_logs;
 mod demo;
 mod export;
 mod imports;
@@ -17,6 +18,7 @@ mod validation;
 
 use access::*;
 pub use auth::*;
+pub use console_logs::*;
 pub use demo::*;
 pub use export::*;
 pub use imports::*;
@@ -43,19 +45,21 @@ use crate::{
         validate_membership_role, validate_name, validate_offset, validate_optional_name,
         validate_optional_step, validate_plan_tier, validate_slug, validate_status, validate_step,
         validate_tags, validate_timestamp, ArtifactRow, AttributeInput, AttributeRow, AuthContext,
-        AuthSessionPayload, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
-        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
-        CreateUserRequest, CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest,
-        MembershipRow, MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, DEFAULT_METRIC_LIMIT,
-        DEFAULT_RUN_LIMIT, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS,
-        MAX_RUN_LIMIT,
+        AuthSessionPayload, ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest,
+        CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
+        CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
+        CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest, MembershipRow,
+        MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow,
+        RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow, UpdateRunRequest,
+        UploadArtifactRequest, UserRow, UserSessionRow, DEFAULT_CONSOLE_LOG_LIMIT,
+        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
+        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
+        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT, MAX_TEXT_BYTES,
     },
     errors::{AppError, AppResult},
     metric_store::{
-        MetricPointRow as ChMetricPointRow, MetricStore, OperationalRecordRow, SeriesReadRow,
-        SeriesSortMode,
+        ConsoleLogInsertRow, ConsoleLogReadRow, MetricPointRow as ChMetricPointRow, MetricStore,
+        OperationalRecordRow, SeriesReadRow, SeriesSortMode,
     },
 };
 

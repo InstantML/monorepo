@@ -27,6 +27,7 @@ import {
   shortValue,
 } from "./dashboard-models";
 import { navGroups } from "./dashboard-config";
+import { InstantMlMark } from "./instantml-mark";
 import type {
   AlertRow,
   ApiRow,
@@ -97,18 +98,18 @@ type DraggedWorkspacePanel = {
 };
 
 const chartPalette = [
+  "#dc5b55",
+  "#5d89dd",
   "var(--accent)",
-  "#f07b2d",
-  "var(--blue)",
-  "#6d7784",
-  "var(--amber)",
-  "#9b7cf3",
+  "var(--warm)",
+  "#8b7cf6",
   "#2ec4b6",
   "#e45f8c",
   "#7bc96f",
-  "#38bdf8",
+  "#14b8a6",
   "#f4a261",
-  "#a3a3a3",
+  "#9ca3af",
+  "#cbd5e1",
 ];
 
 function chartColor(index: number) {
@@ -604,8 +605,8 @@ export function DashboardTopbar({
   return (
     <header className="topbar">
       <div className="topbar-main">
-        <div className="brand" aria-label="Training Observability" title="Training Observability">
-          <div className="brand-mark" aria-hidden="true"><Box size={20} /></div>
+        <div className="brand" aria-label="InstantML" title="InstantML">
+          <div className="brand-mark" aria-hidden="true"><InstantMlMark /></div>
         </div>
         <div className="toolbar topbar-controls">
           <CustomSelect id="project-filter" label="Project" value={project} onChange={onProject} options={[{ value: "", label: "All projects" }, ...projects.map((item) => ({ value: item, label: item }))]} />
@@ -630,7 +631,7 @@ export function DashboardTopbar({
             Name
             <input id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
           </label>
-          <button id="save-view" type="button" onClick={onSaveView}><Save size={15} /> Save view</button>
+          <button className="primary-button" id="save-view" type="button" onClick={onSaveView}><Save size={15} /> Save view</button>
           <CustomSelect
             className="compact"
             id="saved-view-select"
@@ -1183,7 +1184,7 @@ export function RunsWorkspace({
             value={view.mode}
           />
           <button className="secondary compact-button" type="button" onClick={onResetWorkspace}><RefreshCw size={15} /> Reset layout</button>
-          {!showAddPanelDrawer ? <button type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
+          {!showAddPanelDrawer ? <button className="primary-button" type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
         </div>
 
         <div className="workspace-sections">
@@ -2058,9 +2059,9 @@ export function MetricChart({
                 className={`series-point point-${index % 5}`}
                 cx={point.x}
                 cy={point.y}
-                style={{ fill: chartColor(index), stroke: "var(--surface-raised)" }}
+                style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
                 onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, group: item.group, point, distance: 0 })}
-                r={3.3}
+                r={2.4}
               />
             )) : null}
           </g>
@@ -2339,6 +2340,7 @@ export function RunDetail({
   selectedCount,
   selectedRuns,
   timelineRows,
+  workspaceSummary = false,
 }: {
   activeMetricKey: string;
   artifacts?: Artifact[];
@@ -2352,6 +2354,7 @@ export function RunDetail({
   selectedCount: number;
   selectedRuns?: RunSummary[];
   timelineRows: RunTimelineRow[];
+  workspaceSummary?: boolean;
 }) {
   if (!run) return <div className="empty">No run selected.</div>;
   const chartRuns = selectedRuns?.length ? selectedRuns : [run];
@@ -2364,6 +2367,7 @@ export function RunDetail({
     ["Commit", compactValue(run.metadata.git_commit ?? run.metadata.commit ?? "-")],
   ];
   const artifactRows = artifacts.slice(0, 4);
+  const artifactCount = artifactCountForRun(run, artifacts.length);
   const activeMetric = run.metric_aggregates?.[activeMetricKey];
   const activeBest = metricGoal(activeMetricKey) === "minimize" ? activeMetric?.min : activeMetric?.max;
   const configRows = [
@@ -2375,36 +2379,46 @@ export function RunDetail({
     ["Epochs/steps", compactValue(run.config.epochs ?? run.config.steps ?? run.config.total_steps ?? "-")],
   ];
   return (
-    <div className="detail-stack" id={elementId}>
-      <header className="run-detail-hero">
-        <div className="run-detail-title">
-          <span className="analysis-eyebrow">Selected run</span>
-          <h2 title={run.name}>{run.name}</h2>
-          <p>{run.project} · {durationLabel(run)} · {selectedCount ? `${selectedCount} runs selected for charts` : "not in comparison set"}</p>
-        </div>
-        <div className="run-detail-badges">
-          <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
-          {run.tags?.slice(0, 3).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
-          {(run.tags?.length ?? 0) > 3 ? <span className="chip">+{(run.tags?.length ?? 0) - 3}</span> : null}
-        </div>
-      </header>
+    <div className={`detail-stack ${workspaceSummary ? "workspace-summary" : ""}`} id={elementId}>
+      {!workspaceSummary ? (
+        <header className="run-detail-hero">
+          <div className="run-detail-title">
+            <span className="analysis-eyebrow">Selected run</span>
+            <h2 title={run.name}>{run.name}</h2>
+            <p>{run.project} · {durationLabel(run)} · {selectedCount ? `${selectedCount} runs selected for charts` : "not in comparison set"}</p>
+          </div>
+          <div className="run-detail-badges">
+            <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
+            {run.tags?.slice(0, 3).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
+            {(run.tags?.length ?? 0) > 3 ? <span className="chip">+{(run.tags?.length ?? 0) - 3}</span> : null}
+          </div>
+        </header>
+      ) : null}
       <RunMetadataEditor compact onSave={onRunMetadataSave} run={run} title="Run tags and notes" />
-      <section className="detail-section chart-selection-section">
-        <h3><Activity size={15} /> Chart selection</h3>
-        <div className="chart-selection-list">
-          {chartRuns.slice(0, 8).map((selectedRun) => (
-            <span className={selectedRun.id === run.id ? "active" : ""} key={selectedRun.id} title={selectedRun.name}>
-              {selectedRun.name}
-            </span>
-          ))}
-          {chartRuns.length > 8 ? <em>+{chartRuns.length - 8} more</em> : null}
+      {!workspaceSummary ? (
+        <section className="detail-section chart-selection-section">
+          <h3><Activity size={15} /> Chart selection</h3>
+          <div className="chart-selection-list">
+            {chartRuns.slice(0, 8).map((selectedRun) => (
+              <span className={selectedRun.id === run.id ? "active" : ""} key={selectedRun.id} title={selectedRun.name}>
+                {selectedRun.name}
+              </span>
+            ))}
+            {chartRuns.length > 8 ? <em>+{chartRuns.length - 8} more</em> : null}
+          </div>
+        </section>
+      ) : selectedCount ? (
+        <div className="workspace-summary-selection">
+          <Activity size={14} />
+          <span>{selectedCount} runs selected for chart context</span>
+          <strong>{shortMetricName(activeMetricKey)}</strong>
         </div>
-      </section>
+      ) : null}
       <div className="run-kpi-grid">
         <MetricCard label={`Latest ${shortMetricName(activeMetricKey)}`} value={formatNumber(activeMetric?.latest, 3)} tone="neutral" />
         <MetricCard label={`${metricGoalLabel(activeMetricKey)} ${shortMetricName(activeMetricKey)}`} value={formatNumber(activeBest, 3)} tone="good" />
         <MetricCard label="Metric keys" value={formatNumber(metricRows.length, 0)} tone="live" />
-        <MetricCard label="Artifacts" value={formatNumber(artifacts.length, 0)} tone={artifacts.length ? "good" : "neutral"} />
+        <MetricCard label="Artifacts" value={formatNumber(artifactCount, 0)} tone={artifactCount ? "good" : "neutral"} />
       </div>
       {hover ? <div className="detail-row highlight"><span>Hovered point</span><strong>{hover.runName} / step {hover.point.step} / {formatNumber(hover.point.value, 4)}</strong></div> : null}
       {run.status === "failed" ? (
@@ -2421,17 +2435,22 @@ export function RunDetail({
             <h3><Database size={15} /> Metric Summary</h3>
             <RunMetricTable rows={metricRows} />
           </section>
-          <section className="detail-section">
-            <h3><Folder size={15} /> Recent Artifacts ({artifacts.length})</h3>
-            {artifactRows.length ? artifactRows.map((artifact) => (
-              <div className="artifact-mini" key={artifact.id}>
-                <span>{artifact.name}</span>
-                <small>{artifact.step === null ? "no step" : `step ${artifact.step}`}</small>
-                <small>{formatBytes(artifact.size_bytes)}</small>
-              </div>
-            )) : <small>No artifacts logged.</small>}
-          </section>
-          <RichObjectPanel objects={loggedObjects} rowsByObjectId={objectRowsById} title="Rich Objects" />
+          {!workspaceSummary ? (
+            <>
+              <section className="detail-section">
+                <h3><Folder size={15} /> Recent Artifacts ({artifacts.length})</h3>
+                {artifactRows.length ? artifactRows.map((artifact) => (
+                  <div className="artifact-mini" key={artifact.id}>
+                    <span>{artifact.name}</span>
+                    <small>{artifact.step === null ? "no step" : `step ${artifact.step}`}</small>
+                    <small>{formatBytes(artifact.size_bytes)}</small>
+                    <ArtifactMediaPreview artifact={artifact} compact fallback />
+                  </div>
+                )) : <small>No artifacts logged.</small>}
+              </section>
+              <RichObjectPanel objects={loggedObjects} rowsByObjectId={objectRowsById} title="Rich Objects" />
+            </>
+          ) : null}
           <details className="detail-section raw-detail">
             <summary><Database size={15} /> Raw configuration</summary>
             <pre>{JSON.stringify(run.config, null, 2)}</pre>
@@ -2462,6 +2481,13 @@ export function RunDetail({
       </div>
     </div>
   );
+}
+
+function artifactCountForRun(run: RunSummary, loadedCount: number) {
+  const counted = Object.values(run.artifact_counts ?? {}).reduce((total, value) => (
+    total + (typeof value === "number" && Number.isFinite(value) ? value : 0)
+  ), 0);
+  return counted || loadedCount;
 }
 
 export function RichObjectPanel({
@@ -3321,6 +3347,13 @@ export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {
           </div>
           <span>{artifact.step === null ? "no step" : `step ${artifact.step}`}</span>
           <span>{formatBytes(artifact.size_bytes)}</span>
+          {artifactCanUseDownloadRoute(artifact) ? (
+            <a className="copy-button artifact-download" href={artifactDownloadUrl(artifact)}><Download size={13} /> Download</a>
+          ) : (
+            <button className="copy-button artifact-download unavailable" disabled title="Download unavailable for metadata-only demo artifact" type="button">
+              <Download size={13} /> Unavailable
+            </button>
+          )}
           <button className="copy-button" type="button" onClick={() => copyText(artifact.id)}><Copy size={13} /> Copy ID</button>
         </article>
       ))}

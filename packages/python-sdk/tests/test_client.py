@@ -455,6 +455,87 @@ def test_process_spool_mode_writes_events_without_network(tmp_path):
     assert not list((tmp_path / "run_1").glob("*.tmp"))
 
 
+def test_console_logging_posts_streams_and_line_numbers():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    run.log_stdout(["first", "second"], timestamp="2026-05-14T00:00:00Z")
+    run.log_stderr("warn", timestamp="2026-05-14T00:00:01Z")
+    run.log_stdout("third")
+
+    assert calls[0] == (
+        "POST",
+        "/api/runs/run-1/logs",
+        {
+            "stream": "stdout",
+            "lines": [
+                {"line_number": 1, "message": "first", "timestamp": "2026-05-14T00:00:00Z"},
+                {"line_number": 2, "message": "second", "timestamp": "2026-05-14T00:00:00Z"},
+            ],
+        },
+    )
+    assert calls[1][2]["stream"] == "stderr"
+    assert calls[1][2]["lines"][0]["line_number"] == 1
+    assert calls[2][2]["lines"][0]["line_number"] == 3
+
+
+def test_console_logging_buffers_and_validates_inputs():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", buffer_size=2)
+    run.log_console("queued")
+    assert calls == []
+    run.flush()
+    assert calls[0][1] == "/api/runs/run-1/logs"
+
+    with pytest.raises(ValueError, match="stdout or stderr"):
+        run.log_console("bad", stream="debug")
+    with pytest.raises(TypeError, match="stream"):
+        run.log_console("bad", stream=3)
+    with pytest.raises(ValueError, match="at least one"):
+        run.log_stdout([])
+    with pytest.raises(TypeError, match="string or a list"):
+        run.log_stdout(object())
+    with pytest.raises(TypeError, match="strings"):
+        run.log_stdout(["ok", 3])
+    with pytest.raises(ValueError, match="at most"):
+        run.log_stdout(["x"] * 51)
+    with pytest.raises(ValueError, match="too large"):
+        run.log_stdout("x" * (16 * 1024 + 1))
+
+
+def test_console_logging_spool_writes_replayable_log_events(tmp_path):
+    class FailingClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            raise AssertionError("network should not be used in process spool mode")
+
+    run = Run(client=FailingClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
+    run.log_stdout(["spooled"])
+
+    event = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))
+    assert event["data"] == {"logs": {"stdout": ["spooled"]}}
+    assert event["requests"][0]["path"] == "/api/runs/run-1/logs"
+    assert event["requests"][0]["body"]["lines"][0]["line_number"] == 1
+    assert event["requests"][0]["body"]["lines"][0]["message"] == "spooled"
+    assert event["requests"][0]["body"]["lines"][0]["timestamp"]
+
+
 def test_log_snapshot_accepts_defined_dictionary_and_rejects_unknown_shapes(tmp_path):
     class FailingClient:
         offline_dir = None
@@ -654,6 +735,23 @@ def test_process_uploader_sends_event_id_as_metric_idempotency_key(tmp_path):
     event_id = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))["event_id"]
 
     assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
+    assert calls[0][3] == event_id
+
+
+def test_process_uploader_sends_event_id_as_log_idempotency_key(tmp_path):
+    calls = []
+
+    class IdempotentClient:
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {}
+
+    run = Run(client=IdempotentClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
+    run.log_stdout("hello", timestamp="2026-05-14T00:00:00Z")
+    event_id = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))["event_id"]
+
+    assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
+    assert calls[0][1] == "/api/runs/run-1/logs"
     assert calls[0][3] == event_id
 
 

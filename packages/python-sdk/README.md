@@ -15,6 +15,7 @@ Brand transition note: the import package is still `rl_observability` for compat
 - Log videos.
 - Log tables.
 - Log text series and histogram series.
+- Log stdout/stderr console lines.
 - Upload local files to the Rust server.
 - Buffer training-loop events and flush explicitly.
 - Spool failed post-init events to local JSONL and replay them.
@@ -35,6 +36,8 @@ run = ro.init(
     notes="Initial CartPole baseline.",
 )
 run.log_metrics({"train/reward": 100.0}, step=1)
+run.log_stdout("Epoch 1 reward=100.0")
+run.log_stderr(["warning: entropy dipped"])
 run.log_text({"notes/eval": "policy stabilized"}, step=1)
 run.set_notes("Reward stabilized after step 80.")
 run.set_tags(["baseline", "reviewed"])
@@ -206,7 +209,13 @@ PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
   --base-url http://127.0.0.1:8000
 ```
 
-Use `upload_mode="spool"` when the training process should avoid post-init HTTP calls. The SDK writes one fsynced JSON event file per logging call, and the uploader drains those files through the existing API. Metric event files send their `event_id` as an `Idempotency-Key`, so a compatible server can safely accept retried metric events. This first implementation is intended for roughly 100 SDK calls per second per run on a local SSD; batch many scalar values into one metrics dictionary for higher-frequency loops.
+Use `upload_mode="spool"` when the training process should avoid post-init HTTP calls. The SDK writes one fsynced JSON event file per logging call, and the uploader drains those files through the existing API. Metric and console-log event files send their `event_id` as an `Idempotency-Key`, so a compatible server can safely accept retried metric/log events. This first implementation is intended for roughly 100 SDK calls per second per run on a local SSD; batch many scalar values into one metrics dictionary for higher-frequency loops.
+
+Console logging uses the same one-request event format. `Run.log_console(...)`,
+`Run.log_stdout(...)`, and `Run.log_stderr(...)` assign deterministic
+per-run/per-stream line numbers before sending or spooling the event. Each
+console-log request accepts at most 50 lines so worst-case messages fit under
+the Rust API's default JSON body limit.
 
 `log_snapshot()` currently accepts only:
 
