@@ -315,7 +315,7 @@ try {
   });
   await page.waitForFunction(() => document.querySelector(".stat strong")?.textContent?.trim() === "30");
   await chooseSelect(page, "#project-filter", "demo");
-  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("runs loaded"));
+  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
   await page.keyboard.press("Shift+/");
@@ -340,7 +340,7 @@ try {
   await page.waitForFunction(
     (runName) => {
       const detailText = document.querySelector("#run-detail")?.textContent ?? "";
-      return detailText.includes(runName) && detailText.includes("Selected run");
+      return detailText.includes(runName) && detailText.includes("Metric Summary");
     },
     quickSearchRunName,
   );
@@ -369,14 +369,14 @@ try {
   await page.waitForFunction(
     (runName) => {
       const detailText = document.querySelector("#run-detail")?.textContent ?? "";
-      return detailText.includes(runName) && detailText.includes("Chart selection");
+      return detailText.includes(runName) && detailText.includes("Metric Summary");
     },
     inspectedRunName,
   );
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
   await chooseSelect(page, "#project-filter", "demo");
-  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("runs loaded"));
+  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.fill("#search", "seed-44");
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("seed-44"));
   await page.waitForFunction(() => document.querySelector(".workspace-run-row")?.getAttribute("title")?.includes("seed-44"));
@@ -384,20 +384,9 @@ try {
   const objectRequestsBeforeSeedDetail = objectUrls.length;
   await page.locator(".workspace-run-row").first().click();
   await page.getByRole("link", { name: /Run Detail/ }).click();
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Rich Objects"));
-  assert.ok(objectUrls.length > objectRequestsBeforeSeedDetail, "Run Detail should fetch active-run rich objects only when opened");
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
+  assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Files is opened");
   if (backendMode !== "node") {
-    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("eval/samples"));
-    assert.ok(await page.locator(".rich-object-card.kind-table").count() > 0, "table object preview should render");
-    assert.ok(await page.locator(".histogram-preview").count() > 0, "histogram object preview should render");
-    assert.ok(await page.locator(".rich-object-card.kind-image .artifact-image").count() > 0, "image object preview should render");
-    assert.ok(await page.locator(".artifact-media-fallback").count() > 0, "demo media objects should expose fallback text when bytes are unavailable");
-    const tablePreviewSize = await page.locator(".rich-object-card.kind-table .rich-table-preview").first().evaluate((node) => ({
-      cells: node.querySelectorAll("span").length,
-      headers: node.querySelectorAll("strong").length,
-    }));
-    assert.ok(tablePreviewSize.headers <= 8, `table preview should cap columns, got ${tablePreviewSize.headers}`);
-    assert.ok(tablePreviewSize.cells <= 160, `table preview should cap cells, got ${tablePreviewSize.cells}`);
     const logsBeforeRunTab = logUrls.length;
     await page.getByRole("button", { name: "Logs" }).click();
     await page.waitForFunction(() => document.querySelector(".terminal-frame")?.textContent?.includes("loss=0.42"));
@@ -407,9 +396,20 @@ try {
     await page.waitForFunction(() => document.querySelector(".terminal-frame")?.textContent?.includes("checkpoint saved"));
     await page.getByRole("button", { name: "Files" }).click();
     await page.waitForFunction(() => document.querySelector(".evidence-panel")?.textContent?.includes("eval/samples"));
+    assert.ok(objectUrls.length > objectRequestsBeforeSeedDetail, "Files tab should fetch active-run rich objects when opened");
     assert.ok(await page.locator(".evidence-row.active").count() > 0, "Files tab should select a bounded evidence item");
+    await page.fill(".evidence-search input", "eval/samples");
+    await page.locator(".evidence-row", { hasText: "eval/samples" }).click();
+    await page.waitForSelector(".rich-object-card.kind-table", { timeout: 10000 });
+    const tablePreviewSize = await page.locator(".rich-object-card.kind-table .rich-table-preview").first().evaluate((node) => ({
+      cells: node.querySelectorAll("span").length,
+      headers: node.querySelectorAll("strong").length,
+    }));
+    assert.ok(tablePreviewSize.headers <= 8, `table preview should cap columns, got ${tablePreviewSize.headers}`);
+    assert.ok(tablePreviewSize.cells <= 160, `table preview should cap cells, got ${tablePreviewSize.cells}`);
   } else {
-    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("No rich objects logged"));
+    await page.getByRole("button", { name: "Files" }).click();
+    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("No evidence logged"));
   }
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
@@ -434,7 +434,7 @@ try {
   assert.match(await page.locator(".workspace-run-list .compact-empty").innerText(), /No runs match/);
   await page.getByRole("button", { name: "Clear filters" }).click();
   await chooseSelect(page, "#project-filter", "demo");
-  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("runs loaded"));
+  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
   const automaticPanelCount = await page.locator(".workspace-panel-card").count();
@@ -504,7 +504,7 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
   await chooseSelect(page, "#project-filter", "demo");
-  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("runs loaded"));
+  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
   await page.waitForFunction((title) => {
     const targetSection = document.querySelectorAll(".workspace-section")[1];
@@ -662,7 +662,7 @@ try {
   assert.match(await page.locator(".tab-pane.active .readout-card").innerText(), /step/);
 
   await page.getByRole("link", { name: /Run Detail/ }).click();
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Selected run"));
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Reproducibility"));
   await page.getByRole("button", { name: "Data" }).click();
@@ -679,7 +679,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#run-detail .run-metadata-editor")?.textContent?.includes("qa-note-smoke searchable detail note"));
   await page.getByRole("button", { name: "Files" }).click();
   await page.waitForSelector(".evidence-panel", { timeout: 10000 });
-  assert.ok(await page.locator(".evidence-panel .copy-button").count() > 0);
+  await page.waitForSelector(".evidence-panel .copy-button", { timeout: 10000 });
   await page.getByRole("button", { name: "Summary" }).click();
   assert.doesNotMatch(await page.locator("#run-detail").innerText(), /Hovered point/);
 
@@ -689,7 +689,7 @@ try {
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("qa-note-smoke"));
   assert.match(await page.locator(".workspace-run-list").innerText(), /qa-smoke/);
   await page.fill("#search", "");
-  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("runs loaded"));
+  await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 4);
   for (let index = 0; index < 4; index += 1) {
     const selectedForCompare = await page.locator(".workspace-run-row.selected").count();
@@ -864,7 +864,7 @@ try {
   assert.ok(data.runTimelineRows >= 3);
   assert.ok(data.runMetricRows >= 3);
   assert.equal(data.runDetailChart, true);
-  assert.match(data.detail, /Selected run/);
+  assert.match(data.detail, /Metric Summary/);
   assert.match(data.detail, /tags and notes/i);
   assert.match(data.sideBySide, /seed/);
   assert.match(data.sideBySide, /compare-note-smoke|qa-note-smoke|Synthetic/i);

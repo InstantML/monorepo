@@ -461,6 +461,11 @@ Fresh reviewer 3:
 - Recommended edit: Make log endpoints Rust-first for this PR, add idempotency for `/logs`, require SDK line numbers, keep run tabs local to Detail, split selected-run resources before wider extraction, remove tail semantics.
 - Decision: Accepted and reflected in this revision.
 
+Post-implementation UI QA:
+
+- Finding: Summary still carried a duplicate legacy run hero, evidence objects loaded before the Files tab, default sessions could remain visually too light, mobile logs truncated long lines, mobile nav clipped sections, and status copy implied all matching runs were loaded.
+- Decision: Accepted. Summary now uses the new workspace header only, selected-run evidence and metric series are gated by local tab, fresh sessions default to the neutral dark scheme, mobile tabs wrap, long terminal rows scroll, automatic workspace panels are capped lower, and status copy reports the visible page range.
+
 ## Coverage Exceptions
 
 None planned.
