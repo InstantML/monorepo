@@ -132,11 +132,16 @@ These items came from the full frontend audit for issues like fixed minimum grid
   - Build: use server-backed search for runs/metrics/artifacts or label the current scope clearly as local/loaded results.
   - Tests: search finds off-page runs and metrics in a paginated large-project fixture.
 
-- [ ] Replace global dark-mode button styling with explicit button variants.
+- [x] Replace global dark-mode button styling with explicit button variants.
   - Finding: dark mode styles primary buttons by targeting `button:not(...)` with a long exclusion list.
   - Risk: new controls can accidentally inherit primary-blue styling until each selector is manually excluded.
-  - Build: move primary styling to explicit classes such as `.primary-button`; make default button styling neutral.
+  - Build: default button styling is neutral, primary styling moved to `.primary-button`, and key create/save actions opt into that class.
   - Tests: visual smoke checks new generic buttons, sortable headers, row buttons, and icon buttons in dark mode.
+
+- [x] Add the first Pluto-style run workspace slice for Logs and Files.
+  - Finding: Run Detail lacked persistent run-level hierarchy and stdout/stderr/files affordances.
+  - Build: local Summary/Data/Logs/Files/System/Graph tabs live inside `/dashboard/detail`; Logs uses bounded `/api/runs/:id/logs`; Files reuses artifacts/rich objects.
+  - Tests: unit coverage for terminal/evidence helpers plus UI smoke coverage for gated log fetches and Files evidence rendering.
 
 ### P2
 

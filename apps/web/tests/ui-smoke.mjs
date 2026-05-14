@@ -57,10 +57,12 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   const summaryUrls = [];
   const objectUrls = [];
+  const logUrls = [];
   const objectNotFoundUrls = [];
   page.on("request", (request) => {
     if (request.url().includes("/api/runs/summary")) summaryUrls.push(request.url());
     if (request.url().includes("/objects")) objectUrls.push(request.url());
+    if (request.url().includes("/logs")) logUrls.push(request.url());
   });
   page.on("response", (response) => {
     if (response.url().includes("/objects") && response.status() === 404) objectNotFoundUrls.push(response.url());
@@ -123,6 +125,13 @@ try {
       summary: {},
       value: { bins: [0, 0.5, 1], counts: [2, 5] },
     });
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/logs`, {
+      stream: "stdout",
+      lines: [
+        { line_number: 1, message: "Epoch 1 loss=0.42", timestamp: "2026-05-14T00:00:00Z" },
+        { line_number: 2, message: "\u001b[32mcheckpoint saved\u001b[0m", timestamp: "2026-05-14T00:00:01Z" },
+      ],
+    });
   }
   for (let index = 1; index <= 30; index += 1) {
     const run = (await pageApiRequest(page, "POST", "/runs", { project: "pagination", name: `page-run-${String(index).padStart(2, "0")}`, config: { seed: index } })).run;
@@ -131,6 +140,7 @@ try {
   }
   summaryUrls.length = 0;
   objectUrls.length = 0;
+  logUrls.length = 0;
   objectNotFoundUrls.length = 0;
 
   let delayedInitialSummary = true;
@@ -146,6 +156,7 @@ try {
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
   await page.unroute("**/api/runs/summary**");
   assert.equal(objectUrls.length, 0, "initial dashboard entry should not fetch rich objects");
+  assert.equal(logUrls.length, 0, "initial dashboard entry should not fetch console logs");
 
   await page.hover(".tabs");
   await page.waitForFunction(() => (document.querySelector(".tabs")?.getBoundingClientRect().width ?? 0) > 120);
@@ -387,6 +398,16 @@ try {
     }));
     assert.ok(tablePreviewSize.headers <= 8, `table preview should cap columns, got ${tablePreviewSize.headers}`);
     assert.ok(tablePreviewSize.cells <= 160, `table preview should cap cells, got ${tablePreviewSize.cells}`);
+    const logsBeforeRunTab = logUrls.length;
+    await page.getByRole("button", { name: "Logs" }).click();
+    await page.waitForFunction(() => document.querySelector(".terminal-frame")?.textContent?.includes("loss=0.42"));
+    assert.ok(logUrls.length > logsBeforeRunTab, "Logs run tab should fetch selected-run console logs only when opened");
+    assert.match(await page.locator(".terminal-ts").first().innerText(), /\d{2}:\d{2}:\d{2}\.\d{3}/);
+    await page.fill(".logs-search input", "checkpoint");
+    await page.waitForFunction(() => document.querySelector(".terminal-frame")?.textContent?.includes("checkpoint saved"));
+    await page.getByRole("button", { name: "Files" }).click();
+    await page.waitForFunction(() => document.querySelector(".evidence-panel")?.textContent?.includes("eval/samples"));
+    assert.ok(await page.locator(".evidence-row.active").count() > 0, "Files tab should select a bounded evidence item");
   } else {
     await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("No rich objects logged"));
   }
@@ -504,6 +525,18 @@ try {
   await page.mouse.down();
   await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 260, resizeBox.y + resizeBox.height / 2 + 120, { steps: 8 });
   await page.mouse.up();
+  const resizedOnce = await page.evaluate((start) => {
+    const card = document.querySelector(".workspace-panel-card");
+    return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
+  }, startingLayout);
+  if (!resizedOnce) {
+    const retryBox = await firstWorkspacePanel.locator(".panel-resize-handle").boundingBox();
+    assert.ok(retryBox, "expected workspace panel resize handle after retry");
+    await page.mouse.move(retryBox.x + retryBox.width / 2, retryBox.y + retryBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(retryBox.x + retryBox.width / 2 + 320, retryBox.y + retryBox.height / 2 + 180, { steps: 12 });
+    await page.mouse.up();
+  }
   await page.waitForFunction((start) => {
     const card = document.querySelector(".workspace-panel-card");
     return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
@@ -632,7 +665,9 @@ try {
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Selected run"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Reproducibility"));
-  await page.waitForSelector(".run-detail-chart .metric-chart");
+  await page.getByRole("button", { name: "Data" }).click();
+  await page.waitForSelector(".run-data-panel .metric-chart");
+  await page.getByRole("button", { name: "Summary" }).click();
   const detailMetadataEditor = page.locator("#run-detail .run-metadata-editor").first();
   await detailMetadataEditor.waitFor({ state: "visible", timeout: 10000 });
   assert.match(await detailMetadataEditor.innerText(), /Run tags and notes/);
@@ -642,7 +677,10 @@ try {
   await detailMetadataEditor.locator(".notes-control textarea").first().fill("qa-note-smoke searchable detail note");
   await detailMetadataEditor.getByRole("button", { name: /Save/ }).click();
   await page.waitForFunction(() => document.querySelector("#run-detail .run-metadata-editor")?.textContent?.includes("qa-note-smoke searchable detail note"));
-  assert.ok(await page.locator(".artifact-grid .copy-button").count() > 0);
+  await page.getByRole("button", { name: "Files" }).click();
+  await page.waitForSelector(".evidence-panel", { timeout: 10000 });
+  assert.ok(await page.locator(".evidence-panel .copy-button").count() > 0);
+  await page.getByRole("button", { name: "Summary" }).click();
   assert.doesNotMatch(await page.locator("#run-detail").innerText(), /Hovered point/);
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
@@ -777,12 +815,18 @@ try {
   }));
   await page.getByRole("link", { name: /^Run Detail$/ }).click();
   await page.waitForSelector("#run-detail", { timeout: 10000 });
+  await page.getByRole("button", { name: "Data" }).click();
+  await page.waitForSelector(".run-data-panel .metric-chart", { timeout: 10000 });
+  const runDetailChart = await page.locator(".run-data-panel .metric-chart").count() > 0;
+  await page.getByRole("button", { name: "Summary" }).click();
+  await page.waitForSelector(".tab-pane.active .metric-summary-row:not(.metric-summary-head)", { timeout: 10000 });
   const detailData = await page.evaluate(() => ({
     detail: document.querySelector("#run-detail")?.textContent ?? "",
     runTimelineRows: document.querySelectorAll(".tab-pane.active .run-timeline-row").length,
     runMetricRows: document.querySelectorAll(".tab-pane.active .metric-summary-row:not(.metric-summary-head)").length,
-    runDetailChart: Boolean(document.querySelector(".tab-pane.active .run-detail-chart .metric-chart")),
+    runDetailChart: false,
   }));
+  detailData.runDetailChart = runDetailChart;
   await page.getByRole("link", { name: /^Compare$/ }).click();
   await page.waitForSelector(".compare-matrix", { timeout: 10000 });
   const compareData = await page.evaluate(() => ({

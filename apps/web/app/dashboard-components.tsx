@@ -630,7 +630,7 @@ export function DashboardTopbar({
             Name
             <input id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
           </label>
-          <button id="save-view" type="button" onClick={onSaveView}><Save size={15} /> Save view</button>
+          <button className="primary-button" id="save-view" type="button" onClick={onSaveView}><Save size={15} /> Save view</button>
           <CustomSelect
             className="compact"
             id="saved-view-select"
@@ -1183,7 +1183,7 @@ export function RunsWorkspace({
             value={view.mode}
           />
           <button className="secondary compact-button" type="button" onClick={onResetWorkspace}><RefreshCw size={15} /> Reset layout</button>
-          {!showAddPanelDrawer ? <button type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
+          {!showAddPanelDrawer ? <button className="primary-button" type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
         </div>
 
         <div className="workspace-sections">
@@ -2428,6 +2428,7 @@ export function RunDetail({
                 <span>{artifact.name}</span>
                 <small>{artifact.step === null ? "no step" : `step ${artifact.step}`}</small>
                 <small>{formatBytes(artifact.size_bytes)}</small>
+                <ArtifactMediaPreview artifact={artifact} compact fallback />
               </div>
             )) : <small>No artifacts logged.</small>}
           </section>
@@ -3321,6 +3322,9 @@ export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {
           </div>
           <span>{artifact.step === null ? "no step" : `step ${artifact.step}`}</span>
           <span>{formatBytes(artifact.size_bytes)}</span>
+          {artifactCanUseDownloadRoute(artifact) ? (
+            <a className="copy-button artifact-download" href={artifactDownloadUrl(artifact)}><Download size={13} /> Download</a>
+          ) : null}
           <button className="copy-button" type="button" onClick={() => copyText(artifact.id)}><Copy size={13} /> Copy ID</button>
         </article>
       ))}
