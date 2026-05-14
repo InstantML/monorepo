@@ -138,7 +138,17 @@ Coverage exception:
 - `src/config.rs`: environment config and local defaults.
 - `src/http/mod.rs`: HTTP app state, route table, and middleware wiring.
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.
-- `src/store/mod.rs`: ClickHouse-backed operational index, validation-adjacent storage logic, auth/admin helpers, imports, exports, usage, and demo reset.
+- `src/store/mod.rs`: ClickHouse-backed operational index core and module re-exports.
+- `src/store/auth.rs`: users, organizations, sessions, API keys, and admin authorization helpers.
+- `src/store/runs.rs`: projects, runs, run filtering/summaries, scalar metric writes, and metric read endpoints.
+- `src/store/objects.rs`: typed attributes, rich objects, table rows, artifacts, and local artifact upload metadata.
+- `src/store/imports.rs`: Neptune, W&B, and MLflow import normalization and import records.
+- `src/store/export.rs`: side-by-side comparison and bounded JSON export.
+- `src/store/usage.rs`: usage summaries, daily snapshots, and worker cleanup helpers.
+- `src/store/demo.rs`: demo project reset and synthetic data generation.
+- `src/store/access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
+- `src/store/summaries.rs`: run summaries, artifact counts, metric-series conversion, and export metric reads.
+- `src/store/validation.rs`: shared store validation, JSON value shaping, slugging, and unit tests for pure store logic.
 - `src/metric_store.rs`: ClickHouse schema migration, operational record append/load helpers, metric point writes, and metric-series reads.
 - `src/domain.rs`: DTOs and validation helpers.
 - `src/artifact_store.rs`: local staged artifact byte storage and root-confined reads.
