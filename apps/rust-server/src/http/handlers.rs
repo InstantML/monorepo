@@ -5,13 +5,13 @@ pub(super) async fn health() -> Json<Value> {
 }
 
 pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json<Value>> {
-    if !store::ready(&state.pool).await {
+    if !store::ready(&state.store).await {
         return Err(AppError::new(
             StatusCode::SERVICE_UNAVAILABLE,
-            "postgres is not ready",
+            "clickhouse operational store is not ready",
         ));
     }
-    if !metric_store::ready(&state.metric_store).await {
+    if !metric_store::ready(state.store.metric_store()).await {
         return Err(AppError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             "clickhouse is not ready",
@@ -65,7 +65,7 @@ pub(super) async fn auth_dev_google(
     }
     validate_mutation_origin(&state, &headers)?;
     let input = read_json::<DevGoogleAuthRequest>(&headers, bytes, state.config.max_body_bytes)?;
-    let created = store::create_dev_google_session(&state.pool, input).await?;
+    let created = store::create_dev_google_session(&state.store, input).await?;
     json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
 
@@ -88,7 +88,7 @@ pub(super) async fn auth_session(
     let Some(token) = session_cookie(&headers) else {
         return Ok(Json(json!({ "authenticated": false })).into_response());
     };
-    match store::authenticate_session(&state.pool, token).await {
+    match store::authenticate_session(&state.store, token).await {
         Ok(payload) => Ok(Json(payload).into_response()),
         Err(_) => {
             let mut response = Json(json!({ "authenticated": false })).into_response();
@@ -106,7 +106,7 @@ pub(super) async fn auth_logout(
 ) -> AppResult<Response> {
     validate_mutation_origin(&state, &headers)?;
     if let Some(token) = session_cookie(&headers) {
-        store::revoke_session(&state.pool, token).await?;
+        store::revoke_session(&state.store, token).await?;
     }
     let mut response = Json(json!({ "authenticated": false })).into_response();
     response
@@ -123,7 +123,7 @@ pub(super) async fn create_user(
     require_bootstrap(&state, &headers)?;
     let input = read_json::<CreateUserRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "user": store::create_user(&state.pool, input).await? }),
+        json!({ "user": store::create_user(&state.store, input).await? }),
     ))
 }
 
@@ -133,7 +133,7 @@ pub(super) async fn list_users(
 ) -> AppResult<Json<Value>> {
     require_bootstrap(&state, &headers)?;
     Ok(Json(
-        json!({ "users": store::list_users(&state.pool).await? }),
+        json!({ "users": store::list_users(&state.store).await? }),
     ))
 }
 
@@ -146,7 +146,7 @@ pub(super) async fn create_org(
     let input =
         read_json::<CreateOrganizationRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "organization": store::create_organization(&state.pool, input).await? }),
+        json!({ "organization": store::create_organization(&state.store, input).await? }),
     ))
 }
 
@@ -156,7 +156,7 @@ pub(super) async fn list_orgs(
 ) -> AppResult<Json<Value>> {
     require_bootstrap(&state, &headers)?;
     Ok(Json(
-        json!({ "organizations": store::list_organizations(&state.pool).await? }),
+        json!({ "organizations": store::list_organizations(&state.store).await? }),
     ))
 }
 
@@ -170,10 +170,10 @@ pub(super) async fn create_api_key(
     let input = read_json::<CreateApiKeyRequest>(&headers, bytes, state.config.max_body_bytes)?;
     match admin_actor(&state, &headers, org_id).await? {
         Some(user_id) => Ok(Json(
-            store::create_api_key_for_user(&state.pool, user_id, org_id, input).await?,
+            store::create_api_key_for_user(&state.store, user_id, org_id, input).await?,
         )),
         None => Ok(Json(
-            store::create_api_key(&state.pool, org_id, input).await?,
+            store::create_api_key(&state.store, org_id, input).await?,
         )),
     }
 }
@@ -186,7 +186,7 @@ pub(super) async fn list_api_keys(
     let org_id = parse_uuid(&org_id, "organization not found")?;
     require_admin_or_bootstrap(&state, &headers, org_id).await?;
     Ok(Json(
-        json!({ "api_keys": store::list_api_keys(&state.pool, org_id).await? }),
+        json!({ "api_keys": store::list_api_keys(&state.store, org_id).await? }),
     ))
 }
 
@@ -199,7 +199,7 @@ pub(super) async fn revoke_api_key(
     require_admin_or_bootstrap(&state, &headers, org_id).await?;
     let api_key_id = parse_uuid(&api_key_id, "api key not found")?;
     Ok(Json(
-        json!({ "key": store::revoke_api_key(&state.pool, org_id, api_key_id).await? }),
+        json!({ "key": store::revoke_api_key(&state.store, org_id, api_key_id).await? }),
     ))
 }
 
@@ -212,7 +212,7 @@ pub(super) async fn disable_service_account(
     require_admin_or_bootstrap(&state, &headers, org_id).await?;
     let service_account_id = parse_uuid(&service_account_id, "service account not found")?;
     Ok(Json(json!({
-        "service_account": store::disable_service_account(&state.pool, org_id, service_account_id).await?
+        "service_account": store::disable_service_account(&state.store, org_id, service_account_id).await?
     })))
 }
 
@@ -232,7 +232,7 @@ pub(super) async fn reserve_seat(
     }
     let input = read_json::<ReserveSeatRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(json!({
-        "membership": store::reserve_seat(&state.pool, session.user.id, org_id, input).await?
+        "membership": store::reserve_seat(&state.store, session.user.id, org_id, input).await?
     })))
 }
 
@@ -245,7 +245,7 @@ pub(super) async fn create_project(
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateProjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "project": store::create_project(&state.pool, &ctx, input).await? }),
+        json!({ "project": store::create_project(&state.store, &ctx, input).await? }),
     ))
 }
 
@@ -255,7 +255,7 @@ pub(super) async fn list_projects(
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
     Ok(Json(
-        json!({ "projects": store::list_projects(&state.pool, &ctx).await? }),
+        json!({ "projects": store::list_projects(&state.store, &ctx).await? }),
     ))
 }
 
@@ -268,7 +268,7 @@ pub(super) async fn create_run(
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "run": store::create_run(&state.pool, &ctx, input).await? }),
+        json!({ "run": store::create_run(&state.store, &ctx, input).await? }),
     ))
 }
 
@@ -278,9 +278,7 @@ pub(super) async fn list_runs(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
-    Ok(Json(
-        store::list_runs(&state.pool, &state.metric_store, &ctx, &query).await?,
-    ))
+    Ok(Json(store::list_runs(&state.store, &ctx, &query).await?))
 }
 
 pub(super) async fn get_run(
@@ -291,7 +289,7 @@ pub(super) async fn get_run(
     let ctx = context(&state, &headers, true).await?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
-        json!({ "run": store::get_run(&state.pool, &state.metric_store, &ctx, run_id).await? }),
+        json!({ "run": store::get_run(&state.store, &ctx, run_id).await? }),
     ))
 }
 
@@ -306,7 +304,7 @@ pub(super) async fn update_run(
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<UpdateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "run": store::update_run(&state.pool, &ctx, run_id, input).await? }),
+        json!({ "run": store::update_run(&state.store, &ctx, run_id, input).await? }),
     ))
 }
 
@@ -322,16 +320,8 @@ pub(super) async fn log_metrics(
     let (input, raw) =
         read_json_with_raw::<LogMetricsRequest>(&headers, bytes, state.config.max_body_bytes)?;
     let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
-    let inserted = store::log_metrics(
-        &state.pool,
-        &state.metric_store,
-        &ctx,
-        run_id,
-        raw,
-        input,
-        idempotency_key,
-    )
-    .await?;
+    let inserted =
+        store::log_metrics(&state.store, &ctx, run_id, raw, input, idempotency_key).await?;
     Ok(Json(json!({ "inserted": inserted })))
 }
 
@@ -344,7 +334,7 @@ pub(super) async fn get_metrics(
     let ctx = context(&state, &headers, true).await?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
-        store::get_metrics(&state.pool, &state.metric_store, &ctx, run_id, &query).await?,
+        store::get_metrics(&state.store, &ctx, run_id, &query).await?,
     ))
 }
 
@@ -379,7 +369,7 @@ pub(super) async fn metrics_series(
         query.insert("end_step".to_string(), end.to_string());
     }
     Ok(Json(
-        store::metrics_series_batched(&state.pool, &state.metric_store, &ctx, &query).await?,
+        store::metrics_series_batched(&state.store, &ctx, &query).await?,
     ))
 }
 
@@ -389,9 +379,7 @@ pub(super) async fn overview(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
-    Ok(Json(
-        store::overview(&state.pool, &state.metric_store, &ctx, &query).await?,
-    ))
+    Ok(Json(store::overview(&state.store, &ctx, &query).await?))
 }
 
 pub(super) async fn runs_summary(
@@ -400,9 +388,7 @@ pub(super) async fn runs_summary(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
-    Ok(Json(
-        store::runs_summary(&state.pool, &state.metric_store, &ctx, &query).await?,
-    ))
+    Ok(Json(store::runs_summary(&state.store, &ctx, &query).await?))
 }
 
 pub(super) async fn side_by_side(
@@ -411,9 +397,7 @@ pub(super) async fn side_by_side(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
-    Ok(Json(
-        store::side_by_side(&state.pool, &state.metric_store, &ctx, &query).await?,
-    ))
+    Ok(Json(store::side_by_side(&state.store, &ctx, &query).await?))
 }
 
 pub(super) async fn create_attributes(
@@ -427,7 +411,7 @@ pub(super) async fn create_attributes(
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<CreateAttributesRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "attributes": store::create_attributes(&state.pool, &ctx, run_id, input).await? }),
+        json!({ "attributes": store::create_attributes(&state.store, &ctx, run_id, input).await? }),
     ))
 }
 
@@ -440,7 +424,7 @@ pub(super) async fn list_attributes(
     let ctx = context(&state, &headers, true).await?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
-        json!({ "attributes": store::list_attributes(&state.pool, &ctx, run_id, &query).await? }),
+        json!({ "attributes": store::list_attributes(&state.store, &ctx, run_id, &query).await? }),
     ))
 }
 
@@ -455,7 +439,7 @@ pub(super) async fn create_object(
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<CreateObjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(json!({
-        "object": store::create_object(&state.pool, &ctx, run_id, input).await?
+        "object": store::create_object(&state.store, &ctx, run_id, input).await?
     })))
 }
 
@@ -468,7 +452,7 @@ pub(super) async fn list_objects(
     let ctx = context(&state, &headers, true).await?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
-        store::list_objects(&state.pool, &ctx, run_id, &query).await?,
+        store::list_objects(&state.store, &ctx, run_id, &query).await?,
     ))
 }
 
@@ -483,7 +467,7 @@ pub(super) async fn list_object_rows(
         .parse::<i64>()
         .map_err(|_| AppError::not_found("object not found"))?;
     Ok(Json(
-        store::list_object_rows(&state.pool, &ctx, object_id, &query).await?,
+        store::list_object_rows(&state.store, &ctx, object_id, &query).await?,
     ))
 }
 
@@ -498,7 +482,7 @@ pub(super) async fn create_artifact(
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<CreateArtifactRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "artifact": store::create_artifact(&state.pool, &ctx, run_id, input).await? }),
+        json!({ "artifact": store::create_artifact(&state.store, &ctx, run_id, input).await? }),
     ))
 }
 
@@ -514,7 +498,7 @@ pub(super) async fn upload_artifact(
     let input =
         read_json::<UploadArtifactRequest>(&headers, bytes, state.config.max_upload_body_bytes)?;
     Ok(Json(
-        json!({ "artifact": store::upload_artifact(&state.pool, &state.config, &ctx, run_id, input).await? }),
+        json!({ "artifact": store::upload_artifact(&state.store, &state.config, &ctx, run_id, input).await? }),
     ))
 }
 
@@ -527,7 +511,7 @@ pub(super) async fn list_artifacts(
     let ctx = context(&state, &headers, true).await?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
-        json!({ "artifacts": store::list_artifacts(&state.pool, &ctx, run_id, &query).await? }),
+        json!({ "artifacts": store::list_artifacts(&state.store, &ctx, run_id, &query).await? }),
     ))
 }
 
@@ -538,7 +522,7 @@ pub(super) async fn download_artifact(
 ) -> AppResult<Response> {
     let ctx = context(&state, &headers, true).await?;
     let artifact_id = parse_uuid(&artifact_id, "artifact not found")?;
-    let artifact = store::get_artifact_for_context(&state.pool, &ctx, artifact_id).await?;
+    let artifact = store::get_artifact_for_context(&state.store, &ctx, artifact_id).await?;
     let artifact_store = LocalArtifactStore::new(&state.config.artifact_root);
     let file = artifact_store.open(&artifact).await?;
     let content_type = artifact
@@ -563,9 +547,7 @@ pub(super) async fn export_data(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
-    Ok(Json(
-        store::export_data(&state.pool, &state.metric_store, &ctx, &query).await?,
-    ))
+    Ok(Json(store::export_data(&state.store, &ctx, &query).await?))
 }
 
 pub(super) async fn usage_summary(
@@ -574,9 +556,7 @@ pub(super) async fn usage_summary(
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
     require_scope(&ctx, "usage:read", &state)?;
-    Ok(Json(
-        store::usage_summary(&state.pool, &state.metric_store, &ctx).await?,
-    ))
+    Ok(Json(store::usage_summary(&state.store, &ctx).await?))
 }
 
 pub(super) async fn usage_export(
@@ -585,9 +565,7 @@ pub(super) async fn usage_export(
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
     require_scope(&ctx, "usage:read", &state)?;
-    Ok(Json(
-        store::usage_export(&state.pool, &state.metric_store, &ctx).await?,
-    ))
+    Ok(Json(store::usage_export(&state.store, &ctx).await?))
 }
 
 pub(super) async fn list_imports(
@@ -595,7 +573,7 @@ pub(super) async fn list_imports(
     headers: HeaderMap,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
-    Ok(Json(store::list_imports(&state.pool, &ctx).await?))
+    Ok(Json(store::list_imports(&state.store, &ctx).await?))
 }
 
 pub(super) async fn import_neptune(
@@ -640,7 +618,7 @@ async fn import_with_source(
         .map(|value| value == "true")
         .unwrap_or(false);
     Ok(Json(
-        store::import_payload(&state.pool, &state.metric_store, &ctx, source, dry_run, raw).await?,
+        store::import_payload(&state.store, &ctx, source, dry_run, raw).await?,
     ))
 }
 
@@ -653,9 +631,7 @@ pub(super) async fn reset_demo(
     require_scope(&ctx, "sdk:ingest", &state)?;
     store::require_unrestricted_org_access(&ctx)?;
     let _ = read_json_value(&headers, bytes, state.config.max_body_bytes).ok();
-    Ok(Json(
-        store::reset_demo(&state.pool, &state.metric_store, &ctx).await?,
-    ))
+    Ok(Json(store::reset_demo(&state.store, &ctx).await?))
 }
 
 pub(super) async fn not_found() -> AppError {
@@ -707,7 +683,7 @@ async fn require_admin_or_bootstrap(
             "session belongs to a different organization",
         ));
     }
-    store::require_org_admin(&state.pool, session.user.id, org_id)
+    store::require_org_admin(&state.store, session.user.id, org_id)
         .await
         .map(|_| ())
 }
@@ -742,7 +718,7 @@ async fn admin_actor(
             "session belongs to a different organization",
         ));
     }
-    store::require_org_admin(&state.pool, session.user.id, org_id).await?;
+    store::require_org_admin(&state.store, session.user.id, org_id).await?;
     Ok(Some(session.user.id))
 }
 
@@ -757,7 +733,7 @@ async fn context(
                 .strip_prefix("Bearer ")
                 .or_else(|| header.strip_prefix("bearer "))
                 .ok_or_else(|| AppError::unauthorized("authorization must use bearer token"))?;
-            let auth = store::authenticate_api_key(&state.pool, token).await?;
+            let auth = store::authenticate_api_key(&state.store, token).await?;
             Ok(RequestContext {
                 org_id: auth.org_id,
                 auth: Some(auth),
@@ -766,7 +742,7 @@ async fn context(
         }
         None if session_cookie(headers).is_some() => {
             let payload = store::authenticate_session(
-                &state.pool,
+                &state.store,
                 session_cookie(headers).expect("checked session cookie"),
             )
             .await?;
@@ -802,7 +778,7 @@ async fn session_context(
     headers: &HeaderMap,
 ) -> AppResult<crate::domain::AuthSessionPayload> {
     let token = session_cookie(headers).ok_or_else(|| AppError::unauthorized("missing session"))?;
-    store::authenticate_session(&state.pool, token).await
+    store::authenticate_session(&state.store, token).await
 }
 
 fn session_cookie(headers: &HeaderMap) -> Option<&str> {

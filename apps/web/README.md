@@ -2,7 +2,7 @@
 
 This directory contains the Next/React frontend application for Training Observability. It is responsible for browsing projects, comparing runs, charting metrics, viewing artifacts, and inspecting training-loop debugging panels.
 
-Backend note: the UI targets the Rust/Postgres API in `apps/rust-server` by default. The deprecated Node API in `apps/server` remains available for compatibility checks. Keep UI data access on documented REST routes and bounded summary/series endpoints so both backends stay comparable during migration cleanup.
+Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by default. The deprecated Node API in `apps/server` remains available for compatibility checks. Keep UI data access on documented REST routes and bounded summary/series endpoints so both backends stay comparable during migration cleanup.
 
 ## Responsibilities
 
@@ -83,7 +83,7 @@ npm ci
 npx playwright install chromium
 ```
 
-Start the primary Rust/Postgres API from the repo root:
+Start the primary Rust/ClickHouse API from the repo root:
 
 ```bash
 npm run dev:api
@@ -120,7 +120,7 @@ npm run test:ui:direct
 npm run test:rust:ui
 ```
 
-The browser smoke starts disposable Postgres, disposable ClickHouse, and the Rust API by default, builds the Next app, starts `next start`, verifies the public landing page does not fetch dashboard summaries, signs up through the local dev Google-style flow, creates a copy-once SDK API key, seeds demo data through the signed-in session, exercises route-backed tabs with Playwright, verifies run-row click selection plus inspection behavior, exercises Runs workspace add/edit/collapse/fullscreen panel flows, checks drag-and-resize layout persistence, checks focus traps, validates tokenized run search and note search, edits tags/notes from Run Detail and Compare, asserts selected-run-only workspace plotting beyond each panel's automatic preview cap, checks that workspace charts grow and shrink with selected runs, asserts visible panel action affordances, hovers workspace chart points for run/value tooltips, verifies fullscreen chart range zoom, verifies rich-object fetches are gated to Run Detail/Artifacts, table previews are bounded, histogram/image/fallback media previews render, Compare does not add object fan-out, toggles columns, checks empty filters, hovers chart points, validates Compare column/row layouts, addable Compare metric columns, Compare row/run/config sorting, reference switching, non-anonymous metric labels, Compare artifact context, saved-view restoration, artifact/API affordances, and captures a screenshot. `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` all use the Rust/Postgres/ClickHouse harness.
+The browser smoke starts disposable ClickHouse and the Rust API by default, builds the Next app, starts `next start`, verifies the public landing page does not fetch dashboard summaries, signs up through the local dev Google-style flow, creates a copy-once SDK API key, seeds demo data through the signed-in session, exercises route-backed tabs with Playwright, verifies run-row click selection plus inspection behavior, exercises Runs workspace add/edit/collapse/fullscreen panel flows, checks drag-and-resize layout persistence, checks focus traps, validates tokenized run search and note search, edits tags/notes from Run Detail and Compare, asserts selected-run-only workspace plotting beyond each panel's automatic preview cap, checks that workspace charts grow and shrink with selected runs, asserts visible panel action affordances, hovers workspace chart points for run/value tooltips, verifies fullscreen chart range zoom, verifies rich-object fetches are gated to Run Detail/Artifacts, table previews are bounded, histogram/image/fallback media previews render, Compare does not add object fan-out, toggles columns, checks empty filters, hovers chart points, validates Compare column/row layouts, addable Compare metric columns, Compare row/run/config sorting, reference switching, non-anonymous metric labels, Compare artifact context, saved-view restoration, artifact/API affordances, and captures a screenshot. `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` all use the Rust/ClickHouse harness.
 
 The smoke also covers the keyboard-workflow MVP: shortcut help, quick search to run detail, compact rail-label search for long run names, Runs selector collapse/restore, Runs/canvas focus handoff, `Esc` drawer dismissal, workspace undo/redo, and fullscreen panel arrow traversal.
 
@@ -191,7 +191,7 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - Prune stale saved-view run IDs against the API before rendering Compare; a saved local view must never claim selected runs that no longer exist.
 - Keep Runs workspace panel queries bounded by selected runs up to `MAX_SELECTED_RUNS` or filtered page/top N plus metric point limits; do not fetch full metric histories for the panel grid.
 - Keep hidden tab data fetches gated by active tab. Runs should not load Metrics, Run Detail, Compare, or artifact-only data during initial dashboard entry unless that tab is active.
-- Keep workspace local-storage layouts schema-versioned and sanitized before applying. Hosted persistence belongs in the future Rust/Postgres workspace-views API after human user/org membership context lands.
+- Keep workspace local-storage layouts schema-versioned and sanitized before applying. Hosted persistence belongs in the future Rust/ClickHouse workspace-views API after human user/org membership context lands.
 - The first hosted auth/onboarding slice exists, but full organization switching, hosted provider credentials, invitation email delivery, and richer auth/no-access states are still follow-ups.
 
 Known simplification follow-ups from review:

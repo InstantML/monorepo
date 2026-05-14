@@ -3,7 +3,7 @@
 Schema files for the ClickHouse metric store. The Rust server applies these on
 startup via `metric_store::migrate`. Files are applied in lexical order and must
 be idempotent (`CREATE TABLE IF NOT EXISTS`, etc) since ClickHouse has no native
-migration tracking comparable to SQLx.
+schema version tracking built in.
 
 ## Layout
 
@@ -34,5 +34,5 @@ GROUP BY org_id, run_id, key;
 ```
 
 `mean = sum / count` and `variance = sum_sq/count - (sum/count)^2` are computed
-on read. `best = max` (matches the prior Postgres behavior, which always tracked
+on read. `best = max` (matches the prior summary behavior, which always tracked
 max regardless of metric direction).

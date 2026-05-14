@@ -4,17 +4,17 @@ Owner-editable development backlog for Training Observability.
 
 Current product goal: build a W&B-style training observability SaaS for smaller startups, research labs, and lean ML teams that wins on speed, UI quality, predictable pricing, and transparent data ownership.
 
-Current architecture rule: the Rust server is the primary backend path for local and hosted development: `Next/React frontend -> Rust API -> managed Postgres + ClickHouse -> artifact storage` and `Python SDK/uploader -> Rust API -> managed Postgres + ClickHouse -> artifact storage`. The Node server is deprecated and retained only as a compatibility oracle, JSON migration source, and legacy fallback.
+Current architecture rule: the Rust server is the primary backend path for local and hosted development: `Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage` and `Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage`. The Node server is deprecated and retained only as a compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Completed Baseline
 
 - [x] Product strategy, pricing hypotheses, and W&B-competitor wedge documented.
-- [x] Rust/Postgres hosted backend design accepted with diagrams and review notes.
+- [x] Rust/ClickHouse hosted backend design accepted with diagrams and review notes.
 - [x] Node compatibility server covers projects, runs, metrics, summaries, typed attributes, artifacts, org/API-key scaffolding, usage summaries, imports, export, idempotency, and local artifact storage.
 - [x] Next/React UI covers daily run browsing, charting, saved views, comparison, artifacts, rollouts, checkpoints, usage-adjacent surfaces, and API visibility.
 - [x] Python SDK covers run creation, metrics, typed helpers, buffering, offline replay for post-run-create events, process spool, uploader, API-key auth, source metadata, artifact metadata, and file upload.
 - [x] Shared contract smoke exists for the primary Rust backend and deprecated Node compatibility backend.
-- [x] Postgres migrations exist under `apps/rust-server/migrations/`.
+- [x] ClickHouse schema exists under `apps/rust-server/clickhouse/`.
 - [x] Importer first slices exist for Neptune-shaped, transformed W&B, and transformed MLflow JSON.
 
 ## Competitive Gap Review - W&B Docs (2026-05-10)
@@ -58,23 +58,23 @@ High-value gaps to close without copying W&B's whole platform:
 
 Goal: make `apps/rust-server` a runnable, testable service before replacing Node as the default.
 
-- [x] Confirm the first Rust implementation slice in `docs/design/2026-05-09-rust-postgres-backend.md` and record any narrowed implementation notes before coding.
+- [x] Confirm the current Rust/ClickHouse storage slice in `docs/design/2026-05-14-clickhouse-only-storage.md` and record any narrowed implementation notes before coding.
 - [x] Add Rust project scaffolding: `Cargo.toml`, module layout, binary entrypoint, and `serve`, `worker`, `migrate`, and local `all` subcommands.
-- [x] Add app config from environment with clear local defaults for `DATABASE_URL`, bind address, request limits, artifact root, bootstrap token, auth mode, and logging.
-- [x] Add `axum`, `tokio`, `tower-http`, `SQLx`, `serde`, `tracing`, `uuid`, `chrono`, `sha2`, `base64`, `mime_guess`, and OpenAPI tooling.
+- [x] Add app config from environment with clear local defaults for `CLICKHOUSE_URL`, bind address, request limits, artifact root, bootstrap token, auth mode, and logging.
+- [x] Add `axum`, `tokio`, `tower-http`, `ClickHouse client`, `serde`, `tracing`, `uuid`, `chrono`, `sha2`, `base64`, `mime_guess`, and OpenAPI tooling.
 - [x] Implement `GET /healthz`, `GET /readyz`, `GET /metrics`, and `GET /openapi.json`.
 - [x] Add structured JSON error handling that preserves the current `{"error": "message"}` compatibility shape.
 - [x] Add local request IDs, CORS, compression, body-size limits, timeouts, and structured tracing.
-- [x] Add a disposable Postgres integration-test harness that applies all migrations in order.
+- [x] Add a disposable ClickHouse integration-test harness that applies the schema.
 - [x] Add root commands for Rust formatting, linting, tests, migration checks, and contract-test startup once the binary exists.
 - [x] Update `apps/rust-server/README.md`, `SETUP.md`, and root `README.md` with the actual commands.
 
 ## P1 - Rust Compatibility Vertical Slice
 
-Goal: prove the smallest useful SDK -> Rust -> Postgres -> UI path.
+Goal: prove the smallest useful SDK -> Rust -> ClickHouse -> UI path.
 
-- [x] Implement project create/list routes against Postgres.
-- [x] Implement run create/list/get/update routes against Postgres.
+- [x] Implement project create/list routes against ClickHouse.
+- [x] Implement run create/list/get/update routes against ClickHouse.
 - [x] Implement scalar metric ingestion with finite nonnegative numeric steps.
 - [x] Store scalar points in `metric_points` and maintain `metric_series` summaries in the same transaction.
 - [x] Implement bounded metric series reads ordered by `step asc, point id asc`.
@@ -84,7 +84,7 @@ Goal: prove the smallest useful SDK -> Rust -> Postgres -> UI path.
 - [x] Run Python SDK tests against Rust for overlapping routes.
 - [x] Run a minimal UI smoke against Rust by pointing `RLOBS_API_BASE` at the Rust service.
 - [x] Keep Node as the default backend during P1, then retire it to compatibility after the slice passes repeatedly.
-- [x] Promote Rust/Postgres to the default backend after Node/Rust contract, SDK, and frontend parity checks pass.
+- [x] Promote Rust/ClickHouse to the default backend after Node/Rust contract, SDK, and frontend parity checks pass.
 
 ## P2 - Auth, Tenancy, And API Keys
 
@@ -98,7 +98,7 @@ Goal: make hosted org isolation real before broad product data moves to Rust.
 - [x] Add org context resolution for hosted org routes and compatibility routes.
 - [x] Add authorization tests for cross-org run, metric, artifact, import, export, usage, and side-by-side access.
 - [x] Add audit events for auth-sensitive mutations.
-- [x] Evaluate Postgres RLS as defense in depth after application-level org checks pass.
+- [x] Evaluate ClickHouse RLS as defense in depth after application-level org checks pass.
 - [x] Keep UI auth/org error states on existing API error surfaces until richer org switching lands in P5.
 
 ## P3 - Artifacts, Attributes, Imports, Export, And Usage
@@ -109,19 +109,19 @@ Goal: reach feature parity with the Node compatibility server on product workflo
 - [x] Implement artifact metadata create/list routes.
 - [x] Implement local artifact storage trait with staged writes, SHA256, MIME type, size, download, cleanup, and repair behavior.
 - [x] Implement artifact upload/download compatibility routes.
-- [x] Implement side-by-side comparison from Postgres summaries, config, metadata, tags, attributes, artifacts, and selected metrics.
+- [x] Implement side-by-side comparison from ClickHouse summaries, config, metadata, tags, attributes, artifacts, and selected metrics.
 - [x] Implement portable JSON export filtered by org/project/project ID.
 - [x] Implement Neptune-shaped, transformed W&B, and transformed MLflow import routes through a shared normalized importer path.
 - [x] Keep import dry-run and real import validation identical.
 - [x] Make bounded import writes transactional or explicitly documented with cleanup behavior.
-- [x] Implement warning-only `GET /api/usage` and `GET /api/usage/export` from indexed Postgres data.
+- [x] Implement warning-only `GET /api/usage` and `GET /api/usage/export` from indexed ClickHouse data.
 - [x] Add immutable `usage_daily` rollup writer before treating any usage value as invoice truth.
 
-## P4 - Migration From Node JSON To Postgres
+## P4 - Migration From Node JSON To ClickHouse
 
 Goal: let existing local/demo data move forward without hand repair.
 
-- [ ] Build a JSON-to-Postgres migration dry-run CLI for `.rlobs/rlobs.json`.
+- [ ] Build a JSON-to-ClickHouse migration dry-run CLI for `.rlobs/rlobs.json`.
 - [ ] Preserve projects, runs, metrics, maintained summaries, typed attributes, artifacts, imports, users, orgs, service accounts, API-key metadata, and usage-relevant counts.
 - [ ] Preserve artifact byte references and detect missing local files.
 - [ ] Emit a migration report with counts, skipped records, warnings, and estimated storage.
@@ -151,7 +151,7 @@ Goal: keep the UI as the product moat while the backend changes underneath it.
 
 ## P6 - SDK And Uploader Hardening
 
-Goal: make the training-loop hot path trustworthy against Rust/Postgres/ClickHouse.
+Goal: make the training-loop hot path trustworthy against Rust/ClickHouse.
 
 - [ ] Add SDK integration tests that run against Rust for sync mode, buffered mode, offline replay, process spool, uploader retry, and file upload.
 - [ ] Confirm `RLOBS_API_KEY` and explicit `api_key` work against Rust API-key auth.
@@ -169,9 +169,9 @@ Goal: make the training-loop hot path trustworthy against Rust/Postgres/ClickHou
 
 Goal: make a beta deployment boring enough to trust.
 
-- [ ] Add complete Docker Compose path for Postgres, ClickHouse, Rust API, worker, Next web, and local artifact volume.
+- [ ] Add complete Docker Compose path for ClickHouse, Rust API, worker, Next web, and local artifact volume.
 - [ ] Add health, readiness, migration, and seed/bootstrap commands for local hosted-mode testing.
-- [ ] Prepare first hosted beta deployment on the preferred stack: Cloud Run, Neon, Cloudflare R2, and Clerk or equivalent managed auth.
+- [ ] Prepare first hosted beta deployment on the preferred stack: Cloud Run, managed ClickHouse, Cloudflare R2, and Clerk or equivalent managed auth.
 - [ ] Add secret management guidance for database URLs, API-key pepper if used, auth provider keys, object storage credentials, and bootstrap tokens.
 - [ ] Add database backup, restore, migration, and connection-pooling notes.
 - [ ] Add artifact retention and cleanup job documentation.
@@ -182,9 +182,9 @@ Goal: make a beta deployment boring enough to trust.
 
 Goal: prove speed and reliability claims before making them public.
 
-- [ ] Add Rust/Postgres/ClickHouse scale smoke for the daily small-team case: 50 runs, 20 metrics per run, and 1,000 points per metric.
-- [x] Add Rust/Postgres/ClickHouse scale smoke for the design-partner case: 90,000 runs in one project with realistic names, tags, notes, statuses, configs, metric summaries, and artifact counts.
-- [x] Measure Runs page first useful render under 2 seconds for the 90,000-run project on local production build plus local Rust/Postgres/ClickHouse.
+- [ ] Add Rust/ClickHouse scale smoke for the daily small-team case: 50 runs, 20 metrics per run, and 1,000 points per metric.
+- [x] Add Rust/ClickHouse scale smoke for the design-partner case: 90,000 runs in one project with realistic names, tags, notes, statuses, configs, metric summaries, and artifact counts.
+- [x] Measure Runs page first useful render under 2 seconds for the 90,000-run project on local production build plus local Rust/ClickHouse.
   - 2026-05-11 local result: 387 ms with `RLOBS_BENCH_WEB=1`.
 - [x] Measure server-side run search/filter/sort p95 under 500 ms for the 90,000-run project with indexed status, tag, note/name text, config, and selected metric-summary sorts.
   - 2026-05-11 local result: `q=seed 13` p95 118 ms; `metric-best` p95 66 ms.
@@ -193,7 +193,7 @@ Goal: prove speed and reliability claims before making them public.
 - [x] Measure metric chart p95 under 200 ms for one run/key with 1,000 points.
   - 2026-05-11 local result: p95 22 ms.
 - [ ] Measure dashboard initial load p95 under 1 second after auth/session resolution.
-- [ ] Add SQL query-plan checks for summary, chart, artifact, usage, import-history, run search, tag/note search, and compare queries.
+- [ ] Add query-plan/timing checks for summary, chart, artifact, usage, import-history, run search, tag/note search, and compare queries.
 - [ ] Add load tests for SDK metric ingestion batches and process-spool replay.
 - [ ] Add failure-mode tests for idempotency conflicts, body-too-large errors, storage finalize failures, import rollback, and DB transaction errors.
 - [ ] Keep first-party code at 100% meaningful coverage or document precise coverage exceptions.
@@ -206,7 +206,7 @@ These are product validation tasks, but they should feed development priority.
 
 - [ ] Validate the W&B-competitor positioning with real ML teams. Outreach plan exists in `docs/users/2026-05-09-validation-plan.md`.
 - [ ] Validate pricing with small startups and labs before publishing final prices.
-- [ ] Validate whether Cloud Run, Neon, Cloudflare R2, and Clerk are acceptable for first beta users.
+- [ ] Validate whether Cloud Run, managed ClickHouse, Cloudflare R2, and Clerk are acceptable for first beta users.
 - [ ] Validate whether import, dual logging, or a direct W&B/MLflow migration guide is the most important adoption path.
 - [ ] Decide license and public-source posture before representing the repo as open source.
 
@@ -300,7 +300,7 @@ Component detail backlogs:
 
 ## User Notes
 
-- [x] Brendan product notes: Rust/Postgres/ClickHouse is now the primary backend; keep Node only as deprecated compatibility/migration support while aiming to beat W&B on speed, UI quality, and predictable pricing.
+- [x] Brendan product notes: Rust/ClickHouse is now the primary backend; keep Node only as deprecated compatibility/migration support while aiming to beat W&B on speed, UI quality, and predictable pricing.
 - [x] Target customer notes: smaller startups, research labs, lean ML teams, RL/robotics/simulation teams, fine-tuning teams, and ML platform owners who already understand experiment tracking.
 - [x] Feature ideas to validate before implementation: W&B dual logging, MLflow import depth, hosted admin/billing UI, self-host/VPC, public naming, and open-source launch model.
 - [x] W&B docs gap review completed on 2026-05-10 and translated into root, Rust server, and Python SDK TODOs.

@@ -10,7 +10,7 @@ Owner: Codex
 
 Training Observability should win on speed in the daily run-browsing workflow. Design-partner feedback called out a W&B project with roughly 90,000 runs taking seconds to load. The current app already calls the Rust-backed `GET /api/runs/summary` route with server-side filters, search, sort, totals, and page-scoped summaries, but the implementation still uses offset pagination, index-hostile token predicates, and no large-project performance gate.
 
-This design keeps the existing summary endpoint and response shape compatible, then adds cursor pagination, targeted indexes, indexable search predicates, a compact Python `Api.runs()` client, frontend cursor navigation, and a Rust/Postgres/ClickHouse scale benchmark. The smallest useful version does not add a new query language or a separate search service. It makes the existing Runs workspace credible for a 90,000-run project while preserving local Node compatibility for old route shapes.
+This design keeps the existing summary endpoint and response shape compatible, then adds cursor pagination, targeted indexes, indexable search predicates, a compact Python `Api.runs()` client, frontend cursor navigation, and a Rust/ClickHouse scale benchmark. The smallest useful version does not add a new query language or a separate search service. It makes the existing Runs workspace credible for a 90,000-run project while preserving local Node compatibility for old route shapes.
 
 ## Goals
 
@@ -21,7 +21,7 @@ This design keeps the existing summary endpoint and response shape compatible, t
 - Make search predicates indexable enough for name, tag, note, and config text searches at the target scale.
 - Add a Python `Api.runs()` first slice that maps directly to the Rust route.
 - Update the web app to use cursor navigation for Next/Previous page controls.
-- Add a repeatable Rust/Postgres/ClickHouse benchmark that reports 90,000-run first-page, search, sort, and chart timings.
+- Add a repeatable Rust/ClickHouse benchmark that reports 90,000-run first-page, search, sort, and chart timings.
 
 ## Non-Goals
 
@@ -80,7 +80,7 @@ Metric minimize semantics remain a follow-up until summary policy support lands.
 
 For search, replace the current `not exists` token predicate with a small fixed set of indexable `LIKE` clauses. The server still caps token count. Each token is escaped for `LIKE`, and all tokens must match `runs.search_text`. Short tokens under three characters, such as `13`, are still allowed for UX parity but are explicitly benchmarked because trigram indexes are less helpful for them.
 
-The run-list query should resolve `project` names to `project_id` before querying `runs`, then build SQL with direct predicates for present filters instead of nullable `OR` clauses on the hot path. Project-scoped API keys add the restricted project predicate before pagination and before cursor predicates.
+The run-list query should resolve `project` names to `project_id` before querying runs, then apply direct predicates for present filters instead of nullable `OR`-style checks on the hot path. Project-scoped API keys add the restricted project predicate before pagination and before cursor predicates.
 
 The summary route should fetch `limit + 1` rows to compute `next_cursor`, then hydrate summaries for only the returned page rows. The route keeps `total` as an exact count for now so existing UI copy stays useful. The benchmark gate measures the full route cost, including count and metric-key discovery. If either dominates latency, this slice must add `include_total` / `include_metric_keys` flags or split metric catalog discovery before marking the 90,000-run gate complete.
 
@@ -114,7 +114,6 @@ page = api.runs(project="demo", q="seed 13", sort_by="metric-best", metric_key="
 
 Backend:
 
-- Add a migration with run-query indexes.
 - Update `store.rs` run query helpers, cursor validation/encoding, tests, and benchmark support.
 - Update OpenAPI placeholder docs enough to mention cursor query support.
 
@@ -131,8 +130,8 @@ Python SDK:
 
 Storage:
 
-- Add indexes for lower-name sort, status/name sort, duration sort helper expression, created tie-breakers, and metric latest/best sort joins.
-- Keep existing `runs.search_text` trigger and trigram index.
+- Keep operational run records bounded and indexed in the Rust store.
+- Keep metric latest/best sort data in ClickHouse metric summaries.
 
 Docs:
 
@@ -141,40 +140,7 @@ Docs:
 
 ## Data Model
 
-No new tables.
-
-Add migration `0003_large_run_query_indexes.sql`:
-
-```sql
-create index if not exists runs_org_created_id_idx
-  on runs (org_id, created_at desc, id desc);
-
-create index if not exists runs_org_project_created_id_idx
-  on runs (org_id, project_id, created_at desc, id desc);
-
-create index if not exists runs_org_project_name_id_idx
-  on runs (org_id, project_id, lower(name), id);
-
-create index if not exists runs_org_project_status_name_id_idx
-  on runs (org_id, project_id, status, lower(name), id);
-
-create index if not exists runs_org_project_duration_created_id_idx
-  on runs (
-    org_id,
-    project_id,
-    (extract(epoch from (finished_at - started_at))) desc nulls last,
-    created_at desc,
-    id desc
-  );
-
-create index if not exists metric_series_org_key_latest_run_idx
-  on metric_series (org_id, key, latest desc nulls last, run_id);
-
-create index if not exists metric_series_org_key_max_run_idx
-  on metric_series (org_id, key, max desc nulls last, run_id);
-```
-
-The implementation must benchmark both the default org-wide UI path and the project-scoped 90,000-run path. If org-wide plans miss budget, add org-wide variants for the affected sort before completion.
+No new API-visible tables. The current ClickHouse-only implementation stores run metadata in operational records and metric summaries in `metric_series`. The implementation must benchmark both the default org-wide UI path and the project-scoped 90,000-run path. If org-wide plans miss budget, add a narrower projection or query path before completion.
 
 ## API Contracts
 
@@ -218,7 +184,7 @@ Response adds:
 - Indexable token predicates and trigram index keep search bounded for human query strings.
 - Exact `count(*)` and metric-key discovery are measured. If either exceeds the budget, the follow-up is to make totals and metric catalog opt-in/separate.
 - Benchmark gates:
-  - Runs page first useful render under 2 seconds on local production build plus local Rust/Postgres/ClickHouse.
+  - Runs page first useful render under 2 seconds on local production build plus local Rust/ClickHouse.
   - Server-side run search/filter/sort p95 under 500 ms for the 90,000-run fixture.
   - Run summary p95 under 300 ms for default newest page.
   - Metric chart p95 under 200 ms for one run/key with 1,000 points.
@@ -303,7 +269,7 @@ Fresh reviewer 1:
 
 - Finding: Existing optional `OR` predicates may not use the proposed indexes well.
 - Risk: Prepared/generic plans can miss hot-path indexes at 90,000 runs.
-- Recommended edit: Resolve project name to project ID and build fixed SQL for present filters.
+- Recommended edit: Resolve project name to project ID and build fixed predicates for present filters.
 - Decision: Accepted for the run-list hot path.
 
 - Finding: Exact totals and metric-key discovery remain potentially expensive.
@@ -333,16 +299,16 @@ Fresh reviewer 2:
 Implemented on 2026-05-11:
 
 - Rust `GET /api/runs/summary` and `GET /runs` now share bounded run-page query helpers with cursor pagination, direct filter predicates, strict cursor validation, and selected metric latest/best sorting.
-- Migration `apps/rust-server/migrations/0003_large_run_query_indexes.sql` adds created/name/status/duration run indexes plus metric latest/best indexes.
+- The current ClickHouse-only implementation keeps this benchmark as a service-level regression gate; older row-index migration details are superseded by the operational record index plus ClickHouse metric summaries.
 - Metric sort uses a metric-first query for rows with non-null selected metric values, then appends rows missing that metric in created order. Offset compatibility adjusts the missing-row offset after counting metric-bearing rows.
-- Name/status cursor values use the database `lower(r.name)` value selected with the row, so cursor comparisons match the Postgres sort key.
+- Name/status cursor values use the database `lower(r.name)` value selected with the row, so cursor comparisons match the ClickHouse sort key.
 - The web Runs workspace keeps a cursor stack for Rust responses, falls back to offset for the deprecated Node server, clears cursors synchronously when filters/sorts/page size change, and disables pagination while page navigation is in flight.
 - The Python SDK exports `Api.runs()` as the raw read-only first slice.
 - `tools/rust-large-run-benchmark.mjs` seeds 90,000 runs, runs `ANALYZE`, measures the full summary route, and can optionally measure production Next first useful render.
 
 ## Benchmark Results
 
-Local benchmark on 2026-05-11 with disposable local Postgres, local Rust API, local Next production build, 90,000 seeded runs, one selected metric summary per run, and 1,000 chart points on the target run. Current CLI benchmark runs use disposable ClickHouse for metric rows in addition to disposable Postgres metadata:
+Local benchmark on 2026-05-11 with disposable local ClickHouse, local Rust API, local Next production build, 90,000 seeded runs, one selected metric summary per run, and 1,000 chart points on the target run. Current CLI benchmark runs use disposable ClickHouse for both operational records and metric rows:
 
 ```text
 RLOBS_BENCH_RUNS=90000 RLOBS_BENCH_SAMPLES=10 RLOBS_BENCH_WARMUPS=2 RLOBS_BENCH_WEB=1 npm run benchmark:large-runs

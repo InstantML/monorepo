@@ -30,7 +30,7 @@ Future agents must update documentation whenever they change:
 - Working tasks: `../TODO.md`.
 - Fresh setup: `../SETUP.md`.
 - Current implemented architecture: `architecture/current-system.md`.
-- Primary backend foundation: `design/2026-05-09-rust-postgres-backend.md`.
+- Primary backend foundation: `design/2026-05-14-clickhouse-only-storage.md`.
 - Validation plan: `users/2026-05-09-validation-plan.md`.
 - Open-source and brand policy: `product/2026-05-09-open-source-brand.md`.
 - Future-agent workflow: `../AGENTS.md`.
@@ -39,10 +39,10 @@ Future agents must update documentation whenever they change:
 Accepted backend direction:
 
 ```text
-Default:    Next/React + Python SDK -> Rust API -> Postgres + ClickHouse -> artifact storage
+Default:    Next/React + Python SDK -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 Deprecated: Next/React + Python SDK -> Node compatibility API -> JSON state/local artifacts
 ```
 
-Docs should keep that distinction explicit. The Rust/Postgres foundation design is accepted, and the current implemented backend adds ClickHouse for metric time series. The Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback until migration tooling and any remaining route-shape checks are retired.
+Docs should keep that distinction explicit. The ClickHouse-only storage design is accepted for the local/test first slice, with hosted control-plane/data-plane service routing deferred to a later coordination design. The Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback until migration tooling and any remaining route-shape checks are retired.
 
 When these disagree, update the older document or create a superseding design before building.

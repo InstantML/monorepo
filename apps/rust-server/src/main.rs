@@ -36,12 +36,11 @@ async fn run() -> rlobs_rust_server::AppResult<()> {
 }
 
 async fn serve(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
-    store::migrate(&config.database_url).await?;
-    let pool = store::connect(&config).await?;
     let metrics = metric_store::connect(&config)?;
     metric_store::migrate(&metrics).await?;
+    let store = store::Store::connect(metrics.clone()).await?;
     let bind_addr = config.bind_addr;
-    let app = rlobs_rust_server::http::router(AppState::new(pool, metrics, config));
+    let app = rlobs_rust_server::http::router(AppState::new(store, config));
     let listener = TcpListener::bind(bind_addr).await?;
     tracing::info!(%bind_addr, "Training Observability Rust server listening");
     axum::serve(listener, app)
@@ -51,20 +50,18 @@ async fn serve(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
 }
 
 async fn migrate_all(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
-    store::migrate(&config.database_url).await?;
     let metrics = metric_store::connect(&config)?;
     metric_store::migrate(&metrics).await?;
     Ok(())
 }
 
 async fn worker(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
-    store::migrate(&config.database_url).await?;
-    let pool = store::connect(&config).await?;
     let metrics = metric_store::connect(&config)?;
     metric_store::migrate(&metrics).await?;
-    let deleted = store::delete_expired_idempotency(&pool).await?;
-    let deleted_sessions = store::delete_expired_or_revoked_sessions(&pool).await?;
-    let usage_snapshots = store::write_usage_daily_snapshots(&pool, &metrics).await?;
+    let store = store::Store::connect(metrics).await?;
+    let deleted = store::delete_expired_idempotency(&store).await?;
+    let deleted_sessions = store::delete_expired_or_revoked_sessions(&store).await?;
+    let usage_snapshots = store::write_usage_daily_snapshots(&store).await?;
     tracing::info!(deleted, "deleted expired idempotency rows");
     tracing::info!(deleted_sessions, "deleted expired or revoked session rows");
     tracing::info!(usage_snapshots, "wrote immutable usage daily snapshots");
@@ -94,7 +91,7 @@ async fn shutdown_signal() {
 fn print_help() {
     println!(
         "Usage: rlobs-rust-server [serve|all|migrate|worker]\n\n\
-         Environment: DATABASE_URL, CLICKHOUSE_URL, RLOBS_BIND_ADDR, RLOBS_AUTH_MODE, \
+         Environment: CLICKHOUSE_URL, RLOBS_BIND_ADDR, RLOBS_AUTH_MODE, \
          RLOBS_BOOTSTRAP_TOKEN, RLOBS_ARTIFACT_ROOT, RLOBS_MAX_BODY_BYTES, RLOBS_MAX_UPLOAD_BODY_BYTES"
     );
 }

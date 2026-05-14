@@ -24,13 +24,13 @@ Recommended path:
 
 1. Share source privately with early design partners and contributors.
 2. Keep local self-host/dev flows simple enough to evaluate.
-3. Publish Rust/Postgres schema/API docs and export guarantees before public pricing.
+3. Publish Rust/ClickHouse schema/API docs and export guarantees before public pricing.
 4. Choose license and contribution policy before public repo launch.
 5. Decide later whether the long-term model is permissive OSS, source-available core, open-core, or hosted-only with strong export/self-host options.
 
 Hosted-backend boundary:
 
-- Public source sharing should not imply the hosted Rust/Postgres/ClickHouse service is production-ready until contract tests, tenant-isolation tests, migration tests, and deployment docs exist.
+- Public source sharing should not imply the hosted Rust/ClickHouse service is production-ready until contract tests, tenant-isolation tests, migration tests, and deployment docs exist.
 - Keep managed auth provider choices, secret handling, API-key hashing, and billing/usage rollups documented before inviting outside production use.
 
 ## Brand Decision

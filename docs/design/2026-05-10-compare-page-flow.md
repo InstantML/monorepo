@@ -26,7 +26,7 @@ Important constraint: the current Rust side-by-side endpoint accepts at most 50 
 
 ## Non-Goals
 
-- No new Rust/Postgres table, index, or endpoint in this slice.
+- No new Rust/ClickHouse table, index, or endpoint in this slice.
 - No persisted hosted workspace layout for Compare; saved views remain local browser storage.
 - No artifact range streaming work in Rust; that remains tracked in `apps/rust-server/TODO.md`.
 - No tag/note mutation UI in this slice because post-hoc run metadata update needs a separate design.

@@ -1,9 +1,8 @@
-//! ClickHouse-backed metric store.
+//! ClickHouse-backed storage.
 //!
-//! Owns the connection, schema migrations, and (in later phases) the read/write
-//! paths for `metric_points` and `metric_series`. Postgres remains the OLTP
-//! store for orgs, runs, attributes, artifacts, etc; this module handles only
-//! the high-volume time-series data.
+//! Owns the connection, schema migrations, high-volume metric reads/writes, and
+//! the low-volume operational record log used to rebuild the Rust service's
+//! single-process index.
 
 use chrono::{DateTime, Utc};
 use clickhouse::{Client as ClickHouseClient, Row};
@@ -32,6 +31,22 @@ pub struct MetricPointRow {
     pub value: f64,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub logged_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
+}
+
+/// One durable operational record in the ClickHouse control/data-plane layer.
+///
+/// Operational state is intentionally stored as complete JSON payloads in an
+/// append-only table. The Rust service rebuilds its in-process index from these
+/// rows on startup, then writes one row per accepted mutation.
+#[derive(Row, Serialize, Deserialize, Clone)]
+pub struct OperationalRecordRow {
+    pub kind: String,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub org_id: Uuid,
+    pub entity_id: String,
+    pub payload: String,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub created_at: DateTime<Utc>,
 }
@@ -74,6 +89,11 @@ pub struct SeriesReadRow {
     pub latest: f64,
     pub latest_step: f64,
     pub best_step: f64,
+}
+
+#[derive(Row, Deserialize)]
+pub struct MetricKeyReadRow {
+    pub key: String,
 }
 
 const INITIAL_SCHEMA: &str = include_str!("../clickhouse/0001_initial.sql");
@@ -121,6 +141,31 @@ impl MetricStore {
             .await
             .map_err(|err| AppError::internal(format!("clickhouse insert flush failed: {err}")))?;
         Ok(())
+    }
+
+    pub async fn insert_operational_record(&self, row: &OperationalRecordRow) -> AppResult<()> {
+        let mut inserter = self.client.insert("operational_records").map_err(|err| {
+            AppError::internal(format!("clickhouse operational insert init failed: {err}"))
+        })?;
+        inserter.write(row).await.map_err(|err| {
+            AppError::internal(format!("clickhouse operational insert write failed: {err}"))
+        })?;
+        inserter.end().await.map_err(|err| {
+            AppError::internal(format!("clickhouse operational insert flush failed: {err}"))
+        })?;
+        Ok(())
+    }
+
+    pub async fn load_operational_records(&self) -> AppResult<Vec<OperationalRecordRow>> {
+        self.client
+            .query(
+                "SELECT kind, org_id, entity_id, payload, created_at \
+                 FROM operational_records \
+                 ORDER BY created_at ASC, kind ASC, entity_id ASC",
+            )
+            .fetch_all::<OperationalRecordRow>()
+            .await
+            .map_err(clickhouse_read_error)
     }
 
     /// Fetch up to `limit` raw points for a single run, optionally filtered by
@@ -238,13 +283,98 @@ impl MetricStore {
             .map_err(clickhouse_read_error)
     }
 
+    pub async fn query_series_for_runs_key(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        key: &str,
+    ) -> AppResult<Vec<SeriesReadRow>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.client
+            .query(
+                "SELECT \
+                   run_id, key, \
+                   toUInt64(countMerge(count)) AS count, \
+                   minMerge(min) AS min, \
+                   maxMerge(max) AS max, \
+                   sumMerge(sum) AS sum, \
+                   sumMerge(sum_sq) AS sum_sq, \
+                   argMaxMerge(latest) AS latest, \
+                   maxMerge(latest_step) AS latest_step, \
+                   argMaxMerge(best_step) AS best_step \
+                 FROM metric_series \
+                 WHERE org_id = ? AND run_id IN ? AND key = ? \
+                 GROUP BY run_id, key \
+                 ORDER BY run_id",
+            )
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(key)
+            .fetch_all::<SeriesReadRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn query_keys_for_runs(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        limit: i64,
+    ) -> AppResult<Vec<String>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT key \
+                 FROM metric_series \
+                 WHERE org_id = ? AND run_id IN ? \
+                 GROUP BY key \
+                 ORDER BY key \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(limit)
+            .fetch_all::<MetricKeyReadRow>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(rows.into_iter().map(|row| row.key).collect())
+    }
+
     /// Count the total number of metric points for an org. Used by usage
-    /// rollups in place of the prior Postgres `count(*)` query.
+    /// rollups in place of the prior ClickHouse `count(*)` query.
     pub async fn count_points_for_org(&self, org_id: Uuid) -> AppResult<i64> {
         let count: u64 = self
             .client
             .query("SELECT count() FROM metric_points WHERE org_id = ?")
             .bind(org_id)
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(count as i64)
+    }
+
+    pub async fn count_points_for_runs(&self, org_id: Uuid, run_ids: &[Uuid]) -> AppResult<i64> {
+        if run_ids.is_empty() {
+            return Ok(0);
+        }
+        let count: u64 = self
+            .client
+            .query(
+                "SELECT toUInt64(sum(count)) \
+                 FROM ( \
+                   SELECT countMerge(count) AS count \
+                   FROM metric_series \
+                   WHERE org_id = ? AND run_id IN ? \
+                   GROUP BY run_id, key \
+                 )",
+            )
+            .bind(org_id)
+            .bind(run_ids)
             .fetch_one::<u64>()
             .await
             .map_err(clickhouse_read_error)?;

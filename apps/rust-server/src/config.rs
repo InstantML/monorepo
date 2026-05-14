@@ -16,7 +16,6 @@ impl AuthMode {
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
-    pub database_url: String,
     pub clickhouse_url: String,
     pub bind_addr: SocketAddr,
     pub max_body_bytes: usize,
@@ -28,7 +27,6 @@ pub struct AppConfig {
     pub managed_google_enabled: bool,
     pub allowed_frontend_origins: Vec<String>,
     pub request_timeout: Duration,
-    pub database_acquire_timeout: Duration,
     pub log_format: LogFormat,
 }
 
@@ -40,10 +38,6 @@ pub enum LogFormat {
 
 impl AppConfig {
     pub fn from_env() -> AppResult<Self> {
-        let database_url = env_string(
-            "DATABASE_URL",
-            "postgres://postgres:postgres@127.0.0.1:5432/rlobs",
-        );
         let clickhouse_url = env_string("CLICKHOUSE_URL", "http://default:@127.0.0.1:8123/rlobs");
         let bind_addr = env_string("RLOBS_BIND_ADDR", "127.0.0.1:8001")
             .parse()
@@ -67,7 +61,6 @@ impl AppConfig {
             _ => return Err(AppError::config("RLOBS_LOG_FORMAT must be pretty or json")),
         };
         Ok(Self {
-            database_url,
             clickhouse_url,
             bind_addr,
             max_body_bytes: env_usize("RLOBS_MAX_BODY_BYTES", 1_000_000)?,
@@ -84,10 +77,6 @@ impl AppConfig {
             allowed_frontend_origins: env_origin_list("RLOBS_ALLOWED_FRONTEND_ORIGINS"),
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("RLOBS_REQUEST_TIMEOUT_SECONDS", 30)?),
-            database_acquire_timeout: Duration::from_secs(env_u64(
-                "RLOBS_DB_ACQUIRE_TIMEOUT_SECONDS",
-                5,
-            )?),
             log_format,
         })
     }

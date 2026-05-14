@@ -20,7 +20,7 @@ Date: 2026-05-10
 
 - No report editor shortcuts.
 - No media zoom/pan shortcuts.
-- No Rust/Postgres workspace view persistence.
+- No Rust/ClickHouse workspace view persistence.
 - No URL-addressable fullscreen route state in this slice.
 - No broad component extraction unless implementation pressure proves it necessary.
 

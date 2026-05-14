@@ -164,10 +164,10 @@ New SDK-only event file fields:
 - `step`: optional numeric step supplied by the caller.
 - `data`: canonical user-facing snapshot dictionary.
 - `requests`: list of existing API request dictionaries with `method`, `path`, and `body`.
-- `event_id`: unique SDK-generated event identifier used for traceability. Current compatible servers send metric event IDs as `Idempotency-Key`; the Rust/Postgres backend persists org-scoped idempotency rows for retryable SDK/uploader/import writes.
+- `event_id`: unique SDK-generated event identifier used for traceability. Current compatible servers send metric event IDs as `Idempotency-Key`; the Rust/ClickHouse backend persists org-scoped idempotency rows for retryable SDK/uploader/import writes.
 - `sequence`: per-`Run` SDK sequence number used as the first filename component so fast consecutive events drain in call order.
 
-Original slice had no backend schema changes. The later Rust/Postgres backend-foundation implementation adds an `idempotency_keys` table for hosted durability and keeps Node idempotent metric replay as deprecated compatibility behavior.
+Original slice had no backend schema changes. The later Rust/ClickHouse backend-foundation implementation adds an `idempotency_keys` table for hosted durability and keeps Node idempotent metric replay as deprecated compatibility behavior.
 
 ## API Contracts
 

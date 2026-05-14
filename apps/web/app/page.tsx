@@ -83,7 +83,7 @@ export default function LandingPage() {
           </div>
           {config?.dev_auth_enabled ? <p className="auth-note">Local development uses an explicitly labeled Google-style shortcut. No managed Google OAuth button is shown while it is disabled.</p> : null}
           <div className="landing-proof">
-            <span><CheckCircle2 size={14} /> Rust/Postgres summaries</span>
+            <span><CheckCircle2 size={14} /> Rust/ClickHouse summaries</span>
             <span><CheckCircle2 size={14} /> Bounded metric charts</span>
             <span><CheckCircle2 size={14} /> Copy-once SDK keys</span>
           </div>

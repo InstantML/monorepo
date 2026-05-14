@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -16,13 +17,12 @@ const includeWeb = process.env.RLOBS_BENCH_WEB === "1";
 const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
 const project = process.env.RLOBS_BENCH_PROJECT || "bench-90k";
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-large-run-"));
-const pgPort = await freePort();
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
-const databaseUrl = `postgres://127.0.0.1:${pgPort}/rlobs_bench`;
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+const localOrgId = "00000000-0000-0000-0000-000000000001";
 let apiServer = null;
 let webServer = null;
 let clickhouse = null;
@@ -37,29 +37,17 @@ try {
     interserverHttpPort: clickhouseInterserverPort,
   });
 
-  const dataDir = path.join(tempDir, "data");
-  run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: ["ignore", "ignore", "inherit"] });
-  run("pg_ctl", [
-    "-D",
-    dataDir,
-    "-o",
-    `-p ${pgPort} -c listen_addresses='127.0.0.1'`,
-    "-l",
-    path.join(tempDir, "postgres.log"),
-    "start",
-  ], { stdio: ["ignore", "ignore", "inherit"] });
-  run("createdb", ["-h", "127.0.0.1", "-p", String(pgPort), "rlobs_bench"]);
   run("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "migrate"], {
-    env: { ...process.env, DATABASE_URL: databaseUrl, CLICKHOUSE_URL: clickhouse.url },
+    env: { ...process.env, CLICKHOUSE_URL: clickhouse.url },
   });
   await seedBenchmarkData();
+
   const serverLog = path.join(tempDir, "api.log");
   const output = fs.openSync(serverLog, "w");
   apiServer = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
       CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
       RLOBS_AUTH_MODE: "local",
@@ -118,90 +106,114 @@ try {
     await onceClose(apiServer);
   }
   if (clickhouse) await clickhouse.stop();
-  run("pg_ctl", ["-D", path.join(tempDir, "data"), "stop", "-m", "fast"], { allowFailure: true, stdio: ["ignore", "ignore", "ignore"] });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
 async function seedBenchmarkData() {
-  const sqlPath = path.join(tempDir, "seed.sql");
-  fs.writeFileSync(sqlPath, benchmarkSql(), "utf8");
-  run("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-f", sqlPath], { stdio: ["ignore", "inherit", "inherit"] });
-  const metricRows = psqlCapture(metricSeedCopySql());
-  await clickhousePost(clickhouse.url, "INSERT INTO metric_points (org_id, run_id, key, step, value, logged_at) FORMAT TabSeparated", metricRows);
+  const now = new Date();
+  const projectId = randomUUID();
+  const ops = [
+    opRecord("organization", localOrgId, {
+      id: localOrgId,
+      slug: "local",
+      name: "Local",
+      plan_tier: "free",
+      account_type: "customer",
+      seat_limit: 1,
+      created_by_user_id: null,
+      created_at: "1970-01-01T00:00:00Z",
+    }, now),
+    opRecord("project", projectId, {
+      id: projectId,
+      org_id: localOrgId,
+      name: project,
+      description: "Large run benchmark project",
+      created_at: now.toISOString(),
+    }, now),
+  ];
+  const metricRows = [];
+  let newestRunId = null;
+  let newestCreatedAt = null;
+  for (let index = 1; index <= runCount; index += 1) {
+    const runId = randomUUID();
+    const createdAt = new Date(now.getTime() - (runCount - index) * 1000);
+    newestRunId = runId;
+    newestCreatedAt = createdAt;
+    const seed = index % 100;
+    const model = index % 3 === 0 ? "llm" : "rl";
+    const status = index % 97 === 0 ? "failed" : index % 11 === 0 ? "running" : "finished";
+    ops.push(opRecord("run", runId, {
+      id: runId,
+      org_id: localOrgId,
+      project_id: projectId,
+      project,
+      name: `bench-${String(index).padStart(6, "0")}-seed-${seed}`,
+      status,
+      config: {
+        seed,
+        model,
+        optimizer: index % 2 === 0 ? "adamw" : "ppo",
+        hardware: { gpu: index % 4 === 0 ? "H100" : "A100", gpu_count: 1 + (index % 8) },
+      },
+      tags: ["bench", `seed-${seed}`, model],
+      metadata: { notes: `benchmark seed ${seed} reward stability cohort ${index % 17}` },
+      created_at: createdAt.toISOString(),
+      started_at: createdAt.toISOString(),
+      finished_at: status === "running" ? null : new Date(createdAt.getTime() + 60_000 + (index % 500) * 1000).toISOString(),
+    }, createdAt));
+    metricRows.push({
+      org_id: localOrgId,
+      run_id: runId,
+      key: "eval/return_mean",
+      step: 1000,
+      value: 150 + (index % 800),
+      logged_at: clickhouseDate(new Date(createdAt.getTime() + 60 * 60 * 1000)),
+    });
+    if (ops.length >= 5000) {
+      await insertOperationalRecords(ops.splice(0));
+    }
+    if (metricRows.length >= 5000) {
+      await insertMetricPoints(metricRows.splice(0));
+    }
+  }
+  for (let step = 1; step <= 1000; step += 1) {
+    metricRows.push({
+      org_id: localOrgId,
+      run_id: newestRunId,
+      key: "eval/return_mean",
+      step,
+      value: 100 + Math.sin(step / 25) * 10 + step / 10,
+      logged_at: clickhouseDate(newestCreatedAt),
+    });
+  }
+  if (ops.length) await insertOperationalRecords(ops);
+  if (metricRows.length) await insertMetricPoints(metricRows);
 }
 
-function benchmarkSql() {
-  const escapedProject = project.replaceAll("'", "''");
-  return `
-delete from projects where org_id = '00000000-0000-0000-0000-000000000001' and name = '${escapedProject}';
-insert into projects (org_id, name)
-values ('00000000-0000-0000-0000-000000000001', '${escapedProject}');
-
-with project as (
-  select id from projects where org_id = '00000000-0000-0000-0000-000000000001' and name = '${escapedProject}'
-)
-insert into runs (org_id, project_id, name, status, config, tags, metadata, created_at, started_at, finished_at)
-select
-  '00000000-0000-0000-0000-000000000001',
-  project.id,
-  format('bench-%s-seed-%s', lpad(gs::text, 6, '0'), gs % 100),
-  case when gs % 97 = 0 then 'failed' when gs % 11 = 0 then 'running' else 'finished' end,
-  jsonb_build_object(
-    'seed', gs % 100,
-    'model', case when gs % 3 = 0 then 'llm' else 'rl' end,
-    'optimizer', case when gs % 2 = 0 then 'adamw' else 'ppo' end,
-    'hardware', jsonb_build_object('gpu', case when gs % 4 = 0 then 'H100' else 'A100' end, 'gpu_count', 1 + gs % 8)
-  ),
-  array['bench', format('seed-%s', gs % 100), case when gs % 3 = 0 then 'llm' else 'rl' end],
-  jsonb_build_object('notes', format('benchmark seed %s reward stability cohort %s', gs % 100, gs % 17)),
-  now() - ((${runCount} - gs) * interval '1 second'),
-  now() - ((${runCount} - gs) * interval '1 second'),
-  case when gs % 11 = 0 then null else now() - ((${runCount} - gs - 60 - (gs % 500)) * interval '1 second') end
-from generate_series(1, ${runCount}) as gs, project;
-
-analyze runs;
-	`;
+function opRecord(kind, entityId, payload, createdAt) {
+  return {
+    kind,
+    org_id: localOrgId,
+    entity_id: entityId,
+    payload: JSON.stringify(payload),
+    created_at: clickhouseDate(createdAt),
+  };
 }
 
-function metricSeedCopySql() {
-  const escapedProject = project.replaceAll("'", "''");
-  return `
-copy (
-  with project_runs as (
-    select
-      r.org_id,
-      r.id,
-      r.created_at,
-      row_number() over (order by r.created_at) as rn
-    from runs r
-    join projects p on p.org_id = r.org_id and p.id = r.project_id
-    where r.org_id = '00000000-0000-0000-0000-000000000001' and p.name = '${escapedProject}'
-  ),
-  newest as (
-    select org_id, id
-    from project_runs
-    order by created_at desc, id desc
-    limit 1
-  )
-  select
-    org_id,
-    id as run_id,
-    'eval/return_mean' as key,
-    1000::double precision as step,
-    (150 + rn % 800)::double precision as value,
-    to_char((created_at + interval '1 hour') at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') as logged_at
-  from project_runs
-  union all
-  select
-    newest.org_id,
-    newest.id as run_id,
-    'eval/return_mean' as key,
-    gs::double precision as step,
-    (100 + sin(gs / 25.0) * 10 + gs / 10.0)::double precision as value,
-    to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') as logged_at
-  from newest, generate_series(1, 1000) as gs
-) to stdout with (format text, delimiter E'\\t')
-  `;
+async function insertOperationalRecords(records) {
+  await clickhousePost(
+    clickhouse.url,
+    "INSERT INTO operational_records (kind, org_id, entity_id, payload, created_at) FORMAT JSONEachRow",
+    records.map((record) => JSON.stringify(record)).join("\n"),
+  );
+}
+
+async function insertMetricPoints(points) {
+  await clickhousePost(
+    clickhouse.url,
+    "INSERT INTO metric_points (org_id, run_id, key, step, value, logged_at) FORMAT JSONEachRow",
+    points.map((point) => JSON.stringify(point)).join("\n"),
+  );
 }
 
 async function measureEndpoint(name, pathSuffix) {
@@ -288,16 +300,8 @@ function run(command, args, options = {}) {
   }
 }
 
-function psqlCapture(sql) {
-  const result = spawnSync("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-c", sql], {
-    cwd: repo,
-    encoding: "utf8",
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  if (result.status !== 0) {
-    throw new Error(`psql metric seed export failed with status ${result.status}\n${result.stderr}`);
-  }
-  return result.stdout;
+function clickhouseDate(date) {
+  return date.toISOString().replace("T", " ").replace("Z", "");
 }
 
 function numberEnv(name, fallback) {

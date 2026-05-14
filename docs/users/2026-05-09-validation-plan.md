@@ -53,7 +53,7 @@ Keep the first half about their workflow, not this product.
 6. What would make you dual-log to evaluate a replacement?
 7. What would make you switch for one real project?
 8. What would make you trust it for important runs?
-9. Would a hosted Rust/Postgres/ClickHouse backend with exportable schemas, API keys, and future self-host/VPC options feel trustworthy enough for your team?
+9. Would a hosted Rust/ClickHouse backend with exportable schemas, API keys, and future self-host/VPC options feel trustworthy enough for your team?
 
 Then test the wedge:
 

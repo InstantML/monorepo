@@ -2,7 +2,7 @@
 
 Implementation-facing backlog from the W&B docs gap review on 2026-05-10.
 
-Rust/Postgres remains the primary backend. Any item that changes storage, route shape, auth behavior, or a cross-component contract needs a design doc in `docs/design/` and at least two fresh architecture reviews before implementation.
+Rust/ClickHouse remains the primary backend. Any item that changes storage, route shape, auth behavior, or a cross-component contract needs a design doc in `docs/design/` and at least two fresh architecture reviews before implementation.
 
 Primary W&B references reviewed:
 
@@ -28,7 +28,7 @@ Primary W&B references reviewed:
 ## Current Hosted Auth Slice
 
 - [x] Add local Google-style signup/signin for development without committing provider credentials.
-- [x] Store opaque browser sessions as hashed tokens in Postgres and require active memberships for session payloads.
+- [x] Store opaque browser sessions as hashed tokens in ClickHouse and require active memberships for session payloads.
 - [x] Add `organizations.account_type`, `organizations.seat_limit`, `memberships.status`, and transactional seat reservation with owner/admin authorization.
 - [x] Allow session owner/admin users to create copy-once SDK API keys through the existing hashed key path.
 - [x] Add client-safe provider discovery, managed Google placeholder, logout, session lookup, and session cleanup.
@@ -99,7 +99,7 @@ Primary W&B references reviewed:
 
 ## P5 - Reliability And Coverage
 
-- [ ] Add integration tests for every new route with real Postgres and org/project auth checks.
+- [ ] Add integration tests for every new route with real ClickHouse and org/project auth checks.
 - [ ] Add query-plan checks for history, public API filters, 90,000-run search/sort, tag/note search, compare row/column sorting, artifact alias lookup, table pagination, and sweep assignment.
   - First 90,000-run benchmark exists, but it is latency-based rather than `EXPLAIN`-plan asserted.
 - [ ] Add load tests for scalar ingestion, 90,000-run project browsing, table writes, artifact manifest reads, MP3/MP4 media streaming, and public history export.

@@ -1,18 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: rlobs
-      POSTGRES_PASSWORD: rlobs
-      POSTGRES_DB: rlobs
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rlobs -d rlobs"]
-      interval: 2s
-      timeout: 5s
-      retries: 20
-    volumes:
-      - rlobs-postgres:/var/lib/postgresql/data
-
   clickhouse:
     image: clickhouse/clickhouse-server:24.8-alpine
     environment:
@@ -35,8 +21,6 @@ services:
   rlobs:
     build: .
     depends_on:
-      postgres:
-        condition: service_healthy
       clickhouse:
         condition: service_healthy
     ports:
@@ -44,7 +28,6 @@ services:
     volumes:
       - rlobs-artifacts:/data/artifacts
     environment:
-      DATABASE_URL: postgres://rlobs:rlobs@postgres:5432/rlobs
       CLICKHOUSE_URL: http://rlobs:rlobs@clickhouse:8123/rlobs
       RLOBS_BIND_ADDR: 0.0.0.0:8000
       RLOBS_AUTH_MODE: local
@@ -52,6 +35,5 @@ services:
       RLOBS_LOG_FORMAT: json
 
 volumes:
-  rlobs-postgres:
   rlobs-clickhouse:
   rlobs-artifacts:

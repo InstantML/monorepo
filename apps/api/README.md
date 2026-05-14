@@ -92,4 +92,4 @@ Metric contract:
 - Do not load unbounded metric history in list endpoints.
 - Prefer adding new product backend capabilities to `apps/rust-server`.
 - Keep metric step and timestamp compatibility aligned with the Rust server, deprecated Node server, and SDK.
-- Do not add hosted SaaS auth, Postgres migrations, imports, or artifact storage here; those belong in `apps/rust-server`.
+- Do not add hosted SaaS auth, ClickHouse migrations, imports, or artifact storage here; those belong in `apps/rust-server`.

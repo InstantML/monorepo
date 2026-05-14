@@ -1,8 +1,8 @@
 # Deprecated Node Server
 
-This directory contains the deprecated Node.js API compatibility server for Training Observability. The primary backend is now the Rust/Postgres/ClickHouse service in `apps/rust-server`; the main frontend lives in the Next/React app under `apps/web`.
+This directory contains the deprecated Node.js API compatibility server for Training Observability. The primary backend is now the Rust/ClickHouse service in `apps/rust-server`; the main frontend lives in the Next/React app under `apps/web`.
 
-Planning note: `docs/design/2026-05-09-rust-postgres-backend.md` defines the primary Rust/Postgres foundation for the SaaS product, while `docs/architecture/current-system.md` captures the current ClickHouse metric plane. This Node server is retained for route-shape regression tests, JSON migration fixtures, and legacy local fallback.
+Planning note: `docs/design/2026-05-14-clickhouse-only-storage.md` defines the primary Rust/ClickHouse storage direction, while `docs/architecture/current-system.md` captures the current implemented topology. This Node server is retained for route-shape regression tests, JSON migration fixtures, and legacy local fallback.
 
 Compatibility rule: treat this server as the v1 wire-contract oracle. Future Rust work should preserve route shapes, validation behavior, metric ordering, page-scoped summaries, idempotency behavior, importer behavior, artifact metadata/download behavior, and auth-scope semantics unless an accepted design intentionally changes the public contract.
 
@@ -29,7 +29,7 @@ The JSON store now maintains per-run metric summaries at write time in `metricSe
 
 Artifact bytes go through `src/artifact-store.js`. The current implementation is local filesystem storage, but the server no longer writes upload bytes directly in route code.
 
-`better-sqlite3` was attempted earlier but could not build under the available Node 21.7.1 runtime. The accepted large-team deployment path is now the Rust/Postgres design; Node JSON remains the local compatibility store rather than a hidden production database.
+`better-sqlite3` was attempted earlier but could not build under the available Node 21.7.1 runtime. The accepted large-team deployment path is now the Rust/ClickHouse design; Node JSON remains the local compatibility store rather than a hidden production database.
 
 ## API Highlights
 
@@ -77,7 +77,7 @@ http://127.0.0.1:8000
 
 Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:build` and then `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:start`.
 
-Docker Compose from the repo root starts the primary Rust/Postgres/ClickHouse stack, not this deprecated Node compatibility server:
+Docker Compose from the repo root starts the primary Rust/ClickHouse stack, not this deprecated Node compatibility server:
 
 ```bash
 docker compose up --build
@@ -101,9 +101,9 @@ The tests cover server persistence, org/API-key auth, usage scope enforcement, w
 - Do not make demo reset delete user projects.
 - Preserve SDK-compatible endpoints unless a design doc updates the SDK contract.
 - Keep frontend values rendered as text, not injected HTML.
-- Treat `docs/design/2026-05-09-rust-postgres-backend.md` plus `docs/architecture/current-system.md` as the accepted production-storage direction. Node JSON is now deprecated compatibility and migration-source storage.
+- Treat `docs/design/2026-05-14-clickhouse-only-storage.md` plus `docs/architecture/current-system.md` as the accepted production-storage direction. Node JSON is now deprecated compatibility and migration-source storage.
 - Keep W&B-style training observability as the primary product framing; Neptune import support is an adoption path, not the whole backend identity.
-- Treat the Rust/Postgres/ClickHouse service as the primary backend; keep this server passing compatibility tests until migration tooling and legacy fallback are no longer needed.
+- Treat the Rust/ClickHouse service as the primary backend; keep this server passing compatibility tests until migration tooling and legacy fallback are no longer needed.
 
 Known simplification follow-ups from review:
 

@@ -12,7 +12,7 @@ The Runs page is the primary selling surface. It should evolve from a fixed tabl
 
 The supplied W&B screenshots are the visual reference. The implementation should not copy W&B branding or introduce a parallel component system. It should translate the same information architecture into this repo's existing console tokens: compact topbar, left navigation rail, flat panels, low-radius controls, restrained teal accent, and bounded chart rendering.
 
-This design covers the durable product/API direction and a narrow implementation slice. The slice ships a local frontend workspace editor and documents the Rust/Postgres persistence API that should back customer-owned saved workspaces after human auth/user context lands in the Rust request context.
+This design covers the durable product/API direction and a narrow implementation slice. The slice ships a local frontend workspace editor and documents the Rust/ClickHouse persistence API that should back customer-owned saved workspaces after human auth/user context lands in the Rust request context.
 
 ## Research Notes
 
@@ -69,14 +69,14 @@ Important Grafana/Prometheus-style dashboard behaviors to adapt:
   - Resize panel cards in grid-column and grid-row units from a lower-right handle.
   - Persist panel order, section membership, and size through the existing local workspace layout.
 - Preserve existing run summary, metric series, comparison, and artifact API routes.
-- Design a Rust/Postgres persistence API for customer/org-owned workspace views.
+- Design a Rust/ClickHouse persistence API for customer/org-owned workspace views.
 - Keep all data queries bounded; panels must not fetch full metric histories by default.
 - Keep the screen responsive: desktop uses run selector + workspace canvas + optional drawer; mobile stacks filter, run list, panels, and drawer.
 
 ## Non-Goals For First Slice
 
 - Do not implement every W&B advanced expression operator.
-- Do not persist workspace views in Rust/Postgres in this slice; the API is designed below, but implementation waits for human user identity and membership roles.
+- Do not persist workspace views in Rust/ClickHouse in this slice; the API is designed below, but implementation waits for human user identity and membership roles.
 - Do not ship bar, scatter, parallel-coordinate, media, query, or text panels in the first implementation slice.
 - Do not implement report publishing, public sharing, email invites, or social embeds.
 - Do not replace the existing `Metrics`, `Run Detail`, or `Compare` tabs.
@@ -179,52 +179,25 @@ First-slice generation rules:
 - Dropping a panel outside named sections creates or reuses a local `section-unsectioned` section named `Unsectioned`. This is the frontend-local approximation of Grafana's top-level dashboard placement while the current data model keeps panels section-owned.
 - Resize is intentionally coarse in the MVP. It snaps to grid columns/rows rather than storing pixel sizes, which keeps layouts portable across desktop widths and future API persistence.
 
-## Rust/Postgres API Design
+## Rust/ClickHouse API Design
 
 Customer-owned workspace views should be persisted by org and optionally user/project after human auth context exists. This is intentionally not implemented in the first slice because the current Rust `RequestContext` only carries org/API-key service-account context.
 
-```sql
-create table workspace_views (
-  id uuid primary key default gen_random_uuid(),
-  org_id uuid not null references organizations(id) on delete cascade,
-  owner_user_id uuid,
-  project_id uuid,
-  name text not null,
-  scope text not null default 'user' check (scope in ('user', 'org')),
-  mode text not null default 'manual' check (mode in ('automatic', 'manual')),
-  layout jsonb not null,
-  is_default boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  check (jsonb_typeof(layout) = 'object'),
-  foreign key (org_id, project_id) references projects(org_id, id) on delete cascade,
-  foreign key (org_id, owner_user_id) references memberships(org_id, user_id) on delete cascade
-);
+Future ClickHouse operational payload shape:
 
-create index workspace_views_org_project_updated_idx
-  on workspace_views (org_id, project_id, updated_at desc);
+- `id`
+- `org_id`
+- `owner_user_id`
+- `project_id`
+- `name`
+- `scope`: `user` or `org`
+- `mode`: `automatic` or `manual`
+- `layout`: JSON object, capped at 64 KB
+- `is_default`
+- `created_at`
+- `updated_at`
 
-create index workspace_views_org_scope_owner_updated_idx
-  on workspace_views (org_id, scope, owner_user_id, updated_at desc);
-
-create unique index workspace_views_user_name_idx
-  on workspace_views (org_id, owner_user_id, coalesce(project_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(name))
-  where scope = 'user';
-
-create unique index workspace_views_org_name_idx
-  on workspace_views (org_id, coalesce(project_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(name))
-  where scope = 'org';
-
-create unique index workspace_views_user_default_idx
-  on workspace_views (org_id, owner_user_id, coalesce(project_id, '00000000-0000-0000-0000-000000000000'::uuid))
-  where scope = 'user' and is_default;
-
-create unique index workspace_views_org_default_idx
-  on workspace_views (org_id, coalesce(project_id, '00000000-0000-0000-0000-000000000000'::uuid))
-  where scope = 'org' and is_default;
-```
-
-Migration rule: add this only as a future additive `0003_workspace_views.sql` migration. Do not mutate `0001_initial.sql` after it has been applied in local or CI databases.
+Schema rule: add this as a future operational record kind and keep uniqueness/default-view checks in service code until a hosted coordination design exists.
 
 REST routes:
 
@@ -287,13 +260,13 @@ Response shape:
 ```mermaid
 flowchart LR
   SDK["Python SDK"] --> API["Rust API"]
-  API --> PG["Postgres runs, metric_series, metric_points"]
+  API --> CH["ClickHouse operational records and metric tables"]
   UI["Next Runs Workspace"] --> Summary["GET /api/runs/summary"]
   UI --> Series["GET /runs/:id/metrics?key=...&limit=1000"]
   UI --> Views["GET/PUT /api/workspace-views"]
-  Summary --> PG
-  Series --> PG
-  Views --> PG
+  Summary --> CH
+  Series --> CH
+  Views --> CH
 ```
 
 Panel rendering flow:
@@ -388,16 +361,16 @@ Senior product/design review:
 - Finding: Toolbar placement risked duplicating topbar/commandbar controls.
 - Decision: Reuse/rehome existing controls into one Runs workspace filter surface rather than adding a second layer.
 
-Senior Rust/Postgres/API review:
+Senior Rust/ClickHouse/API review:
 
 - Finding: Persisted user views are unsafe before Rust carries human `user_id` and membership roles in `RequestContext`.
 - Decision: First slice is frontend-local only. API/schema remains future design.
 - Finding: Future schema must enforce same-org project/user ownership and avoid nullable uniqueness bugs.
-- Decision: Use composite foreign keys through `(org_id, project_id)` and `(org_id, owner_user_id)`, plus partial unique indexes.
+- Decision: Future persistence should enforce `(org_id, project_id)` and `(org_id, owner_user_id)` ownership plus scoped uniqueness in service code unless a later storage design provides durable constraints.
 - Finding: Project-scoped API keys need restrictions.
 - Decision: Project-scoped keys cannot create org-wide/default workspace views.
 - Finding: Migration must be additive.
-- Decision: Future persistence uses `0003_workspace_views.sql`; do not mutate `0001_initial.sql`.
+- Decision: Future persistence uses a dedicated operational record kind and service-level uniqueness/default checks.
 
 Veteran ML researcher review:
 
@@ -413,7 +386,7 @@ Veteran ML researcher review:
 
 ## Decision
 
-Accepted for a frontend-local first slice implementing W&B-style Runs workspace sections and line panels only. Rust/Postgres workspace persistence is designed but deferred.
+Accepted for a frontend-local first slice implementing W&B-style Runs workspace sections and line panels only. Rust/ClickHouse workspace persistence is designed but deferred.
 
 ## Implementation Notes
 
@@ -422,4 +395,4 @@ Accepted for a frontend-local first slice implementing W&B-style Runs workspace 
 - Added UI smoke coverage for workspace pagination, automatic/manual panels, add/edit/collapse/fullscreen flows, desktop mid-width behavior, and mobile horizontal-overflow checks.
 - Added UI smoke coverage for panel resize handles, moving panels between sections, and preserving the customized placement through reload before resetting back to automatic mode.
 - Added chart-range zoom behavior and fullscreen panel polish: the modal owns the visible title/metric context, hides the duplicate inner card header, keeps the plot bounded to the viewport, and exposes the range brush for zooming inspected sections.
-- Rust/Postgres workspace persistence remains deferred until human user identity and org membership roles are present in the Rust request context.
+- Rust/ClickHouse workspace persistence remains deferred until human user identity and org membership roles are present in the Rust request context.

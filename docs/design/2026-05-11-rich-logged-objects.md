@@ -42,7 +42,7 @@ This replaces the initial draft proposal for a separate `logged_objects` manifes
 
 ## Proposed Design
 
-### Rust/Postgres Storage
+### Rust/ClickHouse Storage
 
 Extend the existing `attributes.type` check to include:
 
@@ -53,33 +53,14 @@ Extend the existing `attributes.type` check to include:
 
 Continue to use `histogram_series` for histograms.
 
-Add `table_object_rows`:
-
-```sql
-create table table_object_rows (
-  id bigint generated always as identity primary key,
-  org_id uuid not null references organizations(id) on delete cascade,
-  attribute_id bigint not null,
-  row_index bigint not null check (row_index >= 0),
-  row jsonb not null check (jsonb_typeof(row) = 'object'),
-  created_at timestamptz not null default now(),
-  foreign key (org_id, attribute_id) references attributes(org_id, id) on delete cascade,
-  unique (org_id, attribute_id, row_index)
-);
-```
-
-Add a composite uniqueness constraint to `attributes` so `table_object_rows` can enforce tenant ownership at the database layer:
-
-```sql
-alter table attributes add constraint attributes_org_id_id_unique unique (org_id, id);
-```
+Add table preview rows as ClickHouse operational records keyed by `attribute_id`. Each row includes `row_index`, a JSON object payload, and `created_at`. The Rust service validates same-org/same-run ownership before writing or reading table rows.
 
 Index query shapes:
 
 - `attributes_rich_object_list_idx` covers selected-run rich-object list order by `(org_id, run_id, coalesce(step, -1) desc, created_at desc, id desc)` without scanning scalar attributes.
 - Existing `attributes_org_run_type_path_step_idx` continues to cover direct typed attribute/path-prefix reads.
 - Existing `attributes_artifact_id_idx` covers linked artifact lookups.
-- The `unique (org_id, attribute_id, row_index)` constraint on `table_object_rows` creates the btree used by paginated table reads, so no redundant row index is needed.
+- The Rust store keeps table rows grouped by attribute id for bounded paginated reads.
 
 ### Rust API
 
@@ -229,13 +210,13 @@ Preview rules:
 
 ## Review Notes
 
-- Rust/Postgres review blocked the separate `logged_objects` manifest as too much schema for the first slice, recommended reusing `attributes`/`artifacts`, and required same-run artifact validation plus tighter payload caps. The accepted design follows that path.
+- Rust/ClickHouse review blocked the separate `logged_objects` manifest as too much schema for the first slice, recommended reusing `attributes`/`artifacts`, and required same-run artifact validation plus tighter payload caps. The accepted design follows that path.
 - Full-stack review blocked Compare fan-out, invalid `artifact_id: "spooled"`, helper signature breakage, vague auth scopes, and loose payload bounds. The accepted design removes Compare object fetches, preserves helper compatibility, rejects async rich-media spool links, states scopes explicitly, and adds validation/benchmark gates.
 
 ## Implementation Notes
 
-- Implemented in Rust with migration `0004_rich_logged_objects.sql`, `POST/GET /api/runs/:run_id/objects`, and `GET /api/objects/:object_id/rows`.
+- Implemented in Rust with ClickHouse-backed operational records, `POST/GET /api/runs/:run_id/objects`, and `GET /api/objects/:object_id/rows`.
 - Implemented in the SDK with `Table`, `Histogram`, `Image`, `Video`, `Audio`, `log_objects`, `log_table_object`, `log_image`, `log_audio`, and `log_video_object` while preserving existing URI/artifact helper signatures.
 - Implemented in the web app with active-run-only object loading in Run Detail and Artifacts. Initial Runs entry and Compare do not add object requests.
-- Post-implementation review fixes: generic attribute writes reject rich media/table types, table-row reads authorize before revealing object kind, object listing maps query kinds to concrete DB types, and migration `0004` adds the rich-object list index.
+- Post-implementation review fixes: generic attribute writes reject rich media/table types, table-row reads authorize before revealing object kind, and object listing maps query kinds to concrete storage types.
 - Local benchmark evidence on 2026-05-11: `RLOBS_OBJECT_BENCH_SAMPLES=10 RLOBS_OBJECT_BENCH_WARMUPS=2 npm run benchmark:rich-objects` with 500 objects and 1,000 table rows measured object list p95 47.5 ms, table-only object list p95 8.3 ms, and table rows p95 1.9 ms.
