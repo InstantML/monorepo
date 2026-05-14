@@ -1,16 +1,37 @@
 """Python SDK for Training Observability."""
 
-from .client import Api, Audio, Client, Histogram, Image, RlobsError, Run, Table, Video, init
+from .client import (
+    Api,
+    Artifact,
+    Audio,
+    Client,
+    File,
+    Histogram,
+    Image,
+    LightningLogger,
+    RlobsError,
+    Run,
+    Table,
+    Text,
+    TransformersCallback,
+    Video,
+    init,
+)
 
 __all__ = [
     "Api",
+    "Artifact",
     "Audio",
     "Client",
+    "File",
     "Histogram",
     "Image",
+    "LightningLogger",
     "RlobsError",
     "Run",
     "Table",
+    "Text",
+    "TransformersCallback",
     "Video",
     "drain_spool",
     "init",

@@ -1,15 +1,35 @@
 import json
+import sqlite3
 import subprocess
+import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 from io import BytesIO
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 import rl_observability as ro
+import rl_observability.client as client_module
 import rl_observability.uploader as uploader
-from rl_observability.client import Client, RlobsError, Run, _environment_metadata, _git_metadata, _source_metadata
+from rl_observability.client import (
+    Client,
+    RlobsError,
+    Run,
+    _ConsoleStream,
+    _LocalStore,
+    _classify_log_payload,
+    _coerce_numeric_values,
+    _collect_system_metrics,
+    _environment_metadata,
+    _git_metadata,
+    _source_metadata,
+    _write_audio_data,
+    _write_image_data,
+    _write_video_data,
+)
 from rlobs_api.server import create_server
 
 
@@ -925,3 +945,812 @@ def test_sdk_http_error_non_error_object_message(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", fail)
     with pytest.raises(RlobsError, match="HTTP Error 500"):
         Client()._request("GET", "/health")
+
+
+def test_log_auto_step_classifies_metrics_text_objects_and_files(tmp_path):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            if path.endswith("/artifacts/upload"):
+                return {"artifact": {"id": f"artifact-{len(calls)}", "name": body["name"], "mime_type": body["mime_type"], "size_bytes": body["size_bytes"]}}
+            return {"object": {"id": len(calls), **body}}
+
+    sample = tmp_path / "sample.txt"
+    sample.write_text("hello", encoding="utf-8")
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    run.log(
+        {
+            "loss": 0.25,
+            "note": "stable",
+            "explicit_text": ro.Text("kept"),
+            "table": ro.Table.from_data([{"epoch": 1, "score": 0.9}]),
+            "hist": ro.Histogram.from_values([0.0, 1.0, 2.0], bins=2),
+            "file": ro.File(str(sample), artifact_type="checkpoint", metadata={"phase": "train"}),
+        }
+    )
+    run.log({"loss": 0.2}, step=5)
+    run.log({"loss": 0.1})
+
+    assert [call[1] for call in calls[:5]] == [
+        "/runs/run-1/metrics",
+        "/api/runs/run-1/attributes",
+        "/api/runs/run-1/objects",
+        "/api/runs/run-1/objects",
+        "/api/runs/run-1/artifacts/upload",
+    ]
+    assert calls[0][2]["step"] == 1
+    assert calls[0][2]["metrics"] == {"loss": 0.25}
+    assert calls[1][2]["attributes"] == [
+        {"path": "note", "type": "string_series", "step": 1, "timestamp": None, "value": "stable"},
+        {"path": "explicit_text", "type": "string_series", "step": 1, "timestamp": None, "value": "kept"},
+    ]
+    assert calls[2][2]["summary"] == {"columns": ["epoch", "score"], "row_count": 1}
+    assert calls[3][2]["kind"] == "histogram"
+    assert calls[4][2]["name"] == "sample.txt"
+    assert calls[4][2]["type"] == "checkpoint"
+    assert calls[4][2]["metadata"] == {"phase": "train", "log_key": "file"}
+    assert calls[-2][2]["step"] == 5
+    assert calls[-1][2]["step"] == 6
+
+
+def test_log_validation_rejects_before_submit_and_expands_supported_lists(tmp_path):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            if path.endswith("/artifacts/upload"):
+                return {"artifact": {"id": f"artifact-{len(calls)}", **body}}
+            return {"object": {"id": len(calls), **body}}
+
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("one", encoding="utf-8")
+    second.write_text("two", encoding="utf-8")
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    with pytest.raises(TypeError, match="numeric"):
+        run.log({"values": [1, 2, 3]})
+    with pytest.raises(TypeError, match="unsupported"):
+        run.log({"bad": object()})
+    with pytest.raises(ValueError, match="log key"):
+        run.log({"": 1})
+    with pytest.raises(ValueError, match="finite"):
+        run.log({"loss": 1.0}, step=float("inf"))
+    with pytest.raises(ValueError, match="nonnegative"):
+        run.log({"loss": 1.0}, step=-1)
+    with pytest.raises(TypeError, match="step"):
+        run.log({"loss": 1.0}, step=True)
+    assert calls == []
+
+    run.log({"tables": [ro.Table(["a"], [[1]]), ro.Table(["a"], [[2]])], "files": [ro.File(str(first)), ro.File(str(second))]})
+
+    assert [call[2]["key"] for call in calls if call[1].endswith("/objects")] == ["tables/0", "tables/1"]
+    assert [call[2]["step"] for call in calls if call[1].endswith("/objects")] == [1, 1]
+    assert [call[2]["name"] for call in calls if call[1].endswith("/artifacts/upload")] == ["first.txt", "second.txt"]
+
+
+def test_wrappers_conversions_and_missing_optional_dependencies(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            if path.endswith("/artifacts/upload"):
+                return {"artifact": {"id": "artifact-1", "name": body["name"], "mime_type": body["mime_type"], "size_bytes": body["size_bytes"]}}
+            return {"object": {"id": 10, **body}}
+
+    class FakeDataFrame:
+        columns = ["name", "score"]
+
+        def to_dict(self, orient):
+            assert orient == "records"
+            return [{"name": "a", "score": 1}]
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    run.log_objects({"frame": ro.Table.from_dataframe(FakeDataFrame())}, step=1)
+    run.log_objects({"image": ro.Image.from_data([[[255, 0, 0]]])}, step=1)
+    run.log_objects({"scaled_image": ro.Image.from_data([[[0.5, 0.0, 0.0]]])}, step=1)
+
+    assert calls[0][2]["rows"] == [{"name": "a", "score": 1}]
+    upload = next(call for call in calls if call[1].endswith("/artifacts/upload"))
+    assert upload[2]["mime_type"] == "image/png"
+
+    real_import = __import__
+
+    def fail_soundfile(name, *args, **kwargs):
+        if name == "soundfile":
+            raise ImportError("no soundfile")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fail_soundfile)
+    with pytest.raises(RlobsError, match="soundfile"):
+        run.log_objects({"audio": ro.Audio.from_data([0.0, 0.1])}, step=1)
+
+    def fail_video_imports(name, *args, **kwargs):
+        if name.startswith("imageio") or name.startswith("moviepy"):
+            raise ImportError("no video dependency")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fail_video_imports)
+    with pytest.raises(RlobsError, match="moviepy or imageio"):
+        run.log_objects({"video": ro.Video.from_data([[[[0, 0, 0]]]])}, step=1)
+
+
+def test_local_store_records_attempted_metrics_events_and_files(tmp_path):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            if path.endswith("/artifacts/upload"):
+                return {"artifact": {"id": "artifact-1", **body}}
+            return {"object": {"id": "object-1", **body}}
+
+    source = tmp_path / "weights.bin"
+    source.write_bytes(b"weights")
+    store = _LocalStore(str(tmp_path / "local"), "run-1")
+    run = Run(client=FakeClient(), run_id="run-1", _local_store=store)
+    run.log({"loss": 1.0, "note": "ok", "table": ro.Table(["a"], [[1]]), "weights": ro.File(str(source))})
+    run.finish()
+
+    database = sqlite3.connect(tmp_path / "local" / "store.sqlite3")
+    metric_rows = database.execute("select key, value, status from metrics").fetchall()
+    event_rows = database.execute("select kind, key, status from events where kind != 'run' order by id").fetchall()
+    file_rows = database.execute("select key, sha256, size_bytes, artifact_type from files").fetchall()
+
+    assert metric_rows == [("loss", 1.0, "attempted")]
+    assert event_rows == [("text", "note", "attempted"), ("object", "table", "attempted")]
+    assert file_rows == [("weights.bin", "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c", 7, "file")]
+
+
+def test_system_metrics_collection_and_sampler_lifecycle(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    class FakePsutil:
+        @staticmethod
+        def cpu_percent(interval=None):
+            assert interval is None
+            return 12.5
+
+        @staticmethod
+        def virtual_memory():
+            return SimpleNamespace(percent=50, used=1024)
+
+        class Process:
+            def __init__(self, pid):
+                assert pid
+
+            def memory_info(self):
+                return SimpleNamespace(rss=2048)
+
+        @staticmethod
+        def disk_usage(path):
+            assert path
+            return SimpleNamespace(percent=60)
+
+        @staticmethod
+        def net_io_counters():
+            return SimpleNamespace(bytes_sent=10, bytes_recv=20)
+
+    class FakeNvml:
+        initialized = False
+        shutdown = False
+
+        @staticmethod
+        def nvmlInit():
+            FakeNvml.initialized = True
+
+        @staticmethod
+        def nvmlDeviceGetCount():
+            return 1
+
+        @staticmethod
+        def nvmlDeviceGetHandleByIndex(index):
+            assert index == 0
+            return "gpu0"
+
+        @staticmethod
+        def nvmlDeviceGetUtilizationRates(handle):
+            assert handle == "gpu0"
+            return SimpleNamespace(gpu=70)
+
+        @staticmethod
+        def nvmlDeviceGetMemoryInfo(handle):
+            assert handle == "gpu0"
+            return SimpleNamespace(used=4, total=8)
+
+        @staticmethod
+        def nvmlDeviceGetPowerUsage(handle):
+            assert handle == "gpu0"
+            return 125000
+
+        @staticmethod
+        def nvmlShutdown():
+            FakeNvml.shutdown = True
+
+    metrics = _collect_system_metrics(psutil_module=FakePsutil, pynvml_module=FakeNvml)
+    assert metrics["system/cpu_percent"] == 12.5
+    assert metrics["system/gpu/0/memory_percent"] == 50.0
+    assert metrics["system/gpu/0/power_watts"] == 125.0
+    assert FakeNvml.initialized
+    assert FakeNvml.shutdown
+
+    monkeypatch.setattr(client_module, "_collect_system_metrics", lambda: {"system/cpu_percent": 1.0})
+    run = Run(client=FakeClient(), run_id="run-1")
+    run.start_system_metrics(interval=0.01)
+    with pytest.raises(RlobsError, match="already running"):
+        run.start_system_metrics(interval=0.01)
+    time.sleep(0.03)
+    run.finish()
+    assert any(call[2]["metrics"] == {"system/cpu_percent": 1.0} for call in calls)
+    with pytest.raises(ValueError, match="positive"):
+        Run(client=FakeClient(), run_id="run-2").start_system_metrics(interval=0)
+
+
+def test_console_capture_writes_through_logs_and_restores(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    stream = BytesIO()
+
+    class TextStream:
+        def write(self, text):
+            stream.write(text.encode("utf-8"))
+            return len(text)
+
+        def flush(self):
+            return None
+
+        def isatty(self):
+            return False
+
+    monkeypatch.setattr(sys, "stdout", TextStream())
+    run = Run(client=FakeClient(), run_id="run-1")
+    run.capture_console()
+    with pytest.raises(RlobsError, match="already enabled"):
+        run.capture_console()
+    sys.stdout.write("hello\n")
+    sys.stdout.flush()
+    run.finish()
+
+    assert stream.getvalue() == b"hello\n"
+    assert calls[0][1] == "/api/runs/run-1/attributes"
+    assert calls[0][2]["attributes"][0]["path"] == "console/stdout"
+    assert calls[0][2]["attributes"][0]["value"] == "hello"
+    assert calls[-1] == ("PATCH", "/runs/run-1", {"status": "finished"})
+
+
+def test_torch_watch_transformers_callback_and_lightning_logger(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {"object": {"id": "object-1", **body}}
+
+    class Handle:
+        def __init__(self):
+            self.removed = False
+
+        def remove(self):
+            self.removed = True
+
+    class Parameter:
+        def __init__(self, values):
+            self.values = values
+            self.hook = None
+            self.handle = Handle()
+
+        def register_hook(self, hook):
+            self.hook = hook
+            return self.handle
+
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self
+
+        def tolist(self):
+            return self.values
+
+    parameter = Parameter([0.0, 1.0, 2.0])
+    model = SimpleNamespace(named_parameters=lambda: [("layer.weight", parameter)])
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    handle = run.watch(model, log="all", log_freq=2, bins=2)
+    parameter.hook([0.0, 0.5])
+    parameter.hook([0.0, 0.5])
+    with pytest.warns(RuntimeWarning, match="gradient logging failed"):
+        parameter.hook(object())
+        parameter.hook(object())
+    handle.remove()
+
+    object_keys = [call[2]["key"] for call in calls if call[1].endswith("/objects")]
+    assert object_keys == ["parameters/layer.weight", "gradients/layer.weight"]
+    assert parameter.handle.removed
+    with pytest.raises(ValueError, match="log_freq"):
+        run.watch(model, log_freq=0)
+    with pytest.raises(ValueError, match="log must"):
+        run.watch(model, log="activations")
+    with pytest.raises(TypeError, match="named_parameters"):
+        run.watch(object())
+
+    class FakeRun:
+        run_id = "fake-run"
+
+        def __init__(self):
+            self.logged = []
+            self.configs = []
+            self.finished = []
+
+        def log(self, metrics, step=None):
+            self.logged.append((metrics, step))
+
+        def log_config(self, params):
+            self.configs.append(params)
+
+        def finish(self, status="finished"):
+            self.finished.append(status)
+
+    fake_run = FakeRun()
+    monkeypatch.setattr(client_module, "init", lambda **kwargs: fake_run)
+    callback = ro.TransformersCallback(project="hf-demo")
+    callback.on_log(SimpleNamespace(project="ignored"), SimpleNamespace(global_step=9), object(), logs={"loss": 1.0, "epoch": "1"})
+    assert fake_run.logged == [({"loss": 1.0}, 9)]
+
+    logger = ro.LightningLogger(project="lightning-demo", run=fake_run)
+    assert logger.name == "lightning-demo"
+    assert logger.version == "fake-run"
+    logger.log_metrics({"acc": 0.8}, step=2)
+    logger.log_hyperparams({"lr": 0.01})
+    logger.finalize("success")
+    assert fake_run.logged[-1] == ({"acc": 0.8}, 2)
+    assert fake_run.configs == [{"lr": 0.01}]
+    assert fake_run.finished == ["success"]
+
+
+def test_wrapper_constructor_edge_cases_and_client_init_options(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path, body))
+        return {"run": {"id": "run-123"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "start_system_metrics", lambda self, interval: setattr(self, "_started_interval", interval))
+    monkeypatch.setattr(Run, "capture_console", lambda self: setattr(self, "_captured_console", True))
+
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        local_store=True,
+        local_store_dir=str(tmp_path / "local"),
+        system_metrics=True,
+        system_metrics_interval=3.0,
+        capture_console=True,
+    )
+
+    assert run._started_interval == 3.0
+    assert run._captured_console is True
+    assert (tmp_path / "local" / "store.sqlite3").exists()
+    run._local_store.close()
+    assert calls[0][1] == "/runs"
+
+    with pytest.raises(ValueError, match="dataframe or data"):
+        ro.Table(dataframe=object(), data=[])
+    assert ro.Table(columns=("a",), rows=({"a": 1},)).rows == [{"a": 1}]
+    assert ro.Table.from_data([{"auto": 1}]).columns == ["auto"]
+    with pytest.raises(TypeError, match="bin count"):
+        ro.Histogram.from_values([1], bins=True)
+    with pytest.raises(ValueError, match="positive"):
+        ro.Histogram.from_values([1], bins=0)
+    with pytest.raises(ValueError, match="at least two"):
+        ro.Histogram.from_values([1], bins=[0])
+    assert ro.Histogram.from_values([1, 1], bins=1).counts == [2.0]
+    assert sum(ro.Histogram.from_values([1, 1], bins=2).counts) == 2.0
+    assert ro.Histogram.from_values([0, 2], bins=[0, 1, 2]).counts == [1.0, 1.0]
+    assert ro.Histogram.from_values([-1, 0, 3], bins=[0, 1, 2]).counts == [1.0, 0.0]
+
+    with pytest.raises(ValueError, match="either path or data"):
+        ro.Image("x.png", data=object())
+    with pytest.raises(ValueError, match="either path or data"):
+        ro.Audio("x.wav", data=object())
+    with pytest.raises(ValueError, match="either path or data"):
+        ro.Video("x.mp4", data=object())
+    assert ro.Image(object()).path is None
+    assert ro.Audio(object()).path is None
+    assert ro.Video(object()).path is None
+
+
+def test_log_helpers_error_paths_and_media_roots(tmp_path):
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    assert run._media_root().name == "run-1"
+    assert Run(client=FakeClient(), run_id="run-1", media_dir=str(tmp_path / "media"))._media_root() == (tmp_path / "media").resolve()
+    assert Run(client=FakeClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path / "spool"))._media_root() == (
+        tmp_path / "spool" / "_media" / "run-1"
+    ).resolve()
+    run._log_system_metrics({})
+    run.finish()
+    run._log_system_metrics({"system/cpu_percent": 1.0})
+
+    with pytest.raises(TypeError, match="dictionary"):
+        _classify_log_payload([])
+    with pytest.raises(ValueError, match="must not be empty"):
+        _classify_log_payload({"items": []})
+    with pytest.raises(TypeError, match="homogeneous"):
+        _classify_log_payload({"items": [ro.File("a"), ro.Table(["a"], [[1]])]})
+    with pytest.raises(TypeError, match="metrics"):
+        run.log_metrics([], step=1)
+    with pytest.raises(TypeError, match="finite numbers"):
+        run.log_metrics({"bad": object()}, step=1)
+    with pytest.raises(TypeError, match="text values"):
+        run.log_text([])
+    with pytest.raises(TypeError, match="text value"):
+        run.log_text({"bad": object()})
+    with pytest.raises(ValueError, match="must not be empty"):
+        ro.Histogram.from_values([])
+    with pytest.raises(RlobsError, match="upload source"):
+        Run(client=FakeClient(), run_id="run-2").upload_file(str(tmp_path / "missing.txt"))
+
+
+def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path):
+    class Figure:
+        def savefig(self, target):
+            target.write_bytes(b"figure")
+
+    class SavedImage:
+        def save(self, target):
+            target.write_bytes(b"image")
+
+    figure = tmp_path / "figure.png"
+    saved = tmp_path / "saved.png"
+    _write_image_data(Figure(), figure)
+    _write_image_data(SavedImage(), saved)
+    assert figure.read_bytes() == b"figure"
+    assert saved.read_bytes() == b"image"
+    with pytest.raises(RlobsError, match="image data"):
+        _write_image_data(None, tmp_path / "none.png")
+
+    real_import = __import__
+
+    def fail_pillow(name, *args, **kwargs):
+        if name == "PIL":
+            raise ImportError("no pillow")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fail_pillow)
+    with pytest.raises(RlobsError, match="Pillow"):
+        _write_image_data([[[0, 0, 0]]], tmp_path / "missing-pillow.png")
+
+    def fail_numpy(name, *args, **kwargs):
+        if name == "numpy":
+            raise ImportError("no numpy")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fail_numpy)
+    with pytest.raises(RlobsError, match="numpy"):
+        _write_image_data([[[0, 0, 0]]], tmp_path / "missing-numpy.png")
+    monkeypatch.setattr("builtins.__import__", real_import)
+
+    writes = []
+
+    class FakeSoundFile:
+        @staticmethod
+        def write(target, data, sample_rate):
+            writes.append((target, data, sample_rate))
+
+    def soundfile_import(name, *args, **kwargs):
+        if name == "soundfile":
+            return FakeSoundFile
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", soundfile_import)
+    _write_audio_data([0.0, 0.1], tmp_path / "audio.wav", 16000)
+    assert writes == [(tmp_path / "audio.wav", [0.0, 0.1], 16000)]
+    with pytest.raises(RlobsError, match="audio data"):
+        _write_audio_data(None, tmp_path / "none.wav", 16000)
+
+    imageio_module = ModuleType("imageio.v3")
+    imageio_calls = []
+    imageio_module.imwrite = lambda target, data, fps: imageio_calls.append((target, data, fps))
+    monkeypatch.setitem(sys.modules, "imageio", ModuleType("imageio"))
+    monkeypatch.setitem(sys.modules, "imageio.v3", imageio_module)
+    monkeypatch.setattr("builtins.__import__", real_import)
+    _write_video_data([[[[0, 0, 0]]]], tmp_path / "video.mp4", 24)
+    assert imageio_calls == [(tmp_path / "video.mp4", [[[[0, 0, 0]]]], 24)]
+    with pytest.raises(RlobsError, match="video data"):
+        _write_video_data(None, tmp_path / "none.mp4", 24)
+
+    class FakeClip:
+        def __init__(self, data, fps):
+            self.data = data
+            self.fps = fps
+
+        def write_videofile(self, target, logger=None):
+            moviepy_calls.append((target, logger, self.data, self.fps))
+
+    moviepy_calls = []
+    moviepy_module = SimpleNamespace(ImageSequenceClip=FakeClip)
+
+    def moviepy_import(name, *args, **kwargs):
+        if name == "imageio.v3":
+            raise ImportError("no imageio")
+        if name == "moviepy.video.io.ImageSequenceClip":
+            return moviepy_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", moviepy_import)
+    _write_video_data([[[[1, 1, 1]]]], tmp_path / "moviepy.mp4", 12)
+    assert moviepy_calls == [(str(tmp_path / "moviepy.mp4"), None, [[[[1, 1, 1]]]], 12)]
+
+    broken_imageio = ModuleType("imageio.v3")
+    broken_imageio.imwrite = lambda target, data, fps: (_ for _ in ()).throw(TypeError("bad video"))
+    monkeypatch.setitem(sys.modules, "imageio.v3", broken_imageio)
+    monkeypatch.setattr("builtins.__import__", real_import)
+    with pytest.raises(RlobsError, match="moviepy or imageio"):
+        _write_video_data([[[[0, 0, 0]]]], tmp_path / "bad-video.mp4", 24)
+
+
+def test_run_media_materialization_audio_and_video_branches(monkeypatch, tmp_path):
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            return {}
+
+    written = []
+    monkeypatch.setattr(client_module, "_write_audio_data", lambda data, target, sample_rate: (written.append(("audio", data, target, sample_rate)), target.write_bytes(b"a")))
+    monkeypatch.setattr(client_module, "_write_video_data", lambda data, target, fps: (written.append(("video", data, target, fps)), target.write_bytes(b"v")))
+    run = Run(client=FakeClient(), run_id="run-1", media_dir=str(tmp_path / "media"))
+
+    audio_path = run._materialize_media_source(ro.Audio.from_data([0.1], sample_rate=8000))
+    video_path = run._materialize_media_source(ro.Video.from_data([[[[0, 0, 0]]]], fps=12, format="mov"))
+
+    assert audio_path.suffix == ".wav"
+    assert video_path.suffix == ".mov"
+    assert written[0][0] == "audio"
+    assert written[0][3] == 8000
+    assert written[1][0] == "video"
+    assert written[1][3] == 12
+
+
+def test_numeric_coercion_and_system_metric_error_branches(monkeypatch):
+    class TypeErrorTensor:
+        def detach(self):
+            return self
+
+        def cpu(self):
+            raise TypeError("not available")
+
+        def numpy(self):
+            return self
+
+        def tolist(self):
+            return {"a": [1, 2], "b": "ignored"}
+
+    assert _coerce_numeric_values(TypeErrorTensor(), "values") == [1.0, 2.0]
+    assert _coerce_numeric_values(3, "values") == [3.0]
+    with pytest.raises(ValueError, match="must not be empty"):
+        _coerce_numeric_values(object(), "values")
+
+    real_import = __import__
+
+    def fail_psutil(name, *args, **kwargs):
+        if name == "psutil":
+            raise ImportError("no psutil")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fail_psutil)
+    assert _collect_system_metrics() == {}
+
+    class GoodPsutil:
+        @staticmethod
+        def cpu_percent(interval=None):
+            return 1
+
+        @staticmethod
+        def virtual_memory():
+            return SimpleNamespace(percent=2, used=3)
+
+        class Process:
+            def __init__(self, pid):
+                return None
+
+            def memory_info(self):
+                return SimpleNamespace(rss=4)
+
+        @staticmethod
+        def disk_usage(path):
+            return SimpleNamespace(percent=5)
+
+        @staticmethod
+        def net_io_counters():
+            return SimpleNamespace(bytes_sent=6, bytes_recv=7)
+
+    def fail_nvml(name, *args, **kwargs):
+        if name == "pynvml":
+            raise ImportError("no nvml")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fail_nvml)
+    assert _collect_system_metrics(psutil_module=GoodPsutil)["system/network_bytes_recv"] == 7.0
+
+    class BrokenPsutil:
+        @staticmethod
+        def cpu_percent(interval=None):
+            raise RuntimeError("broken")
+
+    class NoPowerNvml:
+        @staticmethod
+        def nvmlInit():
+            return None
+
+        @staticmethod
+        def nvmlDeviceGetCount():
+            return 1
+
+        @staticmethod
+        def nvmlDeviceGetHandleByIndex(index):
+            return index
+
+        @staticmethod
+        def nvmlDeviceGetUtilizationRates(handle):
+            return SimpleNamespace(gpu=1)
+
+        @staticmethod
+        def nvmlDeviceGetMemoryInfo(handle):
+            return SimpleNamespace(used=0, total=0)
+
+    with pytest.warns(RuntimeWarning, match="system metrics"):
+        broken = _collect_system_metrics(psutil_module=BrokenPsutil, pynvml_module=NoPowerNvml)
+    assert broken["system/gpu/0/memory_percent"] == 0.0
+
+    class BrokenNvml(NoPowerNvml):
+        @staticmethod
+        def nvmlDeviceGetCount():
+            raise RuntimeError("nvml broken")
+
+    with pytest.warns(RuntimeWarning, match="NVML"):
+        _collect_system_metrics(psutil_module=GoodPsutil, pynvml_module=BrokenNvml)
+
+
+def test_console_stream_and_sampler_error_branches(monkeypatch):
+    class FailingRun:
+        def __init__(self):
+            self.finished = False
+
+        def _is_finished(self):
+            return self.finished
+
+        def _current_log_step(self):
+            return 0
+
+        def log_text(self, data, step=None):
+            raise RlobsError("text failed")
+
+    class Stream:
+        def __init__(self):
+            self.values = []
+
+        def write(self, text):
+            self.values.append(text)
+            return len(text)
+
+        def flush(self):
+            return None
+
+        def isatty(self):
+            return True
+
+    stream = Stream()
+    console = _ConsoleStream(FailingRun(), stream, "console/stdout")
+    console.write("partial")
+    assert stream.values == ["partial"]
+    assert console.isatty() is True
+    with pytest.warns(RuntimeWarning, match="console capture failed"):
+        console.flush()
+    console._run.finished = True
+    console.write("ignored\n")
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    monkeypatch.setattr(client_module, "_collect_system_metrics", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    run.start_system_metrics(interval=0.01)
+    with pytest.warns(RuntimeWarning, match="sampler stopped"):
+        time.sleep(0.03)
+    run.finish()
+
+
+def test_framework_adapter_warning_and_lazy_logger_paths(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {"object": {"id": "object-1", **body}}
+
+    class BadParameter:
+        def register_hook(self, hook):
+            return object()
+
+        def __iter__(self):
+            raise TypeError("not iterable")
+
+    model = SimpleNamespace(named_parameters=lambda: [("bad", BadParameter())])
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.warns(RuntimeWarning, match="log_graph"):
+        with pytest.warns(RuntimeWarning, match="parameter logging failed"):
+            handle = run.watch(model, log="all", log_graph=True)
+    handle.remove()
+    hook = model.named_parameters()[0][1].register_hook(lambda gradient: None)
+    assert hook is not None
+
+    class FakeRun:
+        run_id = "lazy-run"
+
+        def __init__(self):
+            self.logged = []
+            self.finished = []
+
+        def log(self, metrics, step=None):
+            self.logged.append((metrics, step))
+
+        def log_config(self, params):
+            return None
+
+        def finish(self, status="finished"):
+            self.finished.append(status)
+
+    fake_run = FakeRun()
+    monkeypatch.setattr(client_module, "init", lambda **kwargs: fake_run)
+    logger = ro.LightningLogger(project="lazy")
+    logger.log_image("images", ["image"], step=1, caption="x")
+    logger.log_audio("audios", ["audio"], step=2)
+    logger.log_video("videos", ["video"], step=3)
+    logger.finalize()
+    assert logger.version == "lazy-run"
+    assert [entry[1] for entry in fake_run.logged] == [1, 2, 3]
+    assert fake_run.finished == ["finished"]

@@ -35,11 +35,15 @@ Primary W&B references reviewed:
 
 ## P1 - Metric Hot Path
 
-- [ ] Design default step behavior for `run.log()` so users can omit `step` while keeping server-side monotonicity clear.
+- [x] Design and implement default step behavior for `run.log()` so users can omit `step` while keeping server-side monotonicity clear.
+  - Design: `docs/design/2026-05-14-mlop-inspired-sdk-ergonomics.md`
+  - Implemented: implicit steps start at `1`; explicit steps are used as provided and advance the implicit counter.
 - [ ] Add `define_metric` or an equivalent API for summary policy (`last`, `min`, `max`, `best`) and custom x-axis fields once the server supports it.
 - [ ] Add fast batching benchmarks for sync, buffered, process-spool, and offline modes.
-- [ ] Add optional system metric capture for CPU, memory, GPU, network, process info, and environment metadata without slowing scalar metric calls.
+- [x] Add optional system metric capture for CPU, memory, GPU, network, process info, and environment metadata without slowing scalar metric calls.
+  - Implemented: `system_metrics=True` samples psutil/NVML metrics on a small data-sampler thread and logs at the current step.
 - [ ] Add optional console stdout/stderr capture and code/dependency snapshot capture behind explicit settings.
+  - Implemented: `capture_console=True` wraps stdout/stderr and restores them on finish. Remaining: dependency snapshot capture.
 - [ ] Keep artifact uploads, media encoding, and table serialization off the scalar metric hot path.
 
 ## P2 - Rich Data Types
@@ -48,18 +52,22 @@ Primary W&B references reviewed:
   - Design: `docs/design/2026-05-11-rich-logged-objects.md`
   - Remaining wrappers: `Html`, `Plot`, optional `Object3D`/point-cloud payloads, masks/boxes, and NumPy/PIL/pandas optional adapters.
 - [x] Add first-slice `Table` support for typed columns and list-of-rows/list-of-values input.
-  - Remaining: incremental append and pandas DataFrame input behind optional dependencies.
+  - Implemented follow-up: `Table.from_data(...)` and `Table.from_dataframe(...)`.
+  - Remaining: incremental append.
 - [x] Add first-slice `Image` support for file paths and captions.
-  - Remaining: PIL images, NumPy arrays, masks, and bounding boxes.
+  - Implemented follow-up: `Image.from_data(...)` for PIL images, NumPy-like arrays, and matplotlib figures.
+  - Remaining: masks and bounding boxes.
 - [x] Add first-slice `Video` and `Audio` wrappers for file paths plus lightweight metadata. Existing URI-based `log_video` remains compatible; path-upload rich media uses `log_objects`/`log_video_object`/`log_audio`.
+  - Implemented follow-up: `Audio.from_data(...)` with `soundfile` and `Video.from_data(...)` with `imageio`/`moviepy`.
   - Remaining: process-spool media response chaining and optional metadata extraction such as duration.
 - [x] Add `Histogram` support from explicit bins/counts.
-  - Remaining: NumPy-like arrays with optional dependency guards.
+  - Implemented follow-up: `Histogram.from_values(...)` for lists and tensor-like objects.
 - [x] Add serialization tests for the first data types and Rust integration tests for server routes.
 
 ## P3 - Artifacts And Files
 
-- [ ] Design an `Artifact` class with `add_file`, `add_dir`, `add_reference`, metadata, tags, aliases, TTL, and manifest behavior.
+- [ ] Design a full `Artifact` class with `add_file`, `add_dir`, `add_reference`, metadata, tags, aliases, TTL, and manifest behavior.
+  - Implemented first wrapper: `File(...)`/`Artifact(...)` upload a single local path through the existing upload route.
 - [ ] Add `run.log_artifact`, `run.use_artifact`, `artifact.download`, partial file download, and local cache semantics after Rust artifact versions exist.
 - [ ] Add artifact alias/version support including `latest`, `vN`, and custom aliases.
 - [ ] Add external reference artifact support for object stores, HTTP, and filesystem paths where bytes are not uploaded.
@@ -81,7 +89,9 @@ Primary W&B references reviewed:
 
 - [ ] Design minimal `sweep()` and `agent()` APIs after Rust sweep routes are accepted.
 - [ ] Add random/grid sweep agent support before any smarter optimizer.
-- [ ] Add PyTorch Lightning logger, Hugging Face Transformers callback, Keras callbacks, TensorBoard sync, and Gym/RL video helpers only after customer validation picks priority.
+- [ ] Add broader framework integrations after customer validation picks priority.
+  - Implemented first slice: `Run.watch(...)`, `TransformersCallback`, and `LightningLogger`.
+  - Remaining: Keras callbacks, TensorBoard sync, Gym/RL video helpers, and deeper framework-specific behavior.
 - [ ] Add a generic logger protocol so third-party libraries can integrate without depending on private SDK internals.
 - [ ] Keep dual logging to W&B or MLflow optional and behind explicit configuration.
 
