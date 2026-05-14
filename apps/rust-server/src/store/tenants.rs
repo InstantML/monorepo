@@ -119,20 +119,24 @@ impl Store {
         if !self.hosted_clickhouse_enabled() {
             return Ok(local_route(org.id));
         }
-        {
+        let existing_route = {
             let data = self.data.lock().await;
-            if let Some(route) = data.tenant_routes.get(&org.id).cloned() {
-                if route.status == TENANT_ROUTE_READY {
-                    return Ok(route);
-                }
-                if !self.can_retry_route(&route) {
-                    return Err(tenant_unavailable(
-                        route
-                            .error
-                            .as_deref()
-                            .unwrap_or("tenant route is not ready"),
-                    ));
-                }
+            data.tenant_routes.get(&org.id).cloned()
+        };
+        if let Some(route) = existing_route {
+            if route.status == TENANT_ROUTE_READY {
+                return Ok(route);
+            }
+            if let Some(resumed) = self.try_resume_tenant_route(&route).await? {
+                return Ok(resumed);
+            }
+            if !self.can_retry_route(&route) {
+                return Err(tenant_unavailable(
+                    route
+                        .error
+                        .as_deref()
+                        .unwrap_or("tenant route is not ready"),
+                ));
             }
         }
 
@@ -251,7 +255,7 @@ impl Store {
         })
     }
 
-    async fn persist_failed_route(&self, route: TenantRouteRecord) -> AppResult<()> {
+    async fn persist_tenant_route(&self, route: TenantRouteRecord) -> AppResult<()> {
         self.persist_locked(
             TENANT_ROUTE_KIND,
             route.org_id,
@@ -261,6 +265,34 @@ impl Store {
         .await?;
         self.data.lock().await.insert_tenant_route(route);
         Ok(())
+    }
+
+    async fn try_resume_tenant_route(
+        &self,
+        route: &TenantRouteRecord,
+    ) -> AppResult<Option<TenantRouteRecord>> {
+        if route.provisioner != "cloud-service" || route.service_id.is_none() {
+            return Ok(None);
+        }
+        if route.endpoint.is_empty() || route.username.is_empty() || route.database.is_empty() {
+            return Err(tenant_unavailable(
+                "tenant route has a ClickHouse Cloud service id but is missing connection details",
+            ));
+        }
+        let metric_store = self.metric_store_from_route(route).await.map_err(|error| {
+            tenant_unavailable(format!("tenant route resume failed: {}", error.message()))
+        })?;
+        let mut ready = route.clone();
+        ready.status = TENANT_ROUTE_READY.to_string();
+        ready.updated_at = Utc::now();
+        ready.error = None;
+        self.persist_tenant_route(ready.clone()).await?;
+        self.tenant_metric_stores
+            .lock()
+            .await
+            .insert(route.org_id, metric_store);
+        self.tenant_loaded.lock().await.insert(route.org_id);
+        Ok(Some(ready))
     }
 
     async fn provision_cloud_service_tenant(
@@ -281,6 +313,25 @@ impl Store {
             .as_ref()
             .ok_or_else(|| AppError::config("cloud-service provisioner is missing cloud config"))?;
         let created = create_cloud_service(cloud, org).await?;
+        let now = Utc::now();
+        let draft = TenantRouteRecord {
+            org_id: org.id,
+            status: TENANT_ROUTE_PROVISIONING.to_string(),
+            provisioner: "cloud-service".to_string(),
+            endpoint: created.endpoint.clone(),
+            database: "default".to_string(),
+            username: created.username.clone(),
+            password_secret_ref: created
+                .service_id
+                .as_ref()
+                .map(|id| format!("clickhouse-cloud:service:{id}")),
+            password_ciphertext: Some(created.password.clone()),
+            service_id: created.service_id.clone(),
+            created_at: now,
+            updated_at: now,
+            error: None,
+        };
+        self.persist_tenant_route(draft.clone()).await?;
         let connection = ClickHouseConnection {
             endpoint: created.endpoint.clone(),
             username: created.username.clone(),
@@ -289,43 +340,18 @@ impl Store {
         };
         let metric_store = connect_connection(&connection)?;
         if let Err(error) = metric_store::migrate(&metric_store).await {
-            self.persist_failed_route(TenantRouteRecord {
-                org_id: org.id,
-                status: TENANT_ROUTE_FAILED.to_string(),
-                provisioner: "cloud-service".to_string(),
-                endpoint: created.endpoint.clone(),
-                database: "default".to_string(),
-                username: created.username.clone(),
-                password_secret_ref: created
-                    .service_id
-                    .as_ref()
-                    .map(|id| format!("clickhouse-cloud:service:{id}")),
-                password_ciphertext: Some(created.password.clone()),
-                service_id: created.service_id.clone(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-                error: Some(error.message().to_string()),
-            })
-            .await?;
+            let mut failed = draft;
+            failed.status = TENANT_ROUTE_FAILED.to_string();
+            failed.updated_at = Utc::now();
+            failed.error = Some(error.message().to_string());
+            self.persist_tenant_route(failed).await?;
             return Err(error);
         }
-        Ok(TenantRouteRecord {
-            org_id: org.id,
-            status: TENANT_ROUTE_READY.to_string(),
-            provisioner: "cloud-service".to_string(),
-            endpoint: created.endpoint,
-            database: "default".to_string(),
-            username: created.username,
-            password_secret_ref: created
-                .service_id
-                .as_ref()
-                .map(|id| format!("clickhouse-cloud:service:{id}")),
-            password_ciphertext: Some(created.password),
-            service_id: created.service_id,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            error: None,
-        })
+        let mut ready = draft;
+        ready.status = TENANT_ROUTE_READY.to_string();
+        ready.updated_at = Utc::now();
+        ready.error = None;
+        Ok(ready)
     }
 
     async fn metric_store_from_route(&self, route: &TenantRouteRecord) -> AppResult<MetricStore> {
@@ -373,15 +399,21 @@ impl Store {
     }
 
     fn can_retry_route(&self, route: &TenantRouteRecord) -> bool {
-        matches!(
-            self.hosted_clickhouse
-                .as_ref()
-                .map(|hosted| &hosted.provisioner),
-            Some(ClickHouseProvisioner::Database)
-        ) && matches!(
+        let retryable_status = matches!(
             route.status.as_str(),
             TENANT_ROUTE_PROVISIONING | TENANT_ROUTE_FAILED
-        )
+        );
+        match self
+            .hosted_clickhouse
+            .as_ref()
+            .map(|hosted| &hosted.provisioner)
+        {
+            Some(ClickHouseProvisioner::Database) => retryable_status,
+            Some(ClickHouseProvisioner::CloudService) => {
+                retryable_status && route.service_id.is_none()
+            }
+            None => false,
+        }
     }
 }
 
@@ -451,10 +483,25 @@ async fn create_cloud_service(
     org: &OrganizationRow,
 ) -> AppResult<CloudTenant> {
     let client = reqwest::Client::new();
+    let organization_id = resolve_cloud_organization_id(&client, cloud).await?;
+    let service_name = cloud_service_name(org);
+    if let Some(existing) =
+        find_cloud_service_by_name(&client, cloud, &organization_id, &service_name).await?
+    {
+        let service_id = existing
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        return Err(AppError::config(format!(
+            "ClickHouse Cloud service '{service_name}' already exists for org {} as {service_id}, but tenant credentials were not persisted; reset and store credentials before retrying",
+            org.id
+        )));
+    }
     let body = json!({
-        "name": cloud_service_name(org),
+        "name": service_name,
         "provider": cloud.provider,
         "region": cloud.region,
+        "ipAccessList": cloud_ip_access_list(cloud),
         "minReplicaMemoryGb": cloud.min_replica_memory_gb,
         "maxReplicaMemoryGb": cloud.max_replica_memory_gb,
         "numReplicas": cloud.num_replicas
@@ -463,7 +510,7 @@ async fn create_cloud_service(
         client
             .post(cloud_url(
                 cloud,
-                &format!("/organizations/{}/services", cloud.organization_id),
+                &format!("/organizations/{organization_id}/services"),
             ))
             .basic_auth(&cloud.key_id, Some(&cloud.key_secret))
             .json(&body),
@@ -484,8 +531,15 @@ async fn create_cloud_service(
     let (endpoint, username) = endpoint_from_service(service)
         .ok_or_else(|| AppError::internal("ClickHouse Cloud response omitted HTTPS endpoint"))?;
     if let Some(service_id) = &service_id {
-        let waited =
-            wait_for_cloud_service(&client, cloud, service_id, &endpoint, &username).await?;
+        let waited = wait_for_cloud_service(
+            &client,
+            cloud,
+            &organization_id,
+            service_id,
+            &endpoint,
+            &username,
+        )
+        .await?;
         return Ok(CloudTenant {
             endpoint: waited.0,
             username: waited.1,
@@ -501,9 +555,43 @@ async fn create_cloud_service(
     })
 }
 
+async fn find_cloud_service_by_name(
+    client: &reqwest::Client,
+    cloud: &ClickHouseCloudConfig,
+    organization_id: &str,
+    service_name: &str,
+) -> AppResult<Option<Value>> {
+    let value = cloud_request(
+        client
+            .get(cloud_url(
+                cloud,
+                &format!("/organizations/{organization_id}/services"),
+            ))
+            .basic_auth(&cloud.key_id, Some(&cloud.key_secret)),
+    )
+    .await?;
+    Ok(cloud_services_from_response(&value)
+        .into_iter()
+        .find(|service| service.get("name").and_then(Value::as_str) == Some(service_name)))
+}
+
+fn cloud_services_from_response(value: &Value) -> Vec<Value> {
+    let result = value.get("result").unwrap_or(value);
+    if let Some(services) = result.as_array() {
+        return services.clone();
+    }
+    for key in ["services", "data", "items"] {
+        if let Some(services) = result.get(key).and_then(Value::as_array) {
+            return services.clone();
+        }
+    }
+    Vec::new()
+}
+
 async fn wait_for_cloud_service(
     client: &reqwest::Client,
     cloud: &ClickHouseCloudConfig,
+    organization_id: &str,
     service_id: &str,
     fallback_endpoint: &str,
     fallback_username: &str,
@@ -514,10 +602,7 @@ async fn wait_for_cloud_service(
             client
                 .get(cloud_url(
                     cloud,
-                    &format!(
-                        "/organizations/{}/services/{}",
-                        cloud.organization_id, service_id
-                    ),
+                    &format!("/organizations/{organization_id}/services/{service_id}"),
                 ))
                 .basic_auth(&cloud.key_id, Some(&cloud.key_secret)),
         )
@@ -534,6 +619,53 @@ async fn wait_for_cloud_service(
     Ok((fallback_endpoint.to_string(), fallback_username.to_string()))
 }
 
+async fn resolve_cloud_organization_id(
+    client: &reqwest::Client,
+    cloud: &ClickHouseCloudConfig,
+) -> AppResult<String> {
+    if let Some(id) = cloud.organization_id.as_deref() {
+        return Ok(id.to_string());
+    }
+    let value = cloud_request(
+        client
+            .get(cloud_url(cloud, "/organizations"))
+            .basic_auth(&cloud.key_id, Some(&cloud.key_secret)),
+    )
+    .await?;
+    organization_id_from_response(&value).ok_or_else(|| {
+        AppError::config(
+            "ClickHouse Cloud organization id was not configured and discovery returned no organizations",
+        )
+    })
+}
+
+fn organization_id_from_response(value: &Value) -> Option<String> {
+    let result = value.get("result").unwrap_or(value);
+    if let Some(id) = result.get("id").and_then(Value::as_str) {
+        return Some(id.to_string());
+    }
+    if let Some(id) = result
+        .as_array()
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("id"))
+        .and_then(Value::as_str)
+    {
+        return Some(id.to_string());
+    }
+    for key in ["organizations", "data", "items"] {
+        if let Some(id) = result
+            .get(key)
+            .and_then(Value::as_array)
+            .and_then(|items| items.first())
+            .and_then(|item| item.get("id"))
+            .and_then(Value::as_str)
+        {
+            return Some(id.to_string());
+        }
+    }
+    None
+}
+
 async fn cloud_request(builder: reqwest::RequestBuilder) -> AppResult<Value> {
     let response = builder
         .send()
@@ -545,8 +677,18 @@ async fn cloud_request(builder: reqwest::RequestBuilder) -> AppResult<Value> {
         .await
         .map_err(|err| AppError::internal(format!("ClickHouse Cloud response failed: {err}")))?;
     if !status.is_success() {
+        let message = serde_json::from_str::<Value>(&text)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("error")
+                    .or_else(|| value.get("message"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or(text);
         return Err(AppError::internal(format!(
-            "ClickHouse Cloud request failed with {status}"
+            "ClickHouse Cloud request failed with {status}: {message}"
         )));
     }
     serde_json::from_str(&text)
@@ -582,17 +724,31 @@ fn endpoint_from_service(service: &Value) -> Option<(String, String)> {
     Some((format!("https://{host}:{port}"), username))
 }
 
+fn cloud_ip_access_list(cloud: &ClickHouseCloudConfig) -> Vec<Value> {
+    cloud
+        .ip_access_list
+        .iter()
+        .map(|source| {
+            json!({
+                "source": source,
+                "description": "InstantML API"
+            })
+        })
+        .collect()
+}
+
 fn cloud_service_name(org: &OrganizationRow) -> String {
-    let mut stem = org
+    let stem = org
         .slug
         .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-')
-        .collect::<String>();
-    if stem.is_empty() {
-        stem = "org".to_string();
-    }
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let stem = if stem.is_empty() { "Org" } else { &stem };
     let suffix = org.id.simple().to_string();
-    format!("instantml-{stem}-{}", &suffix[..8])
+    format!("InstantML {stem} {}", &suffix[..8])
         .chars()
         .take(50)
         .collect()
@@ -629,6 +785,60 @@ mod tests {
     }
 
     #[test]
+    fn organization_id_from_response_accepts_common_shapes() {
+        assert_eq!(
+            organization_id_from_response(&json!({"result": [{"id": "org-a"}]})),
+            Some("org-a".to_string())
+        );
+        assert_eq!(
+            organization_id_from_response(&json!({"result": {"organizations": [{"id": "org-b"}]}})),
+            Some("org-b".to_string())
+        );
+        assert_eq!(
+            organization_id_from_response(&json!({"organizations": [{"id": "org-c"}]})),
+            Some("org-c".to_string())
+        );
+    }
+
+    #[test]
+    fn cloud_services_from_response_accepts_common_shapes() {
+        assert_eq!(
+            cloud_services_from_response(&json!({"result": [{"name": "service-a"}]})),
+            vec![json!({"name": "service-a"})]
+        );
+        assert_eq!(
+            cloud_services_from_response(&json!({"result": {"services": [{"name": "service-b"}]}})),
+            vec![json!({"name": "service-b"})]
+        );
+        assert_eq!(
+            cloud_services_from_response(&json!({"items": [{"name": "service-c"}]})),
+            vec![json!({"name": "service-c"})]
+        );
+    }
+
+    #[test]
+    fn cloud_ip_access_list_builds_api_shape() {
+        let cloud = ClickHouseCloudConfig {
+            endpoint: "https://api.clickhouse.cloud".to_string(),
+            key_id: "key".to_string(),
+            key_secret: "secret".to_string(),
+            organization_id: Some("org".to_string()),
+            provider: "gcp".to_string(),
+            region: "us-central1".to_string(),
+            ip_access_list: vec!["0.0.0.0/0".to_string()],
+            min_replica_memory_gb: 8,
+            max_replica_memory_gb: 8,
+            num_replicas: 1,
+            wait_timeout: std::time::Duration::from_secs(1),
+        };
+
+        assert_eq!(
+            cloud_ip_access_list(&cloud),
+            vec![json!({"source": "0.0.0.0/0", "description": "InstantML API"})]
+        );
+    }
+
+    #[test]
     fn cloud_service_name_is_bounded() {
         let org = OrganizationRow {
             id: Uuid::parse_str("3e790b99-1150-41f3-9399-c08969f725c2").unwrap(),
@@ -640,6 +850,10 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
         };
-        assert!(cloud_service_name(&org).len() <= 50);
+        let name = cloud_service_name(&org);
+        assert!(name.len() <= 50);
+        assert!(name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == ' '));
     }
 }

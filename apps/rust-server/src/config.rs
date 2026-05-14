@@ -57,9 +57,10 @@ pub struct ClickHouseCloudConfig {
     pub endpoint: String,
     pub key_id: String,
     pub key_secret: String,
-    pub organization_id: String,
+    pub organization_id: Option<String>,
     pub provider: String,
     pub region: String,
+    pub ip_access_list: Vec<String>,
     pub min_replica_memory_gb: u32,
     pub max_replica_memory_gb: u32,
     pub num_replicas: u32,
@@ -192,13 +193,13 @@ fn hosted_clickhouse_config(
             key_secret: required_env("CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET")?,
             organization_id: env::var("RLOBS_CLICKHOUSE_CLOUD_ORG_ID")
                 .or_else(|_| env::var("CLICKHOUSE_CLOUD_ORGANIZATION_ID"))
-                .map_err(|_| {
-                    AppError::config(
-                        "RLOBS_CLICKHOUSE_CLOUD_ORG_ID is required for cloud-service provisioning",
-                    )
-                })?,
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
             provider: env_string("RLOBS_CLICKHOUSE_CLOUD_PROVIDER", "aws"),
             region: env_string("RLOBS_CLICKHOUSE_CLOUD_REGION", "us-east-1"),
+            ip_access_list: env_string_list("RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST")
+                .filter(|values| !values.is_empty())
+                .unwrap_or_else(|| vec!["0.0.0.0/0".to_string()]),
             min_replica_memory_gb: env_u64("RLOBS_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB", 8)?
                 as u32,
             max_replica_memory_gb: env_u64("RLOBS_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 8)?
@@ -245,6 +246,19 @@ fn clickhouse_url_from_env(
 
 fn env_string(key: &str, fallback: &str) -> String {
     env::var(key).unwrap_or_else(|_| fallback.to_string())
+}
+
+fn env_string_list(key: &str) -> Option<Vec<String>> {
+    let raw = env::var(key).ok()?;
+    Some(split_env_string_list(&raw))
+}
+
+fn split_env_string_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn required_env(key: &str) -> AppResult<String> {
@@ -310,5 +324,14 @@ mod tests {
         assert_eq!(unquote_env_value("\"secret\""), "secret");
         assert_eq!(unquote_env_value("'secret'"), "secret");
         assert_eq!(unquote_env_value("secret"), "secret");
+    }
+
+    #[test]
+    fn split_env_string_list_omits_empty_values() {
+        assert_eq!(
+            split_env_string_list(" 10.0.0.1/32, ,0.0.0.0/0 "),
+            vec!["10.0.0.1/32".to_string(), "0.0.0.0/0".to_string()]
+        );
+        assert!(split_env_string_list(" , ").is_empty());
     }
 }

@@ -75,8 +75,12 @@ Environment variables:
 - `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`, `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`: ClickHouse endpoint and credentials for the `instantml_user_data` control table. Values may live in local `.env`; process env wins when both are set.
 - `RLOBS_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted experiments; falling back to the User Data endpoint is only a local/test convenience.
 - `RLOBS_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default: `database`, which is local/test only unless paired with per-org least-privilege ClickHouse users and cross-database denial tests.
-- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `RLOBS_CLICKHOUSE_CLOUD_ORG_ID`, `RLOBS_CLICKHOUSE_CLOUD_PROVIDER`, `RLOBS_CLICKHOUSE_CLOUD_REGION`, `RLOBS_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `RLOBS_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. Cloud-service mode is opt-in because it can create external paid services.
+- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `RLOBS_CLICKHOUSE_CLOUD_ORG_ID`, `RLOBS_CLICKHOUSE_CLOUD_PROVIDER`, `RLOBS_CLICKHOUSE_CLOUD_REGION`, `RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `RLOBS_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `RLOBS_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `RLOBS_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` defaults to `0.0.0.0/0` for demo accessibility; production should set API egress CIDRs. Cloud-service mode is opt-in because it can create external paid services.
 - `RLOBS_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
+
+Shared demo auth:
+
+- Local/dev Google-style auth canonicalizes `hello@instantml.ai` and the legacy typo alias `hello@instantml.com` to one `InstantML Demo` business org. Repeated demo sign-ins reuse that org and tenant route instead of creating another service.
 
 Root helper-only environment variables:
 
@@ -127,6 +131,14 @@ RLOBS_BENCH_RUNS=100000 RLOBS_BENCH_LONG_RUN_STEPS=20000 RLOBS_BENCH_SAMPLES=10 
 ```
 
 The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints. The large-run benchmark uses 100,000 run records by default and gives the newest run 20,000 steps across several metric keys so chart reads exercise the same bounded dashboard path without forcing a multi-billion-row write in normal verification.
+
+Hosted demo seed/benchmark:
+
+```bash
+RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
+```
+
+This command reads the local `.env`, signs in as `hello@instantml.ai`, creates or reuses the `InstantML Demo` cloud-service tenant route, seeds the hosted 100,000-run benchmark only when that project is absent, restarts its temporary Rust API for tenant replay, and prints hosted ClickHouse latency timings. The explicit `RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1` guard is required because the command can create/use paid ClickHouse Cloud services; do not run it from CI or against an account where that would be surprising.
 
 ## Coverage Expectations
 

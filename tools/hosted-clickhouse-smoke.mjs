@@ -48,6 +48,30 @@ try {
     assert.ok(firstKinds.includes(kind), `User Data should contain ${kind}`);
   }
 
+  const demoFirst = await postJson("/api/auth/dev/google", {
+    email: "hello@instantml.ai",
+    display_name: "Different Demo Name",
+    account_type: "individual",
+    org_name: "Per Login Demo Org",
+  });
+  const demoSecond = await postJson("/api/auth/dev/google", {
+    email: "hello@instantml.com",
+    display_name: "Alias Demo Name",
+    account_type: "business",
+    org_name: "Alias Demo Org",
+  });
+  assertNoSensitiveProvisioningFields(demoFirst.body);
+  assert.equal(demoFirst.body.user.primary_email, "hello@instantml.ai");
+  const demoRouteCountAfterFirstSignin = await tenantRouteCount(demoFirst.body.organization.id);
+  assert.ok(demoRouteCountAfterFirstSignin >= 1);
+  assert.equal(demoSecond.body.user.primary_email, "hello@instantml.ai");
+  assert.equal(demoSecond.body.organization.id, demoFirst.body.organization.id);
+  assert.equal(demoSecond.body.organization.name, "InstantML Demo");
+  assert.equal(
+    await tenantRouteCount(demoFirst.body.organization.id),
+    demoRouteCountAfterFirstSignin,
+  );
+
   const keyPayload = await postJson(
     `/api/orgs/${orgId}/api-keys`,
     { name: "Hosted smoke SDK key" },
@@ -257,6 +281,14 @@ async function latestTenantRoute(orgId) {
   );
   assert.equal(rows.length, 1, "expected one latest tenant route row");
   return JSON.parse(rows[0].payload);
+}
+
+async function tenantRouteCount(orgId) {
+  const rows = await clickhouseJsonEachRow(
+    controlUrl,
+    `SELECT count() AS count FROM instantml_user_data WHERE kind = 'tenant_route' AND org_id = '${orgId}' FORMAT JSONEachRow`,
+  );
+  return Number(rows[0]?.count ?? 0);
 }
 
 async function clickhouseCount(url, table, where) {

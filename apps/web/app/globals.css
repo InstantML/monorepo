@@ -714,6 +714,21 @@ p {
   gap: 12px;
 }
 
+.shared-demo-button {
+  justify-content: center;
+}
+
+.auth-form-divider {
+  display: flex;
+  align-items: center;
+  min-height: 1px;
+}
+
+.auth-form-divider span {
+  flex: 1;
+  border-top: 1px solid var(--line-soft);
+}
+
 .auth-form label,
 .segmented-field {
   display: grid;
