@@ -2,6 +2,15 @@ use super::*;
 
 pub async fn usage_summary(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let metric_points = metric_store
+        .count_points_for_org(ctx.org_id)
+        .await
+        .unwrap_or(0);
+    let metric_series = metric_store
+        .count_series_for_org(ctx.org_id)
+        .await
+        .unwrap_or(0);
     let data = store.data.lock().await;
     let org = data
         .organizations
@@ -13,11 +22,6 @@ pub async fn usage_summary(store: &Store, ctx: &RequestContext) -> AppResult<Val
         .filter(|artifact| artifact.org_id == ctx.org_id)
         .filter_map(|artifact| artifact.size_bytes)
         .sum();
-    let metric_points = store
-        .metric_store()
-        .count_points_for_org(ctx.org_id)
-        .await
-        .unwrap_or(0);
     Ok(json!({
         "schema_version": 1,
         "generated_at": Utc::now(),
@@ -31,7 +35,7 @@ pub async fn usage_summary(store: &Store, ctx: &RequestContext) -> AppResult<Val
                 "projects": data.projects.values().filter(|p| p.org_id == ctx.org_id).count(),
                 "runs": data.runs.values().filter(|r| r.org_id == ctx.org_id).count(),
                 "metric_points": metric_points,
-                "metric_series": store.metric_store().count_series_for_org(ctx.org_id).await.unwrap_or(0),
+                "metric_series": metric_series,
                 "artifacts": data.artifacts.values().filter(|a| a.org_id == ctx.org_id).count(),
                 "artifact_bytes_exact": artifact_bytes_exact,
                 "artifact_bytes_unknown": 0

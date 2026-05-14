@@ -124,7 +124,7 @@ pub(super) fn attribute_from_input(
         }
     }
     let row = AttributeRow {
-        id: data.next_attribute_id,
+        id: data.allocate_attribute_id(org_id),
         org_id,
         run_id,
         path: validate_name(Some(&input.path), "attribute path")?,
@@ -136,7 +136,6 @@ pub(super) fn attribute_from_input(
         artifact_id: input.artifact_id,
         created_at: Utc::now(),
     };
-    data.next_attribute_id += 1;
     Ok(row)
 }
 
@@ -526,7 +525,7 @@ mod tests {
             created_at: epoch(),
         });
         data.table_rows.insert(
-            7,
+            (org_id, 7),
             vec![TableObjectRow {
                 row_index: 0,
                 row: json!({"prompt": "hi"}),
@@ -558,8 +557,8 @@ mod tests {
 
         assert!(!data.projects.contains_key(&project_id));
         assert!(!data.runs.contains_key(&run_id));
-        assert!(!data.attributes.contains_key(&7));
-        assert!(!data.table_rows.contains_key(&7));
+        assert!(!data.attributes.contains_key(&(org_id, 7)));
+        assert!(!data.table_rows.contains_key(&(org_id, 7)));
         assert!(!data.artifacts.contains_key(&artifact_id));
     }
 

@@ -727,18 +727,18 @@ async fn context(
     headers: &HeaderMap,
     tenant_route: bool,
 ) -> AppResult<RequestContext> {
-    match header_text(headers, "authorization") {
+    let ctx = match header_text(headers, "authorization") {
         Some(header) => {
             let token = header
                 .strip_prefix("Bearer ")
                 .or_else(|| header.strip_prefix("bearer "))
                 .ok_or_else(|| AppError::unauthorized("authorization must use bearer token"))?;
             let auth = store::authenticate_api_key(&state.store, token).await?;
-            Ok(RequestContext {
+            RequestContext {
                 org_id: auth.org_id,
                 auth: Some(auth),
                 session: None,
-            })
+            }
         }
         None if session_cookie(headers).is_some() => {
             let payload = store::authenticate_session(
@@ -746,7 +746,7 @@ async fn context(
                 session_cookie(headers).expect("checked session cookie"),
             )
             .await?;
-            Ok(RequestContext {
+            RequestContext {
                 org_id: payload.organization.id,
                 auth: None,
                 session: Some(SessionContext {
@@ -754,23 +754,27 @@ async fn context(
                     user_id: payload.user.id,
                     role: payload.membership.role,
                 }),
-            })
+            }
         }
         None if state.config.auth_mode.requires_api_key() && tenant_route => {
-            Err(AppError::unauthorized("missing bearer token"))
+            return Err(AppError::unauthorized("missing bearer token"));
         }
-        None => Ok(RequestContext::local()),
+        None => RequestContext::local(),
+    };
+    if tenant_route {
+        state.store.ensure_tenant_loaded(ctx.org_id).await?;
     }
+    Ok(ctx)
 }
 
 fn require_scope(ctx: &RequestContext, scope: &str, state: &AppState) -> AppResult<()> {
-    if !state.config.auth_mode.requires_api_key() {
-        return Ok(());
+    if let Some(auth) = &ctx.auth {
+        return auth.require_scope(scope);
     }
-    ctx.auth
-        .as_ref()
-        .ok_or_else(|| AppError::unauthorized("missing bearer token"))?
-        .require_scope(scope)
+    if state.config.auth_mode.requires_api_key() {
+        return Err(AppError::unauthorized("missing bearer token"));
+    }
+    Ok(())
 }
 
 async fn session_context(

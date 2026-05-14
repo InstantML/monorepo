@@ -13,6 +13,15 @@ type SessionPayload = {
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
 };
+type DevGoogleAuthPayload = {
+  email: string;
+  display_name?: string;
+  account_type?: string;
+  org_name?: string;
+  seat_emails?: string[];
+};
+const SHARED_DEMO_EMAIL = "hello@instantml.ai";
+const SHARED_DEMO_ORG = "InstantML Demo";
 
 export function AuthFlow({ mode }: { mode: AuthMode }) {
   const api = useMemo(() => new ApiClient(), []);
@@ -52,19 +61,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     return () => controller.abort();
   }, [api]);
 
-  async function submitAuth(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function createDevGoogleSession(payload: DevGoogleAuthPayload) {
     setBusy(true);
     setMessage("Creating your workspace session...");
     try {
-      const payload = await api.post("/api/auth/dev/google", {
-        email,
-        display_name: displayName,
-        account_type: accountType,
-        org_name: orgName || undefined,
-        seat_emails: seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean),
-      });
-      setSession(payload as SessionPayload);
+      const sessionPayload = await api.post("/api/auth/dev/google", payload);
+      setSession(sessionPayload as SessionPayload);
       setMessage("Signed in. Create your first SDK key to finish onboarding.");
       window.history.replaceState(null, "", "/onboarding");
     } catch (error) {
@@ -72,6 +74,26 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await createDevGoogleSession({
+      email,
+      display_name: displayName,
+      account_type: accountType,
+      org_name: orgName || undefined,
+      seat_emails: seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean),
+    });
+  }
+
+  async function submitSharedDemo() {
+    await createDevGoogleSession({
+      email: SHARED_DEMO_EMAIL,
+      display_name: SHARED_DEMO_ORG,
+      account_type: "business",
+      org_name: SHARED_DEMO_ORG,
+    });
   }
 
   async function createKey() {
@@ -116,6 +138,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
 
         {!isOnboarding ? (
           <form className="auth-form" onSubmit={submitAuth}>
+            <button className="shared-demo-button" disabled={busy || !config.dev_auth_enabled} onClick={submitSharedDemo} type="button">
+              <UserPlus size={15} /> Continue as shared demo <ArrowRight size={15} />
+            </button>
+            <div className="auth-form-divider" aria-hidden="true"><span /></div>
             <label>
               Email
               <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />

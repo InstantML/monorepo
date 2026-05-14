@@ -60,7 +60,8 @@ pub async fn list_attributes(
         .get(&run_id)
         .into_iter()
         .flatten()
-        .filter_map(|id| data.attributes.get(id))
+        .filter_map(|id| data.attributes.get(&(ctx.org_id, *id)))
+        .filter(|row| row.run_id == run_id)
         .filter(|row| {
             kind.as_ref()
                 .map(|value| row.kind == *value)
@@ -148,7 +149,7 @@ pub async fn create_object(
         }
     }
     let attribute = AttributeRow {
-        id: data.next_attribute_id,
+        id: data.allocate_attribute_id(ctx.org_id),
         org_id: ctx.org_id,
         run_id,
         path: key,
@@ -196,7 +197,7 @@ pub async fn create_object(
             )
             .await?;
         data.table_rows
-            .insert(rows_record.attribute_id, rows_record.rows);
+            .insert((ctx.org_id, rows_record.attribute_id), rows_record.rows);
     }
     Ok(object)
 }
@@ -229,7 +230,8 @@ pub async fn list_objects(
         .get(&run_id)
         .into_iter()
         .flatten()
-        .filter_map(|id| data.attributes.get(id))
+        .filter_map(|id| data.attributes.get(&(ctx.org_id, *id)))
+        .filter(|row| row.run_id == run_id)
         .filter(|row| {
             matches!(
                 row.kind.as_str(),
@@ -262,7 +264,7 @@ pub async fn list_object_rows(
     let data = store.data.lock().await;
     let object = data
         .attributes
-        .get(&object_id)
+        .get(&(ctx.org_id, object_id))
         .ok_or_else(|| AppError::not_found("object not found"))?;
     let run = fetch_run_in_data(&data, ctx, object.run_id)?;
     ensure_run_access_in_data(ctx, &run)?;
@@ -279,7 +281,7 @@ pub async fn list_object_rows(
     let offset = validate_offset(query.get("offset").map(String::as_str))? as usize;
     let rows = data
         .table_rows
-        .get(&object_id)
+        .get(&(ctx.org_id, object_id))
         .cloned()
         .unwrap_or_default()
         .into_iter()

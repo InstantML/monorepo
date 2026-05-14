@@ -1,5 +1,10 @@
 use super::*;
 
+const SHARED_DEMO_EMAIL: &str = "hello@instantml.ai";
+const SHARED_DEMO_EMAIL_ALIASES: &[&str] = &[SHARED_DEMO_EMAIL, "hello@instantml.com"];
+const SHARED_DEMO_NAME: &str = "InstantML Demo";
+const SHARED_DEMO_ACCOUNT_TYPE: &str = "business";
+
 pub async fn create_user(store: &Store, input: CreateUserRequest) -> AppResult<UserRow> {
     let email = validate_email(input.email.or(input.primary_email).as_deref())?;
     let provider = validate_name(
@@ -100,6 +105,8 @@ pub async fn create_organization(
             .await?;
         data.insert_membership(membership);
     }
+    drop(data);
+    store.ensure_tenant_route(&org).await?;
     Ok(org)
 }
 
@@ -118,14 +125,12 @@ pub async fn create_dev_google_session(
     store: &Store,
     input: DevGoogleAuthRequest,
 ) -> AppResult<CreatedAuthSession> {
-    let email = validate_email(input.email.as_deref())?;
-    let display_name = validate_optional_name(input.display_name.as_deref(), "display_name")?;
-    let account_type = validate_account_type(input.account_type.as_deref())?;
-    let seat_emails = input.seat_emails.unwrap_or_default();
-    let org_name = validate_name(
-        input.org_name.as_deref().or(Some("Personal Workspace")),
-        "organization",
-    )?;
+    let input = normalize_dev_google_auth(input)?;
+    let email = input.email;
+    let display_name = input.display_name;
+    let account_type = input.account_type;
+    let seat_emails = input.seat_emails;
+    let org_name = input.org_name;
     let mut data = store.data.lock().await;
     let user = if let Some(user_id) = data.users_by_email.get(&email).copied() {
         data.users
@@ -157,14 +162,38 @@ pub async fn create_dev_google_session(
             .insert((identity.provider, identity.provider_subject), user.id);
         user
     };
-    if let Some(org) = data
+    let existing_org = data
         .memberships
         .values()
         .filter(|membership| membership.user_id == user.id && membership.status == "active")
         .filter_map(|membership| data.organizations.get(&membership.org_id))
         .find(|org| org.name == org_name && org.account_type == account_type)
         .cloned()
-    {
+        .or_else(|| {
+            data.organizations
+                .values()
+                .find(|org| {
+                    org.created_by_user_id == Some(user.id)
+                        && org.name == org_name
+                        && org.account_type == account_type
+                })
+                .cloned()
+        });
+    if let Some(org) = existing_org {
+        drop(data);
+        store.ensure_tenant_route(&org).await?;
+        let mut data = store.data.lock().await;
+        if !data.memberships.values().any(|membership| {
+            membership.org_id == org.id
+                && membership.user_id == user.id
+                && membership.status == "active"
+        }) {
+            let owner = membership_row(org.id, user.id, "owner", "active");
+            store
+                .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
+                .await?;
+            data.insert_membership(owner);
+        }
         let (session, token) = new_session(user.id, org.id);
         store
             .persist_locked("session", org.id, &session.row.id.to_string(), &session)
@@ -195,6 +224,9 @@ pub async fn create_dev_google_session(
         .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
         .await?;
     data.insert_membership(owner.clone());
+    drop(data);
+    store.ensure_tenant_route(&org).await?;
+    let mut data = store.data.lock().await;
     for email in seat_emails {
         if validate_email(Some(&email)).is_ok() {
             let normalized_email = email.to_ascii_lowercase();
@@ -235,6 +267,43 @@ pub async fn create_dev_google_session(
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
     Ok(CreatedAuthSession { token, payload })
+}
+
+struct NormalizedDevGoogleAuth {
+    email: String,
+    display_name: Option<String>,
+    account_type: String,
+    org_name: String,
+    seat_emails: Vec<String>,
+}
+
+fn normalize_dev_google_auth(input: DevGoogleAuthRequest) -> AppResult<NormalizedDevGoogleAuth> {
+    let email = validate_email(input.email.as_deref())?;
+    if is_shared_demo_email(&email) {
+        return Ok(NormalizedDevGoogleAuth {
+            email: SHARED_DEMO_EMAIL.to_string(),
+            display_name: Some(SHARED_DEMO_NAME.to_string()),
+            account_type: SHARED_DEMO_ACCOUNT_TYPE.to_string(),
+            org_name: SHARED_DEMO_NAME.to_string(),
+            seat_emails: Vec::new(),
+        });
+    }
+    Ok(NormalizedDevGoogleAuth {
+        email,
+        display_name: validate_optional_name(input.display_name.as_deref(), "display_name")?,
+        account_type: validate_account_type(input.account_type.as_deref())?,
+        org_name: validate_name(
+            input.org_name.as_deref().or(Some("Personal Workspace")),
+            "organization",
+        )?,
+        seat_emails: input.seat_emails.unwrap_or_default(),
+    })
+}
+
+fn is_shared_demo_email(email: &str) -> bool {
+    SHARED_DEMO_EMAIL_ALIASES
+        .iter()
+        .any(|candidate| email.eq_ignore_ascii_case(candidate))
 }
 
 pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthSessionPayload> {
@@ -373,10 +442,18 @@ async fn create_api_key_inner(
         .as_deref()
         .map(|value| validate_timestamp(Some(value)))
         .transpose()?;
-    let mut data = store.data.lock().await;
+    let data = store.data.lock().await;
     if !data.organizations.contains_key(&org_id) {
         return Err(AppError::not_found("organization not found"));
     }
+    let org = data
+        .organizations
+        .get(&org_id)
+        .cloned()
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    drop(data);
+    store.ensure_tenant_route(&org).await?;
+    let mut data = store.data.lock().await;
     let project_id =
         resolve_key_project(&data, org_id, input.project_id, input.project.as_deref())?;
     let service_account = ServiceAccountRow {
@@ -526,4 +603,45 @@ pub async fn require_org_admin(
 
 pub fn require_unrestricted_org_access(ctx: &RequestContext) -> AppResult<()> {
     ensure_unrestricted_org_key(ctx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_demo_auth_canonicalizes_aliases() {
+        let normalized = normalize_dev_google_auth(DevGoogleAuthRequest {
+            email: Some("HELLO@instantml.com".to_string()),
+            display_name: Some("Someone Else".to_string()),
+            account_type: Some("customer".to_string()),
+            org_name: Some("Another Org".to_string()),
+            seat_emails: Some(vec!["teammate@example.com".to_string()]),
+        })
+        .unwrap();
+
+        assert_eq!(normalized.email, SHARED_DEMO_EMAIL);
+        assert_eq!(normalized.display_name.as_deref(), Some(SHARED_DEMO_NAME));
+        assert_eq!(normalized.account_type, SHARED_DEMO_ACCOUNT_TYPE);
+        assert_eq!(normalized.org_name, SHARED_DEMO_NAME);
+        assert!(normalized.seat_emails.is_empty());
+    }
+
+    #[test]
+    fn non_demo_auth_preserves_requested_workspace() {
+        let normalized = normalize_dev_google_auth(DevGoogleAuthRequest {
+            email: Some("person@example.com".to_string()),
+            display_name: Some("Person Example".to_string()),
+            account_type: Some("customer".to_string()),
+            org_name: Some("Personal Lab".to_string()),
+            seat_emails: Some(vec!["teammate@example.com".to_string()]),
+        })
+        .unwrap();
+
+        assert_eq!(normalized.email, "person@example.com");
+        assert_eq!(normalized.display_name.as_deref(), Some("Person Example"));
+        assert_eq!(normalized.account_type, "customer");
+        assert_eq!(normalized.org_name, "Personal Lab");
+        assert_eq!(normalized.seat_emails, vec!["teammate@example.com"]);
+    }
 }

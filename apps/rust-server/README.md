@@ -1,11 +1,12 @@
 # Rust Server
 
-This directory contains the primary Rust backend for Training Observability. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
+This directory contains the primary Rust backend for Training Observability. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, and tenant routes, then stores tenant-owned runs and metrics in the org's routed ClickHouse database/service. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Purpose
 
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
+- In hosted ClickHouse mode, store users, orgs, sessions, API keys, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-14-clickhouse-only-storage.md`; the in-process operational index is accepted for local/test and narrow single-process use only.
@@ -70,6 +71,16 @@ Environment variables:
 - `RLOBS_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
 - `RLOBS_DEV_AUTH_ENABLED`: enables the local Google-style auth endpoint when `RLOBS_AUTH_MODE=local`. Loopback local binds enable it by default.
 - `RLOBS_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
+- `RLOBS_HOSTED_CLICKHOUSE_ENABLED`: enables User Data control-plane storage and tenant routing. Default: disabled.
+- `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`, `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`: ClickHouse endpoint and credentials for the `instantml_user_data` control table. Values may live in local `.env`; process env wins when both are set.
+- `RLOBS_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted experiments; falling back to the User Data endpoint is only a local/test convenience.
+- `RLOBS_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default: `database`, which is local/test only unless paired with per-org least-privilege ClickHouse users and cross-database denial tests.
+- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `RLOBS_CLICKHOUSE_CLOUD_ORG_ID`, `RLOBS_CLICKHOUSE_CLOUD_PROVIDER`, `RLOBS_CLICKHOUSE_CLOUD_REGION`, `RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `RLOBS_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `RLOBS_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `RLOBS_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` defaults to `0.0.0.0/0` for demo accessibility; production should set API egress CIDRs. Cloud-service mode is opt-in because it can create external paid services.
+- `RLOBS_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
+
+Shared demo auth:
+
+- Local/dev Google-style auth canonicalizes `hello@instantml.ai` and the legacy typo alias `hello@instantml.com` to one `InstantML Demo` business org. Repeated demo sign-ins reuse that org and tenant route instead of creating another service.
 
 Root helper-only environment variables:
 
@@ -108,17 +119,28 @@ npm run test:ui:direct
 npm run test:rust:contract
 npm run test:rust:sdk
 npm run test:rust:ui
+npm run test:hosted-clickhouse
 ```
 
-These commands start disposable ClickHouse and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the Playwright smoke with Rust as `RLOBS_API_BASE`, including landing, local auth, onboarding, and dashboard routes. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
+These commands start disposable ClickHouse and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the Playwright smoke with Rust as `RLOBS_API_BASE`, including landing, local auth, onboarding, and dashboard routes. `test:hosted-clickhouse` exercises hosted-shaped routing end to end: local sign-up writes User Data control records, API-key creation writes User Data records, API-key scopes are enforced, direct and Python SDK ingestion write to the tenant database, safe provisioning payloads omit tenant secrets, and dashboard summary reads survive an API restart. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
 
 Large-run benchmark:
 
 ```bash
-RLOBS_BENCH_RUNS=90000 RLOBS_BENCH_SAMPLES=10 RLOBS_BENCH_WARMUPS=2 RLOBS_BENCH_WEB=1 npm run benchmark:large-runs
+RLOBS_BENCH_RUNS=100000 RLOBS_BENCH_LONG_RUN_STEPS=20000 RLOBS_BENCH_SAMPLES=10 RLOBS_BENCH_WARMUPS=2 RLOBS_BENCH_WEB=1 npm run benchmark:large-runs
 ```
 
-The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints.
+The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints. The large-run benchmark uses 100,000 run records by default and gives the newest run 20,000 steps across several metric keys so chart reads exercise the same bounded dashboard path without forcing a multi-billion-row write in normal verification.
+
+Hosted demo seed/benchmark:
+
+```bash
+RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
+```
+
+This command reads the local `.env`, signs in as `hello@instantml.ai`, creates or reuses the `InstantML Demo` cloud-service tenant route, seeds the hosted 100,000-run benchmark only when that project is absent, restarts its temporary Rust API for tenant replay, and prints hosted ClickHouse latency timings. The explicit `RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1` guard is required because the command can create/use paid ClickHouse Cloud services; do not run it from CI or against an account where that would be surprising.
+
+In `cloud-service` hosted mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse service, not in the User Data database.
 
 ## Coverage Expectations
 
@@ -136,6 +158,7 @@ Coverage exception:
 - `Cargo.toml`: Rust dependencies and binary target.
 - `src/main.rs`: CLI subcommands and server startup.
 - `src/config.rs`: environment config and local defaults.
+- `src/control_store.rs`: User Data ClickHouse control-plane table and replay helpers for hosted mode.
 - `src/http/mod.rs`: HTTP app state, route table, and middleware wiring.
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.
 - `src/store/mod.rs`: ClickHouse-backed operational index core and module re-exports.
@@ -148,6 +171,7 @@ Coverage exception:
 - `src/store/demo.rs`: demo project reset and synthetic data generation.
 - `src/store/access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
 - `src/store/summaries.rs`: run summaries, artifact counts, metric-series conversion, and export metric reads.
+- `src/store/tenants.rs`: hosted tenant route records, database/cloud provisioners, lazy tenant store loading, and tenant MetricStore selection.
 - `src/store/validation.rs`: shared store validation, JSON value shaping, slugging, and unit tests for pure store logic.
 - `src/metric_store.rs`: ClickHouse schema migration, operational record append/load helpers, metric point writes, and metric-series reads.
 - `src/domain.rs`: DTOs and validation helpers.
@@ -158,6 +182,7 @@ Coverage exception:
 ## Design Docs
 
 - `docs/design/2026-05-14-clickhouse-only-storage.md`
+- `docs/design/2026-05-14-hosted-clickhouse-routing.md`
 - `docs/design/2026-05-10-run-tags-notes-editing.md`
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`

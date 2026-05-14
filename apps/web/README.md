@@ -20,7 +20,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 Current navigation and comparison controls:
 
 - Route-backed navigation for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark so filters and saved-view controls have more room.
-- Unauthenticated visitors land on `/`, can sign in or sign up through the explicitly labeled local dev Google-style flow, reserve business seats, create a copy-once SDK API key, and then enter `/dashboard/runs`.
+- Unauthenticated visitors land on `/`, can sign in or sign up through the explicitly labeled local dev Google-style flow, reserve business seats, create a copy-once SDK API key, and then enter `/dashboard/runs`. The shared demo action signs in as `hello@instantml.ai` and reuses the `InstantML Demo` org/service. In hosted ClickHouse mode, that same local/dev flow writes users/orgs/sessions/API keys to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
 - Light/dark mode toggle with a persisted local preference. Dark mode uses a neon-navy palette: near-black blue canvas, graphite/navy raised surfaces, electric blue accents, and subdued blue selection states.
 - Refresh/loading experience: the root layout applies the saved theme before paint and the app shows a branded loading shell during the first dashboard API load instead of flashing an empty white page.
@@ -34,7 +34,7 @@ Current navigation and comparison controls:
 - First-slice panel support is intentionally line-plot only. Bar/scatter/parallel/media/query/text panels need the future field catalog and persisted layout API described in `docs/design/2026-05-10-runs-workspace-panels.md`.
 - Agent-review hardening: run names inspect a primary run, checkboxes are reserved for compare selection, visible table-column preferences remain available through the `Columns` menu, and empty filters render a clear action in the run rail.
 - Tags and notes are first-class run identification fields in the current UI: the Runs table has a default `Notes` column, the workspace selector shows compact tag chips plus a one-line note preview, and server-backed search matches tag/note text through the Rust `q` route. Run Detail and Compare share a small editor that saves `runs.tags` and `metadata.notes` through `PATCH /runs/:id`; Compare has its own edit-run picker so annotation does not change the reference run.
-- Large-run browsing is server-backed: the Runs workspace uses Rust `next_cursor` values for Next/Previous pagination, falls back to offset pagination for the deprecated Node compatibility server, clears cursors when filters/sorts/page size change, and disables pagination while a page request is in flight. The first 90,000-run benchmark slice measured production first useful render at 387 ms locally on 2026-05-11.
+- Large-run browsing is server-backed: the Runs workspace uses Rust `next_cursor` values for Next/Previous pagination, falls back to offset pagination for the deprecated Node compatibility server, clears cursors when filters/sorts/page size change, and disables pagination while a page request is in flight. The benchmark target is now 100,000 run records with a 20,000-step long-run series; the earlier 90,000-run benchmark slice measured production first useful render at 387 ms locally on 2026-05-11.
 - Sort runs by newest, selected metric latest/best, name, status, or duration.
 - Group chart series by seed, first tag, or selected config keys.
 - Switch chart x-axis between step and logged time.
@@ -118,9 +118,12 @@ npm run web:build
 npm run test:ui
 npm run test:ui:direct
 npm run test:rust:ui
+npm run test:hosted-clickhouse
 ```
 
 The browser smoke starts disposable ClickHouse and the Rust API by default, builds the Next app, starts `next start`, verifies the public landing page does not fetch dashboard summaries, signs up through the local dev Google-style flow, creates a copy-once SDK API key, seeds demo data through the signed-in session, exercises route-backed tabs with Playwright, verifies run-row click selection plus inspection behavior, exercises Runs workspace add/edit/collapse/fullscreen panel flows, checks drag-and-resize layout persistence, checks focus traps, validates tokenized run search and note search, edits tags/notes from Run Detail and Compare, asserts selected-run-only workspace plotting beyond each panel's automatic preview cap, checks that workspace charts grow and shrink with selected runs, asserts visible panel action affordances, hovers workspace chart points for run/value tooltips, verifies fullscreen chart range zoom, verifies rich-object fetches are gated to Run Detail/Artifacts, table previews are bounded, histogram/image/fallback media previews render, Compare does not add object fan-out, toggles columns, checks empty filters, hovers chart points, validates Compare column/row layouts, addable Compare metric columns, Compare row/run/config sorting, reference switching, non-anonymous metric labels, Compare artifact context, saved-view restoration, artifact/API affordances, and captures a screenshot. `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` all use the Rust/ClickHouse harness.
+
+The hosted ClickHouse smoke is API/SDK-facing rather than browser-facing: it signs up, creates an SDK key, verifies User Data control rows, writes direct and Python SDK runs into the routed tenant database, restarts the API, and verifies the dashboard summary endpoint can still read the ingested runs.
 
 The smoke also covers the keyboard-workflow MVP: shortcut help, quick search to run detail, compact rail-label search for long run names, Runs selector collapse/restore, Runs/canvas focus handoff, `Esc` drawer dismissal, workspace undo/redo, and fullscreen panel arrow traversal.
 
@@ -166,6 +169,7 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - `docs/design/2026-05-11-analysis-tabs-redesign.md`
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
+- `docs/design/2026-05-14-hosted-clickhouse-routing.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 
 ## Notes for Future Agents
