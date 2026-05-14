@@ -4,7 +4,7 @@ Owner-editable development backlog for Training Observability.
 
 Current product goal: build a W&B-style training observability SaaS for smaller startups, research labs, and lean ML teams that wins on speed, UI quality, predictable pricing, and transparent data ownership.
 
-Current architecture rule: the Rust/Postgres server is the primary backend path for local and hosted development: `Next/React frontend -> Rust API -> managed Postgres -> artifact storage` and `Python SDK/uploader -> Rust API -> managed Postgres -> artifact storage`. The Node server is deprecated and retained only as a compatibility oracle, JSON migration source, and legacy fallback.
+Current architecture rule: the Rust server is the primary backend path for local and hosted development: `Next/React frontend -> Rust API -> managed Postgres + ClickHouse -> artifact storage` and `Python SDK/uploader -> Rust API -> managed Postgres + ClickHouse -> artifact storage`. The Node server is deprecated and retained only as a compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Completed Baseline
 
@@ -151,7 +151,7 @@ Goal: keep the UI as the product moat while the backend changes underneath it.
 
 ## P6 - SDK And Uploader Hardening
 
-Goal: make the training-loop hot path trustworthy against Rust/Postgres.
+Goal: make the training-loop hot path trustworthy against Rust/Postgres/ClickHouse.
 
 - [ ] Add SDK integration tests that run against Rust for sync mode, buffered mode, offline replay, process spool, uploader retry, and file upload.
 - [ ] Confirm `RLOBS_API_KEY` and explicit `api_key` work against Rust API-key auth.
@@ -169,7 +169,7 @@ Goal: make the training-loop hot path trustworthy against Rust/Postgres.
 
 Goal: make a beta deployment boring enough to trust.
 
-- [ ] Add Docker Compose path for Postgres, Rust API, worker, Next web, and local artifact volume.
+- [ ] Add complete Docker Compose path for Postgres, ClickHouse, Rust API, worker, Next web, and local artifact volume.
 - [ ] Add health, readiness, migration, and seed/bootstrap commands for local hosted-mode testing.
 - [ ] Prepare first hosted beta deployment on the preferred stack: Cloud Run, Neon, Cloudflare R2, and Clerk or equivalent managed auth.
 - [ ] Add secret management guidance for database URLs, API-key pepper if used, auth provider keys, object storage credentials, and bootstrap tokens.
@@ -182,9 +182,9 @@ Goal: make a beta deployment boring enough to trust.
 
 Goal: prove speed and reliability claims before making them public.
 
-- [ ] Add Rust/Postgres scale smoke for the daily small-team case: 50 runs, 20 metrics per run, and 1,000 points per metric.
-- [x] Add Rust/Postgres scale smoke for the design-partner case: 90,000 runs in one project with realistic names, tags, notes, statuses, configs, metric summaries, and artifact counts.
-- [x] Measure Runs page first useful render under 2 seconds for the 90,000-run project on local production build plus local Rust/Postgres.
+- [ ] Add Rust/Postgres/ClickHouse scale smoke for the daily small-team case: 50 runs, 20 metrics per run, and 1,000 points per metric.
+- [x] Add Rust/Postgres/ClickHouse scale smoke for the design-partner case: 90,000 runs in one project with realistic names, tags, notes, statuses, configs, metric summaries, and artifact counts.
+- [x] Measure Runs page first useful render under 2 seconds for the 90,000-run project on local production build plus local Rust/Postgres/ClickHouse.
   - 2026-05-11 local result: 387 ms with `RLOBS_BENCH_WEB=1`.
 - [x] Measure server-side run search/filter/sort p95 under 500 ms for the 90,000-run project with indexed status, tag, note/name text, config, and selected metric-summary sorts.
   - 2026-05-11 local result: `q=seed 13` p95 118 ms; `metric-best` p95 66 ms.
@@ -300,7 +300,7 @@ Component detail backlogs:
 
 ## User Notes
 
-- [x] Brendan product notes: Rust/Postgres is now the primary backend; keep Node only as deprecated compatibility/migration support while aiming to beat W&B on speed, UI quality, and predictable pricing.
+- [x] Brendan product notes: Rust/Postgres/ClickHouse is now the primary backend; keep Node only as deprecated compatibility/migration support while aiming to beat W&B on speed, UI quality, and predictable pricing.
 - [x] Target customer notes: smaller startups, research labs, lean ML teams, RL/robotics/simulation teams, fine-tuning teams, and ML platform owners who already understand experiment tracking.
 - [x] Feature ideas to validate before implementation: W&B dual logging, MLflow import depth, hosted admin/billing UI, self-host/VPC, public naming, and open-source launch model.
 - [x] W&B docs gap review completed on 2026-05-10 and translated into root, Rust server, and Python SDK TODOs.

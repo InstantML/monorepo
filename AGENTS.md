@@ -144,10 +144,10 @@ Add subdirectory READMEs only when commands, ownership, conventions, public APIs
 Expected structure:
 
 ```text
-rl-observability/
+monorepo/
   apps/
     api/        # Python bootstrap/reference API
-    rust-server/  # Primary Rust API + Postgres schema/migrations
+    rust-server/  # Primary Rust API + Postgres migrations + ClickHouse schema
     server/     # Deprecated Node compatibility API
     web/        # Next/React frontend application
   packages/
@@ -284,9 +284,9 @@ The first implementation should be the smallest useful end-to-end workflow:
 
 Defer auth, imports, artifacts, checkpoint lineage, deployment hardening, and shared internal packages until this path works.
 
-Status: this first vertical slice is complete. The current strategy now positions the product as Training Observability: a general training-loop observability product and W&B-style competitor. Near-term work should prioritize reliable SDK ingestion, a fast/comprehensible comparison UI, durable Rust/Postgres/object storage, and importer/dual-logging paths as adoption tools.
+Status: this first vertical slice is complete. The current strategy now positions the product as Training Observability: a general training-loop observability product and W&B-style competitor. Near-term work should prioritize reliable SDK ingestion, a fast/comprehensible comparison UI, durable Rust/Postgres/ClickHouse/object storage, and importer/dual-logging paths as adoption tools.
 
-Accepted hosted backend direction: `Next/React frontend -> Rust API -> managed Postgres -> artifact storage` and `Python SDK/uploader -> Rust API -> managed Postgres -> artifact storage` is now the default setup. Rust work should use `axum + SQLx + Postgres`, preserve current route shapes, keep `org_id` on tenant-owned data, maintain metric summaries at ingestion time, and keep the shared Node compatibility smokes available before removing or changing legacy route behavior.
+Accepted hosted backend direction: `Next/React frontend -> Rust API -> managed Postgres + ClickHouse -> artifact storage` and `Python SDK/uploader -> Rust API -> managed Postgres + ClickHouse -> artifact storage` is now the default setup. Rust work should use `axum + SQLx + Postgres`, preserve current route shapes, keep `org_id` on tenant-owned data, maintain metric summaries at ingestion time, store high-volume metric rows in ClickHouse, and keep the shared Node compatibility smokes available before removing or changing legacy route behavior.
 
 Current known simplicity/comprehensibility follow-ups:
 

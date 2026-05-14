@@ -7,7 +7,7 @@ Use the root `../SETUP.md` before running app commands from a fresh clone.
 Expected apps:
 
 - `api/`: Python bootstrap/reference API service.
-- `rust-server/`: Primary Rust API and worker service home. It contains the accepted Postgres schema migration, runnable service commands, and Postgres-backed product API.
+- `rust-server/`: Primary Rust API and worker service home. It contains the accepted Postgres schema migration, ClickHouse metric-store integration, runnable service commands, and product API.
 - `server/`: Deprecated Node.js compatibility server for route-shape regression tests, JSON migration fixtures, and legacy local fallback.
 - `web/`: Next/React frontend web application.
 
@@ -18,8 +18,8 @@ Current backend/product API work should start in `rust-server/`. Preserve `serve
 Primary local/hosted target:
 
 ```text
-apps/web -> apps/rust-server -> managed Postgres -> artifact storage
-packages/python-sdk/uploader -> apps/rust-server -> managed Postgres -> artifact storage
+apps/web -> apps/rust-server -> managed Postgres + ClickHouse -> artifact storage
+packages/python-sdk/uploader -> apps/rust-server -> managed Postgres + ClickHouse -> artifact storage
 ```
 
 Deprecated local compatibility target:
@@ -29,4 +29,4 @@ apps/web -> apps/server -> .rlobs/rlobs.json + local artifact files
 packages/python-sdk/uploader -> apps/server -> .rlobs/rlobs.json + local artifact files
 ```
 
-Rust work should preserve documented route shapes, use the migration in `rust-server/migrations/`, and keep `npm run test:contract`, `npm run test:rust:sdk`, `npm run test:ui`, and Node compatibility checks passing.
+Rust work should preserve documented route shapes, use the migration in `rust-server/migrations/`, keep ClickHouse metric-store behavior compatible, and keep `npm run test:contract`, `npm run test:rust:sdk`, `npm run test:ui`, and Node compatibility checks passing.

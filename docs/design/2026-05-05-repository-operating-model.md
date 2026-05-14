@@ -48,10 +48,10 @@ The primary users of this design are future agents and contributors. They need a
 The repository should use this structure:
 
 ```text
-rl-observability/
+monorepo/
   apps/
     api/        # Python bootstrap/reference API
-    rust-server/  # Primary Rust API + Postgres migrations
+    rust-server/  # Primary Rust API + Postgres migrations + ClickHouse schema
     server/     # Deprecated Node compatibility API and JSON migration source
     web/        # Next/React frontend application
   packages/
@@ -118,7 +118,7 @@ The first preferred vertical slice is:
 
 Auth, imports, artifacts, checkpoint lineage, deployment hardening, and shared internal packages should be deferred until this path works.
 
-Current status: the first vertical slice is complete. Follow-up work should preserve the operating model while focusing on the current `PRODUCT_STRATEGY.md` priorities: W&B-style training observability, reliable SDK ingestion, durable Rust/Postgres/object storage, a fast/comprehensible comparison UI, and importer/dual-logging paths as adoption tools.
+Current status: the first vertical slice is complete. Follow-up work should preserve the operating model while focusing on the current `PRODUCT_STRATEGY.md` priorities: W&B-style training observability, reliable SDK ingestion, durable Rust/Postgres/ClickHouse/object storage, a fast/comprehensible comparison UI, and importer/dual-logging paths as adoption tools.
 
 ## Component Impact
 
@@ -141,7 +141,7 @@ Python SDK:
 
 Storage:
 
-- Current product storage is Postgres through `apps/rust-server`, with local artifact storage behind an abstraction and future S3-compatible object storage planned for hosted bytes.
+- Current product storage is Postgres metadata plus ClickHouse metric time series through `apps/rust-server`, with local artifact storage behind an abstraction and future S3-compatible object storage planned for hosted bytes.
 - Future storage changes must have their own design docs.
 
 Docs:

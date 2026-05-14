@@ -4,6 +4,17 @@ Operational helper scripts for Training Observability live here. Keep scripts sm
 
 Use the root `../SETUP.md` for fresh-clone setup. Node helpers assume `npm ci` has been run from the repo root.
 
+## Local ClickHouse Helper
+
+`local-clickhouse.mjs` is shared by `dev-rust-api.mjs`, Rust service smokes, and Rust benchmarks. It first checks `CLICKHOUSE_URL`, then starts a local `clickhouse server` only for loopback URLs that use the default user with no password. The dev helper writes generated state under `.rlobs/clickhouse` and logs under `.rlobs/clickhouse-logs`; smoke and benchmark scripts use temporary directories and clean them up afterward.
+
+Useful overrides:
+
+- `CLICKHOUSE_URL`: target ClickHouse HTTP URL. Default: `http://default:@127.0.0.1:8123/rlobs`.
+- `RLOBS_DEV_CHDATA`: generated ClickHouse data path for `npm run dev:api`.
+- `RLOBS_DEV_CH_LOG_DIR`: generated ClickHouse log path for `npm run dev:api`.
+- `RLOBS_DEV_CH_TCP_PORT`, `RLOBS_DEV_CH_INTERSERVER_PORT`, `RLOBS_DEV_CH_MYSQL_PORT`, `RLOBS_DEV_CH_POSTGRESQL_PORT`: optional non-HTTP protocol ports when avoiding local collisions.
+
 ## Neptune JSON Import
 
 `import-neptune-json.mjs` sends a Neptune Exporter-shaped JSON fixture to the Training Observability import endpoint. Neptune import support is a migration path; the current product strategy is broader W&B-style training observability.
@@ -51,7 +62,7 @@ RLOBS_SCALE_RUNS=5 RLOBS_SCALE_METRICS=4 RLOBS_SCALE_POINTS=100 node tools/scale
 
 ## Rust Large-Run Benchmark
 
-`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 90,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 1,000-point chart series. It starts disposable Postgres, applies Rust migrations, seeds data, runs `ANALYZE`, starts the Rust API, and prints JSON p50/p95 timings.
+`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 90,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 1,000-point chart series. It starts disposable Postgres and ClickHouse, applies Rust migrations, seeds metadata into Postgres and metric rows into ClickHouse, runs `ANALYZE`, starts the Rust API, and prints JSON p50/p95 timings.
 
 ```bash
 npm run benchmark:large-runs
@@ -71,7 +82,7 @@ The JSON output includes timings for project newest summary, org newest summary,
 
 ## Rust Rich-Object Benchmark
 
-`rust-rich-objects-benchmark.mjs` is the regression gate for the first table/histogram/media object slice. It starts disposable Postgres, applies Rust migrations, seeds one run with 500 rich object attributes and a 1,000-row table preview, starts the Rust API, and prints object-list/table-row p95 timings.
+`rust-rich-objects-benchmark.mjs` is the regression gate for the first table/histogram/media object slice. It starts disposable Postgres and ClickHouse, applies Rust migrations, seeds one run with 500 rich object attributes and a 1,000-row table preview, starts the Rust API, and prints object-list/table-row p95 timings.
 
 ```bash
 npm run benchmark:rich-objects
@@ -90,7 +101,7 @@ Local 2026-05-11 evidence measured object list p95 47.5 ms for 500 objects, tabl
 
 ## API Contract Smoke
 
-`contract-smoke.mjs` is a black-box compatibility suite for the SDK-facing API and hosted-backend foundation. The root `npm run test:contract` command runs it against the primary Rust/Postgres server through `rust-service-smoke.mjs`. Directly invoking `contract-smoke.mjs` with no base URL also defaults to the Rust/Postgres smoke harness. Set `RLOBS_CONTRACT_BACKEND=node` or use `npm run test:contract:node` only when comparing the deprecated Node route shapes.
+`contract-smoke.mjs` is a black-box compatibility suite for the SDK-facing API and hosted-backend foundation. The root `npm run test:contract` command runs it against the primary Rust/Postgres/ClickHouse server through `rust-service-smoke.mjs`. Directly invoking `contract-smoke.mjs` with no base URL also defaults to the Rust/Postgres/ClickHouse smoke harness. Set `RLOBS_CONTRACT_BACKEND=node` or use `npm run test:contract:node` only when comparing the deprecated Node route shapes.
 
 The smoke verifies users, organizations, bootstrap-gated API keys, auth failures, cross-org denial, authenticated reads/downloads, run lifecycle, numeric metric steps, timestamped metrics, idempotent replay, validation/not-found/body-size errors, attributes, artifact upload/download, side-by-side comparison, maintained summaries, experiment export, `sdk:ingest`-guarded SDK mutations, `usage:read`-guarded usage summary/export, `imports:write`-guarded Neptune/W&B/MLflow imports, and source import visibility.
 
@@ -107,9 +118,9 @@ RLOBS_CONTRACT_BASE_URL=http://127.0.0.1:8001 RLOBS_CONTRACT_BOOTSTRAP_TOKEN=dev
 
 The contract smoke remains the gate for backend compatibility. Rust is the default backend for `test:contract`, `test:contract:direct`, and manual no-env invocation; use `npm run test:contract:node` when comparing deprecated Node behavior.
 
-## Rust/Postgres Service Smokes
+## Rust/Postgres/ClickHouse Service Smokes
 
-`rust-service-smoke.mjs` starts a disposable Postgres cluster, runs the Rust server, waits for `/readyz`, and drives one of the Rust parity smokes:
+`rust-service-smoke.mjs` starts a disposable Postgres cluster and disposable ClickHouse instance, runs the Rust server, waits for `/readyz`, and drives one of the Rust parity smokes:
 
 ```bash
 npm run test:contract
@@ -121,7 +132,7 @@ npm run test:rust:ui
 
 `rust-sdk-smoke.py` is the Python SDK overlap check used by `npm run test:rust:sdk`.
 
-The web smoke in `apps/web/tests/ui-smoke.mjs` follows the same default: no API base means Rust/Postgres. Set `RLOBS_UI_SMOKE_API_BASE` to test an already-running Rust-compatible backend. The full UI smoke covers landing, local auth, onboarding, and dashboard routes, so it now depends on Rust session/auth endpoints rather than the deprecated Node compatibility server.
+The web smoke in `apps/web/tests/ui-smoke.mjs` follows the same default: no API base means Rust/Postgres/ClickHouse. Set `RLOBS_UI_SMOKE_API_BASE` to test an already-running Rust-compatible backend. The full UI smoke covers landing, local auth, onboarding, and dashboard routes, so it now depends on Rust session/auth endpoints rather than the deprecated Node compatibility server.
 
 The accepted hosted schema lives in `apps/rust-server/migrations/`. Apply all migrations to a disposable Postgres database when reviewing schema changes:
 

@@ -7,7 +7,7 @@ This guide is written for users of the product and SDK. It avoids internal imple
 ## What You Get
 
 - A Python SDK for creating runs and logging metrics, configs, tags, notes, text, histograms, artifacts, checkpoints, rollouts, tables, and uploaded files.
-- A Rust/Postgres API that stores run metadata, scalar metric history, summaries, artifacts, searchable tags, and searchable notes.
+- A Rust API backed by Postgres metadata storage and ClickHouse metric storage for run metadata, scalar metric history, summaries, artifacts, searchable tags, and searchable notes.
 - A web UI for browsing runs, building dashboard panels, comparing selected runs, inspecting run details, and previewing safe artifact media.
 
 ## Start A Local Beta Server
@@ -18,7 +18,7 @@ From a source checkout, start the API:
 npm run dev:api
 ```
 
-This serves the Rust/Postgres API at:
+This serves the Rust API at:
 
 ```text
 http://127.0.0.1:8000
@@ -558,7 +558,7 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 - Workspace layouts and saved views are local-browser state today, not hosted team objects.
 - First-slice workspace panels are line plots. Rich table, media, query, text, scatter, and parallel-coordinate panels are planned follow-ups.
 - The SDK package name is still `rl_observability` for compatibility.
-- The deprecated Node server is for compatibility checks only; new product usage should target the Rust/Postgres API.
+- The deprecated Node server is for compatibility checks only; new product usage should target the Rust/Postgres/ClickHouse API.
 
 ## Troubleshooting
 

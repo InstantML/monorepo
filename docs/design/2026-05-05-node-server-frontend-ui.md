@@ -14,7 +14,7 @@ Naming note: this historical design predates the Training Observability rebrand.
 
 The Node server became the primary development surface for the days 5-8 UI slice. It served static frontend assets and exposed the same JSON API contract as the days 1-4 backend so the Python SDK could log to it without changes. The existing Python bootstrap API remained as a reference implementation and test client path.
 
-Current status: implemented and superseded as the primary path by the Next/React app plus Rust/Postgres backend. Later roadmap work added typed attributes, local artifact upload/download, Neptune/W&B/MLflow-shaped imports, saved views, smoothing, grouped averages, side-by-side diffs, org/API-key scaffolding, usage summaries, and shared contract tests. The Rust/Postgres backend in `docs/design/2026-05-09-rust-postgres-backend.md` is now the primary local/product backend, while this Node server remains a deprecated compatibility oracle, JSON migration source, and legacy fallback.
+Current status: implemented and superseded as the primary path by the Next/React app plus Rust/Postgres/ClickHouse backend. Later roadmap work added typed attributes, local artifact upload/download, Neptune/W&B/MLflow-shaped imports, saved views, smoothing, grouped averages, side-by-side diffs, org/API-key scaffolding, usage summaries, and shared contract tests. The Rust/Postgres foundation in `docs/design/2026-05-09-rust-postgres-backend.md` and the current architecture summary in `docs/architecture/current-system.md` describe the primary local/product backend, while this Node server remains a deprecated compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Goals
 

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const mode = process.argv[2] || "contract";
 if (!new Set(["contract", "sdk", "ui"]).has(mode)) {
@@ -13,10 +14,24 @@ if (!new Set(["contract", "sdk", "ui"]).has(mode)) {
 const repo = process.cwd();
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `rlobs-rust-${mode}-`));
 const pgPort = await freePort();
+const clickhouseHttpPort = await freePort();
+const clickhouseTcpPort = await freePort();
+const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
 let server = null;
+let clickhouse = null;
 
 try {
+  const clickhouseUrl = `http://default:@127.0.0.1:${clickhouseHttpPort}/rlobs`;
+  clickhouse = await ensureLocalClickHouse({
+    repo,
+    url: clickhouseUrl,
+    dataDir: path.join(tempDir, "clickhouse"),
+    logDir: path.join(tempDir, "clickhouse-logs"),
+    tcpPort: clickhouseTcpPort,
+    interserverHttpPort: clickhouseInterserverPort,
+  });
+
   const dataDir = path.join(tempDir, "data");
   run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: ["ignore", "ignore", "inherit"] });
   run("pg_ctl", [
@@ -41,6 +56,7 @@ try {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
+      CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
       RLOBS_AUTH_MODE: authMode,
       RLOBS_BOOTSTRAP_TOKEN: bootstrapToken,
@@ -76,8 +92,9 @@ try {
 } finally {
   if (server) {
     server.kill();
-    await new Promise((resolve) => server.once("close", resolve));
+    await onceClose(server);
   }
+  if (clickhouse) await clickhouse.stop();
   run("pg_ctl", ["-D", path.join(tempDir, "data"), "stop", "-m", "fast"], { allowFailure: true, stdio: ["ignore", "ignore", "ignore"] });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
@@ -116,4 +133,9 @@ async function waitForHttp(url, child, logPath) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`Timed out waiting for ${url}. Log:\n${fs.readFileSync(logPath, "utf8")}`);
+}
+
+function onceClose(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => child.once("close", resolve));
 }

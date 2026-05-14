@@ -34,12 +34,12 @@ Honest validation status:
 Current implementation status:
 
 - Thin SDK -> API -> storage -> UI loop exists.
-- Rust/Postgres server is the current primary API and storage backend.
+- Rust/Postgres/ClickHouse server is the current primary API and storage backend.
 - Next/React frontend is the current UI.
 - Python SDK supports run creation, scalar metrics, searchable tags/notes, typed helpers, buffering, explicit `flush()`, offline replay for post-run-create events, process-isolated post-init upload spooling, source metadata, artifacts, checkpoints, rollouts, tables, and local file upload.
 - Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, warning-only usage summaries, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
 - UI supports tabbed run browsing, a W&B/Grafana-inspired Runs workspace with sections and movable/resizable line panels, chart smoothing, step/time x-axis, grouped averages, range zoom, point hover readouts, saved local views, tags/notes editing, artifact previews, checkpoints, rollouts, keyboard workflow shortcuts, and side-by-side diffs.
-- Rust/Postgres backend is implemented as the primary backend under `apps/rust-server`, with Postgres migrations, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, and Rust contract/SDK/UI smokes.
+- Rust/Postgres/ClickHouse backend is implemented as the primary backend under `apps/rust-server`, with Postgres migrations, ClickHouse metric storage, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, and Rust contract/SDK/UI smokes.
 
 Target stack snapshot:
 
@@ -49,7 +49,7 @@ Target stack snapshot:
 - Artifact plane: local filesystem storage first behind an abstraction, then S3-compatible object storage once hosted semantics are proven.
 - Auth plane: managed Google login for humans plus database-owned memberships, service accounts, hashed API keys, scopes, project restrictions, and audit events.
 - Hosting preference: Google Cloud Run for the Rust API, Neon for Postgres, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity.
-- Migration rule: Node is deprecated and retained as the compatibility oracle, JSON migration source, and legacy fallback. New backend work defaults to Rust/Postgres; route-shape changes should still run Node compatibility checks before breaking old clients.
+- Migration rule: Node is deprecated and retained as the compatibility oracle, JSON migration source, and legacy fallback. New backend work defaults to Rust/Postgres/ClickHouse; route-shape changes should still run Node compatibility checks before breaking old clients.
 
 ## Product Positioning
 
@@ -193,7 +193,7 @@ Overage defaults:
 
 Current implementation status:
 
-- The Rust/Postgres server exposes warning-only org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
+- The Rust/Postgres/ClickHouse server exposes warning-only org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
 - Usage is scoped by org and requires `usage:read` in hosted API-key mode.
 - The summary counts seats, projects, runs, scalar metric points, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, and estimated metadata bytes.
 - These values are for pricing validation and debugging, not invoice truth. Rust now writes immutable `usage_daily` snapshots, but billable storage still requires a separate billing implementation and provider/object-store reconciliation.
@@ -278,7 +278,7 @@ Training-loop hot path direction:
 - Prefer `upload_mode="spool"` for long or expensive runs.
 - Move artifact and file upload work outside scalar metric logging.
 - Add idempotency keys before claiming stronger delivery guarantees.
-- Add API-key auth for hosted Rust/Postgres ingestion.
+- Add API-key auth for hosted Rust/Postgres/ClickHouse ingestion.
 - Add W&B dual-logging support only after import paths prove useful with real teams.
 
 ### Backend
@@ -286,7 +286,7 @@ Training-loop hot path direction:
 Current backend:
 
 - Rust API and worker service in `apps/rust-server`.
-- Postgres metadata and metric store for local and hosted development.
+- Postgres metadata and ClickHouse metric store for local and hosted development.
 - Organizations, users, memberships, service accounts, API keys, and audit events.
 - Maintained metric summaries for fast run tables.
 - Local artifact storage behind an S3-compatible abstraction.
@@ -333,19 +333,19 @@ Status: completed as the current planning baseline through `docs/design/2026-05-
 
 Goal:
 
-Make the W&B competitor strategy and Rust/Postgres architecture explicit enough that implementation can proceed in reviewed slices.
+Make the W&B competitor strategy and Rust/Postgres/ClickHouse architecture explicit enough that implementation can proceed in reviewed slices.
 
 Done when:
 
 - Product strategy states speed, UI, and pricing as the wedge.
 - Pricing research and draft tiers are documented.
-- Rust/Postgres design exists with diagrams and reviewer notes.
+- Rust/Postgres foundation design exists with diagrams and reviewer notes; current architecture docs describe the ClickHouse metric plane.
 - TODO is prioritized by implementation importance.
-- Docs clearly say Rust/Postgres is primary, while Node is deprecated compatibility support.
+- Docs clearly say Rust/Postgres/ClickHouse is primary, while Node is deprecated compatibility support.
 
 ### P1: Backend Speed And Durable SaaS Foundation
 
-Status: foundation slice implemented and promoted to Rust/Postgres as the default backend after contract, SDK, UI, importer/artifact, and scale checks passed.
+Status: foundation slice implemented and promoted to Rust/Postgres/ClickHouse as the default backend after contract, SDK, UI, importer/artifact, and scale checks passed.
 
 Goal:
 
@@ -356,7 +356,7 @@ Foundation completed:
 - Create black-box contract tests that run against both Node and Rust backends.
 - Canonize metric step and timestamp semantics.
 - Add idempotency keys for process-spooled event replay.
-- Implement Postgres schema for orgs, users, projects, runs, metric series, metric points, attributes, artifacts, imports, API keys, and audit events.
+- Implement Postgres schema for orgs, users, projects, runs, attributes, artifacts, imports, API keys, and audit events, with ClickHouse schema for metric series and metric points.
 - Implement maintained metric summaries.
 - Add org-scoped API-key auth for SDK ingestion.
 - Add managed-auth-backed user/org model.
@@ -406,7 +406,7 @@ Make pricing credible before public launch.
 
 Current state:
 
-- Org-level warning summaries are computed from Rust/Postgres data.
+- Org-level warning summaries are computed from Rust/Postgres/ClickHouse data.
 - Immutable `usage_daily` snapshots exist for warning/debug rollups.
 - Usage UI is not yet exposed in the hosted workflow.
 
@@ -528,11 +528,11 @@ Mitigation:
 
 Build narrow but polished comparison workflows. Avoid reports, org settings, and dashboard sprawl until the core app is excellent.
 
-### Risk: Rust/Postgres slows feature work.
+### Risk: Rust data stack slows feature work.
 
 Mitigation:
 
-Keep Node as fallback, add black-box contract tests, and implement Rust/Postgres in narrow reviewed slices.
+Keep Node as fallback, add black-box contract tests, and implement Rust/Postgres/ClickHouse in narrow reviewed slices.
 
 ### Risk: Hosted SaaS reduces trust for sensitive training data.
 
@@ -556,7 +556,7 @@ This idea is viable if it becomes a genuinely better daily training observabilit
 The immediate work should stay practical:
 
 - Validate the W&B replacement wedge with real users.
-- Keep Rust/Postgres as the default backend while preserving Node compatibility tests until JSON migration is complete.
+- Keep Rust/Postgres/ClickHouse as the default backend while preserving Node compatibility tests until JSON migration is complete.
 - Harden SDK run lifecycle, offline creation, summary policies, public query APIs, and rich logged objects through reviewed slices.
 - Prove run browsing, search, compare, and chart performance at the 90,000-run design-partner scale.
 - Treat W&B/MLflow/Neptune importers as adoption paths.

@@ -587,7 +587,7 @@ fn normalize_mlflow(payload: Value) -> AppResult<CanonicalImport> {
             )?;
             let metrics = history_metrics
                 .into_iter()
-                .chain(fallback_metrics.into_iter())
+                .chain(fallback_metrics)
                 .collect::<Vec<_>>();
             Ok(CanonicalRun {
                 name,

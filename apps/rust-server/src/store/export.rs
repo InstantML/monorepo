@@ -6,11 +6,8 @@ pub async fn export_data(
     ctx: &RequestContext,
     query: &HashMap<String, String>,
 ) -> AppResult<Value> {
-    if ctx.auth.is_some() {
-        ctx.auth
-            .as_ref()
-            .expect("checked")
-            .require_scope("export:read")?;
+    if let Some(auth) = &ctx.auth {
+        auth.require_scope("export:read")?;
     }
     let project = query.get("project").cloned();
     let project_id = query

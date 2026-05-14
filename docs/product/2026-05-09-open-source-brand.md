@@ -30,7 +30,7 @@ Recommended path:
 
 Hosted-backend boundary:
 
-- Public source sharing should not imply the hosted Rust/Postgres service is production-ready until contract tests, tenant-isolation tests, migration tests, and deployment docs exist.
+- Public source sharing should not imply the hosted Rust/Postgres/ClickHouse service is production-ready until contract tests, tenant-isolation tests, migration tests, and deployment docs exist.
 - Keep managed auth provider choices, secret handling, API-key hashing, and billing/usage rollups documented before inviting outside production use.
 
 ## Brand Decision

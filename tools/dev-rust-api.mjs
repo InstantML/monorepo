@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
 const rlobsDir = path.join(repo, ".rlobs");
@@ -13,12 +14,18 @@ const apiPort = process.env.RLOBS_API_PORT || "8000";
 const bindAddr = process.env.RLOBS_BIND_ADDR || `127.0.0.1:${apiPort}`;
 const databaseUrl = process.env.DATABASE_URL || `postgres://127.0.0.1:${pgPort}/${dbName}`;
 let startedPostgres = false;
+let clickhouse = null;
 let child = null;
 let shuttingDown = false;
 
-main();
+main().catch(async (error) => {
+  console.error(error instanceof Error ? error.message : error);
+  await stopClickHouse();
+  stopPostgres();
+  process.exit(1);
+});
 
-function main() {
+async function main() {
   requireCommand("initdb");
   requireCommand("pg_ctl");
   requireCommand("createdb");
@@ -28,9 +35,11 @@ function main() {
   fs.mkdirSync(rlobsDir, { recursive: true });
   ensurePostgres();
   ensureDatabase();
+  clickhouse = await ensureLocalClickHouse({ repo });
 
   console.log(`Training Observability Rust API starting on http://${bindAddr}`);
   console.log(`Postgres: ${databaseUrl}`);
+  console.log(`ClickHouse: ${clickhouse.url}${clickhouse.started ? " (started locally)" : ""}`);
 
   child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
@@ -38,15 +47,17 @@ function main() {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
+      CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: bindAddr,
       RLOBS_AUTH_MODE: process.env.RLOBS_AUTH_MODE || "local",
       RLOBS_ARTIFACT_ROOT: process.env.RLOBS_ARTIFACT_ROOT || path.join(rlobsDir, "rust-artifacts"),
     },
   });
 
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  child.on("close", (code, signal) => {
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  child.on("close", async (code, signal) => {
+    await stopClickHouse();
     stopPostgres();
     if (signal) process.exit(0);
     process.exit(code ?? 0);
@@ -86,15 +97,23 @@ function ensureDatabase() {
   run("createdb", ["-h", "127.0.0.1", "-p", pgPort, dbName], { stdio: "inherit" });
 }
 
-function shutdown(signal) {
+async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   if (child && child.exitCode === null) {
     child.kill(signal);
     return;
   }
+  await stopClickHouse();
   stopPostgres();
   process.exit(0);
+}
+
+async function stopClickHouse() {
+  if (!clickhouse) return;
+  const service = clickhouse;
+  clickhouse = null;
+  await service.stop();
 }
 
 function stopPostgres() {

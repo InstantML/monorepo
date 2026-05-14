@@ -9,7 +9,8 @@ This guide is the handoff path for new contributors and reviewers. It should wor
 - npm 10 or newer.
 - Python 3.11.
 - Docker Desktop or Docker Engine is optional for the one-command container stack.
-- Rust 1.83 or newer plus local Postgres command-line tools are required for the primary Rust/Postgres backend and smokes.
+- Rust 1.83 or newer plus local Postgres command-line tools are required for the primary Rust/Postgres/ClickHouse backend and smokes.
+- Local ClickHouse binary (`clickhouse`) or a reachable `CLICKHOUSE_URL` is required for Rust API/dev smokes. Docker Compose provides ClickHouse for the container stack.
 
 Version markers:
 
@@ -85,7 +86,7 @@ Run the primary Rust backend contract smoke:
 npm run test:contract
 ```
 
-Run the Rust/Postgres checks and smokes:
+Run the Rust/Postgres/ClickHouse checks and smokes:
 
 ```bash
 npm run rust:fmt
@@ -96,7 +97,7 @@ npm run test:rust:sdk
 npm run test:rust:ui
 ```
 
-The `test:rust:*` commands create disposable Postgres clusters with `initdb`/`pg_ctl`, start the Rust server, and clean up afterward.
+The `test:rust:*` commands create disposable Postgres clusters with `initdb`/`pg_ctl`, start disposable ClickHouse instances when needed, start the Rust server, and clean up afterward.
 
 Run the browser smoke:
 
@@ -112,7 +113,7 @@ npm run test:all
 
 Pull requests run the stable CI subset in GitHub Actions: Rust format/lint/unit tests, Node tests, and Python tests. Continue to run the Rust service, SDK, and UI smokes locally when touching service startup, auth, ClickHouse, or frontend integration paths.
 
-`npm run test:ui` and `npm run test:ui:direct` start disposable Postgres, start the Rust API, build the Next app, start `next start`, drive the landing/signup/onboarding/dashboard flow with Playwright, and write a temporary screenshot path to stdout. Direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` follows the same Rust default. The full UI smoke depends on Rust session/auth endpoints; use Node compatibility checks only for explicit legacy investigations.
+`npm run test:ui` and `npm run test:ui:direct` start disposable Postgres and ClickHouse, start the Rust API, build the Next app, start `next start`, drive the landing/signup/onboarding/dashboard flow with Playwright, and write a temporary screenshot path to stdout. Direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` follows the same Rust default. The full UI smoke depends on Rust session/auth endpoints; use Node compatibility checks only for explicit legacy investigations.
 
 ## Run The App Locally
 
@@ -122,7 +123,7 @@ Terminal 1:
 npm run dev:api
 ```
 
-This starts local Postgres under `.rlobs/postgres`, applies Rust migrations, and serves the Rust API at `http://127.0.0.1:8000`.
+This starts local Postgres under `.rlobs/postgres`, starts or reuses ClickHouse at `CLICKHOUSE_URL` with generated state under `.rlobs/clickhouse`, applies Rust migrations, and serves the Rust API at `http://127.0.0.1:8000`.
 
 If you need an isolated local database without touching an existing `.rlobs/postgres` cluster, use alternate generated-state paths and ports:
 
@@ -130,6 +131,9 @@ If you need an isolated local database without touching an existing `.rlobs/post
 RLOBS_DEV_PGDATA=/tmp/rlobs-postgres \
 RLOBS_DEV_PG_LOG=/tmp/rlobs-postgres.log \
 RLOBS_DEV_PG_PORT=54339 \
+RLOBS_DEV_CHDATA=/tmp/rlobs-clickhouse \
+RLOBS_DEV_CH_LOG_DIR=/tmp/rlobs-clickhouse-logs \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8124/rlobs \
 RLOBS_API_PORT=8010 \
 npm run dev:api
 ```
@@ -146,7 +150,7 @@ Open:
 http://127.0.0.1:3000
 ```
 
-Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard. Click `Reset demo` in the signed-in UI to seed the local `demo` project. The reset generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. Local state is written under `.rlobs/` for legacy Node mode or local Postgres for Rust mode; generated state is ignored by git.
+Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard. Click `Reset demo` in the signed-in UI to seed the local `demo` project. The reset generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. Local state is written under `.rlobs/` for legacy Node mode or local Postgres and ClickHouse for Rust mode; generated state is ignored by git.
 
 For a production-style local web run:
 
@@ -163,15 +167,15 @@ Docker is optional. When available:
 docker compose up --build
 ```
 
-The Docker stack now starts Postgres and the primary Rust API at:
+The Docker stack now starts Postgres, ClickHouse, and the primary Rust API at:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-## Rust/Postgres Path
+## Rust/Postgres/ClickHouse Path
 
-The current default product backend is Rust API plus Postgres. The deprecated Node server remains available only for compatibility and JSON migration work.
+The current default product backend is Rust API plus Postgres metadata storage and ClickHouse metric storage. The deprecated Node server remains available only for compatibility and JSON migration work.
 
 If you want to review the schema against a local or disposable Postgres database:
 
@@ -185,6 +189,7 @@ Start the Rust API manually:
 
 ```bash
 DATABASE_URL=postgres://127.0.0.1:5432/rlobs \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
 RLOBS_BIND_ADDR=127.0.0.1:8001 \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- serve
 ```
@@ -197,7 +202,7 @@ RLOBS_CONTRACT_BOOTSTRAP_TOKEN=dev-bootstrap \
 npm run test:contract:direct
 ```
 
-With no `RLOBS_CONTRACT_BASE_URL`, `npm run test:contract:direct` also starts the disposable Rust/Postgres harness by default. Use `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node` for the deprecated Node compatibility contract smoke.
+With no `RLOBS_CONTRACT_BASE_URL`, `npm run test:contract:direct` also starts the disposable Rust/Postgres/ClickHouse harness by default. Use `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node` for the deprecated Node compatibility contract smoke.
 
 Use `apps/rust-server/SETUP.md` for Rust-specific setup details.
 
@@ -247,6 +252,12 @@ For the Next app, pass a different port directly:
 ```bash
 cd apps/web
 ../../node_modules/.bin/next dev --port 3001
+```
+
+If the default ClickHouse HTTP port is busy with a non-ClickHouse process, use a different `CLICKHOUSE_URL` port:
+
+```bash
+CLICKHOUSE_URL=http://default:@127.0.0.1:8124/rlobs npm run dev:api
 ```
 
 ### Rust Migration Version Mismatch

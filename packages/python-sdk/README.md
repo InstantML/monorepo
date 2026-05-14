@@ -251,4 +251,4 @@ Automatic SDK source metadata is reserved under `metadata["_rlobs"]["source"]`. 
 - Support dual-logging or coexistence with MLflow/W&B where practical.
 - Keep SDK-owned metadata under `_rlobs` and reject user-provided `_rlobs` keys before merging metadata.
 - Add true offline run creation only after a design doc; do not imply it in README examples until implemented.
-- Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/Postgres backend and deprecated Node backend.
+- Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/Postgres/ClickHouse backend and deprecated Node backend.

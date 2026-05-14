@@ -4,6 +4,8 @@ Date: 2026-05-09
 
 Status: Accepted and promoted. P0-P3 Rust/Postgres slices are implemented, parity checks passed against Node, and Rust/Postgres is now the primary backend. The Node server is deprecated compatibility support.
 
+Supersession note: the current implemented metric plane has since moved high-volume `metric_points` and aggregated `metric_series` storage to ClickHouse, as summarized in `PRODUCT_STRATEGY.md` and `docs/architecture/current-system.md`. This design remains the accepted Rust API, Postgres metadata, auth/tenancy, artifact, and compatibility foundation.
+
 Owner: Codex
 
 ## Summary
@@ -887,7 +889,7 @@ No code coverage exception is needed. The Node/Python/SDK/Rust foundation slices
 
 ## Decision
 
-Accepted for the hosted backend direction after review. The completed P0-P3 work promotes Rust/Postgres to the primary backend, keeps the Node server as deprecated compatibility support, adds shared contract tests, aligns metric semantics, adds org/API-key/idempotency/export/storage scaffolding, maintains metric summaries, and commits the initial Postgres migrations.
+Accepted for the hosted backend direction after review. The completed P0-P3 work promotes Rust/Postgres to the primary backend, keeps the Node server as deprecated compatibility support, adds shared contract tests, aligns metric semantics, adds org/API-key/idempotency/export/storage scaffolding, maintains metric summaries, and commits the initial Postgres migrations. Later metric-store work keeps the same route contracts while serving raw metric points and series summaries from ClickHouse.
 
 ## P0/P1 Implementation Slice Notes
 

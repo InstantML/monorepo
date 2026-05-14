@@ -10,7 +10,7 @@ Owner: Codex
 
 This design covers the first four sprint days from `PRODUCT_STRATEGY.md`: customer discovery planning artifacts, MVP specification, repository structure, backend core, and Python SDK logging. The implementation should produce the days 1-4 backend/SDK bootstrap slice: a Python training script creates a run, logs scalar metrics to a local backend, and the backend persists and returns projects, runs, and metrics.
 
-The bootstrap intentionally uses boring Python standard-library building blocks for the first slice: SQLite for persistence, `http.server` for the development API server, `urllib` for SDK HTTP calls, and `pytest` for tests. This avoids introducing framework complexity before the API surface is stable. The current production-oriented path is the accepted Rust/Postgres backend design, while this Python API remains a reference compatibility target.
+The bootstrap intentionally uses boring Python standard-library building blocks for the first slice: SQLite for persistence, `http.server` for the development API server, `urllib` for SDK HTTP calls, and `pytest` for tests. This avoids introducing framework complexity before the API surface is stable. The current production-oriented path builds on the accepted Rust/Postgres foundation design and the implemented ClickHouse metric plane, while this Python API remains a reference compatibility target.
 
 This is not the complete repo-level vertical slice because it does not include UI visibility. A follow-up design should cover the UI list/chart slice: SDK -> API -> database -> UI run list -> bounded metric chart.
 

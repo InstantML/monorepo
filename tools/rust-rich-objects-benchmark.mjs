@@ -5,6 +5,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
 const objectCount = numberEnv("RLOBS_OBJECT_BENCH_OBJECTS", 500);
@@ -14,12 +15,25 @@ const warmups = numberEnv("RLOBS_OBJECT_BENCH_WARMUPS", 2);
 const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-rich-objects-"));
 const pgPort = await freePort();
+const clickhouseHttpPort = await freePort();
+const clickhouseTcpPort = await freePort();
+const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
 const databaseUrl = `postgres://127.0.0.1:${pgPort}/rlobs_object_bench`;
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
 let apiServer = null;
+let clickhouse = null;
 
 try {
+  clickhouse = await ensureLocalClickHouse({
+    repo,
+    url: `http://default:@127.0.0.1:${clickhouseHttpPort}/rlobs`,
+    dataDir: path.join(tempDir, "clickhouse"),
+    logDir: path.join(tempDir, "clickhouse-logs"),
+    tcpPort: clickhouseTcpPort,
+    interserverHttpPort: clickhouseInterserverPort,
+  });
+
   const dataDir = path.join(tempDir, "data");
   run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: ["ignore", "ignore", "inherit"] });
   run("pg_ctl", [
@@ -33,7 +47,7 @@ try {
   ], { stdio: ["ignore", "ignore", "inherit"] });
   run("createdb", ["-h", "127.0.0.1", "-p", String(pgPort), "rlobs_object_bench"]);
   run("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "migrate"], {
-    env: { ...process.env, DATABASE_URL: databaseUrl },
+    env: { ...process.env, DATABASE_URL: databaseUrl, CLICKHOUSE_URL: clickhouse.url },
   });
   seedBenchmarkData();
   const serverLog = path.join(tempDir, "api.log");
@@ -43,6 +57,7 @@ try {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
+      CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
       RLOBS_AUTH_MODE: "local",
       RLOBS_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
@@ -93,6 +108,7 @@ try {
     apiServer.kill();
     await onceClose(apiServer);
   }
+  if (clickhouse) await clickhouse.stop();
   run("pg_ctl", ["-D", path.join(tempDir, "data"), "stop", "-m", "fast"], { allowFailure: true, stdio: ["ignore", "ignore", "ignore"] });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }

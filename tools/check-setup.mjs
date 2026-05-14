@@ -13,6 +13,7 @@ checkCommand("psql", ["--version"], "Postgres psql");
 checkCommand("initdb", ["--version"], "Postgres initdb");
 checkCommand("pg_ctl", ["--version"], "Postgres pg_ctl");
 checkCommand("createdb", ["--version"], "Postgres createdb");
+checkOptionalCommand("clickhouse", ["--version"], "ClickHouse", "Install the ClickHouse local binary, start ClickHouse yourself, or use Docker Compose before running Rust API/dev smokes.");
 checkFile("package-lock.json", "Node lockfile");
 checkFile("requirements-dev.txt", "Python dev requirements");
 checkDirectory("node_modules", "Node dependencies", "Run `npm ci`.");
@@ -102,6 +103,17 @@ function checkCommand(command, args, name) {
   const result = spawnSync(command, args, { encoding: "utf8" });
   if (result.status !== 0) {
     record("fail", name, `${command} was not found`);
+    return null;
+  }
+  const detail = `${result.stdout}${result.stderr}`.trim();
+  record("pass", name, detail);
+  return detail;
+}
+
+function checkOptionalCommand(command, args, name, hint) {
+  const result = spawnSync(command, args, { encoding: "utf8" });
+  if (result.status !== 0) {
+    record("warn", name, hint);
     return null;
   }
   const detail = `${result.stdout}${result.stderr}`.trim();

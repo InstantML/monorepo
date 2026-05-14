@@ -13,26 +13,29 @@ This directory contains the primary Rust backend for Training Observability. Pos
 
 ## Local Setup
 
-Install Rust 1.83 or newer through `rustup` and make sure local Postgres tools are available:
+Install Rust 1.83 or newer through `rustup` and make sure local Postgres tools and either a ClickHouse binary or reachable ClickHouse service are available:
 
 ```bash
 rustc --version
 psql --version
 initdb --version
 pg_ctl --version
+# Needed only when relying on root helpers to auto-start local ClickHouse.
+clickhouse --version
 ```
 
 Start from the repo root. For a normal local Rust run, point `DATABASE_URL` at a Postgres database:
 
 ```bash
 DATABASE_URL=postgres://127.0.0.1:5432/rlobs \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
 RLOBS_BIND_ADDR=127.0.0.1:8001 \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- serve
 ```
 
 The `serve` command applies migrations before listening. The service also creates a fixed local development organization for unauthenticated local compatibility mode. Browser dashboard sessions created by the local dev auth flow use their own signed-in org instead.
 
-For the root `npm run dev:api` helper, local generated Postgres state lives under `.rlobs/postgres`. If that disposable cluster was created by an older checkout and SQLx reports a migration version mismatch, remove `.rlobs/postgres` and `.rlobs/postgres.log`, or start a separate generated cluster by setting `RLOBS_DEV_PGDATA`, `RLOBS_DEV_PG_LOG`, `RLOBS_DEV_PG_PORT`, and `RLOBS_API_PORT`.
+For the root `npm run dev:api` helper, local generated Postgres state lives under `.rlobs/postgres` and local ClickHouse state/logs live under `.rlobs/clickhouse` and `.rlobs/clickhouse-logs`. If the Postgres cluster was created by an older checkout and SQLx reports a migration version mismatch, remove `.rlobs/postgres` and `.rlobs/postgres.log`, or start a separate generated cluster by setting `RLOBS_DEV_PGDATA`, `RLOBS_DEV_PG_LOG`, `RLOBS_DEV_PG_PORT`, and `RLOBS_API_PORT`. Set `CLICKHOUSE_URL` to use an existing ClickHouse service, or leave the default loopback URL so the helper can start a local `clickhouse server` when the binary is installed.
 
 ## Commands
 
@@ -75,6 +78,12 @@ Environment variables:
 - `RLOBS_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
 - `RLOBS_DEV_AUTH_ENABLED`: enables the local Google-style auth endpoint when `RLOBS_AUTH_MODE=local`. Loopback local binds enable it by default.
 - `RLOBS_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
+
+Root helper-only environment variables:
+
+- `RLOBS_DEV_PGDATA`, `RLOBS_DEV_PG_LOG`, `RLOBS_DEV_PG_PORT`: generated Postgres state, log, and port for `npm run dev:api`.
+- `RLOBS_DEV_CHDATA`, `RLOBS_DEV_CH_LOG_DIR`: generated ClickHouse state and logs for `npm run dev:api`.
+- `RLOBS_DEV_CH_TCP_PORT`, `RLOBS_DEV_CH_INTERSERVER_PORT`, `RLOBS_DEV_CH_MYSQL_PORT`, `RLOBS_DEV_CH_POSTGRESQL_PORT`: optional ClickHouse non-HTTP ports for avoiding local collisions.
 
 ## HTTP Surface
 
@@ -134,7 +143,7 @@ npm run test:rust:sdk
 npm run test:rust:ui
 ```
 
-These commands start disposable Postgres and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the Playwright smoke with Rust as `RLOBS_API_BASE`, including landing, local auth, onboarding, and dashboard routes. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
+These commands start disposable Postgres, disposable ClickHouse, and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the Playwright smoke with Rust as `RLOBS_API_BASE`, including landing, local auth, onboarding, and dashboard routes. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
 
 Large-run benchmark:
 

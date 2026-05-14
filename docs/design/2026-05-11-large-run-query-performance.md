@@ -10,7 +10,7 @@ Owner: Codex
 
 Training Observability should win on speed in the daily run-browsing workflow. Design-partner feedback called out a W&B project with roughly 90,000 runs taking seconds to load. The current app already calls the Rust-backed `GET /api/runs/summary` route with server-side filters, search, sort, totals, and page-scoped summaries, but the implementation still uses offset pagination, index-hostile token predicates, and no large-project performance gate.
 
-This design keeps the existing summary endpoint and response shape compatible, then adds cursor pagination, targeted indexes, indexable search predicates, a compact Python `Api.runs()` client, frontend cursor navigation, and a Rust/Postgres scale benchmark. The smallest useful version does not add a new query language or a separate search service. It makes the existing Runs workspace credible for a 90,000-run project while preserving local Node compatibility for old route shapes.
+This design keeps the existing summary endpoint and response shape compatible, then adds cursor pagination, targeted indexes, indexable search predicates, a compact Python `Api.runs()` client, frontend cursor navigation, and a Rust/Postgres/ClickHouse scale benchmark. The smallest useful version does not add a new query language or a separate search service. It makes the existing Runs workspace credible for a 90,000-run project while preserving local Node compatibility for old route shapes.
 
 ## Goals
 
@@ -21,7 +21,7 @@ This design keeps the existing summary endpoint and response shape compatible, t
 - Make search predicates indexable enough for name, tag, note, and config text searches at the target scale.
 - Add a Python `Api.runs()` first slice that maps directly to the Rust route.
 - Update the web app to use cursor navigation for Next/Previous page controls.
-- Add a repeatable Rust/Postgres benchmark that reports 90,000-run first-page, search, sort, and chart timings.
+- Add a repeatable Rust/Postgres/ClickHouse benchmark that reports 90,000-run first-page, search, sort, and chart timings.
 
 ## Non-Goals
 
@@ -218,7 +218,7 @@ Response adds:
 - Indexable token predicates and trigram index keep search bounded for human query strings.
 - Exact `count(*)` and metric-key discovery are measured. If either exceeds the budget, the follow-up is to make totals and metric catalog opt-in/separate.
 - Benchmark gates:
-  - Runs page first useful render under 2 seconds on local production build plus local Rust/Postgres.
+  - Runs page first useful render under 2 seconds on local production build plus local Rust/Postgres/ClickHouse.
   - Server-side run search/filter/sort p95 under 500 ms for the 90,000-run fixture.
   - Run summary p95 under 300 ms for default newest page.
   - Metric chart p95 under 200 ms for one run/key with 1,000 points.
@@ -342,7 +342,7 @@ Implemented on 2026-05-11:
 
 ## Benchmark Results
 
-Local benchmark on 2026-05-11 with disposable local Postgres, local Rust API, local Next production build, 90,000 seeded runs, one selected metric summary per run, and 1,000 chart points on the target run:
+Local benchmark on 2026-05-11 with disposable local Postgres, local Rust API, local Next production build, 90,000 seeded runs, one selected metric summary per run, and 1,000 chart points on the target run. Current CLI benchmark runs use disposable ClickHouse for metric rows in addition to disposable Postgres metadata:
 
 ```text
 RLOBS_BENCH_RUNS=90000 RLOBS_BENCH_SAMPLES=10 RLOBS_BENCH_WARMUPS=2 RLOBS_BENCH_WEB=1 npm run benchmark:large-runs

@@ -4,7 +4,7 @@ This directory contains runnable examples that prove Training Observability work
 
 Use the root `../SETUP.md` for fresh-clone setup before running examples.
 
-Examples now target the primary Rust/Postgres server through the same public SDK API. The deprecated Node compatibility server can still be used for legacy comparisons.
+Examples now target the primary Rust/Postgres/ClickHouse server through the same public SDK API. The deprecated Node compatibility server can still be used for legacy comparisons.
 
 Expected examples:
 

@@ -75,7 +75,7 @@ The sign-in, sign-up, and onboarding screens should be compact operational surfa
 Concrete first viewport composition:
 
 - Product name as the H1: `Training Observability`.
-- Supporting copy: implemented strengths only, such as fast run browsing, bounded metric charts, SDK ingestion, Rust/Postgres storage, and local-first setup.
+- Supporting copy: implemented strengths only, such as fast run browsing, bounded metric charts, SDK ingestion, Rust/Postgres/ClickHouse storage, and local-first setup.
 - Primary action: Google sign-in only when managed auth is configured; otherwise the local dev flow is explicit and labeled.
 - Secondary action: open the local demo/dashboard path after auth.
 - Product preview: a compact dashboard shell with a run table, metric chart, compare row, and SDK/API-key snippet. This should be CSS/HTML product UI, not decorative illustration.

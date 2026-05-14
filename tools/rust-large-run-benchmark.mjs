@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { chromium } from "playwright";
+import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
 const runCount = numberEnv("RLOBS_BENCH_RUNS", 90_000);
@@ -16,13 +17,26 @@ const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
 const project = process.env.RLOBS_BENCH_PROJECT || "bench-90k";
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-large-run-"));
 const pgPort = await freePort();
+const clickhouseHttpPort = await freePort();
+const clickhouseTcpPort = await freePort();
+const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
 const databaseUrl = `postgres://127.0.0.1:${pgPort}/rlobs_bench`;
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
 let apiServer = null;
 let webServer = null;
+let clickhouse = null;
 
 try {
+  clickhouse = await ensureLocalClickHouse({
+    repo,
+    url: `http://default:@127.0.0.1:${clickhouseHttpPort}/rlobs`,
+    dataDir: path.join(tempDir, "clickhouse"),
+    logDir: path.join(tempDir, "clickhouse-logs"),
+    tcpPort: clickhouseTcpPort,
+    interserverHttpPort: clickhouseInterserverPort,
+  });
+
   const dataDir = path.join(tempDir, "data");
   run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: ["ignore", "ignore", "inherit"] });
   run("pg_ctl", [
@@ -36,9 +50,9 @@ try {
   ], { stdio: ["ignore", "ignore", "inherit"] });
   run("createdb", ["-h", "127.0.0.1", "-p", String(pgPort), "rlobs_bench"]);
   run("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "migrate"], {
-    env: { ...process.env, DATABASE_URL: databaseUrl },
+    env: { ...process.env, DATABASE_URL: databaseUrl, CLICKHOUSE_URL: clickhouse.url },
   });
-  seedBenchmarkData();
+  await seedBenchmarkData();
   const serverLog = path.join(tempDir, "api.log");
   const output = fs.openSync(serverLog, "w");
   apiServer = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
@@ -46,6 +60,7 @@ try {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
+      CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
       RLOBS_AUTH_MODE: "local",
       RLOBS_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
@@ -102,14 +117,17 @@ try {
     apiServer.kill();
     await onceClose(apiServer);
   }
+  if (clickhouse) await clickhouse.stop();
   run("pg_ctl", ["-D", path.join(tempDir, "data"), "stop", "-m", "fast"], { allowFailure: true, stdio: ["ignore", "ignore", "ignore"] });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
-function seedBenchmarkData() {
+async function seedBenchmarkData() {
   const sqlPath = path.join(tempDir, "seed.sql");
   fs.writeFileSync(sqlPath, benchmarkSql(), "utf8");
   run("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-f", sqlPath], { stdio: ["ignore", "inherit", "inherit"] });
+  const metricRows = psqlCapture(metricSeedCopySql());
+  await clickhousePost(clickhouse.url, "INSERT INTO metric_points (org_id, run_id, key, step, value, logged_at) FORMAT TabSeparated", metricRows);
 }
 
 function benchmarkSql() {
@@ -141,45 +159,49 @@ select
   case when gs % 11 = 0 then null else now() - ((${runCount} - gs - 60 - (gs % 500)) * interval '1 second') end
 from generate_series(1, ${runCount}) as gs, project;
 
-insert into metric_series (
-  org_id, run_id, key, count, sum, sum_sq, min, max, mean, variance, latest, latest_step, latest_logged_at, best, best_step
-)
-select
-  r.org_id,
-  r.id,
-  'eval/return_mean',
-  1000,
-  0,
-  0,
-  (100 + (row_number() over (order by r.created_at)) % 400)::double precision,
-  (150 + (row_number() over (order by r.created_at)) % 800)::double precision,
-  (125 + (row_number() over (order by r.created_at)) % 500)::double precision,
-  1,
-  (150 + (row_number() over (order by r.created_at)) % 800)::double precision,
-  1000,
-  r.created_at + interval '1 hour',
-  (150 + (row_number() over (order by r.created_at)) % 800)::double precision,
-  1000
-from runs r
-join projects p on p.org_id = r.org_id and p.id = r.project_id
-where r.org_id = '00000000-0000-0000-0000-000000000001' and p.name = '${escapedProject}';
-
-with target as (
-  select r.org_id, r.id
-  from runs r
-  join projects p on p.org_id = r.org_id and p.id = r.project_id
-  where p.name = '${escapedProject}'
-  order by r.created_at desc, r.id desc
-  limit 1
-)
-insert into metric_points (org_id, run_id, key, step, value, logged_at)
-select target.org_id, target.id, 'eval/return_mean', gs, 100 + sin(gs / 25.0) * 10 + gs / 10.0, now()
-from target, generate_series(1, 1000) as gs;
-
 analyze runs;
-analyze metric_series;
-analyze metric_points;
 	`;
+}
+
+function metricSeedCopySql() {
+  const escapedProject = project.replaceAll("'", "''");
+  return `
+copy (
+  with project_runs as (
+    select
+      r.org_id,
+      r.id,
+      r.created_at,
+      row_number() over (order by r.created_at) as rn
+    from runs r
+    join projects p on p.org_id = r.org_id and p.id = r.project_id
+    where r.org_id = '00000000-0000-0000-0000-000000000001' and p.name = '${escapedProject}'
+  ),
+  newest as (
+    select org_id, id
+    from project_runs
+    order by created_at desc, id desc
+    limit 1
+  )
+  select
+    org_id,
+    id as run_id,
+    'eval/return_mean' as key,
+    1000::double precision as step,
+    (150 + rn % 800)::double precision as value,
+    to_char((created_at + interval '1 hour') at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') as logged_at
+  from project_runs
+  union all
+  select
+    newest.org_id,
+    newest.id as run_id,
+    'eval/return_mean' as key,
+    gs::double precision as step,
+    (100 + sin(gs / 25.0) * 10 + gs / 10.0)::double precision as value,
+    to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') as logged_at
+  from newest, generate_series(1, 1000) as gs
+) to stdout with (format text, delimiter E'\\t')
+  `;
 }
 
 async function measureEndpoint(name, pathSuffix) {
@@ -264,6 +286,18 @@ function run(command, args, options = {}) {
   if (!options.allowFailure && result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
   }
+}
+
+function psqlCapture(sql) {
+  const result = spawnSync("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-c", sql], {
+    cwd: repo,
+    encoding: "utf8",
+    maxBuffer: 128 * 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new Error(`psql metric seed export failed with status ${result.status}\n${result.stderr}`);
+  }
+  return result.stdout;
 }
 
 function numberEnv(name, fallback) {

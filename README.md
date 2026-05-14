@@ -13,13 +13,13 @@ Start with:
 - `AGENTS.md` for contributor and future-agent guidelines.
 - `docs/architecture/current-system.md` for the implemented architecture.
 - `docs/design/` for architecture and feature design documents.
-- `docs/design/2026-05-09-rust-postgres-backend.md` for the primary Rust/Postgres backend architecture.
+- `docs/design/2026-05-09-rust-postgres-backend.md` for the primary Rust/Postgres foundation; `PRODUCT_STRATEGY.md` and `docs/architecture/current-system.md` capture the newer ClickHouse metric plane.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
 ## Repository Structure
 
 ```text
-rl-observability/
+monorepo/
   apps/
     api/
     rust-server/
@@ -48,11 +48,11 @@ Current backend ownership:
 The current primary product path is:
 
 ```text
-Next/React frontend -> Rust API -> managed Postgres -> artifact storage
-Python SDK/uploader -> Rust API -> managed Postgres -> artifact storage
+Next/React frontend -> Rust API -> managed Postgres + ClickHouse -> artifact storage
+Python SDK/uploader -> Rust API -> managed Postgres + ClickHouse -> artifact storage
 ```
 
-The Rust service should use `axum`, `tokio`, `tower-http`, `SQLx`, Postgres migrations, structured tracing, and a small worker path for Postgres-backed jobs. The preferred first hosted providers are Google Cloud Run for the Rust API, Neon for Postgres, Cloudflare R2 for S3-compatible artifact bytes, and Clerk or an equivalent managed auth provider for Google login and organizations.
+The Rust service should use `axum`, `tokio`, `tower-http`, `SQLx`, Postgres migrations, ClickHouse for high-volume metric time series, structured tracing, and a small worker path for Postgres-backed jobs. The preferred first hosted providers are Google Cloud Run for the Rust API, Neon for Postgres, a managed ClickHouse-compatible store for metrics, Cloudflare R2 for S3-compatible artifact bytes, and Clerk or an equivalent managed auth provider for Google login and organizations.
 
 Migration rule: the Node server is deprecated but remains the compatibility oracle and JSON migration source until P4 migration tooling and any remaining legacy fallback needs are retired.
 
@@ -109,13 +109,13 @@ Training-observability roadmap first slice is implemented:
 - Tab-aware frontend data fetching so hidden Metrics, Run Detail, Compare, and artifact surfaces no longer fan out requests during every dashboard entry.
 - Neptune Exporter-shaped, transformed W&B, and transformed MLflow JSON importer endpoints and CLIs.
 - Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
-- Docker Compose for a one-command local Rust/Postgres API and artifact-storage stack.
+- Docker Compose for a one-command local Rust/Postgres/ClickHouse API and artifact-storage stack.
 
 Known follow-ups before broadening the roadmap:
 
 - Validate the W&B-competitor wedge with real users.
 - Preserve the strategy that Training Observability should beat W&B on speed, UI quality, and predictable pricing for small teams.
-- Keep Node compatibility checks available until JSON-to-Postgres migration tooling and legacy fallback needs are retired; `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui` exercise Rust against disposable Postgres.
+- Keep Node compatibility checks available until JSON-to-Postgres migration tooling and legacy fallback needs are retired; `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui` exercise Rust against disposable Postgres and ClickHouse.
 - Keep batch/import/upload failure behavior tested as the storage layer evolves.
 - Keep frontend async loaders cancellation-safe as workflow components continue to split.
 - Validate W&B/MLflow/Neptune import and future W&B dual logging with real teams before broadening migration claims.
@@ -130,6 +130,7 @@ Recommended local versions:
 - Python 3.11.
 - Rust 1.83 or newer.
 - Local Postgres command-line tools: `psql`, `initdb`, `pg_ctl`, and `createdb`.
+- Local ClickHouse binary (`clickhouse`) or a reachable `CLICKHOUSE_URL`; Docker Compose can provide ClickHouse for the container path.
 
 For a clean machine or teammate handoff, follow [SETUP.md](SETUP.md). The short path is:
 
@@ -162,9 +163,9 @@ npm run benchmark:large-runs
 
 Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust format/lint/unit tests, Node tests, and Python tests. The Rust service, SDK, and UI smokes still run locally because they require disposable service dependencies and are being hardened alongside the ClickHouse metric-store harness.
 
-Default smoke behavior is Rust/Postgres-first: `npm run test:contract`, `npm run test:contract:direct`, `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocations of `tools/contract-smoke.mjs` or `apps/web/tests/ui-smoke.mjs` all start disposable Postgres and `apps/rust-server`. The deprecated Node backend is opt-in for contract compatibility through `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node`; full UI smoke now depends on Rust session/auth endpoints.
+Default smoke behavior is Rust/Postgres/ClickHouse-first: `npm run test:contract`, `npm run test:contract:direct`, `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocations of `tools/contract-smoke.mjs` or `apps/web/tests/ui-smoke.mjs` all start disposable Postgres, disposable ClickHouse, and `apps/rust-server`. The deprecated Node backend is opt-in for contract compatibility through `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node`; full UI smoke now depends on Rust session/auth endpoints.
 
-Start the primary Rust/Postgres API with a local `.rlobs/postgres` database:
+Start the primary Rust API with local generated Postgres and ClickHouse state:
 
 ```bash
 npm run dev:api
@@ -191,7 +192,7 @@ Run the one-command local stack:
 docker compose up --build
 ```
 
-The Docker stack starts Postgres and the Rust API at `http://127.0.0.1:8000` with durable Postgres rows and artifact bytes in Docker volumes. Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000`.
+The Docker stack starts Postgres, ClickHouse, and the Rust API at `http://127.0.0.1:8000` with durable Postgres rows, ClickHouse metric rows, and artifact bytes in Docker volumes. Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000`.
 
 Run Rust checks and smokes:
 
@@ -210,7 +211,7 @@ Run the 90,000-run local benchmark:
 RLOBS_BENCH_RUNS=90000 RLOBS_BENCH_SAMPLES=10 RLOBS_BENCH_WARMUPS=2 RLOBS_BENCH_WEB=1 npm run benchmark:large-runs
 ```
 
-`npm run test:ui:direct` and `npm run test:contract:direct` also default to the same Rust/Postgres harness unless `RLOBS_UI_SMOKE_API_BASE` or `RLOBS_CONTRACT_BASE_URL` points them at an already-running compatible server.
+`npm run test:ui:direct` and `npm run test:contract:direct` also default to the same Rust/Postgres/ClickHouse harness unless `RLOBS_UI_SMOKE_API_BASE` or `RLOBS_CONTRACT_BASE_URL` points them at an already-running compatible server.
 
 Preview the accepted Postgres schema against a disposable or local database:
 
@@ -224,6 +225,7 @@ Start the Rust service directly against an existing Postgres database:
 
 ```bash
 DATABASE_URL=postgres://127.0.0.1:5432/rlobs \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
 RLOBS_BIND_ADDR=127.0.0.1:8001 \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- serve
 ```
