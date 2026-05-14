@@ -11,7 +11,6 @@ mod imports;
 mod objects;
 mod runs;
 mod summaries;
-mod tenants;
 mod usage;
 mod validation;
 
@@ -23,7 +22,6 @@ pub use imports::*;
 pub use objects::*;
 pub use runs::*;
 use summaries::*;
-pub use tenants::TenantRouteRecord;
 pub use usage::*;
 use validation::*;
 
@@ -36,8 +34,7 @@ use uuid::Uuid;
 use crate::{
     artifact_store::LocalArtifactStore,
     auth::{generate_api_key, generate_session_token, hash_idempotency, hash_secret},
-    config::{AppConfig, HostedClickHouseConfig},
-    control_store::{ControlRecordRow, ControlStore},
+    config::AppConfig,
     domain::{
         validate_account_type, validate_email, validate_json_object, validate_limit,
         validate_membership_role, validate_name, validate_offset, validate_optional_name,
@@ -46,16 +43,14 @@ use crate::{
         AuthSessionPayload, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
         CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
         CreateUserRequest, CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest,
-        MembershipRow, MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, DEFAULT_METRIC_LIMIT,
-        DEFAULT_RUN_LIMIT, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS,
-        MAX_RUN_LIMIT,
+        MembershipRow, MetricSeriesRow, OrganizationRow, ProjectRow, PublicApiKeyRow,
+        RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow, UpdateRunRequest,
+        UploadArtifactRequest, UserRow, UserSessionRow, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT,
+        MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT,
     },
     errors::{AppError, AppResult},
     metric_store::{
         MetricPointRow as ChMetricPointRow, MetricStore, OperationalRecordRow, SeriesReadRow,
-        SeriesSortMode,
     },
 };
 
@@ -102,33 +97,19 @@ const DEMO_STEPS: [i64; 6] = [0, 40, 80, 120, 160, 200];
 #[derive(Clone)]
 pub struct Store {
     metric_store: MetricStore,
-    control_store: Option<ControlStore>,
-    hosted_clickhouse: Option<HostedClickHouseConfig>,
-    tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
-    tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
 }
 
 impl Store {
-    pub async fn connect(
-        metric_store: MetricStore,
-        control_store: Option<ControlStore>,
-        hosted_clickhouse: Option<HostedClickHouseConfig>,
-    ) -> AppResult<Self> {
+    pub async fn connect(metric_store: MetricStore) -> AppResult<Self> {
         let store = Self {
             metric_store,
-            control_store,
-            hosted_clickhouse,
-            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
-            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
         };
         store.rebuild().await?;
-        if !store.hosted_clickhouse_enabled() {
-            store.ensure_local_org().await?;
-        }
+        store.ensure_local_org().await?;
         Ok(store)
     }
 
@@ -137,22 +118,7 @@ impl Store {
     }
 
     async fn rebuild(&self) -> AppResult<()> {
-        let records = if let Some(control_store) = &self.control_store {
-            control_store
-                .load_records()
-                .await?
-                .into_iter()
-                .map(|record| OperationalRecordRow {
-                    kind: record.kind,
-                    org_id: record.org_id,
-                    entity_id: record.entity_id,
-                    payload: record.payload,
-                    created_at: record.created_at,
-                })
-                .collect::<Vec<_>>()
-        } else {
-            self.metric_store.load_operational_records().await?
-        };
+        let records = self.metric_store.load_operational_records().await?;
         let latest_record_micros = records
             .iter()
             .map(|record| record.created_at.timestamp_micros())
@@ -160,7 +126,7 @@ impl Store {
             .unwrap_or(0);
         let mut data = StoreData::default();
         for record in records {
-            data.apply_record(&record.kind, record.org_id, &record.payload)?;
+            data.apply_record(&record.kind, &record.payload)?;
         }
         data.recompute_counters();
         *self.data.lock().await = data;
@@ -209,27 +175,7 @@ impl Store {
                 .map_err(|_| AppError::internal("operational payload serialization failed"))?,
             created_at: self.next_record_created_at().await,
         };
-        if self.is_control_record_kind(kind) {
-            if let Some(control_store) = &self.control_store {
-                let scope = control_record_scope(kind);
-                let control = ControlRecordRow {
-                    event_id: Uuid::new_v4(),
-                    scope: scope.to_string(),
-                    kind: row.kind,
-                    org_id: if scope == "global" {
-                        Uuid::nil()
-                    } else {
-                        org_id
-                    },
-                    entity_id: row.entity_id,
-                    payload: row.payload,
-                    created_at: row.created_at,
-                };
-                return control_store.insert_record(&control).await;
-            }
-        }
-        let metric_store = self.metric_store_for_persist(org_id).await?;
-        metric_store.insert_operational_record(&row).await
+        self.metric_store.insert_operational_record(&row).await
     }
 
     async fn next_record_created_at(&self) -> DateTime<Utc> {
@@ -256,24 +202,20 @@ struct StoreData {
     projects: BTreeMap<Uuid, ProjectRow>,
     projects_by_org_name: HashMap<(Uuid, String), Uuid>,
     runs: BTreeMap<Uuid, RunRow>,
-    runs_by_org_created: BTreeMap<(Uuid, DateTime<Utc>, Uuid), Uuid>,
-    runs_by_org_project_created: BTreeMap<(Uuid, String, DateTime<Utc>, Uuid), Uuid>,
-    run_search_texts: HashMap<Uuid, String>,
-    attributes: BTreeMap<(Uuid, i64), AttributeRow>,
+    attributes: BTreeMap<i64, AttributeRow>,
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
     artifacts: BTreeMap<Uuid, ArtifactRow>,
     artifacts_by_run: HashMap<Uuid, Vec<Uuid>>,
-    table_rows: HashMap<(Uuid, i64), Vec<TableObjectRow>>,
-    imports: BTreeMap<(Uuid, i64), ImportRow>,
+    table_rows: HashMap<i64, Vec<TableObjectRow>>,
+    imports: BTreeMap<i64, ImportRow>,
     idempotency: HashMap<(Uuid, String), IdempotencyRecord>,
     usage_daily: Vec<Value>,
-    tenant_routes: BTreeMap<Uuid, TenantRouteRecord>,
-    next_attribute_id_by_org: HashMap<Uuid, i64>,
-    next_import_id_by_org: HashMap<Uuid, i64>,
+    next_attribute_id: i64,
+    next_import_id: i64,
 }
 
 impl StoreData {
-    fn apply_record(&mut self, kind: &str, org_id: Uuid, payload: &str) -> AppResult<()> {
+    fn apply_record(&mut self, kind: &str, payload: &str) -> AppResult<()> {
         match kind {
             "user" => self.insert_user(parse_payload(payload)?),
             "identity" => {
@@ -296,12 +238,11 @@ impl StoreData {
             "artifact" => self.insert_artifact(parse_payload(payload)?),
             "table_rows" => {
                 let item: TableRowsRecord = parse_payload(payload)?;
-                self.table_rows
-                    .insert((org_id, item.attribute_id), item.rows);
+                self.table_rows.insert(item.attribute_id, item.rows);
             }
             "import" => {
                 let item: ImportRow = parse_payload(payload)?;
-                self.imports.insert((item.org_id, item.id), item);
+                self.imports.insert(item.id, item);
             }
             "idempotency" => {
                 let item: IdempotencyRecord = parse_payload(payload)?;
@@ -309,26 +250,14 @@ impl StoreData {
                     .insert((item.org_id, item.key.clone()), item);
             }
             "usage_daily" => self.usage_daily.push(parse_payload(payload)?),
-            "tenant_route" => self.insert_tenant_route(parse_payload(payload)?),
             _ => {}
         }
         Ok(())
     }
 
     fn recompute_counters(&mut self) {
-        self.next_attribute_id_by_org.clear();
-        for attribute in self.attributes.values() {
-            let next = self
-                .next_attribute_id_by_org
-                .entry(attribute.org_id)
-                .or_insert(1);
-            *next = (*next).max(attribute.id + 1);
-        }
-        self.next_import_id_by_org.clear();
-        for import in self.imports.values() {
-            let next = self.next_import_id_by_org.entry(import.org_id).or_insert(1);
-            *next = (*next).max(import.id + 1);
-        }
+        self.next_attribute_id = self.attributes.keys().last().copied().unwrap_or(0) + 1;
+        self.next_import_id = self.imports.keys().last().copied().unwrap_or(0) + 1;
     }
 
     fn insert_user(&mut self, user: UserRow) {
@@ -365,32 +294,11 @@ impl StoreData {
     }
 
     fn insert_run(&mut self, run: RunRow) {
-        if let Some(existing) = self.runs.get(&run.id) {
-            self.runs_by_org_created
-                .remove(&(existing.org_id, existing.created_at, existing.id));
-            self.runs_by_org_project_created.remove(&(
-                existing.org_id,
-                existing.project.clone(),
-                existing.created_at,
-                existing.id,
-            ));
-        }
-        self.runs_by_org_created
-            .insert((run.org_id, run.created_at, run.id), run.id);
-        self.runs_by_org_project_created.insert(
-            (run.org_id, run.project.clone(), run.created_at, run.id),
-            run.id,
-        );
-        self.run_search_texts.insert(run.id, run_search_text(&run));
         self.runs.insert(run.id, run);
     }
 
     fn insert_attribute(&mut self, attribute: AttributeRow) {
-        let next = self
-            .next_attribute_id_by_org
-            .entry(attribute.org_id)
-            .or_insert(1);
-        *next = (*next).max(attribute.id + 1);
+        self.next_attribute_id = self.next_attribute_id.max(attribute.id + 1);
         self.attributes_by_run
             .entry(attribute.run_id)
             .or_default()
@@ -399,8 +307,7 @@ impl StoreData {
             .entry(attribute.run_id)
             .or_default()
             .push(attribute.id);
-        self.attributes
-            .insert((attribute.org_id, attribute.id), attribute);
+        self.attributes.insert(attribute.id, attribute);
     }
 
     fn insert_artifact(&mut self, artifact: ArtifactRow) {
@@ -430,11 +337,11 @@ impl StoreData {
             .map(|run| run.id)
             .collect::<Vec<_>>();
         for run_id in run_ids {
-            self.remove_run(run_id);
+            self.runs.remove(&run_id);
             if let Some(attribute_ids) = self.attributes_by_run.remove(&run_id) {
                 for id in attribute_ids {
-                    self.attributes.remove(&(delete.org_id, id));
-                    self.table_rows.remove(&(delete.org_id, id));
+                    self.attributes.remove(&id);
+                    self.table_rows.remove(&id);
                 }
             }
             if let Some(artifact_ids) = self.artifacts_by_run.remove(&run_id) {
@@ -443,38 +350,6 @@ impl StoreData {
                 }
             }
         }
-    }
-
-    fn insert_tenant_route(&mut self, route: TenantRouteRecord) {
-        self.tenant_routes.insert(route.org_id, route);
-    }
-
-    fn remove_run(&mut self, run_id: Uuid) {
-        if let Some(run) = self.runs.remove(&run_id) {
-            self.runs_by_org_created
-                .remove(&(run.org_id, run.created_at, run.id));
-            self.runs_by_org_project_created.remove(&(
-                run.org_id,
-                run.project.clone(),
-                run.created_at,
-                run.id,
-            ));
-            self.run_search_texts.remove(&run.id);
-        }
-    }
-
-    fn allocate_attribute_id(&mut self, org_id: Uuid) -> i64 {
-        let next = self.next_attribute_id_by_org.entry(org_id).or_insert(1);
-        let id = *next;
-        *next += 1;
-        id
-    }
-
-    fn allocate_import_id(&mut self, org_id: Uuid) -> i64 {
-        let next = self.next_import_id_by_org.entry(org_id).or_insert(1);
-        let id = *next;
-        *next += 1;
-        id
     }
 }
 
@@ -544,73 +419,5 @@ fn parse_payload<T: for<'de> Deserialize<'de>>(payload: &str) -> AppResult<T> {
 }
 
 pub async fn ready(store: &Store) -> bool {
-    if !crate::metric_store::ready(store.metric_store()).await {
-        return false;
-    }
-    match &store.control_store {
-        Some(control_store) => control_store.ready().await,
-        None => true,
-    }
-}
-
-fn control_record_scope(kind: &str) -> &'static str {
-    match kind {
-        "user" | "identity" => "global",
-        _ => "org",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn control_record_scope_keeps_user_identity_global() {
-        assert_eq!(control_record_scope("user"), "global");
-        assert_eq!(control_record_scope("identity"), "global");
-        assert_eq!(control_record_scope("organization"), "org");
-        assert_eq!(control_record_scope("api_key"), "org");
-    }
-
-    #[test]
-    fn tenant_local_integer_ids_are_keyed_by_org() {
-        let org_a = Uuid::from_u128(1);
-        let org_b = Uuid::from_u128(2);
-        let run_a = Uuid::from_u128(10);
-        let run_b = Uuid::from_u128(20);
-        let mut data = StoreData::default();
-
-        data.insert_attribute(AttributeRow {
-            id: 1,
-            org_id: org_a,
-            run_id: run_a,
-            path: "score".to_string(),
-            kind: "float_series".to_string(),
-            step: Some(1.0),
-            logged_at: Some(epoch()),
-            value: json!(0.8),
-            summary: json!({}),
-            artifact_id: None,
-            created_at: epoch(),
-        });
-        data.insert_attribute(AttributeRow {
-            id: 1,
-            org_id: org_b,
-            run_id: run_b,
-            path: "score".to_string(),
-            kind: "float_series".to_string(),
-            step: Some(1.0),
-            logged_at: Some(epoch()),
-            value: json!(0.9),
-            summary: json!({}),
-            artifact_id: None,
-            created_at: epoch(),
-        });
-
-        assert_eq!(data.attributes.len(), 2);
-        assert_eq!(data.attributes[&(org_a, 1)].run_id, run_a);
-        assert_eq!(data.attributes[&(org_b, 1)].run_id, run_b);
-        assert_eq!(data.allocate_attribute_id(org_a), 2);
-        assert_eq!(data.allocate_attribute_id(org_b), 2);
-    }
+    crate::metric_store::ready(store.metric_store()).await
 }

@@ -13,13 +13,12 @@ axum = { version = "=0.7.9", features = ["macros", "json"] }
 base64 = "=0.22.1"
 base64ct = "=1.6.0"
 chrono = { version = "=0.4.39", features = ["serde"] }
-clickhouse = { version = "=0.13.2", features = ["uuid", "chrono", "rustls-tls-ring", "rustls-tls-webpki-roots"] }
+clickhouse = { version = "=0.13.2", features = ["uuid", "chrono"] }
 getrandom = "=0.2.15"
 home = "=0.5.9"
 http = "=1.2.0"
 indexmap = "=2.7.1"
 mime_guess = "=2.0.5"
-reqwest = { version = "=0.12.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "=1.0.217", features = ["derive"] }
 serde_json = "=1.0.135"
 sha2 = "=0.10.8"

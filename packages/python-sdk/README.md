@@ -60,14 +60,6 @@ run = ro.init(project="cartpole", api_key="rlobs_...", base_url="https://api.exa
 RLOBS_API_KEY=rlobs_... PYTHONPATH=packages/python-sdk python3 train.py
 ```
 
-The hosted ClickHouse smoke proves this path against the Rust API's User Data and tenant-routing layer:
-
-```bash
-npm run test:hosted-clickhouse
-```
-
-That smoke creates an API key through the onboarding route, passes it to `rl_observability.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
-
 Read-only run summary queries use the raw `Api` helper:
 
 ```python

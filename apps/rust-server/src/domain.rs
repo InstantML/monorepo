@@ -131,14 +131,6 @@ pub struct AuthSessionPayload {
     pub membership: MembershipRow,
     pub memberships: Vec<MembershipRow>,
     pub account_type: String,
-    pub provisioning: Option<ProvisioningStatusPayload>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ProvisioningStatusPayload {
-    pub status: String,
-    pub mode: String,
-    pub service_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]

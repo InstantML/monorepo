@@ -31,16 +31,14 @@ pub async fn side_by_side(
                     .get(run_id)
                     .into_iter()
                     .flatten()
-                    .filter_map(|id| data.attributes.get(&(ctx.org_id, *id)).cloned())
-                    .filter(|attribute| attribute.run_id == *run_id),
+                    .filter_map(|id| data.attributes.get(id).cloned()),
             );
             runs.push(run);
         }
         (runs, attributes)
     };
-    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let series = metric_series_for_runs_limited(
-        &metric_store,
+        store.metric_store(),
         ctx.org_id,
         &run_ids,
         MAX_SIDE_BY_SIDE_ROWS as i64 + 1,
@@ -122,9 +120,9 @@ pub async fn export_data(
     let total_runs = runs.len();
     let selected = runs.into_iter().take(MAX_EXPORT_RUNS).collect::<Vec<_>>();
     let run_ids = selected.iter().map(|run| run.id).collect::<Vec<_>>();
-    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-    let metrics = metric_point_values_for_runs(&metric_store, ctx.org_id, &run_ids).await?;
-    let metric_series = metric_series_values_for_runs(&metric_store, ctx.org_id, &run_ids).await?;
+    let metrics = metric_point_values_for_runs(store.metric_store(), ctx.org_id, &run_ids).await?;
+    let metric_series =
+        metric_series_values_for_runs(store.metric_store(), ctx.org_id, &run_ids).await?;
     let data = store.data.lock().await;
     let run_id_set = run_ids.iter().copied().collect::<BTreeSet<_>>();
     let projects = {
@@ -144,8 +142,7 @@ pub async fn export_data(
     let mut attributes = run_ids
         .iter()
         .flat_map(|run_id| data.attributes_by_run.get(run_id).into_iter().flatten())
-        .filter_map(|id| data.attributes.get(&(ctx.org_id, *id)))
-        .filter(|attribute| run_id_set.contains(&attribute.run_id))
+        .filter_map(|id| data.attributes.get(id))
         .map(attribute_value)
         .collect::<Vec<_>>();
     let attributes_truncated = attributes.len() > MAX_EXPORT_ATTRIBUTES;
@@ -164,7 +161,7 @@ pub async fn export_data(
         .filter(|attribute| run_id_set.contains(&attribute.run_id))
         .flat_map(|attribute| {
             data.table_rows
-                .get(&(ctx.org_id, attribute.id))
+                .get(&attribute.id)
                 .into_iter()
                 .flatten()
                 .map(move |row| {

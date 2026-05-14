@@ -137,14 +137,6 @@ pub(super) fn session_payload_from_data(
         .filter(|membership| membership.user_id == session.user_id)
         .cloned()
         .collect::<Vec<_>>();
-    let provisioning =
-        data.tenant_routes
-            .get(&session.org_id)
-            .map(|route| ProvisioningStatusPayload {
-                status: route.status.clone(),
-                mode: route.provisioner.clone(),
-                service_id: route.service_id.clone(),
-            });
     Ok(AuthSessionPayload {
         authenticated: true,
         session,
@@ -153,7 +145,6 @@ pub(super) fn session_payload_from_data(
         organization,
         membership,
         memberships,
-        provisioning,
     })
 }
 

@@ -37,7 +37,6 @@ pub async fn import_payload(
         ensure_import_project_access(store, ctx, &canonical.project).await?;
         return Ok(json!({ "dry_run": true, "summary": summary }));
     }
-    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let mut data = store.data.lock().await;
     let project = match ctx.auth.as_ref().and_then(|auth| auth.project_id) {
         Some(project_id) => {
@@ -95,7 +94,7 @@ pub async fn import_payload(
                 created_at: Utc::now(),
             })
             .collect::<Vec<_>>();
-        metric_store.insert_points(&points).await?;
+        store.metric_store().insert_points(&points).await?;
         for attribute in item.attributes {
             let attribute = attribute_from_input(&mut data, ctx.org_id, run.id, attribute)?;
             store
@@ -138,7 +137,7 @@ pub async fn import_payload(
         run_ids.push(run.id);
     }
     let import = ImportRow {
-        id: data.allocate_import_id(ctx.org_id),
+        id: data.next_import_id,
         org_id: ctx.org_id,
         project_id: Some(project.id),
         source_type: format!("{source}_json"),
@@ -148,10 +147,11 @@ pub async fn import_payload(
         created_at: Utc::now(),
         completed_at: Some(Utc::now()),
     };
+    data.next_import_id += 1;
     store
         .persist_locked("import", ctx.org_id, &import.id.to_string(), &import)
         .await?;
-    data.imports.insert((ctx.org_id, import.id), import.clone());
+    data.imports.insert(import.id, import.clone());
     Ok(json!({ "dry_run": false, "summary": summary, "import": import }))
 }
 

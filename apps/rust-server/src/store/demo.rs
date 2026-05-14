@@ -2,7 +2,6 @@ use super::*;
 
 pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
-    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let mut data = store.data.lock().await;
     let delete = ProjectDeleteRecord {
         org_id: ctx.org_id,
@@ -83,7 +82,7 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
             store
                 .persist_locked("table_rows", ctx.org_id, &table.id.to_string(), &rows)
                 .await?;
-            data.table_rows.insert((ctx.org_id, table.id), rows.rows);
+            data.table_rows.insert(table.id, rows.rows);
             let hist = demo_object(
                 &mut data,
                 ctx.org_id,
@@ -137,7 +136,7 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
     }
     drop(data);
     for chunk in points.chunks(10_000) {
-        metric_store.insert_points(chunk).await?;
+        store.metric_store().insert_points(chunk).await?;
     }
     let mut query = HashMap::new();
     query.insert("project".to_string(), "demo".to_string());
@@ -154,8 +153,8 @@ fn demo_object(
     value: Value,
     summary: Value,
 ) -> AttributeRow {
-    AttributeRow {
-        id: data.allocate_attribute_id(org_id),
+    let row = AttributeRow {
+        id: data.next_attribute_id,
         org_id,
         run_id,
         path: path.to_string(),
@@ -166,7 +165,9 @@ fn demo_object(
         summary,
         artifact_id: None,
         created_at: Utc::now(),
-    }
+    };
+    data.next_attribute_id += 1;
+    row
 }
 
 fn demo_run_name(workload: &str, index: usize, seed: i64) -> String {
