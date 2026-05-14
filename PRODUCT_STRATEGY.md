@@ -1,12 +1,12 @@
-# Training Observability Product Strategy
+# InstantML Product Strategy
 
 ## Current Plan Snapshot
 
 Date: 2026-05-10
 
-Working name: **Training Observability**.
+Working name: **InstantML**.
 
-Training Observability is a hosted SaaS-first, W&B-style training observability product for smaller startups, research labs, and lean ML teams. The product should win on three axes:
+InstantML is a hosted SaaS-first, W&B-style training observability product for smaller startups, research labs, and lean ML teams. The product should win on three axes:
 
 1. **Speed**: faster SDK hot paths, faster run summaries, faster metric charts, and less waiting while comparing experiments.
 2. **UI quality**: a calmer, denser, more legible daily workflow for training-run comparison.
@@ -18,7 +18,7 @@ The near-term product bet:
 
 Brand transition note:
 
-- User-facing docs and UI should say **Training Observability**.
+- User-facing docs and UI should say **InstantML**.
 - Existing package names, storage paths, and compatibility identifiers such as `rl_observability`, `.rlobs`, `rlobs_api`, and `RlobsError` remain until a dedicated namespace migration is designed and tested.
 - RL, robotics, and simulation remain important differentiating workflows, but they are not the brand boundary.
 - Open-source, public-name, and compatibility-name policy lives in `docs/product/2026-05-09-open-source-brand.md`.
@@ -59,7 +59,7 @@ Training observability for small ML teams that want W&B-like value with faster c
 
 ### One-Sentence Pitch
 
-Training Observability helps small ML teams log, compare, debug, and reproduce training runs faster than heavyweight trackers, with predictable pricing and a data model they can trust.
+InstantML helps small ML teams log, compare, debug, and reproduce training runs faster than heavyweight trackers, with predictable pricing and a data model they can trust.
 
 ### Wedge
 
@@ -94,7 +94,7 @@ Most ML teams already understand experiment tracking. The opportunity is not edu
 - Neptune has strong metadata ideas, but its future as an independent product has changed.
 - Many teams want a hosted product now and self-host/VPC/export options later for trust.
 
-Training Observability should become the product that feels smaller in the right ways:
+InstantML should become the product that feels smaller in the right ways:
 
 - Fast by default.
 - Clear by default.
@@ -149,7 +149,7 @@ Opportunity:
 
 LangSmith, Langfuse, Phoenix, and similar tools are strong for prompts, traces, evals, retrieval, and agent runtime behavior. They do not replace long-running training observability: metric streams, checkpoints, artifacts, source context, and experiment comparison.
 
-Training Observability should stay focused on training unless users clearly pull it toward runtime observability later.
+InstantML should stay focused on training unless users clearly pull it toward runtime observability later.
 
 ## Pricing Strategy
 
@@ -448,7 +448,7 @@ Do next:
 - Validate pricing with small startups and labs.
 - Use the validation scorecard in `docs/users/2026-05-09-validation-plan.md`.
 - Keep the accepted open-source and compatibility-name policy in `docs/product/2026-05-09-open-source-brand.md` current.
-- Keep docs aligned with implementation and Training Observability user-facing language.
+- Keep docs aligned with implementation and InstantML user-facing language.
 
 ## Differentiation
 

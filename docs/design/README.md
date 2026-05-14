@@ -22,8 +22,9 @@ Current implemented design sequence:
 - `2026-05-10-run-tags-notes-editing.md`: searchable tags/notes across Rust, SDK, Runs, Run Detail, and Compare.
 - `2026-05-11-rich-logged-objects.md`: first rich logged object slice using attributes/artifacts, paginated table preview rows, SDK wrappers, and Run Detail/Artifacts previews.
 - `2026-05-11-landing-auth-onboarding.md`: landing page, Google-style local auth, browser sessions, org seats, copy-once SDK key onboarding, and real dashboard routes.
+- `2026-05-14-instantml-rescheme-and-chart-polish.md`: InstantML frontend rescheme, public brand-token reference, chart density polish, and project/saved-view acceptance criteria.
 
-Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as Training Observability: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
+Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
 Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
 
@@ -71,6 +72,6 @@ Current recurring review themes to check before future implementation:
 - Metric step and timestamp semantics must stay consistent across SDK, Rust server, deprecated Node server, Python bootstrap API, and importers.
 - Offline SDK behavior must be described exactly as implemented.
 - SDK process spool events should remain one request per file unless idempotency covers every request in a wider event.
-- New user-facing docs and UI should use Training Observability, while legacy code identifiers remain until a namespace migration is designed.
+- New user-facing docs and UI should use InstantML, while legacy code identifiers remain until a namespace migration is designed.
 - Hosted SaaS backend work should preserve documented API compatibility and keep shared contract tests passing against Rust and the deprecated Node server where legacy behavior matters.
 - Performance-sensitive frontend work should keep hidden tab data fetches gated and panel/series requests bounded.
