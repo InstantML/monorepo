@@ -1,0 +1,954 @@
+use super::*;
+
+pub(super) async fn health() -> Json<Value> {
+    Json(json!({ "status": "ok" }))
+}
+
+pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json<Value>> {
+    if !store::ready(&state.pool).await {
+        return Err(AppError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "postgres is not ready",
+        ));
+    }
+    if !metric_store::ready(&state.metric_store).await {
+        return Err(AppError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "clickhouse is not ready",
+        ));
+    }
+    Ok(Json(json!({ "status": "ok" })))
+}
+
+pub(super) async fn metrics() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        "rlobs_rust_build_info{service=\"rust-server\"} 1\n",
+    )
+        .into_response()
+}
+
+pub(super) async fn openapi_json() -> Json<Value> {
+    Json(json!({
+        "openapi": "3.1.0",
+        "info": { "title": "Training Observability Rust API", "version": env!("CARGO_PKG_VERSION") },
+        "paths": {
+            "/healthz": { "get": { "responses": { "200": { "description": "healthy" } } } },
+            "/readyz": { "get": { "responses": { "200": { "description": "ready" } } } },
+            "/projects": { "get": {}, "post": {} },
+            "/runs": { "get": {}, "post": {} },
+            "/runs/{run_id}/metrics": { "get": {}, "post": {} },
+            "/api/metrics/series": { "post": {} },
+            "/api/runs/{run_id}/objects": { "get": {}, "post": {} },
+            "/api/objects/{object_id}/rows": { "get": {} },
+            "/api/runs/summary": { "get": {} }
+        }
+    }))
+}
+
+pub(super) async fn auth_config(State(state): State<Arc<AppState>>) -> Json<Value> {
+    Json(json!({
+        "dev_auth_enabled": state.config.dev_auth_enabled,
+        "managed_google_enabled": state.config.managed_google_enabled
+    }))
+}
+
+pub(super) async fn auth_dev_google(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Response> {
+    if !state.config.dev_auth_enabled {
+        return Err(AppError::unauthorized(
+            "local development auth is not enabled",
+        ));
+    }
+    validate_mutation_origin(&state, &headers)?;
+    let input = read_json::<DevGoogleAuthRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let created = store::create_dev_google_session(&state.pool, input).await?;
+    json_with_session_cookie(&state, &headers, created.payload, &created.token)
+}
+
+pub(super) async fn auth_google(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let _ = read_json::<GoogleAuthRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Err(AppError::new(
+        StatusCode::NOT_IMPLEMENTED,
+        "managed Google auth is not configured",
+    ))
+}
+
+pub(super) async fn auth_session(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let Some(token) = session_cookie(&headers) else {
+        return Ok(Json(json!({ "authenticated": false })).into_response());
+    };
+    match store::authenticate_session(&state.pool, token).await {
+        Ok(payload) => Ok(Json(payload).into_response()),
+        Err(_) => {
+            let mut response = Json(json!({ "authenticated": false })).into_response();
+            response
+                .headers_mut()
+                .append(header::SET_COOKIE, header_value(&clear_session_cookie())?);
+            Ok(response)
+        }
+    }
+}
+
+pub(super) async fn auth_logout(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    validate_mutation_origin(&state, &headers)?;
+    if let Some(token) = session_cookie(&headers) {
+        store::revoke_session(&state.pool, token).await?;
+    }
+    let mut response = Json(json!({ "authenticated": false })).into_response();
+    response
+        .headers_mut()
+        .append(header::SET_COOKIE, header_value(&clear_session_cookie())?);
+    Ok(response)
+}
+
+pub(super) async fn create_user(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    require_bootstrap(&state, &headers)?;
+    let input = read_json::<CreateUserRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        json!({ "user": store::create_user(&state.pool, input).await? }),
+    ))
+}
+
+pub(super) async fn list_users(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    require_bootstrap(&state, &headers)?;
+    Ok(Json(
+        json!({ "users": store::list_users(&state.pool).await? }),
+    ))
+}
+
+pub(super) async fn create_org(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    require_bootstrap(&state, &headers)?;
+    let input =
+        read_json::<CreateOrganizationRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        json!({ "organization": store::create_organization(&state.pool, input).await? }),
+    ))
+}
+
+pub(super) async fn list_orgs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    require_bootstrap(&state, &headers)?;
+    Ok(Json(
+        json!({ "organizations": store::list_organizations(&state.pool).await? }),
+    ))
+}
+
+pub(super) async fn create_api_key(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(org_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let org_id = parse_uuid(&org_id, "organization not found")?;
+    let input = read_json::<CreateApiKeyRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    match admin_actor(&state, &headers, org_id).await? {
+        Some(user_id) => Ok(Json(
+            store::create_api_key_for_user(&state.pool, user_id, org_id, input).await?,
+        )),
+        None => Ok(Json(
+            store::create_api_key(&state.pool, org_id, input).await?,
+        )),
+    }
+}
+
+pub(super) async fn list_api_keys(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(org_id): Path<String>,
+) -> AppResult<Json<Value>> {
+    let org_id = parse_uuid(&org_id, "organization not found")?;
+    require_admin_or_bootstrap(&state, &headers, org_id).await?;
+    Ok(Json(
+        json!({ "api_keys": store::list_api_keys(&state.pool, org_id).await? }),
+    ))
+}
+
+pub(super) async fn revoke_api_key(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((org_id, api_key_id)): Path<(String, String)>,
+) -> AppResult<Json<Value>> {
+    let org_id = parse_uuid(&org_id, "organization not found")?;
+    require_admin_or_bootstrap(&state, &headers, org_id).await?;
+    let api_key_id = parse_uuid(&api_key_id, "api key not found")?;
+    Ok(Json(
+        json!({ "key": store::revoke_api_key(&state.pool, org_id, api_key_id).await? }),
+    ))
+}
+
+pub(super) async fn disable_service_account(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((org_id, service_account_id)): Path<(String, String)>,
+) -> AppResult<Json<Value>> {
+    let org_id = parse_uuid(&org_id, "organization not found")?;
+    require_admin_or_bootstrap(&state, &headers, org_id).await?;
+    let service_account_id = parse_uuid(&service_account_id, "service account not found")?;
+    Ok(Json(json!({
+        "service_account": store::disable_service_account(&state.pool, org_id, service_account_id).await?
+    })))
+}
+
+pub(super) async fn reserve_seat(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(org_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let org_id = parse_uuid(&org_id, "organization not found")?;
+    validate_mutation_origin(&state, &headers)?;
+    let session = session_context(&state, &headers).await?;
+    if session.organization.id != org_id {
+        return Err(AppError::forbidden(
+            "session belongs to a different organization",
+        ));
+    }
+    let input = read_json::<ReserveSeatRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(json!({
+        "membership": store::reserve_seat(&state.pool, session.user.id, org_id, input).await?
+    })))
+}
+
+pub(super) async fn create_project(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let input = read_json::<CreateProjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        json!({ "project": store::create_project(&state.pool, &ctx, input).await? }),
+    ))
+}
+
+pub(super) async fn list_projects(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    Ok(Json(
+        json!({ "projects": store::list_projects(&state.pool, &ctx).await? }),
+    ))
+}
+
+pub(super) async fn create_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let input = read_json::<CreateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        json!({ "run": store::create_run(&state.pool, &ctx, input).await? }),
+    ))
+}
+
+pub(super) async fn list_runs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    Ok(Json(
+        store::list_runs(&state.pool, &state.metric_store, &ctx, &query).await?,
+    ))
+}
+
+pub(super) async fn get_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(
+        json!({ "run": store::get_run(&state.pool, &state.metric_store, &ctx, run_id).await? }),
+    ))
+}
+
+pub(super) async fn update_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let input = read_json::<UpdateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        json!({ "run": store::update_run(&state.pool, &ctx, run_id, input).await? }),
+    ))
+}
+
+pub(super) async fn log_metrics(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) =
+        read_json_with_raw::<LogMetricsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    let inserted = store::log_metrics(
+        &state.pool,
+        &state.metric_store,
+        &ctx,
+        run_id,
+        raw,
+        input,
+        idempotency_key,
+    )
+    .await?;
+    Ok(Json(json!({ "inserted": inserted })))
+}
+
+pub(super) async fn get_metrics(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(
+        store::get_metrics(&state.pool, &state.metric_store, &ctx, run_id, &query).await?,
+    ))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(super) struct MetricsSeriesRequest {
+    key: String,
+    run_ids: Vec<String>,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    start_step: Option<f64>,
+    #[serde(default)]
+    end_step: Option<f64>,
+}
+
+pub(super) async fn metrics_series(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<MetricsSeriesRequest>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let mut query = HashMap::new();
+    query.insert("key".to_string(), body.key);
+    query.insert("run_ids".to_string(), body.run_ids.join(","));
+    if let Some(limit) = body.limit {
+        query.insert("limit".to_string(), limit.to_string());
+    }
+    if let Some(start) = body.start_step {
+        query.insert("start_step".to_string(), start.to_string());
+    }
+    if let Some(end) = body.end_step {
+        query.insert("end_step".to_string(), end.to_string());
+    }
+    Ok(Json(
+        store::metrics_series_batched(&state.pool, &state.metric_store, &ctx, &query).await?,
+    ))
+}
+
+pub(super) async fn overview(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    Ok(Json(
+        store::overview(&state.pool, &state.metric_store, &ctx, &query).await?,
+    ))
+}
+
+pub(super) async fn runs_summary(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    Ok(Json(
+        store::runs_summary(&state.pool, &state.metric_store, &ctx, &query).await?,
+    ))
+}
+
+pub(super) async fn side_by_side(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    Ok(Json(
+        store::side_by_side(&state.pool, &state.metric_store, &ctx, &query).await?,
+    ))
+}
+
+pub(super) async fn create_attributes(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let input = read_json::<CreateAttributesRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        json!({ "attributes": store::create_attributes(&state.pool, &ctx, run_id, input).await? }),
+    ))
+}
+
+pub(super) async fn list_attributes(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(
+        json!({ "attributes": store::list_attributes(&state.pool, &ctx, run_id, &query).await? }),
+    ))
+}
+
+pub(super) async fn create_object(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let input = read_json::<CreateObjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(json!({
+        "object": store::create_object(&state.pool, &ctx, run_id, input).await?
+    })))
+}
+
+pub(super) async fn list_objects(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(
+        store::list_objects(&state.pool, &ctx, run_id, &query).await?,
+    ))
+}
+
+pub(super) async fn list_object_rows(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(object_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let object_id = object_id
+        .parse::<i64>()
+        .map_err(|_| AppError::not_found("object not found"))?;
+    Ok(Json(
+        store::list_object_rows(&state.pool, &ctx, object_id, &query).await?,
+    ))
+}
+
+pub(super) async fn create_artifact(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "artifacts:write", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let input = read_json::<CreateArtifactRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        json!({ "artifact": store::create_artifact(&state.pool, &ctx, run_id, input).await? }),
+    ))
+}
+
+pub(super) async fn upload_artifact(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "artifacts:write", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let input =
+        read_json::<UploadArtifactRequest>(&headers, bytes, state.config.max_upload_body_bytes)?;
+    Ok(Json(
+        json!({ "artifact": store::upload_artifact(&state.pool, &state.config, &ctx, run_id, input).await? }),
+    ))
+}
+
+pub(super) async fn list_artifacts(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(
+        json!({ "artifacts": store::list_artifacts(&state.pool, &ctx, run_id, &query).await? }),
+    ))
+}
+
+pub(super) async fn download_artifact(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(artifact_id): Path<String>,
+) -> AppResult<Response> {
+    let ctx = context(&state, &headers, true).await?;
+    let artifact_id = parse_uuid(&artifact_id, "artifact not found")?;
+    let artifact = store::get_artifact_for_context(&state.pool, &ctx, artifact_id).await?;
+    let artifact_store = LocalArtifactStore::new(&state.config.artifact_root);
+    let file = artifact_store.open(&artifact).await?;
+    let content_type = artifact
+        .mime_type
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let mut response = Response::new(Body::from_stream(ReaderStream::new(file)));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, header_value(&content_type)?);
+    if let Some(size_bytes) = artifact.size_bytes {
+        response.headers_mut().insert(
+            header::CONTENT_LENGTH,
+            header_value(&size_bytes.to_string())?,
+        );
+    }
+    Ok(response)
+}
+
+pub(super) async fn export_data(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    Ok(Json(
+        store::export_data(&state.pool, &state.metric_store, &ctx, &query).await?,
+    ))
+}
+
+pub(super) async fn usage_summary(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "usage:read", &state)?;
+    Ok(Json(
+        store::usage_summary(&state.pool, &state.metric_store, &ctx).await?,
+    ))
+}
+
+pub(super) async fn usage_export(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "usage:read", &state)?;
+    Ok(Json(
+        store::usage_export(&state.pool, &state.metric_store, &ctx).await?,
+    ))
+}
+
+pub(super) async fn list_imports(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    Ok(Json(store::list_imports(&state.pool, &ctx).await?))
+}
+
+pub(super) async fn import_neptune(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    import_with_source(state, headers, query, bytes, "neptune").await
+}
+
+pub(super) async fn import_wandb(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    import_with_source(state, headers, query, bytes, "wandb").await
+}
+
+pub(super) async fn import_mlflow(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    import_with_source(state, headers, query, bytes, "mlflow").await
+}
+
+async fn import_with_source(
+    state: Arc<AppState>,
+    headers: HeaderMap,
+    query: HashMap<String, String>,
+    bytes: Bytes,
+    source: &str,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "imports:write", &state)?;
+    let raw = read_json_value(&headers, bytes, state.config.max_body_bytes)?;
+    let dry_run = query
+        .get("dry_run")
+        .map(|value| value == "true")
+        .unwrap_or(false);
+    Ok(Json(
+        store::import_payload(&state.pool, &state.metric_store, &ctx, source, dry_run, raw).await?,
+    ))
+}
+
+pub(super) async fn reset_demo(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    store::require_unrestricted_org_access(&ctx)?;
+    let _ = read_json_value(&headers, bytes, state.config.max_body_bytes).ok();
+    Ok(Json(
+        store::reset_demo(&state.pool, &state.metric_store, &ctx).await?,
+    ))
+}
+
+pub(super) async fn not_found() -> AppError {
+    AppError::not_found("route not found")
+}
+
+fn require_bootstrap(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
+    if !state.config.auth_mode.requires_api_key() {
+        return Ok(());
+    }
+    require_strict_bootstrap(state, headers)
+}
+
+fn require_strict_bootstrap(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
+    if state.config.bootstrap_token.is_empty() {
+        return Err(AppError::unauthorized("bootstrap token is not configured"));
+    }
+    match header_text(headers, "x-rlobs-bootstrap-token") {
+        Some(token) if token == state.config.bootstrap_token => Ok(()),
+        _ => Err(AppError::unauthorized("invalid bootstrap token")),
+    }
+}
+
+async fn require_admin_or_bootstrap(
+    state: &AppState,
+    headers: &HeaderMap,
+    org_id: Uuid,
+) -> AppResult<()> {
+    if require_strict_bootstrap(state, headers).is_ok() {
+        return Ok(());
+    }
+    if header_text(headers, "authorization").is_some() {
+        let ctx = context(state, headers, true).await?;
+        if ctx.org_id != org_id {
+            return Err(AppError::forbidden(
+                "organization belongs to a different API key",
+            ));
+        }
+        require_scope(&ctx, "api_keys:write", state)?;
+        return store::require_unrestricted_org_access(&ctx);
+    }
+    if state.config.auth_mode.requires_api_key() && session_cookie(headers).is_none() {
+        require_strict_bootstrap(state, headers)?;
+        return Ok(());
+    }
+    let session = session_context(state, headers).await?;
+    if session.organization.id != org_id {
+        return Err(AppError::forbidden(
+            "session belongs to a different organization",
+        ));
+    }
+    store::require_org_admin(&state.pool, session.user.id, org_id)
+        .await
+        .map(|_| ())
+}
+
+async fn admin_actor(
+    state: &AppState,
+    headers: &HeaderMap,
+    org_id: Uuid,
+) -> AppResult<Option<Uuid>> {
+    if require_strict_bootstrap(state, headers).is_ok() {
+        return Ok(None);
+    }
+    if header_text(headers, "authorization").is_some() {
+        let ctx = context(state, headers, true).await?;
+        if ctx.org_id != org_id {
+            return Err(AppError::forbidden(
+                "organization belongs to a different API key",
+            ));
+        }
+        require_scope(&ctx, "api_keys:write", state)?;
+        store::require_unrestricted_org_access(&ctx)?;
+        return Ok(None);
+    }
+    if state.config.auth_mode.requires_api_key() && session_cookie(headers).is_none() {
+        require_strict_bootstrap(state, headers)?;
+        return Ok(None);
+    }
+    validate_mutation_origin(state, headers)?;
+    let session = session_context(state, headers).await?;
+    if session.organization.id != org_id {
+        return Err(AppError::forbidden(
+            "session belongs to a different organization",
+        ));
+    }
+    store::require_org_admin(&state.pool, session.user.id, org_id).await?;
+    Ok(Some(session.user.id))
+}
+
+async fn context(
+    state: &AppState,
+    headers: &HeaderMap,
+    tenant_route: bool,
+) -> AppResult<RequestContext> {
+    match header_text(headers, "authorization") {
+        Some(header) => {
+            let token = header
+                .strip_prefix("Bearer ")
+                .or_else(|| header.strip_prefix("bearer "))
+                .ok_or_else(|| AppError::unauthorized("authorization must use bearer token"))?;
+            let auth = store::authenticate_api_key(&state.pool, token).await?;
+            Ok(RequestContext {
+                org_id: auth.org_id,
+                auth: Some(auth),
+                session: None,
+            })
+        }
+        None if session_cookie(headers).is_some() => {
+            let payload = store::authenticate_session(
+                &state.pool,
+                session_cookie(headers).expect("checked session cookie"),
+            )
+            .await?;
+            Ok(RequestContext {
+                org_id: payload.organization.id,
+                auth: None,
+                session: Some(SessionContext {
+                    session_id: payload.session.id,
+                    user_id: payload.user.id,
+                    role: payload.membership.role,
+                }),
+            })
+        }
+        None if state.config.auth_mode.requires_api_key() && tenant_route => {
+            Err(AppError::unauthorized("missing bearer token"))
+        }
+        None => Ok(RequestContext::local()),
+    }
+}
+
+fn require_scope(ctx: &RequestContext, scope: &str, state: &AppState) -> AppResult<()> {
+    if !state.config.auth_mode.requires_api_key() {
+        return Ok(());
+    }
+    ctx.auth
+        .as_ref()
+        .ok_or_else(|| AppError::unauthorized("missing bearer token"))?
+        .require_scope(scope)
+}
+
+async fn session_context(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> AppResult<crate::domain::AuthSessionPayload> {
+    let token = session_cookie(headers).ok_or_else(|| AppError::unauthorized("missing session"))?;
+    store::authenticate_session(&state.pool, token).await
+}
+
+fn session_cookie(headers: &HeaderMap) -> Option<&str> {
+    let raw = header_text(headers, "cookie")?;
+    raw.split(';').find_map(|part| {
+        let (name, value) = part.trim().split_once('=')?;
+        (name == SESSION_COOKIE && !value.is_empty()).then_some(value)
+    })
+}
+
+fn json_with_session_cookie<T: serde::Serialize>(
+    state: &AppState,
+    headers: &HeaderMap,
+    payload: T,
+    token: &str,
+) -> AppResult<Response> {
+    let mut response = Json(payload).into_response();
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        header_value(&session_cookie_header(
+            token,
+            is_secure_request(state, headers),
+        ))?,
+    );
+    Ok(response)
+}
+
+fn session_cookie_header(token: &str, secure: bool) -> String {
+    let secure = if secure { "; Secure" } else { "" };
+    format!(
+        "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+        60 * 60 * 24 * 30
+    ) + secure
+}
+
+fn clear_session_cookie() -> String {
+    format!("{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
+}
+
+fn is_secure_request(state: &AppState, headers: &HeaderMap) -> bool {
+    if let Some(proto) = header_text(headers, "x-forwarded-proto") {
+        return proto.eq_ignore_ascii_case("https");
+    }
+    // Without an explicit forwarded-proto, fall back to topology heuristics.
+    // The bind address may be 0.0.0.0 inside a container even when the client
+    // reached us via http://localhost:PORT — using the request's Host header
+    // catches that case so we don't set `Secure` on cookies the browser will
+    // then refuse to send back.
+    let host_is_loopback = header_text(headers, "host")
+        .map(|host| {
+            let bare = host.split(':').next().unwrap_or(host);
+            matches!(bare, "localhost" | "127.0.0.1" | "::1" | "[::1]")
+        })
+        .unwrap_or(false);
+    if host_is_loopback {
+        return false;
+    }
+    !state.config.bind_addr.ip().is_loopback()
+}
+
+fn validate_mutation_origin(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
+    let Some(origin) = header_text(headers, "origin") else {
+        return Ok(());
+    };
+    let origin = origin.trim_end_matches('/');
+    if state
+        .config
+        .allowed_frontend_origins
+        .iter()
+        .any(|allowed| allowed == origin)
+    {
+        return Ok(());
+    }
+    if let Ok(url) = Url::parse(origin) {
+        if url
+            .host_str()
+            .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"))
+        {
+            return Ok(());
+        }
+    }
+    Err(AppError::forbidden(
+        "origin is not allowed for this request",
+    ))
+}
+
+fn read_json<T: DeserializeOwned>(
+    headers: &HeaderMap,
+    bytes: Bytes,
+    max_bytes: usize,
+) -> AppResult<T> {
+    validate_json_body(headers, &bytes, max_bytes)?;
+    serde_json::from_slice::<T>(&bytes)
+        .map_err(|_| AppError::validation("request body must be valid JSON"))
+}
+
+fn read_json_value(headers: &HeaderMap, bytes: Bytes, max_bytes: usize) -> AppResult<Value> {
+    validate_json_body(headers, &bytes, max_bytes)?;
+    let raw: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| AppError::validation("request body must be valid JSON"))?;
+    if !raw.is_object() {
+        return Err(AppError::validation("request body must be a JSON object"));
+    }
+    Ok(raw)
+}
+
+fn read_json_with_raw<T: DeserializeOwned>(
+    headers: &HeaderMap,
+    bytes: Bytes,
+    max_bytes: usize,
+) -> AppResult<(T, Value)> {
+    let raw = read_json_value(headers, bytes, max_bytes)?;
+    let typed = serde_json::from_value::<T>(raw.clone())
+        .map_err(|_| AppError::validation("request body must be valid JSON"))?;
+    Ok((typed, raw))
+}
+
+fn validate_json_body(headers: &HeaderMap, bytes: &Bytes, max_bytes: usize) -> AppResult<()> {
+    if bytes.len() > max_bytes {
+        return Err(AppError::payload_too_large("request body is too large"));
+    }
+    if let Some(length) = header_text(headers, "content-length") {
+        let length = length
+            .parse::<usize>()
+            .map_err(|_| AppError::validation("invalid content-length"))?;
+        if length > max_bytes {
+            return Err(AppError::payload_too_large("request body is too large"));
+        }
+    }
+    let content_type = header_text(headers, "content-type").unwrap_or_default();
+    if !content_type.contains("application/json") {
+        return Err(AppError::validation(
+            "content-type must be application/json",
+        ));
+    }
+    Ok(())
+}
+
+fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn parse_uuid(raw: &str, missing_message: &str) -> AppResult<Uuid> {
+    Uuid::parse_str(raw).map_err(|_| AppError::not_found(missing_message))
+}
+
+fn header_value(value: &str) -> AppResult<HeaderValue> {
+    HeaderValue::from_str(value).map_err(|_| AppError::internal("invalid header value"))
+}

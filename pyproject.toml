@@ -1,0 +1,31 @@
+[tool.pytest.ini_options]
+testpaths = [
+  "apps/api/tests",
+  "packages/python-sdk/tests",
+  "examples/rl-cartpole/tests",
+  "examples/q-learning-gridworld/tests",
+  "examples/contextual-bandit/tests",
+  "examples/supervised-regression/tests",
+  "examples/iris-classification/tests",
+]
+pythonpath = [
+  "apps/api",
+  "packages/python-sdk",
+  "examples/rl-cartpole",
+  "examples/q-learning-gridworld",
+  "examples/contextual-bandit",
+  "examples/supervised-regression",
+  "examples/iris-classification",
+]
+addopts = """
+  -q
+  --cov=apps/api/rlobs_api
+  --cov=packages/python-sdk/rl_observability
+  --cov=examples/rl-cartpole
+  --cov=examples/q-learning-gridworld
+  --cov=examples/contextual-bandit
+  --cov=examples/supervised-regression
+  --cov=examples/iris-classification
+  --cov-report=term-missing
+  --cov-fail-under=100
+"""

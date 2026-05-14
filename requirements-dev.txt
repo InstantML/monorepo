@@ -1,0 +1,5 @@
+# Development/test requirements for Python 3.11.
+coverage==7.13.5
+numpy==2.0.0
+pytest==9.0.2
+pytest-cov==7.1.0

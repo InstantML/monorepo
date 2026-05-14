@@ -1,0 +1,70 @@
+erDiagram
+  ORGANIZATIONS ||--o{ MEMBERSHIPS : has
+  USERS ||--o{ MEMBERSHIPS : joins
+  USERS ||--o{ USER_IDENTITIES : authenticates_with
+  ORGANIZATIONS ||--o{ SERVICE_ACCOUNTS : owns
+  SERVICE_ACCOUNTS ||--o{ API_KEYS : issues
+  ORGANIZATIONS ||--o{ PROJECTS : owns
+  PROJECTS ||--o{ RUNS : contains
+  RUNS ||--o{ METRIC_SERIES : has
+  METRIC_SERIES ||--o{ METRIC_POINTS : contains
+  RUNS ||--o{ ATTRIBUTE_EVENTS : records
+  RUNS ||--o{ RUN_ATTRIBUTE_CURRENT : summarizes
+  RUNS ||--o{ ARTIFACTS : owns
+  ORGANIZATIONS ||--o{ IMPORT_JOBS : runs
+  IMPORT_JOBS ||--o{ IMPORT_JOB_RUNS : creates
+  ORGANIZATIONS ||--o{ INGEST_REQUESTS : dedupes
+  ORGANIZATIONS ||--o{ AUDIT_EVENTS : audits
+
+  ORGANIZATIONS {
+    uuid id PK
+    citext slug UK
+    text name
+    timestamptz created_at
+  }
+  USERS {
+    uuid id PK
+    citext primary_email UK
+    text display_name
+    timestamptz created_at
+  }
+  PROJECTS {
+    uuid id PK
+    uuid org_id FK
+    text name
+    timestamptz created_at
+  }
+  RUNS {
+    uuid id PK
+    uuid org_id FK
+    uuid project_id FK
+    text name
+    text status
+    jsonb config
+    text_array tags
+    jsonb metadata
+  }
+  METRIC_SERIES {
+    uuid id PK
+    uuid run_id FK
+    text key
+    bigint count
+    double latest_value
+    double best_value
+  }
+  METRIC_POINTS {
+    bigserial id PK
+    uuid series_id FK
+    double step
+    double value
+    timestamptz logged_at
+  }
+  ARTIFACTS {
+    uuid id PK
+    uuid run_id FK
+    text type
+    text name
+    bigint size_bytes
+    text sha256
+    text object_key
+  }

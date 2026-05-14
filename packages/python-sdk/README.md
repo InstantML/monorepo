@@ -1,0 +1,254 @@
+# Python SDK
+
+This directory contains the Python SDK used by training scripts to send runs, metrics, attributes, artifacts, checkpoints, and source context to Training Observability.
+
+Brand transition note: the import package is still `rl_observability` for compatibility. Do not rename the package without a dedicated namespace migration design and tests.
+
+## Responsibilities
+
+- Initialize runs.
+- Log scalar metrics.
+- Log configs, searchable run tags, and searchable run notes.
+- Log rich table/histogram objects.
+- Log artifacts.
+- Log checkpoints.
+- Log videos.
+- Log tables.
+- Log text series and histogram series.
+- Upload local files to the Rust server.
+- Buffer training-loop events and flush explicitly.
+- Spool failed post-init events to local JSONL and replay them.
+- Write post-init events to a process-isolated local spool for a separate uploader process.
+- Capture metrics-focused timestamp snapshots with a defined dictionary shape.
+- Capture source metadata for reproducibility.
+- Finish runs cleanly.
+
+Target public API:
+
+```python
+import rl_observability as ro
+
+run = ro.init(
+    project="cartpole",
+    config={"seed": 42},
+    tags=["baseline"],
+    notes="Initial CartPole baseline.",
+)
+run.log_metrics({"train/reward": 100.0}, step=1)
+run.log_text({"notes/eval": "policy stabilized"}, step=1)
+run.set_notes("Reward stabilized after step 80.")
+run.set_tags(["baseline", "reviewed"])
+run.log_histogram("model/weights", {"bins": [0, 1], "counts": [10]}, step=1)
+run.log_objects({
+    "eval/samples": ro.Table(["prompt", "score"], [["hello", 0.92]]),
+    "eval/scores": ro.Histogram([0, 0.5, 1.0], [3, 9]),
+}, step=1)
+run.log_checkpoint("checkpoint.pt", "demo://checkpoint.pt", step=1)
+run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
+run.log_table("eval-table.jsonl", "demo://eval-table.jsonl", step=1)
+run.flush()
+run.finish()
+```
+
+Hosted or auth-required servers can use an API key directly or through `RLOBS_API_KEY`:
+
+```python
+run = ro.init(project="cartpole", api_key="rlobs_...", base_url="https://api.example.com")
+```
+
+```bash
+RLOBS_API_KEY=rlobs_... PYTHONPATH=packages/python-sdk python3 train.py
+```
+
+Read-only run summary queries use the raw `Api` helper:
+
+```python
+api = ro.Api(base_url="http://127.0.0.1:8000", api_key="rlobs_...")
+page = api.runs(
+    project="cartpole",
+    q="seed 13",
+    sort_by="metric-best",
+    metric_key="eval/return_mean",
+    limit=25,
+)
+```
+
+`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`.
+
+Backend compatibility note: the SDK talks to the Rust/Postgres server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
+
+Process-isolated upload mode for long training loops:
+
+```python
+run = ro.init(
+    project="cartpole",
+    upload_mode="spool",
+    spool_dir=".rlobs/spool",
+)
+run.log_snapshot(
+    {
+        "metrics": {"train/reward": 100.0, "train/loss": 0.12},
+        "metadata": {"phase": "train"},
+    },
+    step=1,
+)
+run.finish()
+```
+
+## Design Requirement
+
+Before implementation, create or update design docs for:
+
+- SDK package structure
+- Public API
+- Buffering and retry behavior
+- Offline/local logging behavior
+- Artifact upload behavior
+- Compatibility with existing training loops
+
+## Testing Expectations
+
+SDK code should target 100% first-party code coverage.
+
+Expected tests:
+
+- Unit tests for public API behavior.
+- Tests for serialization and validation.
+- Tests for failed network calls.
+- Tests for buffering/retry behavior if implemented.
+- Tests for process spool and uploader behavior.
+- Integration tests against a local API test server when applicable.
+
+## Setup
+
+From the repo root:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-dev.txt
+```
+
+## Usage
+
+```python
+import rl_observability as ro
+
+run = ro.init(project="cartpole", config={"seed": 42}, tags=["baseline"], notes="CartPole baseline.")
+run.log({"train/reward": 100.0}, step=1)
+run.log_config({"optimizer": {"lr": 0.0003}})
+run.add_tags(["baseline"])
+run.set_tags(["baseline", "ready-for-compare"])
+run.set_notes("Reward improved but entropy dipped late.")
+run.log_checkpoint("policy.pt", "demo://policy.pt", step=1)
+run.log_rollout("eval.mp4", "demo://eval.mp4", step=1)
+run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
+run.log_table("rollout-table.jsonl", "demo://rollout-table.jsonl", step=1)
+run.log_table_object("eval/samples", ["prompt", "score"], [["hello", 0.92]], step=1)
+run.finish()
+```
+
+Buffered logging and post-init offline replay:
+
+```python
+run = ro.init(
+    project="cartpole",
+    buffer_size=25,
+    offline_dir=".rlobs/offline",
+)
+for step in range(1000):
+    run.log_metrics({"train/reward": step}, step=step)
+run.finish()
+
+# Later, after the server is reachable, replay events logged after run creation:
+run.replay_offline()
+```
+
+Important limitation: `init()` still requires a reachable server because run creation is not spooled yet. `offline_dir` only applies to failed requests made by an existing `Run`.
+
+Process-isolated upload mode:
+
+```python
+run = ro.init(
+    project="cartpole",
+    upload_mode="spool",
+    spool_dir=".rlobs/spool",
+)
+
+for step in range(1000):
+    run.log_snapshot(
+        {
+            "metrics": {
+                "train/reward": reward,
+                "train/policy_loss": policy_loss,
+            },
+            "metadata": {"phase": "train"},
+        },
+        step=step,
+    )
+
+run.finish()
+```
+
+Run the uploader in a separate process:
+
+```bash
+PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
+  --spool-dir .rlobs/spool \
+  --base-url http://127.0.0.1:8000
+```
+
+Use `upload_mode="spool"` when the training process should avoid post-init HTTP calls. The SDK writes one fsynced JSON event file per logging call, and the uploader drains those files through the existing API. Metric event files send their `event_id` as an `Idempotency-Key`, so a compatible server can safely accept retried metric events. This first implementation is intended for roughly 100 SDK calls per second per run on a local SSD; batch many scalar values into one metrics dictionary for higher-frequency loops.
+
+`log_snapshot()` currently accepts only:
+
+- `metrics`: scalar metrics sent to the server.
+- `metadata`: JSON metadata kept in the local event envelope for debugging and future ingestion.
+
+`step` defaults to `0` for `log_snapshot()` so strict servers receive a numeric metric step. Pass an explicit step for normal training-loop use.
+
+Existing helpers such as `log_config()`, `log_text()`, `log_histogram()`, `log_objects()` for inline table/histogram objects, `add_tags()`, `log_artifact()`, and `finish()` also write single-request events in process spool mode. `upload_file()` records `source_path` and lets the uploader read and encode the file later, so keep source files stable until the uploader succeeds. Rich media object helpers are sync-only for now because linking the object to the uploaded artifact requires the upload response.
+
+Run identification helpers:
+
+- `init(notes="...")` writes the searchable run note into `metadata.notes`.
+- `Run.set_notes("...")` updates `metadata.notes`; pass an empty string to clear the note on compatible Rust/Node servers.
+- `Run.set_tags([...])` replaces the searchable `runs.tags` list.
+- `Run.add_tags([...])` still logs typed tag attributes. Use `set_tags()` when the Runs workspace/search identity should change.
+
+Local file upload against the Rust server:
+
+```python
+run.upload_file("checkpoints/policy.pt", artifact_type="checkpoint", step=100)
+```
+
+For local development without packaging:
+
+```bash
+PYTHONPATH=packages/python-sdk python3 -c "import rl_observability as ro; print(ro.Client())"
+```
+
+## Test
+
+```bash
+python3 -m pytest
+```
+
+The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `RlobsError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` additionally sends bytes to local artifact storage in sync mode and records a source path for the uploader in process spool mode.
+
+The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
+
+Automatic SDK source metadata is reserved under `metadata["_rlobs"]["source"]`. User metadata may still use a top-level `source` key for its own meaning, but `_rlobs` is SDK-owned and `init(metadata={"_rlobs": ...})` raises `ValueError`.
+
+## Notes for Future Agents
+
+- Keep the API tiny and obvious.
+- Logging should not materially slow training loops.
+- Avoid surprising background behavior.
+- Make failure behavior explicit and documented.
+- Keep process spool events to one API request each unless a design doc expands idempotency across multi-request snapshots.
+- Preserve per-run uploader ordering when retrying failed event files.
+- Support dual-logging or coexistence with MLflow/W&B where practical.
+- Keep SDK-owned metadata under `_rlobs` and reject user-provided `_rlobs` keys before merging metadata.
+- Add true offline run creation only after a design doc; do not imply it in README examples until implemented.
+- Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/Postgres backend and deprecated Node backend.

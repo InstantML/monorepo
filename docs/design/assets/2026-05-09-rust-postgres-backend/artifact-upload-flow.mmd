@@ -1,0 +1,16 @@
+flowchart TD
+  A["Client uploads artifact\nJSON/base64 compatibility endpoint"] --> B["Authenticate and authorize\nartifacts:write"]
+  B --> C["Validate run, org, type, name,\nstep, metadata, bytes, MIME, size"]
+  C --> D["Write bytes to temporary object key"]
+  D --> E["Compute SHA256"]
+  E --> F["Begin Postgres transaction"]
+  F --> G["Insert artifact metadata"]
+  G --> H["Insert file/file_series attribute record"]
+  H --> I["Commit transaction"]
+  I --> J["Finalize object key"]
+  J --> K["Return artifact JSON"]
+
+  C -->|"validation fails"| X["Return 400/404\nno bytes written"]
+  D -->|"write fails"| Y["Return storage error\nno metadata committed"]
+  F -->|"DB fails"| Z["Delete temporary object\nreturn error"]
+  J -->|"finalize fails after commit"| W["Mark artifact unavailable\nenqueue cleanup/repair job"]

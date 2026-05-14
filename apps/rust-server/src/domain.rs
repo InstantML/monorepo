@@ -1,0 +1,541 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::FromRow;
+use uuid::Uuid;
+
+use crate::{
+    errors::{AppError, AppResult},
+    store::LOCAL_ORG_ID,
+};
+
+pub const MAX_TEXT_BYTES: usize = 512;
+pub const MAX_METRICS_PER_BATCH: usize = 1_000;
+pub const DEFAULT_METRIC_LIMIT: i64 = 1_000;
+pub const MAX_METRIC_LIMIT: i64 = 5_000;
+pub const DEFAULT_RUN_LIMIT: i64 = 100;
+pub const MAX_RUN_LIMIT: i64 = 500;
+pub const MAX_METRIC_SERIES_RUN_IDS: usize = 500;
+
+#[derive(Clone, Debug)]
+pub struct RequestContext {
+    pub org_id: Uuid,
+    pub auth: Option<AuthContext>,
+    pub session: Option<SessionContext>,
+}
+
+impl RequestContext {
+    pub fn local() -> Self {
+        Self {
+            org_id: LOCAL_ORG_ID,
+            auth: None,
+            session: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AuthContext {
+    pub org_id: Uuid,
+    pub api_key_id: Uuid,
+    pub service_account_id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub scopes: Vec<String>,
+}
+
+impl AuthContext {
+    pub fn require_scope(&self, scope: &str) -> AppResult<()> {
+        if self.scopes.iter().any(|candidate| candidate == scope) {
+            Ok(())
+        } else {
+            Err(AppError::forbidden(format!("api key requires {scope}")))
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SessionContext {
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateUserRequest {
+    pub email: Option<String>,
+    pub primary_email: Option<String>,
+    pub provider: Option<String>,
+    pub provider_subject: Option<String>,
+    pub email_verified: Option<bool>,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, FromRow)]
+pub struct UserRow {
+    pub id: Uuid,
+    pub primary_email: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateOrganizationRequest {
+    pub slug: Option<String>,
+    pub name: Option<String>,
+    pub plan_tier: Option<String>,
+    pub owner_user_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Serialize, FromRow)]
+pub struct OrganizationRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub plan_tier: String,
+    pub account_type: String,
+    pub seat_limit: i32,
+    pub created_by_user_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, FromRow)]
+pub struct MembershipRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, FromRow)]
+pub struct UserSessionRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub org_id: Uuid,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AuthSessionPayload {
+    pub authenticated: bool,
+    pub session: UserSessionRow,
+    pub user: UserRow,
+    pub organization: OrganizationRow,
+    pub membership: MembershipRow,
+    pub memberships: Vec<MembershipRow>,
+    pub account_type: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct CreatedAuthSession {
+    pub token: String,
+    pub payload: AuthSessionPayload,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DevGoogleAuthRequest {
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub account_type: Option<String>,
+    pub org_name: Option<String>,
+    pub seat_emails: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GoogleAuthRequest {
+    pub id_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReserveSeatRequest {
+    pub email: Option<String>,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateApiKeyRequest {
+    pub name: Option<String>,
+    pub scopes: Option<Vec<String>>,
+    pub created_by_user_id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
+    pub project: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct ServiceAccountRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub name: String,
+    pub created_by_user_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub disabled_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct PublicApiKeyRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub service_account_id: Uuid,
+    pub name: String,
+    pub key_prefix: String,
+    pub scopes: Vec<String>,
+    pub project_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct ProjectRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRunRequest {
+    pub project: Option<String>,
+    pub name: Option<String>,
+    pub config: Option<Value>,
+    pub tags: Option<Vec<String>>,
+    pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRunRequest {
+    pub status: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow, Clone)]
+pub struct RunRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub name: String,
+    pub status: String,
+    pub config: Value,
+    pub tags: Vec<String>,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LogMetricsRequest {
+    pub metrics: Value,
+    pub step: Value,
+    pub timestamp: Option<String>,
+    pub preview: Option<bool>,
+    pub preview_completion: Option<Value>,
+}
+
+#[derive(Debug, Serialize, FromRow, Clone)]
+pub struct MetricPointRow {
+    pub key: String,
+    pub step: f64,
+    pub value: f64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, FromRow, Clone)]
+pub struct MetricSeriesRow {
+    pub run_id: Uuid,
+    pub key: String,
+    pub count: i64,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub mean: Option<f64>,
+    pub variance: Option<f64>,
+    pub latest: Option<f64>,
+    pub latest_step: Option<f64>,
+    pub best: Option<f64>,
+    pub best_step: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AttributeInput {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub step: Option<Value>,
+    pub timestamp: Option<String>,
+    pub value: Value,
+    pub summary: Option<Value>,
+    pub artifact_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAttributesRequest {
+    pub attributes: Option<Vec<AttributeInput>>,
+    pub path: Option<String>,
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub step: Option<Value>,
+    pub timestamp: Option<String>,
+    pub value: Option<Value>,
+    pub summary: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateObjectRequest {
+    pub key: Option<String>,
+    pub kind: Option<String>,
+    pub step: Option<Value>,
+    pub artifact_id: Option<Uuid>,
+    pub metadata: Option<Value>,
+    pub summary: Option<Value>,
+    pub value: Option<Value>,
+    pub rows: Option<Vec<Value>>,
+}
+
+#[derive(Debug, Serialize, FromRow, Clone)]
+pub struct AttributeRow {
+    pub id: i64,
+    pub org_id: Uuid,
+    pub run_id: Uuid,
+    pub path: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub step: Option<f64>,
+    pub logged_at: Option<DateTime<Utc>>,
+    pub value: Value,
+    pub summary: Value,
+    pub artifact_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateArtifactRequest {
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub name: Option<String>,
+    pub uri: Option<String>,
+    pub step: Option<Value>,
+    pub size_bytes: Option<Value>,
+    pub sha256: Option<String>,
+    pub mime_type: Option<String>,
+    pub metadata: Option<Value>,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UploadArtifactRequest {
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub name: Option<String>,
+    pub content_base64: Option<String>,
+    pub step: Option<Value>,
+    pub mime_type: Option<String>,
+    pub metadata: Option<Value>,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow, Clone)]
+pub struct ArtifactRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub run_id: Uuid,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub name: String,
+    pub uri: String,
+    pub step: Option<f64>,
+    pub size_bytes: Option<i64>,
+    pub sha256: Option<String>,
+    pub mime_type: Option<String>,
+    pub storage_backend: String,
+    pub storage_key: Option<String>,
+    pub storage_path: Option<String>,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+pub fn validate_name(value: Option<&str>, field: &str) -> AppResult<String> {
+    let text = value
+        .ok_or_else(|| AppError::validation(format!("{field} must be a non-empty string")))?
+        .trim();
+    if text.is_empty() {
+        return Err(AppError::validation(format!(
+            "{field} must be a non-empty string"
+        )));
+    }
+    if text.len() > MAX_TEXT_BYTES {
+        return Err(AppError::validation(format!(
+            "{field} must be at most {MAX_TEXT_BYTES} bytes"
+        )));
+    }
+    Ok(text.to_string())
+}
+
+pub fn validate_optional_name(value: Option<&str>, field: &str) -> AppResult<Option<String>> {
+    value
+        .map(|text| validate_name(Some(text), field))
+        .transpose()
+}
+
+pub fn validate_email(value: Option<&str>) -> AppResult<String> {
+    let email = validate_name(value, "email")?.to_ascii_lowercase();
+    if !email.contains('@') || !email.contains('.') || email.contains(' ') {
+        return Err(AppError::validation("email must be a valid email address"));
+    }
+    Ok(email)
+}
+
+pub fn validate_slug(value: Option<&str>, field: &str) -> AppResult<String> {
+    let slug = validate_name(value, field)?.to_ascii_lowercase();
+    let valid = slug.chars().enumerate().all(|(index, ch)| {
+        ch.is_ascii_lowercase() || ch.is_ascii_digit() || (index > 0 && ch == '-')
+    });
+    if !valid || slug.ends_with('-') || slug.len() > 63 {
+        return Err(AppError::validation(format!(
+            "{field} must use lowercase letters, numbers, and hyphens"
+        )));
+    }
+    Ok(slug)
+}
+
+pub fn validate_plan_tier(value: Option<&str>) -> AppResult<String> {
+    let tier = validate_name(Some(value.unwrap_or("free")), "plan_tier")?.to_ascii_lowercase();
+    if matches!(tier.as_str(), "free" | "lab" | "startup" | "growth") {
+        Ok(tier)
+    } else {
+        Err(AppError::validation(
+            "plan_tier must be one of: free, lab, startup, growth",
+        ))
+    }
+}
+
+pub fn validate_account_type(value: Option<&str>) -> AppResult<String> {
+    let account_type =
+        validate_name(Some(value.unwrap_or("customer")), "account_type")?.to_ascii_lowercase();
+    if matches!(account_type.as_str(), "customer" | "business") {
+        Ok(account_type)
+    } else {
+        Err(AppError::validation(
+            "account_type must be one of: business, customer",
+        ))
+    }
+}
+
+pub fn validate_membership_role(value: Option<&str>) -> AppResult<String> {
+    let role = validate_name(value, "role")?.to_ascii_lowercase();
+    if matches!(role.as_str(), "owner" | "admin" | "member" | "viewer") {
+        Ok(role)
+    } else {
+        Err(AppError::validation(
+            "role must be one of: admin, member, owner, viewer",
+        ))
+    }
+}
+
+pub fn validate_membership_status(value: Option<&str>) -> AppResult<String> {
+    let status = validate_name(value, "status")?.to_ascii_lowercase();
+    if matches!(status.as_str(), "active" | "invited") {
+        Ok(status)
+    } else {
+        Err(AppError::validation(
+            "status must be one of: active, invited",
+        ))
+    }
+}
+
+pub fn validate_json_object(value: Option<Value>, field: &str) -> AppResult<Value> {
+    let value = value.unwrap_or_else(|| Value::Object(Default::default()));
+    if !value.is_object() {
+        return Err(AppError::validation(format!("{field} must be an object")));
+    }
+    Ok(value)
+}
+
+pub fn validate_tags(tags: Option<Vec<String>>) -> AppResult<Vec<String>> {
+    tags.unwrap_or_default()
+        .into_iter()
+        .map(|tag| validate_name(Some(&tag), "tag"))
+        .collect()
+}
+
+pub fn validate_status(status: &str) -> AppResult<String> {
+    let status = validate_name(Some(status), "status")?;
+    if matches!(status.as_str(), "running" | "finished" | "failed") {
+        Ok(status)
+    } else {
+        Err(AppError::validation(
+            "status must be one of: failed, finished, running",
+        ))
+    }
+}
+
+pub fn validate_step(value: &Value, field: &str) -> AppResult<f64> {
+    let number = value
+        .as_f64()
+        .ok_or_else(|| AppError::validation(format!("{field} must be finite numbers")))?;
+    if !number.is_finite() || number < 0.0 {
+        return Err(AppError::validation(format!(
+            "{field} must be a nonnegative number"
+        )));
+    }
+    Ok(number)
+}
+
+pub fn validate_optional_step(value: Option<&Value>, field: &str) -> AppResult<Option<f64>> {
+    value.map(|step| validate_step(step, field)).transpose()
+}
+
+pub fn validate_timestamp(value: Option<&str>) -> AppResult<DateTime<Utc>> {
+    match value {
+        Some(raw) => DateTime::parse_from_rfc3339(&validate_name(Some(raw), "timestamp")?)
+            .map(|timestamp| timestamp.with_timezone(&Utc))
+            .map_err(|_| AppError::validation("timestamp must be an ISO-compatible datetime")),
+        None => Ok(Utc::now()),
+    }
+}
+
+pub fn validate_limit(value: Option<&str>, fallback: i64, max: i64) -> AppResult<i64> {
+    let limit = match value {
+        Some(raw) if !raw.trim().is_empty() => raw
+            .parse::<i64>()
+            .map_err(|_| AppError::validation(format!("limit must be between 1 and {max}")))?,
+        _ => fallback,
+    };
+    if !(1..=max).contains(&limit) {
+        return Err(AppError::validation(format!(
+            "limit must be between 1 and {max}"
+        )));
+    }
+    Ok(limit)
+}
+
+pub fn validate_offset(value: Option<&str>) -> AppResult<i64> {
+    let offset = match value {
+        Some(raw) if !raw.trim().is_empty() => raw
+            .parse::<i64>()
+            .map_err(|_| AppError::validation("offset must be a nonnegative integer"))?,
+        _ => 0,
+    };
+    if offset < 0 {
+        return Err(AppError::validation("offset must be a nonnegative integer"));
+    }
+    Ok(offset)
+}

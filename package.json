@@ -1,0 +1,62 @@
+{
+  "name": "rl-observability",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "setup": "npm run setup:python && npm run setup:playwright && npm run check:setup",
+    "check:setup": "node tools/check-setup.mjs",
+    "setup:python": "python3 -m pip install -r requirements-dev.txt",
+    "setup:playwright": "npx playwright install chromium",
+    "dev:api": "node tools/dev-rust-api.mjs",
+    "dev:api:rust": "node tools/dev-rust-api.mjs",
+    "dev:api:node": "node apps/server/src/server.js --db .rlobs/rlobs.json --port 8000",
+    "dev:web": "cd apps/web && ../../node_modules/.bin/next dev --port 3000",
+    "test": "npm run test:node && npm run rust:test && npm run test:python",
+    "test:python": "python3 -m pytest",
+    "test:node": "node --test --experimental-test-coverage apps/server/tests/*.test.js apps/web/tests/*.test.js",
+    "test:contract": "npm run test:rust:contract",
+    "test:contract:direct": "node tools/contract-smoke.mjs",
+    "test:contract:node": "RLOBS_CONTRACT_BACKEND=node node tools/contract-smoke.mjs",
+    "test:rust:contract": "node tools/rust-service-smoke.mjs contract",
+    "test:rust:sdk": "node tools/rust-service-smoke.mjs sdk",
+    "test:rust:ui": "node tools/rust-service-smoke.mjs ui",
+    "test:scale": "node tools/scale-smoke.mjs",
+    "benchmark:large-runs": "node tools/rust-large-run-benchmark.mjs",
+    "benchmark:rich-objects": "node tools/rust-rich-objects-benchmark.mjs",
+    "test:all": "npm run check:setup && npm run rust:lint && npm run rust:test && npm run test:node && npm run test:python && npm run test:contract && npm run test:rust:sdk && npm run test:scale && npm run test:ui",
+    "test:ui": "node tools/rust-service-smoke.mjs ui",
+    "test:ui:direct": "node apps/web/tests/ui-smoke.mjs",
+    "test:ui:node": "RLOBS_UI_SMOKE_BACKEND=node node apps/web/tests/ui-smoke.mjs",
+    "rust:fmt": "cargo fmt --manifest-path apps/rust-server/Cargo.toml --all",
+    "rust:lint": "cargo clippy --manifest-path apps/rust-server/Cargo.toml --all-targets -- -D warnings",
+    "rust:test": "cargo test --manifest-path apps/rust-server/Cargo.toml",
+    "rust:migrate": "cargo run --manifest-path apps/rust-server/Cargo.toml -- migrate",
+    "rust:serve": "cargo run --manifest-path apps/rust-server/Cargo.toml -- serve",
+    "web:dev": "cd apps/web && ../../node_modules/.bin/next dev --port 3000",
+    "web:build": "cd apps/web && ../../node_modules/.bin/next build",
+    "web:start": "cd apps/web && ../../node_modules/.bin/next start --port 3000",
+    "start": "npm run dev:api",
+    "start:node": "node apps/server/src/server.js"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.17",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "playwright": "1.59.1",
+    "typescript": "5.7.3"
+  },
+  "dependencies": {
+    "lucide-react": "0.564.0",
+    "next": "16.2.4",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "overrides": {
+    "postcss": "8.5.14"
+  }
+}

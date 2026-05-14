@@ -1,0 +1,87 @@
+export class ApiClient {
+  constructor(baseUrl = "") {
+    this.baseUrl = baseUrl;
+  }
+
+  async get(path, options = {}) {
+    return this.request(path, { ...options, method: "GET" });
+  }
+
+  async post(path, body = {}, options = {}) {
+    return this.request(path, {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(options.headers ?? {}) },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async patch(path, body = {}, options = {}) {
+    return this.request(path, {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(options.headers ?? {}) },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async request(path, options = {}) {
+    const response = await fetch(this.baseUrl + path, options);
+    const payload = await readPayload(response);
+    if (!response.ok) throw new ApiError(clientSafeError(response.status, payload), {
+      requestId: typeof payload?.request_id === "string" ? payload.request_id : "",
+      status: response.status,
+    });
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new ApiError("Server returned malformed payload");
+    }
+    return payload;
+  }
+}
+
+async function readPayload(response) {
+  try {
+    if (typeof response.text === "function") {
+      const raw = await response.text();
+      return raw ? JSON.parse(raw) : null;
+    }
+    return await response.json();
+  } catch {
+    if (!response.ok) return null;
+    throw new ApiError("Server returned invalid JSON");
+  }
+}
+
+export class ApiError extends Error {
+  constructor(message, { requestId = "", status = 0 } = {}) {
+    super(requestId ? `${message} Request ${requestId}.` : message);
+    this.name = "ApiError";
+    this.requestId = requestId;
+    this.status = status;
+  }
+}
+
+export function isAbortError(error) {
+  return error?.name === "AbortError";
+}
+
+function clientSafeError(status, payload) {
+  const code = typeof payload?.code === "string" ? payload.code : "";
+  if (code === "validation_error" || status === 400) return "Request was invalid. Check the current filters and try again.";
+  if (status === 401) return "Sign in required.";
+  if (status === 403) return "You do not have access to this workspace.";
+  if (status === 404) return "Requested data was not found.";
+  if (status === 409) return "Request conflicted with current data.";
+  if (status === 429) return "Too many requests. Try again shortly.";
+  if (status >= 500) return "Server is unavailable. Try again shortly.";
+  return "Request failed.";
+}
+
+export function queryString(params) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") search.set(key, value);
+  }
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}

@@ -1,0 +1,10 @@
+node_modules
+.git
+.rlobs
+__pycache__
+.pytest_cache
+.coverage
+coverage
+playwright-report
+target
+apps/rust-server/target

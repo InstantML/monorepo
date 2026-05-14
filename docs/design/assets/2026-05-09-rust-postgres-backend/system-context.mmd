@@ -1,0 +1,39 @@
+flowchart LR
+  subgraph Clients["Clients"]
+    Web["Next/React web app"]
+    SDK["Python SDK"]
+    Uploader["Process spool uploader"]
+  end
+
+  subgraph Identity["Managed identity"]
+    Auth["Managed auth provider\nGoogle login, sessions, JWTs"]
+  end
+
+  subgraph Backend["Training Observability hosted backend"]
+    API["Rust API\naxum, tokio, tower-http"]
+    Worker["Rust worker\nimports, cleanup, async jobs"]
+    OpenAPI["OpenAPI + contract tests"]
+  end
+
+  subgraph Data["Durable data plane"]
+    PG["Managed Postgres\norgs, runs, metrics, attributes"]
+    Artifacts["Artifact store\nlocal first, S3-compatible later"]
+  end
+
+  subgraph Ops["Operations"]
+    Metrics["Prometheus metrics"]
+    Logs["Structured logs + traces"]
+  end
+
+  Web -->|"browser API calls"| API
+  Web -->|"login"| Auth
+  Auth -->|"session/JWT claims"| API
+  SDK -->|"Bearer API key"| API
+  Uploader -->|"Bearer API key + idempotency keys"| API
+  API -->|"SQLx queries + transactions"| PG
+  API -->|"artifact upload/download"| Artifacts
+  Worker -->|"job claims + state"| PG
+  Worker -->|"artifact cleanup/import work"| Artifacts
+  API --> OpenAPI
+  API --> Metrics
+  API --> Logs
