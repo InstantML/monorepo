@@ -12,8 +12,8 @@ Current implemented design sequence:
 - `2026-05-07-sdk-process-uploader.md`: process-isolated SDK upload mode with fsynced event files and a separate uploader.
 - `2026-05-07-next-react-ui-migration.md`: Next/React UI migration with tabs, chart axes, point hover, and API rewrites.
 - `2026-05-08-full-navigation-tabs.md`: frontend navigation expansion and derived workspace tabs.
-- `2026-05-09-rust-postgres-backend.md`: accepted primary Rust/Postgres foundation plan, SaaS auth/tenancy, pricing research, migration strategy, and the P0-P3 Rust service slices.
-- `2026-05-09-usage-metering.md`: warning-only Rust/Postgres usage summaries, immutable daily rollup snapshots, and Node compatibility coverage for pricing validation.
+- `2026-05-14-clickhouse-only-storage.md`: accepted primary Rust/ClickHouse storage plan, local/test first slice, and hosted control-plane/data-plane direction.
+- `2026-05-09-usage-metering.md`: warning-only Rust/ClickHouse usage summaries, immutable daily rollup snapshots, and Node compatibility coverage for pricing validation.
 - `2026-05-09-migration-adoption-p4.md`: SDK metadata reservation, atomic importer core, Neptune hardening, and W&B JSON import first slice.
 - `2026-05-09-mlflow-import-and-dual-logging.md`: MLflow JSON import follow-up and W&B dual-logging recommendation.
 - `2026-05-10-runs-workspace-panels.md`: W&B/Grafana-inspired Runs workspace sections, line panels, add/edit/fullscreen flows, local layout persistence, and future persisted workspace API shape.
@@ -25,16 +25,16 @@ Current implemented design sequence:
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as Training Observability: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
-Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The Rust/Postgres design is accepted for the backend foundation path, and the implemented default backend now uses Rust with Postgres for metadata and ClickHouse for metric time series.
+Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
 
 Backend direction:
 
 ```text
-Default:    apps/web + packages/python-sdk -> apps/rust-server -> Postgres + ClickHouse -> artifact storage
+Default:    apps/web + packages/python-sdk -> apps/rust-server -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 Deprecated: apps/web + packages/python-sdk -> apps/server -> JSON/local artifacts
 ```
 
-Future backend design docs should build on `2026-05-09-rust-postgres-backend.md` plus the current architecture summary: `axum + SQLx + Postgres`, ClickHouse-backed metric time series, org-scoped tenant data, hashed API keys, maintained metric summaries, bounded chart queries, local artifact storage first, and explicit compatibility checks against the deprecated Node server before route-shape changes.
+Future backend design docs should build on `2026-05-14-clickhouse-only-storage.md` plus the current architecture summary: `axum + tokio + ClickHouse`, ClickHouse-backed operational records and metric time series, org-scoped tenant data, hashed API keys, maintained metric summaries, bounded chart queries, local artifact storage first, and explicit compatibility checks against the deprecated Node server before route-shape changes.
 
 Create a design doc before changing:
 

@@ -1,9 +1,8 @@
-//! ClickHouse-backed metric store.
+//! ClickHouse-backed storage.
 //!
-//! Owns the connection, schema migrations, and (in later phases) the read/write
-//! paths for `metric_points` and `metric_series`. Postgres remains the OLTP
-//! store for orgs, runs, attributes, artifacts, etc; this module handles only
-//! the high-volume time-series data.
+//! Owns the connection, schema migrations, high-volume metric reads/writes, and
+//! the low-volume operational record log used to rebuild the Rust service's
+//! single-process index.
 
 use chrono::{DateTime, Utc};
 use clickhouse::{Client as ClickHouseClient, Row};
@@ -32,6 +31,22 @@ pub struct MetricPointRow {
     pub value: f64,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub logged_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
+}
+
+/// One durable operational record in the ClickHouse control/data-plane layer.
+///
+/// Operational state is intentionally stored as complete JSON payloads in an
+/// append-only table. The Rust service rebuilds its in-process index from these
+/// rows on startup, then writes one row per accepted mutation.
+#[derive(Row, Serialize, Deserialize, Clone)]
+pub struct OperationalRecordRow {
+    pub kind: String,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub org_id: Uuid,
+    pub entity_id: String,
+    pub payload: String,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub created_at: DateTime<Utc>,
 }
@@ -76,6 +91,18 @@ pub struct SeriesReadRow {
     pub best_step: f64,
 }
 
+#[derive(Row, Deserialize)]
+pub struct MetricKeyReadRow {
+    pub key: String,
+}
+
+#[derive(Clone, Copy)]
+pub enum SeriesSortMode {
+    Latest,
+    BestMax,
+    BestMin,
+}
+
 const INITIAL_SCHEMA: &str = include_str!("../clickhouse/0001_initial.sql");
 
 /// Wraps a configured ClickHouse client alongside the database it targets.
@@ -87,6 +114,14 @@ const INITIAL_SCHEMA: &str = include_str!("../clickhouse/0001_initial.sql");
 pub struct MetricStore {
     client: ClickHouseClient,
     database: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClickHouseConnection {
+    pub endpoint: String,
+    pub username: String,
+    pub password: String,
+    pub database: String,
 }
 
 impl MetricStore {
@@ -121,6 +156,31 @@ impl MetricStore {
             .await
             .map_err(|err| AppError::internal(format!("clickhouse insert flush failed: {err}")))?;
         Ok(())
+    }
+
+    pub async fn insert_operational_record(&self, row: &OperationalRecordRow) -> AppResult<()> {
+        let mut inserter = self.client.insert("operational_records").map_err(|err| {
+            AppError::internal(format!("clickhouse operational insert init failed: {err}"))
+        })?;
+        inserter.write(row).await.map_err(|err| {
+            AppError::internal(format!("clickhouse operational insert write failed: {err}"))
+        })?;
+        inserter.end().await.map_err(|err| {
+            AppError::internal(format!("clickhouse operational insert flush failed: {err}"))
+        })?;
+        Ok(())
+    }
+
+    pub async fn load_operational_records(&self) -> AppResult<Vec<OperationalRecordRow>> {
+        self.client
+            .query(
+                "SELECT kind, org_id, entity_id, payload, created_at \
+                 FROM operational_records \
+                 ORDER BY created_at ASC, kind ASC, entity_id ASC",
+            )
+            .fetch_all::<OperationalRecordRow>()
+            .await
+            .map_err(clickhouse_read_error)
     }
 
     /// Fetch up to `limit` raw points for a single run, optionally filtered by
@@ -238,13 +298,171 @@ impl MetricStore {
             .map_err(clickhouse_read_error)
     }
 
+    pub async fn query_series_for_runs_key(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        key: &str,
+    ) -> AppResult<Vec<SeriesReadRow>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.client
+            .query(
+                "SELECT \
+                   run_id, key, \
+                   toUInt64(countMerge(count)) AS count, \
+                   minMerge(min) AS min, \
+                   maxMerge(max) AS max, \
+                   sumMerge(sum) AS sum, \
+                   sumMerge(sum_sq) AS sum_sq, \
+                   argMaxMerge(latest) AS latest, \
+                   maxMerge(latest_step) AS latest_step, \
+                   argMaxMerge(best_step) AS best_step \
+                 FROM metric_series \
+                 WHERE org_id = ? AND run_id IN ? AND key = ? \
+                 GROUP BY run_id, key \
+                 ORDER BY run_id",
+            )
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(key)
+            .fetch_all::<SeriesReadRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn query_series_for_org_key(
+        &self,
+        org_id: Uuid,
+        key: &str,
+    ) -> AppResult<Vec<SeriesReadRow>> {
+        self.client
+            .query(
+                "SELECT \
+                   run_id, key, \
+                   toUInt64(countMerge(count)) AS count, \
+                   minMerge(min) AS min, \
+                   maxMerge(max) AS max, \
+                   sumMerge(sum) AS sum, \
+                   sumMerge(sum_sq) AS sum_sq, \
+                   argMaxMerge(latest) AS latest, \
+                   maxMerge(latest_step) AS latest_step, \
+                   argMaxMerge(best_step) AS best_step \
+                 FROM metric_series \
+                 WHERE org_id = ? AND key = ? \
+                 GROUP BY run_id, key \
+                 ORDER BY run_id",
+            )
+            .bind(org_id)
+            .bind(key)
+            .fetch_all::<SeriesReadRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn query_top_series_for_org_key(
+        &self,
+        org_id: Uuid,
+        key: &str,
+        mode: SeriesSortMode,
+        limit: i64,
+    ) -> AppResult<Vec<SeriesReadRow>> {
+        let order_clause = match mode {
+            SeriesSortMode::Latest => "latest DESC",
+            SeriesSortMode::BestMax => "max DESC",
+            SeriesSortMode::BestMin => "min ASC",
+        };
+        let sql = format!(
+            "SELECT \
+               run_id, key, \
+               count, min, max, sum, sum_sq, latest, latest_step, best_step \
+             FROM ( \
+               SELECT \
+                 run_id, key, \
+                 toUInt64(countMerge(count)) AS count, \
+                 minMerge(min) AS min, \
+                 maxMerge(max) AS max, \
+                 sumMerge(sum) AS sum, \
+                 sumMerge(sum_sq) AS sum_sq, \
+                 argMaxMerge(latest) AS latest, \
+                 maxMerge(latest_step) AS latest_step, \
+                 argMaxMerge(best_step) AS best_step \
+               FROM metric_series \
+               WHERE org_id = ? AND key = ? \
+               GROUP BY run_id, key \
+             ) \
+             ORDER BY {order_clause}, run_id \
+             LIMIT ?"
+        );
+        self.client
+            .query(&sql)
+            .bind(org_id)
+            .bind(key)
+            .bind(limit)
+            .fetch_all::<SeriesReadRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn query_keys_for_runs(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        limit: i64,
+    ) -> AppResult<Vec<String>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT key \
+                 FROM metric_series \
+                 WHERE org_id = ? AND run_id IN ? \
+                 GROUP BY key \
+                 ORDER BY key \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(limit)
+            .fetch_all::<MetricKeyReadRow>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(rows.into_iter().map(|row| row.key).collect())
+    }
+
     /// Count the total number of metric points for an org. Used by usage
-    /// rollups in place of the prior Postgres `count(*)` query.
+    /// rollups in place of the prior ClickHouse `count(*)` query.
     pub async fn count_points_for_org(&self, org_id: Uuid) -> AppResult<i64> {
         let count: u64 = self
             .client
             .query("SELECT count() FROM metric_points WHERE org_id = ?")
             .bind(org_id)
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(count as i64)
+    }
+
+    pub async fn count_points_for_runs(&self, org_id: Uuid, run_ids: &[Uuid]) -> AppResult<i64> {
+        if run_ids.is_empty() {
+            return Ok(0);
+        }
+        let count: u64 = self
+            .client
+            .query(
+                "SELECT toUInt64(sum(count)) \
+                 FROM ( \
+                   SELECT countMerge(count) AS count \
+                   FROM metric_series \
+                   WHERE org_id = ? AND run_id IN ? \
+                   GROUP BY run_id, key \
+                 )",
+            )
+            .bind(org_id)
+            .bind(run_ids)
             .fetch_one::<u64>()
             .await
             .map_err(clickhouse_read_error)?;
@@ -285,12 +503,35 @@ fn clickhouse_read_error(err: clickhouse::error::Error) -> AppError {
 /// segment is treated as the database name; the userinfo is split into user
 /// and password.
 pub fn connect(config: &AppConfig) -> AppResult<MetricStore> {
-    let parsed = Url::parse(&config.clickhouse_url)
-        .map_err(|err| AppError::config(format!("CLICKHOUSE_URL is not a valid URL: {err}")))?;
+    connect_url(&config.clickhouse_url, "CLICKHOUSE_URL")
+}
+
+pub fn connect_url(raw_url: &str, label: &str) -> AppResult<MetricStore> {
+    connect_connection(&parse_clickhouse_url(raw_url, label)?)
+}
+
+pub fn connect_connection(connection: &ClickHouseConnection) -> AppResult<MetricStore> {
+    let client = ClickHouseClient::default()
+        .with_url(&connection.endpoint)
+        .with_user(&connection.username)
+        .with_password(&connection.password)
+        .with_database(&connection.database);
+
+    Ok(MetricStore {
+        client,
+        database: connection.database.clone(),
+    })
+}
+
+/// Parse a ClickHouse HTTP URL into the connection fields the clickhouse crate
+/// needs. Accepts URLs of the form `http://user:pass@host:port/database`.
+pub fn parse_clickhouse_url(raw_url: &str, label: &str) -> AppResult<ClickHouseConnection> {
+    let parsed = Url::parse(raw_url)
+        .map_err(|err| AppError::config(format!("{label} is not a valid URL: {err}")))?;
     let scheme = parsed.scheme();
     let host = parsed
         .host_str()
-        .ok_or_else(|| AppError::config("CLICKHOUSE_URL must include a host"))?;
+        .ok_or_else(|| AppError::config(format!("{label} must include a host")))?;
     let port = parsed
         .port()
         .unwrap_or(if scheme == "https" { 8443 } else { 8123 });
@@ -308,13 +549,12 @@ pub fn connect(config: &AppConfig) -> AppResult<MetricStore> {
     let password = parsed.password().unwrap_or("");
 
     let endpoint = format!("{scheme}://{host}:{port}");
-    let client = ClickHouseClient::default()
-        .with_url(endpoint)
-        .with_user(user)
-        .with_password(password)
-        .with_database(&database);
-
-    Ok(MetricStore { client, database })
+    Ok(ClickHouseConnection {
+        endpoint,
+        username: user.to_string(),
+        password: password.to_string(),
+        database,
+    })
 }
 
 /// Apply the ClickHouse schema. Idempotent: every statement uses
@@ -339,7 +579,7 @@ pub async fn ready(store: &MetricStore) -> bool {
 
 /// Create the configured database if it does not exist. ClickHouse rejects
 /// queries against a missing database, so this must run before applying schema.
-async fn ensure_database(store: &MetricStore) -> AppResult<()> {
+pub async fn ensure_database(store: &MetricStore) -> AppResult<()> {
     if store.database.is_empty() || store.database == "default" {
         return Ok(());
     }
@@ -381,6 +621,15 @@ fn split_statements(sql: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_clickhouse_url_applies_defaults() {
+        let parsed = parse_clickhouse_url("https://example.com/default", "TEST_URL").unwrap();
+        assert_eq!(parsed.endpoint, "https://example.com:8443");
+        assert_eq!(parsed.username, "default");
+        assert_eq!(parsed.password, "");
+        assert_eq!(parsed.database, "default");
+    }
 
     #[test]
     fn split_statements_handles_comments_and_blanks() {

@@ -2,7 +2,7 @@
 
 This example logs deterministic RL-style metrics without requiring a simulator dependency. It proves the SDK -> API -> storage path and can run either synchronously or through the process uploader spool.
 
-For the current product UI, run the primary Rust/Postgres API with `npm run dev:api`, run the Next app with `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev`, and open `http://127.0.0.1:3000`. The Python bootstrap API below remains useful for reference SDK compatibility checks.
+For the current product UI, run the primary Rust/ClickHouse API with `npm run dev:api`, run the Next app with `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev`, and open `http://127.0.0.1:3000`. The Python bootstrap API below remains useful for reference SDK compatibility checks.
 
 ## Run
 
@@ -18,7 +18,7 @@ In another terminal, run:
 PYTHONPATH=packages/python-sdk:examples/rl-cartpole python3 examples/rl-cartpole/train.py --server http://127.0.0.1:8000
 ```
 
-To verify process-isolated upload mode against the primary backend, start the Rust/Postgres server from the repo root:
+To verify process-isolated upload mode against the primary backend, start the Rust/ClickHouse server from the repo root:
 
 ```bash
 npm run dev:api

@@ -6,14 +6,8 @@ import { ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
 const rlobsDir = path.join(repo, ".rlobs");
-const dataDir = path.resolve(process.env.RLOBS_DEV_PGDATA || path.join(rlobsDir, "postgres"));
-const logPath = path.resolve(process.env.RLOBS_DEV_PG_LOG || path.join(rlobsDir, "postgres.log"));
-const pgPort = process.env.RLOBS_DEV_PG_PORT || "54329";
-const dbName = process.env.RLOBS_DEV_DB || "rlobs";
 const apiPort = process.env.RLOBS_API_PORT || "8000";
 const bindAddr = process.env.RLOBS_BIND_ADDR || `127.0.0.1:${apiPort}`;
-const databaseUrl = process.env.DATABASE_URL || `postgres://127.0.0.1:${pgPort}/${dbName}`;
-let startedPostgres = false;
 let clickhouse = null;
 let child = null;
 let shuttingDown = false;
@@ -21,24 +15,16 @@ let shuttingDown = false;
 main().catch(async (error) => {
   console.error(error instanceof Error ? error.message : error);
   await stopClickHouse();
-  stopPostgres();
   process.exit(1);
 });
 
 async function main() {
-  requireCommand("initdb");
-  requireCommand("pg_ctl");
-  requireCommand("createdb");
-  requireCommand("psql");
   requireCommand("cargo");
 
   fs.mkdirSync(rlobsDir, { recursive: true });
-  ensurePostgres();
-  ensureDatabase();
   clickhouse = await ensureLocalClickHouse({ repo });
 
   console.log(`Training Observability Rust API starting on http://${bindAddr}`);
-  console.log(`Postgres: ${databaseUrl}`);
   console.log(`ClickHouse: ${clickhouse.url}${clickhouse.started ? " (started locally)" : ""}`);
 
   child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
@@ -46,7 +32,6 @@ async function main() {
     stdio: "inherit",
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
       CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: bindAddr,
       RLOBS_AUTH_MODE: process.env.RLOBS_AUTH_MODE || "local",
@@ -58,43 +43,9 @@ async function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   child.on("close", async (code, signal) => {
     await stopClickHouse();
-    stopPostgres();
     if (signal) process.exit(0);
     process.exit(code ?? 0);
   });
-}
-
-function ensurePostgres() {
-  if (!fs.existsSync(path.join(dataDir, "PG_VERSION"))) {
-    run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: "inherit" });
-  }
-  const status = spawnSync("pg_ctl", ["-D", dataDir, "status"], { encoding: "utf8" });
-  if (status.status === 0) return;
-  run("pg_ctl", [
-    "-D",
-    dataDir,
-    "-o",
-    `-p ${pgPort} -c listen_addresses='127.0.0.1'`,
-    "-l",
-    logPath,
-    "start",
-  ], { stdio: "inherit" });
-  startedPostgres = true;
-}
-
-function ensureDatabase() {
-  const exists = spawnSync("psql", [
-    "-h",
-    "127.0.0.1",
-    "-p",
-    pgPort,
-    "-d",
-    "postgres",
-    "-Atc",
-    `SELECT 1 FROM pg_database WHERE datname = '${dbName.replaceAll("'", "''")}'`,
-  ], { encoding: "utf8" });
-  if (exists.status === 0 && exists.stdout.trim() === "1") return;
-  run("createdb", ["-h", "127.0.0.1", "-p", pgPort, dbName], { stdio: "inherit" });
 }
 
 async function shutdown(signal) {
@@ -105,7 +56,6 @@ async function shutdown(signal) {
     return;
   }
   await stopClickHouse();
-  stopPostgres();
   process.exit(0);
 }
 
@@ -116,27 +66,10 @@ async function stopClickHouse() {
   await service.stop();
 }
 
-function stopPostgres() {
-  if (!startedPostgres) return;
-  startedPostgres = false;
-  spawnSync("pg_ctl", ["-D", dataDir, "stop", "-m", "fast"], { stdio: "ignore" });
-}
-
 function requireCommand(command) {
   const result = spawnSync(command, ["--version"], { encoding: "utf8" });
   if (result.status !== 0) {
-    console.error(`${command} was not found. Install Rust and local Postgres tools before running npm run dev:api.`);
+    console.error(`${command} was not found. Install Rust before running npm run dev:api.`);
     process.exit(1);
-  }
-}
-
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: repo,
-    stdio: options.stdio || "inherit",
-    env: process.env,
-  });
-  if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
   }
 }

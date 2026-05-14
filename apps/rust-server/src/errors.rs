@@ -79,18 +79,6 @@ impl IntoResponse for AppError {
     }
 }
 
-impl From<sqlx::Error> for AppError {
-    fn from(error: sqlx::Error) -> Self {
-        match error {
-            sqlx::Error::RowNotFound => AppError::not_found("resource not found"),
-            _ => {
-                tracing::error!(error = ?error, "database error");
-                AppError::internal("internal server error")
-            }
-        }
-    }
-}
-
 impl From<std::io::Error> for AppError {
     fn from(error: std::io::Error) -> Self {
         tracing::error!(error = ?error, "io error");

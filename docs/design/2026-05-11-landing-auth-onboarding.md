@@ -30,7 +30,7 @@ This design also replaces hash-tab navigation with real Next routes so dashboard
 - Password auth, magic links, billing checkout, SCIM, SAML, or email delivery.
 - Fine-grained dashboard role permissions beyond owner/admin/member/viewer checks needed for onboarding and API-key creation.
 - Removing deprecated Node compatibility smokes.
-- Persisting all dashboard local-storage views to Postgres.
+- Persisting all dashboard local-storage views to ClickHouse.
 
 ## Users and Use Cases
 
@@ -75,7 +75,7 @@ The sign-in, sign-up, and onboarding screens should be compact operational surfa
 Concrete first viewport composition:
 
 - Product name as the H1: `Training Observability`.
-- Supporting copy: implemented strengths only, such as fast run browsing, bounded metric charts, SDK ingestion, Rust/Postgres/ClickHouse storage, and local-first setup.
+- Supporting copy: implemented strengths only, such as fast run browsing, bounded metric charts, SDK ingestion, Rust/ClickHouse storage, and local-first setup.
 - Primary action: Google sign-in only when managed auth is configured; otherwise the local dev flow is explicit and labeled.
 - Secondary action: open the local demo/dashboard path after auth.
 - Product preview: a compact dashboard shell with a run table, metric chart, compare row, and SDK/API-key snippet. This should be CSS/HTML product UI, not decorative illustration.
@@ -95,7 +95,7 @@ Use existing identity tables as the source of truth:
 Add opaque browser sessions:
 
 - The browser receives only a random session token in an `HttpOnly`, `SameSite=Lax` cookie.
-- Postgres stores only `sha256(token)` plus user/org IDs and expiry.
+- ClickHouse stores only `sha256(token)` plus user/org IDs and expiry.
 - The session cookie is `Secure` when the request is not localhost.
 - The server updates `last_seen_at` at most once per minute to avoid write amplification.
 - Logout revokes the session row.
@@ -199,7 +199,7 @@ Python SDK:
 
 Storage:
 
-- Add one migration for `user_sessions`, organization account fields, membership status, and indexes.
+- Add operational record payloads for user sessions, organization account fields, and membership status.
 
 Docs:
 
@@ -209,29 +209,26 @@ Docs:
 
 `organizations` changes:
 
-- `account_type text not null default 'customer' check in ('customer', 'business')`
-- `seat_limit integer not null default 1 check (seat_limit > 0 and seat_limit <= 10000)`
-- Index: existing slug/org indexes remain sufficient for onboarding.
+- `account_type`: `customer` or `business`
+- `seat_limit`: positive integer, capped at 10,000
+- Slug uniqueness remains enforced by the Rust store.
 
 `memberships` changes:
 
-- `status text not null default 'active' check in ('active', 'invited')`
-- Index: `(org_id, status, created_at desc)` for seat list and usage counts.
-- Existing unique `(org_id, user_id)` remains the seat uniqueness guard.
+- `status`: `active` or `invited`
+- Service-level uniqueness on `(org_id, user_id)` remains the seat guard.
 
 `user_sessions`:
 
-- `id uuid primary key default gen_random_uuid()`
-- `user_id uuid not null references users(id) on delete cascade`
-- `org_id uuid not null references organizations(id) on delete cascade`
-- `token_hash bytea not null unique`
-- `created_at timestamptz not null default now()`
-- `last_seen_at timestamptz`
-- `expires_at timestamptz not null`
-- `revoked_at timestamptz`
-- Foreign key `(org_id, user_id)` references memberships for org membership integrity if Postgres accepts it with the existing unique constraint.
-- Index: `user_sessions_user_active_idx` on `(user_id, expires_at desc)` where `revoked_at is null`.
-- Index: `user_sessions_expiry_idx` on `expires_at` for cleanup.
+- `id`
+- `user_id`
+- `org_id`
+- `token_hash`
+- `created_at`
+- `last_seen_at`
+- `expires_at`
+- `revoked_at`
+- The Rust store checks session membership integrity and active/revoked state.
 
 Public signup must not use the existing bootstrap `create_organization` semantics because that helper intentionally reuses slugs for bootstrap/idempotent setup. A separate onboarding store function must be insert-only and return `409` on slug conflict, so a new user cannot become owner of an existing org by picking the same slug.
 
@@ -352,7 +349,7 @@ The main complexity intentionally accepted is session-cookie storage, because da
 
 ## Testing Plan
 
-- Rust migration test covers new columns/tables/indexes.
+- Rust storage tests cover new operational payloads.
 - Rust store tests cover dev Google onboarding, existing-user sign-in, business seat reservation, seat-limit conflict, session lookup, logout/revocation, and session owner/admin API-key authorization.
 - Rust concurrency test covers two simultaneous seat reservations racing against the final available seat.
 - Rust negative tests cover dev auth disabled in API-key/hosted mode, slug-conflict signup, cross-org session access, invited membership session rejection, member/viewer API-key creation rejection, owner/admin API-key creation success, and cross-origin cookie-auth mutation rejection.

@@ -10,13 +10,13 @@ Owner: Codex
 
 Tags and notes are key run identity fields for researchers scanning many experiments, but the current product only partially surfaces them. Demo runs already have `runs.tags` and `metadata.notes`, and Compare can display those fields, but run browsing does not make notes visible enough, Run Detail cannot edit them, Compare cannot edit them, and backend search only covers name, project, tags, and config text.
 
-The smallest durable slice keeps the existing data model: tags remain `runs.tags text[]` and notes remain `runs.metadata.notes`. The Rust API extends `PATCH /runs/:run_id` so callers can update status, tags, and notes in one route. Generic metadata mutation is intentionally deferred so SDK-owned `_rlobs` source metadata, hardware metadata, and imported provenance cannot be overwritten by a broad shallow merge. Run search moves to a trigger-maintained Postgres search column that includes run name, tags, config text, and explicit note fallback fields so note/tag queries are server-backed and indexable without indexing all metadata JSON.
+The smallest durable slice keeps the existing API data model: tags remain the run `tags` array and notes remain `metadata.notes`. The Rust API extends `PATCH /runs/:run_id` so callers can update status, tags, and notes in one route. Generic metadata mutation is intentionally deferred so SDK-owned `_rlobs` source metadata, hardware metadata, and imported provenance cannot be overwritten by a broad shallow merge. In the current ClickHouse-only implementation, run search text is derived in the Rust operational index from run name, tags, config text, and explicit note fallback fields.
 
 ## Goals
 
 - Make tags and notes visible in the Runs table and Runs workspace selector.
 - Add safe post-hoc editing for tags and notes in Run Detail and Compare.
-- Keep Rust/Postgres as the source of truth while preserving Node compatibility behavior.
+- Keep Rust/ClickHouse as the source of truth while preserving Node compatibility behavior.
 - Make run search match notes and tags through the server-backed `q` path.
 - Add first-class Python SDK helpers for notes and post-hoc tag replacement.
 - Keep demo reset producing searchable tags and notes for all generated demo runs.
@@ -58,12 +58,11 @@ Rust API:
 
 Search:
 
-- Add a trigger-maintained `runs.search_text` column through a Rust migration:
-  - lowercased run name
-  - lowercased tags
-  - lowercased config JSON
-  - lowercased explicit note fallback fields: `notes`, `note`, `description`, `summary`, and `comment`
-- Add a trigram GIN index on `runs.search_text` and a GIN index on `runs.tags`.
+- Maintain derived lowercased search text in the Rust operational index:
+  - run name
+  - tags
+  - config JSON
+  - explicit note fallback fields: `notes`, `note`, `description`, `summary`, and `comment`
 - Update run summary, overview, and metric-key discovery filters to require every token to match `r.search_text` while preserving project/status/project-scope filters.
 - Keep whitespace token semantics so `seed 13`, `reward stability`, and `long context` work as AND-token searches.
 - Normalize search tokens by lowercasing, escaping `%`, `_`, and `\`, and capping token count to eight. Short tokens such as `13` still work for seed search but are not treated as proof that the trigram index will be used; 90,000-run query-plan checks remain a follow-up.
@@ -104,7 +103,7 @@ Frontend:
 
 Backend:
 
-- Rust `domain`, `store`, migrations, and tests change.
+- Rust `domain`, `store`, schema-related docs, and tests change.
 - Node compatibility store and tests change.
 
 Frontend:
@@ -121,8 +120,8 @@ Python SDK:
 
 Storage:
 
-- Add trigger-maintained `runs.search_text`.
-- Add GIN indexes for `search_text` and tags.
+- Store tags and notes in the current run payload.
+- Derive search text during operational-index rebuild and run mutation handling.
 
 Docs:
 
@@ -130,26 +129,7 @@ Docs:
 
 ## Data Model
 
-New Postgres search field and refresh trigger:
-
-```sql
-alter table runs add column search_text text not null default '';
-
-create trigger runs_search_text_refresh
-before insert or update of name, tags, config, metadata on runs
-for each row
-execute function runs_refresh_search_text();
-```
-
-Indexes:
-
-```sql
-create extension if not exists pg_trgm;
-create index runs_search_text_trgm_idx on runs using gin (search_text gin_trgm_ops);
-create index runs_tags_gin_idx on runs using gin (tags);
-```
-
-No API response shape adds `search_text`; it remains server-only.
+No API response shape adds `search_text`; it remains server-only. The Rust store computes search text from the stored run payload and uses it for bounded summary filtering.
 
 ## API Contracts
 
@@ -173,7 +153,7 @@ Behavior:
 - Invalid status, tags, oversized note text, or empty patch bodies return `400`.
 - Missing run returns `404`.
 - API-key mode still requires `sdk:ingest`.
- - The update SQL must include `runs.org_id = ctx.org_id` and existing project-scoped access checks remain in force.
+- The update path must check `org_id` and existing project-scoped access before mutating the run.
 
 SDK:
 
@@ -189,8 +169,7 @@ run.set_tags(["candidate", "needs-triage"])
 
 - Expected write frequency: tags/notes edits are human-paced, not training-loop hot-path traffic.
 - Expected search reads: every Runs summary/overview refresh can include `q`; it remains paginated and summary-only.
-- The trigger-maintained `search_text` avoids repeated string construction in every query and gives Postgres a trigram index for note/tag/name/config text search without indexing arbitrary metadata blobs. The trigger is slightly more verbose than a generated column, but avoids Postgres immutability restrictions around JSON/text array expression functions.
-- Tags also get a GIN index for future explicit tag filters.
+- The derived `search_text` avoids repeating note/tag/config fallback logic in every route handler without exposing the field through the API.
 - This slice does not claim full 90,000-run p95 performance. Follow-up query-plan tests and scale smoke remain required before marking large-run-count search done.
 - Frontend editing mutates small run metadata and then refreshes bounded summaries; it does not fetch metric history.
 

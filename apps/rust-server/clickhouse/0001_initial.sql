@@ -1,8 +1,21 @@
--- ClickHouse schema for metric storage.
+-- ClickHouse schema for Training Observability storage.
 --
--- Replaces the Postgres metric_points + metric_series tables.
--- Postgres remains primary for OLTP metadata (orgs, users, runs, attributes, artifacts, etc).
+-- `operational_records` is the low-volume control/data-plane record log used
+-- to rebuild the Rust API's local single-process index. `metric_points` and
+-- `metric_series` are the analytical layer for high-volume scalar metrics.
 -- This file is idempotent (CREATE TABLE IF NOT EXISTS) so it can be applied repeatedly.
+
+CREATE TABLE IF NOT EXISTS operational_records (
+    kind       LowCardinality(String),
+    org_id     UUID,
+    entity_id  String,
+    payload    String CODEC(ZSTD(3)),
+    created_at DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (kind, org_id, entity_id, created_at)
+SETTINGS index_granularity = 8192;
 
 CREATE TABLE IF NOT EXISTS metric_points (
     org_id     UUID,

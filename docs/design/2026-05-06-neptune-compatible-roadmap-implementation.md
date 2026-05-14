@@ -27,7 +27,7 @@ The implementation keeps the existing SDK and UI working, then adds typed attrib
 
 ## Non-Goals
 
-- Postgres implementation in this slice. The later Rust/Postgres design in `2026-05-09-rust-postgres-backend.md` is now the accepted durable storage path; this implemented slice intentionally kept the running server on JSON storage.
+- ClickHouse implementation in this slice. The later Rust/ClickHouse design in `2026-05-14-clickhouse-only-storage.md` is now the accepted durable storage path; this implemented slice intentionally kept the running server on JSON storage.
 - S3-compatible storage implementation. The server will expose local filesystem storage first.
 - Full Parquet parsing. The first importer accepts JSON fixtures that mirror Neptune Exporter concepts; real Parquet support comes after dependency and schema review.
 - Auth, RBAC, hosted SaaS, Kubernetes, and model registry.
@@ -137,7 +137,7 @@ It creates runs, typed attributes, metrics, and artifact metadata. `dry_run=true
 
 ## Implementation Notes
 
-- Postgres and S3-compatible storage remain future work; this slice uses JSON state plus local filesystem artifact storage to keep the implementation reviewable.
+- ClickHouse and S3-compatible storage remain future work; this slice uses JSON state plus local filesystem artifact storage to keep the implementation reviewable.
 - The importer accepts a JSON shape that preserves Neptune concepts but does not parse Parquet yet.
 - Docker Compose runs the Node API and static frontend with a persistent Docker volume.
 - Future agents should update this doc or supersede it before replacing the JSON store, adding auth, or implementing full Neptune Exporter Parquet import.

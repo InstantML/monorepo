@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::{
@@ -71,7 +70,7 @@ pub struct CreateUserRequest {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserRow {
     pub id: Uuid,
     pub primary_email: String,
@@ -89,7 +88,7 @@ pub struct CreateOrganizationRequest {
     pub owner_user_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Serialize, FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrganizationRow {
     pub id: Uuid,
     pub slug: String,
@@ -101,7 +100,7 @@ pub struct OrganizationRow {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MembershipRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -111,7 +110,7 @@ pub struct MembershipRow {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserSessionRow {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -132,6 +131,14 @@ pub struct AuthSessionPayload {
     pub membership: MembershipRow,
     pub memberships: Vec<MembershipRow>,
     pub account_type: String,
+    pub provisioning: Option<ProvisioningStatusPayload>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProvisioningStatusPayload {
+    pub status: String,
+    pub mode: String,
+    pub service_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -170,7 +177,7 @@ pub struct CreateApiKeyRequest {
     pub expires_at: Option<String>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServiceAccountRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -180,7 +187,7 @@ pub struct ServiceAccountRow {
     pub disabled_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicApiKeyRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -201,7 +208,7 @@ pub struct CreateProjectRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProjectRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -226,7 +233,7 @@ pub struct UpdateRunRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Serialize, FromRow, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -251,7 +258,7 @@ pub struct LogMetricsRequest {
     pub preview_completion: Option<Value>,
 }
 
-#[derive(Debug, Serialize, FromRow, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct MetricPointRow {
     pub key: String,
     pub step: f64,
@@ -259,7 +266,7 @@ pub struct MetricPointRow {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, FromRow, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct MetricSeriesRow {
     pub run_id: Uuid,
     pub key: String,
@@ -310,7 +317,7 @@ pub struct CreateObjectRequest {
     pub rows: Option<Vec<Value>>,
 }
 
-#[derive(Debug, Serialize, FromRow, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AttributeRow {
     pub id: i64,
     pub org_id: Uuid,
@@ -352,7 +359,7 @@ pub struct UploadArtifactRequest {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Serialize, FromRow, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ArtifactRow {
     pub id: Uuid,
     pub org_id: Uuid,

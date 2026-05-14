@@ -23,13 +23,13 @@ This is not a billing engine and must not be treated as invoice truth. It gives 
 ## Non-Goals
 
 - Charge cards, invoices, Stripe integration, or plan enforcement.
-- Exact Postgres table/storage byte accounting.
+- Exact ClickHouse table/storage byte accounting.
 - Per-hour or tracked-hour billing.
 - Public final pricing.
 
 ## Proposed Design
 
-Add computed usage helpers to the compatibility store and equivalent Rust/Postgres queries:
+Add computed usage helpers to the compatibility store and equivalent Rust/ClickHouse queries:
 
 - `usageSummary({ org_id? })`
 - `usageExport({ org_id? })`
@@ -68,7 +68,7 @@ Canonical count sources:
 
 Node JSON storage adds `plan_tier` to organizations and otherwise does not add durable usage rows. Usage is recomputed from current state for compatibility checks.
 
-The Rust/Postgres implementation computes the same current summary from indexed tables. The accepted Postgres migration includes `usage_daily` as the durable target, and the Rust worker writes immutable daily snapshots for warning/debug rollups. Billable interpretation is still deferred. `usage_daily` must remain immutable rollup output, not a mutable current total:
+The Rust/ClickHouse implementation computes the same current summary from operational records and metric counts. The accepted ClickHouse-only implementation records daily snapshots as durable operational records, and the Rust worker writes immutable daily snapshots for warning/debug rollups. Billable interpretation is still deferred. `usage_daily` must remain immutable rollup output, not a mutable current total:
 
 - `org_id`
 - `period_start date` in UTC
@@ -92,14 +92,12 @@ The Rust/Postgres implementation computes the same current summary from indexed 
 - Primary key: generated rollup ID
 - Unique active daily snapshot: `(org_id, period_start, rollup_kind)` where `rollup_kind = 'daily_snapshot'`
 
-Monthly storage warning math should use average daily `estimated_storage_bytes_for_warnings` snapshots across UTC days until exact Postgres/object-store billing fields exist. Deletes and retention reduce future snapshots but do not mutate historical snapshots; corrections append a correction row linked to the original.
+Monthly storage warning math should use average daily `estimated_storage_bytes_for_warnings` snapshots across UTC days until exact ClickHouse/object-store billing fields exist. Deletes and retention reduce future snapshots but do not mutate historical snapshots; corrections append a correction row linked to the original.
 
-Postgres index/counter needs:
+ClickHouse counter needs:
 
 - `metric_points(org_id, created_at)` for org/day point counting.
-- `artifacts(org_id, created_at)` and `artifacts(org_id, run_id)` for byte and count rollups.
-- `runs(org_id, created_at)`.
-- `projects(org_id, created_at)`.
+- Operational records for artifacts, runs, and projects must include `org_id` and timestamps so the Rust index can compute counts.
 - Durable billing must not rely on ad hoc full-table scans; use immutable snapshots plus future object-store/provider reconciliation.
 
 ## API Contracts
@@ -174,7 +172,7 @@ The export is a point-in-time current-state snapshot, not a historical billing l
 
 ## Performance Considerations
 
-The Node helper scans in-memory arrays and is acceptable for the compatibility server. The Rust/Postgres version computes usage from indexed org/run/artifact/metric tables and persists daily rollups through the worker. No endpoint returns metric history; only counts and byte totals.
+The Node helper scans in-memory arrays and is acceptable for the compatibility server. The Rust/ClickHouse version computes usage from indexed org/run/artifact/metric tables and persists daily rollups through the worker. No endpoint returns metric history; only counts and byte totals.
 
 ## Simplicity Review
 
@@ -203,17 +201,17 @@ This avoids a premature ledger and billing integration while still giving produc
 
 ## Implementation Notes
 
-- Implemented in the Rust/Postgres server as `GET /api/usage` and `GET /api/usage/export`.
+- Implemented in the Rust/ClickHouse server as `GET /api/usage` and `GET /api/usage/export`.
 - Implemented in the Node compatibility server with the same route shapes for legacy checks.
 - Hosted/authenticated mode requires `usage:read`; default `sdk:ingest` keys receive `403`.
 - Contract smoke now verifies usage scope denial plus authenticated summary/export.
-- Postgres migration includes `organizations.plan_tier`, `usage_daily`, and org/day indexes. The Rust `worker` command writes immutable daily snapshots for each organization.
+- The Rust `worker` command writes immutable daily snapshots for each organization.
 
 ## Review Notes
 
 Fresh reviewer 1:
 
-- Finding: P3 should avoid exact billing semantics until hosted Postgres exists.
+- Finding: P3 should avoid exact billing semantics until hosted ClickHouse exists.
 - Risk: Calling estimates "storage" could imply invoice precision.
 - Recommended edit: Label metric/metadata bytes as estimated and keep overages as warning-only.
 - Decision: Accepted.

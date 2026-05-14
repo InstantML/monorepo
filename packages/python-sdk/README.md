@@ -60,6 +60,14 @@ run = ro.init(project="cartpole", api_key="rlobs_...", base_url="https://api.exa
 RLOBS_API_KEY=rlobs_... PYTHONPATH=packages/python-sdk python3 train.py
 ```
 
+The hosted ClickHouse smoke proves this path against the Rust API's User Data and tenant-routing layer:
+
+```bash
+npm run test:hosted-clickhouse
+```
+
+That smoke creates an API key through the onboarding route, passes it to `rl_observability.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
+
 Read-only run summary queries use the raw `Api` helper:
 
 ```python
@@ -75,7 +83,7 @@ page = api.runs(
 
 `Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`.
 
-Backend compatibility note: the SDK talks to the Rust/Postgres server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
+Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
 
 Process-isolated upload mode for long training loops:
 
@@ -251,4 +259,4 @@ Automatic SDK source metadata is reserved under `metadata["_rlobs"]["source"]`. 
 - Support dual-logging or coexistence with MLflow/W&B where practical.
 - Keep SDK-owned metadata under `_rlobs` and reject user-provided `_rlobs` keys before merging metadata.
 - Add true offline run creation only after a design doc; do not imply it in README examples until implemented.
-- Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/Postgres/ClickHouse backend and deprecated Node backend.
+- Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/ClickHouse backend and deprecated Node backend.

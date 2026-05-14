@@ -10,7 +10,7 @@ Owner: Codex
 
 P4 should make evaluation safer for teams that already use W&B, MLflow, or Neptune. The first slice keeps the product simple: preserve SDK source metadata under a reserved namespace, make partial-write behavior explicit and tested, harden the existing Neptune importer, and add a dependency-free W&B JSON import route.
 
-This is not a full migration platform. It is a narrow bridge that lets users bring representative runs into the current UI and lets future agents test importer semantics before the Rust/Postgres service exists.
+This is not a full migration platform. It is a narrow bridge that lets users bring representative runs into the current UI and lets future agents test importer semantics before the Rust/ClickHouse service exists.
 
 ## Research Notes
 

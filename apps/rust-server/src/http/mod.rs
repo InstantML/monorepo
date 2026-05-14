@@ -10,7 +10,6 @@ use axum::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use tokio_util::io::ReaderStream;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -33,8 +32,7 @@ use crate::{
         ReserveSeatRequest, SessionContext, UpdateRunRequest, UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
-    metric_store::{self, MetricStore},
-    store,
+    metric_store, store,
 };
 
 mod handlers;
@@ -45,18 +43,13 @@ const SESSION_COOKIE: &str = "rlobs_session";
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: PgPool,
-    pub metric_store: MetricStore,
+    pub store: store::Store,
     pub config: AppConfig,
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, metric_store: MetricStore, config: AppConfig) -> Self {
-        Self {
-            pool,
-            metric_store,
-            config,
-        }
+    pub fn new(store: store::Store, config: AppConfig) -> Self {
+        Self { store, config }
     }
 }
 

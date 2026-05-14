@@ -14,4 +14,4 @@ Current SDK caveats to keep documented:
 - `upload_mode="spool"` avoids post-init HTTP calls in the training process. Metric replay now sends event IDs as idempotency keys to servers that support them; non-metric events remain one request per file and should stay idempotent where possible.
 - Automatic source metadata should remain reserved from user metadata overwrites.
 - Metric step semantics must stay aligned with both server implementations before expanding compatibility claims.
-- The SDK should remain backend-agnostic at the REST-contract level. It targets the primary Rust/Postgres/ClickHouse server by default and keeps compatibility with the deprecated Node server through the same documented routes. Use `RLOBS_API_KEY`/`api_key` when hosted or API-key auth is required.
+- The SDK should remain backend-agnostic at the REST-contract level. It targets the primary Rust/ClickHouse server by default and keeps compatibility with the deprecated Node server through the same documented routes. Use `RLOBS_API_KEY`/`api_key` when hosted or API-key auth is required.

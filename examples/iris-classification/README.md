@@ -23,7 +23,7 @@ npm ci
 python3 -m pip install -r requirements-dev.txt
 ```
 
-Start the primary Rust/Postgres API:
+Start the primary Rust/ClickHouse API:
 
 ```bash
 npm run dev:api

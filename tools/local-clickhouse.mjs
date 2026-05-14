@@ -27,7 +27,6 @@ export async function ensureLocalClickHouse(options = {}) {
   const tcpPort = String(options.tcpPort || process.env.RLOBS_DEV_CH_TCP_PORT || await freePort());
   const interserverHttpPort = String(options.interserverHttpPort || process.env.RLOBS_DEV_CH_INTERSERVER_PORT || await freePort());
   const mysqlPort = String(options.mysqlPort || process.env.RLOBS_DEV_CH_MYSQL_PORT || await freePort());
-  const postgresqlPort = String(options.postgresqlPort || process.env.RLOBS_DEV_CH_POSTGRESQL_PORT || await freePort());
 
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });
@@ -47,7 +46,6 @@ export async function ensureLocalClickHouse(options = {}) {
     `--tcp_port=${tcpPort}`,
     `--interserver_http_port=${interserverHttpPort}`,
     `--mysql_port=${mysqlPort}`,
-    `--postgresql_port=${postgresqlPort}`,
     "--listen_host=127.0.0.1",
     `--logger.log=${path.join(logDir, "server.log")}`,
     `--logger.errorlog=${path.join(logDir, "error.log")}`,
