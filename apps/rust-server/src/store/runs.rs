@@ -243,6 +243,60 @@ pub async fn overview(
             }
         }));
     }
+    if let Some(project) = project_filter(query) {
+        if !has_text_search(query)
+            && !has_status_filter(query)
+            && ctx.auth.as_ref().and_then(|auth| auth.project_id).is_none()
+        {
+            let (total_runs, active_runs, failed_runs) = {
+                let data = store.data.lock().await;
+                data.runs
+                    .values()
+                    .filter(|run| run.org_id == ctx.org_id && run.project == project)
+                    .fold(
+                        (0_usize, 0_usize, 0_usize),
+                        |(total, active, failed), run| {
+                            (
+                                total + 1,
+                                active + usize::from(run.status == "running"),
+                                failed + usize::from(run.status == "failed"),
+                            )
+                        },
+                    )
+            };
+            let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+            let sort_mode = if is_minimize_metric(metric_key) {
+                SeriesSortMode::BestMin
+            } else {
+                SeriesSortMode::BestMax
+            };
+            let best_eval_return = metric_store
+                .query_top_series_for_project_key(ctx.org_id, project, metric_key, sort_mode, 1)
+                .await?
+                .into_iter()
+                .next()
+                .map(|row| {
+                    if is_minimize_metric(metric_key) {
+                        row.min
+                    } else {
+                        row.max
+                    }
+                });
+            let metric_points = metric_store
+                .count_points_for_project(ctx.org_id, project)
+                .await
+                .unwrap_or(0);
+            return Ok(json!({
+                "overview": {
+                    "total_runs": total_runs,
+                    "active_runs": active_runs,
+                    "failed_runs": failed_runs,
+                    "best_eval_return": best_eval_return,
+                    "metric_points": metric_points
+                }
+            }));
+        }
+    }
     let runs = filtered_runs(store, ctx, query).await?;
     let total_runs = runs.len();
     let active_runs = runs.iter().filter(|run| run.status == "running").count();
@@ -465,7 +519,8 @@ async fn metric_sorted_index_page(
     }
     let total = {
         let data = store.data.lock().await;
-        indexed_run_total(&data, ctx, query)
+        let tokens = text_search_tokens(query);
+        indexed_run_total(&data, ctx, query, &tokens)
     };
     if total <= MAX_CLICKHOUSE_RUN_ID_CHUNK {
         return Ok(None);
@@ -480,9 +535,10 @@ async fn metric_sorted_index_page(
             .await?;
         let mut page = {
             let data = store.data.lock().await;
+            let tokens = text_search_tokens(query);
             rows.into_iter()
                 .filter_map(|row| data.runs.get(&row.run_id))
-                .filter(|run| run_matches_indexed_query(ctx, query, run))
+                .filter(|run| run_matches_indexed_query(&data, ctx, query, run, &tokens))
                 .cloned()
                 .collect::<Vec<_>>()
         };
@@ -490,7 +546,8 @@ async fn metric_sorted_index_page(
             let mut seen = page.iter().map(|run| run.id).collect::<BTreeSet<_>>();
             if page.len() < target {
                 let data = store.data.lock().await;
-                append_created_index_runs(&data, ctx, query, &mut seen, target, &mut page);
+                let tokens = text_search_tokens(query);
+                append_created_index_runs(&data, ctx, query, &tokens, &mut seen, target, &mut page);
             }
             break page;
         }
@@ -569,16 +626,15 @@ fn created_index_page(
     offset: usize,
     limit: usize,
 ) -> Option<(usize, Vec<RunRow>)> {
-    if has_text_search(query) || has_status_filter(query) {
-        return None;
-    }
-    let total = indexed_run_total(data, ctx, query);
+    let tokens = text_search_tokens(query);
+    let total = indexed_run_total(data, ctx, query, &tokens);
     let mut seen = BTreeSet::new();
     let mut page = Vec::with_capacity(limit);
     append_created_index_runs(
         data,
         ctx,
         query,
+        &tokens,
         &mut seen,
         offset.saturating_add(limit),
         &mut page,
@@ -590,6 +646,7 @@ fn append_created_index_runs(
     data: &StoreData,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
+    tokens: &[String],
     seen: &mut BTreeSet<Uuid>,
     target: usize,
     page: &mut Vec<RunRow>,
@@ -603,7 +660,7 @@ fn append_created_index_runs(
             let Some(run) = data.runs.get(run_id) else {
                 continue;
             };
-            if run_matches_indexed_query(ctx, query, run) {
+            if run_matches_indexed_query(data, ctx, query, run, tokens) {
                 seen.insert(*run_id);
                 page.push(run.clone());
                 if page.len() >= target {
@@ -620,7 +677,7 @@ fn append_created_index_runs(
         let Some(run) = data.runs.get(run_id) else {
             continue;
         };
-        if run_matches_indexed_query(ctx, query, run) {
+        if run_matches_indexed_query(data, ctx, query, run, tokens) {
             seen.insert(*run_id);
             page.push(run.clone());
             if page.len() >= target {
@@ -634,6 +691,7 @@ fn indexed_run_total(
     data: &StoreData,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
+    tokens: &[String],
 ) -> usize {
     if let Some(project) = project_filter(query) {
         data.runs_by_org_project_created
@@ -644,7 +702,7 @@ fn indexed_run_total(
                     && data
                         .runs
                         .get(run_id)
-                        .map(|run| run_matches_indexed_query(ctx, query, run))
+                        .map(|run| run_matches_indexed_query(data, ctx, query, run, tokens))
                         .unwrap_or(false)
             })
             .count()
@@ -656,7 +714,7 @@ fn indexed_run_total(
                     && data
                         .runs
                         .get(run_id)
-                        .map(|run| run_matches_indexed_query(ctx, query, run))
+                        .map(|run| run_matches_indexed_query(data, ctx, query, run, tokens))
                         .unwrap_or(false)
             })
             .count()
@@ -664,9 +722,11 @@ fn indexed_run_total(
 }
 
 fn run_matches_indexed_query(
+    data: &StoreData,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
     run: &RunRow,
+    tokens: &[String],
 ) -> bool {
     if run.org_id != ctx.org_id {
         return false;
@@ -680,9 +740,41 @@ fn run_matches_indexed_query(
     {
         return false;
     }
+    if query
+        .get("status")
+        .filter(|value| !value.is_empty() && value.as_str() != "all")
+        .map(|status| run.status != *status)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    if !tokens.is_empty() {
+        let matches = data
+            .run_search_texts
+            .get(&run.id)
+            .map(|haystack| tokens.iter().all(|token| haystack.contains(token)))
+            .unwrap_or_else(|| {
+                let haystack = run_search_text(run);
+                tokens.iter().all(|token| haystack.contains(token))
+            });
+        if !matches {
+            return false;
+        }
+    }
     project_filter(query)
         .map(|project| run.project == project)
         .unwrap_or(true)
+}
+
+fn text_search_tokens(query: &HashMap<String, String>) -> Vec<String> {
+    query
+        .get("q")
+        .map(|q| {
+            q.split_whitespace()
+                .map(|part| part.to_ascii_lowercase())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn project_filter(query: &HashMap<String, String>) -> Option<&str> {
@@ -1044,6 +1136,41 @@ mod tests {
             assert_eq!(validate_run_sort(value).unwrap(), value);
         }
         assert!(validate_run_sort("other").is_err());
+    }
+
+    #[test]
+    fn created_index_page_applies_status_text_and_project_filters() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: None,
+        };
+        let mut data = StoreData::default();
+        let mut failed = run(1, "failed-llm", 1);
+        failed.status = "failed".to_string();
+        failed.tags = vec!["llm".to_string()];
+        failed.metadata = json!({ "notes": "reward stability cohort" });
+        let mut finished = run(2, "finished-llm", 2);
+        finished.tags = vec!["llm".to_string()];
+        finished.metadata = json!({ "notes": "reward stability cohort" });
+        let mut other_project = run(3, "failed-other-project", 3);
+        other_project.project = "other".to_string();
+        other_project.status = "failed".to_string();
+        other_project.metadata = json!({ "notes": "reward stability cohort" });
+        data.insert_run(failed.clone());
+        data.insert_run(finished);
+        data.insert_run(other_project);
+
+        let query = HashMap::from([
+            ("project".to_string(), "project".to_string()),
+            ("status".to_string(), "failed".to_string()),
+            ("q".to_string(), "reward stability".to_string()),
+        ]);
+        let (total, page) = created_index_page(&data, &ctx, &query, 0, 25).unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].id, failed.id);
     }
 
     #[test]

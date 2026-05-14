@@ -56,11 +56,12 @@ Useful environment variables:
 
 ## Hosted Demo Benchmark Seed
 
-`hosted-demo-seed-benchmark.mjs` signs in as the shared demo account, provisions or reuses its ClickHouse Cloud service, seeds the 100,000-run benchmark into that service once, restarts its temporary Rust server so tenant replay reads the direct seed, and prints hosted API p50/p95 timings. It reads ClickHouse credentials from the local `.env`; do not run it from CI or against a disposable account unless you intend to create/use a hosted ClickHouse service.
+`hosted-demo-seed-benchmark.mjs` signs in as the shared demo account, provisions or reuses its ClickHouse Cloud service, seeds the 100,000-run benchmark into that service once, restarts its temporary Rust server so tenant replay reads the direct seed, and prints sanitized hosted API p50/p95 timings. It benchmarks newest run pages, 100-row pages, name/tag/config/notes search, status filters, combined search+filter, selected-metric sorting, project overview, and a bounded chart series. It reads ClickHouse credentials from the local `.env`; do not run it from CI or against a disposable account unless you intend to create/use a hosted ClickHouse service.
 
 ```bash
 RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
 RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 RLOBS_HOSTED_DEMO_SAMPLES=5 RLOBS_HOSTED_DEMO_WARMUPS=1 npm run benchmark:hosted-demo
+RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 RLOBS_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-benchmark.json npm run benchmark:hosted-demo
 ```
 
 Useful environment variables:
@@ -71,6 +72,11 @@ Useful environment variables:
 - `RLOBS_HOSTED_DEMO_PROJECT`: seeded project name. Default: `instantml-demo-100k`.
 - `RLOBS_HOSTED_DEMO_RUNS`: seeded run count. Default: `100000`.
 - `RLOBS_HOSTED_DEMO_LONG_RUN_STEPS`: metric steps on the newest run. Default: `20000`.
+- `RLOBS_HOSTED_DEMO_METRIC_KEY`: primary metric used for summaries, sorting, and chart reads. Default: `eval/return_mean`.
+- `RLOBS_HOSTED_DEMO_SAMPLES`: measured requests per endpoint. Default: `8`.
+- `RLOBS_HOSTED_DEMO_WARMUPS`: warmup requests per endpoint before timing. Default: `2`.
+- `RLOBS_HOSTED_DEMO_RESULT_PATH`: optional path for sanitized JSON output. The result includes endpoint host only, not ClickHouse credentials, cookies, raw URLs, or org/user IDs.
+- `RLOBS_HOSTED_DEMO_ENFORCE=1`: exit nonzero if hosted p95 budgets fail. Default budgets are 750 ms for run pages/charts and 1000 ms for search/filter/sort/overview.
 - `RLOBS_HOSTED_DEMO_API_BASE`: use an already-running API instead of starting a temporary Rust server. Restart that API after a direct seed before expecting the dashboard to replay the new rows.
 - `RLOBS_CLICKHOUSE_CLOUD_PROVIDER`, `RLOBS_CLICKHOUSE_CLOUD_REGION`: service location. When unset, the tool infers these from the User Data ClickHouse Cloud host when possible.
 - `RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`: comma-separated CIDRs allowed to query the tenant service. Default: `0.0.0.0/0` for demo accessibility.
