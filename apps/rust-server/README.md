@@ -140,6 +140,8 @@ RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
 
 This command reads the local `.env`, signs in as `hello@instantml.ai`, creates or reuses the `InstantML Demo` cloud-service tenant route, seeds the hosted 100,000-run benchmark only when that project is absent, restarts its temporary Rust API for tenant replay, and prints hosted ClickHouse latency timings. The explicit `RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1` guard is required because the command can create/use paid ClickHouse Cloud services; do not run it from CI or against an account where that would be surprising.
 
+In `cloud-service` hosted mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse service, not in the User Data database.
+
 ## Coverage Expectations
 
 Rust first-party service logic targets 100% meaningful coverage for validation, storage orchestration, idempotency handling, auth decisions, artifact byte handling, and API compatibility. Contract, SDK, UI, and benchmark smokes are part of the required verification because the current ClickHouse-only operational index is a storage-layer change with broad route impact.

@@ -1,7 +1,10 @@
 use std::process::ExitCode;
 
 use rlobs_rust_server::{
-    config::AppConfig, control_store::ControlStore, http::AppState, metric_store, store, telemetry,
+    config::{AppConfig, ClickHouseProvisioner},
+    control_store::ControlStore,
+    http::AppState,
+    metric_store, store, telemetry,
 };
 use tokio::net::TcpListener;
 
@@ -39,7 +42,9 @@ async fn run() -> rlobs_rust_server::AppResult<()> {
 
 async fn serve(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
     let metrics = metric_store::connect(&config)?;
-    metric_store::migrate(&metrics).await?;
+    if should_migrate_primary_metric_store(&config) {
+        metric_store::migrate(&metrics).await?;
+    }
     let control_store = ControlStore::connect(&config)?;
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
@@ -62,7 +67,9 @@ async fn serve(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
 
 async fn migrate_all(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
     let metrics = metric_store::connect(&config)?;
-    metric_store::migrate(&metrics).await?;
+    if should_migrate_primary_metric_store(&config) {
+        metric_store::migrate(&metrics).await?;
+    }
     if let Some(control_store) = ControlStore::connect(&config)? {
         control_store.migrate().await?;
     }
@@ -71,7 +78,9 @@ async fn migrate_all(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
 
 async fn worker(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
     let metrics = metric_store::connect(&config)?;
-    metric_store::migrate(&metrics).await?;
+    if should_migrate_primary_metric_store(&config) {
+        metric_store::migrate(&metrics).await?;
+    }
     let control_store = ControlStore::connect(&config)?;
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
@@ -85,6 +94,16 @@ async fn worker(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
     tracing::info!(deleted_sessions, "deleted expired or revoked session rows");
     tracing::info!(usage_snapshots, "wrote immutable usage daily snapshots");
     Ok(())
+}
+
+fn should_migrate_primary_metric_store(config: &AppConfig) -> bool {
+    !matches!(
+        config
+            .hosted_clickhouse
+            .as_ref()
+            .map(|hosted| &hosted.provisioner),
+        Some(ClickHouseProvisioner::CloudService)
+    )
 }
 
 async fn shutdown_signal() {

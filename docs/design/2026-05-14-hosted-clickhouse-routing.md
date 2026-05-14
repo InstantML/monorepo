@@ -421,6 +421,7 @@ Implemented in this branch:
 - Local/dev signup now resolves retry candidates by owner/name/account type and writes owner membership before provisioning, so database-mode failed/provisioning routes can be retried instead of creating duplicate orgs.
 - Cloud-service schema migration failures preserve the created service id in the failed route so operators have a cleanup handle.
 - Cloud-service route retries first attempt to resume stored service credentials and check for an existing deterministic ClickHouse Cloud service name before POSTing a new service, preventing accidental duplicate paid services after a timeout or crash.
+- Cloud-service server startup skips the primary/default metric-store schema migration so the User Data service keeps only control-plane tables; per-org metric schema is migrated after routing to the tenant service.
 - Local/dev demo auth canonicalizes `hello@instantml.ai` and `hello@instantml.com` to one `InstantML Demo` business org, preventing repeated demo sign-ins from creating multiple orgs or ClickHouse services.
 - Cloud-service provisioning can discover the ClickHouse Cloud organization id from the API when `RLOBS_CLICKHOUSE_CLOUD_ORG_ID` is not set.
 - `npm run test:hosted-clickhouse` verifies signup, User Data control rows, API-key creation, API-key scope enforcement, direct API-key ingest, Python SDK ingest, safe non-secret provisioning payloads, dashboard readback, and API restart replay.
