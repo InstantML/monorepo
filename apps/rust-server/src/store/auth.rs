@@ -100,6 +100,8 @@ pub async fn create_organization(
             .await?;
         data.insert_membership(membership);
     }
+    drop(data);
+    store.ensure_tenant_route(&org).await?;
     Ok(org)
 }
 
@@ -157,14 +159,38 @@ pub async fn create_dev_google_session(
             .insert((identity.provider, identity.provider_subject), user.id);
         user
     };
-    if let Some(org) = data
+    let existing_org = data
         .memberships
         .values()
         .filter(|membership| membership.user_id == user.id && membership.status == "active")
         .filter_map(|membership| data.organizations.get(&membership.org_id))
         .find(|org| org.name == org_name && org.account_type == account_type)
         .cloned()
-    {
+        .or_else(|| {
+            data.organizations
+                .values()
+                .find(|org| {
+                    org.created_by_user_id == Some(user.id)
+                        && org.name == org_name
+                        && org.account_type == account_type
+                })
+                .cloned()
+        });
+    if let Some(org) = existing_org {
+        drop(data);
+        store.ensure_tenant_route(&org).await?;
+        let mut data = store.data.lock().await;
+        if !data.memberships.values().any(|membership| {
+            membership.org_id == org.id
+                && membership.user_id == user.id
+                && membership.status == "active"
+        }) {
+            let owner = membership_row(org.id, user.id, "owner", "active");
+            store
+                .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
+                .await?;
+            data.insert_membership(owner);
+        }
         let (session, token) = new_session(user.id, org.id);
         store
             .persist_locked("session", org.id, &session.row.id.to_string(), &session)
@@ -195,6 +221,9 @@ pub async fn create_dev_google_session(
         .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
         .await?;
     data.insert_membership(owner.clone());
+    drop(data);
+    store.ensure_tenant_route(&org).await?;
+    let mut data = store.data.lock().await;
     for email in seat_emails {
         if validate_email(Some(&email)).is_ok() {
             let normalized_email = email.to_ascii_lowercase();
@@ -373,10 +402,18 @@ async fn create_api_key_inner(
         .as_deref()
         .map(|value| validate_timestamp(Some(value)))
         .transpose()?;
-    let mut data = store.data.lock().await;
+    let data = store.data.lock().await;
     if !data.organizations.contains_key(&org_id) {
         return Err(AppError::not_found("organization not found"));
     }
+    let org = data
+        .organizations
+        .get(&org_id)
+        .cloned()
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    drop(data);
+    store.ensure_tenant_route(&org).await?;
+    let mut data = store.data.lock().await;
     let project_id =
         resolve_key_project(&data, org_id, input.project_id, input.project.as_deref())?;
     let service_account = ServiceAccountRow {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -10,12 +10,13 @@ import { chromium } from "playwright";
 import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
-const runCount = numberEnv("RLOBS_BENCH_RUNS", 90_000);
+const runCount = numberEnv("RLOBS_BENCH_RUNS", 100_000);
+const longRunSteps = numberEnv("RLOBS_BENCH_LONG_RUN_STEPS", 20_000);
 const samples = numberEnv("RLOBS_BENCH_SAMPLES", 15);
 const warmups = numberEnv("RLOBS_BENCH_WARMUPS", 2);
 const includeWeb = process.env.RLOBS_BENCH_WEB === "1";
 const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
-const project = process.env.RLOBS_BENCH_PROJECT || "bench-90k";
+const project = process.env.RLOBS_BENCH_PROJECT || "bench-100k";
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-large-run-"));
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
@@ -23,6 +24,10 @@ const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
 const localOrgId = "00000000-0000-0000-0000-000000000001";
+const benchUserId = "00000000-0000-0000-0000-00000000b001";
+const benchMembershipId = "00000000-0000-0000-0000-00000000b002";
+const benchSessionId = "00000000-0000-0000-0000-00000000b003";
+const benchSessionToken = "rlobs_session_large_run_benchmark";
 let apiServer = null;
 let webServer = null;
 let clickhouse = null;
@@ -67,7 +72,7 @@ try {
     summary_newest_org: await measureEndpoint("summary_newest_org", `/api/runs/summary?${new URLSearchParams({ limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`),
     summary_search_seed_13: await measureEndpoint("summary_search_seed_13", `/api/runs/summary?${new URLSearchParams({ project, q: "seed 13", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`),
     summary_sort_metric_best: await measureEndpoint("summary_sort_metric_best", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "metric-best", metric_key: "eval/return_mean" })}`),
-    chart_series: await measureEndpoint("chart_series", `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: "eval/return_mean", limit: "1000" })}`),
+    chart_series: await measureEndpoint("chart_series", `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: "eval/return_mean", limit: "5000" })}`),
   };
 
   let web = null;
@@ -76,6 +81,8 @@ try {
     generated_at: new Date().toISOString(),
     environment: {
       run_count: runCount,
+      long_run_steps: longRunSteps,
+      long_run_metric_keys: ["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"],
       samples,
       warmups,
       include_web: includeWeb,
@@ -122,6 +129,35 @@ async function seedBenchmarkData() {
       seat_limit: 1,
       created_by_user_id: null,
       created_at: "1970-01-01T00:00:00Z",
+    }, now),
+    opRecord("user", benchUserId, {
+      id: benchUserId,
+      primary_email: "large-benchmark@example.com",
+      display_name: "Large Benchmark",
+      avatar_url: null,
+      created_at: now.toISOString(),
+      last_seen_at: now.toISOString(),
+    }, now),
+    opRecord("membership", benchMembershipId, {
+      id: benchMembershipId,
+      org_id: localOrgId,
+      user_id: benchUserId,
+      role: "owner",
+      status: "active",
+      created_at: now.toISOString(),
+    }, now),
+    opRecord("session", benchSessionId, {
+      row: {
+        id: benchSessionId,
+        user_id: benchUserId,
+        org_id: localOrgId,
+        metadata: {},
+        created_at: now.toISOString(),
+        last_seen_at: now.toISOString(),
+        expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        revoked_at: null,
+      },
+      token_hash: Array.from(createHash("sha256").update(benchSessionToken).digest()),
     }, now),
     opRecord("project", projectId, {
       id: projectId,
@@ -176,15 +212,21 @@ async function seedBenchmarkData() {
       await insertMetricPoints(metricRows.splice(0));
     }
   }
-  for (let step = 1; step <= 1000; step += 1) {
-    metricRows.push({
-      org_id: localOrgId,
-      run_id: newestRunId,
-      key: "eval/return_mean",
-      step,
-      value: 100 + Math.sin(step / 25) * 10 + step / 10,
-      logged_at: clickhouseDate(newestCreatedAt),
-    });
+  const longRunKeys = ["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"];
+  for (let step = 1; step <= longRunSteps; step += 1) {
+    for (const key of longRunKeys) {
+      metricRows.push({
+        org_id: localOrgId,
+        run_id: newestRunId,
+        key,
+        step,
+        value: longRunMetricValue(key, step),
+        logged_at: clickhouseDate(newestCreatedAt),
+      });
+    }
+    if (metricRows.length >= 5000) {
+      await insertMetricPoints(metricRows.splice(0));
+    }
   }
   if (ops.length) await insertOperationalRecords(ops);
   if (metricRows.length) await insertMetricPoints(metricRows);
@@ -198,6 +240,13 @@ function opRecord(kind, entityId, payload, createdAt) {
     payload: JSON.stringify(payload),
     created_at: clickhouseDate(createdAt),
   };
+}
+
+function longRunMetricValue(key, step) {
+  if (key === "train/loss") return Math.max(0.01, 4 / Math.sqrt(step));
+  if (key === "train/reward") return 50 + Math.log1p(step) * 12;
+  if (key === "system/tokens_per_second") return 12_000 + Math.sin(step / 111) * 700;
+  return 100 + Math.sin(step / 25) * 10 + step / 100;
 }
 
 async function insertOperationalRecords(records) {
@@ -245,8 +294,15 @@ async function measureWebFirstUsefulRender() {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.context().addCookies([{
+      name: "rlobs_session",
+      value: benchSessionToken,
+      url: `http://127.0.0.1:${webPort}`,
+      httpOnly: true,
+      sameSite: "Lax",
+    }]);
     const started = performance.now();
-    await page.goto(`http://127.0.0.1:${webPort}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`http://127.0.0.1:${webPort}/dashboard/runs`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector(".workspace-run-row", { timeout: 30_000 });
     const first_useful_render_ms = Math.round(performance.now() - started);
     const text = await page.locator(".workspace-run-footer").innerText();

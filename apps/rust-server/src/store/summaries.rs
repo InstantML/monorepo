@@ -3,7 +3,8 @@ use super::*;
 pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResult<Vec<Value>> {
     let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
     let series = if let Some(first) = runs.first() {
-        metric_series_for_runs(store.metric_store(), first.org_id, &run_ids).await?
+        let metric_store = store.metric_store_for_org(first.org_id).await?;
+        metric_series_for_runs(&metric_store, first.org_id, &run_ids).await?
     } else {
         Vec::new()
     };
@@ -19,7 +20,8 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
 
 pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<Value> {
     let run_ids = vec![run.id];
-    let series = metric_series_for_runs(store.metric_store(), run.org_id, &run_ids).await?;
+    let metric_store = store.metric_store_for_org(run.org_id).await?;
+    let series = metric_series_for_runs(&metric_store, run.org_id, &run_ids).await?;
     let counts = {
         let data = store.data.lock().await;
         artifact_counts_for_runs(&data, &run_ids)
