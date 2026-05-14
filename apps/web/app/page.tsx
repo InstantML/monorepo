@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowRight, BarChart3, CheckCircle2, Code2, GitCompare, KeyRound, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, Code2, GitCompare, KeyRound, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../src/api.js";
 import { pathFromLegacyHash } from "../src/routes.js";
+import { InstantMlMark } from "./instantml-mark";
 
 type AuthConfig = {
   dev_auth_enabled: boolean;
@@ -50,8 +51,8 @@ export default function LandingPage() {
     <main className="landing-page">
       <header className="landing-nav" aria-label="Public navigation">
         <a className="landing-brand" href="/">
-          <span className="brand-mark small" aria-hidden="true"><BarChart3 size={17} /></span>
-          <span>Training Observability</span>
+          <span className="brand-mark small" aria-hidden="true"><InstantMlMark /></span>
+          <span>InstantML</span>
         </a>
         <nav>
           <a href="/signin">Sign in</a>
@@ -61,10 +62,10 @@ export default function LandingPage() {
 
       <section className="landing-hero">
         <div className="landing-copy">
-          <p className="eyebrow">Fast training-loop visibility</p>
-          <h1>Training Observability</h1>
+          <p className="eyebrow">Training observability for serious ML teams</p>
+          <h1>InstantML</h1>
           <p className="landing-lede">
-            Browse runs, compare metrics, inspect artifacts, and hand a fresh SDK key to a training loop without pulling full histories into the first view.
+            The training tool you keep open all day: fast logging, fast comparison, clear artifacts, and a backend your team can trust.
           </p>
           <div className="landing-actions">
             {primaryHref ? (
@@ -83,7 +84,7 @@ export default function LandingPage() {
           </div>
           {config?.dev_auth_enabled ? <p className="auth-note">Local development uses an explicitly labeled Google-style shortcut. No managed Google OAuth button is shown while it is disabled.</p> : null}
           <div className="landing-proof">
-            <span><CheckCircle2 size={14} /> Rust/Postgres summaries</span>
+            <span><CheckCircle2 size={14} /> Rust/ClickHouse summaries</span>
             <span><CheckCircle2 size={14} /> Bounded metric charts</span>
             <span><CheckCircle2 size={14} /> Copy-once SDK keys</span>
           </div>
@@ -100,7 +101,7 @@ function DashboardPreview() {
   return (
     <section className="landing-preview" aria-label="Dashboard preview">
       <div className="preview-topbar">
-        <span className="brand-mark tiny" aria-hidden="true"><BarChart3 size={14} /></span>
+        <span className="brand-mark tiny" aria-hidden="true"><InstantMlMark /></span>
         <strong>Runs</strong>
         <span className="preview-chip">1,000 runs</span>
         <span className="preview-chip good">Operational</span>

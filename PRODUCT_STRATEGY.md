@@ -1,12 +1,12 @@
-# Training Observability Product Strategy
+# InstantML Product Strategy
 
 ## Current Plan Snapshot
 
 Date: 2026-05-10
 
-Working name: **Training Observability**.
+Working name: **InstantML**.
 
-Training Observability is a hosted SaaS-first, W&B-style training observability product for smaller startups, research labs, and lean ML teams. The product should win on three axes:
+InstantML is a hosted SaaS-first, W&B-style training observability product for smaller startups, research labs, and lean ML teams. The product should win on three axes:
 
 1. **Speed**: faster SDK hot paths, faster run summaries, faster metric charts, and less waiting while comparing experiments.
 2. **UI quality**: a calmer, denser, more legible daily workflow for training-run comparison.
@@ -18,7 +18,7 @@ The near-term product bet:
 
 Brand transition note:
 
-- User-facing docs and UI should say **Training Observability**.
+- User-facing docs and UI should say **InstantML**.
 - Existing package names, storage paths, and compatibility identifiers such as `rl_observability`, `.rlobs`, `rlobs_api`, and `RlobsError` remain until a dedicated namespace migration is designed and tested.
 - RL, robotics, and simulation remain important differentiating workflows, but they are not the brand boundary.
 - Open-source, public-name, and compatibility-name policy lives in `docs/product/2026-05-09-open-source-brand.md`.
@@ -34,22 +34,22 @@ Honest validation status:
 Current implementation status:
 
 - Thin SDK -> API -> storage -> UI loop exists.
-- Rust/Postgres/ClickHouse server is the current primary API and storage backend.
+- Rust/ClickHouse server is the current primary API and storage backend.
 - Next/React frontend is the current UI.
 - Python SDK supports run creation, scalar metrics, searchable tags/notes, typed helpers, buffering, explicit `flush()`, offline replay for post-run-create events, process-isolated post-init upload spooling, source metadata, artifacts, checkpoints, rollouts, tables, and local file upload.
 - Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, warning-only usage summaries, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
 - UI supports tabbed run browsing, a W&B/Grafana-inspired Runs workspace with sections and movable/resizable line panels, chart smoothing, step/time x-axis, grouped averages, range zoom, point hover readouts, saved local views, tags/notes editing, artifact previews, checkpoints, rollouts, keyboard workflow shortcuts, and side-by-side diffs.
-- Rust/Postgres/ClickHouse backend is implemented as the primary backend under `apps/rust-server`, with Postgres migrations, ClickHouse metric storage, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, and Rust contract/SDK/UI smokes.
+- Rust/ClickHouse backend is implemented as the primary backend under `apps/rust-server`, with ClickHouse operational records, ClickHouse metric storage, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, and Rust contract/SDK/UI smokes.
 
 Target stack snapshot:
 
-- API/runtime: Rust with `axum`, `tokio`, `tower-http`, `SQLx`, explicit service/store modules, structured tracing, and Prometheus-compatible metrics.
-- OLTP plane: managed Postgres with org-scoped UUID tables for users, identities, organizations, memberships, service accounts, API keys, projects, runs, attributes, artifacts, imports, idempotency, audit events, and immutable daily usage rollups.
-- OLAP plane: ClickHouse `metric_points` (MergeTree) and `metric_series` (AggregatingMergeTree, populated by a materialized view) for high-volume metric time series and fast summary/chart queries.
+- API/runtime: Rust with `axum`, `tokio`, `tower-http`, explicit service/store modules, structured tracing, and Prometheus-compatible metrics.
+- Operational plane: ClickHouse-backed low-volume records for users, identities, organizations, memberships, service accounts, API keys, projects, runs, attributes, artifacts, imports, idempotency, audit events, and immutable daily usage rollups.
+- Analytical plane: ClickHouse `metric_points` (MergeTree) and `metric_series` (AggregatingMergeTree, populated by a materialized view) for high-volume metric time series and fast summary/chart queries.
 - Artifact plane: local filesystem storage first behind an abstraction, then S3-compatible object storage once hosted semantics are proven.
 - Auth plane: managed Google login for humans plus database-owned memberships, service accounts, hashed API keys, scopes, project restrictions, and audit events.
-- Hosting preference: Google Cloud Run for the Rust API, Neon for Postgres, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity.
-- Migration rule: Node is deprecated and retained as the compatibility oracle, JSON migration source, and legacy fallback. New backend work defaults to Rust/Postgres/ClickHouse; route-shape changes should still run Node compatibility checks before breaking old clients.
+- Hosting preference: Google Cloud Run or equivalent container hosting for Rust services, managed ClickHouse-compatible storage for operational and analytical data, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity.
+- Migration rule: Node is deprecated and retained as the compatibility oracle, JSON migration source, and legacy fallback. New backend work defaults to Rust/ClickHouse; route-shape changes should still run Node compatibility checks before breaking old clients.
 
 ## Product Positioning
 
@@ -59,7 +59,7 @@ Training observability for small ML teams that want W&B-like value with faster c
 
 ### One-Sentence Pitch
 
-Training Observability helps small ML teams log, compare, debug, and reproduce training runs faster than heavyweight trackers, with predictable pricing and a data model they can trust.
+InstantML helps small ML teams log, compare, debug, and reproduce training runs faster than heavyweight trackers, with predictable pricing and a data model they can trust.
 
 ### Wedge
 
@@ -94,7 +94,7 @@ Most ML teams already understand experiment tracking. The opportunity is not edu
 - Neptune has strong metadata ideas, but its future as an independent product has changed.
 - Many teams want a hosted product now and self-host/VPC/export options later for trust.
 
-Training Observability should become the product that feels smaller in the right ways:
+InstantML should become the product that feels smaller in the right ways:
 
 - Fast by default.
 - Clear by default.
@@ -149,7 +149,7 @@ Opportunity:
 
 LangSmith, Langfuse, Phoenix, and similar tools are strong for prompts, traces, evals, retrieval, and agent runtime behavior. They do not replace long-running training observability: metric streams, checkpoints, artifacts, source context, and experiment comparison.
 
-Training Observability should stay focused on training unless users clearly pull it toward runtime observability later.
+InstantML should stay focused on training unless users clearly pull it toward runtime observability later.
 
 ## Pricing Strategy
 
@@ -193,7 +193,7 @@ Overage defaults:
 
 Current implementation status:
 
-- The Rust/Postgres/ClickHouse server exposes warning-only org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
+- The Rust/ClickHouse server exposes warning-only org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
 - Usage is scoped by org and requires `usage:read` in hosted API-key mode.
 - The summary counts seats, projects, runs, scalar metric points, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, and estimated metadata bytes.
 - These values are for pricing validation and debugging, not invoice truth. Rust now writes immutable `usage_daily` snapshots, but billable storage still requires a separate billing implementation and provider/object-store reconciliation.
@@ -203,21 +203,20 @@ Current implementation status:
 Preferred first hosted stack:
 
 - Rust API: Google Cloud Run.
-- Postgres: Neon.
+- Operational and analytical storage: managed ClickHouse-compatible storage.
 - Artifact storage later: Cloudflare R2.
 - Auth: Clerk or equivalent managed auth provider.
 
 Why:
 
 - Cloud Run offers low-ops container hosting with request/resource billing.
-- Neon offers managed/serverless Postgres with usage-based compute and storage.
+- Managed ClickHouse-compatible providers offer columnar storage and compute for both operational records and metric workloads.
 - Cloudflare R2 offers low-cost S3-compatible storage with free egress.
 - Clerk offers managed auth, Google login, B2B organizations, and machine/API-key primitives.
 
 Sources:
 
 - [Google Cloud Run pricing](https://cloud.google.com/run/pricing)
-- [Neon pricing](https://neon.com/pricing)
 - [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/)
 - [Clerk pricing](https://clerk.com/pricing)
 - [Render pricing](https://render.com/pricing)
@@ -278,7 +277,7 @@ Training-loop hot path direction:
 - Prefer `upload_mode="spool"` for long or expensive runs.
 - Move artifact and file upload work outside scalar metric logging.
 - Add idempotency keys before claiming stronger delivery guarantees.
-- Add API-key auth for hosted Rust/Postgres/ClickHouse ingestion.
+- Add API-key auth for hosted Rust/ClickHouse ingestion.
 - Add W&B dual-logging support only after import paths prove useful with real teams.
 
 ### Backend
@@ -286,7 +285,7 @@ Training-loop hot path direction:
 Current backend:
 
 - Rust API and worker service in `apps/rust-server`.
-- Postgres metadata and ClickHouse metric store for local and hosted development.
+- ClickHouse operational records and ClickHouse metric store for local development; hosted control-plane/data-plane services require the follow-up coordination design.
 - Organizations, users, memberships, service accounts, API keys, and audit events.
 - Maintained metric summaries for fast run tables.
 - Local artifact storage behind an S3-compatible abstraction.
@@ -329,23 +328,23 @@ Must-have reproducibility context:
 
 ### P0: Strategy, Pricing, And Architecture Lock
 
-Status: completed as the current planning baseline through `docs/design/2026-05-09-rust-postgres-backend.md`.
+Status: completed as the current planning baseline, superseded for storage by `docs/design/2026-05-14-clickhouse-only-storage.md`.
 
 Goal:
 
-Make the W&B competitor strategy and Rust/Postgres/ClickHouse architecture explicit enough that implementation can proceed in reviewed slices.
+Make the W&B competitor strategy and Rust/ClickHouse architecture explicit enough that implementation can proceed in reviewed slices.
 
 Done when:
 
 - Product strategy states speed, UI, and pricing as the wedge.
 - Pricing research and draft tiers are documented.
-- Rust/Postgres foundation design exists with diagrams and reviewer notes; current architecture docs describe the ClickHouse metric plane.
+- ClickHouse-only storage design exists with reviewer notes; current architecture docs describe the operational and metric layers.
 - TODO is prioritized by implementation importance.
-- Docs clearly say Rust/Postgres/ClickHouse is primary, while Node is deprecated compatibility support.
+- Docs clearly say Rust/ClickHouse is primary, while Node is deprecated compatibility support.
 
 ### P1: Backend Speed And Durable SaaS Foundation
 
-Status: foundation slice implemented and promoted to Rust/Postgres/ClickHouse as the default backend after contract, SDK, UI, importer/artifact, and scale checks passed.
+Status: foundation slice implemented and promoted to Rust/ClickHouse as the default backend after contract, SDK, UI, importer/artifact, and scale checks passed.
 
 Goal:
 
@@ -356,7 +355,7 @@ Foundation completed:
 - Create black-box contract tests that run against both Node and Rust backends.
 - Canonize metric step and timestamp semantics.
 - Add idempotency keys for process-spooled event replay.
-- Implement Postgres schema for orgs, users, projects, runs, attributes, artifacts, imports, API keys, and audit events, with ClickHouse schema for metric series and metric points.
+- Implement ClickHouse operational records for orgs, users, projects, runs, attributes, artifacts, imports, API keys, and audit events, with ClickHouse schema for metric series and metric points.
 - Implement maintained metric summaries.
 - Add org-scoped API-key auth for SDK ingestion.
 - Add managed-auth-backed user/org model.
@@ -406,7 +405,7 @@ Make pricing credible before public launch.
 
 Current state:
 
-- Org-level warning summaries are computed from Rust/Postgres/ClickHouse data.
+- Org-level warning summaries are computed from Rust/ClickHouse data.
 - Immutable `usage_daily` snapshots exist for warning/debug rollups.
 - Usage UI is not yet exposed in the hosted workflow.
 
@@ -449,7 +448,7 @@ Do next:
 - Validate pricing with small startups and labs.
 - Use the validation scorecard in `docs/users/2026-05-09-validation-plan.md`.
 - Keep the accepted open-source and compatibility-name policy in `docs/product/2026-05-09-open-source-brand.md` current.
-- Keep docs aligned with implementation and Training Observability user-facing language.
+- Keep docs aligned with implementation and InstantML user-facing language.
 
 ## Differentiation
 
@@ -532,7 +531,7 @@ Build narrow but polished comparison workflows. Avoid reports, org settings, and
 
 Mitigation:
 
-Keep Node as fallback, add black-box contract tests, and implement Rust/Postgres/ClickHouse in narrow reviewed slices.
+Keep Node as fallback, add black-box contract tests, and implement Rust/ClickHouse in narrow reviewed slices.
 
 ### Risk: Hosted SaaS reduces trust for sensitive training data.
 
@@ -544,7 +543,7 @@ Emphasize exportability, transparent schemas, API access, future VPC/self-host o
 
 1. Which W&B workflow should we replace first: training dashboard, artifacts, reports, sweeps, or team experiment search?
 2. Should W&B compatibility be dual-logging first, import first, or API-shim first?
-3. Should the first beta use the preferred Cloud Run, Neon, Cloudflare R2, and Clerk stack, or do validation and cost constraints point elsewhere?
+3. Should the first beta use shared hosted ClickHouse cells, dedicated customer services, or a hybrid based on validation and cost constraints?
 4. Which managed auth provider gives enough Google/org/API-key support with the least lock-in?
 5. What storage/metric limits feel generous but safe for the Lab tier?
 6. What public name best conveys fast, affordable training observability?
@@ -556,7 +555,7 @@ This idea is viable if it becomes a genuinely better daily training observabilit
 The immediate work should stay practical:
 
 - Validate the W&B replacement wedge with real users.
-- Keep Rust/Postgres/ClickHouse as the default backend while preserving Node compatibility tests until JSON migration is complete.
+- Keep Rust/ClickHouse as the default backend while preserving Node compatibility tests until JSON migration is complete.
 - Harden SDK run lifecycle, offline creation, summary policies, public query APIs, and rich logged objects through reviewed slices.
 - Prove run browsing, search, compare, and chart performance at the 90,000-run design-partner scale.
 - Treat W&B/MLflow/Neptune importers as adoption paths.

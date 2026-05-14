@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -9,20 +10,24 @@ import { chromium } from "playwright";
 import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
-const runCount = numberEnv("RLOBS_BENCH_RUNS", 90_000);
+const runCount = numberEnv("RLOBS_BENCH_RUNS", 100_000);
+const longRunSteps = numberEnv("RLOBS_BENCH_LONG_RUN_STEPS", 20_000);
 const samples = numberEnv("RLOBS_BENCH_SAMPLES", 15);
 const warmups = numberEnv("RLOBS_BENCH_WARMUPS", 2);
 const includeWeb = process.env.RLOBS_BENCH_WEB === "1";
 const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
-const project = process.env.RLOBS_BENCH_PROJECT || "bench-90k";
+const project = process.env.RLOBS_BENCH_PROJECT || "bench-100k";
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-large-run-"));
-const pgPort = await freePort();
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
-const databaseUrl = `postgres://127.0.0.1:${pgPort}/rlobs_bench`;
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+const localOrgId = "00000000-0000-0000-0000-000000000001";
+const benchUserId = "00000000-0000-0000-0000-00000000b001";
+const benchMembershipId = "00000000-0000-0000-0000-00000000b002";
+const benchSessionId = "00000000-0000-0000-0000-00000000b003";
+const benchSessionToken = "rlobs_session_large_run_benchmark";
 let apiServer = null;
 let webServer = null;
 let clickhouse = null;
@@ -37,29 +42,17 @@ try {
     interserverHttpPort: clickhouseInterserverPort,
   });
 
-  const dataDir = path.join(tempDir, "data");
-  run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: ["ignore", "ignore", "inherit"] });
-  run("pg_ctl", [
-    "-D",
-    dataDir,
-    "-o",
-    `-p ${pgPort} -c listen_addresses='127.0.0.1'`,
-    "-l",
-    path.join(tempDir, "postgres.log"),
-    "start",
-  ], { stdio: ["ignore", "ignore", "inherit"] });
-  run("createdb", ["-h", "127.0.0.1", "-p", String(pgPort), "rlobs_bench"]);
   run("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "migrate"], {
-    env: { ...process.env, DATABASE_URL: databaseUrl, CLICKHOUSE_URL: clickhouse.url },
+    env: { ...process.env, CLICKHOUSE_URL: clickhouse.url },
   });
   await seedBenchmarkData();
+
   const serverLog = path.join(tempDir, "api.log");
   const output = fs.openSync(serverLog, "w");
   apiServer = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
       CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
       RLOBS_AUTH_MODE: "local",
@@ -79,7 +72,7 @@ try {
     summary_newest_org: await measureEndpoint("summary_newest_org", `/api/runs/summary?${new URLSearchParams({ limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`),
     summary_search_seed_13: await measureEndpoint("summary_search_seed_13", `/api/runs/summary?${new URLSearchParams({ project, q: "seed 13", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`),
     summary_sort_metric_best: await measureEndpoint("summary_sort_metric_best", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "metric-best", metric_key: "eval/return_mean" })}`),
-    chart_series: await measureEndpoint("chart_series", `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: "eval/return_mean", limit: "1000" })}`),
+    chart_series: await measureEndpoint("chart_series", `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: "eval/return_mean", limit: "5000" })}`),
   };
 
   let web = null;
@@ -88,6 +81,8 @@ try {
     generated_at: new Date().toISOString(),
     environment: {
       run_count: runCount,
+      long_run_steps: longRunSteps,
+      long_run_metric_keys: ["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"],
       samples,
       warmups,
       include_web: includeWeb,
@@ -118,90 +113,156 @@ try {
     await onceClose(apiServer);
   }
   if (clickhouse) await clickhouse.stop();
-  run("pg_ctl", ["-D", path.join(tempDir, "data"), "stop", "-m", "fast"], { allowFailure: true, stdio: ["ignore", "ignore", "ignore"] });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
 async function seedBenchmarkData() {
-  const sqlPath = path.join(tempDir, "seed.sql");
-  fs.writeFileSync(sqlPath, benchmarkSql(), "utf8");
-  run("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-f", sqlPath], { stdio: ["ignore", "inherit", "inherit"] });
-  const metricRows = psqlCapture(metricSeedCopySql());
-  await clickhousePost(clickhouse.url, "INSERT INTO metric_points (org_id, run_id, key, step, value, logged_at) FORMAT TabSeparated", metricRows);
+  const now = new Date();
+  const projectId = randomUUID();
+  const ops = [
+    opRecord("organization", localOrgId, {
+      id: localOrgId,
+      slug: "local",
+      name: "Local",
+      plan_tier: "free",
+      account_type: "customer",
+      seat_limit: 1,
+      created_by_user_id: null,
+      created_at: "1970-01-01T00:00:00Z",
+    }, now),
+    opRecord("user", benchUserId, {
+      id: benchUserId,
+      primary_email: "large-benchmark@example.com",
+      display_name: "Large Benchmark",
+      avatar_url: null,
+      created_at: now.toISOString(),
+      last_seen_at: now.toISOString(),
+    }, now),
+    opRecord("membership", benchMembershipId, {
+      id: benchMembershipId,
+      org_id: localOrgId,
+      user_id: benchUserId,
+      role: "owner",
+      status: "active",
+      created_at: now.toISOString(),
+    }, now),
+    opRecord("session", benchSessionId, {
+      row: {
+        id: benchSessionId,
+        user_id: benchUserId,
+        org_id: localOrgId,
+        metadata: {},
+        created_at: now.toISOString(),
+        last_seen_at: now.toISOString(),
+        expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        revoked_at: null,
+      },
+      token_hash: Array.from(createHash("sha256").update(benchSessionToken).digest()),
+    }, now),
+    opRecord("project", projectId, {
+      id: projectId,
+      org_id: localOrgId,
+      name: project,
+      description: "Large run benchmark project",
+      created_at: now.toISOString(),
+    }, now),
+  ];
+  const metricRows = [];
+  let newestRunId = null;
+  let newestCreatedAt = null;
+  for (let index = 1; index <= runCount; index += 1) {
+    const runId = randomUUID();
+    const createdAt = new Date(now.getTime() - (runCount - index) * 1000);
+    newestRunId = runId;
+    newestCreatedAt = createdAt;
+    const seed = index % 100;
+    const model = index % 3 === 0 ? "llm" : "rl";
+    const status = index % 97 === 0 ? "failed" : index % 11 === 0 ? "running" : "finished";
+    ops.push(opRecord("run", runId, {
+      id: runId,
+      org_id: localOrgId,
+      project_id: projectId,
+      project,
+      name: `bench-${String(index).padStart(6, "0")}-seed-${seed}`,
+      status,
+      config: {
+        seed,
+        model,
+        optimizer: index % 2 === 0 ? "adamw" : "ppo",
+        hardware: { gpu: index % 4 === 0 ? "H100" : "A100", gpu_count: 1 + (index % 8) },
+      },
+      tags: ["bench", `seed-${seed}`, model],
+      metadata: { notes: `benchmark seed ${seed} reward stability cohort ${index % 17}` },
+      created_at: createdAt.toISOString(),
+      started_at: createdAt.toISOString(),
+      finished_at: status === "running" ? null : new Date(createdAt.getTime() + 60_000 + (index % 500) * 1000).toISOString(),
+    }, createdAt));
+    metricRows.push({
+      org_id: localOrgId,
+      run_id: runId,
+      key: "eval/return_mean",
+      step: 1000,
+      value: 150 + (index % 800),
+      logged_at: clickhouseDate(new Date(createdAt.getTime() + 60 * 60 * 1000)),
+    });
+    if (ops.length >= 5000) {
+      await insertOperationalRecords(ops.splice(0));
+    }
+    if (metricRows.length >= 5000) {
+      await insertMetricPoints(metricRows.splice(0));
+    }
+  }
+  const longRunKeys = ["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"];
+  for (let step = 1; step <= longRunSteps; step += 1) {
+    for (const key of longRunKeys) {
+      metricRows.push({
+        org_id: localOrgId,
+        run_id: newestRunId,
+        key,
+        step,
+        value: longRunMetricValue(key, step),
+        logged_at: clickhouseDate(newestCreatedAt),
+      });
+    }
+    if (metricRows.length >= 5000) {
+      await insertMetricPoints(metricRows.splice(0));
+    }
+  }
+  if (ops.length) await insertOperationalRecords(ops);
+  if (metricRows.length) await insertMetricPoints(metricRows);
 }
 
-function benchmarkSql() {
-  const escapedProject = project.replaceAll("'", "''");
-  return `
-delete from projects where org_id = '00000000-0000-0000-0000-000000000001' and name = '${escapedProject}';
-insert into projects (org_id, name)
-values ('00000000-0000-0000-0000-000000000001', '${escapedProject}');
-
-with project as (
-  select id from projects where org_id = '00000000-0000-0000-0000-000000000001' and name = '${escapedProject}'
-)
-insert into runs (org_id, project_id, name, status, config, tags, metadata, created_at, started_at, finished_at)
-select
-  '00000000-0000-0000-0000-000000000001',
-  project.id,
-  format('bench-%s-seed-%s', lpad(gs::text, 6, '0'), gs % 100),
-  case when gs % 97 = 0 then 'failed' when gs % 11 = 0 then 'running' else 'finished' end,
-  jsonb_build_object(
-    'seed', gs % 100,
-    'model', case when gs % 3 = 0 then 'llm' else 'rl' end,
-    'optimizer', case when gs % 2 = 0 then 'adamw' else 'ppo' end,
-    'hardware', jsonb_build_object('gpu', case when gs % 4 = 0 then 'H100' else 'A100' end, 'gpu_count', 1 + gs % 8)
-  ),
-  array['bench', format('seed-%s', gs % 100), case when gs % 3 = 0 then 'llm' else 'rl' end],
-  jsonb_build_object('notes', format('benchmark seed %s reward stability cohort %s', gs % 100, gs % 17)),
-  now() - ((${runCount} - gs) * interval '1 second'),
-  now() - ((${runCount} - gs) * interval '1 second'),
-  case when gs % 11 = 0 then null else now() - ((${runCount} - gs - 60 - (gs % 500)) * interval '1 second') end
-from generate_series(1, ${runCount}) as gs, project;
-
-analyze runs;
-	`;
+function opRecord(kind, entityId, payload, createdAt) {
+  return {
+    kind,
+    org_id: localOrgId,
+    entity_id: entityId,
+    payload: JSON.stringify(payload),
+    created_at: clickhouseDate(createdAt),
+  };
 }
 
-function metricSeedCopySql() {
-  const escapedProject = project.replaceAll("'", "''");
-  return `
-copy (
-  with project_runs as (
-    select
-      r.org_id,
-      r.id,
-      r.created_at,
-      row_number() over (order by r.created_at) as rn
-    from runs r
-    join projects p on p.org_id = r.org_id and p.id = r.project_id
-    where r.org_id = '00000000-0000-0000-0000-000000000001' and p.name = '${escapedProject}'
-  ),
-  newest as (
-    select org_id, id
-    from project_runs
-    order by created_at desc, id desc
-    limit 1
-  )
-  select
-    org_id,
-    id as run_id,
-    'eval/return_mean' as key,
-    1000::double precision as step,
-    (150 + rn % 800)::double precision as value,
-    to_char((created_at + interval '1 hour') at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') as logged_at
-  from project_runs
-  union all
-  select
-    newest.org_id,
-    newest.id as run_id,
-    'eval/return_mean' as key,
-    gs::double precision as step,
-    (100 + sin(gs / 25.0) * 10 + gs / 10.0)::double precision as value,
-    to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') as logged_at
-  from newest, generate_series(1, 1000) as gs
-) to stdout with (format text, delimiter E'\\t')
-  `;
+function longRunMetricValue(key, step) {
+  if (key === "train/loss") return Math.max(0.01, 4 / Math.sqrt(step));
+  if (key === "train/reward") return 50 + Math.log1p(step) * 12;
+  if (key === "system/tokens_per_second") return 12_000 + Math.sin(step / 111) * 700;
+  return 100 + Math.sin(step / 25) * 10 + step / 100;
+}
+
+async function insertOperationalRecords(records) {
+  await clickhousePost(
+    clickhouse.url,
+    "INSERT INTO operational_records (kind, org_id, entity_id, payload, created_at) FORMAT JSONEachRow",
+    records.map((record) => JSON.stringify(record)).join("\n"),
+  );
+}
+
+async function insertMetricPoints(points) {
+  await clickhousePost(
+    clickhouse.url,
+    "INSERT INTO metric_points (org_id, run_id, key, step, value, logged_at) FORMAT JSONEachRow",
+    points.map((point) => JSON.stringify(point)).join("\n"),
+  );
 }
 
 async function measureEndpoint(name, pathSuffix) {
@@ -233,8 +294,15 @@ async function measureWebFirstUsefulRender() {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.context().addCookies([{
+      name: "rlobs_session",
+      value: benchSessionToken,
+      url: `http://127.0.0.1:${webPort}`,
+      httpOnly: true,
+      sameSite: "Lax",
+    }]);
     const started = performance.now();
-    await page.goto(`http://127.0.0.1:${webPort}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`http://127.0.0.1:${webPort}/dashboard/runs`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector(".workspace-run-row", { timeout: 30_000 });
     const first_useful_render_ms = Math.round(performance.now() - started);
     const text = await page.locator(".workspace-run-footer").innerText();
@@ -288,16 +356,8 @@ function run(command, args, options = {}) {
   }
 }
 
-function psqlCapture(sql) {
-  const result = spawnSync("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-c", sql], {
-    cwd: repo,
-    encoding: "utf8",
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  if (result.status !== 0) {
-    throw new Error(`psql metric seed export failed with status ${result.status}\n${result.stderr}`);
-  }
-  return result.stdout;
+function clickhouseDate(date) {
+  return date.toISOString().replace("T", " ").replace("Z", "");
 }
 
 function numberEnv(name, fallback) {

@@ -1,189 +1,183 @@
 use super::*;
 
+pub async fn create_project(
+    store: &Store,
+    ctx: &RequestContext,
+    input: CreateProjectRequest,
+) -> AppResult<ProjectRow> {
+    if let Some(auth) = &ctx.auth {
+        if auth.project_id.is_some() {
+            return Err(AppError::forbidden(
+                "project-scoped API keys cannot create projects",
+            ));
+        }
+    }
+    let name = validate_name(input.name.as_deref(), "project name")?;
+    let description = validate_optional_name(input.description.as_deref(), "project description")?;
+    let mut data = store.data.lock().await;
+    if let Some(project_id) = data
+        .projects_by_org_name
+        .get(&(ctx.org_id, name.clone()))
+        .copied()
+    {
+        return data
+            .projects
+            .get(&project_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("project not found"));
+    }
+    let project = ProjectRow {
+        id: Uuid::new_v4(),
+        org_id: ctx.org_id,
+        name,
+        description,
+        created_at: Utc::now(),
+    };
+    store
+        .persist_locked("project", ctx.org_id, &project.id.to_string(), &project)
+        .await?;
+    data.insert_project(project.clone());
+    Ok(project)
+}
+
+pub async fn list_projects(store: &Store, ctx: &RequestContext) -> AppResult<Vec<ProjectRow>> {
+    let data = store.data.lock().await;
+    let mut projects = data
+        .projects
+        .values()
+        .filter(|project| project.org_id == ctx.org_id)
+        .filter(|project| {
+            ctx.auth
+                .as_ref()
+                .and_then(|auth| auth.project_id)
+                .map(|id| id == project.id)
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    projects.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(projects)
+}
+
 pub async fn create_run(
-    pool: &PgPool,
+    store: &Store,
     ctx: &RequestContext,
     input: CreateRunRequest,
 ) -> AppResult<RunRow> {
-    let project_name = validate_name(input.project.as_deref(), "project name")?;
-    let project = if let Some(project_id) = ctx.auth.as_ref().and_then(|auth| auth.project_id) {
-        let project = fetch_project_by_id(pool, ctx.org_id, project_id).await?;
-        if project.name != project_name {
-            return Err(AppError::forbidden(
-                "api key is restricted to a different project",
-            ));
-        }
-        project
-    } else {
-        create_project_inner(
-            pool,
-            ctx.org_id,
-            CreateProjectRequest {
-                name: Some(project_name.clone()),
-                description: None,
-            },
-        )
-        .await?
-    };
-    let run_name = validate_name(
-        input
-            .name
-            .as_deref()
-            .or(Some(&format!("{project_name}-run"))),
-        "run name",
-    )?;
+    let project_name = validate_name(input.project.as_deref(), "project")?;
+    let name = validate_name(input.name.as_deref().or(Some("run")), "run name")?;
     let config = validate_json_object(input.config, "config")?;
-    let metadata = validate_json_object(input.metadata, "metadata")?;
     let tags = validate_tags(input.tags)?;
-    let mut tx = pool.begin().await?;
-    let run = sqlx::query_as::<_, RunRow>(
-        r#"
-        insert into runs (org_id, project_id, name, config, tags, metadata)
-        values ($1, $2, $3, $4, $5, $6)
-        returning id, org_id, project_id, $7::text as project, name, status, config, tags, metadata, created_at, started_at, finished_at
-        "#,
-    )
-    .bind(ctx.org_id)
-    .bind(project.id)
-    .bind(run_name)
-    .bind(Json(config.clone()))
-    .bind(&tags)
-    .bind(Json(metadata))
-    .bind(project_name)
-    .fetch_one(&mut *tx)
-    .await?;
-    for (key, value) in config.as_object().into_iter().flatten() {
-        insert_attribute_tx(
-            &mut tx,
-            ctx.org_id,
-            run.id,
-            &format!("config/{key}"),
-            "config",
-            None,
-            None,
-            value.clone(),
-            json!({ "source": "run.config" }),
-            None,
-        )
-        .await?;
+    let metadata = validate_json_object(input.metadata, "metadata")?;
+    let mut data = store.data.lock().await;
+    let project_id = match data
+        .projects_by_org_name
+        .get(&(ctx.org_id, project_name.clone()))
+        .copied()
+    {
+        Some(id) => id,
+        None => {
+            if let Some(auth) = &ctx.auth {
+                if auth.project_id.is_some() {
+                    return Err(AppError::forbidden(
+                        "project-scoped API key cannot create a different project",
+                    ));
+                }
+            }
+            let project = ProjectRow {
+                id: Uuid::new_v4(),
+                org_id: ctx.org_id,
+                name: project_name.clone(),
+                description: None,
+                created_at: Utc::now(),
+            };
+            store
+                .persist_locked("project", ctx.org_id, &project.id.to_string(), &project)
+                .await?;
+            let id = project.id;
+            data.insert_project(project);
+            id
+        }
+    };
+    if let Some(auth) = &ctx.auth {
+        if auth.project_id.is_some_and(|id| id != project_id) {
+            return Err(AppError::forbidden("run belongs to a different project"));
+        }
     }
-    for tag in &tags {
-        insert_attribute_tx(
-            &mut tx,
-            ctx.org_id,
-            run.id,
-            "sys/tags",
-            "tag",
-            None,
-            None,
-            json!(tag),
-            json!({ "group": false }),
-            None,
-        )
+    let run = RunRow {
+        id: Uuid::new_v4(),
+        org_id: ctx.org_id,
+        project_id,
+        project: project_name,
+        name,
+        status: "running".to_string(),
+        config,
+        tags,
+        metadata,
+        created_at: Utc::now(),
+        started_at: Utc::now(),
+        finished_at: None,
+    };
+    store
+        .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)
         .await?;
-    }
-    tx.commit().await?;
+    data.insert_run(run.clone());
     Ok(run)
 }
 
-pub async fn list_runs(
-    pool: &PgPool,
-    metric_store: &MetricStore,
-    ctx: &RequestContext,
-    query: &HashMap<String, String>,
-) -> AppResult<Value> {
-    let limit = validate_limit(
-        query.get("limit").map(String::as_str),
-        DEFAULT_RUN_LIMIT,
-        MAX_RUN_LIMIT,
-    )?;
-    let offset = validate_offset(query.get("offset").map(String::as_str))?;
-    let page = query_run_page(pool, metric_store, ctx, query, limit, offset).await?;
-    Ok(json!({
-        "runs": page.runs,
-        "limit": limit,
-        "offset": offset,
-        "next_cursor": page.next_cursor,
-        "page_info": {
-            "pagination": page.pagination,
-            "has_next_page": page.next_cursor.is_some()
-        }
-    }))
-}
-
-pub async fn get_run(
-    pool: &PgPool,
-    metric_store: &MetricStore,
-    ctx: &RequestContext,
-    run_id: Uuid,
-) -> AppResult<Value> {
-    let run = fetch_run(pool, run_id).await?;
-    ensure_run_access(ctx, &run)?;
-    run_summary_value(pool, metric_store, run).await
-}
-
 pub async fn update_run(
-    pool: &PgPool,
+    store: &Store,
     ctx: &RequestContext,
     run_id: Uuid,
     input: UpdateRunRequest,
 ) -> AppResult<RunRow> {
-    let run = fetch_run(pool, run_id).await?;
-    ensure_run_access(ctx, &run)?;
-    let status = input.status.as_deref().map(validate_status).transpose()?;
-    let tags = input
-        .tags
-        .map(|tags| validate_tags(Some(tags)))
-        .transpose()?;
-    let notes = input
-        .notes
-        .map(|note| validate_note_patch(&note))
-        .transpose()?;
-    if status.is_none() && tags.is_none() && notes.is_none() {
+    let mut data = store.data.lock().await;
+    let mut run = fetch_run_in_data(&data, ctx, run_id)?;
+    if input.status.is_none() && input.tags.is_none() && input.notes.is_none() {
         return Err(AppError::validation(
             "at least one of status, tags, or notes is required",
         ));
     }
-    let mut metadata = run.metadata.clone();
-    if let Some(note) = notes.as_ref() {
-        let object = metadata
-            .as_object_mut()
-            .ok_or_else(|| AppError::validation("metadata must be an object"))?;
-        if note.is_empty() {
-            object.remove("notes");
-        } else {
-            object.insert("notes".to_string(), Value::String(note.clone()));
+    if let Some(status) = input.status {
+        run.status = validate_status(&status)?;
+        if matches!(run.status.as_str(), "finished" | "failed") && run.finished_at.is_none() {
+            run.finished_at = Some(Utc::now());
         }
     }
-    sqlx::query_as::<_, RunRow>(
-        r#"
-        update runs
-        set status = coalesce($3, runs.status),
-            tags = coalesce($4, runs.tags),
-            metadata = $5,
-            finished_at = case
-                when $3::text is null then runs.finished_at
-                when $3 in ('finished', 'failed') then now()
-                else null
-            end
-        from projects p
-        where runs.project_id = p.id and runs.id = $1 and runs.org_id = $2
-        returning runs.id, runs.org_id, runs.project_id, p.name as project, runs.name, runs.status, runs.config, runs.tags,
-                  runs.metadata, runs.created_at, runs.started_at, runs.finished_at
-        "#,
-    )
-    .bind(run_id)
-    .bind(ctx.org_id)
-    .bind(status)
-    .bind(tags)
-    .bind(Json(metadata))
-    .fetch_one(pool)
-    .await
-    .map_err(Into::into)
+    if let Some(tags) = input.tags {
+        run.tags = validate_tags(Some(tags))?;
+    }
+    if let Some(notes) = input.notes {
+        let metadata = run
+            .metadata
+            .as_object_mut()
+            .ok_or_else(|| AppError::validation("metadata must be an object"))?;
+        if notes.trim().is_empty() {
+            metadata.remove("notes");
+        } else {
+            metadata.insert(
+                "notes".to_string(),
+                json!(validate_name(Some(&notes), "notes")?),
+            );
+        }
+    }
+    store
+        .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)
+        .await?;
+    data.insert_run(run.clone());
+    Ok(run)
 }
-pub async fn runs_summary(
-    pool: &PgPool,
-    metric_store: &MetricStore,
+
+pub async fn get_run(store: &Store, ctx: &RequestContext, run_id: Uuid) -> AppResult<Value> {
+    let run = {
+        let data = store.data.lock().await;
+        fetch_run_in_data(&data, ctx, run_id)?
+    };
+    run_summary_value(store, run).await
+}
+
+pub async fn list_runs(
+    store: &Store,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
 ) -> AppResult<Value> {
@@ -191,824 +185,627 @@ pub async fn runs_summary(
         query.get("limit").map(String::as_str),
         DEFAULT_RUN_LIMIT,
         MAX_RUN_LIMIT,
-    )?;
-    let offset = validate_offset(query.get("offset").map(String::as_str))?;
-    let total = count_runs(pool, ctx, query).await?;
-    let page = query_run_page(pool, metric_store, ctx, query, limit, offset).await?;
-    let run_ids = page.runs.iter().map(|run| run.id).collect::<Vec<_>>();
-    let series = metric_series_for_runs(metric_store, ctx.org_id, &run_ids).await?;
-    let artifact_counts = artifact_counts_for_runs(pool, ctx.org_id, &run_ids).await?;
-    let metric_keys = metric_keys_for_filtered_runs(pool, metric_store, ctx, query).await?;
-    let values = page
-        .runs
-        .into_iter()
-        .map(|run| summarize_run(run, &series, &artifact_counts))
-        .collect::<Vec<_>>();
-    Ok(json!({
-        "runs": values,
-        "limit": limit,
-        "offset": offset,
-        "total": total,
-        "metric_keys": metric_keys,
-        "next_cursor": page.next_cursor,
-        "page_info": {
-            "pagination": page.pagination,
-            "has_next_page": page.next_cursor.is_some()
-        }
-    }))
+    )? as usize;
+    let offset = validate_offset(query.get("offset").map(String::as_str))? as usize;
+    let runs = filtered_runs(store, ctx, query).await?;
+    let values = summarize_runs(store, runs.into_iter().skip(offset).take(limit).collect()).await?;
+    Ok(json!({ "runs": values }))
 }
 
 pub async fn overview(
-    pool: &PgPool,
-    metric_store: &MetricStore,
+    store: &Store,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
 ) -> AppResult<Value> {
-    let filters = run_filters(pool, ctx, query).await?;
     let metric_key = query
         .get("metric_key")
         .map(String::as_str)
         .unwrap_or("eval/return_mean");
-    let mut builder = QueryBuilder::<Postgres>::new("select id, status from runs r");
-    push_run_filters(&mut builder, &filters);
-    let run_rows = builder.build().fetch_all(pool).await?;
-    let mut total_runs: i64 = 0;
-    let mut active_runs: i64 = 0;
-    let mut failed_runs: i64 = 0;
-    let mut filtered_ids: Vec<Uuid> = Vec::with_capacity(run_rows.len());
-    for row in run_rows {
-        total_runs += 1;
-        let status: String = row.try_get("status")?;
-        match status.as_str() {
-            "running" => active_runs += 1,
-            "failed" => failed_runs += 1,
-            _ => {}
-        }
-        filtered_ids.push(row.try_get("id")?);
+    if project_filter(query).is_none()
+        && !has_text_search(query)
+        && !has_status_filter(query)
+        && ctx.auth.as_ref().and_then(|auth| auth.project_id).is_none()
+    {
+        let (total_runs, active_runs, failed_runs) = {
+            let data = store.data.lock().await;
+            data.runs
+                .values()
+                .filter(|run| run.org_id == ctx.org_id)
+                .fold(
+                    (0_usize, 0_usize, 0_usize),
+                    |(total, active, failed), run| {
+                        (
+                            total + 1,
+                            active + usize::from(run.status == "running"),
+                            failed + usize::from(run.status == "failed"),
+                        )
+                    },
+                )
+        };
+        let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+        let best_eval_return = metric_store
+            .query_top_series_for_org_key(ctx.org_id, metric_key, SeriesSortMode::BestMax, 1)
+            .await?
+            .into_iter()
+            .next()
+            .map(|row| row.max);
+        let metric_points = metric_store
+            .count_points_for_org(ctx.org_id)
+            .await
+            .unwrap_or(0);
+        return Ok(json!({
+            "overview": {
+                "total_runs": total_runs,
+                "active_runs": active_runs,
+                "failed_runs": failed_runs,
+                "best_eval_return": best_eval_return,
+                "metric_points": metric_points
+            }
+        }));
     }
-    let (metric_points, best_eval_return) = if filtered_ids.is_empty() {
-        (0_i64, None)
-    } else {
-        let total_points: u64 = metric_store
-            .client()
-            .query(
-                "SELECT toUInt64(countMerge(count)) \
-                 FROM metric_series \
-                 WHERE org_id = ? AND run_id IN ?",
-            )
-            .bind(ctx.org_id)
-            .bind(&filtered_ids)
-            .fetch_one::<u64>()
-            .await
-            .map_err(|err| {
-                AppError::internal(format!("clickhouse overview points query failed: {err}"))
-            })?;
-        let best: Option<f64> = metric_store
-            .client()
-            .query(
-                "SELECT maxMerge(max) \
-                 FROM metric_series \
-                 WHERE org_id = ? AND run_id IN ? AND key = ?",
-            )
-            .bind(ctx.org_id)
-            .bind(&filtered_ids)
-            .bind(metric_key)
-            .fetch_optional::<f64>()
-            .await
-            .map_err(|err| {
-                AppError::internal(format!("clickhouse overview best query failed: {err}"))
-            })?;
-        (total_points as i64, best)
-    };
+    if let Some(project) = project_filter(query) {
+        if !has_text_search(query)
+            && !has_status_filter(query)
+            && ctx.auth.as_ref().and_then(|auth| auth.project_id).is_none()
+        {
+            let (total_runs, active_runs, failed_runs) = {
+                let data = store.data.lock().await;
+                data.runs
+                    .values()
+                    .filter(|run| run.org_id == ctx.org_id && run.project == project)
+                    .fold(
+                        (0_usize, 0_usize, 0_usize),
+                        |(total, active, failed), run| {
+                            (
+                                total + 1,
+                                active + usize::from(run.status == "running"),
+                                failed + usize::from(run.status == "failed"),
+                            )
+                        },
+                    )
+            };
+            let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+            let sort_mode = if is_minimize_metric(metric_key) {
+                SeriesSortMode::BestMin
+            } else {
+                SeriesSortMode::BestMax
+            };
+            let best_eval_return = metric_store
+                .query_top_series_for_project_key(ctx.org_id, project, metric_key, sort_mode, 1)
+                .await?
+                .into_iter()
+                .next()
+                .map(|row| {
+                    if is_minimize_metric(metric_key) {
+                        row.min
+                    } else {
+                        row.max
+                    }
+                });
+            let metric_points = metric_store
+                .count_points_for_project(ctx.org_id, project)
+                .await
+                .unwrap_or(0);
+            return Ok(json!({
+                "overview": {
+                    "total_runs": total_runs,
+                    "active_runs": active_runs,
+                    "failed_runs": failed_runs,
+                    "best_eval_return": best_eval_return,
+                    "metric_points": metric_points
+                }
+            }));
+        }
+    }
+    let runs = filtered_runs(store, ctx, query).await?;
+    let total_runs = runs.len();
+    let active_runs = runs.iter().filter(|run| run.status == "running").count();
+    let failed_runs = runs.iter().filter(|run| run.status == "failed").count();
+    let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let series =
+        metric_series_for_runs_key_chunked(&metric_store, ctx.org_id, &run_ids, metric_key).await?;
+    let best_eval_return = series
+        .iter()
+        .filter_map(|row| row.best)
+        .max_by(|a, b| a.total_cmp(b));
+    let metric_points = count_points_for_runs_chunked(&metric_store, ctx.org_id, &run_ids)
+        .await
+        .unwrap_or(0);
     Ok(json!({
         "overview": {
             "total_runs": total_runs,
             "active_runs": active_runs,
             "failed_runs": failed_runs,
-            "metric_points": metric_points,
-            "best_eval_return": best_eval_return
+            "best_eval_return": best_eval_return,
+            "metric_points": metric_points
         }
     }))
 }
-fn ensure_same_org(ctx: &RequestContext, org_id: Uuid) -> AppResult<()> {
-    if ctx.org_id == org_id {
-        Ok(())
-    } else {
-        Err(AppError::forbidden(
-            "run belongs to a different organization",
-        ))
-    }
-}
 
-pub(super) fn ensure_project_access(ctx: &RequestContext, project_id: Uuid) -> AppResult<()> {
-    match ctx.auth.as_ref().and_then(|auth| auth.project_id) {
-        Some(allowed_project_id) if allowed_project_id != project_id => Err(AppError::forbidden(
-            "api key is restricted to a different project",
-        )),
-        _ => Ok(()),
-    }
-}
-
-pub(super) fn ensure_run_access(ctx: &RequestContext, run: &RunRow) -> AppResult<()> {
-    ensure_same_org(ctx, run.org_id)?;
-    ensure_project_access(ctx, run.project_id)
-}
-
-pub(super) fn ensure_unrestricted_org_key(ctx: &RequestContext) -> AppResult<()> {
-    if ctx.auth.as_ref().and_then(|auth| auth.project_id).is_some() {
-        Err(AppError::forbidden("api key is restricted to a project"))
-    } else {
-        Ok(())
-    }
-}
-
-pub(super) async fn fetch_run(pool: &PgPool, run_id: Uuid) -> AppResult<RunRow> {
-    sqlx::query_as::<_, RunRow>(
-        r#"
-        select r.id, r.org_id, r.project_id, p.name as project, r.name, r.status, r.config, r.tags, r.metadata,
-               r.created_at, r.started_at, r.finished_at
-        from runs r join projects p on p.org_id = r.org_id and p.id = r.project_id
-        where r.id = $1
-        "#,
-    )
-    .bind(run_id)
-    .fetch_optional(pool)
-    .await?
-        .ok_or_else(|| AppError::not_found("run not found"))
-}
-
-#[derive(Debug, FromRow)]
-struct RunQueryRow {
-    id: Uuid,
-    org_id: Uuid,
-    project_id: Uuid,
-    project: String,
-    name: String,
-    sort_name: String,
-    status: String,
-    config: Value,
-    tags: Vec<String>,
-    metadata: Value,
-    created_at: DateTime<Utc>,
-    started_at: DateTime<Utc>,
-    finished_at: Option<DateTime<Utc>>,
-    sort_metric: Option<f64>,
-    sort_duration: Option<f64>,
-}
-
-impl From<RunQueryRow> for RunRow {
-    fn from(row: RunQueryRow) -> Self {
-        Self {
-            id: row.id,
-            org_id: row.org_id,
-            project_id: row.project_id,
-            project: row.project,
-            name: row.name,
-            status: row.status,
-            config: row.config,
-            tags: row.tags,
-            metadata: row.metadata,
-            created_at: row.created_at,
-            started_at: row.started_at,
-            finished_at: row.finished_at,
-        }
-    }
-}
-
-struct RunPage {
-    runs: Vec<RunRow>,
-    next_cursor: Option<String>,
-    pagination: &'static str,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct RunPageCursor {
-    v: u8,
-    sort_by: String,
-    metric_key: String,
-    filter_hash: String,
-    values: RunCursorValues,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum RunCursorValues {
-    Created {
-        created_at: DateTime<Utc>,
-        id: Uuid,
-    },
-    Name {
-        name: String,
-        id: Uuid,
-    },
-    Status {
-        status: String,
-        name: String,
-        id: Uuid,
-    },
-    Duration {
-        duration: Option<f64>,
-        created_at: DateTime<Utc>,
-        id: Uuid,
-    },
-    Metric {
-        value: Option<f64>,
-        created_at: DateTime<Utc>,
-        id: Uuid,
-    },
-}
-
-struct RunRowsQuery<'a> {
-    pool: &'a PgPool,
-    metric_store: &'a MetricStore,
-    org_id: Uuid,
-    filters: &'a RunFilters,
-    sort_by: &'a str,
-    metric_key: &'a str,
-    cursor: Option<&'a RunCursorValues>,
-    limit: i64,
-    offset: i64,
-}
-
-async fn query_run_page(
-    pool: &PgPool,
-    metric_store: &MetricStore,
+pub async fn runs_summary(
+    store: &Store,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
-    limit: i64,
-    offset: i64,
-) -> AppResult<RunPage> {
-    let filters = run_filters(pool, ctx, query).await?;
-    let sort_by = validate_run_sort(query.get("sort_by").or_else(|| query.get("sortBy")))?;
+) -> AppResult<Value> {
+    let limit = validate_limit(
+        query.get("limit").map(String::as_str),
+        DEFAULT_RUN_LIMIT,
+        MAX_RUN_LIMIT,
+    )? as usize;
+    let offset = if let Some(cursor) = query.get("cursor") {
+        cursor
+            .strip_prefix("offset:")
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .unwrap_or(0)
+    } else {
+        validate_offset(query.get("offset").map(String::as_str))? as usize
+    };
+    let sort_by = validate_run_sort(
+        query
+            .get("sort_by")
+            .map(String::as_str)
+            .unwrap_or("created"),
+    )?;
     let metric_key = query
         .get("metric_key")
-        .map(|value| validate_name(Some(value), "metric key"))
-        .transpose()?
-        .unwrap_or_else(|| "eval/return_mean".to_string());
-    let filter_hash = run_filter_hash(&filters, &sort_by, &metric_key, limit);
-    let cursor = decode_run_cursor(query.get("cursor"), &sort_by, &metric_key, &filter_hash)?;
-    let page_limit = limit + 1;
-    let mut rows = query_run_rows(RunRowsQuery {
-        pool,
-        metric_store,
-        org_id: ctx.org_id,
-        filters: &filters,
-        sort_by: &sort_by,
-        metric_key: &metric_key,
-        cursor: cursor.as_ref().map(|item| &item.values),
-        limit: page_limit,
-        offset: if cursor.is_some() { 0 } else { offset },
-    })
-    .await?;
-    let has_next = rows.len() > limit as usize;
-    if has_next {
-        rows.pop();
-    }
-    let next_cursor = if has_next {
-        rows.last()
-            .map(|row| {
-                encode_run_cursor(
-                    &sort_by,
-                    &metric_key,
-                    &filter_hash,
-                    cursor_values_for(row, &sort_by),
-                )
-            })
-            .transpose()?
+        .map(String::as_str)
+        .unwrap_or("eval/return_mean");
+    let indexed_page = if sort_by == "created" {
+        let data = store.data.lock().await;
+        created_index_page(&data, ctx, query, offset, limit)
+    } else if matches!(sort_by.as_str(), "metric-latest" | "metric-best") {
+        metric_sorted_index_page(store, ctx, query, &sort_by, metric_key, offset, limit).await?
     } else {
         None
     };
-    Ok(RunPage {
-        runs: rows.into_iter().map(Into::into).collect(),
-        next_cursor,
-        pagination: if cursor.is_some() { "cursor" } else { "offset" },
-    })
-}
-
-async fn query_run_rows(params: RunRowsQuery<'_>) -> AppResult<Vec<RunQueryRow>> {
-    let metric_sort = matches!(params.sort_by, "metric-latest" | "metric-best");
-    let metric_expr = if params.sort_by == "metric-latest" {
-        "ms.latest"
+    let (total, page_runs) = if let Some(page) = indexed_page {
+        page
     } else {
-        "ms.max"
-    };
-    if metric_sort {
-        return query_metric_sorted_run_rows(params).await;
-    }
-    let RunRowsQuery {
-        pool,
-        filters,
-        sort_by,
-        cursor,
-        limit,
-        offset,
-        ..
-    } = params;
-    let mut builder = QueryBuilder::<Postgres>::new(
-        r#"
-        select r.id, r.org_id, r.project_id, p.name as project, r.name, lower(r.name) as sort_name,
-               r.status, r.config, r.tags, r.metadata,
-               r.created_at, r.started_at, r.finished_at,
-        "#,
-    );
-    builder.push("null::double precision");
-    builder.push(
-        r#" as sort_metric,
-               extract(epoch from (r.finished_at - r.started_at))::double precision as sort_duration
-        from runs r
-        join projects p on p.org_id = r.org_id and p.id = r.project_id
-        "#,
-    );
-    push_run_filters(&mut builder, filters);
-    if let Some(cursor) = cursor {
-        push_cursor_predicate(&mut builder, sort_by, metric_expr, cursor)?;
-    }
-    push_run_order(&mut builder, sort_by, metric_expr);
-    builder.push(" limit ").push_bind(limit);
-    if offset > 0 {
-        builder.push(" offset ").push_bind(offset);
-    }
-    builder
-        .build_query_as::<RunQueryRow>()
-        .fetch_all(pool)
-        .await
-        .map_err(Into::into)
-}
-
-/// Sort runs by a metric value (`metric-latest` -> latest; `metric-best` -> max).
-///
-/// Cross-database join: filter run_ids in Postgres, fetch series aggregates
-/// from ClickHouse for those ids, merge in memory, paginate, then hydrate the
-/// page-sized subset of full run rows from Postgres.
-/// Sort runs by a metric value (`metric-latest` -> latest; `metric-best` -> max).
-///
-/// Cross-database join: filter run_ids in Postgres, fetch series aggregates
-/// from ClickHouse for those ids, merge in memory, then hydrate the page-sized
-/// subset of full run rows from Postgres.
-///
-/// Cursor-based pagination is intentionally rejected here pending follow-up:
-/// the cross-DB ordering semantics need to be reproduced precisely against the
-/// previous SQL-only path before cursors can be relied on. Callers fall back
-/// to offset pagination, which the UI already supports.
-async fn query_metric_sorted_run_rows(params: RunRowsQuery<'_>) -> AppResult<Vec<RunQueryRow>> {
-    let RunRowsQuery {
-        pool,
-        metric_store,
-        org_id,
-        filters,
-        sort_by,
-        metric_key,
-        cursor,
-        limit,
-        offset,
-    } = params;
-    if cursor.is_some() {
-        return Err(AppError::validation(
-            "cursor pagination is not supported for metric-sort during the ClickHouse migration; use offset pagination",
-        ));
-    }
-    let mut id_builder = QueryBuilder::<Postgres>::new("select r.id, r.created_at from runs r");
-    push_run_filters(&mut id_builder, filters);
-    let candidates: Vec<(Uuid, DateTime<Utc>)> = id_builder
-        .build_query_as::<(Uuid, DateTime<Utc>)>()
-        .fetch_all(pool)
-        .await?;
-    if candidates.is_empty() {
-        return Ok(Vec::new());
-    }
-    let candidate_ids: Vec<Uuid> = candidates.iter().map(|(id, _)| *id).collect();
-    let series_rows = metric_store
-        .query_series_for_runs(org_id, &candidate_ids, None)
-        .await?;
-    let mut metric_by_run: HashMap<Uuid, f64> = HashMap::new();
-    for row in series_rows {
-        if row.key != metric_key {
-            continue;
-        }
-        let value = match sort_by {
-            "metric-latest" => row.latest,
-            _ => row.max,
+        let mut all_runs = collect_filtered_runs(store, ctx, query).await?;
+        let total = all_runs.len();
+        let page_runs = if matches!(sort_by.as_str(), "metric-latest" | "metric-best")
+            && all_runs.len() > MAX_CLICKHOUSE_RUN_ID_CHUNK
+        {
+            metric_sorted_page(store, ctx, &all_runs, &sort_by, metric_key, offset, limit).await?
+        } else {
+            sort_runs(store, ctx, query, &mut all_runs).await?;
+            all_runs
+                .iter()
+                .skip(offset)
+                .take(limit)
+                .cloned()
+                .collect::<Vec<_>>()
         };
-        metric_by_run.insert(row.run_id, value);
-    }
-    let mut ordered: Vec<(Option<f64>, DateTime<Utc>, Uuid)> = candidates
-        .into_iter()
-        .map(|(id, created_at)| (metric_by_run.get(&id).copied(), created_at, id))
-        .collect();
-    ordered.sort_by(|a, b| {
-        // Metric value desc with NULLS LAST, then created_at desc, then id desc.
-        match (a.0, b.0) {
-            (Some(x), Some(y)) => match y.partial_cmp(&x) {
-                Some(std::cmp::Ordering::Equal) | None => b.1.cmp(&a.1).then_with(|| b.2.cmp(&a.2)),
-                Some(other) => other,
-            },
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => b.1.cmp(&a.1).then_with(|| b.2.cmp(&a.2)),
-        }
-    });
-    let page: Vec<(Option<f64>, DateTime<Utc>, Uuid)> = ordered
-        .into_iter()
-        .skip(offset.max(0) as usize)
-        .take(limit.max(0) as usize)
-        .collect();
-    if page.is_empty() {
-        return Ok(Vec::new());
-    }
-    let page_ids: Vec<Uuid> = page.iter().map(|slot| slot.2).collect();
-    let raw_rows = sqlx::query_as::<_, RunQueryRow>(
-        r#"
-        select r.id, r.org_id, r.project_id, p.name as project, r.name, lower(r.name) as sort_name,
-               r.status, r.config, r.tags, r.metadata,
-               r.created_at, r.started_at, r.finished_at,
-               null::double precision as sort_metric,
-               extract(epoch from (r.finished_at - r.started_at))::double precision as sort_duration
-        from runs r
-        join projects p on p.org_id = r.org_id and p.id = r.project_id
-        where r.id = any($1)
-        "#,
-    )
-    .bind(&page_ids)
-    .fetch_all(pool)
-    .await?;
-    let mut by_id: HashMap<Uuid, RunQueryRow> =
-        raw_rows.into_iter().map(|row| (row.id, row)).collect();
-    let mut output = Vec::with_capacity(page.len());
-    for (metric_value, _, id) in page {
-        if let Some(mut row) = by_id.remove(&id) {
-            row.sort_metric = metric_value;
-            output.push(row);
-        }
-    }
-    Ok(output)
+        (total, page_runs)
+    };
+    let run_ids = page_runs.iter().map(|run| run.id).collect::<Vec<_>>();
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let metric_keys = metric_store
+        .query_keys_for_runs(ctx.org_id, &run_ids, 250_i64)
+        .await?;
+    let next_offset = offset + page_runs.len();
+    let has_next = next_offset < total;
+    Ok(json!({
+        "runs": summarize_runs(store, page_runs).await?,
+        "metric_keys": metric_keys,
+        "total": total,
+        "next_cursor": if has_next { json!(format!("offset:{next_offset}")) } else { Value::Null },
+        "page_info": { "pagination": "cursor", "has_next_page": has_next }
+    }))
 }
 
-async fn count_runs(
-    pool: &PgPool,
+pub(super) async fn filtered_runs(
+    store: &Store,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
-) -> AppResult<i64> {
-    let filters = run_filters(pool, ctx, query).await?;
-    let mut builder = QueryBuilder::<Postgres>::new("select count(*) from runs r");
-    push_run_filters(&mut builder, &filters);
-    builder
-        .build_query_scalar::<i64>()
-        .fetch_one(pool)
-        .await
-        .map_err(Into::into)
+) -> AppResult<Vec<RunRow>> {
+    let mut runs = collect_filtered_runs(store, ctx, query).await?;
+    sort_runs(store, ctx, query, &mut runs).await?;
+    Ok(runs)
 }
 
-struct RunFilters {
-    project_id: Option<Uuid>,
-    project_missing: bool,
-    status: Option<String>,
-    q: Vec<String>,
-    restricted_project_id: Option<Uuid>,
-    org_id: Uuid,
-}
-
-async fn run_filters(
-    pool: &PgPool,
+async fn collect_filtered_runs(
+    store: &Store,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
-) -> AppResult<RunFilters> {
-    let q = query
+) -> AppResult<Vec<RunRow>> {
+    let project = query
+        .get("project")
+        .filter(|value| !value.is_empty() && value.as_str() != "all");
+    let status = query
+        .get("status")
+        .filter(|value| !value.is_empty() && value.as_str() != "all");
+    let tokens = query
         .get("q")
-        .map(|value| {
-            value
-                .split_whitespace()
-                .map(|part| part.trim().to_ascii_lowercase())
-                .filter(|part| !part.is_empty())
-                .take(MAX_SEARCH_TOKENS)
-                .map(|part| format!("%{}%", escape_like_token(&part)))
+        .map(|q| {
+            q.split_whitespace()
+                .map(|part| part.to_ascii_lowercase())
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let requested_project_id = query
-        .get("project_id")
-        .filter(|raw| !raw.trim().is_empty())
-        .map(|raw| {
-            Uuid::parse_str(raw)
-                .map_err(|_| AppError::validation("project_id must be a valid UUID"))
-        })
-        .transpose()?;
-    let named_project_id =
-        if let Some(project) = query.get("project").filter(|raw| !raw.trim().is_empty()) {
-            sqlx::query_scalar::<_, Uuid>("select id from projects where org_id = $1 and name = $2")
-                .bind(ctx.org_id)
-                .bind(project)
-                .fetch_optional(pool)
-                .await?
-        } else {
-            None
-        };
-    let mut project_missing = query
-        .get("project")
-        .filter(|raw| !raw.trim().is_empty())
-        .is_some()
-        && named_project_id.is_none();
-    if let (Some(requested), Some(named)) = (requested_project_id, named_project_id) {
-        if requested != named {
-            project_missing = true;
-        }
-    }
-    let mut project_id = requested_project_id.or(named_project_id);
-    let restricted_project_id = ctx.auth.as_ref().and_then(|auth| auth.project_id);
-    if let Some(restricted) = restricted_project_id {
-        if let Some(requested) = project_id {
-            if requested != restricted {
-                project_missing = true;
-            }
-        }
-        project_id = Some(restricted);
-    }
-    let status = query
-        .get("status")
-        .filter(|raw| !raw.trim().is_empty())
-        .map(|raw| validate_status(raw))
-        .transpose()?;
-    Ok(RunFilters {
-        project_id,
-        project_missing,
-        status,
-        q,
-        restricted_project_id,
-        org_id: ctx.org_id,
-    })
-}
-
-fn push_run_filters(builder: &mut QueryBuilder<'_, Postgres>, filters: &RunFilters) {
-    builder.push(" where r.org_id = ").push_bind(filters.org_id);
-    if filters.project_missing {
-        builder.push(" and false");
-        return;
-    }
-    if let Some(project_id) = filters.project_id {
-        builder.push(" and r.project_id = ").push_bind(project_id);
-    }
-    if let Some(status) = filters.status.as_ref() {
-        builder.push(" and r.status = ").push_bind(status.clone());
-    }
-    for token in &filters.q {
-        builder
-            .push(" and r.search_text like ")
-            .push_bind(token.clone())
-            .push(" escape '\\'");
-    }
-}
-
-fn push_run_order(builder: &mut QueryBuilder<'_, Postgres>, sort_by: &str, metric_expr: &str) {
-    match sort_by {
-        "name" => builder.push(" order by lower(r.name) asc, r.id asc"),
-        "status" => builder.push(" order by r.status asc, lower(r.name) asc, r.id asc"),
-        "duration" => builder.push(" order by extract(epoch from (r.finished_at - r.started_at)) desc nulls last, r.created_at desc, r.id desc"),
-        "metric-latest" | "metric-best" => {
-            builder
-                .push(" order by ")
-                .push(metric_expr)
-                .push(" desc nulls last, r.created_at desc, r.id desc")
-        }
-        _ => builder.push(" order by r.created_at desc, r.id desc"),
+    let runs = {
+        let data = store.data.lock().await;
+        data.runs
+            .values()
+            .filter(|run| run.org_id == ctx.org_id)
+            .filter(|run| {
+                ctx.auth
+                    .as_ref()
+                    .and_then(|auth| auth.project_id)
+                    .map(|id| id == run.project_id)
+                    .unwrap_or(true)
+            })
+            .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
+            .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
+            .filter(|run| {
+                if tokens.is_empty() {
+                    return true;
+                }
+                data.run_search_texts
+                    .get(&run.id)
+                    .map(|haystack| tokens.iter().all(|token| haystack.contains(token)))
+                    .unwrap_or_else(|| {
+                        let haystack = run_search_text(run);
+                        tokens.iter().all(|token| haystack.contains(token))
+                    })
+            })
+            .cloned()
+            .collect::<Vec<_>>()
     };
+    Ok(runs)
 }
 
-fn push_cursor_predicate(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    sort_by: &str,
-    metric_expr: &str,
-    cursor: &RunCursorValues,
+async fn sort_runs(
+    store: &Store,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    runs: &mut [RunRow],
 ) -> AppResult<()> {
-    match (sort_by, cursor) {
-        ("created", RunCursorValues::Created { created_at, id }) => {
-            builder.push(" and (r.created_at < ");
-            builder.push_bind(*created_at);
-            builder.push(" or (r.created_at = ");
-            builder.push_bind(*created_at);
-            builder.push(" and r.id < ");
-            builder.push_bind(*id);
-            builder.push("))");
+    let sort_by = validate_run_sort(
+        query
+            .get("sort_by")
+            .map(String::as_str)
+            .unwrap_or("created"),
+    )?;
+    let metric_key = query
+        .get("metric_key")
+        .map(String::as_str)
+        .unwrap_or("eval/return_mean");
+    match sort_by.as_str() {
+        "metric-latest" | "metric-best" => {
+            let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
+            let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+            let series =
+                metric_series_for_runs_key_chunked(&metric_store, ctx.org_id, &run_ids, metric_key)
+                    .await?
+                    .into_iter()
+                    .map(|row| (row.run_id, row))
+                    .collect::<HashMap<_, _>>();
+            sort_runs_by_metric(runs, &sort_by, metric_key, &series);
         }
-        ("name", RunCursorValues::Name { name, id }) => {
-            builder.push(" and (lower(r.name) > ");
-            builder.push_bind(name.clone());
-            builder.push(" or (lower(r.name) = ");
-            builder.push_bind(name.clone());
-            builder.push(" and r.id > ");
-            builder.push_bind(*id);
-            builder.push("))");
-        }
-        ("status", RunCursorValues::Status { status, name, id }) => {
-            builder.push(" and (r.status > ");
-            builder.push_bind(status.clone());
-            builder.push(" or (r.status = ");
-            builder.push_bind(status.clone());
-            builder.push(" and (lower(r.name) > ");
-            builder.push_bind(name.clone());
-            builder.push(" or (lower(r.name) = ");
-            builder.push_bind(name.clone());
-            builder.push(" and r.id > ");
-            builder.push_bind(*id);
-            builder.push("))))");
-        }
-        (
-            "duration",
-            RunCursorValues::Duration {
-                duration,
-                created_at,
-                id,
-            },
-        ) => {
-            push_desc_nulls_last_cursor(
-                builder,
-                "extract(epoch from (r.finished_at - r.started_at))",
-                *duration,
-                *created_at,
-                *id,
-            );
-        }
-        (
-            "metric-latest" | "metric-best",
-            RunCursorValues::Metric {
-                value,
-                created_at,
-                id,
-            },
-        ) => {
-            push_desc_nulls_last_cursor(builder, metric_expr, *value, *created_at, *id);
-        }
-        _ => {
-            return Err(AppError::validation(
-                "cursor sort values do not match sort_by",
-            ));
-        }
+        "duration" => runs.sort_by(|a, b| {
+            numeric_desc(duration_seconds(a), duration_seconds(b))
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        "name" => runs.sort_by(|a, b| {
+            a.name
+                .cmp(&b.name)
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        "status" => runs.sort_by(|a, b| {
+            a.status
+                .cmp(&b.status)
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        "created" => runs.sort_by_key(|run| std::cmp::Reverse(run.created_at)),
+        _ => unreachable!("validate_run_sort restricts values"),
     }
     Ok(())
 }
 
-fn push_desc_nulls_last_cursor(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    expression: &str,
-    value: Option<f64>,
-    created_at: DateTime<Utc>,
-    id: Uuid,
-) {
-    builder.push(" and (");
-    if let Some(value) = value {
-        builder
-            .push("(")
-            .push(expression)
-            .push(" is not null and (")
-            .push(expression)
-            .push(" < ")
-            .push_bind(value)
-            .push(" or (")
-            .push(expression)
-            .push(" = ")
-            .push_bind(value)
-            .push(" and ");
-        push_created_desc_tie(builder, created_at, id);
-        builder.push("))) or ");
-        builder.push(expression).push(" is null");
-    } else {
-        builder.push(expression).push(" is null and ");
-        push_created_desc_tie(builder, created_at, id);
-    }
-    builder.push(")");
-}
-
-fn push_created_desc_tie(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    created_at: DateTime<Utc>,
-    id: Uuid,
-) {
-    builder.push("(r.created_at < ");
-    builder.push_bind(created_at);
-    builder.push(" or (r.created_at = ");
-    builder.push_bind(created_at);
-    builder.push(" and r.id < ");
-    builder.push_bind(id);
-    builder.push("))");
-}
-
-fn cursor_values_for(row: &RunQueryRow, sort_by: &str) -> RunCursorValues {
-    match sort_by {
-        "name" => RunCursorValues::Name {
-            name: row.sort_name.clone(),
-            id: row.id,
-        },
-        "status" => RunCursorValues::Status {
-            status: row.status.clone(),
-            name: row.sort_name.clone(),
-            id: row.id,
-        },
-        "duration" => RunCursorValues::Duration {
-            duration: row.sort_duration,
-            created_at: row.created_at,
-            id: row.id,
-        },
-        "metric-latest" | "metric-best" => RunCursorValues::Metric {
-            value: row.sort_metric,
-            created_at: row.created_at,
-            id: row.id,
-        },
-        _ => RunCursorValues::Created {
-            created_at: row.created_at,
-            id: row.id,
-        },
-    }
-}
-
-fn decode_run_cursor(
-    raw: Option<&String>,
+async fn metric_sorted_index_page(
+    store: &Store,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
     sort_by: &str,
     metric_key: &str,
-    filter_hash: &str,
-) -> AppResult<Option<RunPageCursor>> {
-    let Some(raw) = raw.filter(|value| !value.trim().is_empty()) else {
+    offset: usize,
+    limit: usize,
+) -> AppResult<Option<(usize, Vec<RunRow>)>> {
+    if has_text_search(query) || has_status_filter(query) {
         return Ok(None);
+    }
+    let total = {
+        let data = store.data.lock().await;
+        let tokens = text_search_tokens(query);
+        indexed_run_total(&data, ctx, query, &tokens)
     };
-    if raw.len() > MAX_RUN_CURSOR_BYTES {
-        return Err(AppError::validation("cursor is too large"));
+    if total <= MAX_CLICKHOUSE_RUN_ID_CHUNK {
+        return Ok(None);
     }
-    let bytes = URL_SAFE_NO_PAD
-        .decode(raw.as_bytes())
-        .map_err(|_| AppError::validation("cursor is invalid"))?;
-    let cursor: RunPageCursor =
-        serde_json::from_slice(&bytes).map_err(|_| AppError::validation("cursor is invalid"))?;
-    if cursor.v != RUN_CURSOR_VERSION {
-        return Err(AppError::validation("cursor version is unsupported"));
-    }
-    if cursor.sort_by != sort_by
-        || cursor.metric_key != metric_key
-        || cursor.filter_hash != filter_hash
-    {
-        return Err(AppError::validation("cursor does not match current query"));
-    }
-    Ok(Some(cursor))
+    let mode = metric_sort_mode(sort_by, metric_key);
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let target = offset.saturating_add(limit);
+    let mut fetch_limit = target.max(1_000).min(total).max(limit);
+    let page = loop {
+        let rows = metric_store
+            .query_top_series_for_org_key(ctx.org_id, metric_key, mode, fetch_limit as i64)
+            .await?;
+        let mut page = {
+            let data = store.data.lock().await;
+            let tokens = text_search_tokens(query);
+            rows.into_iter()
+                .filter_map(|row| data.runs.get(&row.run_id))
+                .filter(|run| run_matches_indexed_query(&data, ctx, query, run, &tokens))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if page.len() >= target || fetch_limit == total {
+            let mut seen = page.iter().map(|run| run.id).collect::<BTreeSet<_>>();
+            if page.len() < target {
+                let data = store.data.lock().await;
+                let tokens = text_search_tokens(query);
+                append_created_index_runs(&data, ctx, query, &tokens, &mut seen, target, &mut page);
+            }
+            break page;
+        }
+        fetch_limit = (fetch_limit * 2).min(total);
+    };
+    Ok(Some((
+        total,
+        page.into_iter().skip(offset).take(limit).collect(),
+    )))
 }
 
-fn encode_run_cursor(
+async fn metric_sorted_page(
+    store: &Store,
+    ctx: &RequestContext,
+    runs: &[RunRow],
     sort_by: &str,
     metric_key: &str,
-    filter_hash: &str,
-    values: RunCursorValues,
-) -> AppResult<String> {
-    let cursor = RunPageCursor {
-        v: RUN_CURSOR_VERSION,
-        sort_by: sort_by.to_string(),
-        metric_key: metric_key.to_string(),
-        filter_hash: filter_hash.to_string(),
-        values,
+    offset: usize,
+    limit: usize,
+) -> AppResult<Vec<RunRow>> {
+    let run_by_id = runs
+        .iter()
+        .map(|run| (run.id, run.clone()))
+        .collect::<HashMap<_, _>>();
+    let mode = metric_sort_mode(sort_by, metric_key);
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let target = offset.saturating_add(limit);
+    let mut fetch_limit = target.max(1_000).min(runs.len()).max(limit);
+    let ordered = loop {
+        let rows = metric_store
+            .query_top_series_for_org_key(ctx.org_id, metric_key, mode, fetch_limit as i64)
+            .await?;
+        let page = rows
+            .into_iter()
+            .filter_map(|row| run_by_id.get(&row.run_id).cloned())
+            .collect::<Vec<_>>();
+        if page.len() >= target || fetch_limit == runs.len() {
+            break page;
+        }
+        fetch_limit = (fetch_limit * 2).min(runs.len());
     };
-    let bytes =
-        serde_json::to_vec(&cursor).map_err(|_| AppError::internal("cursor encode failed"))?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
-}
-
-fn run_filter_hash(filters: &RunFilters, sort_by: &str, metric_key: &str, limit: i64) -> String {
-    let payload = json!({
-        "v": RUN_CURSOR_VERSION,
-        "org_id": filters.org_id,
-        "project_id": filters.project_id,
-        "project_missing": filters.project_missing,
-        "status": filters.status,
-        "q": filters.q,
-        "restricted_project_id": filters.restricted_project_id,
-        "sort_by": sort_by,
-        "metric_key": metric_key,
-        "limit": limit,
-    });
-    let digest = Sha256::digest(payload.to_string().as_bytes());
-    URL_SAFE_NO_PAD.encode(digest)
-}
-
-fn validate_note_patch(note: &str) -> AppResult<String> {
-    let trimmed = note.trim().to_string();
-    if trimmed.len() > MAX_TEXT_BYTES {
-        return Err(AppError::validation(format!(
-            "notes must be at most {MAX_TEXT_BYTES} bytes"
-        )));
+    let mut seen = ordered.iter().map(|run| run.id).collect::<BTreeSet<_>>();
+    let mut page = ordered;
+    if page.len() < target {
+        let mut without_metric = runs
+            .iter()
+            .filter(|run| !seen.contains(&run.id))
+            .cloned()
+            .collect::<Vec<_>>();
+        without_metric.sort_by_key(|run| std::cmp::Reverse(run.created_at));
+        for run in without_metric {
+            seen.insert(run.id);
+            page.push(run);
+            if page.len() >= target {
+                break;
+            }
+        }
     }
-    Ok(trimmed)
+    Ok(page.into_iter().skip(offset).take(limit).collect())
 }
 
-fn escape_like_token(token: &str) -> String {
-    token
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
+fn metric_sort_mode(sort_by: &str, metric_key: &str) -> SeriesSortMode {
+    if sort_by == "metric-latest" {
+        SeriesSortMode::Latest
+    } else if is_minimize_metric(metric_key) {
+        SeriesSortMode::BestMin
+    } else {
+        SeriesSortMode::BestMax
+    }
 }
 
-fn validate_run_sort(value: Option<&String>) -> AppResult<String> {
-    let sort_by = value
+fn created_index_page(
+    data: &StoreData,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    offset: usize,
+    limit: usize,
+) -> Option<(usize, Vec<RunRow>)> {
+    let tokens = text_search_tokens(query);
+    let total = indexed_run_total(data, ctx, query, &tokens);
+    let mut seen = BTreeSet::new();
+    let mut page = Vec::with_capacity(limit);
+    append_created_index_runs(
+        data,
+        ctx,
+        query,
+        &tokens,
+        &mut seen,
+        offset.saturating_add(limit),
+        &mut page,
+    );
+    Some((total, page.into_iter().skip(offset).take(limit).collect()))
+}
+
+fn append_created_index_runs(
+    data: &StoreData,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    tokens: &[String],
+    seen: &mut BTreeSet<Uuid>,
+    target: usize,
+    page: &mut Vec<RunRow>,
+) {
+    if let Some(project) = project_filter(query) {
+        for ((org_id, project_name, _, run_id), _) in data.runs_by_org_project_created.iter().rev()
+        {
+            if *org_id != ctx.org_id || project_name != project || seen.contains(run_id) {
+                continue;
+            }
+            let Some(run) = data.runs.get(run_id) else {
+                continue;
+            };
+            if run_matches_indexed_query(data, ctx, query, run, tokens) {
+                seen.insert(*run_id);
+                page.push(run.clone());
+                if page.len() >= target {
+                    return;
+                }
+            }
+        }
+        return;
+    }
+    for ((org_id, _, run_id), _) in data.runs_by_org_created.iter().rev() {
+        if *org_id != ctx.org_id || seen.contains(run_id) {
+            continue;
+        }
+        let Some(run) = data.runs.get(run_id) else {
+            continue;
+        };
+        if run_matches_indexed_query(data, ctx, query, run, tokens) {
+            seen.insert(*run_id);
+            page.push(run.clone());
+            if page.len() >= target {
+                return;
+            }
+        }
+    }
+}
+
+fn indexed_run_total(
+    data: &StoreData,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    tokens: &[String],
+) -> usize {
+    if let Some(project) = project_filter(query) {
+        data.runs_by_org_project_created
+            .iter()
+            .filter(|((org_id, project_name, _, run_id), _)| {
+                *org_id == ctx.org_id
+                    && project_name == project
+                    && data
+                        .runs
+                        .get(run_id)
+                        .map(|run| run_matches_indexed_query(data, ctx, query, run, tokens))
+                        .unwrap_or(false)
+            })
+            .count()
+    } else {
+        data.runs_by_org_created
+            .iter()
+            .filter(|((org_id, _, run_id), _)| {
+                *org_id == ctx.org_id
+                    && data
+                        .runs
+                        .get(run_id)
+                        .map(|run| run_matches_indexed_query(data, ctx, query, run, tokens))
+                        .unwrap_or(false)
+            })
+            .count()
+    }
+}
+
+fn run_matches_indexed_query(
+    data: &StoreData,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    run: &RunRow,
+    tokens: &[String],
+) -> bool {
+    if run.org_id != ctx.org_id {
+        return false;
+    }
+    if ctx
+        .auth
+        .as_ref()
+        .and_then(|auth| auth.project_id)
+        .map(|project_id| project_id != run.project_id)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    if query
+        .get("status")
+        .filter(|value| !value.is_empty() && value.as_str() != "all")
+        .map(|status| run.status != *status)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    if !tokens.is_empty() {
+        let matches = data
+            .run_search_texts
+            .get(&run.id)
+            .map(|haystack| tokens.iter().all(|token| haystack.contains(token)))
+            .unwrap_or_else(|| {
+                let haystack = run_search_text(run);
+                tokens.iter().all(|token| haystack.contains(token))
+            });
+        if !matches {
+            return false;
+        }
+    }
+    project_filter(query)
+        .map(|project| run.project == project)
+        .unwrap_or(true)
+}
+
+fn text_search_tokens(query: &HashMap<String, String>) -> Vec<String> {
+    query
+        .get("q")
+        .map(|q| {
+            q.split_whitespace()
+                .map(|part| part.to_ascii_lowercase())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn project_filter(query: &HashMap<String, String>) -> Option<&str> {
+    query
+        .get("project")
         .map(String::as_str)
-        .filter(|raw| !raw.trim().is_empty())
-        .unwrap_or("created");
+        .filter(|value| !value.is_empty() && *value != "all")
+}
+
+fn has_text_search(query: &HashMap<String, String>) -> bool {
+    query
+        .get("q")
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn has_status_filter(query: &HashMap<String, String>) -> bool {
+    query
+        .get("status")
+        .map(String::as_str)
+        .map(|value| !value.is_empty() && value != "all")
+        .unwrap_or(false)
+}
+
+fn validate_run_sort(sort_by: &str) -> AppResult<String> {
+    let sort_by = validate_name(Some(sort_by), "sort_by")?;
     if matches!(
-        sort_by,
-        "created" | "metric-latest" | "metric-best" | "name" | "status" | "duration"
+        sort_by.as_str(),
+        "created" | "duration" | "metric-best" | "metric-latest" | "name" | "status"
     ) {
-        Ok(sort_by.to_string())
+        Ok(sort_by)
     } else {
         Err(AppError::validation(
             "sort_by must be one of: created, duration, metric-best, metric-latest, name, status",
@@ -1016,203 +813,447 @@ fn validate_run_sort(value: Option<&String>) -> AppResult<String> {
     }
 }
 
-async fn metric_keys_for_filtered_runs(
-    pool: &PgPool,
+fn sort_runs_by_metric(
+    runs: &mut [RunRow],
+    sort_by: &str,
+    metric_key: &str,
+    series: &HashMap<Uuid, MetricSeriesRow>,
+) {
+    runs.sort_by(|a, b| {
+        let left = metric_sort_value(series.get(&a.id), sort_by, metric_key);
+        let right = metric_sort_value(series.get(&b.id), sort_by, metric_key);
+        let order = if sort_by == "metric-best" && is_minimize_metric(metric_key) {
+            numeric_asc(left, right)
+        } else {
+            numeric_desc(left, right)
+        };
+        order.then_with(|| b.created_at.cmp(&a.created_at))
+    });
+}
+
+fn metric_sort_value(
+    series: Option<&MetricSeriesRow>,
+    sort_by: &str,
+    metric_key: &str,
+) -> Option<f64> {
+    let series = series?;
+    if sort_by == "metric-latest" {
+        return series.latest;
+    }
+    if is_minimize_metric(metric_key) {
+        series.min
+    } else {
+        series.max
+    }
+}
+
+fn is_minimize_metric(key: &str) -> bool {
+    key.split(['/', '_']).any(|part| {
+        matches!(
+            part.to_ascii_lowercase().as_str(),
+            "loss"
+                | "error"
+                | "err"
+                | "perplexity"
+                | "ppl"
+                | "wer"
+                | "cer"
+                | "mae"
+                | "mse"
+                | "rmse"
+                | "nll"
+                | "kl"
+                | "regret"
+        )
+    })
+}
+
+const MAX_CLICKHOUSE_RUN_ID_CHUNK: usize = 4_000;
+
+async fn metric_series_for_runs_key_chunked(
     metric_store: &MetricStore,
+    org_id: Uuid,
+    run_ids: &[Uuid],
+    key: &str,
+) -> AppResult<Vec<MetricSeriesRow>> {
+    if run_ids.len() > MAX_CLICKHOUSE_RUN_ID_CHUNK {
+        let selected = run_ids.iter().copied().collect::<BTreeSet<_>>();
+        let rows = metric_store
+            .query_series_for_org_key(org_id, key)
+            .await?
+            .into_iter()
+            .filter(|row| selected.contains(&row.run_id))
+            .map(series_row_from_aggregate)
+            .collect();
+        return Ok(rows);
+    }
+    let mut tasks = Vec::new();
+    for chunk in run_ids.chunks(MAX_CLICKHOUSE_RUN_ID_CHUNK) {
+        let metric_store = metric_store.clone();
+        let run_ids = chunk.to_vec();
+        let key = key.to_string();
+        tasks.push(tokio::spawn(async move {
+            metric_series_for_runs_key(&metric_store, org_id, &run_ids, &key).await
+        }));
+    }
+    let mut rows = Vec::new();
+    for task in tasks {
+        rows.extend(
+            task.await
+                .map_err(|err| AppError::internal(format!("metric sort task failed: {err}")))??,
+        );
+    }
+    Ok(rows)
+}
+
+async fn count_points_for_runs_chunked(
+    metric_store: &MetricStore,
+    org_id: Uuid,
+    run_ids: &[Uuid],
+) -> AppResult<i64> {
+    let mut tasks = Vec::new();
+    for chunk in run_ids.chunks(MAX_CLICKHOUSE_RUN_ID_CHUNK) {
+        let metric_store = metric_store.clone();
+        let run_ids = chunk.to_vec();
+        tasks.push(tokio::spawn(async move {
+            metric_store.count_points_for_runs(org_id, &run_ids).await
+        }));
+    }
+    let mut total = 0_i64;
+    for task in tasks {
+        total += task
+            .await
+            .map_err(|err| AppError::internal(format!("metric count task failed: {err}")))??;
+    }
+    Ok(total)
+}
+
+pub(super) fn numeric_desc(left: Option<f64>, right: Option<f64>) -> std::cmp::Ordering {
+    let left = left.unwrap_or(f64::NEG_INFINITY);
+    let right = right.unwrap_or(f64::NEG_INFINITY);
+    right.total_cmp(&left)
+}
+
+fn numeric_asc(left: Option<f64>, right: Option<f64>) -> std::cmp::Ordering {
+    let left = left.unwrap_or(f64::INFINITY);
+    let right = right.unwrap_or(f64::INFINITY);
+    left.total_cmp(&right)
+}
+
+fn duration_seconds(run: &RunRow) -> Option<f64> {
+    run.finished_at
+        .map(|finished| (finished - run.started_at).num_milliseconds() as f64 / 1_000.0)
+}
+
+pub async fn log_metrics(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
+    raw: Value,
+    input: LogMetricsRequest,
+    idempotency_key: Option<String>,
+) -> AppResult<usize> {
+    let metrics = validate_metrics(input.metrics)?;
+    let step = validate_step(&input.step, "step")?;
+    let timestamp = validate_timestamp(input.timestamp.as_deref())?;
+    let request_hash = hash_idempotency(run_id, &raw);
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let points = metrics
+        .iter()
+        .map(|(key, value)| ChMetricPointRow {
+            org_id: ctx.org_id,
+            run_id,
+            key: key.clone(),
+            step,
+            value: *value,
+            logged_at: timestamp,
+            created_at: Utc::now(),
+        })
+        .collect::<Vec<_>>();
+    {
+        let data = store.data.lock().await;
+        if let Some(key) = &idempotency_key {
+            if let Some(existing) = data
+                .idempotency
+                .get(&(ctx.org_id, key.clone()))
+                .filter(|record| record.expires_at > Utc::now())
+            {
+                if existing.request_hash == request_hash {
+                    return existing
+                        .response_json
+                        .get("inserted")
+                        .and_then(Value::as_u64)
+                        .map(|value| value as usize)
+                        .ok_or_else(|| {
+                            AppError::internal("stored idempotency response is invalid")
+                        });
+                }
+                return Err(AppError::conflict(
+                    "idempotency key was already used with a different request body",
+                ));
+            }
+        }
+        let run = fetch_run_in_data(&data, ctx, run_id)?;
+        ensure_run_access_in_data(ctx, &run)?;
+    }
+    metric_store.insert_points(&points).await?;
+    if let Some(key) = idempotency_key {
+        let record = IdempotencyRecord {
+            org_id: ctx.org_id,
+            key: key.clone(),
+            request_hash,
+            response_json: json!({ "inserted": points.len() }),
+            expires_at: Utc::now() + ChronoDuration::days(7),
+        };
+        let mut data = store.data.lock().await;
+        store
+            .persist_locked("idempotency", ctx.org_id, &key, &record)
+            .await?;
+        data.idempotency.insert((ctx.org_id, key), record);
+    }
+    Ok(points.len())
+}
+
+pub async fn get_metrics(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
+    query: &HashMap<String, String>,
+) -> AppResult<Value> {
+    {
+        let data = store.data.lock().await;
+        let run = fetch_run_in_data(&data, ctx, run_id)?;
+        ensure_run_access_in_data(ctx, &run)?;
+    }
+    let limit = validate_limit(
+        query.get("limit").map(String::as_str),
+        DEFAULT_METRIC_LIMIT,
+        MAX_METRIC_LIMIT,
+    )?;
+    let start_step = query
+        .get("start_step")
+        .map(|raw| validate_query_step(raw, "start_step"))
+        .transpose()?;
+    let end_step = query
+        .get("end_step")
+        .map(|raw| validate_query_step(raw, "end_step"))
+        .transpose()?;
+    let rows = store
+        .metric_store_for_org(ctx.org_id)
+        .await?
+        .query_points(
+            ctx.org_id,
+            run_id,
+            query.get("key").map(String::as_str),
+            start_step,
+            end_step,
+            limit,
+        )
+        .await?;
+    Ok(json!({ "metrics": rows.into_iter().map(metric_point_value).collect::<Vec<_>>() }))
+}
+
+pub async fn metrics_series_batched(
+    store: &Store,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
-) -> AppResult<BTreeSet<String>> {
-    let filters = run_filters(pool, ctx, query).await?;
-    let mut builder = QueryBuilder::<Postgres>::new("select r.id from runs r");
-    push_run_filters(&mut builder, &filters);
-    let run_ids: Vec<Uuid> = builder.build_query_scalar::<Uuid>().fetch_all(pool).await?;
-    if run_ids.is_empty() {
-        return Ok(BTreeSet::new());
-    }
-    let keys: Vec<String> = metric_store
-        .client()
-        .query(
-            "SELECT DISTINCT key FROM metric_series \
-             WHERE org_id = ? AND run_id IN ? \
-             ORDER BY key",
-        )
-        .bind(ctx.org_id)
-        .bind(&run_ids)
-        .fetch_all::<String>()
-        .await
-        .map_err(|err| AppError::internal(format!("clickhouse metric-keys query failed: {err}")))?;
-    Ok(keys.into_iter().collect())
-}
-
-async fn run_summary_value(
-    pool: &PgPool,
-    metric_store: &MetricStore,
-    run: RunRow,
 ) -> AppResult<Value> {
-    let run_ids = vec![run.id];
-    let series = metric_series_for_runs(metric_store, run.org_id, &run_ids).await?;
-    let counts = artifact_counts_for_runs(pool, run.org_id, &run_ids).await?;
-    Ok(summarize_run(run, &series, &counts))
-}
-
-fn summarize_run(
-    run: RunRow,
-    series: &[MetricSeriesRow],
-    artifact_counts: &HashMap<Uuid, BTreeMap<String, i64>>,
-) -> Value {
-    let mut latest = Map::new();
-    let mut aggregates = Map::new();
-    let mut keys = Vec::new();
-    for item in series.iter().filter(|item| item.run_id == run.id) {
-        latest.insert(item.key.clone(), json!(item.latest));
-        aggregates.insert(
-            item.key.clone(),
-            json!({
-                "latest": item.latest,
-                "min": item.min,
-                "max": item.max,
-                "mean": item.mean,
-                "variance": item.variance,
-                "count": item.count,
-                "best_step": item.best_step
-            }),
-        );
-        keys.push(item.key.clone());
+    let key = validate_name(query.get("key").map(String::as_str), "key")?;
+    let run_ids = parse_run_ids(query.get("run_ids"))?;
+    if run_ids.len() > MAX_METRIC_SERIES_RUN_IDS {
+        return Err(AppError::validation(format!(
+            "run_ids cannot include more than {MAX_METRIC_SERIES_RUN_IDS} runs"
+        )));
     }
-    keys.sort();
-    let counts = artifact_counts.get(&run.id).cloned().unwrap_or_else(|| {
-        BTreeMap::from([
-            ("checkpoint".to_string(), 0),
-            ("rollout".to_string(), 0),
-            ("file".to_string(), 0),
-        ])
-    });
-    let mut value = serde_json::to_value(run).expect("run serializes");
-    if let Value::Object(map) = &mut value {
-        map.insert("latest_metrics".to_string(), Value::Object(latest));
-        map.insert("metric_aggregates".to_string(), Value::Object(aggregates));
-        map.insert("metric_keys".to_string(), json!(keys));
-        map.insert("artifact_counts".to_string(), json!(counts));
-    }
-    value
-}
-
-async fn metric_series_for_runs(
-    metric_store: &MetricStore,
-    org_id: Uuid,
-    run_ids: &[Uuid],
-) -> AppResult<Vec<MetricSeriesRow>> {
-    let rows = metric_store
-        .query_series_for_runs(org_id, run_ids, None)
-        .await?;
-    Ok(rows.into_iter().map(series_row_from_aggregate).collect())
-}
-
-pub(super) async fn metric_series_for_runs_limited(
-    metric_store: &MetricStore,
-    org_id: Uuid,
-    run_ids: &[Uuid],
-    limit: i64,
-) -> AppResult<Vec<MetricSeriesRow>> {
-    let rows = metric_store
-        .query_series_for_runs(org_id, run_ids, Some(limit))
-        .await?;
-    Ok(rows.into_iter().map(series_row_from_aggregate).collect())
-}
-
-pub(super) fn series_row_from_aggregate(
-    aggregate: crate::metric_store::SeriesReadRow,
-) -> MetricSeriesRow {
-    let count = aggregate.count as i64;
-    let mean = if count > 0 {
-        Some(aggregate.sum / count as f64)
-    } else {
-        None
-    };
-    let variance = mean.map(|m| {
-        let raw = aggregate.sum_sq / count as f64 - m * m;
-        if raw < 0.0 {
-            0.0
-        } else {
-            raw
+    {
+        let data = store.data.lock().await;
+        for run_id in &run_ids {
+            let run = fetch_run_in_data(&data, ctx, *run_id)?;
+            ensure_run_access_in_data(ctx, &run)?;
         }
-    });
-    let some_if_any = |value: f64| if count > 0 { Some(value) } else { None };
-    MetricSeriesRow {
-        run_id: aggregate.run_id,
-        key: aggregate.key,
-        count,
-        min: some_if_any(aggregate.min),
-        max: some_if_any(aggregate.max),
-        mean,
-        variance,
-        latest: some_if_any(aggregate.latest),
-        latest_step: some_if_any(aggregate.latest_step),
-        // `best` mirrors the prior Postgres behavior which always tracked max
-        // regardless of metric direction. `best_step` is the step at which
-        // that max occurred.
-        best: some_if_any(aggregate.max),
-        best_step: some_if_any(aggregate.best_step),
     }
-}
-
-async fn artifact_counts_for_runs(
-    pool: &PgPool,
-    org_id: Uuid,
-    run_ids: &[Uuid],
-) -> AppResult<HashMap<Uuid, BTreeMap<String, i64>>> {
-    let mut counts = HashMap::new();
-    for run_id in run_ids {
-        counts.insert(
-            *run_id,
-            BTreeMap::from([
-                ("checkpoint".to_string(), 0),
-                ("rollout".to_string(), 0),
-                ("file".to_string(), 0),
-            ]),
-        );
-    }
-    if run_ids.is_empty() {
-        return Ok(counts);
-    }
-    let rows = sqlx::query(
-        "select run_id, type, count(*) as count from artifacts where org_id = $1 and run_id = any($2) group by run_id, type",
-    )
-    .bind(org_id)
-    .bind(run_ids)
-    .fetch_all(pool)
-    .await?;
+    let limit = validate_limit(
+        query.get("limit").map(String::as_str),
+        DEFAULT_METRIC_LIMIT,
+        MAX_METRIC_LIMIT,
+    )?;
+    let start_step = query_step(query, "start_step")?;
+    let end_step = query_step(query, "end_step")?;
+    let rows = store
+        .metric_store_for_org(ctx.org_id)
+        .await?
+        .query_points_for_runs(ctx.org_id, &run_ids, &key, start_step, end_step, limit)
+        .await?;
+    let mut grouped: BTreeMap<Uuid, Vec<Value>> = BTreeMap::new();
     for row in rows {
-        let run_id: Uuid = row.try_get("run_id")?;
-        let kind: String = row.try_get("type")?;
-        let count: i64 = row.try_get("count")?;
-        counts.entry(run_id).or_default().insert(kind, count);
+        grouped.entry(row.run_id).or_default().push(json!({
+            "key": row.key,
+            "step": row.step,
+            "value": row.value,
+            "created_at": row.created_at
+        }));
     }
-    Ok(counts)
+    Ok(json!({
+        "series": run_ids.into_iter().map(|run_id| json!({
+            "run_id": run_id,
+            "metrics": grouped.remove(&run_id).unwrap_or_default()
+        })).collect::<Vec<_>>()
+    }))
 }
 
-pub(super) async fn side_by_side_attributes(
-    pool: &PgPool,
-    org_id: Uuid,
-    run_ids: &[Uuid],
-    limit: i64,
-) -> AppResult<Vec<AttributeRow>> {
-    if run_ids.is_empty() {
-        return Ok(Vec::new());
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(id: u128, name: &str, created_offset: i64) -> RunRow {
+        let created_at = epoch() + ChronoDuration::seconds(created_offset);
+        RunRow {
+            id: Uuid::from_u128(id),
+            org_id: Uuid::from_u128(1),
+            project_id: Uuid::from_u128(2),
+            project: "project".to_string(),
+            name: name.to_string(),
+            status: "finished".to_string(),
+            config: json!({}),
+            tags: vec![],
+            metadata: json!({}),
+            created_at,
+            started_at: created_at,
+            finished_at: Some(created_at + ChronoDuration::seconds(30)),
+        }
     }
-    sqlx::query_as::<_, AttributeRow>(
-        r#"
-        select id, org_id, run_id, path, type as kind, step, logged_at, value, summary, artifact_id, created_at
-        from attributes
-        where org_id = $1 and run_id = any($2)
-        order by path, run_id, coalesce(step, -1), id
-        limit $3
-        "#,
-    )
-    .bind(org_id)
-    .bind(run_ids)
-    .bind(limit)
-    .fetch_all(pool)
-    .await
-    .map_err(Into::into)
+
+    #[test]
+    fn validate_run_sort_allows_documented_values_only() {
+        for value in [
+            "created",
+            "duration",
+            "metric-best",
+            "metric-latest",
+            "name",
+            "status",
+        ] {
+            assert_eq!(validate_run_sort(value).unwrap(), value);
+        }
+        assert!(validate_run_sort("other").is_err());
+    }
+
+    #[test]
+    fn created_index_page_applies_status_text_and_project_filters() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: None,
+        };
+        let mut data = StoreData::default();
+        let mut failed = run(1, "failed-llm", 1);
+        failed.status = "failed".to_string();
+        failed.tags = vec!["llm".to_string()];
+        failed.metadata = json!({ "notes": "reward stability cohort" });
+        let mut finished = run(2, "finished-llm", 2);
+        finished.tags = vec!["llm".to_string()];
+        finished.metadata = json!({ "notes": "reward stability cohort" });
+        let mut other_project = run(3, "failed-other-project", 3);
+        other_project.project = "other".to_string();
+        other_project.status = "failed".to_string();
+        other_project.metadata = json!({ "notes": "reward stability cohort" });
+        data.insert_run(failed.clone());
+        data.insert_run(finished);
+        data.insert_run(other_project);
+
+        let query = HashMap::from([
+            ("project".to_string(), "project".to_string()),
+            ("status".to_string(), "failed".to_string()),
+            ("q".to_string(), "reward stability".to_string()),
+        ]);
+        let (total, page) = created_index_page(&data, &ctx, &query, 0, 25).unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].id, failed.id);
+    }
+
+    #[test]
+    fn metric_sort_prefers_high_reward_and_low_loss_then_newer_runs() {
+        let newer = run(3, "newer", 3);
+        let older = run(1, "older", 1);
+        let middle = run(2, "middle", 2);
+        let mut runs = vec![older.clone(), newer.clone(), middle.clone()];
+        let reward_series = HashMap::from([
+            (
+                older.id,
+                MetricSeriesRow {
+                    run_id: older.id,
+                    key: "eval/reward".to_string(),
+                    count: 1,
+                    min: Some(10.0),
+                    max: Some(10.0),
+                    mean: Some(10.0),
+                    variance: Some(0.0),
+                    latest: Some(10.0),
+                    latest_step: Some(1.0),
+                    best: Some(10.0),
+                    best_step: Some(1.0),
+                },
+            ),
+            (
+                newer.id,
+                MetricSeriesRow {
+                    run_id: newer.id,
+                    key: "eval/reward".to_string(),
+                    count: 1,
+                    min: Some(20.0),
+                    max: Some(20.0),
+                    mean: Some(20.0),
+                    variance: Some(0.0),
+                    latest: Some(20.0),
+                    latest_step: Some(1.0),
+                    best: Some(20.0),
+                    best_step: Some(1.0),
+                },
+            ),
+        ]);
+
+        sort_runs_by_metric(&mut runs, "metric-best", "eval/reward", &reward_series);
+        assert_eq!(runs[0].id, newer.id);
+        assert_eq!(runs[1].id, older.id);
+        assert_eq!(runs[2].id, middle.id);
+
+        let mut loss_runs = vec![older.clone(), newer.clone()];
+        let loss_series = HashMap::from([
+            (
+                older.id,
+                MetricSeriesRow {
+                    key: "train/loss".to_string(),
+                    min: Some(0.5),
+                    max: Some(1.0),
+                    latest: Some(0.8),
+                    ..reward_series[&older.id].clone()
+                },
+            ),
+            (
+                newer.id,
+                MetricSeriesRow {
+                    key: "train/loss".to_string(),
+                    min: Some(0.2),
+                    max: Some(1.2),
+                    latest: Some(0.9),
+                    ..reward_series[&newer.id].clone()
+                },
+            ),
+        ]);
+
+        sort_runs_by_metric(&mut loss_runs, "metric-best", "train/loss", &loss_series);
+        assert_eq!(loss_runs[0].id, newer.id);
+    }
+
+    #[test]
+    fn duration_seconds_is_none_until_finished() {
+        let finished = run(1, "finished", 0);
+        let mut running = run(2, "running", 0);
+        running.finished_at = None;
+
+        assert_eq!(duration_seconds(&finished), Some(30.0));
+        assert_eq!(duration_seconds(&running), None);
+    }
 }

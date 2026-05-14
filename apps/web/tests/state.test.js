@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
+import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
   MAX_SELECTED_RUNS,
   bestMetric,
@@ -28,6 +29,7 @@ import {
 import { ApiClient, ApiError, isAbortError, queryString } from "../src/api.js";
 import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
+import { ansiTokens, terminalWindow } from "../src/terminal.js";
 
 test("selection is capped and toggled", () => {
   let selected = [];
@@ -204,6 +206,36 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.match(normalizeSeries(series, 100, 80, 28, "time")[0].path, /28\.00/);
   assert.deepEqual(chartSummary(series), [{ id: "a", name: "run-a", last: 3 }]);
   assert.deepEqual(normalizeSeries([], 100, 80), []);
+});
+
+test("terminal helpers tokenize ansi safely and calculate virtual windows", () => {
+  assert.deepEqual(ansiTokens("plain"), [{ text: "plain", className: "" }]);
+  assert.deepEqual(ansiTokens("\u001b[31mred\u001b[0m ok"), [
+    { text: "red", className: "ansi-fg-red" },
+    { text: " ok", className: "" },
+  ]);
+  assert.deepEqual(terminalWindow(100, 56, 28, 84, 1), {
+    start: 1,
+    end: 6,
+    offsetTop: 28,
+    totalHeight: 2800,
+  });
+});
+
+test("evidence helpers group and filter current artifact/object surfaces", () => {
+  const checkpoint = { id: "a1", type: "checkpoint", name: "model.pt", uri: "s3://model", step: 12 };
+  const file = { id: "a2", type: "file", name: "notes.json", uri: "s3://notes", step: null };
+  const object = { id: 4, kind: "table", key: "eval/samples", metadata: { split: "eval" }, step: 2 };
+  const sections = buildEvidenceSections({ artifacts: [checkpoint, file], objects: [object] });
+  assert.deepEqual(sections.map((section) => [section.id, section.items.length]), [
+    ["checkpoints", 1],
+    ["objects", 1],
+    ["files", 1],
+  ]);
+  assert.equal(firstEvidenceItem(sections).label, "model.pt");
+  assert.equal(firstEvidenceItem([]), null);
+  const filtered = buildEvidenceSections({ artifacts: [checkpoint, file], objects: [object], search: "samples" });
+  assert.deepEqual(filtered.map((section) => section.items.length), [0, 1, 0]);
 });
 
 test("comparison helpers sort, aggregate, group, smooth, and average runs", () => {

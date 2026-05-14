@@ -1,11 +1,12 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { ensureLocalClickHouse } from "./local-clickhouse.mjs";
+import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
 const objectCount = numberEnv("RLOBS_OBJECT_BENCH_OBJECTS", 500);
@@ -14,13 +15,12 @@ const samples = numberEnv("RLOBS_OBJECT_BENCH_SAMPLES", 15);
 const warmups = numberEnv("RLOBS_OBJECT_BENCH_WARMUPS", 2);
 const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-rich-objects-"));
-const pgPort = await freePort();
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
-const databaseUrl = `postgres://127.0.0.1:${pgPort}/rlobs_object_bench`;
 const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+const localOrgId = "00000000-0000-0000-0000-000000000001";
 let apiServer = null;
 let clickhouse = null;
 
@@ -34,29 +34,17 @@ try {
     interserverHttpPort: clickhouseInterserverPort,
   });
 
-  const dataDir = path.join(tempDir, "data");
-  run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: ["ignore", "ignore", "inherit"] });
-  run("pg_ctl", [
-    "-D",
-    dataDir,
-    "-o",
-    `-p ${pgPort} -c listen_addresses='127.0.0.1'`,
-    "-l",
-    path.join(tempDir, "postgres.log"),
-    "start",
-  ], { stdio: ["ignore", "ignore", "inherit"] });
-  run("createdb", ["-h", "127.0.0.1", "-p", String(pgPort), "rlobs_object_bench"]);
   run("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "migrate"], {
-    env: { ...process.env, DATABASE_URL: databaseUrl, CLICKHOUSE_URL: clickhouse.url },
+    env: { ...process.env, CLICKHOUSE_URL: clickhouse.url },
   });
-  seedBenchmarkData();
+  await seedBenchmarkData();
+
   const serverLog = path.join(tempDir, "api.log");
   const output = fs.openSync(serverLog, "w");
   apiServer = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
       CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
       RLOBS_AUTH_MODE: "local",
@@ -109,72 +97,105 @@ try {
     await onceClose(apiServer);
   }
   if (clickhouse) await clickhouse.stop();
-  run("pg_ctl", ["-D", path.join(tempDir, "data"), "stop", "-m", "fast"], { allowFailure: true, stdio: ["ignore", "ignore", "ignore"] });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
-function seedBenchmarkData() {
-  const sqlPath = path.join(tempDir, "seed.sql");
-  fs.writeFileSync(sqlPath, benchmarkSql(), "utf8");
-  run("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-f", sqlPath], { stdio: ["ignore", "inherit", "inherit"] });
+async function seedBenchmarkData() {
+  const now = new Date();
+  const projectId = randomUUID();
+  const runId = randomUUID();
+  const records = [
+    opRecord("organization", localOrgId, {
+      id: localOrgId,
+      slug: "local",
+      name: "Local",
+      plan_tier: "free",
+      account_type: "customer",
+      seat_limit: 1,
+      created_by_user_id: null,
+      created_at: "1970-01-01T00:00:00Z",
+    }, now),
+    opRecord("project", projectId, {
+      id: projectId,
+      org_id: localOrgId,
+      name: "object-bench",
+      description: "Rich object benchmark project",
+      created_at: now.toISOString(),
+    }, now),
+    opRecord("run", runId, {
+      id: runId,
+      org_id: localOrgId,
+      project_id: projectId,
+      project: "object-bench",
+      name: "object-bench-run",
+      status: "finished",
+      config: {},
+      tags: ["bench"],
+      metadata: {},
+      created_at: now.toISOString(),
+      started_at: now.toISOString(),
+      finished_at: now.toISOString(),
+    }, now),
+  ];
+  const half = Math.floor(objectCount / 2);
+  for (let index = 1; index <= half; index += 1) {
+    records.push(opRecord("attribute", String(index), {
+      id: index,
+      org_id: localOrgId,
+      run_id: runId,
+      path: `eval/table-${index}`,
+      type: "table",
+      step: index,
+      logged_at: now.toISOString(),
+      value: { kind: "table", metadata: { bench: true } },
+      summary: { columns: ["prompt", "score"], row_count: index === 1 ? tableRows : 5 },
+      artifact_id: null,
+      created_at: now.toISOString(),
+    }, now));
+  }
+  for (let index = 1; index <= objectCount - half; index += 1) {
+    const id = half + index;
+    records.push(opRecord("attribute", String(id), {
+      id,
+      org_id: localOrgId,
+      run_id: runId,
+      path: `eval/histogram-${index}`,
+      type: "histogram_series",
+      step: index,
+      logged_at: now.toISOString(),
+      value: { bins: [0, 1, 2, 3], counts: [index % 7, index % 11, index % 13] },
+      summary: {},
+      artifact_id: null,
+      created_at: now.toISOString(),
+    }, now));
+  }
+  records.push(opRecord("table_rows", "1", {
+    attribute_id: 1,
+    rows: Array.from({ length: tableRows }, (_, index) => ({
+      row_index: index,
+      row: { prompt: `prompt-${index + 1}`, score: (index + 1) / tableRows },
+      created_at: now.toISOString(),
+    })),
+  }, now));
+  await insertOperationalRecords(records);
 }
 
-function benchmarkSql() {
-  return `
-delete from projects where org_id = '00000000-0000-0000-0000-000000000001' and name = 'object-bench';
-insert into projects (org_id, name) values ('00000000-0000-0000-0000-000000000001', 'object-bench');
+function opRecord(kind, entityId, payload, createdAt) {
+  return {
+    kind,
+    org_id: localOrgId,
+    entity_id: entityId,
+    payload: JSON.stringify(payload),
+    created_at: clickhouseDate(createdAt),
+  };
+}
 
-with project as (
-  select id from projects where org_id = '00000000-0000-0000-0000-000000000001' and name = 'object-bench'
-)
-insert into runs (org_id, project_id, name, status, config, tags, metadata)
-select '00000000-0000-0000-0000-000000000001', project.id, 'object-bench-run', 'finished', '{}'::jsonb, array['bench'], '{}'::jsonb
-from project;
-
-with run as (
-  select id from runs where org_id = '00000000-0000-0000-0000-000000000001' and name = 'object-bench-run'
-)
-insert into attributes (org_id, run_id, path, type, step, logged_at, value, summary)
-select
-  '00000000-0000-0000-0000-000000000001',
-  run.id,
-  format('eval/table-%s', gs),
-  'table',
-  gs,
-  now(),
-  jsonb_build_object('kind', 'table', 'metadata', jsonb_build_object('bench', true)),
-  jsonb_build_object('columns', jsonb_build_array('prompt', 'score'), 'row_count', case when gs = 1 then ${tableRows} else 5 end)
-from run, generate_series(1, ${Math.floor(objectCount / 2)}) as gs;
-
-with run as (
-  select id from runs where org_id = '00000000-0000-0000-0000-000000000001' and name = 'object-bench-run'
-)
-insert into attributes (org_id, run_id, path, type, step, logged_at, value, summary)
-select
-  '00000000-0000-0000-0000-000000000001',
-  run.id,
-  format('eval/histogram-%s', gs),
-  'histogram_series',
-  gs,
-  now(),
-  jsonb_build_object('bins', jsonb_build_array(0, 1, 2, 3), 'counts', jsonb_build_array(gs % 7, gs % 11, gs % 13)),
-  '{}'::jsonb
-from run, generate_series(1, ${objectCount - Math.floor(objectCount / 2)}) as gs;
-
-with table_object as (
-  select org_id, id as attribute_id from attributes where path = 'eval/table-1'
-)
-insert into table_object_rows (org_id, attribute_id, row_index, row)
-select
-  table_object.org_id,
-  table_object.attribute_id,
-  gs - 1,
-  jsonb_build_object('prompt', format('prompt-%s', gs), 'score', gs / ${tableRows}.0)
-from table_object, generate_series(1, ${tableRows}) as gs;
-
-analyze attributes;
-analyze table_object_rows;
-  `;
+async function insertOperationalRecords(records) {
+  await clickhousePost(
+    clickhouse.url,
+    "INSERT INTO operational_records (kind, org_id, entity_id, payload, created_at) FORMAT JSONEachRow",
+    records.map((record) => JSON.stringify(record)).join("\n"),
+  );
 }
 
 async function measureEndpoint(name, pathSuffix) {
@@ -214,12 +235,15 @@ function round(value) {
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: repo,
-    env: process.env,
+    env: options.env || process.env,
     stdio: options.stdio ?? "inherit",
-    ...options,
   });
   if (!options.allowFailure && result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
   return result;
+}
+
+function clickhouseDate(date) {
+  return date.toISOString().replace("T", " ").replace("Z", "");
 }
 
 async function waitForHttp(url, processHandle, logPath) {

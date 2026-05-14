@@ -1,9 +1,0 @@
-flowchart LR
-  A["Current Node server\nJSON store remains default"] --> B["Shared black-box\nHTTP contract tests"]
-  B --> C["Rust/Postgres service\nopt-in local path"]
-  C --> D["Contract tests pass\nagainst Node and Rust"]
-  D --> E["JSON to Postgres\nmigration CLI dry-run"]
-  E --> F["Docker Compose path\nweb + Rust API + Postgres"]
-  F --> G["SDK, UI smoke, imports,\nartifacts, scale smoke pass"]
-  G --> H["Flip default backend\nto Rust/Postgres"]
-  H --> I["Keep Node fallback\nfor at least one sprint"]

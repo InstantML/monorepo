@@ -40,8 +40,8 @@ Backend:
 Current product backend:
 
 - Rust API in `apps/rust-server`.
-- Postgres state for local/default product development.
-- Local filesystem artifact storage behind an abstraction first, with S3-compatible storage planned for hosted artifact bytes later. See `docs/design/2026-05-09-rust-postgres-backend.md`.
+- ClickHouse state for local/default product development.
+- Local filesystem artifact storage behind an abstraction first, with S3-compatible storage planned for hosted artifact bytes later. See `docs/design/2026-05-14-clickhouse-only-storage.md`.
 - Deprecated Node JSON server in `apps/server` remains for route compatibility, JSON migration fixtures, and legacy fallback only.
 
 SDK:

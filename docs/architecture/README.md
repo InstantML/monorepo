@@ -4,7 +4,7 @@ This directory is for longer-lived architecture references that remain useful af
 
 Current product direction: Training Observability is a general training-loop observability product with an owned backend stack. Architecture docs should preserve that framing even when they discuss RL examples or Neptune import compatibility.
 
-Accepted backend direction: the default product path is now `Next/React frontend -> Rust API -> Postgres + ClickHouse -> artifact storage` and `Python SDK/uploader -> Rust API -> Postgres + ClickHouse -> artifact storage`. The Node server is deprecated compatibility infrastructure for route-shape checks, JSON migration fixtures, and legacy fallback. Architecture docs should say whether they describe the current Rust/Postgres/ClickHouse system or the deprecated Node/JSON system.
+Accepted backend direction: the default product path is now `Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage` and `Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage`. The Node server is deprecated compatibility infrastructure for route-shape checks, JSON migration fixtures, and legacy fallback. Architecture docs should say whether they describe the current Rust/ClickHouse system or the deprecated Node/JSON system.
 
 `current-system.md` is the source of truth for current component ownership, runtime topology, generated local state, and the storage split after the repo move into `monorepo/`.
 
@@ -15,4 +15,4 @@ Future agents should update this directory when accepted designs become part of 
 Current references:
 
 - `current-system.md`: implemented architecture, current ownership boundaries, runtime topology, API/storage shape, generated local state, and outstanding simplification follow-ups.
-- `../design/2026-05-09-rust-postgres-backend.md`: accepted hosted backend plan, provider research, schema, auth/tenancy model, and migration rollout.
+- `../design/2026-05-14-clickhouse-only-storage.md`: accepted ClickHouse-only local/test storage slice and hosted control-plane/data-plane direction.

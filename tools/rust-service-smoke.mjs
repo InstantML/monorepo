@@ -13,7 +13,6 @@ if (!new Set(["contract", "sdk", "ui"]).has(mode)) {
 
 const repo = process.cwd();
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `rlobs-rust-${mode}-`));
-const pgPort = await freePort();
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
@@ -32,21 +31,7 @@ try {
     interserverHttpPort: clickhouseInterserverPort,
   });
 
-  const dataDir = path.join(tempDir, "data");
-  run("initdb", ["-D", dataDir, "--auth=trust"], { stdio: ["ignore", "ignore", "inherit"] });
-  run("pg_ctl", [
-    "-D",
-    dataDir,
-    "-o",
-    `-p ${pgPort} -c listen_addresses='127.0.0.1'`,
-    "-l",
-    path.join(tempDir, "postgres.log"),
-    "start",
-  ], { stdio: ["ignore", "ignore", "inherit"] });
-  run("createdb", ["-h", "127.0.0.1", "-p", String(pgPort), "rlobs_smoke"]);
-
   const baseUrl = `http://127.0.0.1:${apiPort}`;
-  const databaseUrl = `postgres://127.0.0.1:${pgPort}/rlobs_smoke`;
   const authMode = mode === "contract" ? "api-key" : "local";
   const bootstrapToken = "rust-smoke-bootstrap";
   const serverLog = path.join(tempDir, "server.log");
@@ -55,7 +40,6 @@ try {
     cwd: repo,
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
       CLICKHOUSE_URL: clickhouse.url,
       RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
       RLOBS_AUTH_MODE: authMode,
@@ -95,7 +79,6 @@ try {
     await onceClose(server);
   }
   if (clickhouse) await clickhouse.stop();
-  run("pg_ctl", ["-D", path.join(tempDir, "data"), "stop", "-m", "fast"], { allowFailure: true, stdio: ["ignore", "ignore", "ignore"] });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 

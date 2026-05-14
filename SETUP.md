@@ -8,9 +8,9 @@ This guide is the handoff path for new contributors and reviewers. It should wor
 - Node.js 22 LTS. The app currently works on Node `>=20.9.0`, but Node 22 is the documented version and matches the checked-in `.nvmrc` / `.node-version`.
 - npm 10 or newer.
 - Python 3.11.
+- Rust 1.83 or newer.
+- A local ClickHouse binary (`clickhouse`) or a reachable `CLICKHOUSE_URL` for Rust API/dev smokes.
 - Docker Desktop or Docker Engine is optional for the one-command container stack.
-- Rust 1.83 or newer plus local Postgres command-line tools are required for the primary Rust/Postgres/ClickHouse backend and smokes.
-- Local ClickHouse binary (`clickhouse`) or a reachable `CLICKHOUSE_URL` is required for Rust API/dev smokes. Docker Compose provides ClickHouse for the container stack.
 
 Version markers:
 
@@ -23,70 +23,32 @@ Version markers:
 ```bash
 git clone <repo-url>
 cd rl-observability
-```
-
-Use the repo versions if your machine supports them:
-
-```bash
 nvm install
 nvm use
-```
-
-Create and activate a Python virtual environment:
-
-```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-```
-
-If your system names Python 3.11 as `python3`, use:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-```
-
-Install dependencies:
-
-```bash
 npm ci
 python -m pip install -r requirements-dev.txt
 npx playwright install chromium
+npm run check:setup
 ```
 
 Use `npm ci` for normal setup so installs follow `package-lock.json` exactly. The repo also sets `save-exact=true` in `.npmrc`; when adding or upgrading npm packages, commit the intentional exact version and updated lockfile together.
 
-Check the environment:
-
-```bash
-npm run check:setup
-```
-
 ## Verify The Repo
 
-Run the fast backend/helper suites:
+Fast checks:
 
 ```bash
 npm run rust:test
 npm run test:node
 python3 -m pytest
-```
-
-Run the scale smoke:
-
-```bash
 npm run test:scale
-```
-
-Run the primary Rust backend contract smoke:
-
-```bash
 npm run test:contract
 ```
 
-Run the Rust/Postgres/ClickHouse checks and smokes:
+Rust/ClickHouse checks and smokes:
 
 ```bash
 npm run rust:fmt
@@ -97,23 +59,13 @@ npm run test:rust:sdk
 npm run test:rust:ui
 ```
 
-The `test:rust:*` commands create disposable Postgres clusters with `initdb`/`pg_ctl`, start disposable ClickHouse instances when needed, start the Rust server, and clean up afterward.
-
-Run the browser smoke:
-
-```bash
-npm run test:ui
-```
+The Rust service smoke commands create disposable ClickHouse state, start the Rust server, and clean up afterward. Pull requests run the stable CI subset in GitHub Actions: Rust format/lint/unit tests, Node tests, and Python tests. Continue to run the Rust service, SDK, and UI smokes locally when touching service startup, auth, ClickHouse, or frontend integration paths.
 
 Run everything:
 
 ```bash
 npm run test:all
 ```
-
-Pull requests run the stable CI subset in GitHub Actions: Rust format/lint/unit tests, Node tests, and Python tests. Continue to run the Rust service, SDK, and UI smokes locally when touching service startup, auth, ClickHouse, or frontend integration paths.
-
-`npm run test:ui` and `npm run test:ui:direct` start disposable Postgres and ClickHouse, start the Rust API, build the Next app, start `next start`, drive the landing/signup/onboarding/dashboard flow with Playwright, and write a temporary screenshot path to stdout. Direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` follows the same Rust default. The full UI smoke depends on Rust session/auth endpoints; use Node compatibility checks only for explicit legacy investigations.
 
 ## Run The App Locally
 
@@ -123,14 +75,11 @@ Terminal 1:
 npm run dev:api
 ```
 
-This starts local Postgres under `.rlobs/postgres`, starts or reuses ClickHouse at `CLICKHOUSE_URL` with generated state under `.rlobs/clickhouse`, applies Rust migrations, and serves the Rust API at `http://127.0.0.1:8000`.
+This starts or reuses ClickHouse at `CLICKHOUSE_URL`, stores generated local state under `.rlobs/clickhouse`, applies the Rust ClickHouse schema, and serves the Rust API at `http://127.0.0.1:8000`.
 
-If you need an isolated local database without touching an existing `.rlobs/postgres` cluster, use alternate generated-state paths and ports:
+If you need isolated generated state, use alternate ClickHouse paths and ports:
 
 ```bash
-RLOBS_DEV_PGDATA=/tmp/rlobs-postgres \
-RLOBS_DEV_PG_LOG=/tmp/rlobs-postgres.log \
-RLOBS_DEV_PG_PORT=54339 \
 RLOBS_DEV_CHDATA=/tmp/rlobs-clickhouse \
 RLOBS_DEV_CH_LOG_DIR=/tmp/rlobs-clickhouse-logs \
 CLICKHOUSE_URL=http://default:@127.0.0.1:8124/rlobs \
@@ -150,7 +99,7 @@ Open:
 http://127.0.0.1:3000
 ```
 
-Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard. Click `Reset demo` in the signed-in UI to seed the local `demo` project. The reset generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. Local state is written under `.rlobs/` for legacy Node mode or local Postgres and ClickHouse for Rust mode; generated state is ignored by git.
+Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard. Click `Reset demo` in the signed-in UI to seed the local `demo` project. The reset generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. Generated state is ignored by git.
 
 For a production-style local web run:
 
@@ -167,28 +116,28 @@ Docker is optional. When available:
 docker compose up --build
 ```
 
-The Docker stack now starts Postgres, ClickHouse, and the primary Rust API at:
+The Docker stack starts ClickHouse and the primary Rust API at:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-## Rust/Postgres/ClickHouse Path
+Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000`.
 
-The current default product backend is Rust API plus Postgres metadata storage and ClickHouse metric storage. The deprecated Node server remains available only for compatibility and JSON migration work.
+## Rust/ClickHouse Path
 
-If you want to review the schema against a local or disposable Postgres database:
+The current default product backend is Rust API plus ClickHouse operational storage and ClickHouse metric storage. The deprecated Node server remains available only for compatibility and JSON migration work.
+
+Apply the schema manually:
 
 ```bash
-for migration in apps/rust-server/migrations/*.sql; do
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
-done
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
+cargo run --manifest-path apps/rust-server/Cargo.toml -- migrate
 ```
 
 Start the Rust API manually:
 
 ```bash
-DATABASE_URL=postgres://127.0.0.1:5432/rlobs \
 CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
 RLOBS_BIND_ADDR=127.0.0.1:8001 \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- serve
@@ -202,7 +151,7 @@ RLOBS_CONTRACT_BOOTSTRAP_TOKEN=dev-bootstrap \
 npm run test:contract:direct
 ```
 
-With no `RLOBS_CONTRACT_BASE_URL`, `npm run test:contract:direct` also starts the disposable Rust/Postgres/ClickHouse harness by default. Use `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node` for the deprecated Node compatibility contract smoke.
+With no `RLOBS_CONTRACT_BASE_URL`, `npm run test:contract:direct` also starts the disposable Rust/ClickHouse harness by default. Use `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node` for the deprecated Node compatibility contract smoke.
 
 Use `apps/rust-server/SETUP.md` for Rust-specific setup details.
 
@@ -259,30 +208,3 @@ If the default ClickHouse HTTP port is busy with a non-ClickHouse process, use a
 ```bash
 CLICKHOUSE_URL=http://default:@127.0.0.1:8124/rlobs npm run dev:api
 ```
-
-### Rust Migration Version Mismatch
-
-If `npm run dev:api` exits with a SQLx migration version mismatch, the generated local Postgres cluster under `.rlobs/postgres` was created by an older checkout whose migration checksum no longer matches the current source. For a disposable dev database, stop the server and remove only the generated cluster:
-
-```bash
-rm -rf .rlobs/postgres .rlobs/postgres.log
-npm run dev:api
-```
-
-Use the isolated `RLOBS_DEV_PGDATA` command above if you want to preserve the old generated cluster while checking a clean setup.
-
-### Clean Local Generated State
-
-This removes generated local state and build outputs, not source files:
-
-```bash
-rm -rf .rlobs apps/web/.next .pytest_cache .coverage
-```
-
-Remove installed dependencies only if you want a fully fresh install:
-
-```bash
-rm -rf node_modules .venv
-```
-
-Then repeat the fresh-clone install steps.

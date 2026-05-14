@@ -4,7 +4,7 @@ This example dogfoods Training Observability with a small tabular Q-learning tra
 
 ## Run
 
-Start the primary Rust/Postgres API from the repo root:
+Start the primary Rust/ClickHouse API from the repo root:
 
 ```bash
 npm run dev:api

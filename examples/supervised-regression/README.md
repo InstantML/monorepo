@@ -1,6 +1,6 @@
 # Supervised Regression Example
 
-This example logs a small synthetic tabular regression sweep to Training Observability. It is intended to exercise the non-RL training-loop path: multiple configs, multiple seeds, epoch-level train/validation metrics, run comparison, and optional checkpoint/report/rollout metadata in the current Next UI backed by the Rust/Postgres API.
+This example logs a small synthetic tabular regression sweep to Training Observability. It is intended to exercise the non-RL training-loop path: multiple configs, multiple seeds, epoch-level train/validation metrics, run comparison, and optional checkpoint/report/rollout metadata in the current Next UI backed by the Rust/ClickHouse API.
 
 ## Setup
 
@@ -10,7 +10,7 @@ From the repo root:
 python3 -m pip install -r requirements-dev.txt
 ```
 
-Start the primary Rust/Postgres API:
+Start the primary Rust/ClickHouse API:
 
 ```bash
 npm run dev:api
