@@ -22,6 +22,7 @@ Current implemented design sequence:
 - `2026-05-10-run-tags-notes-editing.md`: searchable tags/notes across Rust, SDK, Runs, Run Detail, and Compare.
 - `2026-05-11-rich-logged-objects.md`: first rich logged object slice using attributes/artifacts, paginated table preview rows, SDK wrappers, and Run Detail/Artifacts previews.
 - `2026-05-11-landing-auth-onboarding.md`: landing page, Google-style local auth, browser sessions, org seats, copy-once SDK key onboarding, and real dashboard routes.
+- `2026-05-14-mlop-inspired-sdk-ergonomics.md`: MLOP-inspired SDK ergonomics while preserving sync/buffer/offline/process-spool architecture, including auto-step `Run.log()`, local file wrappers, optional local SQLite audit, system metrics, console capture, and lightweight framework adapters.
 - `2026-05-14-instantml-rescheme-and-chart-polish.md`: InstantML frontend rescheme, public brand-token reference, chart density polish, and project/saved-view acceptance criteria.
 - `2026-05-14-hosted-clickhouse-query-benchmarks.md`: hosted ClickHouse demo benchmark protocol for 100,000-run dashboard query latency, response validation, budgets, and sanitized result reporting.
 

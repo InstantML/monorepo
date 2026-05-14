@@ -7,10 +7,10 @@ Brand transition note: the import package is still `rl_observability` for compat
 ## Responsibilities
 
 - Initialize runs.
-- Log scalar metrics.
+- Log scalar metrics with explicit `log_metrics()` or ergonomic auto-step `log()`.
 - Log configs, searchable run tags, and searchable run notes.
-- Log rich table/histogram objects.
-- Log artifacts.
+- Log rich table/histogram/image/audio/video objects.
+- Log local file and artifact wrappers through the upload route.
 - Log checkpoints.
 - Log videos.
 - Log tables.
@@ -21,6 +21,9 @@ Brand transition note: the import package is still `rl_observability` for compat
 - Spool failed post-init events to local JSONL and replay them.
 - Write post-init events to a process-isolated local spool for a separate uploader process.
 - Capture metrics-focused timestamp snapshots with a defined dictionary shape.
+- Optionally keep a local SQLite audit store for attempted SDK events.
+- Optionally sample psutil/NVML system metrics during a run.
+- Optionally wrap stdout/stderr and expose lightweight Torch, Transformers, and Lightning adapters.
 - Capture source metadata for reproducibility.
 - Finish runs cleanly.
 
@@ -35,6 +38,8 @@ run = ro.init(
     tags=["baseline"],
     notes="Initial CartPole baseline.",
 )
+run.log({"train/loss": 0.12})  # implicit step 1
+run.log({"train/reward": 100.0}, step=2)
 run.log_metrics({"train/reward": 100.0}, step=1)
 run.log_stdout("Epoch 1 reward=100.0")
 run.log_stderr(["warning: entropy dipped"])
@@ -45,7 +50,9 @@ run.log_histogram("model/weights", {"bins": [0, 1], "counts": [10]}, step=1)
 run.log_objects({
     "eval/samples": ro.Table(["prompt", "score"], [["hello", 0.92]]),
     "eval/scores": ro.Histogram([0, 0.5, 1.0], [3, 9]),
+    "eval/frame": ro.Image.from_data([[[255, 0, 0]]]),
 }, step=1)
+run.log({"checkpoint": ro.File("checkpoints/policy.pt", artifact_type="checkpoint")}, step=1)
 run.log_checkpoint("checkpoint.pt", "demo://checkpoint.pt", step=1)
 run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
 run.log_table("eval-table.jsonl", "demo://eval-table.jsonl", step=1)
@@ -138,6 +145,7 @@ From the repo root:
 python3.11 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements-dev.txt
+python3 -m pip install -r packages/python-sdk/requirements-optional.txt  # optional integrations
 ```
 
 ## Usage
@@ -146,7 +154,8 @@ python3 -m pip install -r requirements-dev.txt
 import rl_observability as ro
 
 run = ro.init(project="cartpole", config={"seed": 42}, tags=["baseline"], notes="CartPole baseline.")
-run.log({"train/reward": 100.0}, step=1)
+run.log({"train/reward": 100.0})
+run.log({"train/loss": 0.12, "notes/eval": "policy stabilized"}, step=2)
 run.log_config({"optimizer": {"lr": 0.0003}})
 run.add_tags(["baseline"])
 run.set_tags(["baseline", "ready-for-compare"])
@@ -157,6 +166,51 @@ run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
 run.log_table("rollout-table.jsonl", "demo://rollout-table.jsonl", step=1)
 run.log_table_object("eval/samples", ["prompt", "score"], [["hello", 0.92]], step=1)
 run.finish()
+```
+
+`Run.log()` is the ergonomic API. If `step` is omitted it auto-increments from `1`; if `step` is provided it uses that value and advances the implicit counter to at least that step. It classifies values before sending any request:
+
+- finite numeric scalars -> metric batch
+- strings and `Text(...)` -> string series
+- `Table`, `Histogram`, `Image`, `Audio`, `Video` -> rich objects
+- `File(...)` and `Artifact(...)` -> artifact upload
+
+Mixed `log()` calls are deterministic but not atomic across routes: metrics are sent first, then text, table/histogram objects, files, and media objects. If a later request fails, earlier requests may already be stored. In `upload_mode="spool"`, each sub-event remains one fsynced request file. Rich media object helpers still require sync mode because object linking needs the upload response.
+
+Data wrappers preserve the original path-first constructors and add conversion factories:
+
+```python
+run.log({
+    "eval/table": ro.Table.from_data([{"prompt": "hello", "score": 0.92}]),
+    "eval/scores": ro.Histogram.from_values([0.1, 0.3, 0.9], bins=8),
+    "eval/frame": ro.Image.from_data(frame_array),
+    "checkpoint": ro.File("checkpoints/policy.pt", artifact_type="checkpoint"),
+})
+```
+
+Optional media conversions import dependencies lazily. `Image.from_data()` supports PIL images, NumPy-like arrays, and matplotlib figures. `Audio.from_data()` requires `soundfile`; `Video.from_data()` requires `imageio` or `moviepy`.
+
+Optional audit and runtime capture:
+
+```python
+run = ro.init(
+    project="cartpole",
+    local_store=True,
+    local_store_dir=".rlobs/local",
+    system_metrics=True,
+    system_metrics_interval=15.0,
+    capture_console=True,
+)
+```
+
+The SQLite store records attempted SDK events before submit; it is not replay and not proof the server accepted the event. System metrics log under `system/...` at the current step without incrementing it. Console capture writes through to the original streams and logs non-empty lines under `console/stdout` and `console/stderr`.
+
+Framework adapters stay deliberately small:
+
+```python
+run.watch(model, log="gradients", log_freq=100)
+trainer.add_callback(ro.TransformersCallback(run=run))
+logger = ro.LightningLogger(project="cartpole")
 ```
 
 Buffered logging and post-init offline replay:
@@ -224,7 +278,7 @@ the Rust API's default JSON body limit.
 
 `step` defaults to `0` for `log_snapshot()` so strict servers receive a numeric metric step. Pass an explicit step for normal training-loop use.
 
-Existing helpers such as `log_config()`, `log_text()`, `log_histogram()`, `log_objects()` for inline table/histogram objects, `add_tags()`, `log_artifact()`, and `finish()` also write single-request events in process spool mode. `upload_file()` records `source_path` and lets the uploader read and encode the file later, so keep source files stable until the uploader succeeds. Rich media object helpers are sync-only for now because linking the object to the uploaded artifact requires the upload response.
+Existing helpers such as `log()`, `log_config()`, `log_text()`, `log_histogram()`, `log_objects()` for inline table/histogram objects, `add_tags()`, `log_artifact()`, and `finish()` also write single-request events in process spool mode. Mixed `log()` payloads are split into deterministic single-request sub-events. `upload_file()` records `source_path`, SHA-256, and size, then lets the uploader read and encode the file later, so keep source files stable until the uploader succeeds. Rich media object helpers are sync-only for now because linking the object to the uploaded artifact requires the upload response.
 
 Run identification helpers:
 
@@ -251,7 +305,7 @@ PYTHONPATH=packages/python-sdk python3 -c "import rl_observability as ro; print(
 python3 -m pytest
 ```
 
-The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `RlobsError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` additionally sends bytes to local artifact storage in sync mode and records a source path for the uploader in process spool mode.
+The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `RlobsError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` additionally hashes and sends bytes to local artifact storage in sync mode and records a source path for the uploader in process spool mode.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 
