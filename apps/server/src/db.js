@@ -70,7 +70,7 @@ export class UnauthorizedError extends Error {}
 export class ForbiddenError extends Error {}
 
 export function defaultDbPath() {
-  return path.join(".rlobs", "rlobs.json");
+  return path.join(".instantml", "instantml.json");
 }
 
 export function utcNow() {
@@ -261,7 +261,7 @@ export function createApiKey(state, orgId, input = {}) {
   };
   if (serviceAccount.created_by_user_id) getUserRecord(state, serviceAccount.created_by_user_id);
   state.serviceAccounts.push(serviceAccount);
-  const secret = `rlobs_${randomBytes(24).toString("base64url")}`;
+  const secret = `instantml_${randomBytes(24).toString("base64url")}`;
   const key = {
     id: randomUUID(),
     org_id: org.id,
@@ -503,7 +503,7 @@ export function prevalidateArtifact(state, runId, input) {
   const artifact = validateArtifactInput(state, runId, {
     ...input,
     type: input?.type ?? "file",
-    uri: "rlobs://preflight",
+    uri: "instantml://preflight",
     size_bytes: 1,
     sha256: "preflight",
     storage_path: "preflight",

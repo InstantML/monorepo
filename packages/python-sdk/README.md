@@ -1,8 +1,6 @@
 # Python SDK
 
-This directory contains the Python SDK used by training scripts to send runs, metrics, attributes, artifacts, checkpoints, and source context to Training Observability.
-
-Brand transition note: the import package is still `rl_observability` for compatibility. Do not rename the package without a dedicated namespace migration design and tests.
+This directory contains the Python SDK used by training scripts to send runs, metrics, attributes, artifacts, checkpoints, and source context to InstantML.
 
 ## Responsibilities
 
@@ -30,7 +28,7 @@ Brand transition note: the import package is still `rl_observability` for compat
 Target public API:
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 run = ro.init(
     project="cartpole",
@@ -60,14 +58,14 @@ run.flush()
 run.finish()
 ```
 
-Hosted or auth-required servers can use an API key directly or through `RLOBS_API_KEY`:
+Hosted or auth-required servers can use an API key directly or through `INSTANTML_API_KEY`:
 
 ```python
-run = ro.init(project="cartpole", api_key="rlobs_...", base_url="https://api.example.com")
+run = ro.init(project="cartpole", api_key="instantml_...", base_url="https://api.example.com")
 ```
 
 ```bash
-RLOBS_API_KEY=rlobs_... PYTHONPATH=packages/python-sdk python3 train.py
+INSTANTML_API_KEY=instantml_... PYTHONPATH=packages/python-sdk python3 train.py
 ```
 
 The hosted ClickHouse smoke proves this path against the Rust API's User Data and tenant-routing layer:
@@ -76,12 +74,12 @@ The hosted ClickHouse smoke proves this path against the Rust API's User Data an
 npm run test:hosted-clickhouse
 ```
 
-That smoke creates an API key through the onboarding route, passes it to `rl_observability.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
+That smoke creates an API key through the onboarding route, passes it to `instantml.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
 
 Read-only run summary queries use the raw `Api` helper:
 
 ```python
-api = ro.Api(base_url="http://127.0.0.1:8000", api_key="rlobs_...")
+api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 page = api.runs(
     project="cartpole",
     q="seed 13",
@@ -101,7 +99,7 @@ Process-isolated upload mode for long training loops:
 run = ro.init(
     project="cartpole",
     upload_mode="spool",
-    spool_dir=".rlobs/spool",
+    spool_dir=".instantml/spool",
 )
 run.log_snapshot(
     {
@@ -151,7 +149,7 @@ python3 -m pip install -r packages/python-sdk/requirements-optional.txt  # optio
 ## Usage
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 run = ro.init(project="cartpole", config={"seed": 42}, tags=["baseline"], notes="CartPole baseline.")
 run.log({"train/reward": 100.0})
@@ -196,7 +194,7 @@ Optional audit and runtime capture:
 run = ro.init(
     project="cartpole",
     local_store=True,
-    local_store_dir=".rlobs/local",
+    local_store_dir=".instantml/local",
     system_metrics=True,
     system_metrics_interval=15.0,
     capture_console=True,
@@ -219,7 +217,7 @@ Buffered logging and post-init offline replay:
 run = ro.init(
     project="cartpole",
     buffer_size=25,
-    offline_dir=".rlobs/offline",
+    offline_dir=".instantml/offline",
 )
 for step in range(1000):
     run.log_metrics({"train/reward": step}, step=step)
@@ -237,7 +235,7 @@ Process-isolated upload mode:
 run = ro.init(
     project="cartpole",
     upload_mode="spool",
-    spool_dir=".rlobs/spool",
+    spool_dir=".instantml/spool",
 )
 
 for step in range(1000):
@@ -258,8 +256,8 @@ run.finish()
 Run the uploader in a separate process:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
-  --spool-dir .rlobs/spool \
+PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
+  --spool-dir .instantml/spool \
   --base-url http://127.0.0.1:8000
 ```
 
@@ -296,7 +294,7 @@ run.upload_file("checkpoints/policy.pt", artifact_type="checkpoint", step=100)
 For local development without packaging:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 -c "import rl_observability as ro; print(ro.Client())"
+PYTHONPATH=packages/python-sdk python3 -c "import instantml as ro; print(ro.Client())"
 ```
 
 ## Test
@@ -305,7 +303,7 @@ PYTHONPATH=packages/python-sdk python3 -c "import rl_observability as ro; print(
 python3 -m pytest
 ```
 
-The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `RlobsError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` additionally hashes and sends bytes to local artifact storage in sync mode and records a source path for the uploader in process spool mode.
+The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `InstantMLError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` additionally hashes and sends bytes to local artifact storage in sync mode and records a source path for the uploader in process spool mode.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 

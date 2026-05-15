@@ -23,7 +23,7 @@ pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json
 pub(super) async fn metrics() -> Response {
     (
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        "rlobs_rust_build_info{service=\"rust-server\"} 1\n",
+        "instantml_rust_build_info{service=\"rust-server\"} 1\n",
     )
         .into_response()
 }
@@ -683,7 +683,7 @@ fn require_strict_bootstrap(state: &AppState, headers: &HeaderMap) -> AppResult<
     if state.config.bootstrap_token.is_empty() {
         return Err(AppError::unauthorized("bootstrap token is not configured"));
     }
-    match header_text(headers, "x-rlobs-bootstrap-token") {
+    match header_text(headers, "x-instantml-bootstrap-token") {
         Some(token) if token == state.config.bootstrap_token => Ok(()),
         _ => Err(AppError::unauthorized("invalid bootstrap token")),
     }

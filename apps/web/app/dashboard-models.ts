@@ -34,7 +34,7 @@ export const chartPadding = 56;
 export const COMPARE_RUN_LIMIT = 50;
 export const COMPARE_ARTIFACT_LIMIT = 12;
 export const WORKSPACE_SCHEMA_VERSION = 1;
-export const WORKSPACE_VIEW_PREFIX = "rlobs:next:local:workspace:";
+export const WORKSPACE_VIEW_PREFIX = "instantml:next:local:workspace:";
 const AUTOMATIC_WORKSPACE_PANEL_LIMIT = 6;
 const PREFERRED_AUTOMATIC_METRICS = [
   "eval/return_mean",
@@ -620,7 +620,7 @@ export function buildModelRows(run: RunSummary | null, artifacts: Artifact[]): M
 
 export function buildReportRows(savedViews: string[]): ReportRow[] {
   return savedViews.map((key) => {
-    const name = key.replace("rlobs:next:view:", "");
+    const name = key.replace("instantml:next:view:", "");
     const [scope, metric] = name.split(":");
     return {
       id: key,

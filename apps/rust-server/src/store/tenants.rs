@@ -230,7 +230,7 @@ impl Store {
             .hosted_clickhouse
             .as_ref()
             .ok_or_else(|| AppError::internal("hosted ClickHouse config missing"))?;
-        let base = parse_clickhouse_url(&hosted.tenant_base_url, "RLOBS_TENANT_CLICKHOUSE_URL")?;
+        let base = parse_clickhouse_url(&hosted.tenant_base_url, "INSTANTML_TENANT_CLICKHOUSE_URL")?;
         let connection = ClickHouseConnection {
             endpoint: base.endpoint.clone(),
             username: base.username.clone(),
@@ -305,7 +305,7 @@ impl Store {
             .ok_or_else(|| AppError::internal("hosted ClickHouse config missing"))?;
         if !hosted.allow_stored_tenant_passwords {
             return Err(AppError::config(
-                "cloud-service provisioning requires RLOBS_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS=true until a secret manager is wired",
+                "cloud-service provisioning requires INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS=true until a secret manager is wired",
             ));
         }
         let cloud = hosted
@@ -378,7 +378,7 @@ impl Store {
                 .ok_or_else(|| AppError::internal("hosted ClickHouse config missing"))?;
             return Ok(parse_clickhouse_url(
                 &hosted.tenant_base_url,
-                "RLOBS_TENANT_CLICKHOUSE_URL",
+                "INSTANTML_TENANT_CLICKHOUSE_URL",
             )?
             .password);
         }

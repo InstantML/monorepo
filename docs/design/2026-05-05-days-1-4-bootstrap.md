@@ -59,11 +59,11 @@ Create the following implementation areas:
 ```text
 apps/
   api/
-    rlobs_api/
+    instantml_api/
     tests/
 packages/
   python-sdk/
-    rl_observability/
+    instantml/
     tests/
 examples/
   rl-cartpole/
@@ -88,7 +88,7 @@ Endpoints:
 The SDK will expose:
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 run = ro.init(project="cartpole", config={"seed": 42})
 run.log({"train/reward": 1.0}, step=1)
@@ -119,7 +119,7 @@ Python SDK:
 Storage:
 
 - SQLite file path is configurable.
-- Local default is `.rlobs/rlobs.sqlite3`.
+- Local default is `.instantml/instantml.sqlite3`.
 - Use one SQLite connection per request or repository operation.
 - Enable `PRAGMA foreign_keys=ON`.
 - Enable `PRAGMA journal_mode=WAL`.
@@ -315,7 +315,7 @@ Complexity deferred:
   - Return `404` with an error body.
 
 - Backend unavailable from SDK.
-  - Raise a clear `RlobsError`.
+  - Raise a clear `InstantMLError`.
 
 - SDK HTTP call hangs.
   - Use a configurable timeout, defaulting to 2 seconds.
@@ -340,7 +340,7 @@ SDK:
 - `log` sends metrics with step.
 - `finish` patches run status.
 - Environment metadata capture.
-- Network/backend failures raise `RlobsError`.
+- Network/backend failures raise `InstantMLError`.
 - HTTP timeout defaults are passed to requests.
 
 Example:

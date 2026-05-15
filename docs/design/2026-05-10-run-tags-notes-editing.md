@@ -74,7 +74,7 @@ Node compatibility:
 
 Python SDK:
 
-- Add `notes` to `Client.init()` and top-level `rl_observability.init()`. It maps to `metadata["notes"]` after SDK source metadata is merged.
+- Add `notes` to `Client.init()` and top-level `instantml.init()`. It maps to `metadata["notes"]` after SDK source metadata is merged.
 - Add `Run.set_notes(notes: str)` and `Run.set_tags(tags: list[str])` helpers backed by `PATCH /runs/:id`.
 - Keep existing `Run.add_tags()` behavior for typed attributes, but document that `set_tags()` updates the searchable run identity field.
 
@@ -163,7 +163,7 @@ run.set_notes("reward improved but entropy collapsed late")
 run.set_tags(["candidate", "needs-triage"])
 ```
 
-`init(notes=...)` works with existing compatible servers because notes are sent inside `metadata`. `set_notes()` and `set_tags()` require a backend that supports this PATCH extension; older bootstrap/reference APIs should return a clear SDK `RlobsError`.
+`init(notes=...)` works with existing compatible servers because notes are sent inside `metadata`. `set_notes()` and `set_tags()` require a backend that supports this PATCH extension; older bootstrap/reference APIs should return a clear SDK `InstantMLError`.
 
 ## Performance Considerations
 

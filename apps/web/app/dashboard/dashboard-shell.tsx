@@ -125,9 +125,9 @@ const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 7;
 const ARTIFACT_PAGE_LIMIT = 100;
-const SAVED_VIEW_PREFIX = "rlobs:next:local:view:";
-const LEGACY_SAVED_VIEW_PREFIX = "rlobs:next:view:";
-const RUNS_RAIL_COLLAPSED_KEY = "rlobs:next:runs-rail-collapsed";
+const SAVED_VIEW_PREFIX = "instantml:next:local:view:";
+const LEGACY_SAVED_VIEW_PREFIX = "instantml:next:view:";
+const RUNS_RAIL_COLLAPSED_KEY = "instantml:next:runs-rail-collapsed";
 const WORKSPACE_HISTORY_LIMIT = 50;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
@@ -766,9 +766,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     setSavedViews(savedViewStorageKeys());
-    setNavPinned(localStorage.getItem("rlobs:next:nav-pinned") === "true");
+    setNavPinned(localStorage.getItem("instantml:next:nav-pinned") === "true");
     setRunsRailCollapsed(localStorage.getItem(RUNS_RAIL_COLLAPSED_KEY) === "true");
-    const storedTheme = localStorage.getItem("rlobs:next:theme");
+    const storedTheme = localStorage.getItem("instantml:next:theme");
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
       ? storedTheme
       : "dark";
@@ -817,7 +817,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [project, workspaceReady, workspaceView]);
 
   useEffect(() => {
-    localStorage.setItem("rlobs:next:nav-pinned", String(navPinned));
+    localStorage.setItem("instantml:next:nav-pinned", String(navPinned));
   }, [navPinned]);
 
   useEffect(() => {
@@ -826,7 +826,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    if (themeReady) localStorage.setItem("rlobs:next:theme", theme);
+    if (themeReady) localStorage.setItem("instantml:next:theme", theme);
   }, [theme, themeReady]);
 
   useEffect(() => {

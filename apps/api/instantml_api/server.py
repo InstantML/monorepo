@@ -21,10 +21,10 @@ class ApiError(Exception):
         self.message = message
 
 
-class RlobsHandler(BaseHTTPRequestHandler):
+class InstantMLHandler(BaseHTTPRequestHandler):
     db_path: Path
 
-    server_version = "RlobsDevAPI/0.1"
+    server_version = "InstantMLDevAPI/0.1"
 
     def do_GET(self) -> None:
         self._handle("GET")
@@ -143,7 +143,7 @@ class RlobsHandler(BaseHTTPRequestHandler):
 def create_server(db_path: str | Path, host: str = "127.0.0.1", port: int = 8000) -> ThreadingHTTPServer:
     db.initialize(db_path)
 
-    class Handler(RlobsHandler):
+    class Handler(InstantMLHandler):
         pass
 
     Handler.db_path = Path(db_path)

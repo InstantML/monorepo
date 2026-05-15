@@ -87,7 +87,7 @@ Important Grafana/Prometheus-style dashboard behaviors to adapt:
 Reference elements to adapt:
 
 - W&B: dark global header, left app rail, run selector sidebar, workspace toolbar, panel sections, add-panel drawer, full-screen panel editor.
-- Training Observability: keep the existing topbar and rail. Inside the `Runs` tab, use a two-layer workspace:
+- InstantML: keep the existing topbar and rail. Inside the `Runs` tab, use a two-layer workspace:
   - `runs-workspace-filter`: a full-width top rectangle containing project/status/search/sort/metric/table controls.
   - `runs-workspace-layout`: left run selector plus main canvas.
   - `workspace-canvas`: panel toolbar, sections, and add-section footer.

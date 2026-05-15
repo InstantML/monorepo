@@ -6,22 +6,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const apiBase = resolveApiBase();
 
 function resolveApiBase() {
-  if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_RLOBS_API_BASE && !process.env.RLOBS_API_BASE) {
-    throw new Error("Use server-only RLOBS_API_BASE for production rewrites.");
+  if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_INSTANTML_API_BASE && !process.env.INSTANTML_API_BASE) {
+    throw new Error("Use server-only INSTANTML_API_BASE for production rewrites.");
   }
-  const rawBase = process.env.RLOBS_API_BASE ?? process.env.NEXT_PUBLIC_RLOBS_API_BASE ?? "http://127.0.0.1:8000";
+  const rawBase = process.env.INSTANTML_API_BASE ?? process.env.NEXT_PUBLIC_INSTANTML_API_BASE ?? "http://127.0.0.1:8000";
   const url = new URL(rawBase);
-  if (!["http:", "https:"].includes(url.protocol)) throw new Error("RLOBS_API_BASE must be an http(s) URL.");
-  const allowedOrigins = (process.env.RLOBS_API_ALLOWED_ORIGINS ?? "")
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("INSTANTML_API_BASE must be an http(s) URL.");
+  const allowedOrigins = (process.env.INSTANTML_API_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
   const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
   if (allowedOrigins.length && !allowedOrigins.includes(url.origin)) {
-    throw new Error(`RLOBS_API_BASE origin ${url.origin} is not in RLOBS_API_ALLOWED_ORIGINS.`);
+    throw new Error(`INSTANTML_API_BASE origin ${url.origin} is not in INSTANTML_API_ALLOWED_ORIGINS.`);
   }
   if (process.env.NODE_ENV === "production" && !allowedOrigins.length && !loopback) {
-    throw new Error("Set RLOBS_API_ALLOWED_ORIGINS for production API rewrites.");
+    throw new Error("Set INSTANTML_API_ALLOWED_ORIGINS for production API rewrites.");
   }
   return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
 }

@@ -1150,7 +1150,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rlobs-rust-server"
+name = "instantml-rust-server"
 version = "0.1.0"
 dependencies = [
  "axum",

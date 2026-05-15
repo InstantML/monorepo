@@ -1,6 +1,6 @@
 # Product Docs
 
-This directory is for product requirements, positioning, roadmap notes, and launch planning for Training Observability.
+This directory is for product requirements, positioning, roadmap notes, and launch planning for InstantML.
 
 Keep `PRODUCT_STRATEGY.md` at the repository root as the main strategic entry point unless the project later outgrows it.
 

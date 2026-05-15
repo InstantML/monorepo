@@ -1,8 +1,6 @@
-# Training Observability
+# InstantML
 
-Training Observability is an early-stage W&B (Weights & Biases)-style SaaS competitor for serious training-loop observability. The product focuses on fast run comparison, reliable SDK ingestion, artifacts, checkpoints, reproducibility context, and predictable pricing for smaller startups, research labs, and lean ML teams.
-
-Brand transition note: the user-facing product name is now Training Observability. Existing implementation names such as `rl_observability`, `.rlobs`, `rlobs_api`, and `RlobsError` remain for compatibility until a dedicated namespace migration is designed and tested.
+InstantML is an early-stage W&B (Weights & Biases)-style SaaS competitor for serious training-loop observability. The product focuses on fast run comparison, reliable SDK ingestion, artifacts, checkpoints, reproducibility context, and predictable pricing for smaller startups, research labs, and lean ML teams.
 
 Start with:
 
@@ -114,7 +112,7 @@ Training-observability roadmap first slice is implemented:
 Known follow-ups before broadening the roadmap:
 
 - Validate the W&B-competitor wedge with real users.
-- Preserve the strategy that Training Observability should beat W&B on speed, UI quality, and predictable pricing for small teams.
+- Preserve the strategy that InstantML should beat W&B on speed, UI quality, and predictable pricing for small teams.
 - Keep Node compatibility checks available until JSON-to-ClickHouse migration tooling and legacy fallback needs are retired; `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui` exercise Rust against disposable ClickHouse.
 - Keep batch/import/upload failure behavior tested as the storage layer evolves.
 - Keep frontend async loaders cancellation-safe as workflow components continue to split.
@@ -162,7 +160,7 @@ npm run benchmark:large-runs
 
 Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust format/lint/unit tests, Node tests, and Python tests. The Rust service, SDK, and UI smokes still run locally because they require disposable service dependencies and are being hardened alongside the ClickHouse metric-store harness.
 
-Default smoke behavior is Rust/ClickHouse-first: `npm run test:contract`, `npm run test:contract:direct`, `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocations of `tools/contract-smoke.mjs` or `apps/web/tests/ui-smoke.mjs` all start disposable ClickHouse and `apps/rust-server`. The deprecated Node backend is opt-in for contract compatibility through `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node`; full UI smoke now depends on Rust session/auth endpoints.
+Default smoke behavior is Rust/ClickHouse-first: `npm run test:contract`, `npm run test:contract:direct`, `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocations of `tools/contract-smoke.mjs` or `apps/web/tests/ui-smoke.mjs` all start disposable ClickHouse and `apps/rust-server`. The deprecated Node backend is opt-in for contract compatibility through `npm run test:contract:node` or `INSTANTML_CONTRACT_BACKEND=node`; full UI smoke now depends on Rust session/auth endpoints.
 
 Start the primary Rust API with local generated ClickHouse state:
 
@@ -173,8 +171,8 @@ npm run dev:api
 Start the Next UI in another terminal:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:build
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:start
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
 ```
 
 Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create a copy-once SDK API key, and open the dashboard. Use `Reset demo` inside the signed-in dashboard to generate 1,000 deterministic demo runs locally; the generated database rows are not committed to git.
@@ -182,7 +180,7 @@ Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-sty
 For faster frontend iteration:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 Run the one-command local stack:
@@ -191,7 +189,7 @@ Run the one-command local stack:
 docker compose up --build
 ```
 
-The Docker stack starts ClickHouse and the Rust API at `http://127.0.0.1:8000` with durable ClickHouse rows, metric rows, and artifact bytes in Docker volumes. Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000`.
+The Docker stack starts ClickHouse and the Rust API at `http://127.0.0.1:8000` with durable ClickHouse rows, metric rows, and artifact bytes in Docker volumes. Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8000`.
 
 Run Rust checks and smokes:
 
@@ -207,23 +205,23 @@ npm run test:rust:ui
 Run the 90,000-run local benchmark:
 
 ```bash
-RLOBS_BENCH_RUNS=90000 RLOBS_BENCH_SAMPLES=10 RLOBS_BENCH_WARMUPS=2 RLOBS_BENCH_WEB=1 npm run benchmark:large-runs
+INSTANTML_BENCH_RUNS=90000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
 ```
 
-`npm run test:ui:direct` and `npm run test:contract:direct` also default to the same Rust/ClickHouse harness unless `RLOBS_UI_SMOKE_API_BASE` or `RLOBS_CONTRACT_BASE_URL` points them at an already-running compatible server.
+`npm run test:ui:direct` and `npm run test:contract:direct` also default to the same Rust/ClickHouse harness unless `INSTANTML_UI_SMOKE_API_BASE` or `INSTANTML_CONTRACT_BASE_URL` points them at an already-running compatible server.
 
 Apply the accepted ClickHouse schema against a disposable or local database:
 
 ```bash
-CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/instantml \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- migrate
 ```
 
 Start the Rust service directly against an existing ClickHouse database:
 
 ```bash
-CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
-RLOBS_BIND_ADDR=127.0.0.1:8001 \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/instantml \
+INSTANTML_BIND_ADDR=127.0.0.1:8001 \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- serve
 ```
 
@@ -237,7 +235,7 @@ npm run test:contract:node
 Start the Python bootstrap API, still available for reference:
 
 ```bash
-PYTHONPATH=apps/api python3 -m rlobs_api.server --db .rlobs/rlobs.sqlite3 --port 8000
+PYTHONPATH=apps/api python3 -m instantml_api.server --db .instantml/instantml.sqlite3 --port 8000
 ```
 
 Run the example in another terminal:
@@ -256,8 +254,8 @@ PYTHONPATH=packages/python-sdk:examples/iris-classification \
 Drain process-spooled SDK events from another terminal:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
-  --spool-dir .rlobs/spool \
+PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
+  --spool-dir .instantml/spool \
   --base-url http://127.0.0.1:8000
 ```
 

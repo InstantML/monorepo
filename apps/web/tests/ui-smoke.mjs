@@ -7,8 +7,8 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 const repo = process.cwd();
-const externalApiBaseUrl = process.env.RLOBS_UI_SMOKE_API_BASE || "";
-const backendMode = (process.env.RLOBS_UI_SMOKE_BACKEND || "rust").toLowerCase();
+const externalApiBaseUrl = process.env.INSTANTML_UI_SMOKE_API_BASE || "";
+const backendMode = (process.env.INSTANTML_UI_SMOKE_BACKEND || "rust").toLowerCase();
 if (!externalApiBaseUrl && backendMode !== "node") {
   const result = spawnSync("node", ["tools/rust-service-smoke.mjs", "ui"], {
     cwd: repo,
@@ -18,7 +18,7 @@ if (!externalApiBaseUrl && backendMode !== "node") {
   process.exit(result.status ?? (result.signal ? 1 : 0));
 }
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-ui-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-ui-"));
 let apiServer = null;
 if (!externalApiBaseUrl && backendMode === "node") {
   const { createServer } = await import("../../server/src/server.js");
@@ -36,13 +36,13 @@ try {
   const nextBin = path.join(repo, "node_modules/.bin/next");
   const build = spawnSync(nextBin, ["build"], {
     cwd: path.join(repo, "apps/web"),
-    env: { ...process.env, RLOBS_API_BASE: apiBaseUrl },
+    env: { ...process.env, INSTANTML_API_BASE: apiBaseUrl },
     encoding: "utf8",
   });
   assert.equal(build.status, 0, `${build.stdout}\n${build.stderr}`);
   nextServer = spawn(nextBin, ["start", "--port", String(webPort)], {
     cwd: path.join(repo, "apps/web"),
-    env: { ...process.env, RLOBS_API_BASE: apiBaseUrl },
+    env: { ...process.env, INSTANTML_API_BASE: apiBaseUrl },
     stdio: ["ignore", "pipe", "pipe"],
   });
   await waitForHttp(`http://127.0.0.1:${webPort}`);
@@ -83,7 +83,7 @@ try {
   await page.waitForURL(/\/onboarding$/, { timeout: 10000 });
   await page.getByRole("button", { name: /Create SDK API key/ }).click();
   await page.waitForSelector(".api-key-reveal code", { timeout: 10000 });
-  assert.match(await page.locator(".api-key-reveal code").innerText(), /^rlobs_/);
+  assert.match(await page.locator(".api-key-reveal code").innerText(), /^instantml_/);
 
   await pageApiRequest(page, "POST", "/api/demo/reset", {});
   if (backendMode !== "node") {
@@ -290,7 +290,7 @@ try {
   await page.getByRole("button", { name: "Previous page" }).click();
   await page.waitForFunction(() => /1-10 of \d+/.test(document.querySelector(".workspace-run-footer")?.textContent ?? ""));
   await page.evaluate((ids) => {
-    localStorage.setItem("rlobs:next:view:off-page-selection", JSON.stringify({
+    localStorage.setItem("instantml:next:view:off-page-selection", JSON.stringify({
       project: "pagination",
       selectedRunIds: ids,
       primaryRunId: ids[0],
@@ -301,7 +301,7 @@ try {
   }, [paginationRunIds[0], paginationRunIds[29]]);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
-  await chooseSelect(page, "#saved-view-select", "rlobs:next:view:off-page-selection");
+  await chooseSelect(page, "#saved-view-select", "instantml:next:view:off-page-selection");
   await page.getByRole("link", { name: /Run Detail/ }).click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("2 runs"));
   assert.match(await page.locator("#run-detail").innerText(), /2 runs/);

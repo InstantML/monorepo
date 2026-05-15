@@ -95,8 +95,8 @@ npm run dev:api
 Start the Next app in another terminal:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:build
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:start
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
 ```
 
 Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create the copy-once SDK key, and enter the dashboard.
@@ -104,7 +104,7 @@ Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-sty
 Fast development server:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 The Playwright smoke uses the production-style build/start path.
@@ -134,7 +134,7 @@ The Runs workspace keeps its summary/filter block pinned below the top bar on de
 
 Pagination coverage includes Rust cursor requests, cursor clearing after filter changes, Previous-page behavior, and deprecated Node offset fallback.
 
-Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust-compatible backend. The full landing/auth/onboarding smoke depends on Rust session endpoints; deprecated Node UI checks should be treated as compatibility-only and kept behind explicit legacy investigation.
+Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust-compatible backend. The full landing/auth/onboarding smoke depends on Rust session endpoints; deprecated Node UI checks should be treated as compatibility-only and kept behind explicit legacy investigation.
 
 ## Current Files
 
@@ -192,7 +192,7 @@ Set `RLOBS_UI_SMOKE_API_BASE` to point the same smoke at an already running Rust
 - Render only the active tab body so hidden chart/detail/comparison surfaces do not rerender on every hover or filter update.
 - Keep chart DOM bounded: line paths are always rendered, but per-point SVG markers are capped for point-heavy series.
 - Keep frontend API failures client-safe. Do not display raw backend stack traces, SQL paths, object-storage paths, or auth details in the topbar.
-- Keep same-origin API proxy configuration server-only in production; `RLOBS_API_BASE` is validated by `next.config.mjs`, and production non-loopback origins must be listed in `RLOBS_API_ALLOWED_ORIGINS`.
+- Keep same-origin API proxy configuration server-only in production; `INSTANTML_API_BASE` is validated by `next.config.mjs`, and production non-loopback origins must be listed in `INSTANTML_API_ALLOWED_ORIGINS`.
 - Keep saved local views validated before applying them. Hosted auth/org work should namespace saved-view keys by authenticated org/user before exposing real multi-org switching.
 - Keep shared data-shaping helpers in `src/` so Node tests can cover important UI logic without requiring a browser.
 - Keep global keyboard matching in `src/shortcuts.js` and keep browser smoke coverage around any command that changes routing, layout, or overlay state.

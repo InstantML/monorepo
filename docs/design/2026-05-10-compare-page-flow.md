@@ -210,7 +210,7 @@ Deferred complexity:
 
 Validation:
 
-- `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:build`
+- `INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build`
 - `npm run test:node`
 - `npm run test:ui`
 - Fresh Computer Use QA found reducer-only row labels and stale saved-view selection; both were fixed and covered by smoke assertions.

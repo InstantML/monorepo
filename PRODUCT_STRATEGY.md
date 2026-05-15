@@ -16,10 +16,6 @@ The near-term product bet:
 
 > Build the training observability tool a small serious ML team wants open all day: fast logging, fast comparison, clear artifacts, simple pricing, and a backend/data model teams can trust.
 
-Brand transition note:
-
-- User-facing docs and UI should say **InstantML**.
-- Existing package names, storage paths, and compatibility identifiers such as `rl_observability`, `.rlobs`, `rlobs_api`, and `RlobsError` remain until a dedicated namespace migration is designed and tested.
 - RL, robotics, and simulation remain important differentiating workflows, but they are not the brand boundary.
 - Open-source, public-name, and compatibility-name policy lives in `docs/product/2026-05-09-open-source-brand.md`.
 

@@ -41,7 +41,7 @@ The target workflow:
 
 1. The user starts the API/UI as usual.
 2. The user starts an uploader process pointed at a spool directory.
-3. The training loop calls `ro.init(..., upload_mode="spool", spool_dir=".rlobs/spool")`.
+3. The training loop calls `ro.init(..., upload_mode="spool", spool_dir=".instantml/spool")`.
 4. Each SDK logging call writes a canonical event file and returns quickly.
 5. The uploader process reads pending event files, calls the existing API endpoints, and deletes each event file after a successful upload.
 
@@ -53,7 +53,7 @@ Add `upload_mode` to `Client.init()` and top-level `ro.init()`:
 run = ro.init(
     project="cartpole",
     upload_mode="spool",
-    spool_dir=".rlobs/spool",
+    spool_dir=".instantml/spool",
 )
 ```
 
@@ -102,7 +102,7 @@ Canonical event envelope:
 Use one JSON file per event:
 
 ```text
-.rlobs/spool/
+.instantml/spool/
   run-123/
     00000000000000000001-20260507T190000000000Z-4d7f2c1c.json
 ```
@@ -115,9 +115,9 @@ Writing one file per event is intentionally simple:
 - A failed upload leaves the file in place for a later retry.
 - There is no shared file truncation or rename collision between the training process and uploader.
 
-The uploader creates a single lock file at the spool root using exclusive create. If another uploader is already active, the second uploader exits with a clear `RlobsError`. This avoids duplicate sends from competing uploaders without adding per-file claim state.
+The uploader creates a single lock file at the spool root using exclusive create. If another uploader is already active, the second uploader exits with a clear `InstantMLError`. This avoids duplicate sends from competing uploaders without adding per-file claim state.
 
-Add `packages/python-sdk/rl_observability/uploader.py` with:
+Add `packages/python-sdk/instantml/uploader.py` with:
 
 - `drain_spool(spool_dir, client=None, base_url="http://127.0.0.1:8000", timeout=2.0, max_events=None) -> int`
 - `main(argv=None) -> int`
@@ -192,8 +192,8 @@ run.log_snapshot(data, step=0, timestamp=None)
 Uploader CLI:
 
 ```bash
-python -m rl_observability.uploader \
-  --spool-dir .rlobs/spool \
+python -m instantml.uploader \
+  --spool-dir .instantml/spool \
   --base-url http://127.0.0.1:8000
 ```
 
@@ -205,7 +205,7 @@ Error behavior:
 - In `spool` mode, metadata-only artifact helpers return a local placeholder artifact with `id="spooled"`.
 - In `spool` mode, `upload_file()` records `source_path`; the uploader reads and encodes the file when it uploads.
 - Uploader upload failures leave files pending for retry.
-- A second concurrent uploader raises `RlobsError` while the first uploader holds the lock.
+- A second concurrent uploader raises `InstantMLError` while the first uploader holds the lock.
 
 ## Performance Considerations
 

@@ -156,7 +156,7 @@ Add dependency-free CLI wrappers:
 
 - `tools/import-wandb-json.mjs`
 
-They mirror `import-neptune-json.mjs`: read a local JSON file, inject/override `project`, support `--dry-run`, `--base-url`, and optional bearer auth through `RLOBS_API_KEY`.
+They mirror `import-neptune-json.mjs`: read a local JSON file, inject/override `project`, support `--dry-run`, `--base-url`, and optional bearer auth through `INSTANTML_API_KEY`.
 
 ## API Contracts
 

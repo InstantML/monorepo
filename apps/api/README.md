@@ -1,6 +1,6 @@
 # Backend API
 
-This directory contains the days 1-4 Python bootstrap backend API service for Training Observability projects, runs, and metrics.
+This directory contains the days 1-4 Python bootstrap backend API service for InstantML projects, runs, and metrics.
 
 Current product note: `apps/rust-server` is now the primary product API. `apps/web` owns the Next/React UI, and `apps/server` remains a deprecated Node compatibility oracle. Keep `apps/api` as a simple reference implementation and SDK compatibility target unless a design doc changes backend ownership.
 
@@ -55,7 +55,7 @@ python3 -m pip install -r requirements-dev.txt
 ## Run
 
 ```bash
-PYTHONPATH=apps/api python3 -m rlobs_api.server --db .rlobs/rlobs.sqlite3 --port 8000
+PYTHONPATH=apps/api python3 -m instantml_api.server --db .instantml/instantml.sqlite3 --port 8000
 ```
 
 ## Test

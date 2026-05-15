@@ -12,7 +12,7 @@ if (!new Set(["contract", "sdk", "ui"]).has(mode)) {
 }
 
 const repo = process.cwd();
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `rlobs-rust-${mode}-`));
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `instantml-rust-${mode}-`));
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
@@ -21,7 +21,7 @@ let server = null;
 let clickhouse = null;
 
 try {
-  const clickhouseUrl = `http://default:@127.0.0.1:${clickhouseHttpPort}/rlobs`;
+  const clickhouseUrl = `http://default:@127.0.0.1:${clickhouseHttpPort}/instantml`;
   clickhouse = await ensureLocalClickHouse({
     repo,
     url: clickhouseUrl,
@@ -41,10 +41,10 @@ try {
     env: {
       ...process.env,
       CLICKHOUSE_URL: clickhouse.url,
-      RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
-      RLOBS_AUTH_MODE: authMode,
-      RLOBS_BOOTSTRAP_TOKEN: bootstrapToken,
-      RLOBS_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
+      INSTANTML_AUTH_MODE: authMode,
+      INSTANTML_BOOTSTRAP_TOKEN: bootstrapToken,
+      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
     },
     stdio: ["ignore", output, output],
   });
@@ -54,22 +54,22 @@ try {
     run("node", ["tools/contract-smoke.mjs"], {
       env: {
         ...process.env,
-        RLOBS_CONTRACT_BASE_URL: baseUrl,
-        RLOBS_CONTRACT_BOOTSTRAP_TOKEN: bootstrapToken,
+        INSTANTML_CONTRACT_BASE_URL: baseUrl,
+        INSTANTML_CONTRACT_BOOTSTRAP_TOKEN: bootstrapToken,
       },
     });
   } else if (mode === "sdk") {
     run("python3", ["tools/rust-sdk-smoke.py"], {
       env: {
         ...process.env,
-        RLOBS_RUST_SMOKE_BASE_URL: baseUrl,
+        INSTANTML_RUST_SMOKE_BASE_URL: baseUrl,
       },
     });
   } else {
     run("node", ["apps/web/tests/ui-smoke.mjs"], {
       env: {
         ...process.env,
-        RLOBS_UI_SMOKE_API_BASE: baseUrl,
+        INSTANTML_UI_SMOKE_API_BASE: baseUrl,
       },
     });
   }

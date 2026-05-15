@@ -6,10 +6,10 @@ import path from "node:path";
 
 let server = null;
 let tempDir = null;
-let bootstrapToken = process.env.RLOBS_CONTRACT_BOOTSTRAP_TOKEN || "";
+let bootstrapToken = process.env.INSTANTML_CONTRACT_BOOTSTRAP_TOKEN || "";
 
-const externalBaseUrl = process.env.RLOBS_CONTRACT_BASE_URL || process.env.RLOBS_BASE_URL;
-const backendMode = (process.env.RLOBS_CONTRACT_BACKEND || "rust").toLowerCase();
+const externalBaseUrl = process.env.INSTANTML_CONTRACT_BASE_URL || process.env.INSTANTML_BASE_URL;
+const backendMode = (process.env.INSTANTML_CONTRACT_BACKEND || "rust").toLowerCase();
 if (!externalBaseUrl && backendMode !== "node") {
   const result = spawnSync("node", ["tools/rust-service-smoke.mjs", "contract"], {
     cwd: process.cwd(),
@@ -33,9 +33,9 @@ try {
 
 async function startNodeCompatibilityServer() {
   const { createServer } = await import("../apps/server/src/server.js");
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-contract-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-contract-"));
   server = createServer({
-    dbPath: path.join(tempDir, "rlobs.json"),
+    dbPath: path.join(tempDir, "instantml.json"),
     storageRoot: path.join(tempDir, "artifacts"),
     requireApiKey: true,
     bootstrapToken: "contract-bootstrap",

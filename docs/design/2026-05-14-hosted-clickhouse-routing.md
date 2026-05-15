@@ -8,7 +8,7 @@ Owner: Codex
 
 ## Summary
 
-Training Observability needs to turn the ClickHouse-only local slice into a hosted-shaped flow: signup creates durable account and organization records in the InstantML User Data ClickHouse service, provisions a tenant data plane, records the tenant route server-side, and routes SDK/API-key traffic to that tenant data plane. The frontend should stay on the existing signup, onboarding, and dashboard routes, and the Python SDK should keep using bearer API keys without learning ClickHouse tenant endpoints.
+InstantML needs to turn the ClickHouse-only local slice into a hosted-shaped flow: signup creates durable account and organization records in the InstantML User Data ClickHouse service, provisions a tenant data plane, records the tenant route server-side, and routes SDK/API-key traffic to that tenant data plane. The frontend should stay on the existing signup, onboarding, and dashboard routes, and the Python SDK should keep using bearer API keys without learning ClickHouse tenant endpoints.
 
 The smallest useful implementation keeps one Rust API process as the public control-plane API. It persists users, identities, organizations, memberships, sessions, service accounts, API keys, and tenant routes into a User Data ClickHouse table. Tenant-owned projects, runs, attributes, artifacts, imports, idempotency records, usage snapshots, and metric points live in the organization data plane selected by the tenant route. The Rust server keeps the current in-process operational index but separates control records from tenant records.
 
@@ -49,7 +49,7 @@ New user signup:
 SDK ingestion:
 
 1. User copies the API key from onboarding.
-2. Python SDK sends `Authorization: Bearer rlobs_...` to the Rust API.
+2. Python SDK sends `Authorization: Bearer instantml_...` to the Rust API.
 3. Rust authenticates the key from User Data, resolves the key's org route, and writes projects/runs/metrics to that org's tenant data plane.
 4. Dashboard requests with the user's session resolve the same org route and read summaries/series from the tenant data plane.
 
@@ -65,19 +65,19 @@ Scale validation:
 
 Add hosted ClickHouse config to the Rust server:
 
-- `RLOBS_HOSTED_CLICKHOUSE_ENABLED`: enables User Data and tenant routing.
+- `INSTANTML_HOSTED_CLICKHOUSE_ENABLED`: enables User Data and tenant routing.
 - `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`: HTTPS ClickHouse endpoint for control-plane storage.
 - `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`
 - `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`
 - `CLICKHOUSE_CLOUD_ENDPOINT`: ClickHouse Cloud API endpoint, default `https://api.clickhouse.cloud`.
 - `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`
 - `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`
-- `RLOBS_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`; default `database` only for local/test. Hosted deployments must set this explicitly.
-- `RLOBS_TENANT_CLICKHOUSE_URL`: optional base URL for database-mode tenant databases; defaults to the User Data endpoint.
-- `RLOBS_CLICKHOUSE_CLOUD_ORG_ID`: explicit ClickHouse Cloud org id for cloud-service mode. If omitted, cloud-service mode discovers the first available organization through `GET /v1/organizations`.
-- `RLOBS_CLICKHOUSE_CLOUD_PROVIDER`, `RLOBS_CLICKHOUSE_CLOUD_REGION`, `RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `RLOBS_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `RLOBS_CLICKHOUSE_CLOUD_NUM_REPLICAS`: optional cloud service shape and query access. The demo default allows `0.0.0.0/0`; production should restrict this to API egress CIDRs.
-- `RLOBS_CLICKHOUSE_CLOUD_WAIT_SECONDS`: wait cap for service readiness.
-- `RLOBS_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: required to store tenant passwords in User Data for cloud-service mode until a secret manager is wired. Database mode stores a config password reference instead of copying the base password into User Data.
+- `INSTANTML_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`; default `database` only for local/test. Hosted deployments must set this explicitly.
+- `INSTANTML_TENANT_CLICKHOUSE_URL`: optional base URL for database-mode tenant databases; defaults to the User Data endpoint.
+- `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`: explicit ClickHouse Cloud org id for cloud-service mode. If omitted, cloud-service mode discovers the first available organization through `GET /v1/organizations`.
+- `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`: optional cloud service shape and query access. The demo default allows `0.0.0.0/0`; production should restrict this to API egress CIDRs.
+- `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: wait cap for service readiness.
+- `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: required to store tenant passwords in User Data for cloud-service mode until a secret manager is wired. Database mode stores a config password reference instead of copying the base password into User Data.
 
 Do not print these values. Logs may include org id, service id, endpoint host, provisioner mode, and route state.
 
@@ -132,7 +132,7 @@ Add a `TenantRouteRecord` stored in User Data:
 - `last_error`
 - `version`
 
-The first slice may store a tenant password in User Data only when `RLOBS_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS=true`. That flag is for local/test and early hosted experiments only. Production cloud-service use is blocked until credentials are stored as secret-manager references or KMS/envelope-encrypted values with rotation semantics. The frontend never receives endpoint, username, password, ciphertext, or secret refs.
+The first slice may store a tenant password in User Data only when `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS=true`. That flag is for local/test and early hosted experiments only. Production cloud-service use is blocked until credentials are stored as secret-manager references or KMS/envelope-encrypted values with rotation semantics. The frontend never receives endpoint, username, password, ciphertext, or secret refs.
 
 ### Signup And Provisioning State Machine
 
@@ -163,7 +163,7 @@ If cloud-service mode creates a service and later fails, it records `service_id`
 
 `cloud-service` provisioner:
 
-- Calls `GET /v1/organizations` or uses `RLOBS_CLICKHOUSE_CLOUD_ORG_ID`.
+- Calls `GET /v1/organizations` or uses `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`.
 - Calls `POST /v1/organizations/{organizationId}/services` with a service name derived from the org slug and configured provider/region/replica shape.
 - Stores the returned service id and password as a secret reference or, only with the explicit stored-password flag, as local/test ciphertext/plaintext in User Data; default username is `default` unless the API returns otherwise.
 - Polls `GET /v1/organizations/{organizationId}/services/{serviceId}` until the service is `running` or the timeout expires.
@@ -346,7 +346,7 @@ Deferred complexity:
   - session dashboard reads tenant summaries/series
   - restart after signup/key/ingest still authenticates and reads tenant data
 - Python smoke:
-  - use the created API key with `rl_observability.init`
+  - use the created API key with `instantml.init`
   - log metrics
   - query runs with `ro.Api.runs(q=..., sort_by=...)`
 - Frontend/Computer Use:
@@ -357,7 +357,7 @@ Deferred complexity:
 - Scale:
   - guarded benchmark tool for 100,000 run metadata and configurable metric rows
   - timing output for run summary, name/tag search, metric sort, and chart series
-  - hosted demo seed requires explicit `RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1`, is idempotent for `hello@instantml.ai`, and refuses partial duplicate seeds unless the operator chooses a new project name
+  - hosted demo seed requires explicit `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1`, is idempotent for `hello@instantml.ai`, and refuses partial duplicate seeds unless the operator chooses a new project name
 
 ## Documentation Plan
 
@@ -423,7 +423,7 @@ Implemented in this branch:
 - Cloud-service route retries first attempt to resume stored service credentials and check for an existing deterministic ClickHouse Cloud service name before POSTing a new service, preventing accidental duplicate paid services after a timeout or crash.
 - Cloud-service server startup skips the primary/default metric-store schema migration so the User Data service keeps only control-plane tables; per-org metric schema is migrated after routing to the tenant service.
 - Local/dev demo auth canonicalizes `hello@instantml.ai` and `hello@instantml.com` to one `InstantML Demo` business org, preventing repeated demo sign-ins from creating multiple orgs or ClickHouse services.
-- Cloud-service provisioning can discover the ClickHouse Cloud organization id from the API when `RLOBS_CLICKHOUSE_CLOUD_ORG_ID` is not set.
+- Cloud-service provisioning can discover the ClickHouse Cloud organization id from the API when `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is not set.
 - `npm run test:hosted-clickhouse` verifies signup, User Data control rows, API-key creation, API-key scope enforcement, direct API-key ingest, Python SDK ingest, safe non-secret provisioning payloads, dashboard readback, and API restart replay.
 - `npm run benchmark:large-runs` now defaults to 100,000 run records and a 20,000-step long-run series across multiple metric keys.
-- `RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo` provisions/reuses the shared demo cloud-service route, seeds the hosted 100,000-run benchmark once, and prints hosted ClickHouse latency measurements.
+- `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo` provisions/reuses the shared demo cloud-service route, seeds the hosted 100,000-run benchmark once, and prints hosted ClickHouse latency measurements.

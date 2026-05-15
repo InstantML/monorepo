@@ -2,14 +2,14 @@
 
 This example logs deterministic RL-style metrics without requiring a simulator dependency. It proves the SDK -> API -> storage path and can run either synchronously or through the process uploader spool.
 
-For the current product UI, run the primary Rust/ClickHouse API with `npm run dev:api`, run the Next app with `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev`, and open `http://127.0.0.1:3000`. The Python bootstrap API below remains useful for reference SDK compatibility checks.
+For the current product UI, run the primary Rust/ClickHouse API with `npm run dev:api`, run the Next app with `INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev`, and open `http://127.0.0.1:3000`. The Python bootstrap API below remains useful for reference SDK compatibility checks.
 
 ## Run
 
 Start the API from the repo root:
 
 ```bash
-PYTHONPATH=apps/api python3 -m rlobs_api.server --db .rlobs/rlobs.sqlite3 --port 8000
+PYTHONPATH=apps/api python3 -m instantml_api.server --db .instantml/instantml.sqlite3 --port 8000
 ```
 
 In another terminal, run:
@@ -32,14 +32,14 @@ PYTHONPATH=packages/python-sdk:examples/rl-cartpole \
   --server http://127.0.0.1:8000 \
   --steps 5 \
   --upload-mode spool \
-  --spool-dir .rlobs/spool-demo
+  --spool-dir .instantml/spool-demo
 ```
 
 Drain the event files from a separate process:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
-  --spool-dir .rlobs/spool-demo \
+PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
+  --spool-dir .instantml/spool-demo \
   --base-url http://127.0.0.1:8000
 ```
 

@@ -8,7 +8,7 @@ Owner: Codex
 
 ## Summary
 
-Training Observability should collapse the Rust backend storage stack from a split metadata database plus metric database into ClickHouse-backed control and data planes:
+InstantML should collapse the Rust backend storage stack from a split metadata database plus metric database into ClickHouse-backed control and data planes:
 
 - A global control plane for low-volume account state such as users, identities, organizations, memberships, service routing, seats, plan state, and org bootstrap metadata.
 - An org/cell data-plane service for tenant-owned training state such as API keys, sessions, projects, runs, attributes, artifacts, imports, idempotency records, audit events, usage snapshots, scalar metric points, and metric-series aggregates.
@@ -157,7 +157,7 @@ Python SDK:
 Storage:
 
 - `CLICKHOUSE_URL` is the only Rust database URL.
-- Local state lives under `.rlobs/clickhouse` and artifact bytes under `.rlobs/rust-artifacts`.
+- Local state lives under `.instantml/clickhouse` and artifact bytes under `.instantml/rust-artifacts`.
 - Deprecated Node JSON storage remains only for compatibility.
 
 Docs:

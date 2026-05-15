@@ -2,9 +2,9 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8-alpine
     environment:
-      CLICKHOUSE_DB: rlobs
-      CLICKHOUSE_USER: rlobs
-      CLICKHOUSE_PASSWORD: rlobs
+      CLICKHOUSE_DB: instantml
+      CLICKHOUSE_USER: instantml
+      CLICKHOUSE_PASSWORD: instantml
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ulimits:
       nofile:
@@ -16,9 +16,9 @@ services:
       timeout: 5s
       retries: 30
     volumes:
-      - rlobs-clickhouse:/var/lib/clickhouse
+      - instantml-clickhouse:/var/lib/clickhouse
 
-  rlobs:
+  instantml:
     build: .
     depends_on:
       clickhouse:
@@ -26,14 +26,14 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - rlobs-artifacts:/data/artifacts
+      - instantml-artifacts:/data/artifacts
     environment:
-      CLICKHOUSE_URL: http://rlobs:rlobs@clickhouse:8123/rlobs
-      RLOBS_BIND_ADDR: 0.0.0.0:8000
-      RLOBS_AUTH_MODE: local
-      RLOBS_ARTIFACT_ROOT: /data/artifacts
-      RLOBS_LOG_FORMAT: json
+      CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
+      INSTANTML_BIND_ADDR: 0.0.0.0:8000
+      INSTANTML_AUTH_MODE: local
+      INSTANTML_ARTIFACT_ROOT: /data/artifacts
+      INSTANTML_LOG_FORMAT: json
 
 volumes:
-  rlobs-clickhouse:
-  rlobs-artifacts:
+  instantml-clickhouse:
+  instantml-artifacts:

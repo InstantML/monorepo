@@ -8,7 +8,7 @@ Owner: Codex
 
 ## Summary
 
-This change rebrands the active frontend experience from the temporary `Training Observability` product name to `InstantML` and applies the public InstantML visual language from `https://instantml.ai/` as inspected on 2026-05-14: near-black app chrome, slate surfaces, emerald primary accents, compact typography, and a simple bar-and-bolt mark.
+This change rebrands the active frontend experience from the temporary `InstantML` product name to `InstantML` and applies the public InstantML visual language from `https://instantml.ai/` as inspected on 2026-05-14: near-black app chrome, slate surfaces, emerald primary accents, compact typography, and a simple bar-and-bolt mark.
 
 The smallest useful version is a visual and documentation rescheme on top of the existing Pluto-style workspace branch. Projects, saved local views, bounded run lists, and batched metric APIs already exist in the current frontend; this slice keeps those contracts intact while making the controls read as first-class InstantML product surface. Chart panels also move closer to the provided W&B reference by using flatter cards, lighter gridlines, thinner metric strokes, smaller points, and a red/blue-first palette that remains readable when many runs overlap.
 
@@ -21,7 +21,7 @@ The smallest useful version is a visual and documentation rescheme on top of the
 
 ## Non-Goals
 
-- Rename code package identifiers, environment variables, localStorage keys, API routes, or SDK import names such as `rlobs`.
+- Rename code package identifiers, environment variables, localStorage keys, API routes, or SDK import names such as `instantml`.
 - Add persisted hosted workspace views in this slice; saved views remain local browser state until a backend workspace-view API is accepted.
 - Change run, metric, artifact, log, or project API shapes.
 - Copy W&B or Pluto branding. The reference is used for chart density and workspace hierarchy only.
@@ -77,10 +77,10 @@ Implementation details:
   - Current saved views are local browser state and may encode a project filter.
   - The saved-view dropdown remains global to the browser profile, matching the existing contract.
   - Applying a saved view should restore its saved project/status/filter/metric state and then let existing stale-run pruning handle missing runs.
-  - Existing `rlobs:next:*` localStorage keys are intentionally retained for compatibility.
+  - Existing `instantml:next:*` localStorage keys are intentionally retained for compatibility.
 - Documentation:
   - Update `PRODUCT_STRATEGY.md`, `apps/web/README.md`, and `docs/design/README.md` so future contributors use InstantML as the user-facing name.
-  - Update only current guidance docs and frontend-facing surfaces in this PR. Historical design docs may keep `Training Observability` when describing previous product naming. Lowercase `training observability` remains valid as a product category.
+  - Update only current guidance docs and frontend-facing surfaces in this PR. Historical design docs may keep `InstantML` when describing previous product naming. Lowercase `training observability` remains valid as a product category.
 
 Rename allowlist:
 
@@ -111,7 +111,7 @@ Python SDK:
 
 Storage:
 
-- No impact. Existing localStorage keys keep their `rlobs` prefixes to avoid breaking saved views.
+- No impact. Existing localStorage keys keep their `instantml` prefixes to avoid breaking saved views.
 
 Docs:
 
@@ -141,12 +141,12 @@ The design keeps this as a narrow reskin plus chart polish. Persisted server-sid
 
 - Saved local views could appear lost if localStorage keys were renamed; this design avoids renaming them.
 - Chart strokes could become too faint in dark mode; CSS keeps high-contrast series colors and hover rings.
-- Brand strings could remain in tests/docs; repository search for `Training Observability` should be run before finishing.
+- Brand strings could remain in tests/docs; repository search for `InstantML` should be run before finishing.
 - Global saved views could surprise users after switching projects; the UI preserves the current global dropdown contract and saved views restore their own project filter when applied.
 
 ## Testing Plan
 
-- Update existing UI smoke assertions from `Training Observability` to `InstantML`.
+- Update existing UI smoke assertions from `InstantML` to `InstantML`.
 - Run `npm run test:node` for web/unit coverage.
 - Run `npm run web:build` for Next compile checks.
 - Run `npm run test:ui` for the Rust API plus browser UI smoke path covering projects, saved views, charts, tabs, and workspace interactions.
@@ -165,7 +165,7 @@ The design keeps this as a narrow reskin plus chart polish. Persisted server-sid
 
 ## Alternatives Considered
 
-- Full namespace migration from `rlobs` to `instantml`: rejected for this slice because it would touch API keys, SDK naming, environment variables, storage migrations, and localStorage compatibility.
+- Full namespace migration from `instantml` to `instantml`: rejected for this slice because it would touch API keys, SDK naming, environment variables, storage migrations, and localStorage compatibility.
 - Default all users to light mode to match the screenshot: rejected because the public InstantML site defaults dark and the app already offers an explicit theme toggle.
 - Persist saved views now: deferred because it requires a backend contract and user/org authorization design beyond a rescheme.
 

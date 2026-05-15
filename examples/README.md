@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains runnable examples that prove Training Observability works end to end across different training-loop shapes.
+This directory contains runnable examples that prove InstantML works end to end across different training-loop shapes.
 
 Use the root `../SETUP.md` for fresh-clone setup before running examples.
 

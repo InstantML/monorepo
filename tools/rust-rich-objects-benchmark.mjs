@@ -9,12 +9,12 @@ import { performance } from "node:perf_hooks";
 import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
-const objectCount = numberEnv("RLOBS_OBJECT_BENCH_OBJECTS", 500);
-const tableRows = numberEnv("RLOBS_OBJECT_BENCH_ROWS", 1000);
-const samples = numberEnv("RLOBS_OBJECT_BENCH_SAMPLES", 15);
-const warmups = numberEnv("RLOBS_OBJECT_BENCH_WARMUPS", 2);
-const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-rich-objects-"));
+const objectCount = numberEnv("INSTANTML_OBJECT_BENCH_OBJECTS", 500);
+const tableRows = numberEnv("INSTANTML_OBJECT_BENCH_ROWS", 1000);
+const samples = numberEnv("INSTANTML_OBJECT_BENCH_SAMPLES", 15);
+const warmups = numberEnv("INSTANTML_OBJECT_BENCH_WARMUPS", 2);
+const enforce = process.env.INSTANTML_BENCH_ENFORCE === "1";
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-rich-objects-"));
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
@@ -27,7 +27,7 @@ let clickhouse = null;
 try {
   clickhouse = await ensureLocalClickHouse({
     repo,
-    url: `http://default:@127.0.0.1:${clickhouseHttpPort}/rlobs`,
+    url: `http://default:@127.0.0.1:${clickhouseHttpPort}/instantml`,
     dataDir: path.join(tempDir, "clickhouse"),
     logDir: path.join(tempDir, "clickhouse-logs"),
     tcpPort: clickhouseTcpPort,
@@ -46,9 +46,9 @@ try {
     env: {
       ...process.env,
       CLICKHOUSE_URL: clickhouse.url,
-      RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
-      RLOBS_AUTH_MODE: "local",
-      RLOBS_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
+      INSTANTML_AUTH_MODE: "local",
+      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
     },
     stdio: ["ignore", output, output],
   });

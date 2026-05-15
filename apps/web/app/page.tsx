@@ -135,8 +135,8 @@ function DashboardPreview() {
           <div className="compare-preview-row"><ShieldCheck size={14} /> artifacts <strong>3 matched</strong></div>
           <div className="compare-preview-row"><KeyRound size={14} /> SDK key <strong>ready</strong></div>
         </div>
-        <pre className="preview-panel sdk-preview"><Code2 size={15} /> export RLOBS_API_KEY=rlobs_...
-python train.py --tracker rlobs</pre>
+        <pre className="preview-panel sdk-preview"><Code2 size={15} /> export INSTANTML_API_KEY=instantml_...
+python train.py --tracker instantml</pre>
       </div>
     </section>
   );

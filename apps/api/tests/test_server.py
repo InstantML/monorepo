@@ -7,8 +7,8 @@ import urllib.request
 
 import pytest
 
-from rlobs_api import server as server_module
-from rlobs_api.server import MAX_BODY_BYTES, create_server
+from instantml_api import server as server_module
+from instantml_api.server import MAX_BODY_BYTES, create_server
 
 
 @pytest.fixture()
@@ -148,7 +148,7 @@ def test_internal_error_response(api_server, monkeypatch):
     def fail(_db_path):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("rlobs_api.db.list_projects", fail)
+    monkeypatch.setattr("instantml_api.db.list_projects", fail)
     with pytest.raises(urllib.error.HTTPError) as exc:
         request(api_server, "GET", "/projects")
 
@@ -179,7 +179,7 @@ def test_run_server_closes_server(monkeypatch, tmp_path):
 
 def test_server_main_parses_args(monkeypatch):
     captured = {}
-    monkeypatch.setattr("sys.argv", ["rlobs-api", "--db", "x.sqlite3", "--host", "0.0.0.0", "--port", "9000"])
+    monkeypatch.setattr("sys.argv", ["instantml-api", "--db", "x.sqlite3", "--host", "0.0.0.0", "--port", "9000"])
     monkeypatch.setattr(
         server_module,
         "run_server",

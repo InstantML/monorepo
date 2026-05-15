@@ -8,7 +8,7 @@ import path from "node:path";
 import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-hosted-clickhouse-"));
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-hosted-clickhouse-"));
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
@@ -78,7 +78,7 @@ try {
     { cookie },
   );
   const apiKey = keyPayload.body.api_key;
-  assert.match(apiKey, /^rlobs_/, "API key should be copy-once secret");
+  assert.match(apiKey, /^instantml_/, "API key should be copy-once secret");
   await assertPostStatus(
     `/api/orgs/${orgId}/api-keys`,
     { name: "Hosted smoke forbidden key" },
@@ -170,7 +170,7 @@ function runPythonSdk(apiKey) {
 import os
 import sys
 sys.path.insert(0, "packages/python-sdk")
-import rl_observability as ro
+import instantml as ro
 
 run = ro.init(
     project="hosted-python",
@@ -178,8 +178,8 @@ run = ro.init(
     config={"seed": 21},
     tags=["hosted", "python-sdk"],
     metadata={"notes": "python sdk hosted path"},
-    base_url=os.environ["RLOBS_BASE_URL"],
-    api_key=os.environ["RLOBS_API_KEY"],
+    base_url=os.environ["INSTANTML_BASE_URL"],
+    api_key=os.environ["INSTANTML_API_KEY"],
     source_tracking=False,
 )
 for step, value in enumerate([100, 101, 102]):
@@ -188,7 +188,7 @@ run.finish()
 `;
   const result = spawnSync("python3", ["-c", script], {
     cwd: repo,
-    env: { ...process.env, RLOBS_BASE_URL: apiBaseUrl, RLOBS_API_KEY: apiKey },
+    env: { ...process.env, INSTANTML_BASE_URL: apiBaseUrl, INSTANTML_API_KEY: apiKey },
     stdio: "inherit",
   });
   if (result.status !== 0) {
@@ -203,14 +203,14 @@ async function startServer() {
     cwd: repo,
     env: {
       ...process.env,
-      CLICKHOUSE_URL: `${clickhouseBase}/rlobs_default`,
+      CLICKHOUSE_URL: `${clickhouseBase}/instantml_default`,
       CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: controlUrl,
-      RLOBS_TENANT_CLICKHOUSE_URL: tenantBaseUrl,
-      RLOBS_HOSTED_CLICKHOUSE_ENABLED: "true",
-      RLOBS_CLICKHOUSE_PROVISIONER: "database",
-      RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
-      RLOBS_AUTH_MODE: "local",
-      RLOBS_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_TENANT_CLICKHOUSE_URL: tenantBaseUrl,
+      INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
+      INSTANTML_CLICKHOUSE_PROVISIONER: "database",
+      INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
+      INSTANTML_AUTH_MODE: "local",
+      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
     },
     stdio: ["ignore", output, output],
   });

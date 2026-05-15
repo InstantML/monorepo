@@ -22,7 +22,7 @@ Version markers:
 
 ```bash
 git clone <repo-url>
-cd rl-observability
+cd instantml
 nvm install
 nvm use
 python3.11 -m venv .venv
@@ -75,22 +75,22 @@ Terminal 1:
 npm run dev:api
 ```
 
-This starts or reuses ClickHouse at `CLICKHOUSE_URL`, stores generated local state under `.rlobs/clickhouse`, applies the Rust ClickHouse schema, and serves the Rust API at `http://127.0.0.1:8000`.
+This starts or reuses ClickHouse at `CLICKHOUSE_URL`, stores generated local state under `.instantml/clickhouse`, applies the Rust ClickHouse schema, and serves the Rust API at `http://127.0.0.1:8000`.
 
 If you need isolated generated state, use alternate ClickHouse paths and ports:
 
 ```bash
-RLOBS_DEV_CHDATA=/tmp/rlobs-clickhouse \
-RLOBS_DEV_CH_LOG_DIR=/tmp/rlobs-clickhouse-logs \
-CLICKHOUSE_URL=http://default:@127.0.0.1:8124/rlobs \
-RLOBS_API_PORT=8010 \
+INSTANTML_DEV_CHDATA=/tmp/instantml-clickhouse \
+INSTANTML_DEV_CH_LOG_DIR=/tmp/instantml-clickhouse-logs \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8124/instantml \
+INSTANTML_API_PORT=8010 \
 npm run dev:api
 ```
 
 Terminal 2:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 Open:
@@ -104,8 +104,8 @@ Sign up with the labeled local dev Google-style flow, create a copy-once SDK key
 For a production-style local web run:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:build
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:start
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
 ```
 
 ## Docker Path
@@ -122,7 +122,7 @@ The Docker stack starts ClickHouse and the primary Rust API at:
 http://127.0.0.1:8000
 ```
 
-Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000`.
+Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8000`.
 
 ## Rust/ClickHouse Path
 
@@ -131,27 +131,27 @@ The current default product backend is Rust API plus ClickHouse operational stor
 Apply the schema manually:
 
 ```bash
-CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/instantml \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- migrate
 ```
 
 Start the Rust API manually:
 
 ```bash
-CLICKHOUSE_URL=http://default:@127.0.0.1:8123/rlobs \
-RLOBS_BIND_ADDR=127.0.0.1:8001 \
+CLICKHOUSE_URL=http://default:@127.0.0.1:8123/instantml \
+INSTANTML_BIND_ADDR=127.0.0.1:8001 \
 cargo run --manifest-path apps/rust-server/Cargo.toml -- serve
 ```
 
 Run API-key contract mode against a manually started Rust server:
 
 ```bash
-RLOBS_CONTRACT_BASE_URL=http://127.0.0.1:8001 \
-RLOBS_CONTRACT_BOOTSTRAP_TOKEN=dev-bootstrap \
+INSTANTML_CONTRACT_BASE_URL=http://127.0.0.1:8001 \
+INSTANTML_CONTRACT_BOOTSTRAP_TOKEN=dev-bootstrap \
 npm run test:contract:direct
 ```
 
-With no `RLOBS_CONTRACT_BASE_URL`, `npm run test:contract:direct` also starts the disposable Rust/ClickHouse harness by default. Use `npm run test:contract:node` or `RLOBS_CONTRACT_BACKEND=node` for the deprecated Node compatibility contract smoke.
+With no `INSTANTML_CONTRACT_BASE_URL`, `npm run test:contract:direct` also starts the disposable Rust/ClickHouse harness by default. Use `npm run test:contract:node` or `INSTANTML_CONTRACT_BACKEND=node` for the deprecated Node compatibility contract smoke.
 
 Use `apps/rust-server/SETUP.md` for Rust-specific setup details.
 
@@ -192,8 +192,8 @@ npx playwright install chromium
 Use a different Rust API port:
 
 ```bash
-RLOBS_API_PORT=8010 npm run dev:api
-RLOBS_API_BASE=http://127.0.0.1:8010 npm run web:dev
+INSTANTML_API_PORT=8010 npm run dev:api
+INSTANTML_API_BASE=http://127.0.0.1:8010 npm run web:dev
 ```
 
 For the Next app, pass a different port directly:
@@ -206,5 +206,5 @@ cd apps/web
 If the default ClickHouse HTTP port is busy with a non-ClickHouse process, use a different `CLICKHOUSE_URL` port:
 
 ```bash
-CLICKHOUSE_URL=http://default:@127.0.0.1:8124/rlobs npm run dev:api
+CLICKHOUSE_URL=http://default:@127.0.0.1:8124/instantml npm run dev:api
 ```

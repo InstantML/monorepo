@@ -30,7 +30,7 @@ Primary W&B references reviewed:
 - [ ] Add disabled/no-op mode for tests and scripts that want the API shape without network or disk writes.
 - [ ] Add client-generated run IDs and resume modes that match Rust server semantics.
 - [ ] Add config include/exclude handling and clear config mutation rules.
-- [ ] Add `RLOBS_PROJECT`, `RLOBS_ENTITY` or org equivalent, `RLOBS_RUN_ID`, `RLOBS_RUN_GROUP`, `RLOBS_MODE`, cache/data/artifact dir variables, and documented precedence with explicit arguments.
+- [ ] Add `INSTANTML_PROJECT`, `INSTANTML_ENTITY` or org equivalent, `INSTANTML_RUN_ID`, `INSTANTML_RUN_GROUP`, `INSTANTML_MODE`, cache/data/artifact dir variables, and documented precedence with explicit arguments.
 - [ ] Keep context-manager finish behavior and make failed/keyboard-interrupted exits explicit in tests.
 
 ## P1 - Metric Hot Path

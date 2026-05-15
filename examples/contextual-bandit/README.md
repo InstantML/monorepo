@@ -1,6 +1,6 @@
 # Contextual Bandit Example
 
-This example logs a realistic online contextual bandit workflow to the local Training Observability server. It creates multiple runs across seeds and policy variants, logs bounded scalar metrics through the Python SDK, and records checkpoint, rollout, and report metadata through the SDK artifact helpers.
+This example logs a realistic online contextual bandit workflow to the local InstantML server. It creates multiple runs across seeds and policy variants, logs bounded scalar metrics through the Python SDK, and records checkpoint, rollout, and report metadata through the SDK artifact helpers.
 
 ## What It Simulates
 
@@ -27,7 +27,7 @@ npm run dev:api
 Start the Next UI in another terminal:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 Run the example in another terminal:
@@ -37,7 +37,7 @@ PYTHONPATH=packages/python-sdk:examples/contextual-bandit \
   python3 examples/contextual-bandit/train.py --server http://127.0.0.1:8000
 ```
 
-The default run creates six runs: two policies across seeds `11`, `23`, and `37`. Local artifact files are written under `.rlobs/contextual-bandit-artifacts/`.
+The default run creates six runs: two policies across seeds `11`, `23`, and `37`. Local artifact files are written under `.instantml/contextual-bandit-artifacts/`.
 
 ## Useful Variants
 

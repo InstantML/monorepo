@@ -1,8 +1,8 @@
 # Future Directions
 
-Exploratory product and architecture ideas for Training Observability. These are not accepted designs yet. Each direction below needs a focused design doc in `docs/design/`, fresh review, benchmarks, and user validation before implementation.
+Exploratory product and architecture ideas for InstantML. These are not accepted designs yet. Each direction below needs a focused design doc in `docs/design/`, fresh review, benchmarks, and user validation before implementation.
 
-The common theme is to make Training Observability more than a passive experiment tracker. The long-term opportunity is to help training systems record raw distributed context, replay or reinterpret decisions, and branch experiments without forcing users to pre-collapse everything into scalar metrics.
+The common theme is to make InstantML more than a passive experiment tracker. The long-term opportunity is to help training systems record raw distributed context, replay or reinterpret decisions, and branch experiments without forcing users to pre-collapse everything into scalar metrics.
 
 ## 1. Worker-Level Raw Signals And User-Defined Reductions
 
@@ -115,7 +115,7 @@ If `slerm` refers to an internal scheduler wrapper, this should be treated as th
 
 ### Product Value
 
-- Makes Training Observability active in the training loop, not just a dashboard after the fact.
+- Makes InstantML active in the training loop, not just a dashboard after the fact.
 - Preserves lineage between parent and child runs.
 - Helps teams exploit promising partial runs without hand-copying checkpoints.
 - Makes Compare more useful by showing branch relationships and config diffs from a known step.

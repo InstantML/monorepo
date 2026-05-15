@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import math
 
-import rl_observability as ro
+import instantml as ro
 
 
 def generate_metrics(step: int, seed: int) -> dict[str, float]:
@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument("--seed", default=42, type=int, help="Deterministic seed value")
     parser.add_argument("--steps", default=10, type=int, help="Number of training steps to log")
     parser.add_argument("--upload-mode", choices=["sync", "spool"], default="sync", help="Post-init SDK upload mode")
-    parser.add_argument("--spool-dir", default=".rlobs/spool", help="Process uploader spool directory")
+    parser.add_argument("--spool-dir", default=".instantml/spool", help="Process uploader spool directory")
     args = parser.parse_args()
 
     run = ro.init(

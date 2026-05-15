@@ -8,7 +8,7 @@ Owner: Codex
 
 ## Summary
 
-Training Observability needs a hosted entry flow before the dashboard. First-time users should land on a product page, continue through a Google-style sign-in or sign-up screen, choose an individual or business account path, create or join an organization, create an SDK API key, and then reach the existing dashboard.
+InstantML needs a hosted entry flow before the dashboard. First-time users should land on a product page, continue through a Google-style sign-in or sign-up screen, choose an individual or business account path, create or join an organization, create an SDK API key, and then reach the existing dashboard.
 
 The smallest useful version keeps the current local-first developer experience while adding the core hosted model: user UUIDs mapped from verified emails, org memberships, opaque browser sessions stored as hashed tokens, org seat limits, and copy-once API key creation. Real Google token verification stays behind the existing managed-auth boundary and configuration; local development uses an explicitly labeled dev Google flow that exercises the same user/org/session/API-key paths without requiring OAuth credentials in the repo.
 
@@ -74,7 +74,7 @@ The sign-in, sign-up, and onboarding screens should be compact operational surfa
 
 Concrete first viewport composition:
 
-- Product name as the H1: `Training Observability`.
+- Product name as the H1: `InstantML`.
 - Supporting copy: implemented strengths only, such as fast run browsing, bounded metric charts, SDK ingestion, Rust/ClickHouse storage, and local-first setup.
 - Primary action: Google sign-in only when managed auth is configured; otherwise the local dev flow is explicit and labeled.
 - Secondary action: open the local demo/dashboard path after auth.
@@ -104,15 +104,15 @@ Session auth and API-key auth coexist:
 
 - Browser dashboard/API-key/org routes use session auth.
 - SDK ingestion continues to use bearer API keys.
-- In `RLOBS_AUTH_MODE=local`, compatibility product routes can still use the fixed local org when no session is present. Session-authenticated requests use the session org instead.
-- In `RLOBS_AUTH_MODE=api-key`, tenant product routes require either a valid API key or valid session, depending on route class. SDK write scopes still use API-key scopes.
+- In `INSTANTML_AUTH_MODE=local`, compatibility product routes can still use the fixed local org when no session is present. Session-authenticated requests use the session org instead.
+- In `INSTANTML_AUTH_MODE=api-key`, tenant product routes require either a valid API key or valid session, depending on route class. SDK write scopes still use API-key scopes.
 
 ### Local Dev Google Flow
 
 Because the repo cannot ship Google OAuth credentials, add a local-only endpoint:
 
 - `POST /api/auth/dev/google`
-- Enabled only when `RLOBS_AUTH_MODE=local` and either the bind address is loopback or `RLOBS_DEV_AUTH_ENABLED=true` is set for an explicitly local development process. It must not run in hosted/API-key mode.
+- Enabled only when `INSTANTML_AUTH_MODE=local` and either the bind address is loopback or `INSTANTML_DEV_AUTH_ENABLED=true` is set for an explicitly local development process. It must not run in hosted/API-key mode.
 - Accepts `email`, `display_name`, `account_type`, `org_name`, and optional `seat_emails`.
 - Validates email/name/account type, upserts user and dev identity, creates a new org or returns `409` on slug conflict, creates membership, stores a session, and returns current session payload.
 - The UI labels this as a local development Google-style flow.
@@ -166,7 +166,7 @@ Local-mode product fallback and admin authorization must be separate. Unauthenti
 - unrestricted org API key with `api_keys:write`,
 - configured bootstrap token.
 
-`RLOBS_AUTH_MODE=local` alone is not sufficient admin authorization.
+`INSTANTML_AUTH_MODE=local` alone is not sufficient admin authorization.
 
 ### Dashboard Session Handling
 
@@ -195,7 +195,7 @@ Frontend:
 
 Python SDK:
 
-- No public SDK API change in this slice. Docs should point new users to the onboarding-generated API key and existing `RLOBS_API_KEY`.
+- No public SDK API change in this slice. Docs should point new users to the onboarding-generated API key and existing `INSTANTML_API_KEY`.
 
 Storage:
 

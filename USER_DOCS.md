@@ -1,6 +1,6 @@
-# Training Observability User Guide
+# InstantML User Guide
 
-Training Observability helps you log training runs from Python, compare metrics across runs, inspect configs and artifacts, and turn those logs into a fast experiment workspace.
+InstantML helps you log training runs from Python, compare metrics across runs, inspect configs and artifacts, and turn those logs into a fast experiment workspace.
 
 This guide is written for users of the product and SDK. It avoids internal implementation detail unless it affects how you log data.
 
@@ -27,7 +27,7 @@ http://127.0.0.1:8000
 Start the web UI in another terminal:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 Open:
@@ -40,7 +40,7 @@ Sign up with the labeled local dev Google-style flow, create a copy-once SDK key
 
 ## Use The Python SDK
 
-The current source package is imported as `rl_observability`.
+The current source package is imported as `instantml`.
 
 For local source usage:
 
@@ -51,20 +51,20 @@ export PYTHONPATH="$PWD/packages/python-sdk"
 For hosted or auth-required servers, set an API key:
 
 ```bash
-export RLOBS_API_KEY="rlobs_..."
+export INSTANTML_API_KEY="instantml_..."
 ```
 
-You can also pass `api_key="rlobs_..."` directly to `ro.init(...)`.
+You can also pass `api_key="instantml_..."` directly to `ro.init(...)`.
 
 Common connection options:
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 client = ro.Client(
     base_url="http://127.0.0.1:8000",
     timeout=2.0,
-    api_key="rlobs_...",
+    api_key="instantml_...",
 )
 
 run = client.init(project="cartpole", name="ppo-seed-42")
@@ -75,7 +75,7 @@ Most users can call `ro.init(...)` directly. Use `ro.Client(...)` when you want 
 ## Minimal Example
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 run = ro.init(
     project="cartpole",
@@ -128,7 +128,7 @@ The UI uses these namespaces to group panels and make metric search easier. Unit
 Use a context manager when you want interrupted runs to be marked as failed automatically:
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 with ro.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
     for epoch in range(10):
@@ -374,7 +374,7 @@ run.finish()
 ```python
 run = ro.init(
     project="cartpole",
-    offline_dir=".rlobs/offline",
+    offline_dir=".instantml/offline",
 )
 
 run.log_metrics({"train/reward": 10.0}, step=1)
@@ -398,7 +398,7 @@ run = ro.init(
     project="humanoid-rl",
     name="td3-seed-36970",
     upload_mode="spool",
-    spool_dir=".rlobs/spool",
+    spool_dir=".instantml/spool",
 )
 
 for step in range(10_000):
@@ -419,16 +419,16 @@ run.finish()
 Uploader process:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
-  --spool-dir .rlobs/spool \
+PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
+  --spool-dir .instantml/spool \
   --base-url http://127.0.0.1:8000
 ```
 
 To run continuously:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
-  --spool-dir .rlobs/spool \
+PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
+  --spool-dir .instantml/spool \
   --base-url http://127.0.0.1:8000 \
   --follow
 ```
@@ -436,9 +436,9 @@ PYTHONPATH=packages/python-sdk python3 -m rl_observability.uploader \
 You can also call the uploader from Python:
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
-uploaded = ro.drain_spool(".rlobs/spool", base_url="http://127.0.0.1:8000")
+uploaded = ro.drain_spool(".instantml/spool", base_url="http://127.0.0.1:8000")
 print(uploaded)
 ```
 
@@ -450,7 +450,7 @@ This condensed example trains a small softmax classifier and logs the pieces tha
 
 ```python
 import numpy as np
-import rl_observability as ro
+import instantml as ro
 
 run = ro.init(
     project="iris-classification",
@@ -557,16 +557,16 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 - True offline run creation is not implemented yet; `init()` needs a reachable server.
 - Workspace layouts and saved views are local-browser state today, not hosted team objects.
 - First-slice workspace panels are line plots. Rich table, media, query, text, scatter, and parallel-coordinate panels are planned follow-ups.
-- The SDK package name is still `rl_observability` for compatibility.
+- The SDK package name is still `instantml` for compatibility.
 - The deprecated Node server is for compatibility checks only; new product usage should target the Rust/ClickHouse API.
 
 ## Troubleshooting
 
-If `import rl_observability` fails in a source checkout:
+If `import instantml` fails in a source checkout:
 
 ```bash
 export PYTHONPATH="$PWD/packages/python-sdk"
-python3 -c "import rl_observability as ro; print(ro.Client())"
+python3 -c "import instantml as ro; print(ro.Client())"
 ```
 
 If SDK calls fail with connection errors, confirm the API is running:
@@ -576,27 +576,27 @@ npm run dev:api
 curl http://127.0.0.1:8000/healthz
 ```
 
-SDK network, server, and invalid-response failures raise `rl_observability.RlobsError`:
+SDK network, server, and invalid-response failures raise `instantml.InstantMLError`:
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 try:
     run = ro.init(project="demo")
-except ro.RlobsError as exc:
-    print(f"Training Observability logging is unavailable: {exc}")
+except ro.InstantMLError as exc:
+    print(f"InstantML logging is unavailable: {exc}")
 ```
 
 If a hosted/auth-required server returns `401` or `403`, check:
 
 ```bash
-echo "$RLOBS_API_KEY"
+echo "$INSTANTML_API_KEY"
 ```
 
 or pass:
 
 ```python
-ro.init(project="demo", api_key="rlobs_...", base_url="https://your-api.example.com")
+ro.init(project="demo", api_key="instantml_...", base_url="https://your-api.example.com")
 ```
 
 If charts look empty, check that you logged finite numeric metrics with nonnegative steps:
