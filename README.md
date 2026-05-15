@@ -188,10 +188,11 @@ RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
 Run the one-command local stack:
 
 ```bash
+cp docker-compose.override.example.yml docker-compose.override.yml
 docker compose up --build
 ```
 
-The Docker stack starts ClickHouse and the Rust API at `http://127.0.0.1:8000` with durable ClickHouse rows, metric rows, and artifact bytes in Docker volumes. Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000`.
+The Docker stack starts ClickHouse and the Rust API with durable ClickHouse rows, metric rows, and artifact bytes in Docker volumes. The example override enables the dev Google-style auth flow inside the container and remaps the host port to 8010 (the gitignored override file is per-machine). Without it the stack ships with secure defaults — `/signup` will render disabled buttons because the dev auth endpoint stays gated. See `SETUP.md` for the full Docker path and security notes.
 
 Run Rust checks and smokes:
 
