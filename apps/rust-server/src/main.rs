@@ -62,7 +62,9 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .map_err(|error| instantml_rust_server::AppError::internal(format!("server failed: {error}")))
+        .map_err(|error| {
+            instantml_rust_server::AppError::internal(format!("server failed: {error}"))
+        })
 }
 
 async fn migrate_all(config: AppConfig) -> instantml_rust_server::AppResult<()> {

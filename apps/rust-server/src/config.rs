@@ -89,7 +89,11 @@ impl AppConfig {
         {
             "local" | "none" | "off" => AuthMode::Local,
             "api-key" | "api_key" | "hosted" => AuthMode::ApiKey,
-            _ => return Err(AppError::config("INSTANTML_AUTH_MODE must be local or api-key")),
+            _ => {
+                return Err(AppError::config(
+                    "INSTANTML_AUTH_MODE must be local or api-key",
+                ))
+            }
         };
         let log_format = match env_string("INSTANTML_LOG_FORMAT", "pretty")
             .to_ascii_lowercase()
@@ -97,7 +101,11 @@ impl AppConfig {
         {
             "pretty" => LogFormat::Pretty,
             "json" => LogFormat::Json,
-            _ => return Err(AppError::config("INSTANTML_LOG_FORMAT must be pretty or json")),
+            _ => {
+                return Err(AppError::config(
+                    "INSTANTML_LOG_FORMAT must be pretty or json",
+                ))
+            }
         };
         Ok(Self {
             clickhouse_url,
@@ -205,7 +213,10 @@ fn hosted_clickhouse_config(
             max_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 8)?
                 as u32,
             num_replicas: env_u64("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS", 1)? as u32,
-            wait_timeout: Duration::from_secs(env_u64("INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS", 600)?),
+            wait_timeout: Duration::from_secs(env_u64(
+                "INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS",
+                600,
+            )?),
         })
     } else {
         None

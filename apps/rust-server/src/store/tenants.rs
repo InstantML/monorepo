@@ -230,7 +230,8 @@ impl Store {
             .hosted_clickhouse
             .as_ref()
             .ok_or_else(|| AppError::internal("hosted ClickHouse config missing"))?;
-        let base = parse_clickhouse_url(&hosted.tenant_base_url, "INSTANTML_TENANT_CLICKHOUSE_URL")?;
+        let base =
+            parse_clickhouse_url(&hosted.tenant_base_url, "INSTANTML_TENANT_CLICKHOUSE_URL")?;
         let connection = ClickHouseConnection {
             endpoint: base.endpoint.clone(),
             username: base.username.clone(),
