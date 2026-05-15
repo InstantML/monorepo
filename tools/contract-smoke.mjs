@@ -47,7 +47,7 @@ async function startNodeCompatibilityServer() {
 
 async function runContract(root) {
   assert.deepEqual(await request(root, "GET", "/health"), { status: "ok" });
-  const bootstrapHeaders = bootstrapToken ? { "X-RLOBS-Bootstrap-Token": bootstrapToken } : {};
+  const bootstrapHeaders = bootstrapToken ? { "X-INSTANTML-Bootstrap-Token": bootstrapToken } : {};
 
   const user = (await request(root, "POST", "/api/users", {
     email: "contract@example.com",

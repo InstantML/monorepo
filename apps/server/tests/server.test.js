@@ -121,7 +121,7 @@ test("HTTP lifecycle, summaries, artifacts, and API work", async () => {
 
 test("org API keys protect SDK ingestion and idempotent metric replay", async () => {
   await withServer(async (baseUrl) => {
-    const bootstrapHeaders = { "X-RLOBS-Bootstrap-Token": "test-bootstrap" };
+    const bootstrapHeaders = { "X-INSTANTML-Bootstrap-Token": "test-bootstrap" };
     const user = (await request(baseUrl, "POST", "/api/users", {
       email: "owner@example.com",
       provider: "google",
