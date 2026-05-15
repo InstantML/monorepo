@@ -37,6 +37,8 @@ SNAPSHOT_KEYS = {"metrics", "metadata"}
 CONSOLE_LOG_STREAMS = {"stdout", "stderr"}
 MAX_CONSOLE_LOG_MESSAGE_BYTES = 16 * 1024
 MAX_CONSOLE_LOG_LINES_PER_BATCH = 50
+_PENDING_RUN_ID = "__instantml_pending__"
+_DEFAULT_INIT_WAIT_SECONDS = 30.0
 
 
 class Table:
@@ -258,6 +260,7 @@ class Client:
         system_metrics: bool = False,
         system_metrics_interval: float = 15.0,
         capture_console: bool = False,
+        async_init: bool = True,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
@@ -268,29 +271,71 @@ class Client:
         combined_metadata.update(metadata or {})
         if notes is not None:
             combined_metadata["notes"] = _validate_note_text(notes)
-        response = self._request(
-            "POST",
-            "/runs",
-            {
-                "project": project,
-                "name": name,
-                "config": config or {},
-                "tags": tags or [],
-                "metadata": combined_metadata,
-            },
+        create_body = {
+            "project": project,
+            "name": name,
+            "config": config or {},
+            "tags": tags or [],
+            "metadata": combined_metadata,
+        }
+        run_client = Client(
+            base_url=self.base_url,
+            timeout=self.timeout,
+            offline_dir=offline_dir or self.offline_dir,
+            api_key=self.api_key,
         )
+
+        if not async_init:
+            response = self._request("POST", "/runs", create_body)
+            run = Run(
+                client=run_client,
+                run_id=response["run"]["id"],
+                buffer_size=buffer_size,
+                upload_mode=upload_mode,
+                spool_dir=spool_dir,
+                _local_store=_LocalStore(local_store_dir, response["run"]["id"]) if local_store else None,
+            )
+            if system_metrics:
+                run.start_system_metrics(interval=system_metrics_interval)
+            if capture_console:
+                run.capture_console()
+            return run
+
         run = Run(
-            client=Client(base_url=self.base_url, timeout=self.timeout, offline_dir=offline_dir or self.offline_dir, api_key=self.api_key),
-            run_id=response["run"]["id"],
+            client=run_client,
+            run_id=_PENDING_RUN_ID,
             buffer_size=buffer_size,
             upload_mode=upload_mode,
             spool_dir=spool_dir,
-            _local_store=_LocalStore(local_store_dir, response["run"]["id"]) if local_store else None,
         )
-        if system_metrics:
-            run.start_system_metrics(interval=system_metrics_interval)
-        if capture_console:
-            run.capture_console()
+
+        def _resolve_init() -> None:
+            try:
+                response = self._request("POST", "/runs", create_body)
+                real_run_id = response["run"]["id"]
+                if local_store:
+                    run._local_store = _LocalStore(local_store_dir, real_run_id)
+                run.run_id = real_run_id  # property setter sets _init_done
+                if system_metrics:
+                    try:
+                        run.start_system_metrics(interval=system_metrics_interval)
+                    except Exception:  # noqa: BLE001 — surface via warning, don't crash worker
+                        pass
+                if capture_console:
+                    try:
+                        run.capture_console()
+                    except Exception:  # noqa: BLE001
+                        pass
+            except BaseException as exc:  # noqa: BLE001 — propagate to foreground via property
+                run._init_error = exc
+                run._init_done.set()
+
+        thread = threading.Thread(
+            target=_resolve_init,
+            name=f"instantml-init-{project}",
+            daemon=True,
+        )
+        thread.start()
         return run
 
     def _request(
@@ -376,27 +421,65 @@ class Api:
         )
 
 
-@dataclass
 class Run:
-    client: Client
-    run_id: str
-    buffer_size: int = 0
-    upload_mode: str = "sync"
-    spool_dir: str | None = None
-    media_dir: str | None = None
-    _queue: list[dict[str, Any]] = field(default_factory=list)
-    _last_steps: dict[str, float] = field(default_factory=dict)
-    _console_line_numbers: dict[str, int] = field(default_factory=dict)
-    _process_sequence: int = field(default=0, init=False)
-    _auto_step: int | float = field(default=0, init=False)
-    _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
-    _finished: bool = field(default=False, init=False)
-    _local_store: "_LocalStore | None" = field(default=None, repr=False)
-    _system_sampler: "_SystemMetricsSampler | None" = field(default=None, init=False, repr=False)
-    _console_capture: "_ConsoleCapture | None" = field(default=None, init=False, repr=False)
+    def __init__(
+        self,
+        client: Client,
+        run_id: str,
+        buffer_size: int = 0,
+        upload_mode: str = "sync",
+        spool_dir: str | None = None,
+        media_dir: str | None = None,
+        _local_store: "_LocalStore | None" = None,
+    ) -> None:
+        _validate_upload_mode(upload_mode)
+        self.client = client
+        self._run_id = run_id
+        self.buffer_size = buffer_size
+        self.upload_mode = upload_mode
+        self.spool_dir = spool_dir
+        self.media_dir = media_dir
+        self._queue: list[dict[str, Any]] = []
+        self._last_steps: dict[str, float] = {}
+        self._console_line_numbers: dict[str, int] = {}
+        self._process_sequence: int = 0
+        self._auto_step: int | float = 0
+        self._lock = threading.RLock()
+        self._finished = False
+        self._local_store: "_LocalStore | None" = _local_store
+        self._system_sampler: "_SystemMetricsSampler | None" = None
+        self._console_capture: "_ConsoleCapture | None" = None
+        self._init_done = threading.Event()
+        self._init_error: BaseException | None = None
+        if run_id and run_id != _PENDING_RUN_ID:
+            self._init_done.set()
 
-    def __post_init__(self) -> None:
-        _validate_upload_mode(self.upload_mode)
+    @property
+    def run_id(self) -> str:
+        if not self._init_done.is_set():
+            self._init_done.wait()
+        if self._init_error is not None:
+            raise self._init_error
+        return self._run_id
+
+    @run_id.setter
+    def run_id(self, value: str) -> None:
+        self._run_id = value
+        if value and value != _PENDING_RUN_ID:
+            self._init_done.set()
+
+    def wait_for_init(self, timeout: float | None = None) -> str:
+        """Block until init resolves and return the real run_id.
+
+        Raises ``InstantMLError`` if the deadline expires. Re-raises any
+        exception that the background init thread captured.
+        """
+        if not self._init_done.is_set():
+            if not self._init_done.wait(timeout=timeout):
+                raise InstantMLError("run init did not complete in time")
+        if self._init_error is not None:
+            raise self._init_error
+        return self._run_id
 
     def __enter__(self) -> "Run":
         return self
@@ -1076,6 +1159,7 @@ def init(
     system_metrics: bool = False,
     system_metrics_interval: float = 15.0,
     capture_console: bool = False,
+    async_init: bool = True,
 ) -> Run:
     return Client(base_url=base_url, timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
         project=project,
@@ -1094,6 +1178,7 @@ def init(
         system_metrics=system_metrics,
         system_metrics_interval=system_metrics_interval,
         capture_console=capture_console,
+        async_init=async_init,
     )
 
 

@@ -435,6 +435,7 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
         spool_dir=str(tmp_path),
         source_tracking=False,
     )
+    run.wait_for_init(timeout=2.0)
 
     assert run.upload_mode == "spool"
     assert run.spool_dir == str(tmp_path)
@@ -445,6 +446,77 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
         Client(base_url="http://example.test").init(project="demo", notes="x" * 513)
     with pytest.raises(ValueError, match="upload_mode"):
         Client(base_url="http://example.test").init(project="demo", upload_mode="background")
+
+
+def test_async_init_returns_run_before_post_completes(monkeypatch):
+    gate = threading.Event()
+    request_started = threading.Event()
+
+    def slow_request(self, method, path, body=None):
+        if method == "POST" and path == "/runs":
+            request_started.set()
+            assert gate.wait(timeout=2.0), "gate was never released"
+            return {"run": {"id": "real-run-id"}}
+        return {}
+
+    monkeypatch.setattr(Client, "_request", slow_request)
+
+    started_at = time.monotonic()
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        source_tracking=False,
+    )
+    elapsed = time.monotonic() - started_at
+
+    # init() returned without waiting on the slow POST.
+    assert elapsed < 0.5, f"init blocked for {elapsed:.3f}s; should be near-zero"
+    assert request_started.wait(timeout=1.0), "worker thread never called _request"
+    assert run._run_id == "__instantml_pending__"
+
+    # Releasing the gate lets the worker finish; run_id access blocks until then.
+    gate.set()
+    assert run.wait_for_init(timeout=2.0) == "real-run-id"
+    assert run.run_id == "real-run-id"
+
+
+def test_async_init_surfaces_server_error_on_run_id_access(monkeypatch):
+    def failing_request(self, method, path, body=None):
+        if method == "POST" and path == "/runs":
+            raise InstantMLError("POST /runs failed: HTTP 500: boom")
+        return {}
+
+    monkeypatch.setattr(Client, "_request", failing_request)
+
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        source_tracking=False,
+    )
+
+    with pytest.raises(InstantMLError, match="boom"):
+        run.wait_for_init(timeout=2.0)
+    with pytest.raises(InstantMLError, match="boom"):
+        _ = run.run_id
+
+
+def test_sync_init_still_blocks_when_async_init_disabled(monkeypatch):
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path))
+        return {"run": {"id": "run-sync"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        source_tracking=False,
+        async_init=False,
+    )
+
+    # In sync mode the POST has already happened by the time init returns.
+    assert calls == [("POST", "/runs")]
+    assert run._run_id == "run-sync"
+    assert run.run_id == "run-sync"
 
 
 def test_process_spool_mode_writes_events_without_network(tmp_path):
