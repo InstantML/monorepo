@@ -11,15 +11,15 @@
 # 2. Enable the dev Google-style auth flow inside the container. The Rust
 #    server only enables this automatically when bound to a loopback
 #    address, which the docker container is not. Setting
-#    RLOBS_DEV_AUTH_ENABLED=true forces it on.
+#    INSTANTML_DEV_AUTH_ENABLED=true forces it on.
 #
-# RLOBS_DEV_AUTH_ENABLED MUST NOT be set in any compose file that is
+# INSTANTML_DEV_AUTH_ENABLED MUST NOT be set in any compose file that is
 # deployed to a publicly reachable host. The endpoint lets anyone with
 # network access mint an authenticated session with an arbitrary email.
 
 services:
-  rlobs:
+  instantml:
     ports:
       - "8010:8000"
     environment:
-      RLOBS_DEV_AUTH_ENABLED: "true"
+      INSTANTML_DEV_AUTH_ENABLED: "true"

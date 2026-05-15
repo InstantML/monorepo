@@ -7,14 +7,14 @@ pub fn generate_api_key() -> String {
     let mut bytes = Vec::with_capacity(32);
     bytes.extend_from_slice(Uuid::new_v4().as_bytes());
     bytes.extend_from_slice(Uuid::new_v4().as_bytes());
-    format!("rlobs_{}", URL_SAFE_NO_PAD.encode(bytes))
+    format!("instantml_{}", URL_SAFE_NO_PAD.encode(bytes))
 }
 
 pub fn generate_session_token() -> String {
     let mut bytes = Vec::with_capacity(32);
     bytes.extend_from_slice(Uuid::new_v4().as_bytes());
     bytes.extend_from_slice(Uuid::new_v4().as_bytes());
-    format!("rlobs_session_{}", URL_SAFE_NO_PAD.encode(bytes))
+    format!("instantml_session_{}", URL_SAFE_NO_PAD.encode(bytes))
 }
 
 pub fn hash_secret(secret: &str) -> Vec<u8> {

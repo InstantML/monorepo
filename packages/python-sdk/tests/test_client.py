@@ -11,12 +11,12 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-import rl_observability as ro
-import rl_observability.client as client_module
-import rl_observability.uploader as uploader
-from rl_observability.client import (
+import instantml as ro
+import instantml.client as client_module
+import instantml.uploader as uploader
+from instantml.client import (
     Client,
-    RlobsError,
+    InstantMLError,
     Run,
     _ConsoleStream,
     _LocalStore,
@@ -30,7 +30,7 @@ from rl_observability.client import (
     _write_image_data,
     _write_video_data,
 )
-from rlobs_api.server import create_server
+from instantml_api.server import create_server
 
 
 @pytest.fixture()
@@ -124,7 +124,7 @@ def test_api_runs_reuses_client_request_auth_timeout_and_returns_payload(monkeyp
     }
 
 
-def test_api_runs_raises_rlobs_error_for_invalid_json(monkeypatch):
+def test_api_runs_raises_instantml_error_for_invalid_json(monkeypatch):
     class FakeResponse:
         def __enter__(self):
             return self
@@ -136,7 +136,7 @@ def test_api_runs_raises_rlobs_error_for_invalid_json(monkeypatch):
             return b"not-json"
 
     monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
-    with pytest.raises(RlobsError, match="invalid JSON"):
+    with pytest.raises(InstantMLError, match="invalid JSON"):
         ro.Api(base_url="http://example.test").runs(limit=1)
 
 
@@ -309,7 +309,7 @@ def test_rich_object_spool_and_validation(tmp_path):
     event = json.loads(next((tmp_path / "spool" / "run-1").glob("*.json")).read_text(encoding="utf-8"))
     assert event["requests"][0]["path"] == "/api/runs/run-1/objects"
     assert event["requests"][0]["body"]["kind"] == "table"
-    with pytest.raises(RlobsError, match="rich media"):
+    with pytest.raises(InstantMLError, match="rich media"):
         run.log_audio("audio/sample", str(source), step=1)
     with pytest.raises(ValueError, match="row length"):
         ro.Run(client=FailingClient(), run_id="run-1").log_table_object("bad", ["a"], [[1, 2]])
@@ -367,7 +367,7 @@ def test_rich_object_helper_edge_cases(tmp_path):
         run.log_objects({"x": ro.Histogram([0, "bad"], [1])}, step=1)
     with pytest.raises(ValueError, match="finite"):
         run.log_objects({"x": ro.Histogram([0, float("inf")], [1])}, step=1)
-    with pytest.raises(RlobsError, match="does not exist"):
+    with pytest.raises(InstantMLError, match="does not exist"):
         run.log_image("images/missing", str(tmp_path / "missing.png"), step=1)
     with pytest.raises(TypeError, match="unsupported"):
         run._log_rich_object("x", object(), step=1, metadata=None)
@@ -824,7 +824,7 @@ def test_process_uploader_failure_preserves_order_per_run(tmp_path):
     class SometimesFailingClient:
         def _request(self, method, path, body):
             if "/run-a/" in path:
-                raise RlobsError("run-a is blocked")
+                raise InstantMLError("run-a is blocked")
             calls.append((method, path, body))
             return {}
 
@@ -856,7 +856,7 @@ def test_process_uploader_lock_conflict_and_max_events(tmp_path):
 
     lock_path = tmp_path / uploader.LOCK_FILE
     lock_path.write_text("123", encoding="utf-8")
-    with pytest.raises(RlobsError, match="already running"):
+    with pytest.raises(InstantMLError, match="already running"):
         uploader.drain_spool(str(tmp_path), client=FakeClient())
     lock_path.unlink()
     assert uploader.drain_spool(str(tmp_path), client=FakeClient()) == 1
@@ -879,13 +879,13 @@ def test_process_uploader_rejects_malformed_events_and_missing_upload_sources(tm
     assert uploader.drain_spool(str(tmp_path), client=FakeClient()) == 0
     non_object.unlink()
 
-    with pytest.raises(RlobsError, match="exactly one request"):
+    with pytest.raises(InstantMLError, match="exactly one request"):
         uploader._send_event(FakeClient(), {"requests": []})
-    with pytest.raises(RlobsError, match="JSON object"):
+    with pytest.raises(InstantMLError, match="JSON object"):
         uploader._send_event(FakeClient(), {"requests": ["bad"]})
-    with pytest.raises(RlobsError, match="method, path, and body"):
+    with pytest.raises(InstantMLError, match="method, path, and body"):
         uploader._send_event(FakeClient(), {"requests": [{"method": "POST", "path": "/runs/run-1/metrics"}]})
-    with pytest.raises(RlobsError, match="cannot read upload source"):
+    with pytest.raises(InstantMLError, match="cannot read upload source"):
         uploader._prepare_body("/api/runs/run-1/artifacts/upload", {"source_path": str(tmp_path / "missing.pt")})
 
 
@@ -894,9 +894,9 @@ def test_request_or_spool_reraises_without_offline_dir():
         offline_dir = None
 
         def _request(self, method, path, body):
-            raise RlobsError("network down")
+            raise InstantMLError("network down")
 
-    with pytest.raises(RlobsError, match="network down"):
+    with pytest.raises(InstantMLError, match="network down"):
         Run(client=FailingClient(), run_id="run-1").log_metrics({"reward": 1}, step=0)
 
 
@@ -984,13 +984,13 @@ def test_source_metadata_handles_missing_git(monkeypatch):
 
 def test_sdk_raises_clear_error_for_http_error(api_server):
     client = Client(base_url=api_server)
-    with pytest.raises(RlobsError, match="project name"):
+    with pytest.raises(InstantMLError, match="project name"):
         client.init(project="")
 
 
 def test_sdk_raises_clear_error_for_network_error():
     client = Client(base_url="http://127.0.0.1:9", timeout=0.01)
-    with pytest.raises(RlobsError):
+    with pytest.raises(InstantMLError):
         client.init(project="cartpole")
 
 
@@ -1006,7 +1006,7 @@ def test_sdk_rejects_invalid_json_response(monkeypatch):
             return b"not-json"
 
     monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
-    with pytest.raises(RlobsError, match="invalid JSON"):
+    with pytest.raises(InstantMLError, match="invalid JSON"):
         Client()._request("GET", "/health")
 
 
@@ -1022,7 +1022,7 @@ def test_sdk_rejects_non_object_json_response(monkeypatch):
             return b"[]"
 
     monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
-    with pytest.raises(RlobsError, match="non-object"):
+    with pytest.raises(InstantMLError, match="non-object"):
         Client()._request("GET", "/health")
 
 
@@ -1031,7 +1031,7 @@ def test_sdk_http_error_fallback_message(monkeypatch):
         raise urllib.error.HTTPError("url", 500, "boom", {}, BytesIO(b"not-json"))
 
     monkeypatch.setattr("urllib.request.urlopen", fail)
-    with pytest.raises(RlobsError, match="HTTP Error 500"):
+    with pytest.raises(InstantMLError, match="HTTP Error 500"):
         Client()._request("GET", "/health")
 
 
@@ -1041,7 +1041,7 @@ def test_sdk_http_error_non_error_object_message(monkeypatch):
         raise urllib.error.HTTPError("url", 500, "boom", {}, body)
 
     monkeypatch.setattr("urllib.request.urlopen", fail)
-    with pytest.raises(RlobsError, match="HTTP Error 500"):
+    with pytest.raises(InstantMLError, match="HTTP Error 500"):
         Client()._request("GET", "/health")
 
 
@@ -1171,7 +1171,7 @@ def test_wrappers_conversions_and_missing_optional_dependencies(monkeypatch, tmp
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fail_soundfile)
-    with pytest.raises(RlobsError, match="soundfile"):
+    with pytest.raises(InstantMLError, match="soundfile"):
         run.log_objects({"audio": ro.Audio.from_data([0.0, 0.1])}, step=1)
 
     def fail_video_imports(name, *args, **kwargs):
@@ -1180,7 +1180,7 @@ def test_wrappers_conversions_and_missing_optional_dependencies(monkeypatch, tmp
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fail_video_imports)
-    with pytest.raises(RlobsError, match="moviepy or imageio"):
+    with pytest.raises(InstantMLError, match="moviepy or imageio"):
         run.log_objects({"video": ro.Video.from_data([[[[0, 0, 0]]]])}, step=1)
 
 
@@ -1295,7 +1295,7 @@ def test_system_metrics_collection_and_sampler_lifecycle(monkeypatch):
     monkeypatch.setattr(client_module, "_collect_system_metrics", lambda: {"system/cpu_percent": 1.0})
     run = Run(client=FakeClient(), run_id="run-1")
     run.start_system_metrics(interval=0.01)
-    with pytest.raises(RlobsError, match="already running"):
+    with pytest.raises(InstantMLError, match="already running"):
         run.start_system_metrics(interval=0.01)
     time.sleep(0.03)
     run.finish()
@@ -1330,7 +1330,7 @@ def test_console_capture_writes_through_logs_and_restores(monkeypatch):
     monkeypatch.setattr(sys, "stdout", TextStream())
     run = Run(client=FakeClient(), run_id="run-1")
     run.capture_console()
-    with pytest.raises(RlobsError, match="already enabled"):
+    with pytest.raises(InstantMLError, match="already enabled"):
         run.capture_console()
     sys.stdout.write("hello\n")
     sys.stdout.flush()
@@ -1523,7 +1523,7 @@ def test_log_helpers_error_paths_and_media_roots(tmp_path):
         run.log_text({"bad": object()})
     with pytest.raises(ValueError, match="must not be empty"):
         ro.Histogram.from_values([])
-    with pytest.raises(RlobsError, match="upload source"):
+    with pytest.raises(InstantMLError, match="upload source"):
         Run(client=FakeClient(), run_id="run-2").upload_file(str(tmp_path / "missing.txt"))
 
 
@@ -1542,7 +1542,7 @@ def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path
     _write_image_data(SavedImage(), saved)
     assert figure.read_bytes() == b"figure"
     assert saved.read_bytes() == b"image"
-    with pytest.raises(RlobsError, match="image data"):
+    with pytest.raises(InstantMLError, match="image data"):
         _write_image_data(None, tmp_path / "none.png")
 
     real_import = __import__
@@ -1553,7 +1553,7 @@ def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fail_pillow)
-    with pytest.raises(RlobsError, match="Pillow"):
+    with pytest.raises(InstantMLError, match="Pillow"):
         _write_image_data([[[0, 0, 0]]], tmp_path / "missing-pillow.png")
 
     def fail_numpy(name, *args, **kwargs):
@@ -1562,7 +1562,7 @@ def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fail_numpy)
-    with pytest.raises(RlobsError, match="numpy"):
+    with pytest.raises(InstantMLError, match="numpy"):
         _write_image_data([[[0, 0, 0]]], tmp_path / "missing-numpy.png")
     monkeypatch.setattr("builtins.__import__", real_import)
 
@@ -1581,7 +1581,7 @@ def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path
     monkeypatch.setattr("builtins.__import__", soundfile_import)
     _write_audio_data([0.0, 0.1], tmp_path / "audio.wav", 16000)
     assert writes == [(tmp_path / "audio.wav", [0.0, 0.1], 16000)]
-    with pytest.raises(RlobsError, match="audio data"):
+    with pytest.raises(InstantMLError, match="audio data"):
         _write_audio_data(None, tmp_path / "none.wav", 16000)
 
     imageio_module = ModuleType("imageio.v3")
@@ -1592,7 +1592,7 @@ def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path
     monkeypatch.setattr("builtins.__import__", real_import)
     _write_video_data([[[[0, 0, 0]]]], tmp_path / "video.mp4", 24)
     assert imageio_calls == [(tmp_path / "video.mp4", [[[[0, 0, 0]]]], 24)]
-    with pytest.raises(RlobsError, match="video data"):
+    with pytest.raises(InstantMLError, match="video data"):
         _write_video_data(None, tmp_path / "none.mp4", 24)
 
     class FakeClip:
@@ -1621,7 +1621,7 @@ def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path
     broken_imageio.imwrite = lambda target, data, fps: (_ for _ in ()).throw(TypeError("bad video"))
     monkeypatch.setitem(sys.modules, "imageio.v3", broken_imageio)
     monkeypatch.setattr("builtins.__import__", real_import)
-    with pytest.raises(RlobsError, match="moviepy or imageio"):
+    with pytest.raises(InstantMLError, match="moviepy or imageio"):
         _write_video_data([[[[0, 0, 0]]]], tmp_path / "bad-video.mp4", 24)
 
 
@@ -1760,7 +1760,7 @@ def test_console_stream_and_sampler_error_branches(monkeypatch):
             return 0
 
         def log_text(self, data, step=None):
-            raise RlobsError("text failed")
+            raise InstantMLError("text failed")
 
     class Stream:
         def __init__(self):

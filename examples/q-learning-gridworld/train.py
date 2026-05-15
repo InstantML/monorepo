@@ -6,7 +6,7 @@ import argparse
 import random
 from dataclasses import dataclass
 
-import rl_observability as ro
+import instantml as ro
 
 
 ACTIONS = {

@@ -62,7 +62,7 @@ impl LocalArtifactStore {
             tmp_path,
             final_path,
             storage_key: storage_key.clone(),
-            uri: format!("rlobs://artifacts/{storage_key}"),
+            uri: format!("instantml://artifacts/{storage_key}"),
             size_bytes,
             sha256,
         })

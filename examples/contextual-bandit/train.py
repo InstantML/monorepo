@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-import rl_observability as ro
+import instantml as ro
 
 
 ARM_NAMES = ["email_coupon", "free_shipping", "bundle_discount", "loyalty_points"]
@@ -139,7 +139,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", default=240, type=int, help="Training decisions per run")
     parser.add_argument("--log-every", default=10, type=int, help="Metric logging interval")
     parser.add_argument("--artifact-every", default=120, type=int, help="Checkpoint metadata interval")
-    parser.add_argument("--output-dir", default=".rlobs/contextual-bandit-artifacts", help="Local artifact output directory")
+    parser.add_argument("--output-dir", default=".instantml/contextual-bandit-artifacts", help="Local artifact output directory")
     parser.add_argument("--no-artifacts", action="store_true", help="Skip artifact metadata logging")
     return parser.parse_args()
 

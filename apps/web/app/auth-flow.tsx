@@ -189,7 +189,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 <button className="secondary" onClick={copyKey} type="button"><Copy size={14} /> {copied ? "Copied" : "Copy key"}</button>
               </div>
             ) : null}
-            <pre className="sdk-snippet">export RLOBS_API_KEY={apiKey || "rlobs_..."}
+            <pre className="sdk-snippet">export INSTANTML_API_KEY={apiKey || "instantml_..."}
 python train.py</pre>
             <a className="button-link" href={apiKey ? nextPath : "/dashboard/runs"}>Open dashboard <ArrowRight size={15} /></a>
           </div>

@@ -25,8 +25,8 @@ packages/python-sdk/uploader -> apps/rust-server -> ClickHouse operational layer
 Deprecated local compatibility target:
 
 ```text
-apps/web -> apps/server -> .rlobs/rlobs.json + local artifact files
-packages/python-sdk/uploader -> apps/server -> .rlobs/rlobs.json + local artifact files
+apps/web -> apps/server -> .instantml/instantml.json + local artifact files
+packages/python-sdk/uploader -> apps/server -> .instantml/instantml.json + local artifact files
 ```
 
 Rust work should preserve documented route shapes, use the schema in `rust-server/clickhouse/`, keep ClickHouse metric-store behavior compatible, and keep `npm run test:contract`, `npm run test:rust:sdk`, `npm run test:ui`, and Node compatibility checks passing.

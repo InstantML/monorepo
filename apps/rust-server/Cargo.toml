@@ -1,11 +1,11 @@
 [package]
-name = "rlobs-rust-server"
+name = "instantml-rust-server"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.83"
 
 [[bin]]
-name = "rlobs-rust-server"
+name = "instantml-rust-server"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,6 +1,6 @@
 # Supervised Regression Example
 
-This example logs a small synthetic tabular regression sweep to Training Observability. It is intended to exercise the non-RL training-loop path: multiple configs, multiple seeds, epoch-level train/validation metrics, run comparison, and optional checkpoint/report/rollout metadata in the current Next UI backed by the Rust/ClickHouse API.
+This example logs a small synthetic tabular regression sweep to InstantML. It is intended to exercise the non-RL training-loop path: multiple configs, multiple seeds, epoch-level train/validation metrics, run comparison, and optional checkpoint/report/rollout metadata in the current Next UI backed by the Rust/ClickHouse API.
 
 ## Setup
 
@@ -19,7 +19,7 @@ npm run dev:api
 Start the Next UI in another terminal:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 Run the sweep in another terminal:
@@ -30,7 +30,7 @@ PYTHONPATH=packages/python-sdk:examples/supervised-regression \
   --server http://127.0.0.1:8000 \
   --seeds 11,29 \
   --epochs 30 \
-  --summary-json .rlobs/supervised-regression-summary.json
+  --summary-json .instantml/supervised-regression-summary.json
 ```
 
 Open `http://127.0.0.1:3000` and select the `supervised-regression` project.

@@ -8,9 +8,9 @@ Owner: Codex
 
 ## Summary
 
-This design added the Node.js server and the day 5-8 frontend experience for the product now called Training Observability. The goal remains to make UI quality the product moat: a dense runs table, bounded metric charting, responsive filtering, clear run details, comparison overlays, artifact browsing, checkpoint timelines, rollout gallery, and a polished training-loop workflow.
+This design added the Node.js server and the day 5-8 frontend experience for the product now called InstantML. The goal remains to make UI quality the product moat: a dense runs table, bounded metric charting, responsive filtering, clear run details, comparison overlays, artifact browsing, checkpoint timelines, rollout gallery, and a polished training-loop workflow.
 
-Naming note: this historical design predates the Training Observability rebrand. User-facing docs and UI now use Training Observability, while code identifiers remain unchanged until a namespace migration is designed.
+Naming note: this historical design predates the InstantML rebrand. User-facing docs and UI now use InstantML, while code identifiers remain unchanged until a namespace migration is designed.
 
 The Node server became the primary development surface for the days 5-8 UI slice. It served static frontend assets and exposed the same JSON API contract as the days 1-4 backend so the Python SDK could log to it without changes. The existing Python bootstrap API remained as a reference implementation and test client path.
 
@@ -126,7 +126,7 @@ Storage:
 
 - Use JSON persistence because `better-sqlite3` failed to install under the available Node 21.7.1 runtime.
 - Reuse the same logical entities as the Python API.
-- Store data at `.rlobs/rlobs.json` by default.
+- Store data at `.instantml/instantml.json` by default.
 - Add a future storage design before replacing JSON persistence.
 
 Docs:

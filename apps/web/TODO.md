@@ -2,7 +2,7 @@
 
 Date: 2026-05-10
 
-Scope: Training Observability web app parity work implied by the W&B docs gap review. This file covers frontend product surfaces: keyboard/workspace interaction, rich data panels, artifacts and lineage, public query/export UI, sweeps, automations, hosted admin flows, and report/workspace workflows. Backend/API work is listed only when the app feature cannot be completed without persisted state or data.
+Scope: InstantML web app parity work implied by the W&B docs gap review. This file covers frontend product surfaces: keyboard/workspace interaction, rich data panels, artifacts and lineage, public query/export UI, sweeps, automations, hosted admin flows, and report/workspace workflows. Backend/API work is listed only when the app feature cannot be completed without persisted state or data.
 
 Primary sources reviewed:
 

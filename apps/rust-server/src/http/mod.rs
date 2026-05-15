@@ -40,7 +40,7 @@ mod handlers;
 
 use handlers::*;
 
-const SESSION_COOKIE: &str = "rlobs_session";
+const SESSION_COOKIE: &str = "instantml_session";
 
 #[derive(Clone)]
 pub struct AppState {

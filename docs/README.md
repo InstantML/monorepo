@@ -1,8 +1,8 @@
 # Documentation
 
-This directory contains product, architecture, user research, and design documentation for Training Observability.
+This directory contains product, architecture, user research, and design documentation for InstantML.
 
-Current product direction: Training Observability is a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The intended wedge is speed, UI quality, and predictable pricing. RL, robotics, simulation, Neptune migration, W&B import/dual-logging, and MLflow import remain important workflows, but they are not the top-level brand boundary.
+Current product direction: InstantML is a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The intended wedge is speed, UI quality, and predictable pricing. RL, robotics, simulation, Neptune migration, W&B import/dual-logging, and MLflow import remain important workflows, but they are not the top-level brand boundary.
 
 Future agents must update documentation whenever they change:
 

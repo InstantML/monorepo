@@ -6,9 +6,7 @@ Status: Current architecture summary
 
 ## Purpose
 
-This document summarizes the implemented system so future agents do not need to reconstruct the architecture from older sprint docs. `PRODUCT_STRATEGY.md` remains the strategic source of truth; this file describes the current technical shape for Training Observability.
-
-Brand transition note: user-facing docs and UI should say Training Observability. Existing implementation identifiers such as `rl_observability`, `.rlobs`, `rlobs_api`, and `RlobsError` remain compatibility names until a dedicated migration is designed.
+This document summarizes the implemented system so future agents do not need to reconstruct the architecture from older sprint docs. `PRODUCT_STRATEGY.md` remains the strategic source of truth; this file describes the current technical shape for InstantML.
 
 Strategy note: the product direction is now a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The current primary backend is Rust plus ClickHouse-only storage: operational records for local/control-plane state and analytical metric tables for high-volume scalar metrics. Hosted multi-process routing is intentionally deferred behind `docs/design/2026-05-14-clickhouse-only-storage.md`.
 
@@ -64,17 +62,17 @@ Local development:
 Browser -> Next dev/server on :3000 -> Rust API on :8000
 Python SDK/uploader ---------------------> Rust API on :8000
 
-Rust API -> local ClickHouse operational log/index (.rlobs/clickhouse by default)
-Rust API -> local ClickHouse metrics               (.rlobs/clickhouse by default)
-Rust API -> local artifact bytes                   (.rlobs/rust-artifacts by default)
+Rust API -> local ClickHouse operational log/index (.instantml/clickhouse by default)
+Rust API -> local ClickHouse metrics               (.instantml/clickhouse by default)
+Rust API -> local artifact bytes                   (.instantml/rust-artifacts by default)
 ```
 
 Docker Compose:
 
 ```text
 Rust API container -> clickhouse service
-Rust API container -> rlobs-artifacts volume
-Next frontend runs separately with RLOBS_API_BASE=http://127.0.0.1:8000
+Rust API container -> instantml-artifacts volume
+Next frontend runs separately with INSTANTML_API_BASE=http://127.0.0.1:8000
 ```
 
 Hosted direction:
@@ -95,13 +93,13 @@ Current dev/default storage:
 
 - ClickHouse `operational_records` stores low-volume records for users, identities, organizations, memberships, sessions, API keys, projects, runs, attributes, artifacts, imports, idempotency, usage snapshots, and table preview rows. The Rust server rebuilds an in-process index from these records on startup.
 - ClickHouse `metric_points` stores raw scalar points. ClickHouse `metric_series` is maintained by a materialized view for summary and chart queries.
-- `npm run dev:api` starts a local ClickHouse server for the default loopback `CLICKHOUSE_URL` when the `clickhouse` binary is installed, stores generated state under `.rlobs/clickhouse`, and also works with an already-running `CLICKHOUSE_URL`. The docker-compose stack provides ClickHouse for the container path.
-- Local artifact bytes are stored through the Rust artifact-store abstraction under `.rlobs/rust-artifacts` by default.
+- `npm run dev:api` starts a local ClickHouse server for the default loopback `CLICKHOUSE_URL` when the `clickhouse` binary is installed, stores generated state under `.instantml/clickhouse`, and also works with an already-running `CLICKHOUSE_URL`. The docker-compose stack provides ClickHouse for the container path.
+- Local artifact bytes are stored through the Rust artifact-store abstraction under `.instantml/rust-artifacts` by default.
 - Python bootstrap API uses SQLite for reference tests.
 
 Deprecated storage:
 
-- Node JSON state at `.rlobs/rlobs.json` for compatibility and migration fixtures.
+- Node JSON state at `.instantml/instantml.json` for compatibility and migration fixtures.
 
 Durable hosted direction:
 

@@ -3,11 +3,11 @@ import sys
 
 sys.path.insert(0, "packages/python-sdk")
 
-import rl_observability as ro  # noqa: E402
-from rl_observability.client import Client  # noqa: E402
+import instantml as ro  # noqa: E402
+from instantml.client import Client  # noqa: E402
 
 
-base_url = os.environ["RLOBS_RUST_SMOKE_BASE_URL"]
+base_url = os.environ["INSTANTML_RUST_SMOKE_BASE_URL"]
 
 run = ro.init(
     project="rust-sdk-smoke",

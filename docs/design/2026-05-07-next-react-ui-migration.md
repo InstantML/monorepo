@@ -20,7 +20,7 @@ The follow-up code-quality pass kept the same UI contract but split the React su
 
 The May 2026 Metrics/Run Detail polish keeps the same REST contracts but makes the secondary workspaces more researcher-useful: Metrics now includes a metric catalog, selected-run leaderboard, hover readout, series summary, grouping, smoothing, x-axis switching, and pinned panels; Run Detail now presents a run dossier with a per-run metric chart, timeline, reproducibility highlights, source metadata, metric aggregate table, config, tags, artifact preview/copy actions, and failed-run triage.
 
-Supersession note: this migration originally targeted the then-current Node API. The React UI still runs as a separate Next app in `apps/web`, but the default backend is now the Rust/ClickHouse service in `apps/rust-server`, selected through `RLOBS_API_BASE` at build/start time and the Next server-side API proxy. The deprecated Node API remains a compatibility target; UI work should preserve documented REST route shapes unless a later design intentionally changes them.
+Supersession note: this migration originally targeted the then-current Node API. The React UI still runs as a separate Next app in `apps/web`, but the default backend is now the Rust/ClickHouse service in `apps/rust-server`, selected through `INSTANTML_API_BASE` at build/start time and the Next server-side API proxy. The deprecated Node API remains a compatibility target; UI work should preserve documented REST route shapes unless a later design intentionally changes them.
 
 ## Goals
 

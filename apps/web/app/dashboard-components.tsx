@@ -638,7 +638,7 @@ export function DashboardTopbar({
             label="View"
             menuAlign="right"
             onChange={onApplySavedView}
-            options={[{ value: "", label: "Unsaved" }, ...savedViews.map((key) => ({ value: key, label: key.replace("rlobs:next:local:view:", "").replace("rlobs:next:view:", "") }))]}
+            options={[{ value: "", label: "Unsaved" }, ...savedViews.map((key) => ({ value: key, label: key.replace("instantml:next:local:view:", "").replace("instantml:next:view:", "") }))]}
             value={savedViewKey}
           />
         </div>
@@ -984,7 +984,7 @@ export function RunsWorkspace({
     draggedPanelRef.current = payload;
     setDraggedPanel(payload);
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-rlobs-panel", JSON.stringify(payload));
+    event.dataTransfer.setData("application/x-instantml-panel", JSON.stringify(payload));
     event.dataTransfer.setData("text/plain", panelId);
   }
   function clearDraggedPanel() {
@@ -1680,7 +1680,7 @@ function panelMatchesSearch(section: WorkspaceSection, panel: WorkspacePanel, se
 
 function readDraggedPanel(event: DragEvent<HTMLElement>): DraggedWorkspacePanel | null {
   try {
-    const raw = event.dataTransfer.getData("application/x-rlobs-panel");
+    const raw = event.dataTransfer.getData("application/x-instantml-panel");
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<DraggedWorkspacePanel>;
     return typeof parsed.sectionId === "string" && typeof parsed.panelId === "string"

@@ -3,9 +3,9 @@ import { performance } from "node:perf_hooks";
 
 import { createStore, emptyState } from "../apps/server/src/db.js";
 
-const runCount = Number(process.env.RLOBS_SCALE_RUNS ?? 50);
-const metricCount = Number(process.env.RLOBS_SCALE_METRICS ?? 20);
-const pointCount = Number(process.env.RLOBS_SCALE_POINTS ?? 1000);
+const runCount = Number(process.env.INSTANTML_SCALE_RUNS ?? 50);
+const metricCount = Number(process.env.INSTANTML_SCALE_METRICS ?? 20);
+const pointCount = Number(process.env.INSTANTML_SCALE_POINTS ?? 1000);
 const store = createStore(emptyState());
 
 const ingestStart = performance.now();

@@ -7,7 +7,7 @@ import test from "node:test";
 import { createLocalArtifactStore } from "../src/artifact-store.js";
 
 test("local artifact store reads only real files inside the storage root", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-artifacts-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-artifacts-"));
   const root = path.join(dir, "artifacts");
   fs.mkdirSync(root, { recursive: true });
   const store = createLocalArtifactStore(root);

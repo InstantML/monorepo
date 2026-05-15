@@ -8,7 +8,7 @@ Owner: Codex
 
 ## Summary
 
-Training Observability should keep its current durable SDK architecture: synchronous REST for simple scripts, existing memory buffering for explicit batching, and process-isolated spool files for long or expensive jobs. MLOP is useful as an ergonomics reference, but not as the core durability model. This design adds the MLOP-style user-facing conveniences without replacing the existing sync/spool architecture.
+InstantML should keep its current durable SDK architecture: synchronous REST for simple scripts, existing memory buffering for explicit batching, and process-isolated spool files for long or expensive jobs. MLOP is useful as an ergonomics reference, but not as the core durability model. This design adds the MLOP-style user-facing conveniences without replacing the existing sync/spool architecture.
 
 The smallest useful slice makes `Run.log()` smarter and easier to use while keeping the existing sync, buffer, offline, and process-spool paths. It auto-increments steps when the user omits `step`, classifies payloads into scalar metrics, rich objects, and files, adds local file wrappers and conversions for common media/data values, optionally records a SQLite audit store, optionally samples system metrics, optionally captures console output, and exposes lightweight Torch, Lightning, and Transformers adapters. All network writes continue to flow through the existing `_submit()` and process-spool paths.
 
@@ -73,7 +73,7 @@ Keep the existing upload modes:
 
 - `sync`: immediate REST calls.
 - `sync` with `buffer_size`: existing in-memory batching until `flush()`.
-- `spool`: one fsynced event file per post-init SDK event, drained by `rl_observability.uploader`.
+- `spool`: one fsynced event file per post-init SDK event, drained by `instantml.uploader`.
 
 No new background uploader thread is introduced. System metric sampling can use a small optional sampler thread because it produces user data, not because it owns network durability.
 
@@ -125,14 +125,14 @@ Optional conversion rules:
 - `Image` accepts paths, PIL images, NumPy arrays, and matplotlib figures when installed.
 - `Audio` accepts paths and NumPy arrays; arrays require `soundfile`.
 - `Video` accepts paths and NumPy arrays; arrays require `moviepy` or `imageio` support.
-- Missing optional dependencies raise `RlobsError` with the exact package name to install.
+- Missing optional dependencies raise `InstantMLError` with the exact package name to install.
 
 ### Local SQLite Store
 
 Add `local_store` and `local_store_dir` to `init()`.
 
 ```python
-run = ro.init(project="demo", local_store=True, local_store_dir=".rlobs/local")
+run = ro.init(project="demo", local_store=True, local_store_dir=".instantml/local")
 ```
 
 The store is an SDK-local audit trail, not a second source of truth. It records:
@@ -188,11 +188,11 @@ Python SDK:
 
 - Extend `client.py` public wrappers and `Run.log()`.
 - Add small modules for media conversion, local store, system metrics, console capture, and integrations if keeping `client.py` readable requires it.
-- Export new wrappers and adapter classes from `rl_observability`.
+- Export new wrappers and adapter classes from `instantml`.
 
 Storage:
 
-- Optional SDK-local SQLite database under `.rlobs/local` or a user-supplied directory.
+- Optional SDK-local SQLite database under `.instantml/local` or a user-supplied directory.
 - Temporary converted media files under a run-local SDK media directory.
 
 Docs:
@@ -277,7 +277,7 @@ Existing methods and wrappers keep backward-compatible call shapes.
 Error behavior:
 
 - Invalid `log()` payload raises before any request is sent.
-- Missing optional conversion dependencies raise `RlobsError`.
+- Missing optional conversion dependencies raise `InstantMLError`.
 - Console wrappers restore original streams on `finish()` even if finish network calls fail.
 - System sampler warnings do not fail training.
 - In `spool` mode, media object upload+link remains unsupported and raises clearly.
@@ -321,7 +321,7 @@ Deferred complexity:
 
 ## Failure Modes
 
-- Server down in sync mode: existing `RlobsError` or `offline_dir` behavior applies.
+- Server down in sync mode: existing `InstantMLError` or `offline_dir` behavior applies.
 - Server down in spool mode: event files remain pending as today.
 - Optional dependency missing: SDK raises a package-specific error only when that feature is used.
 - System sampler crashes: warning is recorded and sampler stops.

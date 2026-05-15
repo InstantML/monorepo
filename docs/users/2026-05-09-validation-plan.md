@@ -1,4 +1,4 @@
-# Validation Plan: W&B-Style Training Observability
+# Validation Plan: W&B-Style InstantML
 
 Date: 2026-05-09
 
@@ -6,7 +6,7 @@ Status: Ready for outreach; no live interviews recorded yet
 
 ## Purpose
 
-Validate whether small ML teams, labs, and lean platform groups care enough about speed, UI quality, predictable pricing, and data portability to try Training Observability beside or instead of W&B, MLflow, Neptune, TensorBoard, or custom logging.
+Validate whether small ML teams, labs, and lean platform groups care enough about speed, UI quality, predictable pricing, and data portability to try InstantML beside or instead of W&B, MLflow, Neptune, TensorBoard, or custom logging.
 
 ## Evidence Status
 
@@ -58,7 +58,7 @@ Keep the first half about their workflow, not this product.
 Then test the wedge:
 
 ```text
-I am building Training Observability for smaller ML teams that want W&B-like experiment tracking, but faster for daily run comparison, calmer in the UI, and priced predictably around seats plus included storage rather than tracked hours.
+I am building InstantML for smaller ML teams that want W&B-like experiment tracking, but faster for daily run comparison, calmer in the UI, and priced predictably around seats plus included storage rather than tracked hours.
 
 What part of that sounds useful, wrong, or irrelevant for your team?
 ```

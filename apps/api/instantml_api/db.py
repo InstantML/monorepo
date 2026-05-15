@@ -40,7 +40,7 @@ def utc_now() -> str:
 
 
 def default_db_path() -> Path:
-    return Path(".rlobs") / "rlobs.sqlite3"
+    return Path(".instantml") / "instantml.sqlite3"
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:

@@ -11,14 +11,14 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=rust-builder /app/apps/rust-server/target/release/rlobs-rust-server /usr/local/bin/rlobs-rust-server
+COPY --from=rust-builder /app/apps/rust-server/target/release/instantml-rust-server /usr/local/bin/instantml-rust-server
 
 EXPOSE 8000
 VOLUME ["/data/artifacts"]
 
-ENV RLOBS_BIND_ADDR=0.0.0.0:8000
-ENV RLOBS_AUTH_MODE=local
-ENV RLOBS_ARTIFACT_ROOT=/data/artifacts
-ENV RLOBS_LOG_FORMAT=json
+ENV INSTANTML_BIND_ADDR=0.0.0.0:8000
+ENV INSTANTML_AUTH_MODE=local
+ENV INSTANTML_ARTIFACT_ROOT=/data/artifacts
+ENV INSTANTML_LOG_FORMAT=json
 
-CMD ["rlobs-rust-server", "serve"]
+CMD ["instantml-rust-server", "serve"]

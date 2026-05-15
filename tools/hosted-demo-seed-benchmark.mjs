@@ -19,17 +19,17 @@ import { clickhousePost } from "./local-clickhouse.mjs";
 const repo = process.cwd();
 loadDotenv(path.join(repo, ".env"));
 
-const runCount = numberEnv("RLOBS_HOSTED_DEMO_RUNS", 100_000);
-const longRunSteps = numberEnv("RLOBS_HOSTED_DEMO_LONG_RUN_STEPS", 20_000);
-const samples = numberEnv("RLOBS_HOSTED_DEMO_SAMPLES", 8);
-const warmups = numberEnv("RLOBS_HOSTED_DEMO_WARMUPS", 2);
-const project = process.env.RLOBS_HOSTED_DEMO_PROJECT || "instantml-demo-100k";
-const demoEmail = process.env.RLOBS_HOSTED_DEMO_EMAIL || "hello@instantml.ai";
-const demoOrg = process.env.RLOBS_HOSTED_DEMO_ORG || "InstantML Demo";
-const existingApiBase = process.env.RLOBS_HOSTED_DEMO_API_BASE;
-const resultPath = process.env.RLOBS_HOSTED_DEMO_RESULT_PATH || "";
-const enforceBudgets = process.env.RLOBS_HOSTED_DEMO_ENFORCE === "1";
-const metricKey = process.env.RLOBS_HOSTED_DEMO_METRIC_KEY || "eval/return_mean";
+const runCount = numberEnv("INSTANTML_HOSTED_DEMO_RUNS", 100_000);
+const longRunSteps = numberEnv("INSTANTML_HOSTED_DEMO_LONG_RUN_STEPS", 20_000);
+const samples = numberEnv("INSTANTML_HOSTED_DEMO_SAMPLES", 8);
+const warmups = numberEnv("INSTANTML_HOSTED_DEMO_WARMUPS", 2);
+const project = process.env.INSTANTML_HOSTED_DEMO_PROJECT || "instantml-demo-100k";
+const demoEmail = process.env.INSTANTML_HOSTED_DEMO_EMAIL || "hello@instantml.ai";
+const demoOrg = process.env.INSTANTML_HOSTED_DEMO_ORG || "InstantML Demo";
+const existingApiBase = process.env.INSTANTML_HOSTED_DEMO_API_BASE;
+const resultPath = process.env.INSTANTML_HOSTED_DEMO_RESULT_PATH || "";
+const enforceBudgets = process.env.INSTANTML_HOSTED_DEMO_ENFORCE === "1";
+const metricKey = process.env.INSTANTML_HOSTED_DEMO_METRIC_KEY || "eval/return_mean";
 const userDataUrl = clickhouseUrlFromEnv(
   "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT",
   "CLICKHOUSE_INSTANTML_USER_DATA_USERNAME",
@@ -37,15 +37,15 @@ const userDataUrl = clickhouseUrlFromEnv(
   process.env.CLICKHOUSE_URL,
 );
 const cloudLocation = inferCloudLocation(userDataUrl);
-const cloudProvider = process.env.RLOBS_CLICKHOUSE_CLOUD_PROVIDER || cloudLocation.provider;
-const cloudRegion = process.env.RLOBS_CLICKHOUSE_CLOUD_REGION || cloudLocation.region;
-if (process.env.RLOBS_HOSTED_DEMO_ALLOW_PROVISION !== "1") {
-  throw new Error("hosted demo benchmark can create paid ClickHouse Cloud services; set RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 to continue");
+const cloudProvider = process.env.INSTANTML_CLICKHOUSE_CLOUD_PROVIDER || cloudLocation.provider;
+const cloudRegion = process.env.INSTANTML_CLICKHOUSE_CLOUD_REGION || cloudLocation.region;
+if (process.env.INSTANTML_HOSTED_DEMO_ALLOW_PROVISION !== "1") {
+  throw new Error("hosted demo benchmark can create paid ClickHouse Cloud services; set INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 to continue");
 }
 if (!existingApiBase && (!cloudProvider || !cloudRegion)) {
-  throw new Error("RLOBS_CLICKHOUSE_CLOUD_PROVIDER and RLOBS_CLICKHOUSE_CLOUD_REGION are required when the User Data endpoint is not a ClickHouse Cloud hostname");
+  throw new Error("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER and INSTANTML_CLICKHOUSE_CLOUD_REGION are required when the User Data endpoint is not a ClickHouse Cloud hostname");
 }
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-hosted-demo-"));
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-hosted-demo-"));
 
 let server = null;
 let apiBaseUrl = existingApiBase || "";
@@ -69,9 +69,9 @@ try {
 
   const route = await latestTenantRoute(orgId);
   if (route.status !== "ready") throw new Error(`demo tenant route is ${route.status}: ${route.error || ""}`);
-  if (route.provisioner !== "cloud-service" && process.env.RLOBS_HOSTED_DEMO_ALLOW_DATABASE_ROUTE !== "1") {
+  if (route.provisioner !== "cloud-service" && process.env.INSTANTML_HOSTED_DEMO_ALLOW_DATABASE_ROUTE !== "1") {
     throw new Error(
-      `demo tenant route uses ${route.provisioner}; set RLOBS_CLICKHOUSE_PROVISIONER=cloud-service before seeding the hosted demo service`,
+      `demo tenant route uses ${route.provisioner}; set INSTANTML_CLICKHOUSE_PROVISIONER=cloud-service before seeding the hosted demo service`,
     );
   }
 
@@ -80,7 +80,7 @@ try {
   if (existingRuns >= runCount) {
     console.log(`hosted demo seed already present: ${existingRuns} ${project} runs`);
   } else if (existingRuns > 0) {
-    throw new Error(`${project} has a partial seed (${existingRuns}/${runCount} runs). Use a new RLOBS_HOSTED_DEMO_PROJECT to avoid duplicate benchmark rows.`);
+    throw new Error(`${project} has a partial seed (${existingRuns}/${runCount} runs). Use a new INSTANTML_HOSTED_DEMO_PROJECT to avoid duplicate benchmark rows.`);
   } else {
     await seedBenchmarkData(tenantUrl, orgId);
   }
@@ -168,15 +168,15 @@ async function startServer(port) {
     cwd: repo,
     env: {
       ...process.env,
-      RLOBS_HOSTED_CLICKHOUSE_ENABLED: "true",
-      RLOBS_CLICKHOUSE_PROVISIONER: "cloud-service",
-      RLOBS_CLICKHOUSE_CLOUD_PROVIDER: cloudProvider,
-      RLOBS_CLICKHOUSE_CLOUD_REGION: cloudRegion,
-      RLOBS_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
-      RLOBS_BIND_ADDR: `127.0.0.1:${port}`,
-      RLOBS_AUTH_MODE: "local",
-      RLOBS_REQUEST_TIMEOUT_SECONDS: process.env.RLOBS_REQUEST_TIMEOUT_SECONDS || "900",
-      RLOBS_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
+      INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service",
+      INSTANTML_CLICKHOUSE_CLOUD_PROVIDER: cloudProvider,
+      INSTANTML_CLICKHOUSE_CLOUD_REGION: cloudRegion,
+      INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
+      INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
+      INSTANTML_AUTH_MODE: "local",
+      INSTANTML_REQUEST_TIMEOUT_SECONDS: process.env.INSTANTML_REQUEST_TIMEOUT_SECONDS || "900",
+      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
     },
     stdio: ["ignore", output, output],
   });
@@ -360,7 +360,7 @@ function tenantBasePassword(route) {
   if (route.password_secret_ref !== "config:tenant_base_url_password") {
     throw new Error("tenant route does not include a resolvable password");
   }
-  const tenantBase = process.env.RLOBS_TENANT_CLICKHOUSE_URL || userDataUrl;
+  const tenantBase = process.env.INSTANTML_TENANT_CLICKHOUSE_URL || userDataUrl;
   return new URL(tenantBase).password;
 }
 

@@ -18,7 +18,7 @@ export function createLocalArtifactStore(root) {
       const storagePath = path.join(storageRoot, storageName);
       fs.writeFileSync(storagePath, buffer);
       return {
-        uri: `rlobs://artifacts/${storageName}`,
+        uri: `instantml://artifacts/${storageName}`,
         storage_path: storagePath,
         size_bytes: buffer.length,
         sha256: createHash("sha256").update(buffer).digest("hex"),

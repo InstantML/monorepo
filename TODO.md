@@ -1,6 +1,6 @@
 # TODO
 
-Owner-editable development backlog for Training Observability.
+Owner-editable development backlog for InstantML.
 
 Current product goal: build a W&B-style training observability SaaS for smaller startups, research labs, and lean ML teams that wins on speed, UI quality, predictable pricing, and transparent data ownership.
 
@@ -44,7 +44,7 @@ Reviewed official W&B docs sources:
 
 High-value gaps to close without copying W&B's whole platform:
 
-- Design-partner feedback from 2026-05-10: speed is the top wedge. A W&B project with around 90,000 runs took seconds to load, so Training Observability must treat large-run-count browsing, search, filtering, and compare performance as core product work, not late polish.
+- Design-partner feedback from 2026-05-10: speed is the top wedge. A W&B project with around 90,000 runs took seconds to load, so InstantML must treat large-run-count browsing, search, filtering, and compare performance as core product work, not late polish.
 - Run lifecycle depth: user-supplied run IDs, resume/reinit/fork semantics, true offline run creation and sync, disabled/no-op mode, notes, group, job type, settings, environment-variable defaults, and cleaner distributed-process behavior.
 - Metric semantics: default step behavior, custom x-axes, summary policies such as min/max/best, explicit history pagination, unsampled metric export, system metrics, console logs, and code/dependency capture.
 - Rich logged objects: first-class table, image, video, audio, histogram, HTML/plot, and 3D/point-cloud schemas instead of treating most non-scalar data as generic artifact metadata.
@@ -80,9 +80,9 @@ Goal: prove the smallest useful SDK -> Rust -> ClickHouse -> UI path.
 - [x] Implement bounded metric series reads ordered by `step asc, point id asc`.
 - [x] Implement `GET /api/runs/summary` by paging runs first, then joining maintained summaries only for page run IDs.
 - [x] Implement idempotent metric replay with org-scoped `Idempotency-Key` rows and request-body hashes.
-- [x] Run `npm run test:contract` against Rust through `RLOBS_CONTRACT_BASE_URL`.
+- [x] Run `npm run test:contract` against Rust through `INSTANTML_CONTRACT_BASE_URL`.
 - [x] Run Python SDK tests against Rust for overlapping routes.
-- [x] Run a minimal UI smoke against Rust by pointing `RLOBS_API_BASE` at the Rust service.
+- [x] Run a minimal UI smoke against Rust by pointing `INSTANTML_API_BASE` at the Rust service.
 - [x] Keep Node as the default backend during P1, then retire it to compatibility after the slice passes repeatedly.
 - [x] Promote Rust/ClickHouse to the default backend after Node/Rust contract, SDK, and frontend parity checks pass.
 
@@ -121,7 +121,7 @@ Goal: reach feature parity with the Node compatibility server on product workflo
 
 Goal: let existing local/demo data move forward without hand repair.
 
-- [ ] Build a JSON-to-ClickHouse migration dry-run CLI for `.rlobs/rlobs.json`.
+- [ ] Build a JSON-to-ClickHouse migration dry-run CLI for `.instantml/instantml.json`.
 - [ ] Preserve projects, runs, metrics, maintained summaries, typed attributes, artifacts, imports, users, orgs, service accounts, API-key metadata, and usage-relevant counts.
 - [ ] Preserve artifact byte references and detect missing local files.
 - [ ] Emit a migration report with counts, skipped records, warnings, and estimated storage.
@@ -154,7 +154,7 @@ Goal: keep the UI as the product moat while the backend changes underneath it.
 Goal: make the training-loop hot path trustworthy against Rust/ClickHouse.
 
 - [ ] Add SDK integration tests that run against Rust for sync mode, buffered mode, offline replay, process spool, uploader retry, and file upload.
-- [ ] Confirm `RLOBS_API_KEY` and explicit `api_key` work against Rust API-key auth.
+- [ ] Confirm `INSTANTML_API_KEY` and explicit `api_key` work against Rust API-key auth.
 - [ ] Add optional org/project/entity context only after hosted route shape is final.
 - [ ] Design SDK lifecycle parity before implementation: run ID, notes, group, job type, resume modes, reinit behavior, offline/disabled modes, env var defaults, and settings.
 - [ ] Add true offline run creation and later sync after the design is accepted; keep the current post-run-create replay limitation documented until then.
@@ -185,7 +185,7 @@ Goal: prove speed and reliability claims before making them public.
 - [ ] Add Rust/ClickHouse scale smoke for the daily small-team case: 50 runs, 20 metrics per run, and 1,000 points per metric.
 - [x] Add Rust/ClickHouse scale smoke for the design-partner case: 90,000 runs in one project with realistic names, tags, notes, statuses, configs, metric summaries, and artifact counts.
 - [x] Measure Runs page first useful render under 2 seconds for the 90,000-run project on local production build plus local Rust/ClickHouse.
-  - 2026-05-11 local result: 387 ms with `RLOBS_BENCH_WEB=1`.
+  - 2026-05-11 local result: 387 ms with `INSTANTML_BENCH_WEB=1`.
 - [x] Measure server-side run search/filter/sort p95 under 500 ms for the 90,000-run project with indexed status, tag, note/name text, config, and selected metric-summary sorts.
   - 2026-05-11 local result: `q=seed 13` p95 118 ms; `metric-best` p95 66 ms.
 - [x] Measure run summary p95 under 300 ms for the target data shape.

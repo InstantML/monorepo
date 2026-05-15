@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import rl_observability as ro
+import instantml as ro
 
 DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data"
 FEATURE_NAMES = ("sepal_length_cm", "sepal_width_cm", "petal_length_cm", "petal_width_cm")
@@ -453,8 +453,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train a NumPy softmax classifier on UCI Iris and log it")
     parser.add_argument("--server", default="http://127.0.0.1:8000", help="Training Observability API URL")
     parser.add_argument("--data-path", type=Path, default=None, help="Optional local Iris CSV path")
-    parser.add_argument("--cache-dir", type=Path, default=Path(".rlobs/datasets"), help="Directory for downloaded public data")
-    parser.add_argument("--artifact-dir", type=Path, default=Path(".rlobs/iris-classification-artifacts"))
+    parser.add_argument("--cache-dir", type=Path, default=Path(".instantml/datasets"), help="Directory for downloaded public data")
+    parser.add_argument("--artifact-dir", type=Path, default=Path(".instantml/iris-classification-artifacts"))
     parser.add_argument("--seeds", default="7,17", type=parse_seeds, help="Comma-separated random seeds")
     parser.add_argument("--configs", default="baseline,regularized,fast-lr", type=select_configs, help="Comma-separated config names")
     parser.add_argument("--epochs", default=160, type=int, help="Epochs per run")

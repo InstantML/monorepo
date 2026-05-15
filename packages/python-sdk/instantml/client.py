@@ -27,11 +27,11 @@ from pathlib import Path
 from typing import Any
 
 
-class RlobsError(Exception):
+class InstantMLError(Exception):
     """Raised when the SDK cannot complete a logging request."""
 
 
-DEFAULT_PROCESS_SPOOL_DIR = ".rlobs/spool"
+DEFAULT_PROCESS_SPOOL_DIR = ".instantml/spool"
 PROCESS_UPLOAD_MODES = {"sync", "spool"}
 SNAPSHOT_KEYS = {"metrics", "metadata"}
 CONSOLE_LOG_STREAMS = {"stdout", "stderr"}
@@ -303,7 +303,7 @@ class Client:
         url = self.base_url.rstrip("/") + path
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        api_key = self.api_key or os.environ.get("RLOBS_API_KEY")
+        api_key = self.api_key or os.environ.get("INSTANTML_API_KEY")
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         if idempotency_key:
@@ -319,15 +319,15 @@ class Client:
                 payload = response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             message = _error_message(exc)
-            raise RlobsError(f"{method} {path} failed: {message}") from exc
+            raise InstantMLError(f"{method} {path} failed: {message}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise RlobsError(f"{method} {path} failed: {exc}") from exc
+            raise InstantMLError(f"{method} {path} failed: {exc}") from exc
         try:
             decoded = json.loads(payload)
         except json.JSONDecodeError as exc:
-            raise RlobsError("server returned invalid JSON") from exc
+            raise InstantMLError("server returned invalid JSON") from exc
         if not isinstance(decoded, dict):
-            raise RlobsError("server returned a non-object JSON payload")
+            raise InstantMLError("server returned a non-object JSON payload")
         return decoded
 
 
@@ -431,14 +431,14 @@ class Run:
             raise ValueError("system_metrics_interval must be positive")
         with self._lock:
             if self._system_sampler is not None:
-                raise RlobsError("system metrics sampler is already running")
+                raise InstantMLError("system metrics sampler is already running")
             self._system_sampler = _SystemMetricsSampler(self, interval)
             self._system_sampler.start()
 
     def capture_console(self) -> None:
         with self._lock:
             if self._console_capture is not None:
-                raise RlobsError("console capture is already enabled")
+                raise InstantMLError("console capture is already enabled")
             self._console_capture = _ConsoleCapture(self)
             self._console_capture.start()
 
@@ -845,10 +845,10 @@ class Run:
             return self._submit_or_spool_object(payload, {"histogram": object_key}, step)
         if isinstance(rich_object, (Image, Video, Audio)):
             if self.upload_mode == "spool":
-                raise RlobsError("rich media object logging requires upload_mode='sync' until uploader response chaining is supported")
+                raise InstantMLError("rich media object logging requires upload_mode='sync' until uploader response chaining is supported")
             source = self._materialize_media_source(rich_object)
             if not source.exists() or not source.is_file():
-                raise RlobsError(f"media source does not exist: {source}")
+                raise InstantMLError(f"media source does not exist: {source}")
             kind = "image" if isinstance(rich_object, Image) else "video" if isinstance(rich_object, Video) else "audio"
             artifact_type = "rollout" if kind == "video" else "file"
             object_metadata = _merge_metadata(shared_metadata, rich_object.metadata)
@@ -947,7 +947,7 @@ class Run:
         elif self.upload_mode == "spool":
             root = Path(self.spool_dir or DEFAULT_PROCESS_SPOOL_DIR).expanduser().resolve() / "_media" / _safe_path_segment(self.run_id)
         else:
-            root = Path(tempfile.gettempdir()) / "rlobs-media" / _safe_path_segment(self.run_id)
+            root = Path(tempfile.gettempdir()) / "instantml-media" / _safe_path_segment(self.run_id)
         root.mkdir(parents=True, exist_ok=True)
         return root
 
@@ -1049,7 +1049,7 @@ class Run:
     def _request_or_spool(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
             return self.client._request(method, path, body)
-        except RlobsError:
+        except InstantMLError:
             if not self.client.offline_dir:
                 raise
             _spool_event(self.client.offline_dir, self.run_id, {"method": method, "path": path, "body": body})
@@ -1099,7 +1099,7 @@ def init(
 
 class _LocalStore:
     def __init__(self, root: str | None, run_id: str) -> None:
-        directory = Path(root or ".rlobs/local").expanduser().resolve()
+        directory = Path(root or ".instantml/local").expanduser().resolve()
         directory.mkdir(parents=True, exist_ok=True)
         self.path = directory / "store.sqlite3"
         self._lock = threading.RLock()
@@ -1235,7 +1235,7 @@ class _SystemMetricsSampler:
         self._run = run
         self._interval = interval
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._loop, name=f"rlobs-system-{run.run_id}", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name=f"instantml-system-{run.run_id}", daemon=True)
 
     def start(self) -> None:
         self._thread.start()
@@ -1739,7 +1739,7 @@ def _histogram_counts_for_edges(values: list[float], edges: list[float]) -> list
 
 def _hash_file(path: Path) -> _FileStats:
     if not path.exists() or not path.is_file():
-        raise RlobsError(f"upload source does not exist: {path}")
+        raise InstantMLError(f"upload source does not exist: {path}")
     digest = hashlib.sha256()
     size_bytes = 0
     with path.open("rb") as handle:
@@ -1751,7 +1751,7 @@ def _hash_file(path: Path) -> _FileStats:
 
 def _write_image_data(data: Any, target: Path) -> None:
     if data is None:
-        raise RlobsError("image data is required")
+        raise InstantMLError("image data is required")
     if callable(getattr(data, "savefig", None)):
         data.savefig(target)
         return
@@ -1761,11 +1761,11 @@ def _write_image_data(data: Any, target: Path) -> None:
     try:
         from PIL import Image as PillowImage
     except ImportError as exc:
-        raise RlobsError("Pillow is required to log image data") from exc
+        raise InstantMLError("Pillow is required to log image data") from exc
     try:
         import numpy as np
     except ImportError as exc:
-        raise RlobsError("numpy is required to log image data arrays") from exc
+        raise InstantMLError("numpy is required to log image data arrays") from exc
     array = np.asarray(_tensor_to_python(data))
     if array.dtype != np.uint8:
         if array.max() <= 1.0:
@@ -1776,31 +1776,31 @@ def _write_image_data(data: Any, target: Path) -> None:
 
 def _write_audio_data(data: Any, target: Path, sample_rate: int) -> None:
     if data is None:
-        raise RlobsError("audio data is required")
+        raise InstantMLError("audio data is required")
     try:
         import soundfile
     except ImportError as exc:
-        raise RlobsError("soundfile is required to log audio data") from exc
+        raise InstantMLError("soundfile is required to log audio data") from exc
     soundfile.write(target, _tensor_to_python(data), sample_rate)
 
 
 def _write_video_data(data: Any, target: Path, fps: int | float) -> None:
     if data is None:
-        raise RlobsError("video data is required")
+        raise InstantMLError("video data is required")
     try:
         import imageio.v3 as imageio
     except ImportError as imageio_error:
         try:
             from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
         except ImportError as moviepy_error:
-            raise RlobsError("moviepy or imageio is required to log video data") from moviepy_error
+            raise InstantMLError("moviepy or imageio is required to log video data") from moviepy_error
         clip = ImageSequenceClip(_tensor_to_python(data), fps=fps)
         clip.write_videofile(str(target), logger=None)
         return
     try:
         imageio.imwrite(target, _tensor_to_python(data), fps=fps)
     except TypeError as exc:
-        raise RlobsError("moviepy or imageio is required to log video data") from exc
+        raise InstantMLError("moviepy or imageio is required to log video data") from exc
 
 
 def _collect_system_metrics(psutil_module: Any | None = None, pynvml_module: Any | None = None) -> dict[str, float]:

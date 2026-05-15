@@ -8,7 +8,7 @@ Owner: Codex
 
 ## Summary
 
-Training Observability should win on speed in the daily run-browsing workflow. Design-partner feedback called out a W&B project with roughly 90,000 runs taking seconds to load. The current app already calls the Rust-backed `GET /api/runs/summary` route with server-side filters, search, sort, totals, and page-scoped summaries, but the implementation still uses offset pagination, index-hostile token predicates, and no large-project performance gate.
+InstantML should win on speed in the daily run-browsing workflow. Design-partner feedback called out a W&B project with roughly 90,000 runs taking seconds to load. The current app already calls the Rust-backed `GET /api/runs/summary` route with server-side filters, search, sort, totals, and page-scoped summaries, but the implementation still uses offset pagination, index-hostile token predicates, and no large-project performance gate.
 
 This design keeps the existing summary endpoint and response shape compatible, then adds cursor pagination, targeted indexes, indexable search predicates, a compact Python `Api.runs()` client, frontend cursor navigation, and a Rust/ClickHouse scale benchmark. The smallest useful version does not add a new query language or a separate search service. It makes the existing Runs workspace credible for a 90,000-run project while preserving local Node compatibility for old route shapes.
 
@@ -104,11 +104,11 @@ The UI continues to show `1-25 of 90,000` style ranges using `pageIndex * pageSi
 Add a compact `Api` class:
 
 ```python
-api = rl_observability.Api(base_url="http://127.0.0.1:8000", api_key="...")
+api = instantml.Api(base_url="http://127.0.0.1:8000", api_key="...")
 page = api.runs(project="demo", q="seed 13", sort_by="metric-best", metric_key="eval/return_mean")
 ```
 
-`Api.runs()` returns the raw summary payload dict and accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`. It omits `None` and empty-string parameters. `cursor` and nonzero `offset` are mutually exclusive client-side. It reuses the existing `Client` request behavior for auth, timeouts, JSON validation, and `RlobsError`. This is deliberately a raw read-only helper, not the full future public API client.
+`Api.runs()` returns the raw summary payload dict and accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`. It omits `None` and empty-string parameters. `cursor` and nonzero `offset` are mutually exclusive client-side. It reuses the existing `Client` request behavior for auth, timeouts, JSON validation, and `InstantMLError`. This is deliberately a raw read-only helper, not the full future public API client.
 
 ## Component Impact
 
@@ -126,7 +126,7 @@ Frontend:
 Python SDK:
 
 - Add `Api` class and tests for query-string construction, auth reuse, and returned payload.
-- Export `Api` from `rl_observability`.
+- Export `Api` from `instantml`.
 
 Storage:
 
@@ -229,7 +229,7 @@ Deferred complexity:
 - Python SDK tests:
   - `Api.runs()` builds the expected encoded query string.
   - API key and timeout are passed through existing request behavior.
-  - Invalid server response still raises `RlobsError`.
+  - Invalid server response still raises `InstantMLError`.
 - Frontend tests:
   - UI smoke verifies Next/Previous use cursor params and still preserve off-page selected runs.
   - Existing search, sorting, tags/notes, and saved-view behavior stays intact.
@@ -311,7 +311,7 @@ Implemented on 2026-05-11:
 Local benchmark on 2026-05-11 with disposable local ClickHouse, local Rust API, local Next production build, 90,000 seeded runs, one selected metric summary per run, and 1,000 chart points on the target run. Current CLI benchmark runs use disposable ClickHouse for both operational records and metric rows:
 
 ```text
-RLOBS_BENCH_RUNS=90000 RLOBS_BENCH_SAMPLES=10 RLOBS_BENCH_WARMUPS=2 RLOBS_BENCH_WEB=1 npm run benchmark:large-runs
+INSTANTML_BENCH_RUNS=90000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
 
 summary_newest_project p50 68 ms, p95 78 ms
 summary_newest_org     p50 67 ms, p95 68 ms

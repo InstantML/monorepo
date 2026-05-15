@@ -8,7 +8,7 @@ Owner: Codex
 
 ## Summary
 
-Training Observability needs first-class rich logged objects so users can inspect tables, histograms, images, videos, and audio samples without turning every non-scalar value into generic artifact metadata. The first slice keeps the implementation intentionally small: it reuses existing `attributes` as the object catalog, reuses existing `artifacts` for media bytes, and adds only a narrow `table_object_rows` table for paginated table previews.
+InstantML needs first-class rich logged objects so users can inspect tables, histograms, images, videos, and audio samples without turning every non-scalar value into generic artifact metadata. The first slice keeps the implementation intentionally small: it reuses existing `attributes` as the object catalog, reuses existing `artifacts` for media bytes, and adds only a narrow `table_object_rows` table for paginated table previews.
 
 This replaces the initial draft proposal for a separate `logged_objects` manifest. Two fresh reviewers rejected that as too much schema for the first slice because it duplicated `attributes` and `artifacts`, made export/import/usage broader than necessary, and introduced avoidable Compare fan-out. The accepted slice keeps scalar metric ingestion untouched and adds bounded object read/write routes around existing storage.
 
@@ -219,4 +219,4 @@ Preview rules:
 - Implemented in the SDK with `Table`, `Histogram`, `Image`, `Video`, `Audio`, `log_objects`, `log_table_object`, `log_image`, `log_audio`, and `log_video_object` while preserving existing URI/artifact helper signatures.
 - Implemented in the web app with active-run-only object loading in Run Detail and Artifacts. Initial Runs entry and Compare do not add object requests.
 - Post-implementation review fixes: generic attribute writes reject rich media/table types, table-row reads authorize before revealing object kind, and object listing maps query kinds to concrete storage types.
-- Local benchmark evidence on 2026-05-11: `RLOBS_OBJECT_BENCH_SAMPLES=10 RLOBS_OBJECT_BENCH_WARMUPS=2 npm run benchmark:rich-objects` with 500 objects and 1,000 table rows measured object list p95 47.5 ms, table-only object list p95 8.3 ms, and table rows p95 1.9 ms.
+- Local benchmark evidence on 2026-05-11: `INSTANTML_OBJECT_BENCH_SAMPLES=10 INSTANTML_OBJECT_BENCH_WARMUPS=2 npm run benchmark:rich-objects` with 500 objects and 1,000 table rows measured object list p95 47.5 ms, table-only object list p95 8.3 ms, and table rows p95 1.9 ms.

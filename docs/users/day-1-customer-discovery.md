@@ -6,7 +6,7 @@ Status: Planning artifact, not completed user research
 
 ## Goal
 
-Prepare to validate the first wedge for Training Observability:
+Prepare to validate the first wedge for InstantML:
 
 > A focused W&B-style training observability product for teams that need faster run comparison, reliable ingestion, artifact/source visibility, and more control over experiment history.
 

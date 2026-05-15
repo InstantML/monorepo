@@ -1,6 +1,6 @@
 .coverage
 .pytest_cache/
-.rlobs/
+.instantml/
 .venv/
 venv/
 .env

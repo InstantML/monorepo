@@ -7,9 +7,9 @@ import test from "node:test";
 import { ConflictError, ForbiddenError, UnauthorizedError, createStore, defaultDbPath, emptyState, loadState, openStore, ValidationError } from "../src/db.js";
 
 test("file-backed store persists and tolerates partial state files", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-store-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-store-"));
   const dbPath = path.join(dir, "state.json");
-  assert.equal(defaultDbPath(), path.join(".rlobs", "rlobs.json"));
+  assert.equal(defaultDbPath(), path.join(".instantml", "instantml.json"));
   assert.deepEqual(loadState(path.join(dir, "missing.json")), emptyState());
   fs.writeFileSync(dbPath, JSON.stringify({ projects: [{ id: "p", name: "z", created_at: "t" }] }));
   const loaded = loadState(dbPath);
@@ -41,7 +41,7 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   const member = store.createUser({ email: "member@example.com" });
   store.state.memberships.push({ id: "member-1", org_id: org.id, user_id: member.id, role: "member", created_at: "2026-05-09T00:00:00.000Z" });
   const createdKey = store.createApiKey(org.id, { name: "training", created_by_user_id: user.id, scopes: ["sdk:ingest", "artifacts:write"] });
-  assert.match(createdKey.api_key, /^rlobs_/);
+  assert.match(createdKey.api_key, /^instantml_/);
   assert.equal(createdKey.key.key_hash, undefined);
   assert.equal(store.listApiKeys(org.id)[0].name, "training");
   const auth = store.authenticateApiKey(createdKey.api_key);
@@ -56,7 +56,7 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   const otherOrg = store.createOrganization({ slug: "other-labs", name: "Other Labs" });
   const otherAuth = store.authenticateApiKey(store.createApiKey(otherOrg.id, { name: "other" }).api_key);
   assert.throws(() => store.logMetrics(run.id, { step: 1, metrics: { reward: 3 } }, { auth: otherAuth }), ForbiddenError);
-  assert.throws(() => store.authenticateApiKey("rlobs_bad"), UnauthorizedError);
+  assert.throws(() => store.authenticateApiKey("instantml_bad"), UnauthorizedError);
 
   const summary = store.runsSummary({ org_id: org.id, project: "research" });
   assert.equal(summary.runs[0].latest_metrics.reward, 1);
@@ -210,7 +210,7 @@ test("typed attributes, float steps, aggregates, artifacts, and comparison rows 
   const artifact = store.createArtifact(first.id, {
     type: "checkpoint",
     name: "policy.pt",
-    uri: "rlobs://artifact/policy.pt",
+    uri: "instantml://artifact/policy.pt",
     step: 1.5,
     size_bytes: 12,
     sha256: "abc123",

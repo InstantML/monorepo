@@ -1,6 +1,6 @@
 # Deprecated Node Server
 
-This directory contains the deprecated Node.js API compatibility server for Training Observability. The primary backend is now the Rust/ClickHouse service in `apps/rust-server`; the main frontend lives in the Next/React app under `apps/web`.
+This directory contains the deprecated Node.js API compatibility server for InstantML. The primary backend is now the Rust/ClickHouse service in `apps/rust-server`; the main frontend lives in the Next/React app under `apps/web`.
 
 Planning note: `docs/design/2026-05-14-clickhouse-only-storage.md` defines the primary Rust/ClickHouse storage direction, while `docs/architecture/current-system.md` captures the current implemented topology. This Node server is retained for route-shape regression tests, JSON migration fixtures, and legacy local fallback.
 
@@ -23,7 +23,7 @@ Compatibility rule: treat this server as the v1 wire-contract oracle. Future Rus
 
 ## Storage
 
-This slice uses dependency-free JSON persistence at `.rlobs/rlobs.json` by default for dev/demo mode. Local uploaded artifacts are stored beside the database under `artifacts/` unless `storageRoot` is passed to `createServer`.
+This slice uses dependency-free JSON persistence at `.instantml/instantml.json` by default for dev/demo mode. Local uploaded artifacts are stored beside the database under `artifacts/` unless `storageRoot` is passed to `createServer`.
 
 The JSON store now maintains per-run metric summaries at write time in `metricSeries`. Run-table summaries and side-by-side metric aggregate values read those summaries instead of recomputing from full metric history. Raw metric history remains available through bounded metric-series endpoints.
 
@@ -51,7 +51,7 @@ Artifact bytes go through `src/artifact-store.js`. The current implementation is
 - `GET /api/usage` returns org-scoped warning-only usage counts for seats, projects, runs, scalar metric points, retained metric series, artifacts, API keys, exact artifact bytes, and estimated metadata bytes.
 - `GET /api/usage/export` returns the same usage shape as versioned JSON for billing/debug planning. It is not invoice truth.
 
-Set `RLOBS_REQUIRE_API_KEY=true` or pass `requireApiKey: true` to `createServer()` to require bearer API keys on tenant reads, SDK writes, imports, exports, usage summaries, and artifact downloads. In that mode, local admin scaffolding routes for users, orgs, and API keys require `X-RLOBS-Bootstrap-Token` matching `RLOBS_BOOTSTRAP_TOKEN` or the `bootstrapToken` server option. SDK run/metric/attribute mutations require `sdk:ingest`, and artifact metadata/upload routes require `artifacts:write`. Import routes require `imports:write`; default locally-created SDK keys include it for local migration testing, while usage-only keys cannot import. Usage routes require `usage:read`; default SDK ingest keys cannot read seat/API-key counts. Local dev defaults remain unauthenticated for compatibility.
+Set `INSTANTML_REQUIRE_API_KEY=true` or pass `requireApiKey: true` to `createServer()` to require bearer API keys on tenant reads, SDK writes, imports, exports, usage summaries, and artifact downloads. In that mode, local admin scaffolding routes for users, orgs, and API keys require `X-INSTANTML-Bootstrap-Token` matching `INSTANTML_BOOTSTRAP_TOKEN` or the `bootstrapToken` server option. SDK run/metric/attribute mutations require `sdk:ingest`, and artifact metadata/upload routes require `artifacts:write`. Import routes require `imports:write`; default locally-created SDK keys include it for local migration testing, while usage-only keys cannot import. Usage routes require `usage:read`; default SDK ingest keys cannot read seat/API-key counts. Local dev defaults remain unauthenticated for compatibility.
 
 Batch attribute writes and importer writes are all-or-nothing in the Node store. Import dry-runs and real imports use the same normalized validation path, and invalid second-run metric/artifact payloads do not leave partial projects, runs, metrics, summaries, artifacts, or import records. Importers preserve external run IDs under source/import metadata instead of writing source-owned `_rlobs` keys at the top level. Artifact upload validates run, artifact metadata, and path before writing local bytes.
 
@@ -75,7 +75,7 @@ The API is available at:
 http://127.0.0.1:8000
 ```
 
-Run the Next frontend separately with `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:build` and then `RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:start`.
+Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build` and then `INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start`.
 
 Docker Compose from the repo root starts the primary Rust/ClickHouse stack, not this deprecated Node compatibility server:
 

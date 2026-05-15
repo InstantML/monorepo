@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from rlobs_api import db
+from instantml_api import db
 
 
 def test_project_creation_is_idempotent(tmp_path):
@@ -12,7 +12,7 @@ def test_project_creation_is_idempotent(tmp_path):
 
     assert first == second
     assert db.list_projects(db_path) == [first]
-    assert db.default_db_path().name == "rlobs.sqlite3"
+    assert db.default_db_path().name == "instantml.sqlite3"
 
 
 def test_run_lifecycle_and_metric_queries_are_bounded(tmp_path):

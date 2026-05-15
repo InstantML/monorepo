@@ -16,8 +16,8 @@ export function createServer({
   dbPath = defaultDbPath(),
   webRoot = DEFAULT_WEB_ROOT,
   storageRoot = null,
-  requireApiKey = process.env.RLOBS_REQUIRE_API_KEY === "true",
-  bootstrapToken = process.env.RLOBS_BOOTSTRAP_TOKEN ?? "",
+  requireApiKey = process.env.INSTANTML_REQUIRE_API_KEY === "true",
+  bootstrapToken = process.env.INSTANTML_BOOTSTRAP_TOKEN ?? "",
 } = {}) {
   const store = openStore(dbPath);
   const artifactRoot = storageRoot ?? path.join(path.dirname(dbPath), "artifacts");
@@ -34,7 +34,7 @@ export function createServer({
   return server;
 }
 
-export async function route(req, store, webRoot = DEFAULT_WEB_ROOT, artifactStore = createLocalArtifactStore(path.join(".rlobs", "artifacts")), options = {}) {
+export async function route(req, store, webRoot = DEFAULT_WEB_ROOT, artifactStore = createLocalArtifactStore(path.join(".instantml", "artifacts")), options = {}) {
   const url = new URL(req.url, "http://localhost");
   const pathname = stripTrailingSlash(url.pathname);
   const method = req.method;
@@ -308,7 +308,7 @@ function requireBootstrap(req, options) {
   if (!options.requireApiKey) return;
   const configured = options.bootstrapToken ?? "";
   if (!configured) throw new UnauthorizedError("bootstrap token is not configured");
-  if (req.headers["x-rlobs-bootstrap-token"] !== configured) throw new UnauthorizedError("invalid bootstrap token");
+  if (req.headers["x-instantml-bootstrap-token"] !== configured) throw new UnauthorizedError("invalid bootstrap token");
 }
 
 function withOrg(input, auth) {

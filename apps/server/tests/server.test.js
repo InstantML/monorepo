@@ -9,8 +9,8 @@ import test from "node:test";
 import { createServer } from "../src/server.js";
 
 async function withServer(fn, options = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-node-"));
-  const server = createServer({ dbPath: path.join(dir, "rlobs.json"), storageRoot: path.join(dir, "artifacts"), ...options });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-node-"));
+  const server = createServer({ dbPath: path.join(dir, "instantml.json"), storageRoot: path.join(dir, "artifacts"), ...options });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   try {
@@ -96,8 +96,8 @@ test("HTTP lifecycle, summaries, artifacts, and API work", async () => {
     const missingFileArtifact = (await request(baseUrl, "POST", `/api/runs/${run.id}/artifacts`, {
       type: "file",
       name: "missing.txt",
-      uri: "rlobs://artifacts/missing.txt",
-      storage_path: path.join(os.tmpdir(), "missing-rlobs-artifact.txt"),
+      uri: "instantml://artifacts/missing.txt",
+      storage_path: path.join(os.tmpdir(), "missing-instantml-artifact.txt"),
     })).artifact;
     assert.equal(missingFileArtifact.storage_path, null);
     const missingDownload = await fetch(`${baseUrl}/api/artifacts/${missingFileArtifact.id}/download`);
@@ -121,7 +121,7 @@ test("HTTP lifecycle, summaries, artifacts, and API work", async () => {
 
 test("org API keys protect SDK ingestion and idempotent metric replay", async () => {
   await withServer(async (baseUrl) => {
-    const bootstrapHeaders = { "X-RLOBS-Bootstrap-Token": "test-bootstrap" };
+    const bootstrapHeaders = { "X-INSTANTML-Bootstrap-Token": "test-bootstrap" };
     const user = (await request(baseUrl, "POST", "/api/users", {
       email: "owner@example.com",
       provider: "google",
@@ -141,7 +141,7 @@ test("org API keys protect SDK ingestion and idempotent metric replay", async ()
     });
     assert.equal(response.status, 401);
     const keyResponse = await request(baseUrl, "POST", `/api/orgs/${organization.id}/api-keys`, { name: "sdk" }, bootstrapHeaders);
-    assert.match(keyResponse.api_key, /^rlobs_/);
+    assert.match(keyResponse.api_key, /^instantml_/);
     assert.equal((await request(baseUrl, "GET", `/api/orgs/${organization.id}/api-keys`, undefined, bootstrapHeaders)).api_keys[0].key_hash, undefined);
 
     const missingAuth = await fetch(baseUrl + "/runs", {
@@ -450,7 +450,7 @@ test("request parsing and static serving guardrails work", async () => {
 
 test("listen starts a server on an ephemeral port", async () => {
   const { listen } = await import("../src/server.js");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-listen-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-listen-"));
   const server = listen({ dbPath: path.join(dir, "listen.json"), port: 0 });
   await new Promise((resolve) => server.once("listening", resolve));
   assert.ok(server.address().port > 0);
@@ -460,7 +460,7 @@ test("listen starts a server on an ephemeral port", async () => {
 });
 
 test("static server falls back to octet-stream for unknown file types", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-static-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-static-"));
   fs.writeFileSync(path.join(dir, "blob.bin"), "abc");
   const server = createServer({ dbPath: path.join(dir, "db.json"), webRoot: dir });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -476,7 +476,7 @@ test("Python SDK can log to the Node server without API changes", async () => {
     const repo = process.cwd();
 const script = `
 import sys
-import rl_observability as ro
+import instantml as ro
 run = ro.init(project="sdk-node", name="sdk-run", base_url="${baseUrl}")
 run.log({"eval/return_mean": 12.5}, step=1)
 run.finish()

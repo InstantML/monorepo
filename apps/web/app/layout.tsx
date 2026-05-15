@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 const themeBootstrap = `
 (() => {
   try {
-    const stored = localStorage.getItem("rlobs:next:theme");
+    const stored = localStorage.getItem("instantml:next:theme");
     const theme = stored === "dark" || stored === "light" ? stored : "dark";
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.backgroundColor = theme === "dark" ? "#07080c" : "#ffffff";

@@ -7,8 +7,8 @@ Benchmark result summaries live here when they are useful for product or perform
 Use the hosted demo script from the repo root:
 
 ```bash
-RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1 \
-RLOBS_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-clickhouse-query-benchmark.json \
+INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 \
+INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-clickhouse-query-benchmark.json \
 npm run benchmark:hosted-demo
 ```
 

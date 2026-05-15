@@ -10,7 +10,7 @@ Owner: Codex
 
 This design implemented the first broad pass of the Neptune comparison roadmap without trying to clone Neptune enterprise features. It remains useful as the typed-attribute/import/comparison design record.
 
-Current strategy note: `PRODUCT_STRATEGY.md` now positions the product as Training Observability, a general training-loop observability product and W&B-style competitor. Neptune compatibility remains an adoption and migration path, not the primary product identity.
+Current strategy note: `PRODUCT_STRATEGY.md` now positions the product as InstantML, a general training-loop observability product and W&B-style competitor. Neptune compatibility remains an adoption and migration path, not the primary product identity.
 
 The implementation keeps the existing SDK and UI working, then adds typed attributes, a safer SDK hot path, artifact upload/download, a small Neptune Exporter-style importer, and comparison UI controls.
 

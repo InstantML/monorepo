@@ -130,7 +130,7 @@ Reasons:
 Future adapter shape:
 
 ```python
-run = rl_observability.init(..., adapters=[rl_observability.adapters.wandb(project="existing-wandb-project")])
+run = instantml.init(..., adapters=[instantml.adapters.wandb(project="existing-wandb-project")])
 run.log_metrics({"reward": 1}, step=1)
 ```
 

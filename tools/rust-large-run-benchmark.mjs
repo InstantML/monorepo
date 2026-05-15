@@ -10,14 +10,14 @@ import { chromium } from "playwright";
 import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
-const runCount = numberEnv("RLOBS_BENCH_RUNS", 100_000);
-const longRunSteps = numberEnv("RLOBS_BENCH_LONG_RUN_STEPS", 20_000);
-const samples = numberEnv("RLOBS_BENCH_SAMPLES", 15);
-const warmups = numberEnv("RLOBS_BENCH_WARMUPS", 2);
-const includeWeb = process.env.RLOBS_BENCH_WEB === "1";
-const enforce = process.env.RLOBS_BENCH_ENFORCE === "1";
-const project = process.env.RLOBS_BENCH_PROJECT || "bench-100k";
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rlobs-large-run-"));
+const runCount = numberEnv("INSTANTML_BENCH_RUNS", 100_000);
+const longRunSteps = numberEnv("INSTANTML_BENCH_LONG_RUN_STEPS", 20_000);
+const samples = numberEnv("INSTANTML_BENCH_SAMPLES", 15);
+const warmups = numberEnv("INSTANTML_BENCH_WARMUPS", 2);
+const includeWeb = process.env.INSTANTML_BENCH_WEB === "1";
+const enforce = process.env.INSTANTML_BENCH_ENFORCE === "1";
+const project = process.env.INSTANTML_BENCH_PROJECT || "bench-100k";
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-large-run-"));
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
@@ -27,7 +27,7 @@ const localOrgId = "00000000-0000-0000-0000-000000000001";
 const benchUserId = "00000000-0000-0000-0000-00000000b001";
 const benchMembershipId = "00000000-0000-0000-0000-00000000b002";
 const benchSessionId = "00000000-0000-0000-0000-00000000b003";
-const benchSessionToken = "rlobs_session_large_run_benchmark";
+const benchSessionToken = "instantml_session_large_run_benchmark";
 let apiServer = null;
 let webServer = null;
 let clickhouse = null;
@@ -35,7 +35,7 @@ let clickhouse = null;
 try {
   clickhouse = await ensureLocalClickHouse({
     repo,
-    url: `http://default:@127.0.0.1:${clickhouseHttpPort}/rlobs`,
+    url: `http://default:@127.0.0.1:${clickhouseHttpPort}/instantml`,
     dataDir: path.join(tempDir, "clickhouse"),
     logDir: path.join(tempDir, "clickhouse-logs"),
     tcpPort: clickhouseTcpPort,
@@ -54,9 +54,9 @@ try {
     env: {
       ...process.env,
       CLICKHOUSE_URL: clickhouse.url,
-      RLOBS_BIND_ADDR: `127.0.0.1:${apiPort}`,
-      RLOBS_AUTH_MODE: "local",
-      RLOBS_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
+      INSTANTML_AUTH_MODE: "local",
+      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
     },
     stdio: ["ignore", output, output],
   });
@@ -283,11 +283,11 @@ async function measureWebFirstUsefulRender() {
   const nextBin = path.join(repo, "node_modules/.bin/next");
   run(nextBin, ["build"], {
     cwd: path.join(repo, "apps/web"),
-    env: { ...process.env, RLOBS_API_BASE: apiBaseUrl },
+    env: { ...process.env, INSTANTML_API_BASE: apiBaseUrl },
   });
   webServer = spawn(nextBin, ["start", "--port", String(webPort)], {
     cwd: path.join(repo, "apps/web"),
-    env: { ...process.env, RLOBS_API_BASE: apiBaseUrl },
+    env: { ...process.env, INSTANTML_API_BASE: apiBaseUrl },
     stdio: ["ignore", "ignore", "inherit"],
   });
   await waitForHttp(`http://127.0.0.1:${webPort}`, webServer, null);
@@ -295,7 +295,7 @@ async function measureWebFirstUsefulRender() {
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.context().addCookies([{
-      name: "rlobs_session",
+      name: "instantml_session",
       value: benchSessionToken,
       url: `http://127.0.0.1:${webPort}`,
       httpOnly: true,

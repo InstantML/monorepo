@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use rlobs_rust_server::{
+use instantml_rust_server::{
     config::{AppConfig, ClickHouseProvisioner},
     control_store::ControlStore,
     http::AppState,
@@ -19,7 +19,7 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run() -> rlobs_rust_server::AppResult<()> {
+async fn run() -> instantml_rust_server::AppResult<()> {
     let command = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "serve".to_string());
@@ -34,13 +34,13 @@ async fn run() -> rlobs_rust_server::AppResult<()> {
             print_help();
             Ok(())
         }
-        other => Err(rlobs_rust_server::AppError::config(format!(
+        other => Err(instantml_rust_server::AppError::config(format!(
             "unknown command {other}; expected serve, worker, migrate, or all"
         ))),
     }
 }
 
-async fn serve(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
+async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     let metrics = metric_store::connect(&config)?;
     if should_migrate_primary_metric_store(&config) {
         metric_store::migrate(&metrics).await?;
@@ -56,16 +56,18 @@ async fn serve(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
     )
     .await?;
     let bind_addr = config.bind_addr;
-    let app = rlobs_rust_server::http::router(AppState::new(store, config));
+    let app = instantml_rust_server::http::router(AppState::new(store, config));
     let listener = TcpListener::bind(bind_addr).await?;
     tracing::info!(%bind_addr, "Training Observability Rust server listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .map_err(|error| rlobs_rust_server::AppError::internal(format!("server failed: {error}")))
+        .map_err(|error| {
+            instantml_rust_server::AppError::internal(format!("server failed: {error}"))
+        })
 }
 
-async fn migrate_all(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
+async fn migrate_all(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     let metrics = metric_store::connect(&config)?;
     if should_migrate_primary_metric_store(&config) {
         metric_store::migrate(&metrics).await?;
@@ -76,7 +78,7 @@ async fn migrate_all(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
     Ok(())
 }
 
-async fn worker(config: AppConfig) -> rlobs_rust_server::AppResult<()> {
+async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     let metrics = metric_store::connect(&config)?;
     if should_migrate_primary_metric_store(&config) {
         metric_store::migrate(&metrics).await?;
@@ -128,9 +130,9 @@ async fn shutdown_signal() {
 
 fn print_help() {
     println!(
-        "Usage: rlobs-rust-server [serve|all|migrate|worker]\n\n\
-         Environment: CLICKHOUSE_URL, RLOBS_BIND_ADDR, RLOBS_AUTH_MODE, \
-         RLOBS_BOOTSTRAP_TOKEN, RLOBS_ARTIFACT_ROOT, RLOBS_MAX_BODY_BYTES, RLOBS_MAX_UPLOAD_BODY_BYTES, \
-         RLOBS_HOSTED_CLICKHOUSE_ENABLED, CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT"
+        "Usage: instantml-rust-server [serve|all|migrate|worker]\n\n\
+         Environment: CLICKHOUSE_URL, INSTANTML_BIND_ADDR, INSTANTML_AUTH_MODE, \
+         INSTANTML_BOOTSTRAP_TOKEN, INSTANTML_ARTIFACT_ROOT, INSTANTML_MAX_BODY_BYTES, INSTANTML_MAX_UPLOAD_BODY_BYTES, \
+         INSTANTML_HOSTED_CLICKHOUSE_ENABLED, CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT"
     );
 }

@@ -6,7 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 
 export async function ensureLocalClickHouse(options = {}) {
   const repo = options.repo || process.cwd();
-  const url = options.url || process.env.CLICKHOUSE_URL || "http://default:@127.0.0.1:8123/rlobs";
+  const url = options.url || process.env.CLICKHOUSE_URL || "http://default:@127.0.0.1:8123/instantml";
   const parsed = new URL(url);
 
   if (await clickhouseReady(url)) {
@@ -22,11 +22,11 @@ export async function ensureLocalClickHouse(options = {}) {
   requireCommand("clickhouse");
 
   const httpPort = parsed.port || "8123";
-  const dataDir = path.resolve(options.dataDir || process.env.RLOBS_DEV_CHDATA || path.join(repo, ".rlobs", "clickhouse"));
-  const logDir = path.resolve(options.logDir || process.env.RLOBS_DEV_CH_LOG_DIR || path.join(repo, ".rlobs", "clickhouse-logs"));
-  const tcpPort = String(options.tcpPort || process.env.RLOBS_DEV_CH_TCP_PORT || await freePort());
-  const interserverHttpPort = String(options.interserverHttpPort || process.env.RLOBS_DEV_CH_INTERSERVER_PORT || await freePort());
-  const mysqlPort = String(options.mysqlPort || process.env.RLOBS_DEV_CH_MYSQL_PORT || await freePort());
+  const dataDir = path.resolve(options.dataDir || process.env.INSTANTML_DEV_CHDATA || path.join(repo, ".instantml", "clickhouse"));
+  const logDir = path.resolve(options.logDir || process.env.INSTANTML_DEV_CH_LOG_DIR || path.join(repo, ".instantml", "clickhouse-logs"));
+  const tcpPort = String(options.tcpPort || process.env.INSTANTML_DEV_CH_TCP_PORT || await freePort());
+  const interserverHttpPort = String(options.interserverHttpPort || process.env.INSTANTML_DEV_CH_INTERSERVER_PORT || await freePort());
+  const mysqlPort = String(options.mysqlPort || process.env.INSTANTML_DEV_CH_MYSQL_PORT || await freePort());
 
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });

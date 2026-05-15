@@ -1,6 +1,6 @@
 # Q-Learning Gridworld Example
 
-This example dogfoods Training Observability with a small tabular Q-learning training loop. It logs multiple seeds, episode returns, success rate, epsilon, mean absolute TD error, checkpoint metadata, rollout metadata, and a config artifact.
+This example dogfoods InstantML with a small tabular Q-learning training loop. It logs multiple seeds, episode returns, success rate, epsilon, mean absolute TD error, checkpoint metadata, rollout metadata, and a config artifact.
 
 ## Run
 
@@ -13,7 +13,7 @@ npm run dev:api
 Start the Next UI in another terminal:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 Run the example:

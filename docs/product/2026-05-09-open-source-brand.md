@@ -6,9 +6,9 @@ Status: Accepted planning policy
 
 ## Summary
 
-Training Observability should treat openness as a trust and adoption strategy first, not as a premature community strategy. The current repo can be shared with contributors and reviewers, but a public open-source launch should wait until licensing, security posture, hosted-backend boundaries, and namespace migration are deliberate.
+InstantML should treat openness as a trust and adoption strategy first, not as a premature community strategy. The current repo can be shared with contributors and reviewers, but a public open-source launch should wait until licensing, security posture, hosted-backend boundaries, and namespace migration are deliberate.
 
-The public product language remains **Training Observability** for now. That is descriptive, but stable enough for docs, validation calls, and internal planning. Do not pick a clever permanent brand before user validation proves which wedge matters most.
+The public product language remains **InstantML** for now. That is descriptive, but stable enough for docs, validation calls, and internal planning. Do not pick a clever permanent brand before user validation proves which wedge matters most.
 
 ## Open Source Decision
 
@@ -37,7 +37,7 @@ Hosted-backend boundary:
 
 Decision:
 
-- Use **Training Observability** in user-facing docs and UI until external validation says the name is a liability.
+- Use **InstantML** in user-facing docs and UI until external validation says the name is a liability.
 - Treat it as a working public name, not a final trademark or package namespace.
 - Do not rename code identifiers in this phase; namespace migration needs its own design and compatibility plan.
 
@@ -54,24 +54,24 @@ Naming criteria for a future final name:
 
 Temporary compatibility identifiers:
 
-- `rl_observability`: current Python SDK package.
-- `rlobs_api`: historical Python bootstrap API package.
-- `.rlobs`: local state, spool, artifact, and offline replay directory.
-- `rlobs://`: local artifact URI scheme.
-- `rlobs_...`: current local API-key prefix.
-- `RlobsError`: current Python SDK exception.
-- `@rlobs/server`: deprecated Node compatibility package name.
-- `rlobs:next:view:*`: current browser localStorage saved-view prefix.
+- `instantml`: current Python SDK package.
+- `instantml_api`: historical Python bootstrap API package.
+- `.instantml`: local state, spool, artifact, and offline replay directory.
+- `instantml://`: local artifact URI scheme.
+- `instantml_...`: current local API-key prefix.
+- `InstantMLError`: current Python SDK exception.
+- `@instantml/server`: deprecated Node compatibility package name.
+- `instantml:next:view:*`: current browser localStorage saved-view prefix.
 
 Policy:
 
 - Keep these identifiers stable until a namespace migration design exists.
-- User-facing prose should call the product Training Observability even when commands include compatibility names.
+- User-facing prose should call the product InstantML even when commands include compatibility names.
 - Any future rename must include backward-compatible env vars, import aliases, storage migration notes, and tests for existing local data.
 
 ## Documentation Rules
 
-- README and docs should use Training Observability for the product.
+- README and docs should use InstantML for the product.
 - Historical design docs may mention older names only as context.
-- Code comments, package imports, path names, and error class names may keep `rlobs` until migration.
+- Code comments, package imports, path names, and error class names may keep `instantml` until migration.
 - Product claims about W&B, pricing, or speed should stay framed as strategy or hypotheses unless backed by current measurements or customer validation.

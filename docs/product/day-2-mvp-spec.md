@@ -2,13 +2,13 @@
 
 Date: 2026-05-05
 
-Status: Implemented days 1-4 bootstrap; superseded by current Training Observability strategy for roadmap planning
+Status: Implemented days 1-4 bootstrap; superseded by current InstantML strategy for roadmap planning
 
 ## Current Status
 
 This file records the original day-2 bootstrap spec. It remains useful for understanding why the repo started with a standard-library Python API and small SDK, but `PRODUCT_STRATEGY.md` and `docs/architecture/current-system.md` are now the current sources of truth.
 
-Current product direction: Training Observability is now positioned as a general training-loop observability product and W&B-style competitor. RL and Neptune migration remain important workflows, but new roadmap work should not treat the product as RL-only or Neptune-first.
+Current product direction: InstantML is now positioned as a general training-loop observability product and W&B-style competitor. RL and Neptune migration remain important workflows, but new roadmap work should not treat the product as RL-only or Neptune-first.
 
 Implemented after this spec:
 
@@ -49,7 +49,7 @@ SDK:
 - Python package using `urllib.request`.
 - Synchronous calls for the first slice.
 - 2 second default timeout.
-- Clear `RlobsError` on network or non-2xx API failures.
+- Clear `InstantMLError` on network or non-2xx API failures.
 
 Tests:
 
@@ -97,7 +97,7 @@ Metrics:
 ## SDK Interface
 
 ```python
-import rl_observability as ro
+import instantml as ro
 
 run = ro.init(
     project="cartpole",
@@ -135,7 +135,7 @@ npm run dev:api
 Historical Python bootstrap API:
 
 ```bash
-PYTHONPATH=apps/api python3 -m rlobs_api.server --db .rlobs/rlobs.sqlite3 --port 8000
+PYTHONPATH=apps/api python3 -m instantml_api.server --db .instantml/instantml.sqlite3 --port 8000
 ```
 
 Run the example:

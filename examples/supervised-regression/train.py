@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import rl_observability as ro
+import instantml as ro
 
 try:  # NumPy is optional; the pure-Python path keeps this example portable.
     import numpy as np

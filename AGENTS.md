@@ -284,7 +284,7 @@ The first implementation should be the smallest useful end-to-end workflow:
 
 Defer auth, imports, artifacts, checkpoint lineage, deployment hardening, and shared internal packages until this path works.
 
-Status: this first vertical slice is complete. The current strategy now positions the product as Training Observability: a general training-loop observability product and W&B-style competitor. Near-term work should prioritize reliable SDK ingestion, a fast/comprehensible comparison UI, durable Rust/ClickHouse/object storage, and importer/dual-logging paths as adoption tools.
+Status: this first vertical slice is complete. The current strategy now positions the product as InstantML: a general training-loop observability product and W&B-style competitor. Near-term work should prioritize reliable SDK ingestion, a fast/comprehensible comparison UI, durable Rust/ClickHouse/object storage, and importer/dual-logging paths as adoption tools.
 
 Accepted backend direction: `Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage` and `Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage` is now the default setup. Hosted work should split a global user/control-plane ClickHouse layer from org/cell data-plane services only after the coordination/reconciliation design in `docs/design/2026-05-14-clickhouse-only-storage.md` is implemented. Rust work should use `axum + tokio + ClickHouse`, preserve current route shapes, keep `org_id` on tenant-owned data, maintain metric summaries at ingestion time, and keep the shared Node compatibility smokes available before removing or changing legacy route behavior.
 

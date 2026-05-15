@@ -5,9 +5,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { ensureLocalClickHouse } from "./local-clickhouse.mjs";
 
 const repo = process.cwd();
-const rlobsDir = path.join(repo, ".rlobs");
-const apiPort = process.env.RLOBS_API_PORT || "8000";
-const bindAddr = process.env.RLOBS_BIND_ADDR || `127.0.0.1:${apiPort}`;
+const instantmlDir = path.join(repo, ".instantml");
+const apiPort = process.env.INSTANTML_API_PORT || "8000";
+const bindAddr = process.env.INSTANTML_BIND_ADDR || `127.0.0.1:${apiPort}`;
 let clickhouse = null;
 let child = null;
 let shuttingDown = false;
@@ -21,7 +21,7 @@ main().catch(async (error) => {
 async function main() {
   requireCommand("cargo");
 
-  fs.mkdirSync(rlobsDir, { recursive: true });
+  fs.mkdirSync(instantmlDir, { recursive: true });
   clickhouse = await ensureLocalClickHouse({ repo });
 
   console.log(`Training Observability Rust API starting on http://${bindAddr}`);
@@ -33,9 +33,9 @@ async function main() {
     env: {
       ...process.env,
       CLICKHOUSE_URL: clickhouse.url,
-      RLOBS_BIND_ADDR: bindAddr,
-      RLOBS_AUTH_MODE: process.env.RLOBS_AUTH_MODE || "local",
-      RLOBS_ARTIFACT_ROOT: process.env.RLOBS_ARTIFACT_ROOT || path.join(rlobsDir, "rust-artifacts"),
+      INSTANTML_BIND_ADDR: bindAddr,
+      INSTANTML_AUTH_MODE: process.env.INSTANTML_AUTH_MODE || "local",
+      INSTANTML_ARTIFACT_ROOT: process.env.INSTANTML_ARTIFACT_ROOT || path.join(instantmlDir, "rust-artifacts"),
     },
   });
 

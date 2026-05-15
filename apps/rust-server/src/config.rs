@@ -71,51 +71,59 @@ impl AppConfig {
     pub fn from_env() -> AppResult<Self> {
         load_dotenv();
         let mut clickhouse_url =
-            env_string("CLICKHOUSE_URL", "http://default:@127.0.0.1:8123/rlobs");
+            env_string("CLICKHOUSE_URL", "http://default:@127.0.0.1:8123/instantml");
         let hosted_clickhouse = hosted_clickhouse_config(&clickhouse_url)?;
         if env::var("CLICKHOUSE_URL").is_err() {
             if let Some(hosted) = &hosted_clickhouse {
                 clickhouse_url = hosted.tenant_base_url.clone();
             }
         }
-        let bind_addr = env_string("RLOBS_BIND_ADDR", "127.0.0.1:8001")
+        let bind_addr = env_string("INSTANTML_BIND_ADDR", "127.0.0.1:8001")
             .parse()
             .map_err(|_| {
-                AppError::config("RLOBS_BIND_ADDR must be a socket address like 127.0.0.1:8001")
+                AppError::config("INSTANTML_BIND_ADDR must be a socket address like 127.0.0.1:8001")
             })?;
-        let auth_mode = match env_string("RLOBS_AUTH_MODE", "local")
+        let auth_mode = match env_string("INSTANTML_AUTH_MODE", "local")
             .to_ascii_lowercase()
             .as_str()
         {
             "local" | "none" | "off" => AuthMode::Local,
             "api-key" | "api_key" | "hosted" => AuthMode::ApiKey,
-            _ => return Err(AppError::config("RLOBS_AUTH_MODE must be local or api-key")),
+            _ => {
+                return Err(AppError::config(
+                    "INSTANTML_AUTH_MODE must be local or api-key",
+                ))
+            }
         };
-        let log_format = match env_string("RLOBS_LOG_FORMAT", "pretty")
+        let log_format = match env_string("INSTANTML_LOG_FORMAT", "pretty")
             .to_ascii_lowercase()
             .as_str()
         {
             "pretty" => LogFormat::Pretty,
             "json" => LogFormat::Json,
-            _ => return Err(AppError::config("RLOBS_LOG_FORMAT must be pretty or json")),
+            _ => {
+                return Err(AppError::config(
+                    "INSTANTML_LOG_FORMAT must be pretty or json",
+                ))
+            }
         };
         Ok(Self {
             clickhouse_url,
             bind_addr,
-            max_body_bytes: env_usize("RLOBS_MAX_BODY_BYTES", 1_000_000)?,
-            max_upload_body_bytes: env_usize("RLOBS_MAX_UPLOAD_BODY_BYTES", 50_000_000)?,
+            max_body_bytes: env_usize("INSTANTML_MAX_BODY_BYTES", 1_000_000)?,
+            max_upload_body_bytes: env_usize("INSTANTML_MAX_UPLOAD_BODY_BYTES", 50_000_000)?,
             artifact_root: PathBuf::from(env_string(
-                "RLOBS_ARTIFACT_ROOT",
-                ".rlobs/rust-artifacts",
+                "INSTANTML_ARTIFACT_ROOT",
+                ".instantml/rust-artifacts",
             )),
-            bootstrap_token: env::var("RLOBS_BOOTSTRAP_TOKEN").unwrap_or_default(),
+            bootstrap_token: env::var("INSTANTML_BOOTSTRAP_TOKEN").unwrap_or_default(),
             dev_auth_enabled: matches!(auth_mode, AuthMode::Local)
-                && env_bool_optional("RLOBS_DEV_AUTH_ENABLED")?
+                && env_bool_optional("INSTANTML_DEV_AUTH_ENABLED")?
                     .unwrap_or_else(|| bind_addr.ip().is_loopback()),
             managed_google_enabled: false,
-            allowed_frontend_origins: env_origin_list("RLOBS_ALLOWED_FRONTEND_ORIGINS"),
+            allowed_frontend_origins: env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS"),
             auth_mode,
-            request_timeout: Duration::from_secs(env_u64("RLOBS_REQUEST_TIMEOUT_SECONDS", 30)?),
+            request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
             log_format,
             hosted_clickhouse,
         })
@@ -155,10 +163,10 @@ fn unquote_env_value(raw: &str) -> String {
 fn hosted_clickhouse_config(
     default_clickhouse_url: &str,
 ) -> AppResult<Option<HostedClickHouseConfig>> {
-    if !env_bool_optional("RLOBS_HOSTED_CLICKHOUSE_ENABLED")?.unwrap_or(false) {
+    if !env_bool_optional("INSTANTML_HOSTED_CLICKHOUSE_ENABLED")?.unwrap_or(false) {
         return Ok(None);
     }
-    let provisioner = match env_string("RLOBS_CLICKHOUSE_PROVISIONER", "database")
+    let provisioner = match env_string("INSTANTML_CLICKHOUSE_PROVISIONER", "database")
         .to_ascii_lowercase()
         .as_str()
     {
@@ -166,7 +174,7 @@ fn hosted_clickhouse_config(
         "cloud-service" | "cloud_service" | "service" => ClickHouseProvisioner::CloudService,
         _ => {
             return Err(AppError::config(
-                "RLOBS_CLICKHOUSE_PROVISIONER must be database or cloud-service",
+                "INSTANTML_CLICKHOUSE_PROVISIONER must be database or cloud-service",
             ))
         }
     };
@@ -176,7 +184,7 @@ fn hosted_clickhouse_config(
         "CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD",
         default_clickhouse_url,
     );
-    let tenant_base_url = env::var("RLOBS_TENANT_CLICKHOUSE_URL").unwrap_or_else(|_| {
+    let tenant_base_url = env::var("INSTANTML_TENANT_CLICKHOUSE_URL").unwrap_or_else(|_| {
         clickhouse_url_from_env(
             "CLICKHOUSE_INSTANTML_TENANT_ENDPOINT",
             "CLICKHOUSE_INSTANTML_TENANT_USERNAME",
@@ -185,27 +193,30 @@ fn hosted_clickhouse_config(
         )
     });
     let allow_stored_tenant_passwords =
-        env_bool_optional("RLOBS_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS")?.unwrap_or(false);
+        env_bool_optional("INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS")?.unwrap_or(false);
     let cloud = if matches!(provisioner, ClickHouseProvisioner::CloudService) {
         Some(ClickHouseCloudConfig {
             endpoint: env_string("CLICKHOUSE_CLOUD_ENDPOINT", "https://api.clickhouse.cloud"),
             key_id: required_env("CLICKHOUSE_INSTANTML_GENERAL_KEY_ID")?,
             key_secret: required_env("CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET")?,
-            organization_id: env::var("RLOBS_CLICKHOUSE_CLOUD_ORG_ID")
+            organization_id: env::var("INSTANTML_CLICKHOUSE_CLOUD_ORG_ID")
                 .or_else(|_| env::var("CLICKHOUSE_CLOUD_ORGANIZATION_ID"))
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
-            provider: env_string("RLOBS_CLICKHOUSE_CLOUD_PROVIDER", "aws"),
-            region: env_string("RLOBS_CLICKHOUSE_CLOUD_REGION", "us-east-1"),
-            ip_access_list: env_string_list("RLOBS_CLICKHOUSE_CLOUD_IP_ACCESS_LIST")
+            provider: env_string("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER", "aws"),
+            region: env_string("INSTANTML_CLICKHOUSE_CLOUD_REGION", "us-east-1"),
+            ip_access_list: env_string_list("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST")
                 .filter(|values| !values.is_empty())
                 .unwrap_or_else(|| vec!["0.0.0.0/0".to_string()]),
-            min_replica_memory_gb: env_u64("RLOBS_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB", 8)?
+            min_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB", 8)?
                 as u32,
-            max_replica_memory_gb: env_u64("RLOBS_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 8)?
+            max_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 8)?
                 as u32,
-            num_replicas: env_u64("RLOBS_CLICKHOUSE_CLOUD_NUM_REPLICAS", 1)? as u32,
-            wait_timeout: Duration::from_secs(env_u64("RLOBS_CLICKHOUSE_CLOUD_WAIT_SECONDS", 600)?),
+            num_replicas: env_u64("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS", 1)? as u32,
+            wait_timeout: Duration::from_secs(env_u64(
+                "INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS",
+                600,
+            )?),
         })
     } else {
         None
@@ -311,9 +322,9 @@ mod tests {
 
     #[test]
     fn hosted_clickhouse_is_disabled_by_default() {
-        std::env::remove_var("RLOBS_HOSTED_CLICKHOUSE_ENABLED");
+        std::env::remove_var("INSTANTML_HOSTED_CLICKHOUSE_ENABLED");
         assert!(
-            hosted_clickhouse_config("http://default:@127.0.0.1:8123/rlobs")
+            hosted_clickhouse_config("http://default:@127.0.0.1:8123/instantml")
                 .unwrap()
                 .is_none()
         );

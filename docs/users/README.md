@@ -1,6 +1,6 @@
 # User Research
 
-This directory is for Training Observability customer discovery notes, personas, interview scripts, and synthesized user research.
+This directory is for InstantML customer discovery notes, personas, interview scripts, and synthesized user research.
 
 Future agents should keep raw interview notes clearly separated from synthesized conclusions. Do not add private or sensitive user information unless the repository is explicitly intended to store it.
 

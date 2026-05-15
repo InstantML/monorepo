@@ -32,7 +32,7 @@ npm run dev:api
 Start the Next UI in another terminal:
 
 ```bash
-RLOBS_API_BASE=http://127.0.0.1:8000 npm run web:dev
+INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
 Open:
@@ -51,7 +51,7 @@ Run the full sweep:
 PYTHONPATH=packages/python-sdk:examples/iris-classification \
   python3 examples/iris-classification/train.py \
   --server http://127.0.0.1:8000 \
-  --summary-json .rlobs/iris-classification-summary.json
+  --summary-json .instantml/iris-classification-summary.json
 ```
 
 The default run creates six runs: `baseline`, `regularized`, and `fast-lr` across seeds `7` and `17`.
@@ -74,7 +74,7 @@ To run offline from an already-downloaded dataset:
 PYTHONPATH=packages/python-sdk:examples/iris-classification \
   python3 examples/iris-classification/train.py \
   --server http://127.0.0.1:8000 \
-  --data-path .rlobs/datasets/iris.data \
+  --data-path .instantml/datasets/iris.data \
   --no-download
 ```
 
@@ -109,8 +109,8 @@ The dataset is tiny. The default sweep should complete in a few seconds on a nor
 Generated local files are written under:
 
 ```text
-.rlobs/datasets/
-.rlobs/iris-classification-artifacts/
+.instantml/datasets/
+.instantml/iris-classification-artifacts/
 ```
 
 Both paths are ignored by git.

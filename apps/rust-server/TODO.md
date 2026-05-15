@@ -70,7 +70,7 @@ Primary W&B references reviewed:
 - [ ] Support `use_artifact` semantics with run-to-artifact input edges and run-to-artifact output edges.
 - [ ] Add artifact download by collection/version/alias plus partial file downloads by manifest path.
 - [ ] Add media artifact streaming support for safe MP3/MP4 playback, including MIME validation, HTTP range requests, auth checks, and download-only fallback for unsupported or external-reference files.
-- [ ] Add external reference artifacts for S3/GCS/Azure/HTTP/NFS-style URIs where bytes stay outside Training Observability.
+- [ ] Add external reference artifacts for S3/GCS/Azure/HTTP/NFS-style URIs where bytes stay outside InstantML.
 - [ ] Add object-storage backend support and direct or multipart upload planning for large files.
 - [ ] Add artifact retention and TTL fields with safe worker behavior and audit events.
 - [ ] Defer registry/model lifecycle until artifact versions and lineage are stable.

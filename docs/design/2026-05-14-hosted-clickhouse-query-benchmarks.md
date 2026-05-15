@@ -16,7 +16,7 @@ The smallest useful version extends the existing guarded hosted demo benchmark i
 
 - Benchmark the existing hosted ClickHouse demo tenant with 100,000 seeded runs.
 - Cover run list, search, filter, combined search/filter, metric sort, overview, and chart-series endpoints.
-- Preserve the guarded seed/provision behavior already documented for `RLOBS_HOSTED_DEMO_ALLOW_PROVISION=1`.
+- Preserve the guarded seed/provision behavior already documented for `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1`.
 - Record sanitized results and budgets without committing secrets, raw ClickHouse URLs, cookies, or API keys.
 - Keep claims about W&B comparative performance honest: use InstantML interactive budgets unless an apples-to-apples W&B benchmark is actually run.
 
@@ -52,8 +52,8 @@ Extend `tools/hosted-demo-seed-benchmark.mjs`:
   - `GET /runs/:id/metrics?key=eval/return_mean&limit=5000`
 - Return p50, p95, min, max, and response sanity counts for each path.
 - Measurement protocol:
-  - Use `RLOBS_HOSTED_DEMO_WARMUPS` warm requests per endpoint, default 2.
-  - Use `RLOBS_HOSTED_DEMO_SAMPLES` measured requests per endpoint, default 8. Result files must record the actual count; p95 is computed with the existing nearest-rank method over sorted measured timings.
+  - Use `INSTANTML_HOSTED_DEMO_WARMUPS` warm requests per endpoint, default 2.
+  - Use `INSTANTML_HOSTED_DEMO_SAMPLES` measured requests per endpoint, default 8. Result files must record the actual count; p95 is computed with the existing nearest-rank method over sorted measured timings.
   - Measure warmed steady-state latency. The temporary Rust API may be restarted before measurement so direct ClickHouse seed rows are replayed, but endpoint timings start after readiness and warmups.
   - Use fixed endpoint order for reproducibility and record raw measured timings in local JSON output. Committed Markdown may summarize p50/p95/min/max without raw timings.
   - Every measured request must be a 2xx JSON response with the expected shape; non-2xx, malformed JSON, wrong shape, or known-empty cases fail the benchmark instead of being timed as successes.
@@ -76,7 +76,7 @@ Extend `tools/hosted-demo-seed-benchmark.mjs`:
   - search/filter/sort: hosted end-to-end p95 <= 1000 ms; internal local target remains 500 ms.
   - overview: p95 <= 1000 ms hosted
   - chart series: hosted end-to-end p95 <= 750 ms; internal local target remains 200 ms.
-- Add `RLOBS_HOSTED_DEMO_RESULT_PATH` to write the sanitized JSON payload to a chosen path.
+- Add `INSTANTML_HOSTED_DEMO_RESULT_PATH` to write the sanitized JSON payload to a chosen path.
 - Add a `benchmarks/README.md` and one dated Markdown result file with machine/date caveats and no secrets.
 - Sanitized result allowlist:
   - commit SHA, branch name, generated timestamp, client platform/architecture, Node version, sample/warmup counts, configured run count, seeded run count, long-run steps, project name, ClickHouse provider/region if derivable, tenant provisioner, endpoint host only, and measurement summaries.

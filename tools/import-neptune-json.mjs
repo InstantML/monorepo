@@ -18,7 +18,7 @@ const body = {
 };
 const endpoint = `${options.baseUrl.replace(/\/$/, "")}/api/imports/neptune${options.dryRun ? "?dry_run=true" : ""}`;
 const headers = { "Content-Type": "application/json" };
-if (process.env.RLOBS_API_KEY) headers.Authorization = `Bearer ${process.env.RLOBS_API_KEY}`;
+if (process.env.INSTANTML_API_KEY) headers.Authorization = `Bearer ${process.env.INSTANTML_API_KEY}`;
 const response = await fetch(endpoint, {
   method: "POST",
   headers,

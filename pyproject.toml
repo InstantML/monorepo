@@ -19,8 +19,8 @@ pythonpath = [
 ]
 addopts = """
   -q
-  --cov=apps/api/rlobs_api
-  --cov=packages/python-sdk/rl_observability
+  --cov=apps/api/instantml_api
+  --cov=packages/python-sdk/instantml
   --cov=examples/rl-cartpole
   --cov=examples/q-learning-gridworld
   --cov=examples/contextual-bandit
