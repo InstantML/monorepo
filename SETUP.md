@@ -113,16 +113,30 @@ INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
 Docker is optional. When available:
 
 ```bash
+cp docker-compose.override.example.yml docker-compose.override.yml
 docker compose up --build
 ```
+
+The override enables the dev Google-style auth flow inside the
+container (the Rust server only enables it automatically when bound to
+a loopback address, which the container is not) and remaps host port
+8000 → 8010 in case another local service already owns 8000. The
+override file is gitignored so per-machine tweaks don't get committed.
+Skip the `cp` step on a clean machine to ship with secure defaults
+only — but then `/signup` will render disabled buttons.
 
 The Docker stack starts ClickHouse and the primary Rust API at:
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8010   # or http://127.0.0.1:8000 with the default port mapping
 ```
 
-Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8000`.
+Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8010`
+(or `:8000` if you skipped the override).
+
+**Do not enable `INSTANTML_DEV_AUTH_ENABLED` on any host reachable from the
+public internet** — the endpoint lets anyone mint an authenticated
+session with an arbitrary email.
 
 ## Rust/ClickHouse Path
 

@@ -1,0 +1,25 @@
+# Example docker-compose override for local development.
+#
+# Copy to docker-compose.override.yml (which is gitignored) and adjust as
+# needed for your machine. The override file is automatically picked up by
+# `docker compose up` alongside docker-compose.yml.
+#
+# Two common reasons to use this:
+# 1. Port 8000 collision with another local service (e.g. a Python uvicorn
+#    server from `npm run dev:api` running outside docker). Mapping the
+#    container's 8000 to host 8010 lets both coexist.
+# 2. Enable the dev Google-style auth flow inside the container. The Rust
+#    server only enables this automatically when bound to a loopback
+#    address, which the docker container is not. Setting
+#    INSTANTML_DEV_AUTH_ENABLED=true forces it on.
+#
+# INSTANTML_DEV_AUTH_ENABLED MUST NOT be set in any compose file that is
+# deployed to a publicly reachable host. The endpoint lets anyone with
+# network access mint an authenticated session with an arbitrary email.
+
+services:
+  instantml:
+    ports:
+      - "8010:8000"
+    environment:
+      INSTANTML_DEV_AUTH_ENABLED: "true"
