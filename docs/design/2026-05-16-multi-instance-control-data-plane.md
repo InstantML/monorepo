@@ -2,7 +2,7 @@
 
 Date: 2026-05-16
 
-Status: Accepted for narrow first slice after review revisions
+Status: Accepted; rollout slice implemented locally through split service-plane roles
 
 Owner: Codex
 
@@ -24,11 +24,12 @@ thin and focused on tenant discovery, auth/session exchange, and cell routing.
 
 The smallest useful implementation in this change is not to raise Cloud Run
 max instances yet. It is to factor operational replay into a deterministic,
-unit-tested full-projection layer and document the route/storage contract
-required before multi-instance Cloud Run is enabled. This gives later work a
-clean place to add a stable operational event id, request-time catch-up, direct
-operational queries, or an org-scoped write coordinator without changing public
-REST route shapes.
+unit-tested full-projection layer, split the Rust HTTP surface into explicit
+`combined`, `control`, and `data` service-plane roles, and verify locally that a
+data-plane process can refresh User Data control records before auth and then
+serve tenant routes. This gives later work a clean place to add a stable
+operational event id, request-time catch-up, direct operational queries, or an
+org-scoped write coordinator without changing public REST route shapes.
 
 ## Goals
 
@@ -41,8 +42,9 @@ REST route shapes.
   instance setting can be briefly exceeded under automatic scaling according to
   the official max-instances docs, so public correctness still requires the
   storage gates below.
-- Implement the first code slice: deterministic operational projection/replay
-  helpers with focused unit tests.
+- Implement the rollout code slice up to deployment: deterministic operational
+  projection/replay helpers, service-plane route gating, data-plane
+  control-record refresh before auth, and a split control/data hosted smoke.
 - Update architecture and component docs so future agents do not accidentally
   scale the single-process cache by only changing Cloud Run settings.
 
@@ -110,6 +112,7 @@ Phase plan:
 | Phase | Public entrypoint | Data-plane shape | Allowed scale |
 | --- | --- | --- | --- |
 | Current internal hosted slice | One Rust Cloud Run service | Control and data-plane responsibilities in one binary | Single active instance only |
+| Local split-service rollout | Separate Rust processes with `INSTANTML_SERVICE_PLANE=control` and `data` | Shared User Data control table plus routed tenant data plane | Local/test only; no Cloud Run deployment |
 | Dedicated customer cell | Stable public API plus org-dedicated cell URL or internal routing | One org per cell/service | One active data-plane instance per org until write gates close |
 | Shared multi-instance cell | Stable public API plus explicit tenant discovery/routing | Many orgs per cell | Multiple equivalent data-plane instances only after read/write gates close |
 
@@ -172,9 +175,10 @@ read strategies:
 3. Direct ClickHouse operational queries for the endpoints where cache staleness
    is unacceptable.
 
-The implementation in this PR starts with the deterministic projection helper
-only. It centralizes replay rules so later refresh paths can call one tested
-function instead of duplicating `apply_record` loops.
+The implementation now centralizes deterministic projection replay and uses
+that same path when data-plane services refresh control records before request
+auth. Data-plane refresh is full User Data replay, not timestamp-watermarked
+incremental catch-up.
 
 `created_at` alone is not an accepted incremental refresh watermark for
 multi-instance writes. The current per-process monotonic clock prevents ties
@@ -232,7 +236,13 @@ Backend:
 
 - Add a small operational replay/projection helper inside `apps/rust-server`.
 - Route startup and tenant load paths through the helper.
-- Keep existing route handlers and DTOs unchanged.
+- Add `INSTANTML_SERVICE_PLANE=combined|control|data` route gating in the
+  existing Rust binary.
+- Add a full User Data refresh before data-plane bearer/session auth so a
+  separately started data process can see API keys, sessions, orgs, and tenant
+  routes created by the control process.
+- Keep existing request/response DTOs unchanged except additive operator
+  diagnostics on `/api/auth/config` and `/openapi.json`.
 - Keep Cloud Run deployment guarded for one active instance. Future deployment
   work should verify scaling mode, active traffic revisions, and tag-only
   revisions before treating the service as single-instance.
@@ -286,7 +296,12 @@ Future schema additions to consider:
 
 ## API Contracts
 
-No public contract changes in this slice.
+No route-path, auth, request-body, or product response contract changes in this
+slice. Two additive diagnostics are exposed for operators and smoke tests:
+
+- `GET /api/auth/config` includes `service_plane`.
+- `GET /openapi.json` includes `x-instantml-service-plane` and only lists the
+  routes exposed by the current service-plane role.
 
 Future routing must preserve these external contracts:
 
@@ -385,6 +400,12 @@ Existing verification to run:
 - `npm run test:hosted-clickhouse`
 - `npm run test:rust:ui`
 
+`npm run test:hosted-clickhouse` should start separate local `control` and
+`data` Rust processes. The control process owns auth/session/org/API-key and
+tenant provisioning routes; the data process owns project/run/metric/dashboard
+routes, refreshes User Data before auth, and must still serve dashboard reads
+after a data-process restart.
+
 No live GCP or ClickHouse Cloud deployment commands should be run for this
 change.
 
@@ -471,11 +492,13 @@ Fresh reviewer 3:
 
 ## Coverage Exceptions
 
-- Uncovered area: live multi-instance freshness, write uniqueness, direct-cell
-  auth, SDK cell redirects, and atomic metric/log idempotency.
-- Reason: This accepted first slice only factors deterministic full replay and
-  documents scale-out gates. It intentionally does not enable multiple live API
-  instances.
+- Uncovered area: live multi-writer freshness, write uniqueness, public
+  routing/SDK cell redirects, incremental control catch-up, and atomic
+  metric/log idempotency.
+- Reason: This accepted rollout slice factors deterministic full replay,
+  implements split service-plane HTTP surfaces, and validates direct data-plane
+  auth through full User Data refresh. It intentionally does not enable shared
+  cells with multiple live writers.
 - Risk: Operators could still create stale state or duplicate writes by scaling
   the hosted service manually outside the accepted gates.
 - Follow-up: Add a stable operational event id or per-org sequence, close the

@@ -12,12 +12,15 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-hosted-clickhou
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
-const apiPort = await freePort();
-const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+const controlPort = await freePort();
+const dataPort = await freePort();
+const controlBaseUrl = `http://127.0.0.1:${controlPort}`;
+const dataBaseUrl = `http://127.0.0.1:${dataPort}`;
 const clickhouseBase = `http://default:@127.0.0.1:${clickhouseHttpPort}`;
 const controlUrl = `${clickhouseBase}/instantml_user_data_smoke`;
 const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
-let server = null;
+let controlServer = null;
+let dataServer = null;
 let clickhouse = null;
 
 try {
@@ -30,8 +33,15 @@ try {
     interserverHttpPort: clickhouseInterserverPort,
   });
 
-  server = await startServer();
-  const signup = await postJson("/api/auth/dev/google", {
+  controlServer = await startServer("control");
+  dataServer = await startServer("data");
+
+  await assertServicePlane(controlBaseUrl, "control");
+  await assertServicePlane(dataBaseUrl, "data");
+  await assertRouteStatus(controlBaseUrl, "/runs", { method: "GET" }, 404);
+  await assertRouteStatus(dataBaseUrl, "/api/orgs", { method: "GET" }, 404);
+
+  const signup = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hosted-smoke@example.com",
     display_name: "Hosted Smoke",
     account_type: "business",
@@ -48,13 +58,13 @@ try {
     assert.ok(firstKinds.includes(kind), `User Data should contain ${kind}`);
   }
 
-  const demoFirst = await postJson("/api/auth/dev/google", {
+  const demoFirst = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hello@instantml.ai",
     display_name: "Different Demo Name",
     account_type: "individual",
     org_name: "Per Login Demo Org",
   });
-  const demoSecond = await postJson("/api/auth/dev/google", {
+  const demoSecond = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hello@instantml.com",
     display_name: "Alias Demo Name",
     account_type: "business",
@@ -73,6 +83,7 @@ try {
   );
 
   const keyPayload = await postJson(
+    controlBaseUrl,
     `/api/orgs/${orgId}/api-keys`,
     { name: "Hosted smoke SDK key" },
     { cookie },
@@ -80,6 +91,7 @@ try {
   const apiKey = keyPayload.body.api_key;
   assert.match(apiKey, /^instantml_/, "API key should be copy-once secret");
   await assertPostStatus(
+    controlBaseUrl,
     `/api/orgs/${orgId}/api-keys`,
     { name: "Hosted smoke forbidden key" },
     { apiKey },
@@ -92,6 +104,7 @@ try {
 
   const run = (
     await postJson(
+      dataBaseUrl,
       "/runs",
       {
         project: "hosted-smoke",
@@ -104,12 +117,14 @@ try {
     )
   ).body.run;
   await postJson(
+    dataBaseUrl,
     `/runs/${run.id}/metrics`,
     { step: 1, metrics: { "eval/return_mean": 42, "train/loss": 0.2 } },
     { apiKey },
   );
 
   const summary = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-smoke&q=searchable&limit=10",
     { cookie },
   );
@@ -119,6 +134,7 @@ try {
 
   runPythonSdk(apiKey);
   const pythonSummary = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-python&q=python-sdk&limit=10",
     { cookie },
   );
@@ -129,15 +145,17 @@ try {
   assert.equal(await clickhouseCount(tenantUrl, "operational_records", "kind = 'run'"), 3);
   assert.equal(await clickhouseCount(tenantUrl, "metric_points", "key = 'eval/return_mean'"), 4);
 
-  await stopServer();
-  server = await startServer();
+  await stopServer("data");
+  dataServer = await startServer("data");
   const restarted = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-smoke&q=query target&limit=10",
     { cookie },
   );
   assert.equal(restarted.runs.length, 1);
   assert.equal(restarted.runs[0].id, run.id);
   const restartedPython = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-python&q=python-sdk&limit=10",
     { cookie },
   );
@@ -160,7 +178,8 @@ try {
     ),
   );
 } finally {
-  await stopServer();
+  await stopServer("data");
+  await stopServer("control");
   if (clickhouse) await clickhouse.stop();
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
@@ -188,7 +207,7 @@ run.finish()
 `;
   const result = spawnSync("python3", ["-c", script], {
     cwd: repo,
-    env: { ...process.env, INSTANTML_BASE_URL: apiBaseUrl, INSTANTML_API_KEY: apiKey },
+    env: { ...process.env, INSTANTML_BASE_URL: dataBaseUrl, INSTANTML_API_KEY: apiKey },
     stdio: "inherit",
   });
   if (result.status !== 0) {
@@ -196,42 +215,49 @@ run.finish()
   }
 }
 
-async function startServer() {
-  const serverLog = path.join(tempDir, `api-${Date.now()}.log`);
+async function startServer(servicePlane) {
+  const port = servicePlane === "control" ? controlPort : dataPort;
+  const baseUrl = servicePlane === "control" ? controlBaseUrl : dataBaseUrl;
+  const serverLog = path.join(tempDir, `${servicePlane}-api-${Date.now()}.log`);
   const output = fs.openSync(serverLog, "w");
   const child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
     env: {
       ...process.env,
-      CLICKHOUSE_URL: `${clickhouseBase}/instantml_default`,
+      CLICKHOUSE_URL: `${clickhouseBase}/instantml_${servicePlane}_default`,
       CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: controlUrl,
       INSTANTML_TENANT_CLICKHOUSE_URL: tenantBaseUrl,
       INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
       INSTANTML_CLICKHOUSE_PROVISIONER: "database",
-      INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
+      INSTANTML_SERVICE_PLANE: servicePlane,
+      INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
       INSTANTML_AUTH_MODE: "local",
-      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, `${servicePlane}-artifacts`),
     },
     stdio: ["ignore", output, output],
   });
   fs.closeSync(output);
-  await waitForHttp(`${apiBaseUrl}/readyz`, child, serverLog);
+  await waitForHttp(`${baseUrl}/readyz`, child, serverLog);
   return child;
 }
 
-async function stopServer() {
-  if (!server) return;
-  const child = server;
-  server = null;
+async function stopServer(servicePlane) {
+  const child = servicePlane === "control" ? controlServer : dataServer;
+  if (!child) return;
+  if (servicePlane === "control") {
+    controlServer = null;
+  } else {
+    dataServer = null;
+  }
   if (child.exitCode === null && child.signalCode === null) child.kill();
   await onceClose(child);
 }
 
-async function postJson(pathname, body, options = {}) {
+async function postJson(baseUrl, pathname, body, options = {}) {
   const headers = { "content-type": "application/json" };
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
-  const response = await fetch(apiBaseUrl + pathname, {
+  const response = await fetch(baseUrl + pathname, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -244,11 +270,11 @@ async function postJson(pathname, body, options = {}) {
   };
 }
 
-async function assertPostStatus(pathname, body, options, status) {
+async function assertPostStatus(baseUrl, pathname, body, options, status) {
   const headers = { "content-type": "application/json" };
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
-  const response = await fetch(apiBaseUrl + pathname, {
+  const response = await fetch(baseUrl + pathname, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -257,13 +283,33 @@ async function assertPostStatus(pathname, body, options, status) {
   assert.equal(response.status, status, `${pathname} expected ${status}, got ${response.status}: ${text}`);
 }
 
-async function getJson(pathname, options = {}) {
+async function getJson(baseUrl, pathname, options = {}) {
   const headers = {};
   if (options.cookie) headers.cookie = options.cookie;
-  const response = await fetch(apiBaseUrl + pathname, { headers });
+  const response = await fetch(baseUrl + pathname, { headers });
   const text = await response.text();
   if (!response.ok) throw new Error(`${pathname} failed with ${response.status}: ${text}`);
   return text ? JSON.parse(text) : {};
+}
+
+async function assertServicePlane(baseUrl, expected) {
+  const config = await getJson(baseUrl, "/api/auth/config");
+  assert.equal(config.service_plane, expected);
+  const openapi = await getJson(baseUrl, "/openapi.json");
+  assert.equal(openapi["x-instantml-service-plane"], expected);
+  if (expected === "control") {
+    assert.ok(openapi.paths["/api/orgs/{org_id}/api-keys"]);
+    assert.equal(openapi.paths["/runs"], undefined);
+  } else {
+    assert.ok(openapi.paths["/runs"]);
+    assert.equal(openapi.paths["/api/orgs/{org_id}/api-keys"], undefined);
+  }
+}
+
+async function assertRouteStatus(baseUrl, pathname, options, status) {
+  const response = await fetch(baseUrl + pathname, options);
+  const text = await response.text();
+  assert.equal(response.status, status, `${pathname} expected ${status}, got ${response.status}: ${text}`);
 }
 
 async function controlKinds() {

@@ -143,18 +143,7 @@ impl Store {
 
     async fn rebuild(&self) -> AppResult<()> {
         let records = if let Some(control_store) = &self.control_store {
-            control_store
-                .load_records()
-                .await?
-                .into_iter()
-                .map(|record| OperationalRecordRow {
-                    kind: record.kind,
-                    org_id: record.org_id,
-                    entity_id: record.entity_id,
-                    payload: record.payload,
-                    created_at: record.created_at,
-                })
-                .collect::<Vec<_>>()
+            operational_rows_from_control_records(control_store.load_records().await?)
         } else {
             self.metric_store.load_operational_records().await?
         };
@@ -162,6 +151,20 @@ impl Store {
         let stats = data.apply_operational_records(records, ReplayScope::All)?;
         *self.data.lock().await = data;
         *self.record_clock_micros.lock().await = stats.latest_record_micros;
+        Ok(())
+    }
+
+    pub async fn refresh_control_records(&self) -> AppResult<()> {
+        let Some(control_store) = &self.control_store else {
+            return Ok(());
+        };
+        let records = operational_rows_from_control_records(control_store.load_records().await?);
+        let stats = {
+            let mut data = self.data.lock().await;
+            data.apply_operational_records(records, ReplayScope::All)?
+        };
+        let mut clock = self.record_clock_micros.lock().await;
+        *clock = (*clock).max(stats.latest_record_micros);
         Ok(())
     }
 
@@ -678,10 +681,29 @@ pub async fn ready(store: &Store) -> bool {
     if !crate::metric_store::ready(store.metric_store()).await {
         return false;
     }
+    control_ready(store).await
+}
+
+pub async fn control_ready(store: &Store) -> bool {
     match &store.control_store {
         Some(control_store) => control_store.ready().await,
         None => true,
     }
+}
+
+fn operational_rows_from_control_records(
+    records: Vec<ControlRecordRow>,
+) -> Vec<OperationalRecordRow> {
+    records
+        .into_iter()
+        .map(|record| OperationalRecordRow {
+            kind: record.kind,
+            org_id: record.org_id,
+            entity_id: record.entity_id,
+            payload: record.payload,
+            created_at: record.created_at,
+        })
+        .collect()
 }
 
 fn control_record_scope(kind: &str) -> &'static str {

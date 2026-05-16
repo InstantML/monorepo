@@ -5,16 +5,16 @@ pub(super) async fn health() -> Json<Value> {
 }
 
 pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json<Value>> {
-    if !store::ready(&state.store).await {
+    if state.config.service_plane.includes_data() && !store::ready(&state.store).await {
         return Err(AppError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             "clickhouse operational store is not ready",
         ));
     }
-    if !metric_store::ready(state.store.metric_store()).await {
+    if !state.config.service_plane.includes_data() && !store::control_ready(&state.store).await {
         return Err(AppError::new(
             StatusCode::SERVICE_UNAVAILABLE,
-            "clickhouse is not ready",
+            "clickhouse control store is not ready",
         ));
     }
     Ok(Json(json!({ "status": "ok" })))
@@ -28,7 +28,7 @@ pub(super) async fn metrics() -> Response {
         .into_response()
 }
 
-pub(super) async fn openapi_json() -> Json<Value> {
+pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Value> {
     let mut paths = serde_json::Map::new();
     openapi_insert(
         &mut paths,
@@ -764,6 +764,9 @@ pub(super) async fn openapi_json() -> Json<Value> {
         )],
     );
 
+    let service_plane = state.config.service_plane;
+    paths.retain(|path, _| openapi_path_available_for_plane(path, service_plane));
+
     Json(json!({
         "openapi": "3.1.0",
         "info": {
@@ -771,6 +774,7 @@ pub(super) async fn openapi_json() -> Json<Value> {
             "version": env!("CARGO_PKG_VERSION"),
             "description": "Current Rust/ClickHouse API route index. See docs/architecture/current-api.md for inputs, query parameters, response envelopes, auth scopes, and examples."
         },
+        "x-instantml-service-plane": service_plane.as_str(),
         "security": [
             { "bearerApiKey": [] },
             { "browserSession": [] }
@@ -798,6 +802,27 @@ pub(super) async fn openapi_json() -> Json<Value> {
             }
         }
     }))
+}
+
+fn openapi_path_available_for_plane(
+    path: &str,
+    service_plane: crate::config::ServicePlaneRole,
+) -> bool {
+    if matches!(
+        path,
+        "/health" | "/healthz" | "/readyz" | "/metrics" | "/openapi.json" | "/api/auth/config"
+    ) {
+        return true;
+    }
+    if path.starts_with("/api/auth/")
+        || path == "/api/users"
+        || path == "/api/orgs"
+        || path == "/api/orgs/name-availability"
+        || path.starts_with("/api/orgs/{org_id}/")
+    {
+        return service_plane.includes_control();
+    }
+    service_plane.includes_data()
 }
 
 fn openapi_insert(
@@ -843,9 +868,11 @@ fn openapi_operation(
 }
 
 pub(super) async fn auth_config(State(state): State<Arc<AppState>>) -> Json<Value> {
+    let exposes_auth_routes = state.config.service_plane.includes_control();
     Json(json!({
-        "dev_auth_enabled": state.config.dev_auth_enabled,
-        "managed_clerk_enabled": state.config.managed_clerk_enabled
+        "dev_auth_enabled": exposes_auth_routes && state.config.dev_auth_enabled,
+        "managed_clerk_enabled": exposes_auth_routes && state.config.managed_clerk_enabled,
+        "service_plane": state.config.service_plane.as_str()
     }))
 }
 
@@ -1632,6 +1659,7 @@ async fn context(
     headers: &HeaderMap,
     tenant_route: bool,
 ) -> AppResult<RequestContext> {
+    refresh_control_before_auth(state).await?;
     let ctx = match header_text(headers, "authorization") {
         Some(header) => {
             let token = header
@@ -1716,8 +1744,16 @@ async fn session_context(
     state: &AppState,
     headers: &HeaderMap,
 ) -> AppResult<crate::domain::AuthSessionPayload> {
+    refresh_control_before_auth(state).await?;
     let token = session_cookie(headers).ok_or_else(|| AppError::unauthorized("missing session"))?;
     store::authenticate_session(&state.store, token).await
+}
+
+async fn refresh_control_before_auth(state: &AppState) -> AppResult<()> {
+    if state.config.service_plane.refreshes_control_before_auth() {
+        state.store.refresh_control_records().await?;
+    }
+    Ok(())
 }
 
 fn session_cookie(headers: &HeaderMap) -> Option<&str> {
@@ -1990,6 +2026,36 @@ mod tests {
     }
 
     #[test]
+    fn openapi_paths_follow_service_plane_roles() {
+        use crate::config::ServicePlaneRole;
+
+        assert!(openapi_path_available_for_plane(
+            "/api/auth/config",
+            ServicePlaneRole::Control
+        ));
+        assert!(openapi_path_available_for_plane(
+            "/api/auth/config",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
+            "/api/orgs/{org_id}/api-keys",
+            ServicePlaneRole::Control
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/orgs/{org_id}/api-keys",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
+            "/runs",
+            ServicePlaneRole::Data
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/runs",
+            ServicePlaneRole::Control
+        ));
+    }
+
+    #[test]
     fn clerk_signup_allowlist_only_applies_to_signup() {
         let mut config = test_config();
         config.signup_allowed_emails = vec!["founder@example.com".to_string()];
@@ -2019,6 +2085,7 @@ mod tests {
         AppConfig {
             clickhouse_url: "http://default:@127.0.0.1:8123/instantml".to_string(),
             bind_addr: "127.0.0.1:0".parse().unwrap(),
+            service_plane: crate::config::ServicePlaneRole::Combined,
             max_body_bytes: 1_000_000,
             max_upload_body_bytes: 50_000_000,
             artifact_root: ".instantml/rust-artifacts".into(),

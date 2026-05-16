@@ -45,6 +45,12 @@ not redirect SDK or browser requests to a cell. Any future direct-to-cell or
 redirect behavior must preserve bearer auth, session/cookie rules,
 `Idempotency-Key`, request bodies, and project-scoped/demo authorization.
 
+For local split-service verification, the Rust binary also supports
+`INSTANTML_SERVICE_PLANE=control` and `INSTANTML_SERVICE_PLANE=data`. The
+control role exposes platform, auth/session, user/org, seat, API-key, and
+service-account routes. The data role exposes platform and tenant product
+routes. `combined` remains the default and the current deployed shape.
+
 ## Auth Model
 
 There are three credential paths.
@@ -128,20 +134,23 @@ Validation limits that affect callers:
 | `GET` | `/healthz` | none | none | Same as `/health` |
 | `GET` | `/readyz` | none | none | `{ "status": "ok" }` when operational and metric ClickHouse stores are reachable |
 | `GET` | `/metrics` | none | none | Prometheus text metrics |
-| `GET` | `/openapi.json` | none | none | Compact OpenAPI 3.1 route index |
+| `GET` | `/openapi.json` | none | none | Compact role-aware OpenAPI 3.1 route index with `x-instantml-service-plane` |
 
 ## Auth And Session
 
 ### `GET /api/auth/config`
 
-Returns provider availability for the frontend.
+Returns provider availability for the frontend on the current service-plane
+role. Data-plane-only services return auth providers as disabled because they do
+not expose session exchange routes.
 
 Output:
 
 ```json
 {
   "dev_auth_enabled": false,
-  "managed_clerk_enabled": true
+  "managed_clerk_enabled": true,
+  "service_plane": "combined"
 }
 ```
 

@@ -33,7 +33,7 @@ use crate::{
         UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
-    metric_store, store,
+    store,
 };
 
 mod handlers;
@@ -58,8 +58,33 @@ pub fn router(state: AppState) -> Router {
     let max_body = state.config.max_body_bytes;
     let max_upload = state.config.max_upload_body_bytes;
     let request_timeout = state.config.request_timeout;
+    let service_plane = state.config.service_plane;
     let shared = Arc::new(state);
     let cors = cors_layer(&shared.config);
+
+    let mut app = platform_routes();
+    if service_plane.includes_control() {
+        app = app.merge(control_routes());
+    }
+    if service_plane.includes_data() {
+        app = app.merge(data_routes(max_upload));
+    }
+
+    app.fallback(not_found)
+        .with_state(shared)
+        .layer(
+            ServiceBuilder::new()
+                .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+                .layer(PropagateRequestIdLayer::x_request_id())
+                .layer(TraceLayer::new_for_http())
+                .layer(cors)
+                .layer(CompressionLayer::new())
+                .layer(TimeoutLayer::new(request_timeout)),
+        )
+        .layer(DefaultBodyLimit::max(max_body))
+}
+
+fn platform_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health", get(health))
         .route("/healthz", get(health))
@@ -67,6 +92,10 @@ pub fn router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .route("/openapi.json", get(openapi_json))
         .route("/api/auth/config", get(auth_config))
+}
+
+fn control_routes() -> Router<Arc<AppState>> {
+    Router::new()
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))
@@ -87,6 +116,10 @@ pub fn router(state: AppState) -> Router {
             "/api/orgs/:org_id/service-accounts/:service_account_id/disable",
             post(disable_service_account),
         )
+}
+
+fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
+    Router::new()
         .route("/projects", post(create_project).get(list_projects))
         .route("/runs", post(create_run).get(list_runs))
         .route("/runs/:run_id", get(get_run).patch(update_run))
@@ -128,18 +161,6 @@ pub fn router(state: AppState) -> Router {
         .route("/api/imports/wandb", post(import_wandb))
         .route("/api/imports/mlflow", post(import_mlflow))
         .route("/api/demo/reset", post(reset_demo))
-        .fallback(not_found)
-        .with_state(shared)
-        .layer(
-            ServiceBuilder::new()
-                .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
-                .layer(PropagateRequestIdLayer::x_request_id())
-                .layer(TraceLayer::new_for_http())
-                .layer(cors)
-                .layer(CompressionLayer::new())
-                .layer(TimeoutLayer::new(request_timeout)),
-        )
-        .layer(DefaultBodyLimit::max(max_body))
 }
 
 fn cors_layer(config: &AppConfig) -> CorsLayer {

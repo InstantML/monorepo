@@ -37,7 +37,7 @@ Important environment variables:
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips ClickHouse Cloud access-list updates.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips ClickHouse Cloud API-key access-list updates.
 
-Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision a public Cloud Run URL. The service is intentionally pinned to one instance until the hosted operational-index coordination work lands, and artifact byte uploads remain disabled in hosted mode until object storage is designed.
+Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision a public Cloud Run URL. The deployed service remains the `INSTANTML_SERVICE_PLANE=combined` shape and is intentionally pinned to one instance until the hosted operational-index coordination work lands; artifact byte uploads remain disabled in hosted mode until object storage is designed.
 
 ## Import Helpers
 
@@ -166,6 +166,15 @@ npm run rust:test
 npm run rust:migrate
 npm run rust:serve
 ```
+
+`hosted-clickhouse-smoke.mjs` is the local control/data rollout gate behind
+`npm run test:hosted-clickhouse`. It starts disposable ClickHouse plus two Rust
+processes: `INSTANTML_SERVICE_PLANE=control` for auth/session/org/API-key and
+tenant provisioning, and `INSTANTML_SERVICE_PLANE=data` for project/run/metric
+and dashboard routes. It verifies role-specific route tables, data-plane
+control-record refresh before auth, Python SDK ingestion through the data role,
+and dashboard readback after a data-process restart. It does not deploy or touch
+live ClickHouse Cloud/GCP resources.
 
 Expected import JSON shape:
 
