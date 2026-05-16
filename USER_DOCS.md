@@ -40,12 +40,24 @@ Sign up with the labeled local dev Google-style flow, create a copy-once SDK key
 
 ## Use The Python SDK
 
-The current source package is imported as `instantml`.
+The SDK is imported as `instantml`.
+
+After the package is published:
+
+```bash
+python3 -m pip install instantml
+```
 
 For local source usage:
 
 ```bash
 export PYTHONPATH="$PWD/packages/python-sdk"
+```
+
+You can also install the local package directly from a source checkout:
+
+```bash
+python3 -m pip install -e packages/python-sdk
 ```
 
 For hosted or auth-required servers, set an API key:

@@ -1,0 +1,4 @@
+include PYPI_README.md
+include README.md
+include requirements-optional.txt
+prune tests

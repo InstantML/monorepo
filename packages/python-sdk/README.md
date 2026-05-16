@@ -146,6 +146,40 @@ python3 -m pip install -r requirements-dev.txt
 python3 -m pip install -r packages/python-sdk/requirements-optional.txt  # optional integrations
 ```
 
+## Package Distribution
+
+The SDK is packaged as the `instantml` Python distribution. The core wheel has no required third-party runtime dependencies; optional media and system integrations stay behind extras and lazy imports.
+
+Build and check the package from the repo root:
+
+```bash
+npm run sdk:build
+npm run sdk:check
+npm run sdk:test-install
+```
+
+For local editable development without `PYTHONPATH`:
+
+```bash
+python3 -m pip install -e packages/python-sdk
+```
+
+Once the package is published, users install it with:
+
+```bash
+python3 -m pip install instantml
+```
+
+Optional extras:
+
+```bash
+python3 -m pip install "instantml[media]"
+python3 -m pip install "instantml[system]"
+python3 -m pip install "instantml[all]"
+```
+
+Release upload uses `.github/workflows/python-sdk-release.yml` with PyPI/TestPyPI Trusted Publishing. Before the first upload, configure pending trusted publishers for the `instantml` project, using workflow file `python-sdk-release.yml` and GitHub Environments `pypi` and `testpypi`. Public PyPI publication should remain gated on final public license/terms approval; the package metadata currently marks the SDK as `LicenseRef-Proprietary` rather than open source.
+
 ## Usage
 
 ```python
