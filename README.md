@@ -187,22 +187,22 @@ For faster frontend iteration:
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
-Run the local frontend against the hosted combined Cloud Run API:
+Deploy the default split control/data Cloud Run topology:
 
 ```bash
 npm run deploy:cloud-run
-npm run web:dev
 ```
 
-The deploy helper writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local` after a successful single-service deploy, so subsequent frontend sessions only need the web command.
+`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_PUBLIC_API_BASE` to your load balancer, gateway, or thin router URL if you want the helper to write local frontend env files. Data-plane services default to manual one-instance scaling until durable multi-writer gates land. Hosted artifact byte uploads are disabled until object storage lands.
 
-Deploy the split control/data Cloud Run topology:
+The explicit aliases are:
 
 ```bash
 npm run deploy:cloud-run:multi
+npm run deploy:cloud-run:single
 ```
 
-The split deploy creates a control service and a data service from the same Rust image. Set `INSTANTML_PUBLIC_API_BASE` to your load balancer, gateway, or thin router URL if you want the helper to write local frontend env files. Data-plane services default to manual one-instance scaling until durable multi-writer gates land. Hosted artifact byte uploads are disabled until object storage lands.
+Use `deploy:cloud-run:single` only for the legacy combined Cloud Run service. A single-service deploy writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local`, so subsequent frontend sessions only need `npm run web:dev`.
 
 Run the one-command local stack:
 

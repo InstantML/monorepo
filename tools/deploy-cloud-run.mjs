@@ -9,13 +9,14 @@ const cli = parseArgs(process.argv.slice(2));
 if (cli.help) {
   console.log(`Usage:
   npm run deploy:cloud-run
+  npm run deploy:cloud-run:single
   npm run deploy:cloud-run:multi
   node tools/deploy-cloud-run.mjs --topology=single|split
 
 Environment:
   GCP_PROJECT                         Google Cloud project id.
   GCP_REGION                          Deployment region. Default: us-central1.
-  INSTANTML_CLOUD_RUN_TOPOLOGY         single or split. Default: single.
+  INSTANTML_CLOUD_RUN_TOPOLOGY         single or split. Default: split.
   INSTANTML_CLOUD_RUN_SERVICE          Combined service name. Default: instantml-rust-api.
   INSTANTML_CLOUD_RUN_SERVICE_PREFIX   Split service name prefix. Default: instantml.
   INSTANTML_CLOUD_RUN_CONTROL_SERVICE  Split control service name. Default: instantml-control.
@@ -45,7 +46,7 @@ const project = value("GCP_PROJECT") || configuredProject.stdout.trim();
 if (!project || project === "(unset)") fail("Set GCP_PROJECT or run `gcloud config set project <project-id>`.");
 
 const region = value("GCP_REGION") || value("CLOUDSDK_RUN_REGION") || value("GOOGLE_CLOUD_REGION") || "us-central1";
-const topology = normalizeTopology(cli.topology || value("INSTANTML_CLOUD_RUN_TOPOLOGY") || "single");
+const topology = normalizeTopology(cli.topology || value("INSTANTML_CLOUD_RUN_TOPOLOGY") || "split");
 const service = value("INSTANTML_CLOUD_RUN_SERVICE") || "instantml-rust-api";
 const servicePrefix = value("INSTANTML_CLOUD_RUN_SERVICE_PREFIX") || "instantml";
 const controlService = value("INSTANTML_CLOUD_RUN_CONTROL_SERVICE") || `${servicePrefix}-control`;

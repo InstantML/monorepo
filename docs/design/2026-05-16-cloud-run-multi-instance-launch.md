@@ -68,12 +68,13 @@ balancer/router URL via `INSTANTML_PUBLIC_API_BASE`.
 
 Add three root scripts:
 
-- `npm run deploy:cloud-run`: backward-compatible single combined service.
+- `npm run deploy:cloud-run`: default split control/data topology.
 - `npm run deploy:cloud-run:single`: explicit single combined service.
 - `npm run deploy:cloud-run:multi`: split control/data topology.
 
 `tools/deploy-cloud-run.mjs` accepts `--topology=single|split` and
-`INSTANTML_CLOUD_RUN_TOPOLOGY=single|split`.
+`INSTANTML_CLOUD_RUN_TOPOLOGY=single|split`. When no topology is provided, the
+helper defaults to `split`.
 
 ### Split Targets
 
@@ -224,7 +225,7 @@ Deferred complexity:
 
 ## Failure Modes
 
-- If a split deployment has no public load balancer/router URL, local frontend
+- If the default split deployment has no public load balancer/router URL, local frontend
   env is not updated. The deploy output names the missing
   `INSTANTML_PUBLIC_API_BASE` value.
 - If ClickHouse allowlisting fails, the helper warns or fails according to the
@@ -310,6 +311,8 @@ Rust/storage review:
 
 ## Decision
 
-Accepted. The repo now treats split Cloud Run as a launchable deployment shape,
+Accepted. The repo now treats split Cloud Run as the default deployment shape,
 with the data service defaulting to single-writer manual scaling until the
-shared-cell write gates are complete.
+shared-cell write gates are complete. The single combined Cloud Run service is
+available only through the explicit `deploy:cloud-run:single` command or
+`--topology=single`.

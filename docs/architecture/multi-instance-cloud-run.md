@@ -116,20 +116,20 @@ flowchart TD
 
 ## Deployment Commands
 
-Single combined service:
+Default split control/data services:
 
 ```bash
 npm run deploy:cloud-run
-npm run deploy:cloud-run:single
-```
-
-Split control/data services:
-
-```bash
 npm run deploy:cloud-run:multi
 ```
 
-The split command builds one image and deploys:
+Legacy combined service:
+
+```bash
+npm run deploy:cloud-run:single
+```
+
+The default split command builds one image and deploys:
 
 - `instantml-control` with `INSTANTML_SERVICE_PLANE=control`
 - `instantml-data-<region>-a` with `INSTANTML_SERVICE_PLANE=data`
@@ -142,7 +142,7 @@ service URL or an explicit public API base.
 
 | Variable | Purpose |
 | --- | --- |
-| `INSTANTML_CLOUD_RUN_TOPOLOGY` | `single` or `split` |
+| `INSTANTML_CLOUD_RUN_TOPOLOGY` | `single` or `split`; default `split` |
 | `INSTANTML_CLOUD_RUN_SERVICE_PREFIX` | Prefix for split service names |
 | `INSTANTML_CLOUD_RUN_CONTROL_SERVICE` | Override control service name |
 | `INSTANTML_CLOUD_RUN_DATA_SERVICE` | Override data service name |
@@ -220,7 +220,7 @@ ClickHouse allowlist must include those CIDRs.
 
 1. Confirm PR checks pass: `npm run rust:verify`.
 2. Confirm Cloud Run secrets exist or are present in local `.env`.
-3. Run `npm run deploy:cloud-run:multi` in the target GCP project.
+3. Run `npm run deploy:cloud-run` in the target GCP project.
 4. Confirm deploy output lists both services and the static egress IP.
 5. Confirm ClickHouse Cloud service and API-key access lists include the NAT IP.
 6. Put a load balancer, gateway, or thin router in front of control/data.
