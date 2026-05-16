@@ -10,7 +10,7 @@ Owner: Codex
 
 InstantML needs a first hosted Rust API deployment so local development can run only the frontend while the API, control data, and tenant data live in cloud services. The smallest useful version deploys the existing Rust container to Google Cloud Run, stores runtime secrets in Secret Manager, builds and stores images in Artifact Registry through Cloud Build, and points the local Next app at the Cloud Run service URL through `INSTANTML_API_BASE`.
 
-The hosted API connects to the existing live ClickHouse Cloud User Data service and provisions tenant ClickHouse Cloud warehouses through the already accepted hosted ClickHouse routing path. Because the Rust operational index remains documented as single-process safe, this deployment must pin Cloud Run to one instance until a reconciliation or direct-query hosted coordination design is accepted.
+The hosted API connects to the existing live ClickHouse Cloud User Data service and provisions tenant ClickHouse Cloud warehouses through the already accepted hosted ClickHouse routing path. Because the Rust operational index remains documented as single-process safe, this deployment must stay at one active instance until the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are implemented and verified. Cloud Run `maxScale=1` reduces risk but is not the correctness mechanism under automatic scaling.
 
 ClickHouse Cloud access should be restricted to a static Cloud Run egress IP where possible. The deployment creates a regional VPC/subnet, static external address, Cloud Router, and Cloud NAT, then deploys Cloud Run with Direct VPC egress for all outbound traffic so ClickHouse Cloud can allowlist the static NAT address instead of opening the service or Cloud API key to the internet.
 
@@ -217,7 +217,7 @@ Operational health checks used after deploy:
 
 ## Performance Considerations
 
-- Cloud Run starts with one instance because the in-process operational index is not yet multi-process safe.
+- Cloud Run starts with one active instance because the in-process operational index is not yet multi-process safe. `maxScale=1` is a deployment guard, not a product correctness proof; customer-facing single-writer cells should use manual scaling or an app-level write lease before depending on one writer.
 - Cloud Run concurrency starts at `20` to preserve request throughput inside one process while avoiding multiple independent operational caches and excessive slow signup/provisioning pressure.
 - Startup applies or verifies ClickHouse schemas. Cloud-service tenant schema migration happens when a tenant route is provisioned or loaded.
 - The first hosted smoke should validate readiness and a narrow API path rather than seeding a large benchmark every deploy.
@@ -228,7 +228,7 @@ This is the smallest production-shaped deployment because it uses the existing D
 
 Deferred complexity:
 
-- Multi-instance Cloud Run.
+- Multi-instance Cloud Run; see `2026-05-16-multi-instance-control-data-plane.md` for the accepted control/data-plane direction and gates.
 - Secret-manager-backed tenant password references inside User Data.
 - GCS/R2 artifact bytes.
 - Terraform or Pulumi infrastructure ownership.
@@ -245,7 +245,7 @@ Deferred complexity:
 - ClickHouse Cloud API-key allowlist does not include Cloud Run egress IP: new tenant-service creation fails from Cloud Run even though service query traffic may work; operator must update the key allowlist and redeploy or retry.
 - Cloud Run cold starts: service may take longer while establishing Direct VPC egress and checking ClickHouse.
 - Container-local artifacts are ephemeral: hosted byte uploads stay disabled until object storage lands.
-- Multi-instance override: two API instances can serve stale operational state; keep `--max-instances 1`.
+- Multi-instance override: two API instances can serve stale operational state or duplicate writes; keep one active instance and do not use this helper as a shared multi-instance release path.
 - Public signup abuse: signup allowlists are required for this internal slice; public-launch signup needs quotas, budget alerts, and abuse controls.
 
 ## Testing Plan
@@ -257,7 +257,7 @@ Deferred complexity:
 - `npm run web:build`
 - Deploy with `npm run deploy:cloud-run`.
 - Verify `GET /health`, `GET /readyz`, and `GET /api/auth/config` against the Cloud Run URL.
-- Verify Cloud Run `maxScale` is `1`.
+- Verify the Cloud Run deployment still has a one-active-instance guard and no unexpected active traffic split/tag serving path.
 - Verify `dev_auth_enabled=false`.
 - Verify the deploy helper writes `apps/web/.env.local` so `npm run web:dev` points at the hosted API without a local Rust server.
 - Verify `INSTANTML_SIGNUP_ALLOWED_EMAILS` or `INSTANTML_SIGNUP_ALLOWED_DOMAINS` is set.
@@ -308,4 +308,4 @@ Fresh reviewer 2:
 
 ## Decision
 
-Accepted for the internal single-instance first slice after review revisions. Public launch remains blocked on tenant secret storage, object storage, signup abuse controls, budget/quota controls, and multi-process operational-state reconciliation.
+Accepted for the internal single-instance first slice after review revisions. Public launch remains blocked on tenant secret storage, object storage, signup abuse controls, budget/quota controls, and the multi-instance operational-state gates documented in `2026-05-16-multi-instance-control-data-plane.md`.

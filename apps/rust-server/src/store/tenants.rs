@@ -72,26 +72,17 @@ impl Store {
 
         let metric_store = self.metric_store_from_route(&route).await?;
         let records = metric_store.load_operational_records().await?;
-        let latest_record_micros = records
-            .iter()
-            .map(|record| record.created_at.timestamp_micros())
-            .max()
-            .unwrap_or(0);
-        {
+        let stats = {
             let mut data = self.data.lock().await;
-            for record in records {
-                validate_tenant_record_org(org_id, &record)?;
-                data.apply_record(&record.kind, record.org_id, &record.payload)?;
-            }
-            data.recompute_counters();
-        }
+            data.apply_operational_records(records, ReplayScope::Tenant(org_id))?
+        };
         self.tenant_metric_stores
             .lock()
             .await
             .insert(org_id, metric_store);
         self.tenant_loaded.lock().await.insert(org_id);
         let mut clock = self.record_clock_micros.lock().await;
-        *clock = (*clock).max(latest_record_micros);
+        *clock = (*clock).max(stats.latest_record_micros);
         Ok(())
     }
 
@@ -424,35 +415,6 @@ fn tenant_database_name(org_id: Uuid) -> String {
 
 fn tenant_unavailable(message: impl Into<String>) -> AppError {
     AppError::new(StatusCode::SERVICE_UNAVAILABLE, message)
-}
-
-fn validate_tenant_record_org(
-    expected_org_id: Uuid,
-    record: &crate::metric_store::OperationalRecordRow,
-) -> AppResult<()> {
-    if record.org_id != expected_org_id {
-        return Err(AppError::internal(
-            "tenant operational record belonged to a different org",
-        ));
-    }
-    let payload = serde_json::from_str::<Value>(&record.payload)
-        .map_err(|_| AppError::internal("tenant operational record payload is invalid"))?;
-    let payload_org_id = payload
-        .get("org_id")
-        .or_else(|| payload.get("row").and_then(|row| row.get("org_id")))
-        .and_then(Value::as_str)
-        .map(Uuid::parse_str)
-        .transpose()
-        .map_err(|_| AppError::internal("tenant operational record org_id is invalid"))?;
-    if payload_org_id
-        .map(|org_id| org_id != expected_org_id)
-        .unwrap_or(false)
-    {
-        return Err(AppError::internal(
-            "tenant operational record payload belonged to a different org",
-        ));
-    }
-    Ok(())
 }
 
 fn local_route(org_id: Uuid) -> TenantRouteRecord {

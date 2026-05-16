@@ -39,6 +39,12 @@ INSTANTML_API_BASE=https://instantml-rust-api-hfv667633q-uc.a.run.app
 INSTANTML_API_ALLOWED_ORIGINS=https://instantml-rust-api-hfv667633q-uc.a.run.app
 ```
 
+The current public client contract is one stable API base URL. This
+multi-instance first slice does not expose public data-plane cell URLs and does
+not redirect SDK or browser requests to a cell. Any future direct-to-cell or
+redirect behavior must preserve bearer auth, session/cookie rules,
+`Idempotency-Key`, request bodies, and project-scoped/demo authorization.
+
 ## Auth Model
 
 There are three credential paths.

@@ -8,7 +8,7 @@ Status: Current architecture summary
 
 This document summarizes the implemented system so future agents do not need to reconstruct the architecture from older sprint docs. `PRODUCT_STRATEGY.md` remains the strategic source of truth; this file describes the current technical shape for InstantML.
 
-Strategy note: the product direction is now a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The current primary backend is Rust plus ClickHouse-only storage: operational records for local/control-plane state and analytical metric tables for high-volume scalar metrics. Hosted multi-process routing is intentionally deferred behind `docs/design/2026-05-14-clickhouse-only-storage.md`.
+Strategy note: the product direction is now a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The current primary backend is Rust plus ClickHouse-only storage: operational records for local/control-plane state and analytical metric tables for high-volume scalar metrics. Hosted multi-process routing is intentionally deferred behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; deterministic full replay exists, but live multi-instance freshness and write uniqueness are not complete.
 
 Architecture split:
 
@@ -85,7 +85,7 @@ Data plane -> ClickHouse org operational layer + ClickHouse metric layer
 Rust API -> S3-compatible artifact storage
 ```
 
-For the hosted path, start with a shared cell only after a coordination/reconciliation design exists. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
+For the hosted path, do not add a central hot-path application proxy for all SDK/browser/metric/artifact traffic. Use a global control-plane responsibility for auth, org lookup, account state, and tenant routes, then route to data-plane cells. Start with dedicated single-active-instance customer cells when isolation is needed, and start shared multi-instance cells only after the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are closed. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
 
 Internal hosted first slice:
 
@@ -131,7 +131,7 @@ The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
 ## Operational Commands
 
 - `npm run dev:api`: starts or reuses local ClickHouse, applies the ClickHouse schema, then serves the Rust API.
-- `npm run deploy:cloud-run`: deploys the Rust API to the internal single-instance Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud service and API-key allowlists when credentials are present, and writes the hosted API URL to local frontend env files.
+- `npm run deploy:cloud-run`: deploys the Rust API to the internal single-instance Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud service and API-key allowlists when credentials are present, and writes the hosted API URL to local frontend env files. Do not use this as a multi-instance release path; Cloud Run `maxScale=1` reduces risk but the product's correctness gates live in the multi-instance design.
 - `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui`: run through `tools/rust-service-smoke.mjs`, which creates disposable ClickHouse state, starts Rust, runs the smoke, and cleans up.
 - `npm run benchmark:large-runs`: seeds operational records and metric rows into disposable ClickHouse before measuring summary/search/sort/chart endpoints.
 - `npm run dev:api:node` and `npm run test:contract:node`: explicit deprecated Node compatibility paths.
@@ -177,12 +177,13 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-in esta
 - `docs/design/2026-05-11-landing-auth-onboarding.md`: local auth/onboarding route shape.
 - `docs/design/2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, and ClickHouse Cloud warehouse defaults.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`: internal single-instance Cloud Run deployment, Secret Manager, static ClickHouse egress, and local frontend-to-hosted API workflow.
+- `docs/design/2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance architecture direction, central-proxy rejection, route/auth/storage gates, and deterministic replay first slice.
 - `docs/architecture/auth-and-tenant-flow.md`: current human/session/API-key tenant authorization flow.
 
 ## Notes For Future Agents
 
 - Treat `apps/rust-server` as the primary backend.
-- Treat the ClickHouse operational index as local/test single-process until the hosted coordination design lands.
+- Treat the ClickHouse operational index as local/test single-process until the multi-instance control/data-plane gates land. The deterministic replay helper is groundwork, not permission to raise Cloud Run instance count.
 - Preserve route-shape compatibility unless a design doc explicitly changes the contract.
 - Keep Node compatibility smokes available for deprecated route-shape checks until migration tooling no longer needs them.
 - Keep list endpoints bounded and keep metric history on dedicated series endpoints.

@@ -155,6 +155,8 @@ npm run test:rust:ui
 
 The web smoke in `apps/web/tests/ui-smoke.mjs` follows the same default: no API base means Rust/ClickHouse. Set `INSTANTML_UI_SMOKE_API_BASE` to test an already-running Rust-compatible backend. The full UI smoke covers landing, local auth, onboarding, and dashboard routes, so it depends on Rust session/auth endpoints rather than the deprecated Node compatibility server.
 
+When `rust-service-smoke.mjs` launches the UI smoke against a disposable Rust API, it overrides `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` together so hosted values in the repo-root `.env` cannot break local smoke builds.
+
 Rust service commands:
 
 ```bash

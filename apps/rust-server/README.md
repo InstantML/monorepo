@@ -9,7 +9,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
-- Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-14-clickhouse-only-storage.md`; the in-process operational index is accepted for local/test and narrow single-process use only.
+- Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-process use only. The store now has deterministic full operational replay helpers, but live multi-instance freshness, write uniqueness, direct-cell auth, and metric/log idempotency remain scale-out gates.
 
 ## Local Setup
 
@@ -61,7 +61,7 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 `npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, deploys Cloud Run with `--max-instances 1`, and verifies `/health`, `/readyz`, and `/api/auth/config`.
 
-The first hosted slice is intentionally internal and single-instance. Keep Cloud Run at one max instance until the hosted operational-index coordination work is accepted and implemented. The helper writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
+The first hosted slice is intentionally internal and single-instance. Keep Cloud Run at one active instance until the hosted operational-index coordination work in `docs/design/2026-05-16-multi-instance-control-data-plane.md` is implemented and verified. A Cloud Run `maxScale=1` setting reduces risk but is not a correctness mechanism under automatic scaling; future customer-facing single-writer cells should use manual scaling or an app-level write lease before relying on one writer. The helper writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
 
 Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
 
@@ -182,11 +182,11 @@ In `cloud-service` hosted mode the Rust server migrates only the User Data contr
 Rust first-party service logic targets 100% meaningful coverage for validation, storage orchestration, idempotency handling, auth decisions, artifact byte handling, and API compatibility. Contract, SDK, UI, and benchmark smokes are part of the required verification because the current ClickHouse-only operational index is a storage-layer change with broad route impact.
 
 Coverage exception:
-- Uncovered area: durable multi-process reconciliation and hosted service routing for the ClickHouse operational log.
-- Reason: the accepted first slice is local/test single-process only.
-- Risk: multiple Rust API processes pointed at the same operational table can serve stale index state until a later coordination design lands.
-- Follow-up: implement the hosted control-plane/data-plane design in `docs/design/2026-05-14-clickhouse-only-storage.md`.
-- Owner/date: future storage owner, 2026-05-14.
+- Uncovered area: live multi-instance freshness, write uniqueness, direct-cell auth, SDK cell redirects, and atomic metric/log idempotency.
+- Reason: the accepted multi-instance first slice adds deterministic full operational replay and tenant-scoped replay validation only; it does not enable multiple live API instances.
+- Risk: multiple Rust API processes pointed at the same operational table can serve stale index state or duplicate writes if scaled outside the accepted gates.
+- Follow-up: add a stable operational event id or per-org sequence, close the mutation matrix gates, and run two-instance ClickHouse-backed integration tests before enabling shared cells.
+- Owner/date: hosted backend owner, 2026-05-16.
 
 ## Key Files
 
@@ -196,7 +196,7 @@ Coverage exception:
 - `src/control_store.rs`: User Data ClickHouse control-plane table and replay helpers for hosted mode.
 - `src/http/mod.rs`: HTTP app state, route table, and middleware wiring.
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.
-- `src/store/mod.rs`: ClickHouse-backed operational index core and module re-exports.
+- `src/store/mod.rs`: ClickHouse-backed operational index core, deterministic replay helpers, tenant replay validation, and module re-exports.
 - `src/store/auth.rs`: users, organizations, sessions, API keys, and admin authorization helpers.
 - `src/store/console_logs.rs`: stdout/stderr validation, idempotent writes, cursor encoding, and read response shaping.
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, scalar metric writes, and metric read endpoints.
@@ -226,6 +226,7 @@ Coverage exception:
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-16-clerk-hosted-auth.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
+- `docs/design/2026-05-16-multi-instance-control-data-plane.md`
 - `docs/architecture/current-api.md`
 
 ## Notes For Future Agents
