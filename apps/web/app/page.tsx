@@ -1,7 +1,7 @@
 "use client";
 
-import { Show, SignInButton, useClerk } from "@clerk/nextjs";
-import { ArrowRight, CheckCircle2, Code2, GitCompare, KeyRound, ShieldCheck } from "lucide-react";
+import { Show, useClerk } from "@clerk/nextjs";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../src/api.js";
@@ -27,152 +27,156 @@ export default function LandingPage() {
       return;
     }
     const controller = new AbortController();
-    api.get("/api/auth/config", { signal: controller.signal })
-      .then((payload) => {
-        setConfig({
-          dev_auth_enabled: Boolean(payload.dev_auth_enabled),
-          managed_clerk_enabled: Boolean(payload.managed_clerk_enabled),
-        });
-      })
-      .catch((error) => {
-        if (error?.name === "AbortError") return;
-        setConfigError(error instanceof Error ? error.message : "Provider availability is unavailable.");
-      });
+    (async () => {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const payload = await api.get("/api/auth/config", { signal: controller.signal });
+          setConfigError("");
+          setConfig({
+            dev_auth_enabled: Boolean(payload.dev_auth_enabled),
+            managed_clerk_enabled: Boolean(payload.managed_clerk_enabled),
+          });
+          return;
+        } catch (error: any) {
+          if (controller.signal.aborted || error?.name === "AbortError") return;
+          if (attempt >= 2) {
+            setConfigError(error instanceof Error ? error.message : "Provider availability is unavailable.");
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
+        }
+      }
+    })();
     return () => controller.abort();
   }, [api]);
 
-  const primaryHref = config?.dev_auth_enabled ? "/signup" : "";
-  const providerLabel = config
-    ? config.dev_auth_enabled
-      ? "Local dev Google-style auth enabled"
-      : config.managed_clerk_enabled
-        ? "Managed Clerk enabled"
-        : "No sign-in provider enabled"
-    : configError || "Checking provider availability...";
-
-  async function signOut() {
-    setSigningOut(true);
-    try {
-      await api.post("/api/auth/logout", {});
-      await clerk.signOut({ redirectUrl: "/" });
-    } catch (error) {
-      setConfigError(error instanceof Error ? error.message : "Unable to sign out.");
-      setSigningOut(false);
+  // Sign-out must be robust. The InstantML logout POST can intermittently
+  // ETIMEDOUT against the hosted API; the old code awaited it before
+  // clerk.signOut(), so one timeout left the user fully signed in. Logout is
+  // idempotent, so retry it (bounded) best-effort to actually revoke the
+  // server session, then ALWAYS clear the Clerk session so a failed logout
+  // can never strand the user on a signed-in page.
+  async function bestEffortLogout() {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 6000);
+      try {
+        await api.post("/api/auth/logout", {}, { signal: ctrl.signal });
+        window.clearTimeout(timer);
+        return;
+      } catch {
+        window.clearTimeout(timer);
+      }
     }
   }
 
+  async function signOut() {
+    setSigningOut(true);
+    await bestEffortLogout();
+    // Safety net: if clerk.signOut() hangs (no rejection), don't leave the
+    // button stuck — force navigation home after a bounded wait.
+    const safety = window.setTimeout(() => window.location.assign("/"), 8000);
+    try {
+      await clerk.signOut({ redirectUrl: "/" });
+    } catch {
+      window.location.assign("/");
+    } finally {
+      window.clearTimeout(safety);
+    }
+  }
+
+  const providerReady = Boolean(config?.dev_auth_enabled || config?.managed_clerk_enabled);
+
   return (
-    <main className="landing-page">
-      <header className="landing-nav" aria-label="Public navigation">
-        <a className="landing-brand" href="/">
-          <span className="brand-mark small" aria-hidden="true"><InstantMlMark /></span>
-          <span>InstantML</span>
+    <div className="iml-landing">
+      <header className="iml-bar">
+        <a className="iml-brand" href="/">
+          <span className="iml-mark" aria-hidden="true"><InstantMlMark /></span>
+          InstantML
         </a>
-        <nav>
+        <nav className="iml-bar-actions" aria-label="Account">
           {config?.managed_clerk_enabled ? (
             <>
               <Show when="signed-out">
-                <SignInButton mode="modal">
-                  <button type="button">Sign in</button>
-                </SignInButton>
-                <a className="button-link secondary-link" href="/signup">Start workspace</a>
+                <a className="iml-btn iml-btn--ghost" href="/signin">Sign in</a>
+                <a className="iml-btn iml-btn--primary" href="/signup">Start workspace</a>
               </Show>
               <Show when="signed-in">
-                <a href="/dashboard/runs">Open app</a>
-                <button disabled={signingOut} onClick={signOut} type="button">Sign out</button>
+                <a className="iml-btn iml-btn--primary" href="/dashboard/runs">Open app</a>
+                <button className="iml-btn iml-btn--ghost" disabled={signingOut} onClick={signOut} type="button">
+                  {signingOut ? "Signing out…" : "Sign out"}
+                </button>
               </Show>
             </>
           ) : (
             <>
-              <a href="/signin">Sign in</a>
-              <a className="button-link secondary-link" href="/signup">Start workspace</a>
+              <a className="iml-btn iml-btn--ghost" href="/signin">Sign in</a>
+              <a className="iml-btn iml-btn--primary" href="/signup">Start workspace</a>
             </>
           )}
         </nav>
       </header>
 
-      <section className="landing-hero">
-        <div className="landing-copy">
-          <p className="eyebrow">Training observability for serious ML teams</p>
-          <h1>InstantML</h1>
-          <p className="landing-lede">
-            The training tool you keep open all day: fast logging, fast comparison, clear artifacts, and a backend your team can trust.
+      <main className="iml-stage">
+        <section className="iml-hero">
+          <p className="iml-eyebrow is-accent">Training observability for serious ML teams</p>
+          <h1>The training tool you keep <span className="iml-em">open all day.</span></h1>
+          <p className="iml-lede">
+            Fast logging, fast comparison, clear artifacts, and a Rust/ClickHouse backend your team
+            can trust. One <code>pip install</code>, three SDK calls.
           </p>
-          <div className="landing-actions">
-            {config?.managed_clerk_enabled ? (
-              <a className="button-link" href="/signup">
-                Start with Clerk <ArrowRight size={15} />
-              </a>
-            ) : primaryHref ? (
-              <a className="button-link" href={primaryHref}>
-                Continue with Dev Google <ArrowRight size={15} />
-              </a>
-            ) : (
-              <button disabled type="button">Sign-in unavailable</button>
-            )}
-            <a className="button-link secondary-link" href="/signin">Open sign in</a>
-          </div>
-          <div className="provider-status" role="status" aria-live="polite">
-            <span className={config?.dev_auth_enabled || config?.managed_clerk_enabled ? "good" : "neutral"} />
-            <strong>Provider availability</strong>
-            <em>{providerLabel}</em>
-          </div>
-          {config?.dev_auth_enabled ? <p className="auth-note">Local development uses an explicitly labeled Google-style shortcut. Clerk is used for hosted sign-in.</p> : null}
-          <div className="landing-proof">
-            <span><CheckCircle2 size={14} /> Rust/ClickHouse summaries</span>
-            <span><CheckCircle2 size={14} /> Bounded metric charts</span>
-            <span><CheckCircle2 size={14} /> Copy-once SDK keys</span>
-          </div>
-        </div>
 
-        <DashboardPreview />
-      </section>
-    </main>
-  );
-}
-
-function DashboardPreview() {
-  const chartPoints = "M8 88 L56 72 L104 76 L152 44 L200 50 L248 24 L296 31";
-  return (
-    <section className="landing-preview" aria-label="Dashboard preview">
-      <div className="preview-topbar">
-        <span className="brand-mark tiny" aria-hidden="true"><InstantMlMark /></span>
-        <strong>Runs</strong>
-        <span className="preview-chip">1,000 runs</span>
-        <span className="preview-chip good">Operational</span>
-      </div>
-      <div className="preview-grid">
-        <div className="preview-panel run-table-preview">
-          <div className="preview-head"><strong>Run table</strong><small>bounded summaries</small></div>
-          {[
-            ["rl-sweep-seed-44", "finished", "0.91"],
-            ["llm-ft-seed-21", "running", "0.87"],
-            ["reward-ablation-13", "finished", "0.82"],
-          ].map(([name, status, score]) => (
-            <div className="preview-row" key={name}>
-              <span>{name}</span>
-              <em>{status}</em>
-              <strong>{score}</strong>
+          {config?.managed_clerk_enabled ? (
+            <>
+              <Show when="signed-in">
+                <div className="iml-cta">
+                  <a className="iml-btn iml-btn--primary iml-btn--lg" href="/dashboard/runs">
+                    Open app <ArrowRight className="iml-arrow" size={15} />
+                  </a>
+                  <button className="iml-btn iml-btn--outline iml-btn--lg" disabled={signingOut} onClick={signOut} type="button">
+                    {signingOut ? "Signing out…" : "Sign out"}
+                  </button>
+                </div>
+              </Show>
+              <Show when="signed-out">
+                <div className="iml-cta">
+                  <a className="iml-btn iml-btn--primary iml-btn--lg" href="/signup">
+                    Start a workspace <ArrowRight className="iml-arrow" size={15} />
+                  </a>
+                  <a className="iml-btn iml-btn--outline iml-btn--lg" href="/signin">Sign in</a>
+                </div>
+              </Show>
+            </>
+          ) : (
+            <div className="iml-cta">
+              {providerReady ? (
+                <a className="iml-btn iml-btn--primary iml-btn--lg" href="/signup">
+                  Start a workspace <ArrowRight className="iml-arrow" size={15} />
+                </a>
+              ) : (
+                <button className="iml-btn iml-btn--primary iml-btn--lg" disabled type="button">
+                  Sign-in unavailable
+                </button>
+              )}
+              <a className="iml-btn iml-btn--outline iml-btn--lg" href="/signin">Sign in</a>
             </div>
-          ))}
-        </div>
-        <div className="preview-panel metric-preview">
-          <div className="preview-head"><strong>eval/return_mean</strong><small>step range</small></div>
-          <svg viewBox="0 0 304 110" role="img" aria-label="Metric line trending upward">
-            <path className="preview-axis" d="M8 98 H296" />
-            <path className="preview-line" d={chartPoints} />
-            <circle cx="248" cy="24" r="4" />
-          </svg>
-        </div>
-        <div className="preview-panel compare-preview">
-          <div className="preview-head"><strong>Compare</strong><small>changed signals</small></div>
-          <div className="compare-preview-row"><GitCompare size={14} /> seed <strong>44 beats 21</strong></div>
-          <div className="compare-preview-row"><ShieldCheck size={14} /> artifacts <strong>3 matched</strong></div>
-          <div className="compare-preview-row"><KeyRound size={14} /> SDK key <strong>ready</strong></div>
-        </div>
-        <pre className="preview-panel sdk-preview"><Code2 size={15} /> export INSTANTML_API_KEY=instantml_...
-python train.py --tracker instantml</pre>
-      </div>
-    </section>
+          )}
+
+          <div className="iml-proof-chips">
+            <span className="iml-chip is-accent"><span className="iml-dot is-running" /> Bounded metric charts</span>
+            <span className="iml-chip"><CheckCircle2 size={12} /> Copy-once SDK keys</span>
+            <span className="iml-chip"><CheckCircle2 size={12} /> Rust / ClickHouse storage</span>
+          </div>
+
+          {config && !providerReady ? (
+            <p className="iml-hint is-err" role="status">
+              No sign-in provider is configured for this environment.
+            </p>
+          ) : configError ? (
+            <p className="iml-hint" role="status">{configError}</p>
+          ) : null}
+        </section>
+      </main>
+    </div>
   );
 }

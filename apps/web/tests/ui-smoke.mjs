@@ -72,7 +72,7 @@ try {
 
   const webBaseUrl = `http://127.0.0.1:${webPort}`;
   await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".landing-page", { timeout: 10000 });
+  await page.waitForSelector(".iml-landing", { timeout: 10000 });
   assert.equal(summaryUrls.length, 0, "public landing page should not fetch run summaries");
 
   await page.goto(`${webBaseUrl}/signup`, { waitUntil: "domcontentloaded" });
@@ -84,8 +84,8 @@ try {
   await page.getByRole("button", { name: /Continue with Dev Google/ }).click();
   await page.waitForURL(/\/onboarding$/, { timeout: 10000 });
   await page.getByRole("button", { name: /Create SDK API key/ }).click();
-  await page.waitForSelector(".api-key-reveal code", { timeout: 10000 });
-  assert.match(await page.locator(".api-key-reveal code").innerText(), /^instantml_/);
+  await page.waitForSelector(".iml-term-body code", { timeout: 10000 });
+  assert.match(await page.locator(".iml-term-body code").innerText(), /^instantml_/);
 
   await pageApiRequest(page, "POST", "/api/demo/reset", {}, { retries: 2 });
   if (backendMode !== "node") {
