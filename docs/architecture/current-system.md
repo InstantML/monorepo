@@ -103,7 +103,7 @@ This Cloud Run slice is operationally useful but not public-launch complete. It 
 Split Cloud Run launch wiring:
 
 ```text
-Public API URL / load balancer / thin router
+Public HTTPS API URL / managed load balancer
   -> Cloud Run instantml-control, INSTANTML_SERVICE_PLANE=control
   -> Cloud Run instantml-data-<region>-a, INSTANTML_SERVICE_PLANE=data
 
@@ -112,7 +112,7 @@ Both services -> ClickHouse User Data control table
 Data service  -> routed tenant ClickHouse service/database
 ```
 
-The default deploy command is now `npm run deploy:cloud-run`, which launches the split control/data topology. `npm run deploy:cloud-run:multi` is the explicit split alias, and `npm run deploy:cloud-run:single` is the legacy combined-service path. The data service defaults to manual scaling with one active instance, while the control service defaults to automatic scaling with a bounded max. A public load balancer, gateway, or thin router remains an operator-owned resource; set `INSTANTML_PUBLIC_API_BASE` when that URL exists so the deploy helper can write local frontend env files.
+The default deploy command is now `npm run deploy:cloud-run`, which launches the split control/data topology. `npm run deploy:cloud-run:multi` is the explicit split alias, and `npm run deploy:cloud-run:single` is the legacy combined-service path. Both control and data default to manual scaling with one active instance until their multi-process freshness and uniqueness gates are complete. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` to create the managed HTTPS public router; HTTP-only public IP routing is rejected.
 
 ## Storage
 
@@ -145,7 +145,7 @@ The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
 ## Operational Commands
 
 - `npm run dev:api`: starts or reuses local ClickHouse, applies the ClickHouse schema, then serves the Rust API.
-- `npm run deploy:cloud-run`: builds one Rust image and deploys split control/data Cloud Run services with role-specific environment. The data service remains manual single-instance by default; use this as launch wiring, not as permission to run shared data cells with multiple active writers.
+- `npm run deploy:cloud-run`: builds one Rust image and deploys split control/data Cloud Run services with role-specific environment. The data service remains manual single-instance by default; use this as launch wiring, not as permission to run shared data cells with multiple active writers. With `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and a router domain, it can also create the managed HTTPS public router.
 - `npm run deploy:cloud-run:single`: deploys the Rust API to the internal single-instance combined Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud service and API-key allowlists when credentials are present, and writes the hosted API URL to local frontend env files.
 - `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui`: run through `tools/rust-service-smoke.mjs`, which creates disposable ClickHouse state, starts Rust, runs the smoke, and cleans up.
 - `npm run test:hosted-clickhouse`: runs separate local Rust `control` and `data` service-plane processes against disposable ClickHouse User Data and tenant databases, then verifies control-only routes, data-only routes, API-key/session auth refresh, SDK ingestion, and data-plane restart replay.

@@ -18,5 +18,5 @@ Current references:
 - `current-api.md`: current Rust API route reference with auth requirements, inputs, query parameters, response envelopes, limits, and examples.
 - `current-schemas.md`: current control-plane and data-plane ClickHouse schemas, operational record kinds, JSON payload shapes, replay rules, and schema change checklist.
 - `auth-and-tenant-flow.md`: Clerk hosted auth, InstantML browser sessions, SDK API keys, org authorization, and hosted ClickHouse tenant routing.
-- `multi-instance-cloud-run.md`: split Cloud Run control/data topology, request flows, deploy commands, scaling guardrails, ClickHouse allowlisting, and launch checklist.
+- `multi-instance-cloud-run.md`: split Cloud Run control/data topology, HTTPS public router, request flows, deploy commands, scaling guardrails, ClickHouse allowlisting, and launch checklist.
 - `../design/2026-05-14-clickhouse-only-storage.md`: accepted ClickHouse-only local/test storage slice and hosted control-plane/data-plane direction.

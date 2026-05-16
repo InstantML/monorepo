@@ -54,7 +54,7 @@ Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse met
 Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 ```
 
-The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment now supports both a combined single Cloud Run service and split `control`/`data` Cloud Run services. Data-plane cells remain single-writer by default until the coordination/reconciliation gates for shared multi-writer cells are implemented.
+The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment now supports both a combined single Cloud Run service, split `control`/`data` Cloud Run services, and an optional managed HTTPS public router. Data-plane cells remain single-writer by default until the coordination/reconciliation gates for shared multi-writer cells are implemented.
 
 Migration rule: the Node server is deprecated but remains the compatibility oracle and JSON migration source until P4 migration tooling and any remaining legacy fallback needs are retired.
 
@@ -194,7 +194,7 @@ Deploy the default split control/data Cloud Run topology:
 npm run deploy:cloud-run
 ```
 
-`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_PUBLIC_API_BASE` to your load balancer, gateway, or thin router URL if you want the helper to write local frontend env files. Data-plane services default to manual one-instance scaling until durable multi-writer gates land. Hosted artifact byte uploads are disabled until object storage lands.
+`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Control and data services default to manual one-instance scaling until durable multi-process gates land; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads are disabled until object storage lands.
 
 The explicit aliases are:
 

@@ -14,11 +14,12 @@ deploy those roles deliberately instead of treating the split as a local-only
 test shape.
 
 The smallest useful launch shape is a split Cloud Run topology with one control
-service and one data service/cell built from the same image. The control service
-owns auth, users, orgs, API keys, seats, and tenant route records. The data
-service owns product routes for projects, runs, metrics, logs, imports, usage,
-and export. Both services share the User Data ClickHouse control table and use
-the same static Cloud NAT egress for ClickHouse Cloud allowlisting.
+service and one data service/cell built from the same image, optionally fronted
+by a managed HTTPS external Application Load Balancer. The control service owns
+auth, users, orgs, API keys, seats, and tenant route records. The data service
+owns product routes for projects, runs, metrics, logs, imports, usage, and
+export. Both services share the User Data ClickHouse control table and use the
+same static Cloud NAT egress for ClickHouse Cloud allowlisting.
 
 This design does not claim shared-cell multi-writer correctness. The launchable
 default keeps the data cell on manual single-instance scaling while control can
@@ -26,12 +27,20 @@ use automatic bounded scaling. That gives us real operational separation and a
 clean Cloud Run shape without pretending per-process projections are a
 distributed coordination layer.
 
+After review, "three instances" for the current shared data cell is explicitly
+not production-safe. The safe current deployment is one public HTTPS router, one
+active control instance, and one active data writer per cell. True
+three-cell or three-replica tenant routing needs a separate durable tenant-cell
+assignment/router design plus write-idempotency gates.
+
 ## Goals
 
 - Add an explicit deploy command for split Cloud Run control/data services.
 - Keep the existing single combined Cloud Run deploy command available.
 - Build one container image and deploy it with role-specific environment.
 - Preserve static egress and ClickHouse Cloud access-list behavior.
+- Create/update a managed HTTPS public routing layer when an API DNS name is
+  provided.
 - Document how routing, Docker Compose, and Cloud Run services fit together.
 - Keep local/frontend env updates safe when a split deployment does not yet have
   a public load balancer or router URL.
@@ -39,8 +48,9 @@ distributed coordination layer.
 ## Non-Goals
 
 - Do not run a live deployment as part of this change.
-- Do not create a Cloud Load Balancer automatically.
+- Do not create an HTTP-only public API endpoint.
 - Do not raise data-plane cells to multiple active writer instances by default.
+- Do not make Cloud Run session affinity a correctness mechanism.
 - Do not add Redis, Kafka, Spanner, Firestore, or a new coordinator.
 - Do not change public REST route shapes, SDK behavior, or browser auth flows.
 
@@ -60,7 +70,8 @@ Future agents need clear docs that distinguish:
 Frontend developers still need a safe local environment file update path. A
 single combined deploy can write the service URL directly. A split deploy should
 only write `INSTANTML_API_BASE` when an operator provides the public load
-balancer/router URL via `INSTANTML_PUBLIC_API_BASE`.
+balancer/router URL via `INSTANTML_PUBLIC_API_BASE` or when the helper creates
+an HTTPS router from `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`.
 
 ## Proposed Design
 
@@ -76,13 +87,20 @@ Add three root scripts:
 `INSTANTML_CLOUD_RUN_TOPOLOGY=single|split`. When no topology is provided, the
 helper defaults to `split`.
 
+The helper also accepts:
+
+- `--public-router`: create/update the HTTPS public router.
+- `--data-instances=N`: request manual data instance count. Values above `1`
+  fail unless `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1` is set for a
+  controlled test.
+
 ### Split Targets
 
 The split deploy creates two Cloud Run services from one image:
 
 | Target | Service plane | Default service name | Default scaling |
 | --- | --- | --- | --- |
-| Control | `control` | `instantml-control` | automatic, max 5 |
+| Control | `control` | `instantml-control` | manual, 1 instance |
 | Data cell | `data` | `instantml-data-<region>-a` | manual, 1 instance |
 
 The defaults can be changed with:
@@ -97,6 +115,12 @@ The defaults can be changed with:
 - `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`
 - `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES`
 - `INSTANTML_CLOUD_RUN_DATA_INSTANCES`
+- `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1`
+- `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1`
+
+The unsafe overrides exist only to reproduce multi-process bugs or run
+controlled load tests. They must not be used for production traffic until the
+control-plane and data-plane write gates are closed.
 
 ### Runtime Environment
 
@@ -129,6 +153,28 @@ allowlisted.
 This follows the Cloud Run static outbound IP pattern: route all Cloud Run
 egress through a VPC network with Cloud NAT configured with reserved static IPs.
 
+### Public HTTPS Router
+
+When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` or `--public-router` is set, the
+deploy helper creates or reconciles these global load-balancer resources:
+
+- reserved global IPv4 address,
+- serverless NEGs for the control and data Cloud Run services,
+- exact-state backend services with a timeout aligned to the Cloud Run request
+  timeout,
+- URL map routing `/api/auth`, `/api/users`, and `/api/orgs` to control,
+  defaulting all other routes to data,
+- Google-managed SSL certificate for
+  `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`,
+- target HTTPS proxy and global forwarding rule on port `443`.
+
+The helper refuses to create the public router without a DNS name because
+`http://<ip>` would expose browser session cookies and API keys in cleartext.
+The first router run may return `pending-dns` or `pending-certificate` after
+creating resources. The operator must point the DNS `A` record at the reserved
+load-balancer IP so the managed certificate can become active, then rerun the
+helper to verify the router and write the public API base.
+
 ### Verification
 
 After each Cloud Run service deploy, the helper checks:
@@ -139,7 +185,13 @@ After each Cloud Run service deploy, the helper checks:
 - `/openapi.json`
 
 The last two responses must report the expected `service_plane`. The helper also
-verifies the configured scaling mode where the Cloud Run description exposes it.
+verifies the configured scaling mode and session-affinity setting where the
+Cloud Run description exposes them.
+
+When the HTTPS router is enabled, the helper verifies:
+
+- `GET https://<router-domain>/api/auth/config` reports `control`.
+- `GET https://<router-domain>/openapi.json` reports `data`.
 
 ### Local Docker Compose
 
@@ -167,7 +219,7 @@ Frontend:
 
 - No frontend code changes.
 - Split deploys only write local `INSTANTML_API_BASE` when
-  `INSTANTML_PUBLIC_API_BASE` is provided.
+  `INSTANTML_PUBLIC_API_BASE` is provided or the HTTPS router is created.
 
 Python SDK:
 
@@ -199,10 +251,15 @@ publish role-aware diagnostics:
 
 ## Performance Considerations
 
-- Control-plane traffic is lower volume and can scale automatically with a
-  bounded max instance count.
+- Control-plane traffic is lower volume, but the current control service still
+  rebuilds auth/org/API-key state into a process-local projection. It stays one
+  active instance by default until control refresh and uniqueness gates are
+  multi-process safe.
 - Data-plane traffic is the hot path. The default deploy keeps one active data
   instance per cell until durable multi-writer gates land.
+- Cloud Run session affinity can reduce churn for browser requests, but it is
+  best-effort and is not used as a correctness condition. SDK clients may not
+  preserve the affinity cookie.
 - Metric/log writes remain batched at the request level. Shared multi-writer
   cells still require durable idempotency or ClickHouse dedupe keys before
   automatic data-plane scaling is enabled.
@@ -217,7 +274,7 @@ in the deploy helper is a list of deployment targets.
 
 Deferred complexity:
 
-- automatic Cloud Load Balancer creation,
+- custom-domain DNS automation,
 - direct-to-cell SDK discovery,
 - public cell URL management,
 - distributed write coordination,
@@ -225,14 +282,20 @@ Deferred complexity:
 
 ## Failure Modes
 
-- If the default split deployment has no public load balancer/router URL, local frontend
-  env is not updated. The deploy output names the missing
-  `INSTANTML_PUBLIC_API_BASE` value.
+- If the default split deployment has no public load balancer/router URL, local
+  frontend env is updated with direct split control/data service URLs only.
+- If public router creation is requested without
+  `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, the helper fails before mutating
+  cloud resources.
+- If router DNS does not point at the reserved load-balancer IP, the helper
+  returns a `pending-dns` router record without writing the public API env.
+- If the managed certificate is not active yet, the helper returns a
+  `pending-certificate` router record without writing the public API env.
 - If ClickHouse allowlisting fails, the helper warns or fails according to the
   same service/key allowlist options as the existing deploy flow.
 - If a target reports the wrong service plane, deploy verification fails.
-- If manual data scaling is changed to automatic before write gates are closed,
-  duplicate project/import/idempotency behavior can still occur.
+- If data scaling is changed above one writer before write gates are closed,
+  the helper fails unless the explicit unsafe test override is set.
 - If Cloud Run briefly exceeds revision-level max instances during deploys or
   spikes, correctness must still come from app/storage gates, not from max
   instance settings.
@@ -241,6 +304,7 @@ Deferred complexity:
 
 - `node --check tools/deploy-cloud-run.mjs`
 - `node tools/deploy-cloud-run.mjs --help`
+- `npm run test:deploy-cloud-run`
 - `npm run rust:verify`
 - `docker compose config`
 - `git diff --check`
@@ -274,8 +338,16 @@ Separate Dockerfiles for control and data:
 
 Automatic load balancer creation:
 
-- Deferred. GCP load balancer setup needs domain/certificate/host/path policy
-  decisions that should be explicit operator choices.
+- Partially accepted. The helper can create the managed HTTPS routing layer
+  after an operator supplies the API DNS name. HTTP-only IP routing remains
+  rejected.
+
+Three active data instances for one shared cell:
+
+- Rejected for production. It exposes stale in-memory projections, duplicate
+  low-volume records, and non-atomic metric/log idempotency. Cloud Run session
+  affinity is not a correctness mechanism and SDK traffic may not preserve the
+  affinity cookie.
 
 ## Review Notes
 
@@ -299,20 +371,56 @@ Rust/storage review:
   document the gate.
 - Decision: accepted.
 
+Control-plane scaling review:
+
+- Finding: control routes also depend on process-local auth/org/API-key
+  projections.
+- Risk: scaled control instances can see stale logout, revocation, signup,
+  org, or API-key state until control refresh/uniqueness gates are durable.
+- Recommended edit: default control to one manual instance and require an
+  explicit unsafe test flag for higher control scaling.
+- Decision: accepted.
+
+Public router review:
+
+- Finding: an HTTP-only load balancer would expose session cookies and API keys
+  in cleartext.
+- Risk: deploying `http://<ip>` as the public API base weakens auth and
+  onboarding security.
+- Recommended edit: require a DNS name and managed HTTPS certificate before the
+  helper writes a public router URL.
+- Decision: accepted.
+
+Multi-writer/runtime review:
+
+- Finding: three Cloud Run data instances against one shared data cell are not
+  safe with the current per-process operational projection.
+- Risk: SDK create/log/update calls can land on different instances, causing
+  stale reads, duplicate project/import/idempotency records, or missing run
+  lookups.
+- Recommended edit: fail data scaling above one active writer unless an
+  explicit unsafe test flag is set.
+- Decision: accepted.
+
 ## Coverage Exceptions
 
-- Uncovered area: live GCP split Cloud Run deployment.
-- Reason: this change intentionally does not deploy or mutate cloud resources.
-- Risk: gcloud flag behavior or Cloud Run response shape may differ in a live
+- Uncovered area: live GCP HTTPS load-balancer provisioning and DNS/certificate
+  activation.
+- Reason: this change intentionally stops before creating public cloud
+  resources without a reviewed API DNS name.
+- Risk: gcloud resource shapes or certificate timing may differ in the live
   project.
-- Follow-up: run `npm run deploy:cloud-run:multi` in a controlled project, then
-  record the resulting service descriptions and any script adjustments.
+- Follow-up: set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, run
+  `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1 npm run deploy:cloud-run` in a
+  controlled window, point DNS to the emitted IP, and record the resulting
+  service descriptions.
 - Owner/date: hosted backend owner, 2026-05-16.
 
 ## Decision
 
 Accepted. The repo now treats split Cloud Run as the default deployment shape,
 with the data service defaulting to single-writer manual scaling until the
-shared-cell write gates are complete. The single combined Cloud Run service is
-available only through the explicit `deploy:cloud-run:single` command or
-`--topology=single`.
+shared-cell write gates are complete. The deploy helper supports a managed
+HTTPS public router only when a DNS name is supplied. The single combined Cloud
+Run service is available only through the explicit `deploy:cloud-run:single`
+command or `--topology=single`.

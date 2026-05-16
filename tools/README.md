@@ -24,7 +24,7 @@ npm run deploy:cloud-run
 npm run deploy:cloud-run -- --help
 ```
 
-The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud service and Cloud API-key IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` so the local Next proxy can route auth/org calls to control and run/project/metric calls to data.
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud service and Cloud API-key IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL.
 
 Important environment variables:
 
@@ -33,6 +33,11 @@ Important environment variables:
 - `INSTANTML_CLOUD_RUN_SERVICE`: legacy combined Cloud Run service name. Default: `instantml-rust-api`.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`: split control Cloud Run service name. Default: `instantml-control`.
 - `INSTANTML_CLOUD_RUN_DATA_SERVICE`: split data Cloud Run service name. Default: `instantml-data-<region>-a`.
+- `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1`: permits control scaling above one instance for controlled tests only.
+- `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual data instance count. Values above `1` fail unless `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1` is set for a controlled test.
+- `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1`: creates or updates the managed HTTPS public router.
+- `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`: DNS host for the router, for example `api.instantml.ai`. Required when public router creation is enabled.
+- `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: optional Google-managed SSL certificate resource name.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated browser origins allowed for cookie-authenticated mutations. Default includes local Next and `https://instantml.ai`.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
 - `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup and requires manual ClickHouse Cloud allowlisting.
@@ -40,7 +45,7 @@ Important environment variables:
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips ClickHouse Cloud API-key access-list updates.
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation can wait for ClickHouse Cloud tenant provisioning.
 
-Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision public Cloud Run URLs. The default deployment is the split `control` plus `data` shape; the data service remains manual single-writer by default until the hosted operational-index coordination work lands. Artifact byte uploads remain disabled in hosted mode until object storage is designed.
+Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision public Cloud Run or load-balancer URLs. The default deployment is the split `control` plus `data` shape; both services remain manual single-instance by default until the hosted operational-index coordination work lands. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Artifact byte uploads remain disabled in hosted mode until object storage is designed.
 
 ## Import Helpers
 

@@ -25,19 +25,34 @@ Local default:
 http://127.0.0.1:8000
 ```
 
-Internal hosted Cloud Run:
+Hosted Cloud Run direct services:
 
 ```text
-https://instantml-rust-api-hfv667633q-uc.a.run.app
+https://instantml-control-<hash>-uc.a.run.app
+https://instantml-data-us-central1-a-<hash>-uc.a.run.app
+```
+
+Hosted public router, when DNS and the managed HTTPS load balancer are
+configured:
+
+```text
+https://api.instantml.ai
 ```
 
 The local Next app should normally call the Rust API through same-origin Next
-rewrites. After `npm run deploy:cloud-run`, `apps/web/.env.local` receives:
+rewrites. After a direct split `npm run deploy:cloud-run`,
+`apps/web/.env.local` receives:
 
 ```text
-INSTANTML_API_BASE=https://instantml-rust-api-hfv667633q-uc.a.run.app
-INSTANTML_API_ALLOWED_ORIGINS=https://instantml-rust-api-hfv667633q-uc.a.run.app
+INSTANTML_CONTROL_API_BASE=https://instantml-control-<hash>-uc.a.run.app
+INSTANTML_DATA_API_BASE=https://instantml-data-us-central1-a-<hash>-uc.a.run.app
+INSTANTML_API_ALLOWED_ORIGINS=https://instantml-control-<hash>-uc.a.run.app,https://instantml-data-us-central1-a-<hash>-uc.a.run.app
 ```
+
+When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and
+`INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper writes
+`INSTANTML_API_BASE`, `INSTANTML_CONTROL_API_BASE`, and
+`INSTANTML_DATA_API_BASE` to the same `https://<api-domain>` value.
 
 The current public client contract is one stable API base URL. This
 multi-instance first slice does not expose public data-plane cell URLs and does

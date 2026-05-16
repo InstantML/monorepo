@@ -15,6 +15,8 @@ The split topology is the one we should use when we want operational separation:
 control-plane routes and data-plane routes run as separate Cloud Run services,
 but both are built from the same Rust image. The data service remains a
 single-writer cell by default until durable multi-writer gates are complete.
+The deploy helper can also create a managed HTTPS external Application Load
+Balancer so local frontend and SDK clients can use one public API origin.
 
 ## Topology
 
@@ -22,7 +24,7 @@ single-writer cell by default until durable multi-writer gates are complete.
 flowchart LR
   browser["Browser / Next frontend"]
   sdk["Python SDK / uploader"]
-  edge["Public API URL\n(load balancer or thin router)"]
+  edge["Public HTTPS API URL\n(global Application Load Balancer)"]
   control["Cloud Run: instantml-control\nINSTANTML_SERVICE_PLANE=control"]
   data["Cloud Run: instantml-data-<region>-a\nINSTANTML_SERVICE_PLANE=data"]
   userdata[("ClickHouse User Data\nusers, orgs, sessions,\nAPI keys, tenant routes")]
@@ -39,17 +41,20 @@ flowchart LR
   data --> nat --> tenant
 ```
 
-The public API URL can be a load balancer, API gateway, or thin router. A plain
-load balancer can route by host/path, but it cannot inspect an org hidden inside
-a bearer token before the app authenticates. For a single data cell, path-based
-routing is enough. For many cells, use a discovery step or a thin app router.
+The current public API URL should be the managed HTTPS load balancer created by
+`tools/deploy-cloud-run.mjs` after an API DNS name is configured. It routes
+control paths by host/path and defaults product traffic to the data service. A
+plain load balancer cannot inspect an org hidden inside a bearer token before
+the app authenticates. For a single data cell, path-based routing is enough. For
+many cells, use a discovery step or a thin app router with durable tenant-cell
+assignment.
 
 ## Service Responsibilities
 
 | Service | Routes | Durable source | Default scale |
 | --- | --- | --- | --- |
 | `combined` | control and data | User Data plus tenant ClickHouse | automatic max 1 in legacy deploy |
-| `control` | auth, sessions, users, orgs, seats, API keys, service accounts | User Data ClickHouse | automatic max 5 |
+| `control` | auth, sessions, users, orgs, seats, API keys, service accounts | User Data ClickHouse | manual 1 |
 | `data` | projects, runs, metrics, logs, artifacts, objects, imports, usage, export | tenant ClickHouse plus User Data refresh before auth | manual 1 |
 
 Platform routes exist on every service:
@@ -138,6 +143,21 @@ Set `INSTANTML_PUBLIC_API_BASE` when a load balancer or router URL exists. The
 deploy helper writes local frontend env files only when there is a single
 service URL or an explicit public API base.
 
+Create/update the managed HTTPS public router:
+
+```bash
+INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1 \
+INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=api.instantml.ai \
+npm run deploy:cloud-run
+```
+
+The helper reserves a global IP, creates serverless NEGs, reconciles control and
+data backend services, imports a path-based URL map, creates a Google-managed
+SSL certificate, and exposes only port `443`. The first run can finish with
+`pending-dns` or `pending-certificate`; point the DNS `A` record for the router
+domain at the emitted IP, wait for certificate activation, and rerun deploy to
+verify the public URL and write it into local frontend env.
+
 ## Key Environment Variables
 
 | Variable | Purpose |
@@ -150,6 +170,11 @@ service URL or an explicit public API base.
 | `INSTANTML_CLOUD_RUN_CONTROL_SCALING` | `auto` or `manual` |
 | `INSTANTML_CLOUD_RUN_DATA_SCALING` | `auto` or `manual`; default `manual` |
 | `INSTANTML_CLOUD_RUN_DATA_INSTANCES` | Manual data instances; default `1` |
+| `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE` | Set `1` only for controlled tests above one control instance |
+| `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER` | Set `1` only for controlled tests above one data writer |
+| `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER` | Set `1` to create/update the HTTPS public router |
+| `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` | Required DNS host for router HTTPS certificate |
+| `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE` | Optional managed SSL certificate resource name |
 | `INSTANTML_PUBLIC_API_BASE` | Public LB/router URL for frontend env |
 | `INSTANTML_CLOUD_RUN_STATIC_EGRESS` | Set `0` to skip NAT/static egress setup |
 
@@ -182,8 +207,11 @@ npm run test:hosted-clickhouse
 
 ## Scaling Rules
 
-Control can scale horizontally earlier because it owns lower-volume account and
-auth routes. Data cells stay manual single-instance by default.
+Control and data cells stay manual single-instance by default. Control owns
+lower-volume account/auth routes, but it still depends on a process-local
+projection for logout, revocation, signup, org, and API-key state. The deploy
+helper refuses control or data scaling above one active instance unless the
+matching unsafe test flag is set.
 
 Do not switch a shared data cell to automatic multi-instance writes until these
 gates are closed:
@@ -198,6 +226,25 @@ Cloud Run maximum instance settings are not a correctness mechanism. Cloud Run
 can briefly exceed max instance limits during rapid spikes, and deployments can
 temporarily run old and new revisions at the same time. The app/storage layer
 must provide correctness.
+
+Cloud Run session affinity is also not a correctness mechanism. It is
+best-effort, browser-oriented stickiness; SDK traffic may not preserve the
+affinity cookie. Treat it only as a latency/cache optimization after data-plane
+correctness is durable without stickiness.
+
+### About "Three Instances"
+
+The reviewed production-safe layout today is not three active writers for one
+data cell. It is:
+
+- one public HTTPS router,
+- one active control instance,
+- one active writer for each data cell.
+
+To make three data cells production-ready, add durable tenant-to-cell assignment
+to User Data, route browser/API-key traffic to the assigned cell, and add
+multi-process integration tests for stale reads and duplicate writes. Until
+then, `--data-instances=3` is blocked by default.
 
 ## ClickHouse Allowlisting
 
@@ -223,12 +270,14 @@ ClickHouse allowlist must include those CIDRs.
 3. Run `npm run deploy:cloud-run` in the target GCP project.
 4. Confirm deploy output lists both services and the static egress IP.
 5. Confirm ClickHouse Cloud service and API-key access lists include the NAT IP.
-6. Put a load balancer, gateway, or thin router in front of control/data.
-7. Set `INSTANTML_PUBLIC_API_BASE` to that public URL and rerun deploy or update
-   local frontend env manually.
+6. For one public API origin, set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and
+   `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>`, then rerun deploy.
+7. Point the API domain DNS `A` record at the emitted global load-balancer IP.
 8. Verify:
    - control `/api/auth/config` reports `control`
    - data `/api/auth/config` reports `data`
+   - router `https://<api-domain>/api/auth/config` reports `control`
+   - router `https://<api-domain>/openapi.json` reports `data`
    - both `/readyz` endpoints are healthy
    - hosted login creates/reuses the expected org and tenant route
    - SDK ingestion lands in the routed tenant ClickHouse service
