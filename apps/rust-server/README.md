@@ -43,6 +43,7 @@ npm run rust:lint
 npm run rust:test
 npm run rust:migrate
 npm run rust:serve
+npm run deploy:cloud-run
 ```
 
 Binary subcommands:
@@ -55,6 +56,14 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 ```
 
 `worker` prunes expired idempotency keys and expired/revoked browser sessions from the single-process index, then writes immutable `usage_daily` snapshots for each organization. With the ClickHouse-only first slice, cleanup compacts live memory only; durable operational-log compaction is deferred to the hosted storage follow-up.
+
+## Hosted Cloud Run Deployment
+
+`npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, deploys Cloud Run with `--max-instances 1`, and verifies `/health`, `/readyz`, and `/api/auth/config`.
+
+The first hosted slice is intentionally internal and single-instance. Keep Cloud Run at one max instance until the hosted operational-index coordination work is accepted and implemented. The helper writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
+
+Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
 
 ## Config
 
@@ -76,11 +85,14 @@ Environment variables:
 - `CLERK_JWT_ISSUER`: optional exact Clerk session-token issuer. When unset, tokens must still use an HTTPS Clerk-owned issuer host.
 - `INSTANTML_CLERK_SESSION_MAX_AGE_SECONDS`: maximum accepted age for a Clerk session token exchanged into an InstantML session. Default: `600`.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
+- `INSTANTML_SIGNUP_ALLOWED_EMAILS`: comma-separated exact email allowlist for hosted Clerk signups. Sign-in for existing memberships is still allowed.
+- `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: comma-separated hosted Clerk signup domain allowlist. Domains may be written with or without a leading `@`.
+- `INSTANTML_ARTIFACT_UPLOADS_ENABLED`: enables artifact byte uploads. Defaults to `true` for local mode and `false` when hosted ClickHouse is enabled, because hosted object storage is not implemented yet.
 - `INSTANTML_HOSTED_CLICKHOUSE_ENABLED`: enables User Data control-plane storage and tenant routing. Default: disabled.
 - `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`, `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`: ClickHouse endpoint and credentials for the `instantml_user_data` control table. Values may live in local `.env`; process env wins when both are set.
 - `INSTANTML_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted experiments; falling back to the User Data endpoint is only a local/test convenience.
 - `INSTANTML_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default: `database`, which is local/test only unless paired with per-org least-privilege ClickHouse users and cross-database denial tests.
-- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` defaults to `0.0.0.0/0` for demo accessibility; production should set API egress CIDRs. Cloud-service mode is opt-in because it can create external paid services.
+- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` is required in cloud-service mode and should include the Cloud Run static egress CIDR, currently `136.115.243.188/32`, so every new tenant service is created with API-only ClickHouse access. Cloud-service mode is opt-in because it can create external paid services.
 - `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
 
 Cloud-service retries recover from a service that was created before the route credentials were persisted by resetting that service password through the ClickHouse Cloud API, then writing a ready tenant route. This handles browser/API request timeouts during first provisioning without requiring manual User Data edits.
@@ -106,6 +118,13 @@ Implemented health and platform endpoints:
 - `GET /openapi.json`
 
 Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, browser sessions, org seat reservation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+
+The durable route reference lives in `docs/architecture/current-api.md`. Keep
+that document, this README, `src/http/mod.rs`, `src/http/handlers.rs`, and
+`src/domain.rs` synchronized whenever an endpoint, request body, query
+parameter, response envelope, auth rule, or limit changes. The live service's
+`GET /openapi.json` returns a compact route index with the same route set for
+operator verification.
 
 In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
 
@@ -206,6 +225,8 @@ Coverage exception:
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-16-clerk-hosted-auth.md`
+- `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
+- `docs/architecture/current-api.md`
 
 ## Notes For Future Agents
 

@@ -30,6 +30,7 @@ Future agents must update documentation whenever they change:
 - Working tasks: `../TODO.md`.
 - Fresh setup: `../SETUP.md`.
 - Current implemented architecture: `architecture/current-system.md`.
+- Current Rust API reference: `architecture/current-api.md`.
 - Primary backend foundation: `design/2026-05-14-clickhouse-only-storage.md`.
 - Validation plan: `users/2026-05-09-validation-plan.md`.
 - Open-source and brand policy: `product/2026-05-09-open-source-brand.md`.

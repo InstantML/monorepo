@@ -892,7 +892,7 @@ mod tests {
             organization_id: Some("org".to_string()),
             provider: "gcp".to_string(),
             region: "us-central1".to_string(),
-            ip_access_list: vec!["0.0.0.0/0".to_string()],
+            ip_access_list: vec!["136.115.243.188/32".to_string()],
             min_replica_memory_gb: 12,
             max_replica_memory_gb: 12,
             num_replicas: 1,
@@ -901,7 +901,7 @@ mod tests {
 
         assert_eq!(
             cloud_ip_access_list(&cloud),
-            vec![json!({"source": "0.0.0.0/0", "description": "InstantML API"})]
+            vec![json!({"source": "136.115.243.188/32", "description": "InstantML API"})]
         );
     }
 

@@ -29,22 +29,817 @@ pub(super) async fn metrics() -> Response {
 }
 
 pub(super) async fn openapi_json() -> Json<Value> {
+    let mut paths = serde_json::Map::new();
+    openapi_insert(
+        &mut paths,
+        "/health",
+        &[(
+            "get",
+            openapi_operation("Liveness check", None, &[], &[("200", "healthy")], true),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/healthz",
+        &[(
+            "get",
+            openapi_operation(
+                "Liveness check alias",
+                None,
+                &[],
+                &[("200", "healthy")],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/readyz",
+        &[(
+            "get",
+            openapi_operation(
+                "Readiness check for operational and metric stores",
+                None,
+                &[],
+                &[("200", "ready"), ("503", "not ready")],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/metrics",
+        &[(
+            "get",
+            openapi_operation(
+                "Prometheus text metrics",
+                None,
+                &[],
+                &[("200", "Prometheus text exposition")],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/openapi.json",
+        &[(
+            "get",
+            openapi_operation(
+                "Compact route index",
+                None,
+                &[],
+                &[("200", "OpenAPI route index")],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/auth/config",
+        &[(
+            "get",
+            openapi_operation(
+                "Frontend auth provider availability",
+                None,
+                &[],
+                &[("200", "dev and Clerk auth booleans")],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/auth/dev/google",
+        &[(
+            "post",
+            openapi_operation(
+                "Create local development Google-style browser session",
+                Some(("x-instantml-auth", "local-dev-origin")),
+                &[],
+                &[("200", "session payload and session cookie")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/auth/clerk",
+        &[(
+            "post",
+            openapi_operation(
+                "Exchange Clerk session token for InstantML browser session",
+                Some(("x-instantml-auth", "allowed-origin")),
+                &[],
+                &[("200", "session payload and session cookie")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/auth/session",
+        &[(
+            "get",
+            openapi_operation(
+                "Read current browser session",
+                None,
+                &[],
+                &[(
+                    "200",
+                    "authenticated session payload or authenticated=false",
+                )],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/auth/logout",
+        &[(
+            "post",
+            openapi_operation(
+                "Revoke current browser session and clear cookie",
+                Some(("x-instantml-auth", "allowed-origin")),
+                &[],
+                &[("200", "authenticated=false")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/users",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Bootstrap a user",
+                    Some(("x-instantml-auth", "bootstrap-token")),
+                    &[],
+                    &[("200", "user row")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List bootstrap users",
+                    Some(("x-instantml-auth", "bootstrap-token")),
+                    &[],
+                    &[("200", "user rows")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/orgs",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Bootstrap an organization",
+                    Some(("x-instantml-auth", "bootstrap-token")),
+                    &[],
+                    &[("200", "organization row")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List organizations",
+                    Some(("x-instantml-auth", "bootstrap-token")),
+                    &[],
+                    &[("200", "organization rows")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/orgs/name-availability",
+        &[(
+            "get",
+            openapi_operation(
+                "Check organization slug availability",
+                None,
+                &["name"],
+                &[("200", "availability payload")],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/orgs/{org_id}/api-keys",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Create a copy-once SDK API key",
+                    Some((
+                        "x-instantml-auth",
+                        "owner/admin session, api_keys:write API key, or bootstrap token",
+                    )),
+                    &[],
+                    &[("200", "plaintext api_key once plus public key row")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List API keys for an organization",
+                    Some((
+                        "x-instantml-auth",
+                        "owner/admin session, api_keys:write API key, or bootstrap token",
+                    )),
+                    &[],
+                    &[("200", "public API key rows")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/orgs/{org_id}/seats",
+        &[(
+            "post",
+            openapi_operation(
+                "Reserve an invited organization seat",
+                Some(("x-instantml-auth", "owner/admin browser session")),
+                &[],
+                &[("200", "membership row")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/orgs/{org_id}/api-keys/{api_key_id}/revoke",
+        &[(
+            "post",
+            openapi_operation(
+                "Revoke an API key",
+                Some((
+                    "x-instantml-auth",
+                    "owner/admin session, api_keys:write API key, or bootstrap token",
+                )),
+                &[],
+                &[("200", "revoked public API key row")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/orgs/{org_id}/service-accounts/{service_account_id}/disable",
+        &[(
+            "post",
+            openapi_operation(
+                "Disable a service account",
+                Some((
+                    "x-instantml-auth",
+                    "owner/admin session, api_keys:write API key, or bootstrap token",
+                )),
+                &[],
+                &[("200", "disabled service account row")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/projects",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Create or fetch a project by name",
+                    Some(("x-instantml-scope", "sdk:ingest")),
+                    &[],
+                    &[("200", "project row")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List projects visible to the current tenant context",
+                    None,
+                    &[],
+                    &[("200", "project rows")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/runs",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Create a run and implicitly create the project when allowed",
+                    Some(("x-instantml-scope", "sdk:ingest")),
+                    &[],
+                    &[("200", "run row")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List runs with bounded filters and offset pagination",
+                    None,
+                    &[
+                        "project",
+                        "status",
+                        "q",
+                        "sort_by",
+                        "metric_key",
+                        "limit",
+                        "offset",
+                    ],
+                    &[("200", "run summaries")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/runs/{run_id}",
+        &[
+            (
+                "get",
+                openapi_operation(
+                    "Fetch one summarized run",
+                    None,
+                    &[],
+                    &[("200", "run summary")],
+                    false,
+                ),
+            ),
+            (
+                "patch",
+                openapi_operation(
+                    "Update run status, tags, or notes",
+                    Some(("x-instantml-scope", "sdk:ingest")),
+                    &[],
+                    &[("200", "updated run row")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/runs/{run_id}/metrics",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Log scalar metrics for one run",
+                    Some(("x-instantml-scope", "sdk:ingest")),
+                    &[],
+                    &[("200", "inserted metric count")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "Read bounded scalar metric points for one run",
+                    None,
+                    &["key", "start_step", "end_step", "limit"],
+                    &[("200", "metric point rows")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/metrics/series",
+        &[(
+            "post",
+            openapi_operation(
+                "Read bounded metric series for multiple runs",
+                None,
+                &[],
+                &[("200", "series grouped by run_id")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/runs/{run_id}/logs",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Append stdout or stderr console lines",
+                    Some(("x-instantml-scope", "sdk:ingest")),
+                    &[],
+                    &[("200", "inserted log count")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "Read bounded stdout or stderr console lines",
+                    None,
+                    &["stream", "limit", "cursor", "q"],
+                    &[("200", "console log page")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/overview",
+        &[(
+            "get",
+            openapi_operation(
+                "Dashboard overview counts and selected metric best value",
+                None,
+                &["project", "status", "q", "metric_key"],
+                &[("200", "overview payload")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/runs/summary",
+        &[(
+            "get",
+            openapi_operation(
+                "Dashboard run summaries with cursor pagination and metric key catalog",
+                None,
+                &[
+                    "project",
+                    "status",
+                    "q",
+                    "sort_by",
+                    "metric_key",
+                    "limit",
+                    "offset",
+                    "cursor",
+                ],
+                &[("200", "summary page")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/runs/side-by-side",
+        &[(
+            "get",
+            openapi_operation(
+                "Compare runs by config, metadata, tags, attributes, and metric aggregates",
+                None,
+                &["run_ids", "runs", "reference_run_id", "diff_only"],
+                &[("200", "comparison rows")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/runs/{run_id}/attributes",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Create typed non-rich attributes",
+                    Some(("x-instantml-scope", "sdk:ingest")),
+                    &[],
+                    &[("200", "created attributes")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List typed attributes for a run",
+                    None,
+                    &["type", "path_prefix", "limit", "offset"],
+                    &[("200", "attribute rows")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/runs/{run_id}/objects",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Create rich table, media, or histogram objects",
+                    Some(("x-instantml-scope", "sdk:ingest")),
+                    &[],
+                    &[("200", "created object")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List rich objects for a run",
+                    None,
+                    &["kind", "key", "limit", "offset"],
+                    &[("200", "object page")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/objects/{object_id}/rows",
+        &[(
+            "get",
+            openapi_operation(
+                "Read bounded rows for a table object",
+                None,
+                &["limit", "offset"],
+                &[("200", "table object rows")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/runs/{run_id}/artifacts",
+        &[
+            (
+                "post",
+                openapi_operation(
+                    "Create artifact metadata",
+                    Some(("x-instantml-scope", "artifacts:write")),
+                    &[],
+                    &[("200", "artifact row")],
+                    false,
+                ),
+            ),
+            (
+                "get",
+                openapi_operation(
+                    "List artifacts for a run",
+                    None,
+                    &["limit"],
+                    &[("200", "artifact rows")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/runs/{run_id}/artifacts/upload",
+        &[(
+            "post",
+            openapi_operation(
+                "Upload local artifact bytes and create artifact metadata",
+                Some(("x-instantml-scope", "artifacts:write")),
+                &[],
+                &[
+                    ("200", "artifact row"),
+                    (
+                        "403",
+                        "disabled in hosted mode until object storage is configured",
+                    ),
+                ],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/artifacts/{artifact_id}/download",
+        &[(
+            "get",
+            openapi_operation(
+                "Download locally stored artifact bytes",
+                None,
+                &[],
+                &[("200", "artifact byte stream")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/export",
+        &[(
+            "get",
+            openapi_operation(
+                "Bounded JSON export of filtered tenant data",
+                Some(("x-instantml-scope", "export:read for API keys")),
+                &["project", "status", "q", "sort_by", "metric_key"],
+                &[("200", "versioned export payload")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/usage",
+        &[(
+            "get",
+            openapi_operation(
+                "Computed org usage summary",
+                Some((
+                    "x-instantml-scope",
+                    "usage:read and unrestricted org access",
+                )),
+                &[],
+                &[("200", "usage payload")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/usage/export",
+        &[(
+            "get",
+            openapi_operation(
+                "Versioned usage export",
+                Some((
+                    "x-instantml-scope",
+                    "usage:read and unrestricted org access",
+                )),
+                &[],
+                &[("200", "usage export payload")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/imports",
+        &[(
+            "get",
+            openapi_operation(
+                "List recent imports",
+                None,
+                &[],
+                &[("200", "import rows")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/imports/neptune",
+        &[(
+            "post",
+            openapi_operation(
+                "Import normalized Neptune JSON",
+                Some(("x-instantml-scope", "imports:write")),
+                &["dry_run"],
+                &[("200", "dry-run or completed import summary")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/imports/wandb",
+        &[(
+            "post",
+            openapi_operation(
+                "Import normalized W&B JSON",
+                Some(("x-instantml-scope", "imports:write")),
+                &["dry_run"],
+                &[("200", "dry-run or completed import summary")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/imports/mlflow",
+        &[(
+            "post",
+            openapi_operation(
+                "Import normalized MLflow JSON",
+                Some(("x-instantml-scope", "imports:write")),
+                &["dry_run"],
+                &[("200", "dry-run or completed import summary")],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/demo/reset",
+        &[(
+            "post",
+            openapi_operation(
+                "Reset and seed demo project data",
+                Some((
+                    "x-instantml-scope",
+                    "sdk:ingest and unrestricted org access",
+                )),
+                &[],
+                &[("200", "demo reset payload")],
+                false,
+            ),
+        )],
+    );
+
     Json(json!({
         "openapi": "3.1.0",
-        "info": { "title": "Training Observability Rust API", "version": env!("CARGO_PKG_VERSION") },
-        "paths": {
-            "/healthz": { "get": { "responses": { "200": { "description": "healthy" } } } },
-            "/readyz": { "get": { "responses": { "200": { "description": "ready" } } } },
-            "/projects": { "get": {}, "post": {} },
-            "/runs": { "get": {}, "post": {} },
-            "/runs/{run_id}/metrics": { "get": {}, "post": {} },
-            "/api/metrics/series": { "post": {} },
-            "/api/runs/{run_id}/logs": { "get": {}, "post": {} },
-            "/api/runs/{run_id}/objects": { "get": {}, "post": {} },
-            "/api/objects/{object_id}/rows": { "get": {} },
-            "/api/runs/summary": { "get": {} }
+        "info": {
+            "title": "InstantML Rust API",
+            "version": env!("CARGO_PKG_VERSION"),
+            "description": "Current Rust/ClickHouse API route index. See docs/architecture/current-api.md for inputs, query parameters, response envelopes, auth scopes, and examples."
+        },
+        "security": [
+            { "bearerApiKey": [] },
+            { "browserSession": [] }
+        ],
+        "paths": paths,
+        "components": {
+            "securitySchemes": {
+                "bearerApiKey": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "description": "InstantML SDK API key sent as Authorization: Bearer instantml_..."
+                },
+                "browserSession": {
+                    "type": "apiKey",
+                    "in": "cookie",
+                    "name": "instantml_session",
+                    "description": "HttpOnly browser session cookie issued by /api/auth/dev/google or /api/auth/clerk"
+                },
+                "bootstrapToken": {
+                    "type": "apiKey",
+                    "in": "header",
+                    "name": "X-InstantML-Bootstrap-Token",
+                    "description": "Operator-only bootstrap token for initial users, orgs, and admin key paths"
+                }
+            }
         }
     }))
+}
+
+fn openapi_insert(
+    paths: &mut serde_json::Map<String, Value>,
+    path: &str,
+    operations: &[(&str, Value)],
+) {
+    let mut path_item = serde_json::Map::new();
+    for (method, operation) in operations {
+        path_item.insert((*method).to_string(), operation.clone());
+    }
+    paths.insert(path.to_string(), Value::Object(path_item));
+}
+
+fn openapi_operation(
+    summary: &str,
+    extension: Option<(&str, &str)>,
+    query_parameters: &[&str],
+    response_specs: &[(&str, &str)],
+    public: bool,
+) -> Value {
+    let mut operation = serde_json::Map::new();
+    operation.insert("summary".to_string(), json!(summary));
+    if public {
+        operation.insert("security".to_string(), json!([]));
+    }
+    if let Some((key, value)) = extension {
+        operation.insert(key.to_string(), json!(value));
+    }
+    if !query_parameters.is_empty() {
+        let parameters = query_parameters
+            .iter()
+            .map(|name| json!({ "name": name, "in": "query" }))
+            .collect::<Vec<_>>();
+        operation.insert("x-query-parameters".to_string(), json!(parameters));
+    }
+    let mut responses = serde_json::Map::new();
+    for (status, description) in response_specs {
+        responses.insert((*status).to_string(), json!({ "description": description }));
+    }
+    operation.insert("responses".to_string(), Value::Object(responses));
+    Value::Object(operation)
 }
 
 pub(super) async fn auth_config(State(state): State<Arc<AppState>>) -> Json<Value> {
@@ -99,6 +894,7 @@ pub(super) async fn auth_clerk(
         state.config.clerk_session_max_token_age,
     )
     .await?;
+    validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
     let created = store::create_clerk_session(&state.store, principal, input).await?;
     json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
@@ -581,6 +1377,11 @@ pub(super) async fn upload_artifact(
     let ctx = context(&state, &headers, true).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
+    if !state.config.artifact_uploads_enabled {
+        return Err(AppError::forbidden(
+            "artifact byte uploads are disabled until hosted object storage is configured",
+        ));
+    }
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input =
         read_json::<UploadArtifactRequest>(&headers, bytes, state.config.max_upload_body_bytes)?;
@@ -1099,6 +1900,48 @@ fn validate_json_body(headers: &HeaderMap, bytes: &Bytes, max_bytes: usize) -> A
     Ok(())
 }
 
+fn validate_clerk_signup_allowed(
+    config: &AppConfig,
+    email: &str,
+    input: &ClerkAuthRequest,
+) -> AppResult<()> {
+    if !is_clerk_signup_request(input) {
+        return Ok(());
+    }
+    if config.signup_allowed_emails.is_empty() && config.signup_allowed_domains.is_empty() {
+        return Ok(());
+    }
+    let normalized = email.trim().to_ascii_lowercase();
+    if config
+        .signup_allowed_emails
+        .iter()
+        .any(|allowed| allowed == &normalized)
+    {
+        return Ok(());
+    }
+    let domain = normalized.split_once('@').map(|(_, domain)| domain);
+    if let Some(domain) = domain {
+        if config
+            .signup_allowed_domains
+            .iter()
+            .any(|allowed| allowed == domain)
+        {
+            return Ok(());
+        }
+    }
+    Err(AppError::forbidden(
+        "hosted signup is restricted to invited accounts",
+    ))
+}
+
+fn is_clerk_signup_request(input: &ClerkAuthRequest) -> bool {
+    input.mode.as_deref() == Some("signup")
+        || input
+            .org_name
+            .as_deref()
+            .is_some_and(|name| !name.trim().is_empty())
+}
+
 fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
@@ -1144,5 +1987,56 @@ mod tests {
         assert!(require_session_scope(&session("member", false), "sdk:ingest").is_ok());
         assert!(require_session_scope(&session("member", false), "api_keys:write").is_err());
         assert!(require_session_scope(&session("owner", false), "api_keys:write").is_ok());
+    }
+
+    #[test]
+    fn clerk_signup_allowlist_only_applies_to_signup() {
+        let mut config = test_config();
+        config.signup_allowed_emails = vec!["founder@example.com".to_string()];
+        config.signup_allowed_domains = vec!["instantml.ai".to_string()];
+        let signup = ClerkAuthRequest {
+            token: None,
+            mode: Some("signup".to_string()),
+            account_type: None,
+            org_name: Some("Acme".to_string()),
+            seat_emails: None,
+        };
+        assert!(validate_clerk_signup_allowed(&config, "founder@example.com", &signup).is_ok());
+        assert!(validate_clerk_signup_allowed(&config, "teammate@instantml.ai", &signup).is_ok());
+        assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signup).is_err());
+
+        let signin = ClerkAuthRequest {
+            token: None,
+            mode: Some("signin".to_string()),
+            account_type: None,
+            org_name: None,
+            seat_emails: None,
+        };
+        assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signin).is_ok());
+    }
+
+    fn test_config() -> AppConfig {
+        AppConfig {
+            clickhouse_url: "http://default:@127.0.0.1:8123/instantml".to_string(),
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            max_body_bytes: 1_000_000,
+            max_upload_body_bytes: 50_000_000,
+            artifact_root: ".instantml/rust-artifacts".into(),
+            bootstrap_token: String::new(),
+            auth_mode: crate::config::AuthMode::Local,
+            dev_auth_enabled: true,
+            managed_clerk_enabled: false,
+            clerk_secret_key: None,
+            clerk_api_base: "https://api.clerk.com".to_string(),
+            clerk_jwt_issuer: None,
+            clerk_session_max_token_age: std::time::Duration::from_secs(600),
+            signup_allowed_emails: Vec::new(),
+            signup_allowed_domains: Vec::new(),
+            artifact_uploads_enabled: true,
+            allowed_frontend_origins: Vec::new(),
+            request_timeout: std::time::Duration::from_secs(30),
+            log_format: crate::config::LogFormat::Pretty,
+            hosted_clickhouse: None,
+        }
     }
 }

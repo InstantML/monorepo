@@ -4,6 +4,8 @@
 .venv/
 venv/
 .env
+.env.local
+apps/web/.env.local
 node_modules/
 .next/
 apps/web/.next/
@@ -19,3 +21,4 @@ __pycache__/
 *.sqlite3-wal
 docker-compose.override.yml
 .rlobs
+.claude/
