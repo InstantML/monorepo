@@ -1,5 +1,3 @@
-use axum::http::StatusCode;
-
 use super::*;
 use crate::{
     config::{ClickHouseCloudConfig, ClickHouseProvisioner},
@@ -414,7 +412,7 @@ fn tenant_database_name(org_id: Uuid) -> String {
 }
 
 fn tenant_unavailable(message: impl Into<String>) -> AppError {
-    AppError::new(StatusCode::SERVICE_UNAVAILABLE, message)
+    AppError::warehouse_unavailable(message)
 }
 
 fn local_route(org_id: Uuid) -> TenantRouteRecord {

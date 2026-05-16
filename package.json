@@ -30,6 +30,7 @@
     "test:scale": "node tools/scale-smoke.mjs",
     "benchmark:large-runs": "node tools/rust-large-run-benchmark.mjs",
     "benchmark:hosted-demo": "node tools/hosted-demo-seed-benchmark.mjs",
+    "benchmark:cloud-run": "node tools/hosted-cloud-run-benchmark.mjs",
     "seed:hosted-scale": "node tools/hosted-tenant-scale-seed.mjs",
     "benchmark:rich-objects": "node tools/rust-rich-objects-benchmark.mjs",
     "deploy:cloud-run": "node tools/deploy-cloud-run.mjs --topology=split",

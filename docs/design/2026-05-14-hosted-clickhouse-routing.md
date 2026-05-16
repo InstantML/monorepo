@@ -200,6 +200,11 @@ The visible local/dev flow stays mostly the same:
 - On success, the API response may include a safe `provisioning` object with `status`, `mode`, and optional `service_id`, never password or endpoint secrets.
 - Onboarding still creates the SDK API key through `/api/orgs/:org_id/api-keys`.
 - Dashboard reads are unchanged and should show SDK-ingested data for the signed-in org.
+- Tenant warehouse wakeups are not control/API outages. If a routed tenant
+  ClickHouse service is stopped, idle, or still warming, tenant data routes
+  should return `503` with `code: "warehouse_unavailable"` so the frontend can
+  show a "Starting data warehouse" loading state and retry without exposing
+  ClickHouse endpoint details.
 
 If provisioning is slow, the signup route should return only after the database-mode route is ready. For cloud-service mode, the first implementation may block up to the configured timeout; background provisioning is deferred because it needs durable job state and retry semantics. API-key creation is disabled until the route is ready.
 

@@ -216,7 +216,27 @@ This command reads the local `.env`, signs in as `hello@instantml.ai`, creates o
 
 The hosted benchmark now validates and times the dashboard's critical 100,000-run query shapes: newest run pages, larger pages, name/tag/config/notes search, failed/running/finished filters, combined search+filter, selected-metric sort, project overview, and a bounded chart series. Set `INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-benchmark.json` to save the sanitized JSON result, and `INSTANTML_HOSTED_DEMO_ENFORCE=1` to fail if hosted p95 budgets are missed.
 
+Cloud Run API benchmark:
+
+```bash
+INSTANTML_API_KEY=instantml_... npm run benchmark:cloud-run
+```
+
+Use this after `seed:hosted-scale` has created the large tenant dataset. It
+measures the deployed Cloud Run data service or HTTPS router with bearer auth,
+so the measured path is client -> Cloud Run -> ClickHouse Cloud. It covers org
+and project run summaries, searches, status filters, metric sort, overview,
+single-run chart series, and batched selected-run series calls against the
+100,000+ run hosted-scale projects. Set
+`INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json`
+to save sanitized JSON output.
+
 In `cloud-service` hosted mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse service, not in the User Data database.
+
+Hosted tenant warehouse wakeups are reported as `503` errors with the stable
+JSON code `warehouse_unavailable`. Public error text stays sanitized, but the
+code lets the frontend show "Starting data warehouse" and retry instead of
+presenting the condition as a generic API outage.
 
 ## Coverage Expectations
 

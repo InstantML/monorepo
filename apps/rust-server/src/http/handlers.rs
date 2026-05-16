@@ -6,14 +6,12 @@ pub(super) async fn health() -> Json<Value> {
 
 pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json<Value>> {
     if state.config.service_plane.includes_data() && !store::ready(&state.store).await {
-        return Err(AppError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
+        return Err(AppError::service_unavailable(
             "clickhouse operational store is not ready",
         ));
     }
     if !state.config.service_plane.includes_data() && !store::control_ready(&state.store).await {
-        return Err(AppError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
+        return Err(AppError::service_unavailable(
             "clickhouse control store is not ready",
         ));
     }

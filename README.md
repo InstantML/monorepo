@@ -105,7 +105,7 @@ Training-observability roadmap first slice is implemented:
 - Side-by-side comparison, metric aggregate summaries, chart smoothing, grouped averages, x-axis mode, sorting, and saved local views.
 - Runs workspace sections, top-level add-panel drawer, line-panel editing, fullscreen inspection, movable/resizable panels, local layout persistence, selected-run-only plotting, hover tooltips, and range zoom.
 - Visible/searchable run tags and notes, with editing from Run Detail and Compare and Rust-backed indexed search over name/tags/config/notes text.
-- Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, a raw Python `Api.runs()` query helper, and a repeatable 90,000-run benchmark. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms.
+- Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, a raw Python `Api.runs()` query helper, a repeatable local 100,000-run benchmark, and a hosted Cloud Run API benchmark for the deployed Cloud Run -> ClickHouse path. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms.
 - Rich-object benchmark evidence from 2026-05-11 measured selected-run object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, and table row p95 1.9 ms for 1,000 bounded rows.
 - Keyboard workflow MVP covering quick search, shortcut help, overlay dismissal, workspace undo/redo, run selector collapse, focus handoff, and fullscreen panel traversal.
 - Tab-aware frontend data fetching so hidden Metrics, Run Detail, Compare, and artifact surfaces no longer fan out requests during every dashboard entry.
@@ -123,7 +123,7 @@ Known follow-ups before broadening the roadmap:
 - Keep frontend async loaders cancellation-safe as workflow components continue to split.
 - Validate W&B/MLflow/Neptune import and future W&B dual logging with real teams before broadening migration claims.
 - Implement real Neptune Exporter Parquet import after a dependency/schema design.
-- Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 90,000-run design-partner scale before making public hosted speed claims. The first local run-list/search/sort benchmark slice is complete, but high metric-key cardinality, Compare payloads, and workspace panel series fan-out still need dedicated gates.
+- Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 100,000+ run design-partner scale before making public hosted speed claims. The local run-list/search/sort benchmark slice is complete, and `npm run benchmark:cloud-run` is the default hosted backend signal for API calls through Cloud Run into ClickHouse Cloud. High metric-key cardinality, Compare payloads, and richer workspace panel fan-out still need dedicated gates.
 
 ## Quickstart
 
@@ -161,6 +161,7 @@ npm run test:node
 npm run test:contract:node
 npm run test:scale
 npm run benchmark:large-runs
+npm run benchmark:cloud-run -- --help
 ```
 
 Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust format/lint/unit tests, Node tests, and Python tests. The Rust service, SDK, and UI smokes still run locally because they require disposable service dependencies and are being hardened alongside the ClickHouse metric-store harness.
@@ -233,10 +234,17 @@ npm run test:rust:sdk
 npm run test:rust:ui
 ```
 
-Run the 90,000-run local benchmark:
+Run the 100,000-run local benchmark:
 
 ```bash
-INSTANTML_BENCH_RUNS=90000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
+INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
+```
+
+Run the hosted Cloud Run -> ClickHouse benchmark after `seed:hosted-scale` has
+created the large tenant dataset and `.env` points at the deployed data API:
+
+```bash
+INSTANTML_API_KEY=instantml_... npm run benchmark:cloud-run
 ```
 
 `npm run test:ui:direct` and `npm run test:contract:direct` also default to the same Rust/ClickHouse harness unless `INSTANTML_UI_SMOKE_API_BASE` or `INSTANTML_CONTRACT_BASE_URL` points them at an already-running compatible server.

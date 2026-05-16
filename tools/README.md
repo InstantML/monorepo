@@ -113,6 +113,50 @@ Useful environment variables:
 - `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`: service location. When unset, the tool infers these from the User Data ClickHouse Cloud host when possible.
 - `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`: comma-separated CIDRs allowed to query the tenant service. Required for `cloud-service` provisioning; the Cloud Run deployment uses `136.115.243.188/32`.
 
+## Hosted Cloud Run API Benchmark
+
+`hosted-cloud-run-benchmark.mjs` is the default hosted performance signal after
+the split Cloud Run deployment. It does not seed data. Instead, it expects a
+live 100,000+ run tenant, usually created by `seed:hosted-scale`, and measures
+the real path the SDK/frontend use in production:
+
+```text
+benchmark client -> Cloud Run data service or HTTPS router -> ClickHouse Cloud tenant
+```
+
+Run it from the repo root after setting an SDK API key for the tenant:
+
+```bash
+INSTANTML_API_KEY=instantml_... npm run benchmark:cloud-run
+INSTANTML_API_KEY=instantml_... \
+INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json \
+npm run benchmark:cloud-run
+```
+
+The benchmark reads `INSTANTML_DATA_API_BASE` or `INSTANTML_API_BASE` from
+`.env` by default. It rejects non-HTTPS API bases unless
+`INSTANTML_CLOUD_RUN_BENCH_ALLOW_HTTP=1` is set for a local proxy. Measured
+routes include org and project run summaries, 100-row pages, cursor page 2,
+name/tag/config/notes searches, status filters, combined search/filter,
+selected-metric sorting, org/project overview, single-run chart series, and
+batched selected-run `POST /api/metrics/series` calls. Results are sanitized to
+host-only API metadata and never include API keys, raw URLs, cookies, org IDs,
+or response bodies.
+
+Useful environment variables:
+
+- `INSTANTML_CLOUD_RUN_BENCH_API_BASE`: override the API base. Defaults to `INSTANTML_DATA_API_BASE` then `INSTANTML_API_BASE`.
+- `INSTANTML_CLOUD_RUN_BENCH_API_KEY`: override the bearer API key. Defaults to `INSTANTML_API_KEY`.
+- `INSTANTML_CLOUD_RUN_BENCH_PROJECTS`: comma-separated project names. Defaults to `INSTANTML_HOSTED_SCALE_PROJECTS` or `hosted-scale-control,hosted-scale-data`.
+- `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`: minimum runs expected across benchmark projects. Default: `100000`.
+- `INSTANTML_CLOUD_RUN_BENCH_EXPECTED_STEPS`: expected metric steps per run for chart/window choices. Default: `1000`.
+- `INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS`: selected runs for batched chart calls. Default: `8`.
+- `INSTANTML_CLOUD_RUN_BENCH_CHART_LIMIT`: per-series chart row limit. Default: `1000`.
+- `INSTANTML_CLOUD_RUN_BENCH_SAMPLES`: measured requests per endpoint. Default: `8`.
+- `INSTANTML_CLOUD_RUN_BENCH_WARMUPS`: warmup requests per endpoint before timing. Default: `2`.
+- `INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH`: optional sanitized JSON output path.
+- `INSTANTML_CLOUD_RUN_BENCH_ENFORCE=1`: exit nonzero if hosted p95 budgets fail.
+
 ## Hosted Tenant Scale Seed
 
 `hosted-tenant-scale-seed.mjs` is a guarded live cutover/load-test helper for an

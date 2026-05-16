@@ -150,6 +150,7 @@ The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
 - `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui`: run through `tools/rust-service-smoke.mjs`, which creates disposable ClickHouse state, starts Rust, runs the smoke, and cleans up.
 - `npm run test:hosted-clickhouse`: runs separate local Rust `control` and `data` service-plane processes against disposable ClickHouse User Data and tenant databases, then verifies control-only routes, data-only routes, API-key/session auth refresh, SDK ingestion, and data-plane restart replay.
 - `npm run benchmark:large-runs`: seeds operational records and metric rows into disposable ClickHouse before measuring summary/search/sort/chart endpoints.
+- `npm run benchmark:cloud-run`: measures the deployed hosted data API with bearer auth against the large hosted-scale tenant, covering Cloud Run -> ClickHouse summary/search/filter/sort/overview/chart and batched selected-run series paths.
 - `npm run dev:api:node` and `npm run test:contract:node`: explicit deprecated Node compatibility paths.
 
 ## Data Model

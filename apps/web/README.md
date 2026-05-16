@@ -126,6 +126,12 @@ combined service or set both split bases for control/data before running
 `web:dev`, `web:build`, or `web:start`. Non-loopback API origins must also be
 listed in `INSTANTML_API_ALLOWED_ORIGINS`.
 
+When the hosted API returns `code: "warehouse_unavailable"` with HTTP `503`, the
+dashboard treats the API as reachable and shows a "Starting data warehouse"
+loading state while retrying. This is the expected user-facing state when an
+org's tenant ClickHouse warehouse is waking after idle; User Data/control
+failures should remain separate operational alerts.
+
 The Playwright smoke uses the production-style build/start path.
 
 Next generates `next-env.d.ts` during `next dev`, `next build`, and `next typegen`. The file is ignored because Next 16 rewrites its route-type import between development and production builds.

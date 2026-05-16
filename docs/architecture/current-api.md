@@ -87,7 +87,10 @@ except for export reads.
 ## Common Shapes
 
 All JSON API errors use HTTP status codes and a JSON body with at least an
-`error` string. Most handlers also attach `x-request-id`.
+`error` string. Some errors also include a stable `code` string. Most handlers
+also attach `x-request-id`. Hosted tenant ClickHouse wake/start failures return
+`503` with `code: "warehouse_unavailable"` so clients can distinguish a waking
+tenant warehouse from a down control/API service.
 
 Important row shapes:
 

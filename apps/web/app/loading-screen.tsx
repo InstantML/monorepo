@@ -1,6 +1,6 @@
 import { InstantMlMark } from "./instantml-mark";
 
-export function AppLoadingScreen() {
+export function AppLoadingScreen({ detail = "Loading workspace" }: { detail?: string }) {
   return (
     <main className="app-loading-screen" aria-label="Loading InstantML">
       <div className="app-loading-card">
@@ -9,7 +9,7 @@ export function AppLoadingScreen() {
         </div>
         <div>
           <h1>InstantML</h1>
-          <p>Loading workspace</p>
+          <p>{detail}</p>
         </div>
         <div className="app-loading-bars" aria-hidden="true">
           <span />
