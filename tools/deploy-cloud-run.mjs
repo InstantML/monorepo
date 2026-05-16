@@ -96,10 +96,20 @@ for (const target of deploymentTargets()) {
 if (writeLocalEnv) {
   const publicApiBase = value("INSTANTML_PUBLIC_API_BASE")
     || (topology === "single" ? deployments[0]?.url : "");
+  const controlDeployment = deployments.find((target) => target.servicePlane === "control");
+  const dataDeployment = deployments.find((target) => target.servicePlane === "data");
   if (publicApiBase) {
     const localFrontendEnv = {
       INSTANTML_API_BASE: publicApiBase,
       INSTANTML_API_ALLOWED_ORIGINS: publicApiBase,
+    };
+    updateDotenv(envFile, localFrontendEnv);
+    updateDotenv(webEnvFile, localFrontendEnv);
+  } else if (topology === "split" && controlDeployment?.url && dataDeployment?.url) {
+    const localFrontendEnv = {
+      INSTANTML_CONTROL_API_BASE: controlDeployment.url,
+      INSTANTML_DATA_API_BASE: dataDeployment.url,
+      INSTANTML_API_ALLOWED_ORIGINS: uniqueOrigins([controlDeployment.url, dataDeployment.url]).join(","),
     };
     updateDotenv(envFile, localFrontendEnv);
     updateDotenv(webEnvFile, localFrontendEnv);
@@ -124,9 +134,9 @@ console.log(JSON.stringify({
     url,
   })),
   public_api_base: value("INSTANTML_PUBLIC_API_BASE") || (topology === "single" ? deployments[0]?.url : null),
-  local_frontend: (value("INSTANTML_PUBLIC_API_BASE") || topology === "single")
-    ? "npm run web:dev"
-    : "configure INSTANTML_PUBLIC_API_BASE after LB/router setup",
+  local_frontend: topology === "split" && !value("INSTANTML_PUBLIC_API_BASE")
+    ? "npm run web:dev (uses INSTANTML_CONTROL_API_BASE and INSTANTML_DATA_API_BASE)"
+    : "npm run web:dev",
 }, null, 2));
 
 function parseArgs(args) {
@@ -235,6 +245,10 @@ function updateDotenv(file, updates) {
     if (!seen.has(key)) next.push(`${key}=${val}`);
   }
   fs.writeFileSync(file, next.join("\n").replace(/\n*$/, "\n"));
+}
+
+function uniqueOrigins(urls) {
+  return [...new Set(urls.map((url) => new URL(url).origin))];
 }
 
 function preflightBuildContext() {
@@ -380,7 +394,7 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_SIGNUP_ALLOWED_DOMAINS: value("INSTANTML_SIGNUP_ALLOWED_DOMAINS"),
     INSTANTML_ARTIFACT_UPLOADS_ENABLED: "false",
     INSTANTML_MAX_UPLOAD_BODY_BYTES: value("INSTANTML_MAX_UPLOAD_BODY_BYTES") || "50000000",
-    INSTANTML_REQUEST_TIMEOUT_SECONDS: value("INSTANTML_REQUEST_TIMEOUT_SECONDS") || "30",
+    INSTANTML_REQUEST_TIMEOUT_SECONDS: value("INSTANTML_REQUEST_TIMEOUT_SECONDS") || "900",
     CLERK_API_BASE: value("CLERK_API_BASE") || "https://api.clerk.com",
     CLERK_JWT_ISSUER: value("CLERK_JWT_ISSUER"),
     CLICKHOUSE_CLOUD_ENDPOINT: value("CLICKHOUSE_CLOUD_ENDPOINT") || "https://api.clickhouse.cloud",

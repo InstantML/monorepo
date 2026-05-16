@@ -24,20 +24,23 @@ npm run deploy:cloud-run
 npm run deploy:cloud-run -- --help
 ```
 
-The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud service and Cloud API-key IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run with `--max-instances 1`, verifies `/health`, `/readyz`, and `/api/auth/config`, then writes the hosted API URL to `.env` and `apps/web/.env.local`.
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud service and Cloud API-key IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` so the local Next proxy can route auth/org calls to control and run/project/metric calls to data.
 
 Important environment variables:
 
 - `GCP_PROJECT`: target project, otherwise the active `gcloud` project.
 - `GCP_REGION`: deployment region. Default: `us-central1`.
-- `INSTANTML_CLOUD_RUN_SERVICE`: Cloud Run service name. Default: `instantml-rust-api`.
+- `INSTANTML_CLOUD_RUN_SERVICE`: legacy combined Cloud Run service name. Default: `instantml-rust-api`.
+- `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`: split control Cloud Run service name. Default: `instantml-control`.
+- `INSTANTML_CLOUD_RUN_DATA_SERVICE`: split data Cloud Run service name. Default: `instantml-data-<region>-a`.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated browser origins allowed for cookie-authenticated mutations. Default includes local Next and `https://instantml.ai`.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
 - `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup and requires manual ClickHouse Cloud allowlisting.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips ClickHouse Cloud access-list updates.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips ClickHouse Cloud API-key access-list updates.
+- `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation can wait for ClickHouse Cloud tenant provisioning.
 
-Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision a public Cloud Run URL. The deployed service remains the `INSTANTML_SERVICE_PLANE=combined` shape and is intentionally pinned to one instance until the hosted operational-index coordination work lands; artifact byte uploads remain disabled in hosted mode until object storage is designed.
+Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision public Cloud Run URLs. The default deployment is the split `control` plus `data` shape; the data service remains manual single-writer by default until the hosted operational-index coordination work lands. Artifact byte uploads remain disabled in hosted mode until object storage is designed.
 
 ## Import Helpers
 
@@ -104,6 +107,35 @@ Useful environment variables:
 - `INSTANTML_HOSTED_DEMO_API_BASE`: use an already-running API instead of starting a temporary Rust server. Restart that API after a direct seed before expecting the dashboard to replay the new rows.
 - `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`: service location. When unset, the tool infers these from the User Data ClickHouse Cloud host when possible.
 - `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`: comma-separated CIDRs allowed to query the tenant service. Required for `cloud-service` provisioning; the Cloud Run deployment uses `136.115.243.188/32`.
+
+## Hosted Tenant Scale Seed
+
+`hosted-tenant-scale-seed.mjs` is a guarded live cutover/load-test helper for an
+already-provisioned hosted tenant. It reads the latest ready tenant route from
+User Data, optionally verifies `INSTANTML_API_KEY` against the deployed data
+service, can truncate tenant data tables, then seeds two projects with
+100,000 total runs and 1,000 steps per run by generating metric rows inside the
+tenant ClickHouse warehouse. This avoids millions of one-step public API calls
+while preserving the deployed storage and dashboard read path.
+
+```bash
+INSTANTML_HOSTED_SCALE_SEED_ALLOW=1 \
+INSTANTML_HOSTED_SCALE_TRUNCATE=1 \
+INSTANTML_API_KEY=instantml_... \
+npm run seed:hosted-scale
+```
+
+Useful environment variables:
+
+- `INSTANTML_HOSTED_SCALE_SEED_ALLOW=1`: required confirmation because this writes to live ClickHouse Cloud.
+- `INSTANTML_HOSTED_SCALE_TRUNCATE=1`: wipe tenant `operational_records`, `metric_points`, `metric_series`, and `console_log_lines` before seeding.
+- `INSTANTML_HOSTED_SCALE_ORG_ID`: target a specific org route; otherwise the latest ready tenant route is used.
+- `INSTANTML_HOSTED_SCALE_RUNS`: total runs. Default: `100000`.
+- `INSTANTML_HOSTED_SCALE_STEPS`: metric steps per run. Default: `1000`.
+- `INSTANTML_HOSTED_SCALE_PROJECTS`: comma-separated project names. Default: `hosted-scale-control,hosted-scale-data`.
+- `INSTANTML_HOSTED_SCALE_METRIC_KEYS`: comma-separated metric keys. Defaults include `eval/return_mean`, `eval/success_rate`, training metrics, and system metrics.
+- `INSTANTML_HOSTED_SCALE_RUN_BATCH`: run batch size per server-side metric insert. Default: `500`.
+- `INSTANTML_HOSTED_SCALE_KEEP_SEED_TABLE=1`: keep the temporary ClickHouse seed table for debugging.
 
 ## Rust Rich-Object Benchmark
 

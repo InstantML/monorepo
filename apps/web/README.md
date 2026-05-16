@@ -113,7 +113,15 @@ Run against the hosted Cloud Run Rust API:
 npm run web:dev
 ```
 
-After `npm run deploy:cloud-run` succeeds, the deploy helper writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local`. Next loads that file automatically, so local frontend development no longer needs a local Rust server. If you point at a different hosted API manually, set both values to that API origin before running `web:dev`, `web:build`, or `web:start`.
+After `npm run deploy:cloud-run` succeeds, the deploy helper writes hosted API
+settings into `apps/web/.env.local`. Single-service deploys write
+`INSTANTML_API_BASE`; split control/data deploys write
+`INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE`. Next loads that file
+automatically, so local frontend development no longer needs a local Rust server.
+If you point at a different hosted API manually, set `INSTANTML_API_BASE` for a
+combined service or set both split bases for control/data before running
+`web:dev`, `web:build`, or `web:start`. Non-loopback API origins must also be
+listed in `INSTANTML_API_ALLOWED_ORIGINS`.
 
 The Playwright smoke uses the production-style build/start path.
 
