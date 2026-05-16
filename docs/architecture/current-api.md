@@ -25,19 +25,46 @@ Local default:
 http://127.0.0.1:8000
 ```
 
-Internal hosted Cloud Run:
+Hosted Cloud Run direct services:
 
 ```text
-https://instantml-rust-api-hfv667633q-uc.a.run.app
+https://instantml-control-<hash>-uc.a.run.app
+https://instantml-data-us-central1-a-<hash>-uc.a.run.app
+```
+
+Hosted public router, when DNS and the managed HTTPS load balancer are
+configured:
+
+```text
+https://api.instantml.ai
 ```
 
 The local Next app should normally call the Rust API through same-origin Next
-rewrites. After `npm run deploy:cloud-run`, `apps/web/.env.local` receives:
+rewrites. After a direct split `npm run deploy:cloud-run`,
+`apps/web/.env.local` receives:
 
 ```text
-INSTANTML_API_BASE=https://instantml-rust-api-hfv667633q-uc.a.run.app
-INSTANTML_API_ALLOWED_ORIGINS=https://instantml-rust-api-hfv667633q-uc.a.run.app
+INSTANTML_CONTROL_API_BASE=https://instantml-control-<hash>-uc.a.run.app
+INSTANTML_DATA_API_BASE=https://instantml-data-us-central1-a-<hash>-uc.a.run.app
+INSTANTML_API_ALLOWED_ORIGINS=https://instantml-control-<hash>-uc.a.run.app,https://instantml-data-us-central1-a-<hash>-uc.a.run.app
 ```
+
+When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and
+`INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper writes
+`INSTANTML_API_BASE`, `INSTANTML_CONTROL_API_BASE`, and
+`INSTANTML_DATA_API_BASE` to the same `https://<api-domain>` value.
+
+The current public client contract is one stable API base URL. This
+multi-instance first slice does not expose public data-plane cell URLs and does
+not redirect SDK or browser requests to a cell. Any future direct-to-cell or
+redirect behavior must preserve bearer auth, session/cookie rules,
+`Idempotency-Key`, request bodies, and project-scoped/demo authorization.
+
+For local split-service verification, the Rust binary also supports
+`INSTANTML_SERVICE_PLANE=control` and `INSTANTML_SERVICE_PLANE=data`. The
+control role exposes platform, auth/session, user/org, seat, API-key, and
+service-account routes. The data role exposes platform and tenant product
+routes. `combined` remains the default and the current deployed shape.
 
 ## Auth Model
 
@@ -60,7 +87,10 @@ except for export reads.
 ## Common Shapes
 
 All JSON API errors use HTTP status codes and a JSON body with at least an
-`error` string. Most handlers also attach `x-request-id`.
+`error` string. Some errors also include a stable `code` string. Most handlers
+also attach `x-request-id`. Hosted tenant ClickHouse wake/start failures return
+`503` with `code: "warehouse_unavailable"` so clients can distinguish a waking
+tenant warehouse from a down control/API service.
 
 Important row shapes:
 
@@ -122,20 +152,23 @@ Validation limits that affect callers:
 | `GET` | `/healthz` | none | none | Same as `/health` |
 | `GET` | `/readyz` | none | none | `{ "status": "ok" }` when operational and metric ClickHouse stores are reachable |
 | `GET` | `/metrics` | none | none | Prometheus text metrics |
-| `GET` | `/openapi.json` | none | none | Compact OpenAPI 3.1 route index |
+| `GET` | `/openapi.json` | none | none | Compact role-aware OpenAPI 3.1 route index with `x-instantml-service-plane` |
 
 ## Auth And Session
 
 ### `GET /api/auth/config`
 
-Returns provider availability for the frontend.
+Returns provider availability for the frontend on the current service-plane
+role. Data-plane-only services return auth providers as disabled because they do
+not expose session exchange routes.
 
 Output:
 
 ```json
 {
   "dev_auth_enabled": false,
-  "managed_clerk_enabled": true
+  "managed_clerk_enabled": true,
+  "service_plane": "combined"
 }
 ```
 

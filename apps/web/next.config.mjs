@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadRootEnv();
 /** @type {import('next').NextConfig} */
-const apiBase = resolveApiBase();
+const apiBases = resolveApiBases();
 
 function loadRootEnv() {
   const envPath = path.resolve(__dirname, "../..", ".env");
@@ -24,20 +24,31 @@ function loadRootEnv() {
   }
 }
 
-function resolveApiBase() {
+function resolveApiBases() {
   if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_INSTANTML_API_BASE && !process.env.INSTANTML_API_BASE) {
     throw new Error("Use server-only INSTANTML_API_BASE for production rewrites.");
   }
-  const rawBase = process.env.INSTANTML_API_BASE ?? process.env.NEXT_PUBLIC_INSTANTML_API_BASE ?? "http://127.0.0.1:8000";
+  const rawDefault = process.env.INSTANTML_API_BASE ?? process.env.NEXT_PUBLIC_INSTANTML_API_BASE ?? "http://127.0.0.1:8000";
+  const rawControl = process.env.INSTANTML_CONTROL_API_BASE;
+  const rawData = process.env.INSTANTML_DATA_API_BASE;
+  const splitDefault = rawControl && rawData ? rawControl : rawDefault;
+  return {
+    default: resolveApiBase("INSTANTML_API_BASE", splitDefault),
+    control: resolveApiBase("INSTANTML_CONTROL_API_BASE", rawControl ?? rawDefault),
+    data: resolveApiBase("INSTANTML_DATA_API_BASE", rawData ?? rawDefault),
+  };
+}
+
+function resolveApiBase(name, rawBase) {
   const url = new URL(rawBase);
-  if (!["http:", "https:"].includes(url.protocol)) throw new Error("INSTANTML_API_BASE must be an http(s) URL.");
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error(`${name} must be an http(s) URL.`);
   const allowedOrigins = (process.env.INSTANTML_API_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
   const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
   if (allowedOrigins.length && !allowedOrigins.includes(url.origin)) {
-    throw new Error(`INSTANTML_API_BASE origin ${url.origin} is not in INSTANTML_API_ALLOWED_ORIGINS.`);
+    throw new Error(`${name} origin ${url.origin} is not in INSTANTML_API_ALLOWED_ORIGINS.`);
   }
   if (process.env.NODE_ENV === "production" && !allowedOrigins.length && !loopback) {
     throw new Error("Set INSTANTML_API_ALLOWED_ORIGINS for production API rewrites.");
@@ -62,10 +73,15 @@ const nextConfig = {
   },
   async rewrites() {
     return [
-      { source: "/api/:path*", destination: `${apiBase}/api/:path*` },
-      { source: "/runs/:path*", destination: `${apiBase}/runs/:path*` },
-      { source: "/projects", destination: `${apiBase}/projects` },
-      { source: "/health", destination: `${apiBase}/health` },
+      { source: "/api/auth/:path*", destination: `${apiBases.control}/api/auth/:path*` },
+      { source: "/api/users", destination: `${apiBases.control}/api/users` },
+      { source: "/api/users/:path*", destination: `${apiBases.control}/api/users/:path*` },
+      { source: "/api/orgs", destination: `${apiBases.control}/api/orgs` },
+      { source: "/api/orgs/:path*", destination: `${apiBases.control}/api/orgs/:path*` },
+      { source: "/api/:path*", destination: `${apiBases.data}/api/:path*` },
+      { source: "/runs/:path*", destination: `${apiBases.data}/runs/:path*` },
+      { source: "/projects", destination: `${apiBases.data}/projects` },
+      { source: "/health", destination: `${apiBases.default}/health` },
     ];
   },
   async headers() {

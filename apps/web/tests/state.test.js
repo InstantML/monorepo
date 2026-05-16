@@ -295,8 +295,9 @@ test("api client handles query strings and malformed responses", async () => {
   assert.equal(queryString({ a: "" }), "");
   assert.equal(isAbortError({ name: "AbortError" }), true);
   assert.equal(isAbortError(new Error("plain")), false);
-  const apiError = new ApiError("Safe message.", { requestId: "req_test", status: 403 });
+  const apiError = new ApiError("Safe message.", { code: "forbidden", requestId: "req_test", status: 403 });
   assert.equal(apiError.status, 403);
+  assert.equal(apiError.code, "forbidden");
   assert.equal(apiError.requestId, "req_test");
   assert.match(apiError.message, /req_test/);
   const originalFetch = globalThis.fetch;
@@ -323,6 +324,14 @@ test("api client handles query strings and malformed responses", async () => {
   await assert.rejects(() => new ApiClient().get("/html-error"), /Server is unavailable/);
   globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "validation_error", request_id: "req_1" }) });
   await assert.rejects(() => new ApiClient().get("/bad-request"), /Request was invalid.+req_1/);
+  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ code: "warehouse_unavailable" }) });
+  await assert.rejects(async () => {
+    await new ApiClient().get("/warehouse");
+  }, (error) => error instanceof ApiError
+    && error.code === "warehouse_unavailable"
+    && /Starting data warehouse/.test(error.message));
+  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ code: "service_unavailable" }) });
+  await assert.rejects(() => new ApiClient().get("/starting"), /InstantML API is starting/);
   globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
   await assert.rejects(() => new ApiClient().get("/auth"), /Sign in required/);
   globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({ error: "internal secret" }) });

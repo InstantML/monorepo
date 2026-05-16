@@ -23,49 +23,64 @@ pub async fn log_console_logs(
     let stream = validate_console_stream(input.stream.as_deref())?;
     let now = Utc::now();
     let rows = validate_console_log_inputs(ctx.org_id, run_id, &stream, input.lines, now)?;
-    let request_hash = hash_idempotency(run_id, &raw);
+    let request_hash = hash_idempotency(run_id, &raw)?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     if let Some(key) = idempotency_key {
-        let mut data = store.data.lock().await;
-        if let Some(existing) = data
-            .idempotency
-            .get(&(ctx.org_id, key.clone()))
-            .filter(|record| record.expires_at > Utc::now())
-        {
-            if existing.request_hash == request_hash {
-                return existing
-                    .response_json
-                    .get("inserted")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize)
-                    .ok_or_else(|| AppError::internal("stored idempotency response is invalid"));
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            {
+                let data = store.data.lock().await;
+                if let Some(existing) = data
+                    .idempotency
+                    .get(&(ctx.org_id, key.clone()))
+                    .filter(|record| record.expires_at > Utc::now())
+                {
+                    if existing.request_hash == request_hash {
+                        return existing
+                            .response_json
+                            .get("inserted")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize)
+                            .ok_or_else(|| {
+                                AppError::internal("stored idempotency response is invalid")
+                            });
+                    }
+                    return Err(AppError::conflict(
+                        "idempotency key was already used with a different request body",
+                    ));
+                }
+                let run = fetch_run_in_data(&data, ctx, run_id)?;
+                ensure_run_access_in_data(ctx, &run)?;
             }
-            return Err(AppError::conflict(
-                "idempotency key was already used with a different request body",
-            ));
+            metric_store.insert_console_logs(&rows).await?;
+            let record = IdempotencyRecord {
+                org_id: ctx.org_id,
+                key: key.clone(),
+                request_hash,
+                response_json: json!({ "inserted": rows.len() }),
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            };
+            store
+                .persist_locked("idempotency", ctx.org_id, &key, &record)
+                .await?;
+            store
+                .data
+                .lock()
+                .await
+                .idempotency
+                .insert((ctx.org_id, key.clone()), record);
+            Ok(rows.len())
         }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
+    {
+        let data = store.data.lock().await;
         let run = fetch_run_in_data(&data, ctx, run_id)?;
         ensure_run_access_in_data(ctx, &run)?;
-        metric_store.insert_console_logs(&rows).await?;
-        let record = IdempotencyRecord {
-            org_id: ctx.org_id,
-            key: key.clone(),
-            request_hash,
-            response_json: json!({ "inserted": rows.len() }),
-            expires_at: Utc::now() + ChronoDuration::days(7),
-        };
-        store
-            .persist_locked("idempotency", ctx.org_id, &key, &record)
-            .await?;
-        data.idempotency.insert((ctx.org_id, key), record);
-    } else {
-        {
-            let data = store.data.lock().await;
-            let run = fetch_run_in_data(&data, ctx, run_id)?;
-            ensure_run_access_in_data(ctx, &run)?;
-        }
-        metric_store.insert_console_logs(&rows).await?;
     }
+    metric_store.insert_console_logs(&rows).await?;
     Ok(rows.len())
 }
 

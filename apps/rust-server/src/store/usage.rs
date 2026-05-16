@@ -3,14 +3,8 @@ use super::*;
 pub async fn usage_summary(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-    let metric_points = metric_store
-        .count_points_for_org(ctx.org_id)
-        .await
-        .unwrap_or(0);
-    let metric_series = metric_store
-        .count_series_for_org(ctx.org_id)
-        .await
-        .unwrap_or(0);
+    let metric_points = metric_store.count_points_for_org(ctx.org_id).await?;
+    let metric_series = metric_store.count_series_for_org(ctx.org_id).await?;
     let data = store.data.lock().await;
     let org = data
         .organizations

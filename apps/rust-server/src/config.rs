@@ -18,6 +18,7 @@ impl AuthMode {
 pub struct AppConfig {
     pub clickhouse_url: String,
     pub bind_addr: SocketAddr,
+    pub service_plane: ServicePlaneRole,
     pub max_body_bytes: usize,
     pub max_upload_body_bytes: usize,
     pub artifact_root: PathBuf,
@@ -42,6 +43,39 @@ pub struct AppConfig {
 pub enum LogFormat {
     Pretty,
     Json,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServicePlaneRole {
+    Combined,
+    Control,
+    Data,
+}
+
+impl ServicePlaneRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Combined => "combined",
+            Self::Control => "control",
+            Self::Data => "data",
+        }
+    }
+
+    pub fn includes_control(self) -> bool {
+        matches!(self, Self::Combined | Self::Control)
+    }
+
+    pub fn includes_data(self) -> bool {
+        matches!(self, Self::Combined | Self::Data)
+    }
+
+    pub fn refreshes_control_before_auth(self) -> bool {
+        matches!(self, Self::Data)
+    }
+
+    fn requires_hosted_clickhouse(self) -> bool {
+        matches!(self, Self::Control | Self::Data)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -80,6 +114,12 @@ impl AppConfig {
         let mut clickhouse_url =
             env_string("CLICKHOUSE_URL", "http://default:@127.0.0.1:8123/instantml");
         let hosted_clickhouse = hosted_clickhouse_config(&clickhouse_url)?;
+        let service_plane = service_plane_role()?;
+        if service_plane.requires_hosted_clickhouse() && hosted_clickhouse.is_none() {
+            return Err(AppError::config(
+                "INSTANTML_SERVICE_PLANE=control or data requires INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true",
+            ));
+        }
         if env::var("CLICKHOUSE_URL").is_err() {
             if let Some(hosted) = &hosted_clickhouse {
                 clickhouse_url = hosted.tenant_base_url.clone();
@@ -128,6 +168,7 @@ impl AppConfig {
         Ok(Self {
             clickhouse_url,
             bind_addr,
+            service_plane,
             max_body_bytes: env_usize("INSTANTML_MAX_BODY_BYTES", 1_000_000)?,
             max_upload_body_bytes: env_usize("INSTANTML_MAX_UPLOAD_BODY_BYTES", 50_000_000)?,
             artifact_root: PathBuf::from(env_string(
@@ -168,6 +209,26 @@ impl AppConfig {
             log_format,
             hosted_clickhouse,
         })
+    }
+}
+
+fn service_plane_role() -> AppResult<ServicePlaneRole> {
+    let raw = env::var("INSTANTML_SERVICE_PLANE")
+        .or_else(|_| env::var("INSTANTML_SERVICE_PLANE_ROLE"))
+        .unwrap_or_else(|_| "combined".to_string());
+    parse_service_plane_role(&raw)
+}
+
+fn parse_service_plane_role(raw: &str) -> AppResult<ServicePlaneRole> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | "combined" | "all" | "single" | "single-process" | "single_process" => {
+            Ok(ServicePlaneRole::Combined)
+        }
+        "control" | "control-plane" | "control_plane" => Ok(ServicePlaneRole::Control),
+        "data" | "data-plane" | "data_plane" => Ok(ServicePlaneRole::Data),
+        _ => Err(AppError::config(
+            "INSTANTML_SERVICE_PLANE must be combined, control, or data",
+        )),
     }
 }
 
@@ -389,5 +450,22 @@ mod tests {
             vec!["10.0.0.1/32".to_string(), "0.0.0.0/0".to_string()]
         );
         assert!(split_env_string_list(" , ").is_empty());
+    }
+
+    #[test]
+    fn service_plane_role_accepts_stable_aliases() {
+        assert_eq!(
+            parse_service_plane_role("combined").unwrap(),
+            ServicePlaneRole::Combined
+        );
+        assert_eq!(
+            parse_service_plane_role("control-plane").unwrap(),
+            ServicePlaneRole::Control
+        );
+        assert_eq!(
+            parse_service_plane_role("data_plane").unwrap(),
+            ServicePlaneRole::Data
+        );
+        assert!(parse_service_plane_role("proxy").is_err());
     }
 }

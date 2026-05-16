@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use instantml_rust_server::{
-    config::{AppConfig, ClickHouseProvisioner},
+    config::{AppConfig, ClickHouseProvisioner, ServicePlaneRole},
     control_store::ControlStore,
     http::AppState,
     metric_store, store, telemetry,
@@ -99,6 +99,9 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
 }
 
 fn should_migrate_primary_metric_store(config: &AppConfig) -> bool {
+    if matches!(config.service_plane, ServicePlaneRole::Control) {
+        return false;
+    }
     !matches!(
         config
             .hosted_clickhouse
@@ -133,6 +136,6 @@ fn print_help() {
         "Usage: instantml-rust-server [serve|all|migrate|worker]\n\n\
          Environment: CLICKHOUSE_URL, INSTANTML_BIND_ADDR, INSTANTML_AUTH_MODE, \
          INSTANTML_BOOTSTRAP_TOKEN, INSTANTML_ARTIFACT_ROOT, INSTANTML_MAX_BODY_BYTES, INSTANTML_MAX_UPLOAD_BODY_BYTES, \
-         INSTANTML_HOSTED_CLICKHOUSE_ENABLED, CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT"
+         INSTANTML_HOSTED_CLICKHOUSE_ENABLED, INSTANTML_SERVICE_PLANE, CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT"
     );
 }

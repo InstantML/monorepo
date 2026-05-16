@@ -27,6 +27,8 @@ Current implemented design sequence:
 - `2026-05-14-hosted-clickhouse-query-benchmarks.md`: hosted ClickHouse demo benchmark protocol for 100,000-run dashboard query latency, response validation, budgets, and sanitized result reporting.
 - `2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, browser session authorization, and ClickHouse Cloud Mini warehouse defaults.
 - `2026-05-16-gcp-cloud-run-rust-api.md`: internal single-instance Cloud Run deployment for the Rust API, Secret Manager, static ClickHouse egress, and local-frontend-to-hosted-API workflow.
+- `2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance control/data-plane direction, central hot-path proxy rejection, single-instance guardrails, mutation gates, deterministic operational replay, split `combined`/`control`/`data` service-plane roles, and data-plane control-record refresh before auth.
+- `2026-05-16-cloud-run-multi-instance-launch.md`: split Cloud Run launch wiring, deploy helper target model, managed HTTPS public router, Docker Compose split profile, static egress reuse, scaling defaults, unsafe multi-writer guardrails, and frontend env behavior.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
@@ -39,7 +41,7 @@ Default:    apps/web + packages/python-sdk -> apps/rust-server -> ClickHouse ope
 Deprecated: apps/web + packages/python-sdk -> apps/server -> JSON/local artifacts
 ```
 
-Future backend design docs should build on `2026-05-14-clickhouse-only-storage.md` plus the current architecture summary: `axum + tokio + ClickHouse`, ClickHouse-backed operational records and metric time series, org-scoped tenant data, hashed API keys, maintained metric summaries, bounded chart queries, local artifact storage first, and explicit compatibility checks against the deprecated Node server before route-shape changes.
+Future backend design docs should build on `2026-05-14-clickhouse-only-storage.md`, `2026-05-16-multi-instance-control-data-plane.md`, `2026-05-16-cloud-run-multi-instance-launch.md`, and the current architecture summary: `axum + tokio + ClickHouse`, ClickHouse-backed operational records and metric time series, org-scoped tenant data, hashed API keys, maintained metric summaries, bounded chart queries, local artifact storage first, split service-plane roles for hosted control/data rollout, HTTPS-only public routing, and explicit compatibility checks against the deprecated Node server before route-shape changes. Do not treat deterministic full replay, data-plane full control refresh, split Cloud Run services, Cloud Run session affinity, or Cloud Run `maxScale=1` as sufficient for shared multi-instance write correctness.
 
 Create a design doc before changing:
 

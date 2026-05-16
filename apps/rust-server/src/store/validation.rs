@@ -228,13 +228,12 @@ pub(super) fn table_summary(mut summary: Value, rows: &[Value]) -> AppResult<Val
 }
 
 pub(super) fn media_summary(mut summary: Value, artifact: &ArtifactRow) -> Value {
-    let object = summary
-        .as_object_mut()
-        .expect("validate_json_object guarantees an object");
-    object.insert("artifact_name".to_string(), json!(artifact.name));
-    object.insert("artifact_uri".to_string(), json!(artifact.uri));
-    object.insert("mime_type".to_string(), json!(artifact.mime_type));
-    object.insert("size_bytes".to_string(), json!(artifact.size_bytes));
+    if let Some(object) = summary.as_object_mut() {
+        object.insert("artifact_name".to_string(), json!(artifact.name));
+        object.insert("artifact_uri".to_string(), json!(artifact.uri));
+        object.insert("mime_type".to_string(), json!(artifact.mime_type));
+        object.insert("size_bytes".to_string(), json!(artifact.size_bytes));
+    }
     summary
 }
 
@@ -357,7 +356,7 @@ pub(super) fn validate_query_step(raw: &str, field: &str) -> AppResult<f64> {
 pub(super) fn datetime_from_micros(micros: i64) -> DateTime<Utc> {
     let secs = micros.div_euclid(1_000_000);
     let nanos = (micros.rem_euclid(1_000_000) as u32) * 1_000;
-    DateTime::<Utc>::from_timestamp(secs, nanos).expect("timestamp micros are in range")
+    DateTime::<Utc>::from_timestamp(secs, nanos).unwrap_or_else(epoch)
 }
 
 pub(super) fn run_search_text(run: &RunRow) -> String {
@@ -422,7 +421,7 @@ pub(super) fn unique_slug(data: &StoreData, base: &str) -> String {
 }
 
 pub(super) fn epoch() -> DateTime<Utc> {
-    DateTime::<Utc>::from_timestamp(0, 0).expect("epoch")
+    DateTime::<Utc>::from_timestamp(0, 0).unwrap_or_else(Utc::now)
 }
 
 pub(super) fn round4(value: f64) -> f64 {

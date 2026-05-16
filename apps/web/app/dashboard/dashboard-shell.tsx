@@ -30,7 +30,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
-import { ApiClient, isAbortError, queryString } from "../../src/api.js";
+import { ApiClient, ApiError, isAbortError, queryString } from "../../src/api.js";
 import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
@@ -130,6 +130,7 @@ const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 12;
 const ARTIFACT_PAGE_LIMIT = 100;
 const WORKSPACE_HISTORY_LIMIT = 50;
+const WAREHOUSE_RETRY_MS = 5_000;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
@@ -141,9 +142,14 @@ function boundedOptions(options: string[], activeValue: string, limit = MAX_METR
 }
 
 function messageTone(message: string): "error" | "loading" | "ok" {
+  if (/starting data warehouse|warehouse is awake/i.test(message)) return "loading";
   if (/unable|invalid|failed|unavailable|not found|access|sign in/i.test(message)) return "error";
-  if (/loading|resetting|syncing/i.test(message)) return "loading";
+  if (/loading|resetting|syncing|starting/i.test(message)) return "loading";
   return "ok";
+}
+
+function isWarehouseStartingError(error: unknown) {
+  return error instanceof ApiError && error.code === "warehouse_unavailable";
 }
 
 function quickSearchTokenMatches(haystack: string, token: string) {
@@ -213,6 +219,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const workspaceViewRef = useRef<WorkspaceView | null>(null);
   const workspaceFocusRegionRef = useRef<"runs" | "canvas">("canvas");
   const summaryTotalRef = useRef(0);
+  const warehouseRetryTimerRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
@@ -261,6 +268,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [hover, setHover] = useState<HoverPoint>(null);
   const [hoverMetricKey, setHoverMetricKey] = useState(metricKey);
   const [message, setMessage] = useState("Loading runs...");
+  const [loadingDetail, setLoadingDetail] = useState("Loading workspace");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [savedViews, setSavedViews] = useState<string[]>([]);
   const [savedViewKey, setSavedViewKey] = useState("");
@@ -587,9 +595,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const loadDashboard = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     const requestOptions = options && "signal" in options ? options : {};
     const requestId = dashboardRequestRef.current + 1;
+    if (warehouseRetryTimerRef.current) {
+      window.clearTimeout(warehouseRetryTimerRef.current);
+      warehouseRetryTimerRef.current = null;
+    }
     dashboardRequestRef.current = requestId;
     setDashboardLoading(true);
+    setLoadingDetail("Loading runs");
     setMessage("Loading runs...");
+    let keepLoadingScreen = false;
     try {
       const params = currentPageCursor
         ? { project, status, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
@@ -612,16 +626,27 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
       setMessage(runsPageMessage(nextSummary.total, pageOffset, nextSummary.runs.length));
     } catch (error) {
-      if (requestId === dashboardRequestRef.current && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load runs.");
+      if (requestId === dashboardRequestRef.current && !isAbortError(error)) {
+        const detail = error instanceof Error ? error.message : "Unable to load runs.";
+        setMessage(detail);
+        if (isWarehouseStartingError(error) && !options.signal?.aborted) {
+          setLoadingDetail("Starting data warehouse");
+          keepLoadingScreen = !initialLoadDone;
+          warehouseRetryTimerRef.current = window.setTimeout(() => {
+            warehouseRetryTimerRef.current = null;
+            if (!options.signal?.aborted) void loadDashboard();
+          }, WAREHOUSE_RETRY_MS);
+        }
+      }
     } finally {
       if (requestId === dashboardRequestRef.current) {
-        setDashboardLoading(false);
+        setDashboardLoading(keepLoadingScreen);
         pageNavigationPendingRef.current = false;
         setPageNavigationPending(false);
-        if (!options.signal?.aborted) setInitialLoadDone(true);
+        if (!keepLoadingScreen && !options.signal?.aborted) setInitialLoadDone(true);
       }
     }
-  }, [api, currentPageCursor, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
+  }, [api, currentPageCursor, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -706,6 +731,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     summaryTotalRef.current = summary.total;
   }, [summary.total]);
+
+  useEffect(() => {
+    return () => {
+      if (warehouseRetryTimerRef.current) window.clearTimeout(warehouseRetryTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     function applyRouteTab() {
@@ -1715,7 +1746,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
   const ActiveIcon = activeTabIcon;
 
-  if (!initialLoadDone) return <AppLoadingScreen />;
+  if (!initialLoadDone) return <AppLoadingScreen detail={loadingDetail} />;
   if (!dashboardAuthorized) {
     return (
       <main className="auth-page" aria-busy="false">
