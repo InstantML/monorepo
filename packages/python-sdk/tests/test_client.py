@@ -1056,14 +1056,16 @@ def test_source_metadata_handles_missing_git(monkeypatch):
 
 def test_sdk_raises_clear_error_for_http_error(api_server):
     client = Client(base_url=api_server)
+    run = client.init(project="")
     with pytest.raises(InstantMLError, match="project name"):
-        client.init(project="")
+        run.wait_for_init(timeout=2.0)
 
 
 def test_sdk_raises_clear_error_for_network_error():
     client = Client(base_url="http://127.0.0.1:9", timeout=0.01)
+    run = client.init(project="cartpole")
     with pytest.raises(InstantMLError):
-        client.init(project="cartpole")
+        run.wait_for_init(timeout=2.0)
 
 
 def test_sdk_rejects_invalid_json_response(monkeypatch):
@@ -1528,7 +1530,9 @@ def test_wrapper_constructor_edge_cases_and_client_init_options(monkeypatch, tmp
         system_metrics=True,
         system_metrics_interval=3.0,
         capture_console=True,
+        async_init=False,
     )
+    run.wait_for_init(timeout=2.0)
 
     assert run._started_interval == 3.0
     assert run._captured_console is True
@@ -1560,6 +1564,47 @@ def test_wrapper_constructor_edge_cases_and_client_init_options(monkeypatch, tmp
     assert ro.Image(object()).path is None
     assert ro.Audio(object()).path is None
     assert ro.Video(object()).path is None
+
+
+def test_async_init_ignores_optional_system_and_console_failures(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        return {"run": {"id": "run-optional"}}
+
+    def fail_start_system_metrics(self, interval):
+        calls.append(("system", interval))
+        raise RuntimeError("sampler failed")
+
+    def fail_capture_console(self):
+        calls.append(("console", None))
+        raise RuntimeError("console failed")
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "start_system_metrics", fail_start_system_metrics)
+    monkeypatch.setattr(Run, "capture_console", fail_capture_console)
+
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        source_tracking=False,
+        local_store=True,
+        local_store_dir=str(tmp_path / "async-local"),
+        system_metrics=True,
+        system_metrics_interval=4.0,
+        capture_console=True,
+    )
+
+    assert run.wait_for_init(timeout=2.0) == "run-optional"
+    assert calls == [("system", 4.0), ("console", None)]
+    assert (tmp_path / "async-local" / "store.sqlite3").exists()
+    run._local_store.close()
+
+
+def test_wait_for_init_times_out_for_pending_run():
+    run = Run(client=Client(base_url="http://example.test"), run_id="__instantml_pending__")
+
+    with pytest.raises(InstantMLError, match="did not complete"):
+        run.wait_for_init(timeout=0)
 
 
 def test_log_helpers_error_paths_and_media_roots(tmp_path):

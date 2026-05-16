@@ -1,4 +1,4 @@
-import { Activity, Box, Check, ChevronDown, CircleHelp, Columns3, Copy, CopyPlus, Database, Download, FileText, Folder, GitBranch, GripVertical, Maximize2, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Search, Server, Star, Sun, Tag, Trash2, X } from "lucide-react";
+import { Activity, Box, Check, ChevronDown, ChevronRight, CircleHelp, Columns3, Copy, CopyPlus, Database, Download, FileText, Folder, GitBranch, GripVertical, Maximize2, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Search, Server, Star, Sun, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, DragEvent, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -26,7 +26,8 @@ import {
   shortMetricName,
   shortValue,
 } from "./dashboard-models";
-import { navGroups } from "./dashboard-config";
+import { navGroups, tabs } from "./dashboard-config";
+import { savedViewLabel } from "./dashboard/state/storage-keys";
 import { InstantMlMark } from "./instantml-mark";
 import type {
   AlertRow,
@@ -563,38 +564,56 @@ export function QuickSearchModal({
 
 export function DashboardTopbar({
   activeIcon: ActiveIcon,
+  activeTab,
+  detailRunName,
   message,
   onApplySavedView,
   onLoadDemo,
   onProject,
+  onQuery,
+  onQuickSearch,
+  onRefresh,
   onSaveView,
+  onSelectTab,
   onShortcutHelp,
+  onSortBy,
   onStatus,
   onThemeToggle,
   onViewName,
   project,
   projects,
+  query,
   savedViewKey,
   savedViews,
+  sortBy,
   status,
   theme,
   tone,
   viewName,
 }: {
   activeIcon: LucideIcon;
+  activeTab: TabId;
+  detailRunName: string;
   message: string;
   onApplySavedView: (key: string) => void;
   onLoadDemo: () => void;
   onProject: (project: string) => void;
+  onQuery: (value: string) => void;
+  onQuickSearch: () => void;
+  onRefresh: () => void;
   onSaveView: () => void;
+  onSelectTab: (tabId: TabId) => void;
   onShortcutHelp: () => void;
+  onSortBy: (value: string) => void;
   onStatus: (status: string) => void;
   onThemeToggle: () => void;
   onViewName: (value: string) => void;
   project: string;
   projects: string[];
+  query: string;
   savedViewKey: string;
   savedViews: string[];
+  sortBy: string;
   status: string;
   theme: "light" | "dark";
   tone: "error" | "loading" | "ok";
@@ -602,13 +621,70 @@ export function DashboardTopbar({
 }) {
   const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
+  // Run Detail is reached *through* a run — its filters are meaningless there,
+  // so it uses the admin shell (no workbar), matching the run-detail mock.
+  const showWorkbar = activeTab !== "detail";
+  const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--topbar-height", showWorkbar ? "92px" : "48px");
+    return () => {
+      root.style.removeProperty("--topbar-height");
+    };
+  }, [showWorkbar]);
+
   return (
-    <header className="topbar">
-      <div className="topbar-main">
-        <div className="brand" aria-label="InstantML" title="InstantML">
-          <div className="brand-mark" aria-hidden="true"><InstantMlMark /></div>
+    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"}`}>
+      <div className="brandbar">
+        <a className="brand-cell" href="/dashboard/runs" aria-label="InstantML">
+          <span className="brand-mark" aria-hidden="true"><InstantMlMark /></span>
+        </a>
+        <div className="brandbar-row">
+          <span className="brand-wordmark">InstantML</span>
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            <span className="crumb">{project || "demo"}</span>
+            <span className="sep" aria-hidden="true">/</span>
+            {activeTab === "detail" ? (
+              <>
+                <a className="crumb crumb-link" href={tabToPath("runs")} onClick={(event) => { event.preventDefault(); onSelectTab("runs"); }}>Runs</a>
+                <span className="sep" aria-hidden="true">/</span>
+                <span className="crumb cur" aria-current="page" title={detailRunName || "Run Detail"}>{detailRunName || "Run Detail"}</span>
+              </>
+            ) : (
+              <span className="crumb cur" aria-current="page">{tabLabel}</span>
+            )}
+          </nav>
+          <div className="brandbar-actions">
+            <button className="ghost-kbd" type="button" onClick={onQuickSearch} aria-label="Quick search">
+              <Search size={13} /> Search <span className="kbd">⌘K</span>
+            </button>
+            <button
+              aria-label="Keyboard shortcuts"
+              className="icon-button framed"
+              onClick={onShortcutHelp}
+              title="Keyboard shortcuts"
+              type="button"
+            >
+              <CircleHelp size={15} />
+            </button>
+            <button
+              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+              aria-pressed={dark}
+              className="icon-button framed"
+              onClick={onThemeToggle}
+              title={dark ? "Light mode" : "Dark mode"}
+              type="button"
+            >
+              {dark ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+            <div className="avatar" aria-label="Account: AK">AK</div>
+          </div>
         </div>
-        <div className="toolbar topbar-controls">
+      </div>
+
+      {showWorkbar ? (
+        <div className="workbar" role="toolbar" aria-label="Run filters">
           <CustomSelect id="project-filter" label="Project" value={project} onChange={onProject} options={[{ value: "", label: "All projects" }, ...projects.map((item) => ({ value: item, label: item }))]} />
           <CustomSelect
             id="status-filter"
@@ -622,49 +698,47 @@ export function DashboardTopbar({
               { value: "failed", label: "Failed" },
             ]}
           />
-          <span className={`system-status ${tone}`}><span /> {operationalLabel}</span>
-        </div>
-        <div className="action-cluster">
-          <span className={`status-message ${tone}`} id="status-message" role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} tabIndex={-1} title={message}><ActiveIcon size={13} /> {message}</span>
-          <button id="demo-reset" type="button" className="secondary" onClick={onLoadDemo}><Download size={15} /> Reset demo</button>
-          <label className="control compact">
+          <span className="workbar-divider" aria-hidden="true" />
+          <label className="workbar-search">
+            <Search size={13} />
+            <input id="search" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="runs, tags, notes, config" aria-label="Search runs" />
+          </label>
+          <CustomSelect
+            className="compact"
+            id="sort-select"
+            label="Sort"
+            onChange={onSortBy}
+            options={[
+              { value: "created", label: "Newest" },
+              { value: "metric-latest", label: "Latest metric" },
+              { value: "metric-best", label: "Best metric" },
+              { value: "name", label: "Name" },
+              { value: "status", label: "Status" },
+              { value: "duration", label: "Duration" },
+            ]}
+            value={sortBy}
+          />
+          <span className={`system-status ${tone}`} title={message}><span /> {operationalLabel}</span>
+          <span className={`status-message ${tone}`} id="status-message" role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} tabIndex={-1} title={message}>{message}</span>
+          <div className="workbar-spacer" />
+          <button id="demo-reset" type="button" className="secondary workbar-ghost" onClick={onLoadDemo} title="Reset demo data"><Download size={14} /></button>
+          <label className="control compact workbar-name">
             Name
             <input id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
           </label>
-          <button className="primary-button" id="save-view" type="button" onClick={onSaveView}><Save size={15} /> Save view</button>
+          <button className="primary-button" id="save-view" type="button" onClick={onSaveView}><Save size={14} /> Save view</button>
           <CustomSelect
             className="compact"
             id="saved-view-select"
             label="View"
             menuAlign="right"
             onChange={onApplySavedView}
-            options={[{ value: "", label: "Unsaved" }, ...savedViews.map((key) => ({ value: key, label: key.replace("instantml:next:local:view:", "").replace("instantml:next:view:", "") }))]}
+            options={[{ value: "", label: "Unsaved" }, ...savedViews.map((key) => ({ value: key, label: savedViewLabel(key) }))]}
             value={savedViewKey}
           />
+          <button className="icon-button framed" type="button" aria-label="Refresh" onClick={onRefresh}><RefreshCw size={14} /></button>
         </div>
-        <div className="utility-icons" aria-label="Utilities">
-          <button
-            aria-label="Keyboard shortcuts"
-            className="icon-button framed"
-            onClick={onShortcutHelp}
-            title="Keyboard shortcuts"
-            type="button"
-          >
-            <CircleHelp size={15} />
-          </button>
-          <button
-            aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-            aria-pressed={dark}
-            className="icon-button framed"
-            onClick={onThemeToggle}
-            title={dark ? "Light mode" : "Dark mode"}
-            type="button"
-          >
-            {dark ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
-          <div className="avatar">AK</div>
-        </div>
-      </div>
+      ) : null}
     </header>
   );
 }
@@ -708,6 +782,8 @@ export function DashboardNav({
       aria-label="Dashboard sections"
       onMouseEnter={() => onAutoOpenChange(true)}
       onMouseLeave={() => onAutoOpenChange(false)}
+      onFocus={() => onAutoOpenChange(true)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onAutoOpenChange(false); }}
       ref={navRef}
     >
       <div className="tab-scroll">
@@ -755,16 +831,12 @@ export function RunsCommandbar({
   onMetricKey,
   onPinnedMetricFilter,
   onPinnedMetric,
-  onQuery,
   onRefresh,
-  onSortBy,
   onTableColumns,
   pinnedMetricFilter,
   pinnedMetricFilterValid,
   pinnedMetricOptions,
   pinnedMetrics,
-  query,
-  sortBy,
   tableColumns,
 }: {
   columnsOpen: boolean;
@@ -774,40 +846,16 @@ export function RunsCommandbar({
   onMetricKey: (value: string) => void;
   onPinnedMetricFilter: (value: string) => void;
   onPinnedMetric: (metric: string) => void;
-  onQuery: (value: string) => void;
   onRefresh: () => void;
-  onSortBy: (value: string) => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   pinnedMetricFilter: string;
   pinnedMetricFilterValid: boolean;
   pinnedMetricOptions: string[];
   pinnedMetrics: string[];
-  query: string;
-  sortBy: string;
   tableColumns: TableColumns;
 }) {
   return (
     <div className="runs-commandbar">
-      <label className="control search-control">
-        <span className="command-label"><Search size={14} /> Filter runs...</span>
-        <input id="search" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="runs, tags, notes, config" />
-      </label>
-      <CustomSelect
-        className="command-select"
-        id="sort-select"
-        label="Sort"
-        labelClassName="command-label"
-        onChange={onSortBy}
-        options={[
-          { value: "created", label: "Newest" },
-          { value: "metric-latest", label: "Latest metric" },
-          { value: "metric-best", label: "Best metric" },
-          { value: "name", label: "Name" },
-          { value: "status", label: "Status" },
-          { value: "duration", label: "Duration" },
-        ]}
-        value={sortBy}
-      />
       <CustomSelect
         className="command-select metric-command"
         disabled={!metricOptions.length}
@@ -888,6 +936,7 @@ export function RunsWorkspace({
   onEditPanel,
   onFullscreenPanel,
   onInspectRun,
+  onOpenRun,
   onMode,
   onMovePanel,
   onPanelSearch,
@@ -934,6 +983,7 @@ export function RunsWorkspace({
   onEditPanel: (sectionId: string, panelId: string) => void;
   onFullscreenPanel: (sectionId: string, panelId: string) => void;
   onInspectRun: (runId: string) => void;
+  onOpenRun: (runId: string) => void;
   onMode: (mode: "automatic" | "manual") => void;
   onMovePanel: (sourceSectionId: string, panelId: string, targetSectionId: string, targetIndex: number) => void;
   onPanelSearch: (value: string) => void;
@@ -1112,34 +1162,40 @@ export function RunsWorkspace({
             const visibleTags = visibleTagsForSearch(run.tags, runSearch, 3);
             const hiddenTags = run.tags.filter((tag) => !visibleTags.includes(tag));
             return (
-              <button
-                aria-label={compareLabel}
-                aria-pressed={selected}
+              <div
                 className={`workspace-run-row ${selected ? "selected" : ""}`}
                 key={run.id}
-                onClick={(event) => {
-                  if (!event.shiftKey) onInspectRun(run.id);
-                  onToggleRun(run.id, { shift: event.shiftKey });
-                }}
-                title={run.name}
-                type="button"
               >
-                <span className="workspace-eye" aria-hidden="true">
-                  <span />
-                </span>
-                <span className="workspace-run-main">
-                  <i className={`legend-dot dot-${index % 5}`} />
-                  <span>
+                <button
+                  aria-label={compareLabel}
+                  aria-pressed={selected}
+                  className="workspace-run-select"
+                  onClick={(event) => onToggleRun(run.id, { shift: event.shiftKey })}
+                  title={selected ? "Remove from comparison" : "Add to comparison"}
+                  type="button"
+                >
+                  <span className="workspace-eye" aria-hidden="true"><span /></span>
+                </button>
+                <button
+                  aria-label={`Open ${run.name}`}
+                  className="workspace-run-open"
+                  onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
+                  title={`Open ${run.name}`}
+                  type="button"
+                >
+                  <i className={`legend-dot dot-${index % 5}`} aria-hidden="true" />
+                  <span className="workspace-run-body">
                     <strong>{compactRailRunName(run.name)}</strong>
                     <small>{run.project} · {runConfigSummary(run)}</small>
                     <span className="workspace-run-tags" aria-label={`${run.name} tags`}>
                       {visibleTags.map((tag) => <b key={tag}>{tag}</b>)}
                       {hiddenTags.length ? <em title={hiddenTags.join(", ")}>+{hiddenTags.length}</em> : null}
                     </span>
-                    <small className="workspace-run-note" title={note}>{note || "No notes yet."}</small>
+                    {note ? <small className="workspace-run-note" title={note}>{note}</small> : null}
                   </span>
-                </span>
-              </button>
+                  <span className="workspace-run-open-hint" aria-hidden="true">Open <ChevronRight size={12} /></span>
+                </button>
+              </div>
             );
           }) : (
             <div className="empty compact-empty">
@@ -2383,7 +2439,7 @@ export function RunDetail({
       {!workspaceSummary ? (
         <header className="run-detail-hero">
           <div className="run-detail-title">
-            <span className="analysis-eyebrow">Selected run</span>
+            <span className="analysis-eyebrow eyebrow--accent">Selected run</span>
             <h2 title={run.name}>{run.name}</h2>
             <p>{run.project} · {durationLabel(run)} · {selectedCount ? `${selectedCount} runs selected for charts` : "not in comparison set"}</p>
           </div>

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstantML — Run Detail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .run-header {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .run-header .top {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 20px;
+  }
+  .run-header .id { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
+  .run-header .eyebrow { align-self: center; }
+  .run-header h1 {
+    font: 600 19px/1 var(--font-mono);
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .run-header .sub { font: 500 12px/1 var(--font-mono); color: var(--muted); }
+  .run-header .sub b { color: var(--text-2); font-weight: 600; }
+  .run-header .spacer { flex: 1; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 24px; padding: 0 11px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--text-2);
+    font: 600 11.5px/1 var(--font-sans);
+  }
+  .pill--finished { background: var(--surface-2); border-color: var(--line); color: var(--text-2); }
+  .pill--running { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+  .run-header .acts { display: flex; gap: 4px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 332px; gap: 16px; }
+  .col { display: grid; gap: 16px; align-content: start; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .card-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .card-head .ic { color: var(--muted); display:grid; place-items:center; }
+  .card-head .spacer { flex: 1; }
+  .card-body { padding: 16px 18px; }
+
+  .tn-name { font: 500 12px/1 var(--font-mono); color: var(--muted); margin-bottom: 10px; }
+  .tn-note {
+    font: 500 13px/1.5 var(--font-sans);
+    color: var(--text-2);
+    margin-top: 12px;
+    padding-inline-start: 12px;
+    border-inline-start: 2px solid var(--line-strong);
+  }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 8px;
+  }
+  .kpi .v { font: 700 22px/1 var(--font-sans); letter-spacing: var(--tracking-display); }
+  .kpi .v.mono { font-family: var(--font-mono); font-size: 20px; font-weight: 600; }
+
+  .timeline { display: grid; gap: 0; }
+  .tl-item {
+    display: grid; grid-template-columns: 16px 1fr auto;
+    gap: 12px; padding: 13px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .tl-item:last-child { border-bottom: 0; }
+  .tl-mark { display: grid; place-items: center; }
+  .tl-mark .d { width: 8px; height: 8px; border-radius: 999px; background: var(--accent); }
+  .tl-mark .d.dim { background: var(--faint); }
+  .tl-body .t { font: 600 12.5px/1.2 var(--font-sans); color: var(--text); }
+  .tl-body .s { font: 500 11px/1.3 var(--font-mono); color: var(--muted); margin-top: 3px; }
+  .tl-time { font: 500 11px/1.2 var(--font-mono); color: var(--muted); white-space: nowrap; align-self: center; }
+
+  .table-wrap { max-height: calc(100vh - var(--topbar-h) - 540px); min-height: 240px; overflow: auto; }
+  .table td .k { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="shell shell--admin">
+  <header class="brandbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="14" width="4" height="7" rx="1" fill="currentColor"/>
+          <rect x="10" y="9" width="4" height="12" rx="1" fill="currentColor" opacity="0.75"/>
+          <rect x="17" y="4" width="4" height="17" rx="1" fill="currentColor" opacity="0.5"/>
+          <path d="M13 2 L7 13 L11 13 L9 22 L17 9 L12 9 Z" fill="#07080c" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+    <div class="row">
+      <span class="brand-wordmark">InstantML</span>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <span class="crumb">demo</span>
+        <span class="sep" aria-hidden="true">/</span>
+        <a class="crumb" href="#">Runs</a>
+        <span class="sep" aria-hidden="true">/</span>
+        <span class="cur" aria-current="page">rl-ppo-cartpole-seed-36970</span>
+      </nav>
+      <div class="global-actions">
+        <button class="btn btn--ghost btn--xs" aria-label="Search (Command K)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg> Search <span class="kbd">⌘K</span></button>
+        <button class="btn btn--ghost btn--icon" aria-label="Toggle theme"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+        <button class="chip chip--ghost" style="height:28px;border-radius:6px;font-family:var(--font-sans);font-weight:600;" aria-label="Account: AK">AK</button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="navrail" aria-label="Primary">
+    <div class="group">
+      <a href="#" class="nav-item" aria-label="Runs"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Metrics"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Compare"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 4v16M17 4v16"/><path d="M7 8H3M21 8h-4M7 16H3M21 16h-4"/></svg></a>
+    </div>
+    <div class="group">
+      <a href="#" class="nav-item is-active" aria-current="page" aria-label="Run workspace"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Datasets"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Artifacts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21 8-9-5-9 5 9 5 9-5z"/><path d="m3 8 9 5 9-5M3 16l9 5 9-5"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Models"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Alerts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg></a>
+    </div>
+    <div class="group">
+      <a href="#" class="nav-item" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.2-1.3L14 2h-4l-.3 2.5a7 7 0 0 0-2.2 1.3l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.2 1.3L10 22h4l.3-2.5a7 7 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Integrations"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 3v6M14 3v6M6 9h12v3a6 6 0 0 1-12 0z"/><path d="M12 18v3"/></svg></a>
+      <a href="#" class="nav-item" aria-label="API"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg></a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <section class="run-header">
+      <div class="top">
+        <span class="eyebrow eyebrow--accent">Run</span>
+        <div class="id">
+          <h1>rl-ppo-cartpole-seed-36970</h1>
+          <span class="sub"><b>1,200s</b> · started <b>May 15, 00:27</b> · <b>democc446806</b> · <b>trainer-038</b></span>
+        </div>
+        <div class="spacer"></div>
+        <span class="pill pill--finished"><span class="dot dot--finished" title="Finished"></span> Finished</span>
+        <div class="acts">
+          <button class="btn btn--icon btn--xs" aria-label="Edit run"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+          <button class="btn btn--icon btn--xs" aria-label="Copy run ID"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          <button class="btn btn--xs btn--danger">Stop run</button>
+        </div>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Run sections">
+        <button class="tab is-active" role="tab" aria-selected="true">Summary</button>
+        <button class="tab" role="tab" aria-selected="false">Data <span class="count">11</span></button>
+        <button class="tab" role="tab" aria-selected="false">Logs</button>
+        <button class="tab" role="tab" aria-selected="false">Files <span class="count">3</span></button>
+        <button class="tab" role="tab" aria-selected="false">System</button>
+        <button class="tab" role="tab" aria-selected="false">Graph</button>
+      </div>
+    </section>
+
+    <div class="layout">
+      <div class="col">
+        <article class="card">
+          <div class="card-head">
+            <span class="ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.3 13.3 20.6a2 2 0 0 1-2.8 0l-7-7V4h9.5l7.6 7.6a2 2 0 0 1 0 1.7z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg></span>
+            <span class="subtitle">Tags &amp; notes</span>
+            <div class="spacer"></div>
+            <button class="btn btn--xs" aria-label="Edit tags and notes"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit</button>
+          </div>
+          <div class="card-body">
+            <div class="tn-name">rl-ppo-cartpole-seed-36970</div>
+            <div class="tags">
+              <span class="chip">demo</span>
+              <span class="chip">rl</span>
+              <span class="chip chip--accent">baseline</span>
+              <span class="chip">seed-36970</span>
+              <span class="chip">healthy</span>
+            </div>
+            <p class="tn-note">Synthetic RL run 999 — tracking reward stability, KL/entropy, and rollout speed for seed 36970 on the 2×L4 lambda-us-south pool.</p>
+          </div>
+        </article>
+
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <span class="eyebrow">4 runs selected for chart context</span>
+            <div style="flex:1"></div>
+            <span class="eyebrow eyebrow--accent">return_mean</span>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi"><span class="eyebrow">Latest return_mean</span><span class="v mono">307.79</span></div>
+            <div class="kpi"><span class="eyebrow">Best return_mean</span><span class="v mono" style="color:var(--accent)">307.79</span></div>
+            <div class="kpi"><span class="eyebrow">Metric keys</span><span class="v">11</span></div>
+            <div class="kpi"><span class="eyebrow">Artifacts</span><span class="v">3</span></div>
+          </div>
+        </div>
+
+        <article class="card">
+          <div class="card-head">
+            <span class="ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg></span>
+            <span class="subtitle">Metric summary</span>
+            <div class="spacer"></div>
+            <span class="meta">11 keys</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th scope="col">Metric</th><th scope="col" style="text-align:right">Latest</th><th scope="col" style="text-align:right">Goal</th><th scope="col" style="text-align:right">Mean</th><th scope="col" style="text-align:right">Step</th></tr></thead>
+              <tbody>
+                <tr><td><span class="k">eval/return_mean</span></td><td class="num" style="text-align:right">307.79</td><td class="num" style="text-align:right;color:var(--muted)">307.79</td><td class="num" style="text-align:right">174.92</td><td class="num" style="text-align:right">200</td></tr>
+                <tr><td><span class="k">train/loss</span></td><td class="num" style="text-align:right">0.848</td><td class="num" style="text-align:right;color:var(--muted)">0.848</td><td class="num" style="text-align:right">1.531</td><td class="num" style="text-align:right">200</td></tr>
+                <tr><td><span class="k">eval/success_rate</span></td><td class="num" style="text-align:right">0.96</td><td class="num" style="text-align:right;color:var(--muted)">0.96</td><td class="num" style="text-align:right">0.71</td><td class="num" style="text-align:right">200</td></tr>
+                <tr><td><span class="k">rollout/ep_rew_mean</span></td><td class="num" style="text-align:right">310.19</td><td class="num" style="text-align:right;color:var(--muted)">312.04</td><td class="num" style="text-align:right">188.30</td><td class="num" style="text-align:right">200</td></tr>
+                <tr><td><span class="k">agent/entropy</span></td><td class="num" style="text-align:right">0.214</td><td class="num" style="text-align:right;color:var(--muted)">0.118</td><td class="num" style="text-align:right">0.402</td><td class="num" style="text-align:right">200</td></tr>
+                <tr><td><span class="k">agent/kl</span></td><td class="num" style="text-align:right">0.018</td><td class="num" style="text-align:right;color:var(--muted)">0.012</td><td class="num" style="text-align:right">0.026</td><td class="num" style="text-align:right">200</td></tr>
+                <tr><td><span class="k">system/gpu_util</span></td><td class="num" style="text-align:right">88.2</td><td class="num" style="text-align:right;color:var(--muted)">—</td><td class="num" style="text-align:right">84.6</td><td class="num" style="text-align:right">200</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+
+      <div class="col">
+        <article class="card">
+          <div class="card-head">
+            <span class="ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+            <span class="subtitle">Timeline</span>
+          </div>
+          <div class="card-body" style="padding:6px 18px;">
+            <div class="timeline">
+              <div class="tl-item">
+                <span class="tl-mark"><span class="d"></span></span>
+                <div class="tl-body"><div class="t">Created</div><div class="s">rl-ppo-cartpole-seed-36970</div></div>
+                <span class="tl-time">May 15, 00:47</span>
+              </div>
+              <div class="tl-item">
+                <span class="tl-mark"><span class="d"></span></span>
+                <div class="tl-body"><div class="t">Started</div><div class="s">project · demo</div></div>
+                <span class="tl-time">May 15, 00:27</span>
+              </div>
+              <div class="tl-item">
+                <span class="tl-mark"><span class="d"></span></span>
+                <div class="tl-body"><div class="t">Best return_mean</div><div class="s">307.79 at step 200</div></div>
+                <span class="tl-time">May 15, 00:44</span>
+              </div>
+              <div class="tl-item">
+                <span class="tl-mark"><span class="d dim"></span></span>
+                <div class="tl-body"><div class="t">Finished</div><div class="s">stable validation metrics</div></div>
+                <span class="tl-time">May 15, 00:47</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <span class="ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span>
+            <span class="subtitle">Reproducibility</span>
+          </div>
+          <div class="card-body" style="display:grid;gap:11px;">
+            <div style="display:flex;justify-content:space-between;"><span class="meta">framework</span><span class="mono">stable-baselines3</span></div>
+            <div style="display:flex;justify-content:space-between;"><span class="meta">algo</span><span class="mono">ppo</span></div>
+            <div style="display:flex;justify-content:space-between;"><span class="meta">seed</span><span class="mono">36970</span></div>
+            <div style="display:flex;justify-content:space-between;"><span class="meta">learning_rate</span><span class="mono">3.0e-4</span></div>
+            <div class="divider" style="margin:3px 0;"></div>
+            <div style="display:flex;justify-content:space-between;"><span class="meta">gpu</span><span class="mono">2× L4 24GB</span></div>
+            <div style="display:flex;justify-content:space-between;"><span class="meta">cloud</span><span class="mono">lambda/us-south</span></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>
