@@ -99,6 +99,7 @@ pub(super) async fn auth_clerk(
         state.config.clerk_session_max_token_age,
     )
     .await?;
+    validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
     let created = store::create_clerk_session(&state.store, principal, input).await?;
     json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
@@ -581,6 +582,11 @@ pub(super) async fn upload_artifact(
     let ctx = context(&state, &headers, true).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
+    if !state.config.artifact_uploads_enabled {
+        return Err(AppError::forbidden(
+            "artifact byte uploads are disabled until hosted object storage is configured",
+        ));
+    }
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input =
         read_json::<UploadArtifactRequest>(&headers, bytes, state.config.max_upload_body_bytes)?;
@@ -1099,6 +1105,48 @@ fn validate_json_body(headers: &HeaderMap, bytes: &Bytes, max_bytes: usize) -> A
     Ok(())
 }
 
+fn validate_clerk_signup_allowed(
+    config: &AppConfig,
+    email: &str,
+    input: &ClerkAuthRequest,
+) -> AppResult<()> {
+    if !is_clerk_signup_request(input) {
+        return Ok(());
+    }
+    if config.signup_allowed_emails.is_empty() && config.signup_allowed_domains.is_empty() {
+        return Ok(());
+    }
+    let normalized = email.trim().to_ascii_lowercase();
+    if config
+        .signup_allowed_emails
+        .iter()
+        .any(|allowed| allowed == &normalized)
+    {
+        return Ok(());
+    }
+    let domain = normalized.split_once('@').map(|(_, domain)| domain);
+    if let Some(domain) = domain {
+        if config
+            .signup_allowed_domains
+            .iter()
+            .any(|allowed| allowed == domain)
+        {
+            return Ok(());
+        }
+    }
+    Err(AppError::forbidden(
+        "hosted signup is restricted to invited accounts",
+    ))
+}
+
+fn is_clerk_signup_request(input: &ClerkAuthRequest) -> bool {
+    input.mode.as_deref() == Some("signup")
+        || input
+            .org_name
+            .as_deref()
+            .is_some_and(|name| !name.trim().is_empty())
+}
+
 fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
@@ -1144,5 +1192,56 @@ mod tests {
         assert!(require_session_scope(&session("member", false), "sdk:ingest").is_ok());
         assert!(require_session_scope(&session("member", false), "api_keys:write").is_err());
         assert!(require_session_scope(&session("owner", false), "api_keys:write").is_ok());
+    }
+
+    #[test]
+    fn clerk_signup_allowlist_only_applies_to_signup() {
+        let mut config = test_config();
+        config.signup_allowed_emails = vec!["founder@example.com".to_string()];
+        config.signup_allowed_domains = vec!["instantml.ai".to_string()];
+        let signup = ClerkAuthRequest {
+            token: None,
+            mode: Some("signup".to_string()),
+            account_type: None,
+            org_name: Some("Acme".to_string()),
+            seat_emails: None,
+        };
+        assert!(validate_clerk_signup_allowed(&config, "founder@example.com", &signup).is_ok());
+        assert!(validate_clerk_signup_allowed(&config, "teammate@instantml.ai", &signup).is_ok());
+        assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signup).is_err());
+
+        let signin = ClerkAuthRequest {
+            token: None,
+            mode: Some("signin".to_string()),
+            account_type: None,
+            org_name: None,
+            seat_emails: None,
+        };
+        assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signin).is_ok());
+    }
+
+    fn test_config() -> AppConfig {
+        AppConfig {
+            clickhouse_url: "http://default:@127.0.0.1:8123/instantml".to_string(),
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            max_body_bytes: 1_000_000,
+            max_upload_body_bytes: 50_000_000,
+            artifact_root: ".instantml/rust-artifacts".into(),
+            bootstrap_token: String::new(),
+            auth_mode: crate::config::AuthMode::Local,
+            dev_auth_enabled: true,
+            managed_clerk_enabled: false,
+            clerk_secret_key: None,
+            clerk_api_base: "https://api.clerk.com".to_string(),
+            clerk_jwt_issuer: None,
+            clerk_session_max_token_age: std::time::Duration::from_secs(600),
+            signup_allowed_emails: Vec::new(),
+            signup_allowed_domains: Vec::new(),
+            artifact_uploads_enabled: true,
+            allowed_frontend_origins: Vec::new(),
+            request_timeout: std::time::Duration::from_secs(30),
+            log_format: crate::config::LogFormat::Pretty,
+            hosted_clickhouse: None,
+        }
     }
 }

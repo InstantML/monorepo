@@ -12,6 +12,7 @@ Start with:
 - `docs/architecture/current-system.md` for the implemented architecture.
 - `docs/design/` for architecture and feature design documents.
 - `docs/design/2026-05-14-clickhouse-only-storage.md` for the primary Rust/ClickHouse storage direction.
+- `docs/design/2026-05-16-gcp-cloud-run-rust-api.md` for the internal Cloud Run deployment slice.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
 ## Repository Structure
@@ -108,6 +109,7 @@ Training-observability roadmap first slice is implemented:
 - Neptune Exporter-shaped, transformed W&B, and transformed MLflow JSON importer endpoints and CLIs.
 - Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
 - Docker Compose for a one-command local Rust/ClickHouse API and artifact-storage stack.
+- Internal Cloud Run deployment for the Rust API with Secret Manager secrets, single-instance scaling, static egress to ClickHouse Cloud, and local frontend-only development against the hosted API.
 
 Known follow-ups before broadening the roadmap:
 
@@ -182,6 +184,15 @@ For faster frontend iteration:
 ```bash
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
+
+Run the local frontend against the hosted Cloud Run API:
+
+```bash
+npm run deploy:cloud-run
+npm run web:dev
+```
+
+The deploy helper writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local` after a successful deploy, so subsequent frontend sessions only need the web command. The hosted Rust API remains pinned to one Cloud Run instance until the operational-index coordination design is implemented. Hosted artifact byte uploads are disabled until object storage lands.
 
 Run the one-command local stack:
 

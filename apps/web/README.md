@@ -107,6 +107,14 @@ Fast development server:
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
+Run against the hosted Cloud Run Rust API:
+
+```bash
+npm run web:dev
+```
+
+After `npm run deploy:cloud-run` succeeds, the deploy helper writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local`. Next loads that file automatically, so local frontend development no longer needs a local Rust server. If you point at a different hosted API manually, set both values to that API origin before running `web:dev`, `web:build`, or `web:start`.
+
 The Playwright smoke uses the production-style build/start path.
 
 Next generates `next-env.d.ts` during `next dev`, `next build`, and `next typegen`. The file is ignored because Next 16 rewrites its route-type import between development and production builds.
@@ -179,6 +187,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
 - `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
 - `docs/design/2026-05-14-instantml-rescheme-and-chart-polish.md`
+- `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 
 ## Notes for Future Agents

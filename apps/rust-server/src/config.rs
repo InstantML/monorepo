@@ -29,6 +29,9 @@ pub struct AppConfig {
     pub clerk_api_base: String,
     pub clerk_jwt_issuer: Option<String>,
     pub clerk_session_max_token_age: Duration,
+    pub signup_allowed_emails: Vec<String>,
+    pub signup_allowed_domains: Vec<String>,
+    pub artifact_uploads_enabled: bool,
     pub allowed_frontend_origins: Vec<String>,
     pub request_timeout: Duration,
     pub log_format: LogFormat,
@@ -146,6 +149,19 @@ impl AppConfig {
                 "INSTANTML_CLERK_SESSION_MAX_AGE_SECONDS",
                 600,
             )?),
+            signup_allowed_emails: env_string_list("INSTANTML_SIGNUP_ALLOWED_EMAILS")
+                .unwrap_or_default()
+                .into_iter()
+                .map(|email| email.to_ascii_lowercase())
+                .collect(),
+            signup_allowed_domains: env_string_list("INSTANTML_SIGNUP_ALLOWED_DOMAINS")
+                .unwrap_or_default()
+                .into_iter()
+                .map(|domain| domain.trim_start_matches('@').to_ascii_lowercase())
+                .filter(|domain| !domain.is_empty())
+                .collect(),
+            artifact_uploads_enabled: env_bool_optional("INSTANTML_ARTIFACT_UPLOADS_ENABLED")?
+                .unwrap_or_else(|| hosted_clickhouse.is_none()),
             allowed_frontend_origins: env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS"),
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),

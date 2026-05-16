@@ -15,6 +15,29 @@ Useful overrides:
 - `INSTANTML_DEV_CH_LOG_DIR`: generated ClickHouse log path for `npm run dev:api`.
 - `INSTANTML_DEV_CH_TCP_PORT`, `INSTANTML_DEV_CH_INTERSERVER_PORT`, `INSTANTML_DEV_CH_MYSQL_PORT`: optional non-HTTP protocol ports when avoiding local collisions.
 
+## Cloud Run Deploy Helper
+
+`deploy-cloud-run.mjs` deploys the Rust API to Google Cloud Run for the internal hosted slice described in `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`.
+
+```bash
+npm run deploy:cloud-run
+npm run deploy:cloud-run -- --help
+```
+
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run with `--max-instances 1`, verifies `/health`, `/readyz`, and `/api/auth/config`, then writes the hosted API URL to `.env` and `apps/web/.env.local`.
+
+Important environment variables:
+
+- `GCP_PROJECT`: target project, otherwise the active `gcloud` project.
+- `GCP_REGION`: deployment region. Default: `us-central1`.
+- `INSTANTML_CLOUD_RUN_SERVICE`: Cloud Run service name. Default: `instantml-rust-api`.
+- `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated browser origins allowed for cookie-authenticated mutations. Default includes local Next and `https://instantml.ai`.
+- `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
+- `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup and requires manual ClickHouse Cloud allowlisting.
+- `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips ClickHouse Cloud access-list updates.
+
+Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision a public Cloud Run URL. The service is intentionally pinned to one instance until the hosted operational-index coordination work lands, and artifact byte uploads remain disabled in hosted mode until object storage is designed.
+
 ## Import Helpers
 
 `import-neptune-json.mjs`, `import-wandb-json.mjs`, and `import-mlflow-json.mjs` send representative export-shaped JSON files to the Rust import endpoints. They do not call vendor APIs or download artifact bytes.
