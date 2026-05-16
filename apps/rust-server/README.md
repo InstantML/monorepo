@@ -39,8 +39,10 @@ From the repo root:
 ```bash
 npm run dev:api
 npm run rust:fmt
+npm run rust:fmt:check
 npm run rust:lint
 npm run rust:test
+npm run rust:verify
 npm run rust:migrate
 npm run rust:serve
 npm run deploy:cloud-run
@@ -151,6 +153,14 @@ Rust unit tests:
 npm run rust:test
 ```
 
+Rust static verification:
+
+```bash
+npm run rust:fmt:check
+npm run rust:lint
+npm run rust:verify
+```
+
 Run shared smokes against Rust:
 
 ```bash
@@ -189,6 +199,8 @@ In `cloud-service` hosted mode the Rust server migrates only the User Data contr
 ## Coverage Expectations
 
 Rust first-party service logic targets 100% meaningful coverage for validation, storage orchestration, idempotency handling, auth decisions, artifact byte handling, and API compatibility. Contract, SDK, UI, and benchmark smokes are part of the required verification because the current ClickHouse-only operational index is a storage-layer change with broad route impact.
+
+Agent/contributor guidance lives in `CLAUDE.md`. Production Rust code should propagate `AppResult` instead of panicking, keep 5xx response details out of public JSON, avoid silent storage fallbacks, and preserve deterministic full User Data replay until a durable monotonic control cursor is designed.
 
 Coverage exception:
 - Uncovered area: live multi-writer freshness, write uniqueness, public cell routing/SDK redirects, and atomic metric/log idempotency.

@@ -44,7 +44,9 @@
     "web:build": "cd apps/web && ../../node_modules/.bin/next build",
     "web:start": "cd apps/web && ../../node_modules/.bin/next start --port 3000",
     "start": "npm run dev:api",
-    "start:node": "node apps/server/src/server.js"
+    "start:node": "node apps/server/src/server.js",
+    "rust:fmt:check": "cargo fmt --manifest-path apps/rust-server/Cargo.toml --all -- --check",
+    "rust:verify": "npm run rust:fmt:check && npm run rust:lint && npm run rust:test && npm run test:rust:contract && npm run test:hosted-clickhouse"
   },
   "devDependencies": {
     "@types/node": "22.19.17",

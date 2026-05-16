@@ -69,10 +69,26 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if self.status.is_server_error() {
+            tracing::error!(
+                status = self.status.as_u16(),
+                error = %self.message,
+                "request failed"
+            );
+        }
+        let public_error = if self.status.is_server_error() {
+            if self.status == StatusCode::SERVICE_UNAVAILABLE {
+                "service unavailable"
+            } else {
+                "internal server error"
+            }
+        } else {
+            &self.message
+        };
         (
             self.status,
             Json(ErrorBody {
-                error: &self.message,
+                error: public_error,
             }),
         )
             .into_response()

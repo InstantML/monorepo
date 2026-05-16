@@ -111,6 +111,7 @@ pub struct Store {
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
+    inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
 }
@@ -127,6 +128,7 @@ impl Store {
             hosted_clickhouse,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
         };
@@ -142,15 +144,19 @@ impl Store {
     }
 
     async fn rebuild(&self) -> AppResult<()> {
-        let records = if let Some(control_store) = &self.control_store {
-            operational_rows_from_control_records(control_store.load_records().await?)
+        let (data, latest_record_micros) = if let Some(control_store) = &self.control_store {
+            let records = control_store.load_records().await?;
+            let mut data = StoreData::default();
+            let stats = data.apply_control_records(records)?;
+            (data, stats.latest_record_micros)
         } else {
-            self.metric_store.load_operational_records().await?
+            let records = self.metric_store.load_operational_records().await?;
+            let mut data = StoreData::default();
+            let stats = data.apply_operational_records(records, ReplayScope::All)?;
+            (data, stats.latest_record_micros)
         };
-        let mut data = StoreData::default();
-        let stats = data.apply_operational_records(records, ReplayScope::All)?;
         *self.data.lock().await = data;
-        *self.record_clock_micros.lock().await = stats.latest_record_micros;
+        *self.record_clock_micros.lock().await = latest_record_micros;
         Ok(())
     }
 
@@ -158,11 +164,25 @@ impl Store {
         let Some(control_store) = &self.control_store else {
             return Ok(());
         };
-        let records = operational_rows_from_control_records(control_store.load_records().await?);
-        let stats = {
+        let records = control_store.load_records().await?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let (stats, changed_tenant_routes) = {
             let mut data = self.data.lock().await;
-            data.apply_operational_records(records, ReplayScope::All)?
+            let previous_routes = data.tenant_routes.clone();
+            let stats = data.apply_control_records(records)?;
+            let changed_routes = changed_tenant_routes(&previous_routes, &data.tenant_routes);
+            (stats, changed_routes)
         };
+        if !changed_tenant_routes.is_empty() {
+            let mut loaded = self.tenant_loaded.lock().await;
+            let mut stores = self.tenant_metric_stores.lock().await;
+            for org_id in &changed_tenant_routes {
+                loaded.remove(org_id);
+                stores.remove(org_id);
+            }
+        }
         let mut clock = self.record_clock_micros.lock().await;
         *clock = (*clock).max(stats.latest_record_micros);
         Ok(())
@@ -238,6 +258,23 @@ impl Store {
         *clock = next;
         datetime_from_micros(next)
     }
+
+    pub(super) async fn reserve_idempotency_key(&self, org_id: Uuid, key: &str) -> AppResult<()> {
+        let mut inflight = self.inflight_idempotency.lock().await;
+        if !inflight.insert((org_id, key.to_string())) {
+            return Err(AppError::conflict(
+                "idempotency key is already being processed",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) async fn release_idempotency_key(&self, org_id: Uuid, key: &str) {
+        self.inflight_idempotency
+            .lock()
+            .await
+            .remove(&(org_id, key.to_string()));
+    }
 }
 
 #[derive(Default)]
@@ -291,6 +328,26 @@ impl StoreData {
             if let ReplayScope::Tenant(expected_org_id) = scope {
                 validate_tenant_record_for_replay(expected_org_id, &record)?;
             }
+            stats.latest_record_micros = stats
+                .latest_record_micros
+                .max(record.created_at.timestamp_micros());
+            self.apply_record(&record.kind, record.org_id, &record.payload)?;
+        }
+        self.recompute_counters();
+        Ok(stats)
+    }
+
+    fn apply_control_records(
+        &mut self,
+        mut records: Vec<ControlRecordRow>,
+    ) -> AppResult<ReplayStats> {
+        records.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.event_id.cmp(&right.event_id))
+        });
+        let mut stats = ReplayStats::default();
+        for record in records {
             stats.latest_record_micros = stats
                 .latest_record_micros
                 .max(record.created_at.timestamp_micros());
@@ -691,26 +748,23 @@ pub async fn control_ready(store: &Store) -> bool {
     }
 }
 
-fn operational_rows_from_control_records(
-    records: Vec<ControlRecordRow>,
-) -> Vec<OperationalRecordRow> {
-    records
-        .into_iter()
-        .map(|record| OperationalRecordRow {
-            kind: record.kind,
-            org_id: record.org_id,
-            entity_id: record.entity_id,
-            payload: record.payload,
-            created_at: record.created_at,
-        })
-        .collect()
-}
-
 fn control_record_scope(kind: &str) -> &'static str {
     match kind {
         "user" | "identity" => "global",
         _ => "org",
     }
+}
+
+fn changed_tenant_routes(
+    previous: &BTreeMap<Uuid, TenantRouteRecord>,
+    current: &BTreeMap<Uuid, TenantRouteRecord>,
+) -> BTreeSet<Uuid> {
+    previous
+        .keys()
+        .chain(current.keys())
+        .filter(|org_id| previous.get(org_id) != current.get(org_id))
+        .copied()
+        .collect()
 }
 
 #[cfg(test)]
@@ -725,6 +779,25 @@ mod tests {
         created_at_micros: i64,
     ) -> OperationalRecordRow {
         OperationalRecordRow {
+            kind: kind.to_string(),
+            org_id,
+            entity_id: entity_id.into(),
+            payload: serde_json::to_string(payload).unwrap(),
+            created_at: datetime_from_micros(created_at_micros),
+        }
+    }
+
+    fn control_replay_row<T: Serialize>(
+        kind: &str,
+        org_id: Uuid,
+        entity_id: impl Into<String>,
+        event_id: Uuid,
+        payload: &T,
+        created_at_micros: i64,
+    ) -> ControlRecordRow {
+        ControlRecordRow {
+            event_id,
+            scope: "org".to_string(),
             kind: kind.to_string(),
             org_id,
             entity_id: entity_id.into(),
@@ -867,6 +940,94 @@ mod tests {
             .unwrap();
 
         assert_eq!(left.runs[&run_id].status, right.runs[&run_id].status);
+    }
+
+    #[test]
+    fn control_replay_uses_event_id_as_equal_timestamp_tiebreaker() {
+        let org_id = Uuid::from_u128(1);
+        let older = OrganizationRow {
+            id: org_id,
+            slug: "org".to_string(),
+            name: "Older".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 1,
+            created_by_user_id: None,
+            created_at: epoch(),
+        };
+        let newer = OrganizationRow {
+            name: "Newer".to_string(),
+            ..older.clone()
+        };
+        let older_event_id = Uuid::from_u128(1);
+        let newer_event_id = Uuid::from_u128(2);
+        let mut data = StoreData::default();
+
+        let stats = data
+            .apply_control_records(vec![
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    newer_event_id,
+                    &newer,
+                    10,
+                ),
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    older_event_id,
+                    &older,
+                    10,
+                ),
+            ])
+            .unwrap();
+
+        assert_eq!(data.organizations[&org_id].name, "Newer");
+        assert_eq!(stats.latest_record_micros, 10);
+    }
+
+    #[test]
+    fn changed_tenant_routes_returns_only_final_route_differences() {
+        fn test_route(org_id: Uuid, endpoint: &str) -> TenantRouteRecord {
+            TenantRouteRecord {
+                org_id,
+                status: "ready".to_string(),
+                provisioner: "database".to_string(),
+                endpoint: endpoint.to_string(),
+                database: "default".to_string(),
+                username: "default".to_string(),
+                password_secret_ref: Some("config:tenant_base_url_password".to_string()),
+                password_ciphertext: None,
+                service_id: None,
+                created_at: epoch(),
+                updated_at: epoch(),
+                error: None,
+            }
+        }
+
+        let stable_org_id = Uuid::from_u128(1);
+        let changed_org_id = Uuid::from_u128(2);
+        let new_org_id = Uuid::from_u128(3);
+        let stable = test_route(stable_org_id, "https://stable.example.com:8443");
+        let changed_before = test_route(changed_org_id, "https://old.example.com:8443");
+        let changed_after = test_route(changed_org_id, "https://new.example.com:8443");
+        let new_route = test_route(new_org_id, "https://new.example.com:8443");
+        let previous = BTreeMap::from([
+            (stable_org_id, stable.clone()),
+            (changed_org_id, changed_before),
+        ]);
+        let current = BTreeMap::from([
+            (stable_org_id, stable),
+            (changed_org_id, changed_after),
+            (new_org_id, new_route),
+        ]);
+
+        assert_eq!(
+            changed_tenant_routes(&previous, &current),
+            BTreeSet::from([changed_org_id, new_org_id])
+        );
     }
 
     #[test]

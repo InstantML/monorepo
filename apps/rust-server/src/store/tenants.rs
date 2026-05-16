@@ -12,7 +12,7 @@ const TENANT_ROUTE_PROVISIONING: &str = "provisioning";
 const TENANT_ROUTE_FAILED: &str = "failed";
 const TENANT_BASE_PASSWORD_REF: &str = "config:tenant_base_url_password";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantRouteRecord {
     pub org_id: Uuid,
     pub status: String,

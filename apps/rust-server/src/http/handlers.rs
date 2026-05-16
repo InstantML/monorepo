@@ -1673,12 +1673,14 @@ async fn context(
                 session: None,
             }
         }
-        None if session_cookie(headers).is_some() => {
-            let payload = store::authenticate_session(
-                &state.store,
-                session_cookie(headers).expect("checked session cookie"),
-            )
-            .await?;
+        None => {
+            let Some(token) = session_cookie(headers) else {
+                if state.config.auth_mode.requires_api_key() && tenant_route {
+                    return Err(AppError::unauthorized("missing bearer token"));
+                }
+                return Ok(RequestContext::local());
+            };
+            let payload = store::authenticate_session(&state.store, token).await?;
             RequestContext {
                 org_id: payload.organization.id,
                 auth: None,
@@ -1690,10 +1692,6 @@ async fn context(
                 }),
             }
         }
-        None if state.config.auth_mode.requires_api_key() && tenant_route => {
-            return Err(AppError::unauthorized("missing bearer token"));
-        }
-        None => RequestContext::local(),
     };
     if tenant_route {
         state.store.ensure_tenant_loaded(ctx.org_id).await?;

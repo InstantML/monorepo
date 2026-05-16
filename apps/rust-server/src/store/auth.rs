@@ -343,7 +343,10 @@ async fn create_verified_provider_session(
             let normalized_email = email.to_ascii_lowercase();
             let invited_user = if let Some(id) = data.users_by_email.get(&normalized_email).copied()
             {
-                data.users.get(&id).cloned().expect("indexed user")
+                data.users
+                    .get(&id)
+                    .cloned()
+                    .ok_or_else(|| AppError::internal("user email index is inconsistent"))?
             } else {
                 let invited_user = UserRow {
                     id: Uuid::new_v4(),
@@ -513,13 +516,13 @@ fn effective_api_key_scopes(data: &StoreData, record: &ApiKeyRecord) -> Vec<Stri
 
 pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthSessionPayload> {
     let token_hash = hash_secret(token);
-    let mut data = store.data.lock().await;
+    let data = store.data.lock().await;
     let session_id = data
         .sessions_by_hash
         .get(&token_hash)
         .copied()
         .ok_or_else(|| AppError::unauthorized("invalid session"))?;
-    let mut session = data
+    let session = data
         .sessions
         .get(&session_id)
         .cloned()
@@ -527,9 +530,9 @@ pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthS
     if session.row.revoked_at.is_some() || session.row.expires_at <= Utc::now() {
         return Err(AppError::unauthorized("invalid session"));
     }
-    session.row.last_seen_at = Some(Utc::now());
-    data.insert_session(session.clone());
-    session_payload_from_data(&data, session.row)
+    let mut row = session.row;
+    row.last_seen_at = Some(Utc::now());
+    session_payload_from_data(&data, row)
 }
 
 pub async fn revoke_session(store: &Store, token: &str) -> AppResult<()> {
@@ -576,7 +579,10 @@ pub async fn reserve_seat(
         return Err(AppError::conflict("organization seat limit reached"));
     }
     let invited_user = if let Some(id) = data.users_by_email.get(&email).copied() {
-        data.users.get(&id).cloned().expect("indexed user")
+        data.users
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| AppError::internal("user email index is inconsistent"))?
     } else {
         let user = UserRow {
             id: Uuid::new_v4(),
@@ -777,13 +783,13 @@ pub async fn disable_service_account(
 
 pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthContext> {
     let key_hash = hash_secret(token);
-    let mut data = store.data.lock().await;
+    let data = store.data.lock().await;
     let key_id = data
         .api_keys_by_hash
         .get(&key_hash)
         .copied()
         .ok_or_else(|| AppError::unauthorized("invalid API key"))?;
-    let mut record = data
+    let record = data
         .api_keys
         .get(&key_id)
         .cloned()
@@ -805,8 +811,6 @@ pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthC
         return Err(AppError::unauthorized("invalid API key"));
     }
     let scopes = effective_api_key_scopes(&data, &record);
-    record.row.last_used_at = Some(Utc::now());
-    data.insert_api_key(record.clone());
     Ok(AuthContext {
         org_id: record.row.org_id,
         api_key_id: record.row.id,
