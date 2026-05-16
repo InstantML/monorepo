@@ -6,6 +6,11 @@ Status: Accepted; rollout slice implemented locally through split service-plane 
 
 Owner: Codex
 
+Superseding launch note: `2026-05-16-cloud-run-multi-instance-launch.md`
+adds Docker and Cloud Run deploy wiring for the split control/data topology.
+The read/write correctness gates in this document still apply: data-plane cells
+default to one active writer until durable shared-cell coordination lands.
+
 ## Summary
 
 InstantML should not add a central application proxy that receives every SDK,

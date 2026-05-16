@@ -46,6 +46,8 @@ npm run rust:verify
 npm run rust:migrate
 npm run rust:serve
 npm run deploy:cloud-run
+npm run deploy:cloud-run:single
+npm run deploy:cloud-run:multi
 ```
 
 Binary subcommands:
@@ -61,9 +63,18 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 ## Hosted Cloud Run Deployment
 
-`npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, deploys Cloud Run with `--max-instances 1`, and verifies `/health`, `/readyz`, and `/api/auth/config`.
+`npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. It remains the backward-compatible single combined-service path. `npm run deploy:cloud-run:single` is the explicit equivalent. `npm run deploy:cloud-run:multi` builds one image and deploys split `control` and `data` Cloud Run services from that image.
 
-The first hosted slice is intentionally internal and single-instance. Keep Cloud Run at one active instance until the hosted operational-index coordination work in `docs/design/2026-05-16-multi-instance-control-data-plane.md` is implemented and verified. A Cloud Run `maxScale=1` setting reduces risk but is not a correctness mechanism under automatic scaling; future customer-facing single-writer cells should use manual scaling or an app-level write lease before relying on one writer. The helper writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
+The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`.
+
+The first split hosted launch shape is:
+
+- `instantml-control` with `INSTANTML_SERVICE_PLANE=control`, automatic scaling, and a default max of 5 instances.
+- `instantml-data-<region>-a` with `INSTANTML_SERVICE_PLANE=data`, manual scaling, and 1 active instance by default.
+
+Data-plane cells stay single-writer by default until the durable multi-writer gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are complete. A Cloud Run `maxScale=1` setting reduces risk but is not a correctness mechanism under automatic scaling; customer-facing single-writer cells should use manual scaling or an app-level write lease before relying on one writer.
+
+The single-service deploy writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`. Split deploys write local frontend env only when `INSTANTML_PUBLIC_API_BASE` points at the public load balancer, gateway, or thin router URL that fronts the control/data services.
 
 Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
 
@@ -73,7 +84,7 @@ Logical control/data-plane division is available before deployment:
 - `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, user/org, seat, API-key, service-account, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
 - `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, metrics, logs, attributes, objects, artifacts, export, usage, imports, and demo reset. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
 
-Do not deploy separate control/data Cloud Run services yet. The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division, but deployment still waits on routing, Cloud Run service shape, and the remaining multi-writer gates.
+The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
 
 ## Config
 
@@ -82,6 +93,7 @@ Environment variables:
 - `CLICKHOUSE_URL`: ClickHouse HTTP connection string of the form `http://user:pass@host:port/database`. Default: `http://default:@127.0.0.1:8123/instantml`. The named database is created if missing on startup.
 - `INSTANTML_BIND_ADDR`: API bind address. Default: `127.0.0.1:8001`.
 - `INSTANTML_SERVICE_PLANE`: `combined`, `control`, or `data`. Default: `combined`. `control` and `data` require `INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true`.
+- `INSTANTML_CELL_ID`: optional operator label for a data-plane cell. The deploy helper sets it for split data services.
 - `INSTANTML_AUTH_MODE`: `local` or `api-key`. Default: `local`.
 - `INSTANTML_BOOTSTRAP_TOKEN`: required for bootstrap routes when `INSTANTML_AUTH_MODE=api-key`.
 - `INSTANTML_ARTIFACT_ROOT`: local artifact byte root. Default: `.instantml/rust-artifacts`.
@@ -117,6 +129,10 @@ Root helper-only environment variables:
 
 - `INSTANTML_DEV_CHDATA`, `INSTANTML_DEV_CH_LOG_DIR`: generated ClickHouse state and logs for `npm run dev:api`.
 - `INSTANTML_DEV_CH_TCP_PORT`, `INSTANTML_DEV_CH_INTERSERVER_PORT`, `INSTANTML_DEV_CH_MYSQL_PORT`: optional non-HTTP ports for avoiding local collisions.
+- `INSTANTML_CLOUD_RUN_TOPOLOGY`: `single` or `split` for `tools/deploy-cloud-run.mjs`. `deploy:cloud-run:multi` passes `split`.
+- `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
+- `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Data defaults to `manual`.
+- `INSTANTML_PUBLIC_API_BASE`: public load balancer/router URL written to local frontend env after a split deploy.
 
 ## HTTP Surface
 

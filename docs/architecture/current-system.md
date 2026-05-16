@@ -8,7 +8,7 @@ Status: Current architecture summary
 
 This document summarizes the implemented system so future agents do not need to reconstruct the architecture from older sprint docs. `PRODUCT_STRATEGY.md` remains the strategic source of truth; this file describes the current technical shape for InstantML.
 
-Strategy note: the product direction is now a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The current primary backend is Rust plus ClickHouse-only storage: operational records for local/control-plane state and analytical metric tables for high-volume scalar metrics. Hosted multi-process routing is intentionally gated behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; deterministic full replay, role-specific control/data HTTP surfaces, and data-plane control-record refresh exist, but shared-cell multi-writer freshness and write uniqueness are not complete.
+Strategy note: the product direction is now a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The current primary backend is Rust plus ClickHouse-only storage: operational records for local/control-plane state and analytical metric tables for high-volume scalar metrics. Hosted multi-process routing now has launch wiring through split Cloud Run `control` and `data` services; deterministic full replay, role-specific HTTP surfaces, and data-plane control-record refresh exist, but shared-cell multi-writer freshness and write uniqueness are not complete.
 
 Architecture split:
 
@@ -85,7 +85,7 @@ Data plane -> ClickHouse org operational layer + ClickHouse metric layer
 Rust API -> S3-compatible artifact storage
 ```
 
-For the hosted path, do not add a central hot-path application proxy for all SDK/browser/metric/artifact traffic. Use a global control-plane responsibility for auth, org lookup, account state, and tenant routes, then route to data-plane cells. The Rust binary can be started as `INSTANTML_SERVICE_PLANE=combined`, `control`, or `data`; combined remains the deployed shape, while the split roles are validated locally and ready for deployment design. Start with dedicated single-active-instance customer cells when isolation is needed, and start shared multi-instance cells only after the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are closed. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
+For the hosted path, do not add a central hot-path application proxy for all SDK/browser/metric/artifact traffic. Use a global control-plane responsibility for auth, org lookup, account state, and tenant routes, then route to data-plane cells. The Rust binary can be started as `INSTANTML_SERVICE_PLANE=combined`, `control`, or `data`; the deploy helper can launch either the combined service or split control/data Cloud Run services. Start with dedicated single-active-instance customer cells when isolation is needed, and start shared multi-instance cells only after the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are closed. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
 
 Internal hosted first slice:
 
@@ -99,6 +99,20 @@ Cloud Run Rust API -> static Cloud NAT egress IP for ClickHouse service and API-
 ```
 
 This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, restricts ClickHouse Cloud services and API keys to the Cloud Run static egress IP plus explicit operator IPs, restricts hosted Clerk signup by allowlist, and disables hosted artifact byte uploads until object storage is designed.
+
+Split Cloud Run launch wiring:
+
+```text
+Public API URL / load balancer / thin router
+  -> Cloud Run instantml-control, INSTANTML_SERVICE_PLANE=control
+  -> Cloud Run instantml-data-<region>-a, INSTANTML_SERVICE_PLANE=data
+
+Both services -> same Cloud NAT static egress IP
+Both services -> ClickHouse User Data control table
+Data service  -> routed tenant ClickHouse service/database
+```
+
+The split deploy command is `npm run deploy:cloud-run:multi`. The data service defaults to manual scaling with one active instance, while the control service defaults to automatic scaling with a bounded max. A public load balancer, gateway, or thin router remains an operator-owned resource; set `INSTANTML_PUBLIC_API_BASE` when that URL exists so the deploy helper can write local frontend env files.
 
 ## Storage
 
@@ -131,7 +145,8 @@ The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
 ## Operational Commands
 
 - `npm run dev:api`: starts or reuses local ClickHouse, applies the ClickHouse schema, then serves the Rust API.
-- `npm run deploy:cloud-run`: deploys the Rust API to the internal single-instance combined Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud service and API-key allowlists when credentials are present, and writes the hosted API URL to local frontend env files. Do not use this as a multi-instance release path; Cloud Run `maxScale=1` reduces risk but the product's correctness gates live in the multi-instance design.
+- `npm run deploy:cloud-run`: deploys the Rust API to the internal single-instance combined Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud service and API-key allowlists when credentials are present, and writes the hosted API URL to local frontend env files.
+- `npm run deploy:cloud-run:multi`: builds one Rust image and deploys split control/data Cloud Run services with role-specific environment. The data service remains manual single-instance by default; use this as launch wiring, not as permission to run shared data cells with multiple active writers.
 - `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui`: run through `tools/rust-service-smoke.mjs`, which creates disposable ClickHouse state, starts Rust, runs the smoke, and cleans up.
 - `npm run test:hosted-clickhouse`: runs separate local Rust `control` and `data` service-plane processes against disposable ClickHouse User Data and tenant databases, then verifies control-only routes, data-only routes, API-key/session auth refresh, SDK ingestion, and data-plane restart replay.
 - `npm run benchmark:large-runs`: seeds operational records and metric rows into disposable ClickHouse before measuring summary/search/sort/chart endpoints.
@@ -179,12 +194,14 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-in esta
 - `docs/design/2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, and ClickHouse Cloud warehouse defaults.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`: internal single-instance Cloud Run deployment, Secret Manager, static ClickHouse egress, and local frontend-to-hosted API workflow.
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance architecture direction, central-proxy rejection, route/auth/storage gates, and deterministic replay first slice.
+- `docs/design/2026-05-16-cloud-run-multi-instance-launch.md`: Cloud Run split deploy helper, Docker Compose split profile, scaling defaults, and launch wiring.
+- `docs/architecture/multi-instance-cloud-run.md`: current split Cloud Run overview with diagrams and launch checklist.
 - `docs/architecture/auth-and-tenant-flow.md`: current human/session/API-key tenant authorization flow.
 
 ## Notes For Future Agents
 
 - Treat `apps/rust-server` as the primary backend.
-- Treat the ClickHouse operational index as local/test single-writer until the multi-instance control/data-plane gates land. The deterministic replay helper and split service-plane roles are groundwork, not permission to raise Cloud Run instance count.
+- Treat the ClickHouse operational index as local/test or data-cell single-writer until the multi-instance control/data-plane gates land. The deterministic replay helper, split service-plane roles, and split Cloud Run deployment helper are groundwork, not permission to run shared data cells with multiple active writers.
 - Preserve route-shape compatibility unless a design doc explicitly changes the contract.
 - Keep Node compatibility smokes available for deprecated route-shape checks until migration tooling no longer needs them.
 - Keep list endpoints bounded and keep metric history on dedicated series endpoints.

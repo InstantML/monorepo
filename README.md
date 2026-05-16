@@ -14,6 +14,7 @@ Start with:
 - `docs/design/` for architecture and feature design documents.
 - `docs/design/2026-05-14-clickhouse-only-storage.md` for the primary Rust/ClickHouse storage direction.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md` for the internal Cloud Run deployment slice.
+- `docs/architecture/multi-instance-cloud-run.md` for the current split Cloud Run control/data topology.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
 ## Repository Structure
@@ -52,7 +53,7 @@ Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse met
 Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 ```
 
-The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment should split a global user/control-plane ClickHouse layer from org/cell data-plane services only after the coordination/reconciliation design is implemented.
+The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment now supports both a combined single Cloud Run service and split `control`/`data` Cloud Run services. Data-plane cells remain single-writer by default until the coordination/reconciliation gates for shared multi-writer cells are implemented.
 
 Migration rule: the Node server is deprecated but remains the compatibility oracle and JSON migration source until P4 migration tooling and any remaining legacy fallback needs are retired.
 
@@ -186,14 +187,22 @@ For faster frontend iteration:
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
-Run the local frontend against the hosted Cloud Run API:
+Run the local frontend against the hosted combined Cloud Run API:
 
 ```bash
 npm run deploy:cloud-run
 npm run web:dev
 ```
 
-The deploy helper writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local` after a successful deploy, so subsequent frontend sessions only need the web command. The hosted Rust API remains pinned to one Cloud Run instance until the operational-index coordination design is implemented. Hosted artifact byte uploads are disabled until object storage lands.
+The deploy helper writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local` after a successful single-service deploy, so subsequent frontend sessions only need the web command.
+
+Deploy the split control/data Cloud Run topology:
+
+```bash
+npm run deploy:cloud-run:multi
+```
+
+The split deploy creates a control service and a data service from the same Rust image. Set `INSTANTML_PUBLIC_API_BASE` to your load balancer, gateway, or thin router URL if you want the helper to write local frontend env files. Data-plane services default to manual one-instance scaling until durable multi-writer gates land. Hosted artifact byte uploads are disabled until object storage lands.
 
 Run the one-command local stack:
 
@@ -203,6 +212,14 @@ docker compose up --build
 ```
 
 The Docker stack starts ClickHouse and the Rust API with durable ClickHouse rows, metric rows, and artifact bytes in Docker volumes. The example override enables the dev Google-style auth flow inside the container and remaps the host port to 8010 (the gitignored override file is per-machine). Without it the stack ships with secure defaults — `/signup` will render disabled buttons because the dev auth endpoint stays gated. See `SETUP.md` for the full Docker path and security notes.
+
+Run the split local container shape:
+
+```bash
+docker compose --profile split up --build instantml-control instantml-data
+```
+
+This starts `instantml-control` on host port `8001` and `instantml-data` on host port `8002` against the same ClickHouse container. It is useful for understanding service-plane wiring; `npm run test:hosted-clickhouse` remains the stronger automated split-process verification.
 
 Run Rust checks and smokes:
 

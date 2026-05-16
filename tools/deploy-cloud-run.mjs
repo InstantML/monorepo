@@ -5,13 +5,25 @@ import os from "node:os";
 import path from "node:path";
 
 const repo = process.cwd();
-if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`Usage: npm run deploy:cloud-run
+const cli = parseArgs(process.argv.slice(2));
+if (cli.help) {
+  console.log(`Usage:
+  npm run deploy:cloud-run
+  npm run deploy:cloud-run:multi
+  node tools/deploy-cloud-run.mjs --topology=single|split
 
 Environment:
   GCP_PROJECT                         Google Cloud project id.
   GCP_REGION                          Deployment region. Default: us-central1.
-  INSTANTML_CLOUD_RUN_SERVICE          Cloud Run service name. Default: instantml-rust-api.
+  INSTANTML_CLOUD_RUN_TOPOLOGY         single or split. Default: single.
+  INSTANTML_CLOUD_RUN_SERVICE          Combined service name. Default: instantml-rust-api.
+  INSTANTML_CLOUD_RUN_SERVICE_PREFIX   Split service name prefix. Default: instantml.
+  INSTANTML_CLOUD_RUN_CONTROL_SERVICE  Split control service name. Default: instantml-control.
+  INSTANTML_CLOUD_RUN_DATA_SERVICE     Split data service name. Default: instantml-data-<region>-a.
+  INSTANTML_CLOUD_RUN_CONTROL_SCALING  auto or manual. Default: auto.
+  INSTANTML_CLOUD_RUN_DATA_SCALING     auto or manual. Default: manual.
+  INSTANTML_CLOUD_RUN_DATA_INSTANCES   Manual data instances. Default: 1.
+  INSTANTML_PUBLIC_API_BASE            Optional public LB/router URL written to local frontend env.
   INSTANTML_SIGNUP_ALLOWED_EMAILS      Comma-separated hosted signup allowlist.
   INSTANTML_ALLOWED_FRONTEND_ORIGINS   Comma-separated browser origins allowed for session mutations.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
@@ -33,7 +45,12 @@ const project = value("GCP_PROJECT") || configuredProject.stdout.trim();
 if (!project || project === "(unset)") fail("Set GCP_PROJECT or run `gcloud config set project <project-id>`.");
 
 const region = value("GCP_REGION") || value("CLOUDSDK_RUN_REGION") || value("GOOGLE_CLOUD_REGION") || "us-central1";
+const topology = normalizeTopology(cli.topology || value("INSTANTML_CLOUD_RUN_TOPOLOGY") || "single");
 const service = value("INSTANTML_CLOUD_RUN_SERVICE") || "instantml-rust-api";
+const servicePrefix = value("INSTANTML_CLOUD_RUN_SERVICE_PREFIX") || "instantml";
+const controlService = value("INSTANTML_CLOUD_RUN_CONTROL_SERVICE") || `${servicePrefix}-control`;
+const dataCellId = value("INSTANTML_CLOUD_RUN_DATA_CELL") || `${region}-a`;
+const dataService = value("INSTANTML_CLOUD_RUN_DATA_SERVICE") || `${servicePrefix}-data-${slug(dataCellId)}`;
 const repository = value("INSTANTML_ARTIFACT_REPOSITORY") || "instantml";
 const network = value("INSTANTML_CLOUD_RUN_NETWORK") || "instantml-cloud-run";
 const subnet = value("INSTANTML_CLOUD_RUN_SUBNET") || `instantml-cloud-run-${region}`;
@@ -44,7 +61,8 @@ const natName = value("INSTANTML_CLOUD_RUN_NAT") || `instantml-cloud-run-nat-${r
 const serviceAccountName = value("INSTANTML_CLOUD_RUN_SERVICE_ACCOUNT") || "instantml-rust-api";
 const activeAccount = capture(["config", "get-value", "account"]).trim();
 const imageTag = value("INSTANTML_IMAGE_TAG") || gitShortSha() || timestampTag();
-const image = `${region}-docker.pkg.dev/${project}/${repository}/${service}:${imageTag}`;
+const imageName = value("INSTANTML_IMAGE_NAME") || (topology === "split" ? "instantml-rust-server" : service);
+const image = `${region}-docker.pkg.dev/${project}/${repository}/${imageName}:${imageTag}`;
 const useStaticEgress = boolValue("INSTANTML_CLOUD_RUN_STATIC_EGRESS", true);
 const updateClickHouseServiceAllowlist = value("INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES") !== "none";
 const updateClickHouseKeyAllowlist = value("INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS") !== "none";
@@ -58,37 +76,126 @@ const serviceAccountEmail = ensureServiceAccount();
 ensureCloudBuildServiceAccount();
 const staticEgressIp = useStaticEgress ? ensureStaticEgress() : "";
 const secretEnv = syncSecrets(serviceAccountEmail);
-const envVars = buildRuntimeEnv(staticEgressIp, activeAccount);
+const baseEnvVars = buildRuntimeEnv(staticEgressIp, activeAccount);
 if (staticEgressIp && (updateClickHouseServiceAllowlist || updateClickHouseKeyAllowlist)) {
   await updateClickHouseAccessLists(staticEgressIp);
 }
 buildImage();
-const url = deployService(serviceAccountEmail, staticEgressIp, envVars, secretEnv);
-await verifyService(url);
-if (writeLocalEnv) {
-  const localFrontendEnv = {
-    INSTANTML_API_BASE: url,
-    INSTANTML_API_ALLOWED_ORIGINS: url,
+const deployments = [];
+for (const target of deploymentTargets()) {
+  const envVars = {
+    ...baseEnvVars,
+    INSTANTML_SERVICE_PLANE: target.servicePlane,
   };
-  updateDotenv(envFile, localFrontendEnv);
-  updateDotenv(webEnvFile, localFrontendEnv);
+  if (target.cellId) envVars.INSTANTML_CELL_ID = target.cellId;
+  const url = deployService(target, serviceAccountEmail, staticEgressIp, envVars, secretEnv);
+  await verifyService(url, target);
+  deployments.push({ ...target, url });
+}
+if (writeLocalEnv) {
+  const publicApiBase = value("INSTANTML_PUBLIC_API_BASE")
+    || (topology === "single" ? deployments[0]?.url : "");
+  if (publicApiBase) {
+    const localFrontendEnv = {
+      INSTANTML_API_BASE: publicApiBase,
+      INSTANTML_API_ALLOWED_ORIGINS: publicApiBase,
+    };
+    updateDotenv(envFile, localFrontendEnv);
+    updateDotenv(webEnvFile, localFrontendEnv);
+  } else {
+    console.warn("Split deployment did not update local frontend env; set INSTANTML_PUBLIC_API_BASE to your load balancer/router URL.");
+  }
 }
 
 console.log(JSON.stringify({
   status: "ok",
   project,
   region,
-  service,
-  url,
+  topology,
   image,
   service_account: serviceAccountEmail,
   static_egress_ip: staticEgressIp || null,
-  local_frontend: "npm run web:dev",
+  deployments: deployments.map(({ service, servicePlane, scaling, url, cellId }) => ({
+    service,
+    service_plane: servicePlane,
+    scaling,
+    cell_id: cellId || null,
+    url,
+  })),
+  public_api_base: value("INSTANTML_PUBLIC_API_BASE") || (topology === "single" ? deployments[0]?.url : null),
+  local_frontend: (value("INSTANTML_PUBLIC_API_BASE") || topology === "single")
+    ? "npm run web:dev"
+    : "configure INSTANTML_PUBLIC_API_BASE after LB/router setup",
 }, null, 2));
+
+function parseArgs(args) {
+  const output = { help: false, topology: "" };
+  for (const arg of args) {
+    if (arg === "--help" || arg === "-h") output.help = true;
+    if (arg.startsWith("--topology=")) output.topology = arg.slice("--topology=".length);
+  }
+  return output;
+}
 
 function value(key) {
   const raw = env[key];
   return typeof raw === "string" && raw.trim() ? raw.trim() : "";
+}
+
+function normalizeTopology(raw) {
+  const value = raw.trim().toLowerCase();
+  if (["single", "combined"].includes(value)) return "single";
+  if (["split", "multi", "multi-instance", "multi_instance"].includes(value)) return "split";
+  fail("INSTANTML_CLOUD_RUN_TOPOLOGY must be single or split.");
+}
+
+function deploymentTargets() {
+  if (topology === "single") {
+    return [{
+      service,
+      servicePlane: "combined",
+      scaling: automaticScaling("INSTANTML_CLOUD_RUN", "1"),
+    }];
+  }
+  return [
+    {
+      service: controlService,
+      servicePlane: "control",
+      scaling: scalingFor("INSTANTML_CLOUD_RUN_CONTROL", "auto", "5"),
+    },
+    {
+      service: dataService,
+      servicePlane: "data",
+      cellId: dataCellId,
+      scaling: scalingFor("INSTANTML_CLOUD_RUN_DATA", "manual", "1"),
+    },
+  ];
+}
+
+function scalingFor(prefix, fallbackMode, fallbackMax) {
+  const mode = (value(`${prefix}_SCALING`) || fallbackMode).toLowerCase();
+  if (mode === "manual") {
+    return {
+      mode: "manual",
+      instances: value(`${prefix}_INSTANCES`) || "1",
+    };
+  }
+  if (mode !== "auto" && mode !== "automatic") {
+    fail(`${prefix}_SCALING must be auto or manual.`);
+  }
+  return automaticScaling(prefix, fallbackMax);
+}
+
+function automaticScaling(prefix, fallbackMax) {
+  return {
+    mode: "auto",
+    min: value(`${prefix}_MIN_INSTANCES`) || "0",
+    max: value(`${prefix}_MAX_INSTANCES`) || fallbackMax,
+  };
+}
+
+function slug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "cell";
 }
 
 function boolValue(key, fallback) {
@@ -289,10 +396,10 @@ function buildImage() {
   run(["builds", "submit", "--tag", image, "."], { timeout: 30 * 60 * 1000 });
 }
 
-function deployService(serviceAccountEmail, staticEgressIp, envVars, secretEnv) {
+function deployService(target, serviceAccountEmail, staticEgressIp, envVars, secretEnv) {
   const envFilePath = writeTempEnvFile(envVars);
   const args = [
-    "run", "deploy", service,
+    "run", "deploy", target.service,
     "--image", image,
     "--region", region,
     "--platform", "managed",
@@ -304,10 +411,9 @@ function deployService(serviceAccountEmail, staticEgressIp, envVars, secretEnv) 
     "--memory", value("INSTANTML_CLOUD_RUN_MEMORY") || "1Gi",
     "--concurrency", value("INSTANTML_CLOUD_RUN_CONCURRENCY") || "20",
     "--timeout", value("INSTANTML_CLOUD_RUN_TIMEOUT") || "900",
-    "--max-instances", "1",
-    "--min-instances", value("INSTANTML_CLOUD_RUN_MIN_INSTANCES") || "0",
     "--env-vars-file", envFilePath,
   ];
+  appendScalingArgs(args, target.scaling);
   if (secretEnv.length) {
     args.push("--set-secrets", secretEnv.join(","));
   }
@@ -319,16 +425,51 @@ function deployService(serviceAccountEmail, staticEgressIp, envVars, secretEnv) 
   } finally {
     fs.rmSync(envFilePath, { force: true });
   }
-  const url = capture(["run", "services", "describe", service, "--region", region, "--format=value(status.url)"]).trim();
+  const url = capture(["run", "services", "describe", target.service, "--region", region, "--format=value(status.url)"]).trim();
   if (!url) fail("Cloud Run deploy succeeded but service URL was not returned.");
-  const description = JSON.parse(capture(["run", "services", "describe", service, "--region", region, "--format=json"]));
-  const maxScale = description?.spec?.template?.metadata?.annotations?.["autoscaling.knative.dev/maxScale"]
-    ?? description?.template?.metadata?.annotations?.["autoscaling.knative.dev/maxScale"]
-    ?? description?.template?.scaling?.maxInstanceCount;
-  if (String(maxScale) !== "1") {
-    fail(`Cloud Run max instances verification failed; expected 1, got ${maxScale ?? "unknown"}.`);
-  }
+  const description = JSON.parse(capture(["run", "services", "describe", target.service, "--region", region, "--format=json"]));
+  verifyCloudRunScaling(target, description);
   return url;
+}
+
+function appendScalingArgs(args, scaling) {
+  if (scaling.mode === "manual") {
+    args.push("--scaling", scaling.instances);
+    return;
+  }
+  args.push("--max-instances", scaling.max, "--min-instances", scaling.min);
+}
+
+function verifyCloudRunScaling(target, description) {
+  const scaling = serviceScaling(description);
+  if (target.scaling.mode === "manual") {
+    if (scaling.mode !== "manual" || String(scaling.manualInstances) !== String(target.scaling.instances)) {
+      fail(`${target.service} scaling verification failed; expected manual ${target.scaling.instances}, got ${JSON.stringify(scaling)}.`);
+    }
+    return;
+  }
+  if (String(scaling.maxInstances) !== String(target.scaling.max)) {
+    fail(`${target.service} max instances verification failed; expected ${target.scaling.max}, got ${scaling.maxInstances ?? "unknown"}.`);
+  }
+}
+
+function serviceScaling(description) {
+  const annotations = {
+    ...(description?.metadata?.annotations || {}),
+    ...(description?.spec?.template?.metadata?.annotations || {}),
+    ...(description?.template?.metadata?.annotations || {}),
+  };
+  const mode = annotations["run.googleapis.com/scalingMode"]
+    || description?.scaling?.scalingMode
+    || (annotations["run.googleapis.com/manualInstanceCount"] ? "manual" : "auto");
+  return {
+    mode: String(mode).toLowerCase(),
+    manualInstances: annotations["run.googleapis.com/manualInstanceCount"]
+      || description?.scaling?.manualInstanceCount,
+    maxInstances: annotations["autoscaling.knative.dev/maxScale"]
+      ?? description?.template?.scaling?.maxInstanceCount
+      ?? description?.scaling?.maxInstanceCount,
+  };
 }
 
 function writeTempEnvFile(envVars) {
@@ -340,8 +481,8 @@ function writeTempEnvFile(envVars) {
   return file;
 }
 
-async function verifyService(url) {
-  for (const pathname of ["/health", "/readyz", "/api/auth/config"]) {
+async function verifyService(url, target) {
+  for (const pathname of ["/health", "/readyz", "/api/auth/config", "/openapi.json"]) {
     const response = await fetch(`${url}${pathname}`);
     const text = await response.text();
     if (!response.ok) {
@@ -352,8 +493,17 @@ async function verifyService(url) {
       if (config.dev_auth_enabled !== false) {
         fail("/api/auth/config verification failed; dev auth must be disabled in Cloud Run.");
       }
+      if (config.service_plane !== target.servicePlane) {
+        fail(`${target.service} /api/auth/config verification failed; expected ${target.servicePlane}, got ${config.service_plane}.`);
+      }
     }
-    console.log(`${pathname} ok`);
+    if (pathname === "/openapi.json") {
+      const spec = JSON.parse(text);
+      if (spec["x-instantml-service-plane"] !== target.servicePlane) {
+        fail(`${target.service} /openapi.json verification failed; expected ${target.servicePlane}, got ${spec["x-instantml-service-plane"]}.`);
+      }
+    }
+    console.log(`${target.service} ${pathname} ok`);
   }
 }
 
