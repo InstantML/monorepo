@@ -19,6 +19,7 @@ import {
   Layers3,
   Package,
   Plug,
+  Plus,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -102,6 +103,8 @@ import {
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspaceView } from "../dashboard-types";
 import { RunWorkspace, type RunWorkspaceTabId } from "./components/run-workspace";
+import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY } from "./state/storage-keys";
+import { PageHead } from "./ui/page-head";
 
 type ThemeMode = "light" | "dark";
 type ChartZoomRange = { min: number; max: number } | null;
@@ -123,11 +126,8 @@ type QuickSearchItem = {
 const SEARCH_DEBOUNCE_MS = 250;
 const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
-const MAX_COMPARE_TABLE_METRICS = 7;
+const MAX_COMPARE_TABLE_METRICS = 12;
 const ARTIFACT_PAGE_LIMIT = 100;
-const SAVED_VIEW_PREFIX = "instantml:next:local:view:";
-const LEGACY_SAVED_VIEW_PREFIX = "instantml:next:view:";
-const RUNS_RAIL_COLLAPSED_KEY = "instantml:next:runs-rail-collapsed";
 const WORKSPACE_HISTORY_LIMIT = 50;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
@@ -766,9 +766,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     setSavedViews(savedViewStorageKeys());
-    setNavPinned(localStorage.getItem("instantml:next:nav-pinned") === "true");
+    setNavPinned(localStorage.getItem(NAV_PINNED_KEY) === "true");
     setRunsRailCollapsed(localStorage.getItem(RUNS_RAIL_COLLAPSED_KEY) === "true");
-    const storedTheme = localStorage.getItem("instantml:next:theme");
+    const storedTheme = localStorage.getItem(THEME_KEY);
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
       ? storedTheme
       : "dark";
@@ -817,7 +817,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [project, workspaceReady, workspaceView]);
 
   useEffect(() => {
-    localStorage.setItem("instantml:next:nav-pinned", String(navPinned));
+    localStorage.setItem(NAV_PINNED_KEY, String(navPinned));
   }, [navPinned]);
 
   useEffect(() => {
@@ -826,7 +826,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    if (themeReady) localStorage.setItem("instantml:next:theme", theme);
+    if (themeReady) localStorage.setItem(THEME_KEY, theme);
   }, [theme, themeReady]);
 
   useEffect(() => {
@@ -1270,6 +1270,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (compareSortMetricKey === metric) setCompareSortMetricKey(metricKey);
   }
 
+  function addAllCompareTableMetrics() {
+    setCompareTableMetrics(
+      metricOptionsForControls
+        .filter((metric) => metric && metric !== metricKey)
+        .slice(0, Math.max(0, MAX_COMPARE_TABLE_METRICS - 1)),
+    );
+  }
+
+  function resetCompareTableMetrics() {
+    setCompareTableMetrics([]);
+    setCompareSortMetricKey(metricKey);
+  }
+
   const selectionAnchorRunIdRef = useRef<string>("");
   const [selectAllMatchingBusy, setSelectAllMatchingBusy] = useState(false);
 
@@ -1707,19 +1720,28 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     <main className="app">
       <DashboardTopbar
         activeIcon={ActiveIcon}
+        activeTab={activeTab}
+        detailRunName={primaryRun?.name ?? ""}
         message={message}
         onApplySavedView={applySavedView}
         onLoadDemo={loadDemo}
         onProject={changeProject}
+        onQuery={changeRunQueryInput}
+        onQuickSearch={() => setQuickSearchOpen(true)}
+        onRefresh={loadDashboard}
         onSaveView={saveView}
+        onSelectTab={selectTab}
         onShortcutHelp={openShortcutHelp}
+        onSortBy={changeRunSort}
         onStatus={changeStatus}
         onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onViewName={setViewName}
         project={project}
         projects={projects}
+        query={queryInput}
         savedViewKey={savedViewKey}
         savedViews={savedViews}
+        sortBy={sortBy}
         status={status}
         theme={theme}
         tone={currentMessageTone}
@@ -1732,6 +1754,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
           {activeTab === "runs" ? (
             <>
+          <PageHead
+            eyebrow="Workspace"
+            title="Runs"
+            emphasis="in flight"
+            lede={`${project || "All projects"} · ${metricKey}`}
+          />
           <div className="runs-workspace-filter">
             <Stats overview={overview} metricKey={metricKey} />
             <RunsCommandbar
@@ -1742,16 +1770,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onMetricKey={changeMetricKey}
               onPinnedMetricFilter={setColumnMetricFilter}
               onPinnedMetric={togglePinnedMetric}
-              onQuery={changeRunQueryInput}
               onRefresh={loadDashboard}
-              onSortBy={changeRunSort}
               onTableColumns={setTableColumns}
               pinnedMetricFilter={columnMetricFilter}
               pinnedMetricFilterValid={columnMetricFilterValid}
               pinnedMetricOptions={columnMetricOptionsForControls}
               pinnedMetrics={pinnedMetrics}
-              query={queryInput}
-              sortBy={sortBy}
               tableColumns={tableColumns}
             />
           </div>
@@ -1766,6 +1790,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             onEditPanel={(sectionId, panelId) => setEditingPanelRef({ sectionId, panelId })}
             onFullscreenPanel={(sectionId, panelId) => setFullscreenPanelRef({ sectionId, panelId })}
             onInspectRun={setPrimaryRunId}
+            onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
             onMode={setWorkspaceMode}
             onMovePanel={moveWorkspacePanel}
             onPanelSearch={setPanelSearch}
@@ -1869,8 +1894,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           <div className="analysis-page metrics-analysis">
             <header className="analysis-header">
               <div className="analysis-title-block">
-                <span className="analysis-eyebrow">Metrics</span>
-                <h2>{metricTitle(metricKey)}</h2>
+                <span className="analysis-eyebrow eyebrow--accent">Metrics</span>
+                <h2>{metricTitle(metricKey)} <span className="serif-em">over time</span></h2>
                 <p>
                   {activeMetricCatalogRow
                     ? `${activeMetricCatalogRow.selectedCount}/${activeMetricCatalogRow.runCount} selected runs · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points · ${metricGoalLabel(metricKey)} objective`
@@ -1978,24 +2003,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "detail" ? (
             <>
           <div className="analysis-page detail-analysis">
-            {runWorkspaceTab === "data" ? (
-              <div className="analysis-toolbar detail-toolbar">
-                <CustomSelect
-                  id="detail-metric-select"
-                  label="Metric"
-                  onChange={setMetricKey}
-                  options={metricOptionsForControls.length ? metricOptionsForControls.map((metric) => ({ value: metric, label: metric })) : [{ value: "", label: "No metrics", disabled: true }]}
-                  value={metricOptionsForControls.length ? metricKey : ""}
-                />
-                <CustomSelect
-                  id="detail-x-mode"
-                  label="X axis"
-                  onChange={setXMode}
-                  options={[{ value: "step", label: "Step" }, { value: "time", label: "Time" }]}
-                  value={xMode}
-                />
-              </div>
-            ) : null}
             <RunWorkspace
               activeMetricKey={metricKey}
               api={api}
@@ -2006,6 +2013,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               chartNormalizedSeries={primaryNormalizedSeries}
               chartRangeSeries={primaryRangeSeries}
               chartZoomRange={primaryChartZoomRange}
+              dataControls={
+                <>
+                  <CustomSelect
+                    id="detail-metric-select"
+                    label="Metric"
+                    onChange={setMetricKey}
+                    options={metricOptionsForControls.length ? metricOptionsForControls.map((metric) => ({ value: metric, label: metric })) : [{ value: "", label: "No metrics", disabled: true }]}
+                    value={metricOptionsForControls.length ? metricKey : ""}
+                  />
+                  <CustomSelect
+                    id="detail-x-mode"
+                    label="X axis"
+                    onChange={setXMode}
+                    options={[{ value: "step", label: "Step" }, { value: "time", label: "Time" }]}
+                    value={xMode}
+                  />
+                </>
+              }
               elementId="run-detail"
               hover={inspectedPoint}
               loggedObjects={loggedObjects}
@@ -2039,8 +2064,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             <section className="panel analysis-card compare-shell">
               <header className="analysis-header compare-analysis-header">
                 <div className="analysis-title-block">
-                  <span className="analysis-eyebrow">Compare</span>
-                  <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs</h2>
+                  <span className="analysis-eyebrow eyebrow--accent">Compare</span>
+                  <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs <span className="serif-em">side by side</span></h2>
                   <p>{metricKey} · {metricGoalLabel(metricKey)} objective · row-first evidence scan</p>
                 </div>
                 <div className="analysis-stat-strip">
@@ -2161,6 +2186,26 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                     ) : null}
                   </div>
                 ))}
+                <div className="compare-metric-strip-actions">
+                  <button
+                    className="compare-metric-action"
+                    disabled={!compareAddMetricOptions.length || compareTableMetricKeys.length >= MAX_COMPARE_TABLE_METRICS}
+                    onClick={addAllCompareTableMetrics}
+                    title={`Add up to ${MAX_COMPARE_TABLE_METRICS} metric columns`}
+                    type="button"
+                  >
+                    <Plus size={12} /> Add all
+                  </button>
+                  <button
+                    className="compare-metric-action"
+                    disabled={compareTableMetricKeys.length <= 1}
+                    onClick={resetCompareTableMetrics}
+                    title="Reset to the primary metric column"
+                    type="button"
+                  >
+                    Reset
+                  </button>
+                </div>
               </div>
               <SideBySide
                 artifactsByRun={compareArtifactsByRun}
@@ -2205,6 +2250,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "alerts" ? "active" : ""}`} aria-label="Alerts">
           {activeTab === "alerts" ? (
             <>
+          <PageHead eyebrow="Workspace" title="Alerts" emphasis="worth watching" lede={`${alertRows.length} active · run health`} />
           <div className="tab-grid two-col">
             <section className="panel">
               <div className="panel-head">
@@ -2232,6 +2278,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {activeTab === "datasets" ? (
             <>
+          <PageHead eyebrow="Workspace" title="Datasets" emphasis="in scope" lede={`config-derived · ${datasetRows.length} keys`} />
           <div className="tab-grid two-col">
             <section className="panel">
               <div className="panel-head"><h2><Database size={15} /> Config-derived Datasets <span>({datasetRows.length})</span></h2></div>
@@ -2255,6 +2302,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "artifacts" ? "active" : ""}`} aria-label="Artifacts">
           {activeTab === "artifacts" ? (
             <>
+          <PageHead eyebrow="Workspace" title="Artifacts" emphasis="and lineage" lede={`${visibleArtifacts.length} for ${primaryRun?.name ?? "inspected run"}`} />
           <div className="tab-grid two-col">
             <section className="panel">
               <div className="panel-head"><h2><Package size={15} /> Selected-run Artifacts <span>({visibleArtifacts.length})</span></h2></div>
@@ -2280,6 +2328,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "models" ? "active" : ""}`} aria-label="Models">
           {activeTab === "models" ? (
             <>
+          <PageHead eyebrow="Workspace" title="Checkpoints" emphasis="and lineage" lede={`${modelRows.length} tracked · ${primaryRun?.name ?? "no run"}`} />
           <div className="tab-grid two-col">
             <section className="panel">
               <div className="panel-head"><h2><Box size={15} /> Checkpoint Lineage <span>({modelRows.length})</span></h2></div>
@@ -2299,6 +2348,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
           {activeTab === "reports" ? (
             <>
+          <PageHead eyebrow="Workspace" title="Saved views" emphasis="on tap" lede={`${reportRows.length} local · ${shortMetricName(metricKey)}`} />
           <div className="tab-grid two-col">
             <section className="panel">
               <div className="panel-head"><h2><FileBarChart size={15} /> Local Saved Views <span>({reportRows.length})</span></h2></div>
@@ -2323,6 +2373,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
           {activeTab === "settings" ? (
             <>
+          <PageHead eyebrow="Admin" title="Workspace" emphasis="settings" lede="filters · defaults" />
           <div className="tab-grid settings-grid">
             <section className="panel">
               <div className="panel-head"><h2><Settings size={15} /> Workspace</h2></div>
@@ -2368,6 +2419,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "integrations" ? "active" : ""}`} aria-label="Integrations">
           {activeTab === "integrations" ? (
             <>
+          <PageHead eyebrow="Admin" title="Integrations" emphasis="and imports" lede="SDK · API · migration paths" />
           <section className="panel">
             <div className="panel-head"><h2><Plug size={15} /> Integrations</h2></div>
             <div className="panel-body integration-grid">
@@ -2381,6 +2433,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "api" ? "active" : ""}`} aria-label="API">
           {activeTab === "api" ? (
             <>
+          <PageHead eyebrow="Admin" title="API" emphasis="surface" lede="documented REST routes" />
           <div className="tab-grid two-col">
             <section className="panel">
               <div className="panel-head"><h2><Code2 size={15} /> API Surface</h2></div>

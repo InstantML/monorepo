@@ -9,7 +9,6 @@ import {
   Cpu,
   Database,
   FileBarChart,
-  FileText,
   GitCompare,
   HardDrive,
   Package,
@@ -26,7 +25,6 @@ export const navGroups = [
     items: [
       { id: "runs", label: "Runs", icon: Activity },
       { id: "metrics", label: "Metrics", icon: BarChart3 },
-      { id: "detail", label: "Run Detail", icon: FileText },
       { id: "compare", label: "Compare", icon: GitCompare },
     ],
   },
@@ -52,7 +50,9 @@ export const navGroups = [
 
 export const tabs = navGroups.flatMap((group) => [...group.items]);
 
-const tabIds = new Set<TabId>(tabs.map((tab) => tab.id));
+// `detail` is intentionally not a nav item (reached by clicking a run), but it
+// is still a valid tab/route — keep it in the id set so isTabId stays correct.
+const tabIds = new Set<TabId>([...tabs.map((tab) => tab.id), "detail"]);
 
 export function isTabId(value: string): value is TabId {
   return tabIds.has(value as TabId);

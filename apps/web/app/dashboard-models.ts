@@ -1,5 +1,6 @@
 import { queryString } from "../src/api.js";
 import { bestMetric, durationLabel, formatNumber, metricGoal } from "../src/state.js";
+import { WORKSPACE_VIEW_PREFIX } from "./dashboard/state/storage-keys";
 
 import type {
   AlertRow,
@@ -34,7 +35,7 @@ export const chartPadding = 56;
 export const COMPARE_RUN_LIMIT = 50;
 export const COMPARE_ARTIFACT_LIMIT = 12;
 export const WORKSPACE_SCHEMA_VERSION = 1;
-export const WORKSPACE_VIEW_PREFIX = "instantml:next:local:workspace:";
+export { WORKSPACE_VIEW_PREFIX };
 const AUTOMATIC_WORKSPACE_PANEL_LIMIT = 6;
 const PREFERRED_AUTOMATIC_METRICS = [
   "eval/return_mean",

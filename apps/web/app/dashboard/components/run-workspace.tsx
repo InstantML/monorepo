@@ -15,7 +15,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 import { isAbortError, queryString } from "../../../src/api.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../../../src/evidence.js";
@@ -75,6 +75,7 @@ export function RunWorkspace({
   chartNormalizedSeries,
   chartRangeSeries,
   chartZoomRange,
+  dataControls,
   elementId,
   hover,
   loggedObjects,
@@ -102,6 +103,7 @@ export function RunWorkspace({
   chartNormalizedSeries: MetricSeries[];
   chartRangeSeries: MetricSeries[];
   chartZoomRange: ChartZoomRange;
+  dataControls?: ReactNode;
   elementId: string;
   hover: HoverPoint;
   loggedObjects: LoggedObject[];
@@ -120,23 +122,28 @@ export function RunWorkspace({
   timelineRows: RunTimelineRow[];
   xMode: string;
 }) {
-  useEffect(() => {
-    onWorkspaceTabChange("summary");
-  }, [onWorkspaceTabChange, run?.id]);
-
-  if (!run) return <div className="empty">No run selected.</div>;
+  if (!run) {
+    return (
+      <div className="empty compact-empty run-detail-empty">
+        <strong>No run open</strong>
+        <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics.</span>
+        <a className="secondary compact-button" href="/dashboard/runs">Go to Runs</a>
+      </div>
+    );
+  }
   return (
     <div className="run-workspace" id={elementId}>
       <header className="run-workspace-header">
-        <div className="run-workspace-title">
-          <span>{run.project}</span>
-          <h2 title={run.name}>{run.name}</h2>
-          <p>{durationContext(run)} · {sourceContext(run)}</p>
-        </div>
-        <div className="run-workspace-meta">
+        <div className="run-workspace-topline">
+          <span className="run-workspace-eyebrow eyebrow--accent">Run</span>
+          <h2 className="run-workspace-name" title={run.name}>{run.name}</h2>
+          <span className="run-workspace-sub">{durationContext(run)} · {sourceContext(run)}</span>
+          <div className="run-workspace-spacer" />
           <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
-          {run.tags.slice(0, 2).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
-          {run.tags.length > 2 ? <span className="chip">+{run.tags.length - 2}</span> : null}
+          <div className="run-workspace-meta">
+            {run.tags.slice(0, 2).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
+            {run.tags.length > 2 ? <span className="chip">+{run.tags.length - 2}</span> : null}
+          </div>
         </div>
         <nav className="run-workspace-tabs" aria-label="Run workspace sections">
           {RUN_TABS.map((item) => (
@@ -175,6 +182,7 @@ export function RunWorkspace({
         <section className="run-workspace-panel run-data-panel">
           <div className="panel-head compact-panel-head">
             <h2><BarChart3 size={15} /> {shortMetricName(activeMetricKey)} Curve</h2>
+            {dataControls ? <div className="run-data-controls">{dataControls}</div> : null}
             <span className="chart-kind">bounded series</span>
           </div>
           <MetricChart
@@ -418,20 +426,66 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
   const artifactTotal = Object.values(run.artifact_counts ?? {}).reduce((total, value) => (
     total + (typeof value === "number" && Number.isFinite(value) ? value : 0)
   ), 0);
-  const rows = [
-    ["Host", run.metadata.hostname ?? run.metadata.host ?? "not logged"],
-    ["PID", run.metadata.pid ?? "not logged"],
-    ["Commit", commit ?? "not logged"],
-    ["Metric keys", metricRows.length],
-    ["Artifacts", artifactTotal],
+  const identity = [
+    ["Host", String(run.metadata.hostname ?? run.metadata.host ?? "not logged")],
+    ["PID", String(run.metadata.pid ?? "not logged")],
+    ["Commit", String(commit ?? "not logged")],
+    ["Metric keys", String(metricRows.length)],
+    ["Artifacts", String(artifactTotal)],
   ];
+  const systemRows = metricRows
+    .filter((row) => /^(system|gpu|cpu|mem|memory|disk|network|hardware)[/_]/i.test(row.key))
+    .sort((a, b) => a.key.localeCompare(b.key));
+  const fmt = (value: number | null) => (value === null ? "—" : formatNumber(value, 3));
   return (
     <section className="run-workspace-panel system-panel">
-      <div className="system-grid">
-        {rows.map(([label, value]) => (
-          <MetricCard key={String(label)} label={String(label)} value={String(value)} tone="neutral" />
+      <div className="system-identity">
+        {identity.map(([label, value]) => (
+          <div className="system-identity-item" key={label}>
+            <span className="eyebrow">{label}</span>
+            <strong title={value}>{value}</strong>
+          </div>
         ))}
       </div>
+      {systemRows.length ? (
+        <div className="card system-metrics-card">
+          <div className="card-head">
+            <span className="subtitle"><Server size={15} /> System telemetry</span>
+            <span className="meta">{systemRows.length} signals</span>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">Signal</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Latest</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Mean</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Min</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Max</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Points</th>
+                </tr>
+              </thead>
+              <tbody>
+                {systemRows.map((row) => (
+                  <tr key={row.key}>
+                    <td><span className="mono">{row.key}</span></td>
+                    <td className="num" style={{ textAlign: "right" }}>{fmt(row.latest)}</td>
+                    <td className="num" style={{ textAlign: "right" }}>{fmt(row.mean)}</td>
+                    <td className="num" style={{ textAlign: "right" }}>{fmt(row.min)}</td>
+                    <td className="num" style={{ textAlign: "right" }}>{fmt(row.max)}</td>
+                    <td className="num" style={{ textAlign: "right" }}>{formatNumber(row.count, 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="empty">
+          <Server size={18} />
+          No system or hardware telemetry has been logged for {run.name} yet.
+        </div>
+      )}
     </section>
   );
 }

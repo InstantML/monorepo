@@ -302,7 +302,7 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
   await chooseSelect(page, "#saved-view-select", "instantml:next:view:off-page-selection");
-  await page.getByRole("link", { name: /Run Detail/ }).click();
+  await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("2 runs"));
   assert.match(await page.locator("#run-detail").innerText(), /2 runs/);
   await page.getByRole("link", { name: /^Runs$/ }).click();
@@ -327,8 +327,8 @@ try {
   await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Keyboard shortcuts"]'));
 
   const firstWorkspaceRun = page.locator(".workspace-run-row").first();
-  const quickSearchRunName = await firstWorkspaceRun.getAttribute("title")
-    ?? await firstWorkspaceRun.locator(".workspace-run-main strong").innerText();
+  const quickSearchRunName = (await firstWorkspaceRun.locator(".workspace-run-open").getAttribute("title"))?.replace(/^Open\s+/, "")
+    ?? await firstWorkspaceRun.locator(".workspace-run-body strong").innerText();
   await page.keyboard.press("Control+K");
   await page.waitForSelector("#quick-search-input");
   await page.keyboard.press("Tab");
@@ -357,15 +357,15 @@ try {
   await page.waitForFunction(() => document.activeElement?.id === "panel-search");
 
   const selectedBeforeRowClick = await page.locator(".workspace-run-row.selected").count();
-  const unselectedRunButton = page.locator(".workspace-run-row:not(.selected)").first();
-  const inspectedRunName = await unselectedRunButton.getAttribute("title");
+  const unselectedRunRow = page.locator(".workspace-run-row:not(.selected)").first();
+  const inspectedRunName = (await unselectedRunRow.locator(".workspace-run-open").getAttribute("title"))?.replace(/^Open\s+/, "");
   assert.ok(inspectedRunName, "unselected run row should expose its full run name");
-  await unselectedRunButton.click();
+  await unselectedRunRow.locator(".workspace-run-select").click();
   await page.waitForFunction(
     (expected) => document.querySelectorAll(".workspace-run-row.selected").length === expected,
     selectedBeforeRowClick + 1,
   );
-  await page.getByRole("link", { name: /Run Detail/ }).click();
+  await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(
     (runName) => {
       const detailText = document.querySelector("#run-detail")?.textContent ?? "";
@@ -379,11 +379,10 @@ try {
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.fill("#search", "seed-44");
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("seed-44"));
-  await page.waitForFunction(() => document.querySelector(".workspace-run-row")?.getAttribute("title")?.includes("seed-44"));
+  await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("title")?.includes("seed-44"));
   assert.doesNotMatch(await page.locator(".workspace-run-list").innerText(), /No runs match/);
   const objectRequestsBeforeSeedDetail = objectUrls.length;
-  await page.locator(".workspace-run-row").first().click();
-  await page.getByRole("link", { name: /Run Detail/ }).click();
+  await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Files is opened");
   if (backendMode !== "node") {
@@ -661,7 +660,7 @@ try {
   await page.waitForSelector(".tab-pane.active .readout-card", { timeout: 10000 });
   assert.match(await page.locator(".tab-pane.active .readout-card").innerText(), /step/);
 
-  await page.getByRole("link", { name: /Run Detail/ }).click();
+  await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Reproducibility"));
@@ -694,7 +693,7 @@ try {
   for (let index = 0; index < 4; index += 1) {
     const selectedForCompare = await page.locator(".workspace-run-row.selected").count();
     if (selectedForCompare >= 4) break;
-    await page.locator(".workspace-run-row:not(.selected)").first().click();
+    await page.locator(".workspace-run-row:not(.selected) .workspace-run-select").first().click();
     await page.waitForFunction((minimum) => document.querySelectorAll(".workspace-run-row.selected").length >= minimum, selectedForCompare + 1);
   }
   const objectRequestsBeforeCompare = objectUrls.length;

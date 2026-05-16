@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstantML — Runs Workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .page-head {
+    display: flex; align-items: baseline; gap: 14px;
+    padding: 2px 2px 14px;
+  }
+  .page-head h1 { font: 700 20px/1 var(--font-sans); letter-spacing: var(--tracking-display); }
+  .page-head .lede { font: 500 12px/1 var(--font-mono); color: var(--muted); }
+  .page-head .spacer { flex: 1; }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: var(--run-rail-w) 1fr;
+    gap: 14px;
+    height: calc(100vh - var(--topbar-h) - var(--workspace-bar-h) - 36px - 50px);
+    min-height: 460px;
+  }
+
+  /* Run rail */
+  .rail { display: grid; grid-template-rows: auto auto 1fr auto; min-height: 0; }
+  .rail-head {
+    display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 9px;
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .rail-head .cbx {
+    width: 16px; height: 16px; border: 1px solid var(--line-strong);
+    border-radius: 4px; background: var(--surface-2);
+  }
+  .rail-head .title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .rail-head .title .n { color: var(--muted); font: 500 12px/1 var(--font-mono); }
+  .rail-head .health { display: flex; align-items: center; gap: 8px; }
+  .rail-head .h-chip { display: inline-flex; align-items: center; gap: 5px; font: 600 11px/1 var(--font-mono); color: var(--muted); }
+  .rail-head .h-chip svg { display: block; }
+  .rail-banner {
+    margin: 10px 12px;
+    padding: 9px 12px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--radius);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .rail-banner .t { font: 600 12px/1.3 var(--font-sans); color: var(--text-2); }
+  .rail-banner a { font: 600 12px/1 var(--font-sans); color: var(--accent); }
+  .rail-banner .spacer { flex: 1; }
+  .rail-list { overflow: auto; padding: 0 8px 8px; }
+  .run-row {
+    display: grid;
+    grid-template-columns: 16px 16px 1fr 10px;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    position: relative;
+  }
+  .run-row + .run-row { margin-top: 1px; }
+  .run-row:hover { background: var(--surface-hover); }
+  .run-row:focus-visible { outline-offset: -2px; }
+  .run-row .check {
+    width: 16px; height: 16px; border: 1px solid var(--line-strong);
+    border-radius: 4px; display: grid; place-items: center; background: var(--surface-2);
+  }
+  .run-row.is-selected .check { background: var(--text-2); border-color: var(--text-2); }
+  .run-row .ident { min-width: 0; display: grid; gap: 2px; }
+  .run-row .ident-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .run-row .nm { font: 600 12.5px/1.15 var(--font-mono); letter-spacing: -0.01em; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-row .cfg { font: 500 11px/1.2 var(--font-mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-row .swatch { width: 8px; height: 8px; border-radius: 2px; }
+  .run-row .reveal { display: none; }
+  .run-row.is-selected::before {
+    content: ""; position: absolute; inset-inline-start: 0; top: 7px; bottom: 7px;
+    width: 2px; background: var(--accent); border-radius: 2px;
+  }
+  .run-row.is-expanded { align-items: start; }
+  .run-row.is-expanded .reveal { display: grid; gap: 6px; margin-top: 6px; grid-column: 3 / -1; }
+  .run-row.is-expanded .reveal .note { font: 500 11.5px/1.35 var(--font-sans); color: var(--muted); }
+  .rail-foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    border-top: 1px solid var(--line-soft);
+    font: 500 11px/1 var(--font-mono); color: var(--muted);
+  }
+  .rail-foot .spacer { flex: 1; }
+  .rail-foot .pg { display: flex; gap: 4px; }
+  .pg .btn { width: 28px; height: 28px; padding: 0; }
+
+  /* Canvas */
+  .canvas { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .canvas-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .canvas-bar .spacer { flex: 1; }
+  .canvas-scroll { overflow: auto; padding: 16px; display: grid; gap: 18px; }
+  .sect { display: grid; gap: 12px; }
+  .sect-head { display: flex; align-items: center; gap: 10px; }
+  .sect-head .chev { color: var(--faint); display: grid; place-items: center; width: 20px; height: 20px; }
+  .sect-head h3 { font: 600 14px/1 var(--font-sans); }
+  .sect-head .count {
+    height: 18px; padding: 0 7px; display: inline-grid; place-items: center;
+    border-radius: 4px; background: var(--accent-soft); border: 1px solid var(--accent-line);
+    color: var(--accent); font: 600 10.5px/1 var(--font-mono);
+  }
+  .sect-head .spacer { flex: 1; }
+  .panel-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px 10px;
+  }
+  .panel-head .h { display: grid; gap: 3px; flex: 1; min-width: 0; }
+  .panel-head .h .nm { font: 600 13px/1 var(--font-sans); }
+  .panel-head .h .mt { font: 500 11px/1 var(--font-mono); color: var(--muted); }
+  .panel-head .acts { display: flex; gap: 2px; }
+  .panel-head .acts .btn { width: 28px; height: 28px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
+  .panel-head .acts .btn:hover { background: var(--surface-hover); color: var(--text); }
+  .panel-ctl { display: flex; gap: 4px; padding: 0 14px 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 5px 12px; padding: 0 14px 12px; }
+  .legend .ls { display: flex; align-items: center; gap: 6px; font: 500 11px/1 var(--font-mono); color: var(--muted); }
+  .legend .ls i { width: 8px; height: 2px; border-radius: 2px; }
+  .plot { padding: 0 8px 12px; }
+  .plot svg { width: 100%; height: 178px; }
+
+  @media (max-width: 1366px) { :root { --run-rail-w: 244px; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Brand row -->
+  <header class="brandbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="14" width="4" height="7" rx="1" fill="currentColor"/>
+          <rect x="10" y="9" width="4" height="12" rx="1" fill="currentColor" opacity="0.75"/>
+          <rect x="17" y="4" width="4" height="17" rx="1" fill="currentColor" opacity="0.5"/>
+          <path d="M13 2 L7 13 L11 13 L9 22 L17 9 L12 9 Z" fill="#07080c" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+    <div class="row">
+      <span class="brand-wordmark">InstantML</span>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <span class="crumb">demo</span>
+        <span class="sep" aria-hidden="true">/</span>
+        <span class="cur" aria-current="page">Runs</span>
+      </nav>
+      <div class="global-actions">
+        <button class="btn btn--ghost btn--xs" aria-label="Search (Command K)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg> Search <span class="kbd">⌘K</span></button>
+        <button class="btn btn--ghost btn--icon" aria-label="Toggle theme"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+        <button class="chip chip--ghost" style="height:28px;border-radius:6px;font-family:var(--font-sans);font-weight:600;" aria-label="Account: AK">AK</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Workspace controls row -->
+  <div class="workbar" role="toolbar" aria-label="Run filters">
+    <button class="select" aria-label="Project: demo" style="min-width:124px;">demo</button>
+    <button class="select" aria-label="Status: All" style="min-width:96px;">All status</button>
+    <div class="divider--v" aria-hidden="true"></div>
+    <label class="input" style="width:260px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+      <input type="search" placeholder="runs, tags, notes, config" style="border:0;background:transparent;outline:0;flex:1;min-width:0;padding:0;" aria-label="Search runs">
+    </label>
+    <button class="select" aria-label="Sort: Newest" style="min-width:104px;">Newest</button>
+    <button class="btn" aria-label="Configure columns"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M6 12h12M9 18h6"/></svg> Columns</button>
+    <div class="spacer"></div>
+    <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg> Save view</button>
+    <button class="select" aria-label="Saved view: Unsaved" style="min-width:110px;">Unsaved</button>
+    <button class="btn btn--icon" aria-label="Refresh"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+  </div>
+
+  <!-- Nav rail -->
+  <nav class="navrail" aria-label="Primary">
+    <div class="group">
+      <a href="#" class="nav-item is-active" aria-current="page" aria-label="Runs"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Metrics"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Compare"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 4v16M17 4v16"/><path d="M7 8H3M21 8h-4M7 16H3M21 16h-4"/></svg></a>
+    </div>
+    <div class="group">
+      <a href="#" class="nav-item" aria-label="Reports"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Datasets"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Artifacts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21 8-9-5-9 5 9 5 9-5z"/><path d="m3 8 9 5 9-5M3 16l9 5 9-5"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Models"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Alerts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg></a>
+    </div>
+    <div class="group">
+      <a href="#" class="nav-item" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.2-1.3L14 2h-4l-.3 2.5a7 7 0 0 0-2.2 1.3l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.2 1.3L10 22h4l.3-2.5a7 7 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z"/></svg></a>
+      <a href="#" class="nav-item" aria-label="Integrations"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 3v6M14 3v6M6 9h12v3a6 6 0 0 1-12 0z"/><path d="M12 18v3"/></svg></a>
+      <a href="#" class="nav-item" aria-label="API"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg></a>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="page-head">
+      <span class="eyebrow eyebrow--accent">Workspace</span>
+      <h1>Runs <span class="serif-em">in flight</span></h1>
+      <div class="spacer"></div>
+      <span class="lede">1–25 of 1,000 · eval/return_mean</span>
+    </div>
+
+    <div class="workspace">
+      <!-- Rail -->
+      <section class="rail surface" aria-label="Run selector">
+        <div class="rail-head">
+          <button class="cbx" role="checkbox" aria-checked="mixed" aria-label="Select all visible runs"></button>
+          <div class="title">
+            <span class="subtitle">Runs</span>
+            <span class="n">1,000</span>
+          </div>
+          <div class="health">
+            <span class="h-chip" title="11 active"><span class="dot dot--running"></span>11</span>
+            <span class="h-chip" title="11 failed"><span class="dot dot--failed"></span>11</span>
+            <button class="btn btn--ghost btn--icon" aria-label="Collapse run rail"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+          </div>
+        </div>
+        <div class="rail-banner">
+          <span class="t">4 of 1,000 selected</span>
+          <span class="kbd" title="Shift-click to select a range">⇧ click</span>
+          <span class="spacer"></span>
+          <a href="#">Select 500 →</a>
+        </div>
+        <div class="rail-list" role="listbox" aria-label="Runs" aria-multiselectable="true">
+          <div class="run-row is-selected is-expanded" role="option" aria-selected="true" tabindex="0">
+            <span class="check" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#07080c" stroke-width="3.5"><path d="M5 12l5 5 9-11"/></svg></span>
+            <span class="dot dot--finished" title="Finished"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">rl-ppo-cartpole-seed-36970</span></div>
+              <span class="cfg">seed 36970 · lr 1e-4 · ppo · sb3</span>
+            </div>
+            <span class="swatch" style="background:var(--series-1)"></span>
+            <div class="reveal">
+              <div class="tags">
+                <span class="chip">demo</span><span class="chip">rl</span><span class="chip chip--accent">baseline</span><span class="chip">healthy</span>
+              </div>
+              <span class="note">Synthetic RL run 999: reward stability and rollout quality for seed 36970.</span>
+            </div>
+          </div>
+          <div class="run-row is-selected" role="option" aria-selected="true" tabindex="-1">
+            <span class="check" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#07080c" stroke-width="3.5"><path d="M5 12l5 5 9-11"/></svg></span>
+            <span class="dot dot--running" title="Running"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">rl-dqn-minigrid-seed-36933</span></div>
+              <span class="cfg">seed 36933 · lr 3e-4 · dqn · sb3</span>
+            </div>
+            <span class="swatch" style="background:var(--series-2)"></span>
+          </div>
+          <div class="run-row is-selected" role="option" aria-selected="true" tabindex="-1">
+            <span class="check" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#07080c" stroke-width="3.5"><path d="M5 12l5 5 9-11"/></svg></span>
+            <span class="dot dot--finished" title="Finished"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">rl-sac-hopper-seed-36896</span></div>
+              <span class="cfg">seed 36896 · lr 1e-4 · sac · sb3</span>
+            </div>
+            <span class="swatch" style="background:var(--series-3)"></span>
+          </div>
+          <div class="run-row is-selected" role="option" aria-selected="true" tabindex="-1">
+            <span class="check" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#07080c" stroke-width="3.5"><path d="M5 12l5 5 9-11"/></svg></span>
+            <span class="dot dot--finished" title="Finished"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">rl-ppo-cartpole-seed-36859</span></div>
+              <span class="cfg">seed 36859 · lr 1e-4 · ppo · sb3</span>
+            </div>
+            <span class="swatch" style="background:var(--series-4)"></span>
+          </div>
+          <div class="run-row" role="option" aria-selected="false" tabindex="-1">
+            <span class="check" aria-hidden="true"></span>
+            <span class="dot dot--queued" title="Queued"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">rl-td3-walker-seed-36812</span></div>
+              <span class="cfg">seed 36812 · lr 3e-4 · td3 · sb3</span>
+            </div>
+            <span></span>
+          </div>
+          <div class="run-row" role="option" aria-selected="false" tabindex="-1">
+            <span class="check" aria-hidden="true"></span>
+            <span class="dot dot--finished" title="Finished"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">llm-sft-7b-seed-21044</span></div>
+              <span class="cfg">seed 21044 · lr 2e-5 · sft · trl</span>
+            </div>
+            <span></span>
+          </div>
+          <div class="run-row" role="option" aria-selected="false" tabindex="-1">
+            <span class="check" aria-hidden="true"></span>
+            <span class="dot dot--failed" title="Failed"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">llm-dpo-7b-seed-20990</span></div>
+              <span class="cfg">seed 20990 · lr 5e-6 · dpo · trl</span>
+            </div>
+            <span></span>
+          </div>
+          <div class="run-row" role="option" aria-selected="false" tabindex="-1">
+            <span class="check" aria-hidden="true"></span>
+            <span class="dot dot--finished" title="Finished"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">vit-pretrain-seed-18302</span></div>
+              <span class="cfg">seed 18302 · lr 1e-3 · vit · timm</span>
+            </div>
+            <span></span>
+          </div>
+          <div class="run-row" role="option" aria-selected="false" tabindex="-1">
+            <span class="check" aria-hidden="true"></span>
+            <span class="dot dot--finished" title="Finished"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">cnn-resnet50-seed-17771</span></div>
+              <span class="cfg">seed 17771 · lr 1e-2 · resnet50</span>
+            </div>
+            <span></span>
+          </div>
+          <div class="run-row" role="option" aria-selected="false" tabindex="-1">
+            <span class="check" aria-hidden="true"></span>
+            <span class="dot dot--running" title="Running"></span>
+            <div class="ident">
+              <div class="ident-top"><span class="nm">rl-ppo-cartpole-seed-17012</span></div>
+              <span class="cfg">seed 17012 · lr 1e-4 · ppo · sb3</span>
+            </div>
+            <span></span>
+          </div>
+        </div>
+        <div class="rail-foot">
+          <span>1–25 of 1,000</span>
+          <div class="spacer"></div>
+          <div class="pg">
+            <button class="btn" aria-label="Previous page"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+            <button class="btn" aria-label="Next page"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Canvas -->
+      <section class="canvas surface" aria-label="Chart panels">
+        <div class="canvas-bar">
+          <label class="input" style="width:280px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+            <input type="search" placeholder="Search panels" style="border:0;background:transparent;outline:0;flex:1;min-width:0;padding:0;" aria-label="Search panels">
+          </label>
+          <div class="spacer"></div>
+          <button class="select" aria-label="Layout mode: Automatic" style="min-width:118px;">Automatic</button>
+          <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> Reset layout</button>
+          <button class="btn btn--primary"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg> Add panel</button>
+        </div>
+        <div class="canvas-scroll">
+          <div class="sect">
+            <div class="sect-head">
+              <button class="chev" aria-label="Collapse section" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+              <h3>eval</h3>
+              <span class="count">4</span>
+              <div class="spacer"></div>
+              <button class="btn btn--ghost btn--icon" aria-label="Section layout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>
+            </div>
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-head">
+                  <div class="h"><span class="nm">Return Mean</span><span class="mt">eval/return_mean · 4 plotted / 4 selected</span></div>
+                  <div class="acts">
+                    <button class="btn" aria-label="Edit panel"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+                    <button class="btn" aria-label="Fullscreen panel"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg></button>
+                  </div>
+                </div>
+                <div class="panel-ctl">
+                  <button class="chip chip--ghost" aria-pressed="false">Step</button>
+                  <button class="chip chip--ghost" aria-pressed="false">Ungrouped</button>
+                  <button class="chip chip--ghost" aria-pressed="false">Full fidelity</button>
+                  <span class="chip chip--accent">4 selected</span>
+                </div>
+                <div class="legend">
+                  <span class="ls"><i style="background:var(--series-1)"></i>cartpole-36970</span>
+                  <span class="ls"><i style="background:var(--series-2)"></i>minigrid-36933</span>
+                  <span class="ls"><i style="background:var(--series-3)"></i>hopper-36896</span>
+                  <span class="ls"><i style="background:var(--series-4)"></i>cartpole-36859</span>
+                </div>
+                <div class="plot">
+                  <svg viewBox="0 0 520 178" preserveAspectRatio="xMidYMid meet" role="img" aria-label="eval/return_mean trending upward across 4 runs, converging near 320 by step 200">
+                    <g stroke="var(--chart-grid)" stroke-width="1">
+                      <line x1="0" y1="36" x2="520" y2="36"/><line x1="0" y1="80" x2="520" y2="80"/><line x1="0" y1="124" x2="520" y2="124"/><line x1="0" y1="168" x2="520" y2="168"/>
+                    </g>
+                    <path d="M6 162 C 90 150, 150 120, 210 96 S 360 50, 430 36 514 20 514 20" fill="none" stroke="var(--series-1)" stroke-width="1.25" opacity="0.9"/>
+                    <path d="M6 166 C 90 160, 150 140, 210 112 S 360 70, 430 52 514 40 514 40" fill="none" stroke="var(--series-2)" stroke-width="1.25" opacity="0.9"/>
+                    <path d="M6 160 C 90 152, 150 128, 210 104 S 360 62, 430 46 514 30 514 30" fill="none" stroke="var(--series-3)" stroke-width="1.25" opacity="0.9"/>
+                    <path d="M6 168 C 90 162, 150 150, 210 124 S 360 86, 430 66 514 52 514 52" fill="none" stroke="var(--series-4)" stroke-width="1.25" opacity="0.9"/>
+                    <circle cx="514" cy="20" r="2.5" fill="var(--series-1)"/>
+                  </svg>
+                </div>
+              </article>
+              <article class="panel">
+                <div class="panel-head">
+                  <div class="h"><span class="nm">Loss</span><span class="mt">train/loss · 4 plotted / 4 selected</span></div>
+                  <div class="acts">
+                    <button class="btn" aria-label="Edit panel"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+                    <button class="btn" aria-label="Fullscreen panel"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg></button>
+                  </div>
+                </div>
+                <div class="panel-ctl">
+                  <button class="chip chip--ghost" aria-pressed="false">Step</button>
+                  <button class="chip chip--ghost" aria-pressed="false">Ungrouped</button>
+                  <button class="chip chip--ghost" aria-pressed="false">Full fidelity</button>
+                  <span class="chip chip--accent">4 selected</span>
+                </div>
+                <div class="legend">
+                  <span class="ls"><i style="background:var(--series-1)"></i>cartpole-36970</span>
+                  <span class="ls"><i style="background:var(--series-2)"></i>minigrid-36933</span>
+                  <span class="ls"><i style="background:var(--series-3)"></i>hopper-36896</span>
+                  <span class="ls"><i style="background:var(--series-4)"></i>cartpole-36859</span>
+                </div>
+                <div class="plot">
+                  <svg viewBox="0 0 520 178" preserveAspectRatio="xMidYMid meet" role="img" aria-label="train/loss decreasing from ~2.0 to ~0.85 across 4 runs by step 200">
+                    <g stroke="var(--chart-grid)" stroke-width="1">
+                      <line x1="0" y1="36" x2="520" y2="36"/><line x1="0" y1="80" x2="520" y2="80"/><line x1="0" y1="124" x2="520" y2="124"/><line x1="0" y1="168" x2="520" y2="168"/>
+                    </g>
+                    <path d="M6 24 C 90 40, 150 80, 210 108 S 360 150, 430 160 514 166 514 166" fill="none" stroke="var(--series-1)" stroke-width="1.25" opacity="0.9"/>
+                    <path d="M6 30 C 90 48, 150 88, 210 116 S 360 154, 430 162 514 168 514 168" fill="none" stroke="var(--series-2)" stroke-width="1.25" opacity="0.9"/>
+                    <path d="M6 20 C 90 34, 150 74, 210 100 S 360 144, 430 156 514 162 514 162" fill="none" stroke="var(--series-3)" stroke-width="1.25" opacity="0.9"/>
+                    <path d="M6 34 C 90 52, 150 96, 210 124 S 360 158, 430 164 514 170 514 170" fill="none" stroke="var(--series-4)" stroke-width="1.25" opacity="0.9"/>
+                  </svg>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>
