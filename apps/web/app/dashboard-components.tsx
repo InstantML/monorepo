@@ -2067,7 +2067,11 @@ export function MetricChart({
     return <div className="chart-area"><div className="empty">{emptyMessage}</div></div>;
   }
   const pointCount = normalizedSeries.reduce((sum, item) => sum + (item.normalizedPoints?.length ?? 0), 0);
-  const showPointNodes = pointCount <= 1200;
+  // Per-point <circle> markers are the dominant SVG paint cost on the
+  // canvas (one node per data point per series). The polyline already
+  // conveys the curve and hover is resolved geometrically by the svg-level
+  // onMove handler, so markers only earn their keep on sparse charts.
+  const showPointNodes = pointCount <= 240;
   const xTicks = axisTicks(domain.minX, domain.maxX, 5);
   const yTicks = axisTicks(domain.minY, domain.maxY, 5);
   const xSpan = Math.max(1, domain.maxX - domain.minX);

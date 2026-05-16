@@ -1776,13 +1776,14 @@ p {
 
 .workspace-rail-select-banner {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
   background: var(--surface-muted, #f5f7fa);
   border-bottom: 1px solid var(--line-soft);
   font-size: 12px;
+  line-height: 1.4;
   color: var(--text-muted, #4a5568);
 }
 
@@ -1882,7 +1883,10 @@ p {
 .workspace-run-list {
   flex: 1 1 auto;
   display: grid;
-  grid-auto-rows: minmax(86px, max-content);
+  /* Floor matches .workspace-run-row min-height so collapsed rows get a
+   * real track (no overlap); max-content lets selected/hovered rows grow
+   * to fit the revealed tags + note. */
+  grid-auto-rows: minmax(48px, max-content);
   align-content: start;
   gap: 2px;
   min-height: 0;
@@ -2139,6 +2143,14 @@ p {
   border-bottom: 1px solid var(--line);
   background: var(--surface);
   scroll-margin-top: calc(var(--topbar-height) + var(--runs-filter-sticky-height) + 74px);
+  /* The canvas stacks many SVG-heavy chart sections vertically. Without
+   * this, every off-screen chart is still painted/composited on each
+   * scroll frame — the main reason scrolling crawls with many runs.
+   * content-visibility skips rendering work for sections outside the
+   * viewport; `contain-intrinsic-size: auto` remembers each section's
+   * real height after it has been seen so the scrollbar stays stable. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 620px;
 }
 
 .workspace-section.collapsed .section-title-button svg {
@@ -6767,8 +6779,9 @@ button.compare-row-head.active {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  backdrop-filter: blur(14px);
+  /* Opaque (no backdrop blur) — sticky + blur repaints the whole detail
+   * page behind it on every scroll frame. */
+  background: var(--surface);
 }
 
 .run-workspace-title {
@@ -7616,15 +7629,18 @@ textarea:focus {
   z-index: var(--z-chrome);
   height: var(--topbar-height);
   border-bottom: 1px solid var(--line);
+  /* Opaque background instead of a translucent backdrop-filter blur. A
+   * blurred sticky header forces a full-width backdrop re-rasterization on
+   * every scroll frame, which is the main cause of janky page scrolling.
+   * `backdrop-filter: none` is explicit because earlier .topbar rules still
+   * declare a blur that would otherwise win the cascade. */
   background: var(--bg);
-  background: color-mix(in srgb, var(--bg) 93%, transparent);
-  backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: none;
   box-shadow: none;
   display: flex;
   flex-direction: column;
 }
-:root[data-theme="dark"] .topbar { background: rgba(7, 8, 12, 0.93); }
-@supports not (backdrop-filter: blur(1px)) { .topbar { background: var(--bg); } }
+:root[data-theme="dark"] .topbar { background: #07080c; }
 
 /* Brand row — 48px */
 .brandbar {
@@ -7753,7 +7769,9 @@ textarea:focus {
 .workbar .control.compact { flex: 0 1 132px; min-width: 104px; }
 .workbar .control.compact input,
 .workbar .control.compact .select-trigger { width: 100%; }
-.workbar-spacer { flex: 1; min-width: 8px; }
+/* A small gap, not a growable region — the search field absorbs the slack
+ * so the bar never pushes the right-hand cluster off into overflow:hidden. */
+.workbar-spacer { flex: 0 0 8px; min-width: 8px; }
 .workbar .system-status {
   height: 24px;
   padding: 0 10px;
@@ -7981,8 +7999,11 @@ textarea:focus {
   align-items: center;
   gap: 7px;
   height: 32px;
-  flex: 0 1 280px;
-  min-width: 160px;
+  /* Search is the primary control: let it grow into free space and keep a
+   * floor wide enough that the "runs, tags, notes, config" placeholder is
+   * never clipped. */
+  flex: 1 1 240px;
+  min-width: 200px;
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -8320,12 +8341,35 @@ textarea:focus {
   padding: 0;
 }
 .workbar-search input:focus { box-shadow: none; border: 0; }
-/* status-message reads as quiet context, not an input box */
+/* The steady-state message is just the page count ("1-25 of N matching"),
+ * already shown in the run-rail head and footer and echoed by the
+ * "Operational" status pill — keeping it in the workbar only squished the
+ * row. Collapse it visually (kept in the a11y tree for the aria-live
+ * region) and only surface it for the messages that actually matter:
+ * loading + errors. */
 .workbar .status-message {
   border: 0;
   background: transparent;
   padding: 0;
-  max-width: 220px;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  flex: 0 0 0;
+}
+.workbar .status-message.error,
+.workbar .status-message.loading {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  clip: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 240px;
 }
 
 /* ── Compare: readable annotation chips + restrained diff highlight ─────── */
@@ -8379,12 +8423,21 @@ textarea:focus {
   grid-template-columns: 56px minmax(0, 1fr);
   transition: none;
 }
-.shell.nav-auto-open,
-.shell:has(.tabs:hover),
-.shell:has(.tabs:focus-within),
-.shell.nav-pinned {
+/* Hover / focus auto-open stays a floating overlay — the grid column
+ * stays 56px so a transient peek never reflows the page. Scoped to the
+ * non-pinned state: when pinned these :has(:hover) rules would otherwise
+ * out-specify .shell.nav-pinned and collapse the docked column on hover. */
+.shell:not(.nav-pinned).nav-auto-open,
+.shell:not(.nav-pinned):has(.tabs:hover),
+.shell:not(.nav-pinned):has(.tabs:focus-within) {
   --sidebar-width: 56px;
   grid-template-columns: 56px minmax(0, 1fr);
+}
+/* Pinned = docked: the rail reserves its own grid column so it never
+ * covers page content (the bug was the pinned rail overlaying the canvas). */
+.shell.nav-pinned {
+  --sidebar-width: 212px;
+  grid-template-columns: 212px minmax(0, 1fr);
 }
 .tabs {
   width: 56px;
@@ -8393,7 +8446,6 @@ textarea:focus {
   padding: 12px 8px 10px;
   overflow: visible;
   transition: width 140ms ease, box-shadow 140ms ease;
-  will-change: width;
 }
 :root[data-theme="dark"] .tabs { background: #07080c; }
 .tab-scroll { overflow-x: hidden; overflow-y: auto; }
@@ -8403,6 +8455,11 @@ textarea:focus {
 .shell.nav-pinned .tabs {
   width: 212px;
   box-shadow: 1px 0 0 var(--line), 22px 0 46px -12px rgba(0, 0, 0, 0.55);
+}
+/* Docked (pinned) rail sits in its own column — drop the floating drop
+ * shadow that only makes sense for the overlay state. */
+.shell.nav-pinned .tabs {
+  box-shadow: 1px 0 0 var(--line);
 }
 .tab-button {
   min-height: 36px;
@@ -8635,6 +8692,11 @@ textarea:focus {
   align-items: stretch;
   gap: 0;
   padding: 0;
+  /* Collapsed rows show only name + sub, so a 48px floor is enough — the
+   * old 86px floor wasted half the rail and made the list feel crowded
+   * with few rows visible. Tags/notes still expand selected/hovered rows
+   * via their own max-height reveal. */
+  min-height: 48px;
 }
 .workspace-run-select {
   display: grid;
@@ -8767,6 +8829,14 @@ textarea:focus {
 .workspace-run-open:focus-visible .workspace-run-open-hint {
   opacity: 1;
   transform: translateX(0);
+}
+/* The hint is absolutely positioned over the right of the row; without
+ * this it sits on top of the run name/project text. Reserve its width on
+ * the body (only while it's shown) so the name ellipsis-truncates clear
+ * of it instead of running underneath. */
+.workspace-run-open:hover .workspace-run-body,
+.workspace-run-open:focus-visible .workspace-run-body {
+  padding-inline-end: 70px;
 }
 
 /* ── Compare metric-columns strip: add-all / reset affordances ─────────── */
