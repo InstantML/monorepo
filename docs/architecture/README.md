@@ -15,5 +15,6 @@ Future agents should update this directory when accepted designs become part of 
 Current references:
 
 - `current-system.md`: implemented architecture, current ownership boundaries, runtime topology, API/storage shape, generated local state, and outstanding simplification follow-ups.
+- `current-api.md`: current Rust API route reference with auth requirements, inputs, query parameters, response envelopes, limits, and examples.
 - `auth-and-tenant-flow.md`: Clerk hosted auth, InstantML browser sessions, SDK API keys, org authorization, and hosted ClickHouse tenant routing.
 - `../design/2026-05-14-clickhouse-only-storage.md`: accepted ClickHouse-only local/test storage slice and hosted control-plane/data-plane direction.

@@ -154,7 +154,11 @@ Metric `step` is a finite nonnegative number across the Rust server, deprecated 
 
 ## API Surface
 
-SDK-compatible endpoints:
+The maintained route reference is `docs/architecture/current-api.md`. The Rust
+service also exposes a compact live route index at `GET /openapi.json` so
+operators can verify the deployed surface.
+
+Core SDK-compatible endpoints:
 
 - `POST /runs`
 - `PATCH /runs/:run_id`

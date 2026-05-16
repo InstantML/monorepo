@@ -119,6 +119,13 @@ Implemented health and platform endpoints:
 
 Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, browser sessions, org seat reservation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
+The durable route reference lives in `docs/architecture/current-api.md`. Keep
+that document, this README, `src/http/mod.rs`, `src/http/handlers.rs`, and
+`src/domain.rs` synchronized whenever an endpoint, request body, query
+parameter, response envelope, auth rule, or limit changes. The live service's
+`GET /openapi.json` returns a compact route index with the same route set for
+operator verification.
+
 In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
 
 Console logs are stored in tenant ClickHouse through `console_log_lines`.
@@ -219,6 +226,7 @@ Coverage exception:
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-16-clerk-hosted-auth.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
+- `docs/architecture/current-api.md`
 
 ## Notes For Future Agents
 
