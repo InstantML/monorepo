@@ -127,14 +127,16 @@ pub(super) fn session_payload_from_data(
         .memberships
         .values()
         .find(|membership| {
-            membership.org_id == session.org_id && membership.user_id == session.user_id
+            membership.org_id == session.org_id
+                && membership.user_id == session.user_id
+                && membership.status == "active"
         })
         .cloned()
-        .ok_or_else(|| AppError::not_found("membership not found"))?;
+        .ok_or_else(|| AppError::unauthorized("active membership required"))?;
     let memberships = data
         .memberships
         .values()
-        .filter(|membership| membership.user_id == session.user_id)
+        .filter(|membership| membership.user_id == session.user_id && membership.status == "active")
         .cloned()
         .collect::<Vec<_>>();
     let provisioning =

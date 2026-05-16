@@ -164,7 +164,7 @@ If cloud-service mode creates a service and later fails, it records `service_id`
 `cloud-service` provisioner:
 
 - Calls `GET /v1/organizations` or uses `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`.
-- Calls `POST /v1/organizations/{organizationId}/services` with a service name derived from the org slug and configured provider/region/replica shape.
+- Calls `POST /v1/organizations/{organizationId}/services` with a service name derived from the org name plus a stable org-id prefix, and the configured provider/region/replica shape.
 - Stores the returned service id and password as a secret reference or, only with the explicit stored-password flag, as local/test ciphertext/plaintext in User Data; default username is `default` unless the API returns otherwise.
 - Polls `GET /v1/organizations/{organizationId}/services/{serviceId}` until the service is `running` or the timeout expires.
 - Extracts the HTTPS endpoint from the service endpoints.
@@ -196,7 +196,7 @@ The visible local/dev flow stays mostly the same:
 
 - `/signup` posts to `/api/auth/dev/google` only in local/dev mode.
 - The local/dev auth page includes a shared demo action that posts `hello@instantml.ai`, `InstantML Demo`, and `business`; the Rust API canonicalizes that identity server-side so direct API calls get the same reuse behavior.
-- Hosted signup must use `/api/auth/google` or the managed-auth callback path once managed auth is implemented. This PR keeps `/api/auth/dev/google` as the local verification route and tests that it is disabled when dev auth is disabled.
+- Hosted signup must use `/api/auth/clerk` once managed auth is enabled. This PR keeps `/api/auth/dev/google` as the local verification route and tests that it is disabled when dev auth is disabled.
 - On success, the API response may include a safe `provisioning` object with `status`, `mode`, and optional `service_id`, never password or endpoint secrets.
 - Onboarding still creates the SDK API key through `/api/orgs/:org_id/api-keys`.
 - Dashboard reads are unchanged and should show SDK-ingested data for the signed-in org.
@@ -420,7 +420,7 @@ Implemented in this branch:
 - Tenant replay rejects operational rows whose row org or payload org does not match the tenant route org.
 - Local/dev signup now resolves retry candidates by owner/name/account type and writes owner membership before provisioning, so database-mode failed/provisioning routes can be retried instead of creating duplicate orgs.
 - Cloud-service schema migration failures preserve the created service id in the failed route so operators have a cleanup handle.
-- Cloud-service route retries first attempt to resume stored service credentials and check for an existing deterministic ClickHouse Cloud service name before POSTing a new service, preventing accidental duplicate paid services after a timeout or crash.
+- Cloud-service route retries first attempt to resume stored service credentials and check for an existing deterministic ClickHouse Cloud service name before POSTing a new service, preventing accidental duplicate paid services after a timeout or crash. The deterministic name includes the org-id prefix so normalized/truncated org-name collisions cannot route two orgs to the same service during recovery.
 - Cloud-service server startup skips the primary/default metric-store schema migration so the User Data service keeps only control-plane tables; per-org metric schema is migrated after routing to the tenant service.
 - Local/dev demo auth canonicalizes `hello@instantml.ai` and `hello@instantml.com` to one `InstantML Demo` business org, preventing repeated demo sign-ins from creating multiple orgs or ClickHouse services.
 - Cloud-service provisioning can discover the ClickHouse Cloud organization id from the API when `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is not set.

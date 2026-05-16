@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{
     body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -14,7 +14,7 @@ use tokio_util::io::ReaderStream;
 use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     timeout::TimeoutLayer,
     trace::TraceLayer,
@@ -26,11 +26,11 @@ use crate::{
     artifact_store::LocalArtifactStore,
     config::AppConfig,
     domain::{
-        CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
+        ClerkAuthRequest, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
         CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest,
         CreateProjectRequest, CreateRunRequest, CreateUserRequest, DevGoogleAuthRequest,
-        GoogleAuthRequest, LogMetricsRequest, RequestContext, ReserveSeatRequest, SessionContext,
-        UpdateRunRequest, UploadArtifactRequest,
+        LogMetricsRequest, RequestContext, ReserveSeatRequest, SessionContext, UpdateRunRequest,
+        UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
     metric_store, store,
@@ -59,6 +59,7 @@ pub fn router(state: AppState) -> Router {
     let max_upload = state.config.max_upload_body_bytes;
     let request_timeout = state.config.request_timeout;
     let shared = Arc::new(state);
+    let cors = cors_layer(&shared.config);
     Router::new()
         .route("/health", get(health))
         .route("/healthz", get(health))
@@ -67,11 +68,12 @@ pub fn router(state: AppState) -> Router {
         .route("/openapi.json", get(openapi_json))
         .route("/api/auth/config", get(auth_config))
         .route("/api/auth/dev/google", post(auth_dev_google))
-        .route("/api/auth/google", post(auth_google))
+        .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))
         .route("/api/auth/logout", post(auth_logout))
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
+        .route("/api/orgs/name-availability", get(org_name_availability))
         .route(
             "/api/orgs/:org_id/api-keys",
             post(create_api_key).get(list_api_keys),
@@ -133,9 +135,40 @@ pub fn router(state: AppState) -> Router {
                 .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
                 .layer(PropagateRequestIdLayer::x_request_id())
                 .layer(TraceLayer::new_for_http())
-                .layer(CorsLayer::permissive())
+                .layer(cors)
                 .layer(CompressionLayer::new())
                 .layer(TimeoutLayer::new(request_timeout)),
         )
         .layer(DefaultBodyLimit::max(max_body))
+}
+
+fn cors_layer(config: &AppConfig) -> CorsLayer {
+    let allowed = config.allowed_frontend_origins.clone();
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(move |origin, _| {
+            origin_allowed_for_cors(origin, &allowed)
+        }))
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::OPTIONS])
+        .allow_headers([
+            header::ACCEPT,
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            HeaderName::from_static("idempotency-key"),
+            HeaderName::from_static("x-instantml-bootstrap-token"),
+        ])
+        .allow_credentials(true)
+}
+
+fn origin_allowed_for_cors(origin: &HeaderValue, allowed: &[String]) -> bool {
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
+    let origin = origin.trim_end_matches('/');
+    if allowed.iter().any(|candidate| candidate == origin) {
+        return true;
+    }
+    Url::parse(origin)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1"))
 }

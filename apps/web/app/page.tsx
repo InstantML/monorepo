@@ -1,5 +1,6 @@
 "use client";
 
+import { Show, SignInButton, useClerk } from "@clerk/nextjs";
 import { ArrowRight, CheckCircle2, Code2, GitCompare, KeyRound, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -9,13 +10,15 @@ import { InstantMlMark } from "./instantml-mark";
 
 type AuthConfig = {
   dev_auth_enabled: boolean;
-  managed_google_enabled: boolean;
+  managed_clerk_enabled: boolean;
 };
 
 export default function LandingPage() {
   const api = useMemo(() => new ApiClient(), []);
+  const clerk = useClerk();
   const [config, setConfig] = useState<AuthConfig | null>(null);
   const [configError, setConfigError] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     const legacyPath = pathFromLegacyHash(window.location.hash);
@@ -28,7 +31,7 @@ export default function LandingPage() {
       .then((payload) => {
         setConfig({
           dev_auth_enabled: Boolean(payload.dev_auth_enabled),
-          managed_google_enabled: Boolean(payload.managed_google_enabled),
+          managed_clerk_enabled: Boolean(payload.managed_clerk_enabled),
         });
       })
       .catch((error) => {
@@ -38,14 +41,25 @@ export default function LandingPage() {
     return () => controller.abort();
   }, [api]);
 
-  const primaryHref = config?.dev_auth_enabled ? "/signup" : config?.managed_google_enabled ? "/signin" : "";
+  const primaryHref = config?.dev_auth_enabled ? "/signup" : "";
   const providerLabel = config
     ? config.dev_auth_enabled
       ? "Local dev Google-style auth enabled"
-      : config.managed_google_enabled
-        ? "Managed Google enabled"
+      : config.managed_clerk_enabled
+        ? "Managed Clerk enabled"
         : "No sign-in provider enabled"
     : configError || "Checking provider availability...";
+
+  async function signOut() {
+    setSigningOut(true);
+    try {
+      await api.post("/api/auth/logout", {});
+      await clerk.signOut({ redirectUrl: "/" });
+    } catch (error) {
+      setConfigError(error instanceof Error ? error.message : "Unable to sign out.");
+      setSigningOut(false);
+    }
+  }
 
   return (
     <main className="landing-page">
@@ -55,8 +69,25 @@ export default function LandingPage() {
           <span>InstantML</span>
         </a>
         <nav>
-          <a href="/signin">Sign in</a>
-          <a className="button-link secondary-link" href="/signup">Start local dev</a>
+          {config?.managed_clerk_enabled ? (
+            <>
+              <Show when="signed-out">
+                <SignInButton mode="modal">
+                  <button type="button">Sign in</button>
+                </SignInButton>
+                <a className="button-link secondary-link" href="/signup">Start workspace</a>
+              </Show>
+              <Show when="signed-in">
+                <a href="/dashboard/runs">Open app</a>
+                <button disabled={signingOut} onClick={signOut} type="button">Sign out</button>
+              </Show>
+            </>
+          ) : (
+            <>
+              <a href="/signin">Sign in</a>
+              <a className="button-link secondary-link" href="/signup">Start workspace</a>
+            </>
+          )}
         </nav>
       </header>
 
@@ -68,21 +99,25 @@ export default function LandingPage() {
             The training tool you keep open all day: fast logging, fast comparison, clear artifacts, and a backend your team can trust.
           </p>
           <div className="landing-actions">
-            {primaryHref ? (
+            {config?.managed_clerk_enabled ? (
+              <a className="button-link" href="/signup">
+                Start with Clerk <ArrowRight size={15} />
+              </a>
+            ) : primaryHref ? (
               <a className="button-link" href={primaryHref}>
-                {config?.dev_auth_enabled ? "Continue with Dev Google" : "Continue with Google"} <ArrowRight size={15} />
+                Continue with Dev Google <ArrowRight size={15} />
               </a>
             ) : (
-              <button disabled type="button">Google sign-in unavailable</button>
+              <button disabled type="button">Sign-in unavailable</button>
             )}
             <a className="button-link secondary-link" href="/signin">Open sign in</a>
           </div>
           <div className="provider-status" role="status" aria-live="polite">
-            <span className={config?.dev_auth_enabled || config?.managed_google_enabled ? "good" : "neutral"} />
+            <span className={config?.dev_auth_enabled || config?.managed_clerk_enabled ? "good" : "neutral"} />
             <strong>Provider availability</strong>
             <em>{providerLabel}</em>
           </div>
-          {config?.dev_auth_enabled ? <p className="auth-note">Local development uses an explicitly labeled Google-style shortcut. No managed Google OAuth button is shown while it is disabled.</p> : null}
+          {config?.dev_auth_enabled ? <p className="auth-note">Local development uses an explicitly labeled Google-style shortcut. Clerk is used for hosted sign-in.</p> : null}
           <div className="landing-proof">
             <span><CheckCircle2 size={14} /> Rust/ClickHouse summaries</span>
             <span><CheckCircle2 size={14} /> Bounded metric charts</span>

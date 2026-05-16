@@ -1,9 +1,28 @@
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+loadRootEnv();
 /** @type {import('next').NextConfig} */
 const apiBase = resolveApiBase();
+
+function loadRootEnv() {
+  const envPath = path.resolve(__dirname, "../..", ".env");
+  if (!fs.existsSync(envPath)) return;
+  const contents = fs.readFileSync(envPath, "utf8");
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const separator = line.indexOf("=");
+    if (separator <= 0) continue;
+    const key = line.slice(0, separator).trim();
+    if (process.env[key] !== undefined) continue;
+    const rawValue = line.slice(separator + 1).trim();
+    const quoted = (rawValue.startsWith("\"") && rawValue.endsWith("\"")) || (rawValue.startsWith("'") && rawValue.endsWith("'"));
+    process.env[key] = quoted ? rawValue.slice(1, -1) : rawValue;
+  }
+}
 
 function resolveApiBase() {
   if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_INSTANTML_API_BASE && !process.env.INSTANTML_API_BASE) {
@@ -26,8 +45,10 @@ function resolveApiBase() {
   return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
 }
 
+const clerkConnect = "https://api.clerk.com https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com";
+const clerkAssets = "https://img.clerk.com https://images.clerk.dev https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com";
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'" },
+  { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com; img-src 'self' data: blob: ${clerkAssets}; connect-src 'self' http://127.0.0.1:* http://localhost:* ${clerkConnect}; frame-src ${clerkConnect} https://challenges.cloudflare.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' ${clerkConnect} https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:` },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },

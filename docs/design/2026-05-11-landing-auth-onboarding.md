@@ -47,8 +47,8 @@ Existing local developers can still run the Rust API and Next app without Google
 ### Route Flow
 
 - `/`: landing page for unauthenticated visitors. It explains the product, speed posture, supported workflows, and SDK-to-dashboard loop. Authenticated users can continue to `/dashboard/runs`.
-- `/signin`: compact Google-style sign-in screen. In local/dev mode it accepts name and email and posts to the dev auth endpoint. In hosted mode it is the shell for managed Google sign-in.
-- `/signup`: account selection and Google-style sign-up. The user chooses `customer` or `business`, enters email/name, and for business enters an org name.
+- `/signin`: compact sign-in screen. In local/dev mode it accepts name and email and posts to the dev auth endpoint. Hosted identity is now Clerk per `2026-05-16-clerk-hosted-auth.md`.
+- `/signup`: account selection and hosted/dev sign-up. The user chooses `customer` or `business`, enters an org name, and signs in through Clerk in hosted mode or the labeled dev Google-style form in local mode.
 - `/onboarding`: authenticated setup checklist for org name, account type, optional seat emails, API-key creation, and final dashboard entry.
 - `/dashboard`: redirects or normalizes to `/dashboard/runs`.
 - `/dashboard/:tab`: existing dashboard shell with `runs`, `metrics`, `detail`, `compare`, `alerts`, `datasets`, `artifacts`, `models`, `reports`, `settings`, `integrations`, and `api`.
@@ -76,7 +76,7 @@ Concrete first viewport composition:
 
 - Product name as the H1: `InstantML`.
 - Supporting copy: implemented strengths only, such as fast run browsing, bounded metric charts, SDK ingestion, Rust/ClickHouse storage, and local-first setup.
-- Primary action: Google sign-in only when managed auth is configured; otherwise the local dev flow is explicit and labeled.
+- Primary action: Clerk sign-in/sign-up only when managed auth is configured; otherwise the local dev flow is explicit and labeled.
 - Secondary action: open the local demo/dashboard path after auth.
 - Product preview: a compact dashboard shell with a run table, metric chart, compare row, and SDK/API-key snippet. This should be CSS/HTML product UI, not decorative illustration.
 - Responsive acceptance: at `720px` and below the preview stacks under copy, code/API-key blocks wrap or horizontally scroll inside their own container, and no text is allowed to overlap buttons or metrics.
@@ -117,17 +117,16 @@ Because the repo cannot ship Google OAuth credentials, add a local-only endpoint
 - Validates email/name/account type, upserts user and dev identity, creates a new org or returns `409` on slug conflict, creates membership, stores a session, and returns current session payload.
 - The UI labels this as a local development Google-style flow.
 
-Add a production-shaped endpoint now but keep it explicit:
+Superseded hosted endpoint note:
 
-- `POST /api/auth/google`
-- If managed Google verification is not configured, returns `501` or `401` with a client-safe error.
-- When a verifier is configured later, it should validate the Google ID token, then call the same store onboarding function as the dev route.
+- The accepted hosted endpoint is now `POST /api/auth/clerk`, described in `2026-05-16-clerk-hosted-auth.md`.
+- Clerk may still use Google as an upstream identity provider, but InstantML should exchange verified Clerk session tokens rather than direct Google ID tokens.
 
 Add provider availability discovery:
 
 - `GET /api/auth/config`
-- Returns whether local dev auth and managed Google auth are enabled.
-- The frontend must not present a broken primary Google action. In production, hide or disable Google sign-in until configured. In local development, show the dev Google-style form clearly as a development shortcut.
+- Returns whether local dev auth and managed Clerk auth are enabled.
+- The frontend must not present a broken primary hosted action. In production, hide or disable Clerk sign-in until configured. In local development, show the dev Google-style form clearly as a development shortcut.
 
 ### Onboarding And Seats
 
@@ -253,7 +252,7 @@ Sessions expire after 30 days by default. The worker should delete expired or re
 Response:
 
 ```json
-{ "dev_auth_enabled": true, "managed_google_enabled": false }
+{ "dev_auth_enabled": true, "managed_clerk_enabled": false }
 ```
 
 `POST /api/auth/dev/google`
@@ -281,10 +280,10 @@ Response:
 }
 ```
 
-`POST /api/auth/google`
+`POST /api/auth/clerk`
 
 - Same response when configured.
-- Returns a client-safe auth/configuration error until real Google verification is configured.
+- Returns a client-safe auth/configuration error until Clerk verification is configured.
 
 `GET /api/auth/session`
 

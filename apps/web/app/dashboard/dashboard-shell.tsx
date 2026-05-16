@@ -1,5 +1,6 @@
 "use client";
 
+import { useClerk } from "@clerk/nextjs";
 import {
   Activity,
   AlertTriangle,
@@ -203,6 +204,7 @@ function initialActiveTab(initialTab: TabId) {
 
 export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) {
   const api = useMemo(() => new ApiClient(), []);
+  const clerk = useClerk();
   const dashboardRequestRef = useRef(0);
   const applyingSavedViewRef = useRef(false);
   const pageNavigationPendingRef = useRef(false);
@@ -646,6 +648,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     checkSession();
     return () => controller.abort();
   }, [api]);
+
+  const signOut = useCallback(async () => {
+    try {
+      await api.post("/api/auth/logout", {});
+      await clerk.signOut({ redirectUrl: "/signin" });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to sign out.";
+      setDashboardAuthMessage(detail);
+      setMessage(detail);
+    }
+  }, [api, clerk]);
 
   useEffect(() => {
     if (!dashboardAuthorized) return;
@@ -1731,6 +1744,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onRefresh={loadDashboard}
         onSaveView={saveView}
         onSelectTab={selectTab}
+        onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
         onSortBy={changeRunSort}
         onStatus={changeStatus}

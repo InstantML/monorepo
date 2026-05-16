@@ -492,11 +492,31 @@ async fn create_cloud_service(
         let service_id = existing
             .get("id")
             .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        return Err(AppError::config(format!(
-            "ClickHouse Cloud service '{service_name}' already exists for org {} as {service_id}, but tenant credentials were not persisted; reset and store credentials before retrying",
-            org.id
-        )));
+            .ok_or_else(|| AppError::internal("ClickHouse Cloud service response omitted id"))?;
+        let (fallback_endpoint, fallback_username) =
+            endpoint_from_service(&existing).unwrap_or_else(|| (String::new(), String::new()));
+        let (endpoint, username) = wait_for_cloud_service(
+            &client,
+            cloud,
+            &organization_id,
+            service_id,
+            &fallback_endpoint,
+            &fallback_username,
+        )
+        .await?;
+        if endpoint.is_empty() || username.is_empty() {
+            return Err(AppError::internal(
+                "ClickHouse Cloud response omitted HTTPS endpoint",
+            ));
+        }
+        let password =
+            reset_cloud_service_password(&client, cloud, &organization_id, service_id).await?;
+        return Ok(CloudTenant {
+            endpoint,
+            username,
+            password,
+            service_id: Some(service_id.to_string()),
+        });
     }
     let body = json!({
         "name": service_name,
@@ -554,6 +574,31 @@ async fn create_cloud_service(
         password,
         service_id,
     })
+}
+
+async fn reset_cloud_service_password(
+    client: &reqwest::Client,
+    cloud: &ClickHouseCloudConfig,
+    organization_id: &str,
+    service_id: &str,
+) -> AppResult<String> {
+    let value = cloud_request(
+        client
+            .patch(cloud_url(
+                cloud,
+                &format!("/organizations/{organization_id}/services/{service_id}/password"),
+            ))
+            .basic_auth(&cloud.key_id, Some(&cloud.key_secret))
+            .json(&json!({})),
+    )
+    .await?;
+    let result = value.get("result").unwrap_or(&value);
+    result
+        .get("password")
+        .or_else(|| value.get("password"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("ClickHouse Cloud password reset omitted password"))
+        .map(str::to_string)
 }
 
 async fn find_cloud_service_by_name(
@@ -739,20 +784,41 @@ fn cloud_ip_access_list(cloud: &ClickHouseCloudConfig) -> Vec<Value> {
 }
 
 fn cloud_service_name(org: &OrganizationRow) -> String {
-    let stem = org
-        .slug
+    const WAREHOUSE_LABEL: &str = " - Warehouse ";
+    const MAX_SERVICE_NAME: usize = 50;
+    let id_suffix = org
+        .id
+        .simple()
+        .to_string()
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .take(8)
+        .collect::<String>();
+    let suffix = format!("{WAREHOUSE_LABEL}{id_suffix}");
+    let mut stem = org
+        .name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == ' ' {
+                ch
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    let stem = if stem.is_empty() { "Org" } else { &stem };
-    let suffix = org.id.simple().to_string();
-    format!("InstantML {stem} {}", &suffix[..8])
+    if stem.is_empty() {
+        stem = "InstantML".to_string();
+    }
+    let max_stem = MAX_SERVICE_NAME.saturating_sub(suffix.len());
+    stem = stem
         .chars()
-        .take(50)
-        .collect()
+        .take(max_stem)
+        .collect::<String>()
+        .trim()
+        .to_string();
+    format!("{stem}{suffix}")
 }
 
 #[cfg(test)]
@@ -827,8 +893,8 @@ mod tests {
             provider: "gcp".to_string(),
             region: "us-central1".to_string(),
             ip_access_list: vec!["0.0.0.0/0".to_string()],
-            min_replica_memory_gb: 8,
-            max_replica_memory_gb: 8,
+            min_replica_memory_gb: 12,
+            max_replica_memory_gb: 12,
             num_replicas: 1,
             wait_timeout: std::time::Duration::from_secs(1),
         };
@@ -853,8 +919,52 @@ mod tests {
         };
         let name = cloud_service_name(&org);
         assert!(name.len() <= 50);
+        assert!(name.ends_with(" - Warehouse 3e790b99"));
         assert!(name
             .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == ' '));
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == ' ' || ch == '-'));
+    }
+
+    #[test]
+    fn cloud_service_name_uses_org_name_warehouse_suffix_with_stable_id() {
+        let org = OrganizationRow {
+            id: Uuid::parse_str("3e790b99-1150-41f3-9399-c08969f725c2").unwrap(),
+            slug: "acme-research".to_string(),
+            name: "Acme Research".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 25,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+        assert_eq!(
+            cloud_service_name(&org),
+            "Acme Research - Warehouse 3e790b99"
+        );
+    }
+
+    #[test]
+    fn cloud_service_name_avoids_collisions_after_truncation() {
+        let first = OrganizationRow {
+            id: Uuid::parse_str("3e790b99-1150-41f3-9399-c08969f725c2").unwrap(),
+            slug: "long-one".to_string(),
+            name: "Acme Research Laboratory With A Very Long Shared Prefix".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 25,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+        let second = OrganizationRow {
+            id: Uuid::parse_str("bbd330da-8ff1-4643-b916-e0fbcbeb1a8f").unwrap(),
+            slug: "long-two".to_string(),
+            name: first.name.clone(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 25,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+        assert_ne!(cloud_service_name(&first), cloud_service_name(&second));
     }
 }

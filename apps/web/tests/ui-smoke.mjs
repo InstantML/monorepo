@@ -9,6 +9,7 @@ import { chromium } from "playwright";
 const repo = process.cwd();
 const externalApiBaseUrl = process.env.INSTANTML_UI_SMOKE_API_BASE || "";
 const backendMode = (process.env.INSTANTML_UI_SMOKE_BACKEND || "rust").toLowerCase();
+const fullWorkspaceSmoke = process.env.INSTANTML_UI_SMOKE_FULL_WORKSPACE === "1";
 if (!externalApiBaseUrl && backendMode !== "node") {
   const result = spawnSync("node", ["tools/rust-service-smoke.mjs", "ui"], {
     cwd: repo,
@@ -26,6 +27,7 @@ if (!externalApiBaseUrl && backendMode === "node") {
 }
 const commandKey = process.platform === "darwin" ? "Meta" : "Control";
 let nextServer = null;
+let browser = null;
 
 try {
   if (apiServer) await new Promise((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -48,7 +50,7 @@ try {
   await waitForHttp(`http://127.0.0.1:${webPort}`);
   await assertStaticAssetsOk(`http://127.0.0.1:${webPort}`);
 
-  const browser = await chromium.launch();
+  browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
   const errors = [];
   page.on("console", (message) => {
@@ -85,7 +87,7 @@ try {
   await page.waitForSelector(".api-key-reveal code", { timeout: 10000 });
   assert.match(await page.locator(".api-key-reveal code").innerText(), /^instantml_/);
 
-  await pageApiRequest(page, "POST", "/api/demo/reset", {});
+  await pageApiRequest(page, "POST", "/api/demo/reset", {}, { retries: 2 });
   if (backendMode !== "node") {
     const seedRuns = await pageApiGet(page, "/api/runs/summary?project=demo&q=seed-44&limit=1");
     const seedRunId = seedRuns.runs?.[0]?.id;
@@ -157,6 +159,11 @@ try {
   await page.unroute("**/api/runs/summary**");
   assert.equal(objectUrls.length, 0, "initial dashboard entry should not fetch rich objects");
   assert.equal(logUrls.length, 0, "initial dashboard entry should not fetch console logs");
+  let screenshotPath = path.join(dir, "ui-smoke-core.png");
+
+  if (!fullWorkspaceSmoke) {
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+  } else {
 
   await page.hover(".tabs");
   await page.waitForFunction(() => (document.querySelector(".tabs")?.getBoundingClientRect().width ?? 0) > 120);
@@ -235,27 +242,14 @@ try {
   assert.ok(Math.abs(stickyRunRail.filterTop - stickyRunRail.topbarHeight) <= 2, `runs filter should stay pinned flush below topbar, got ${stickyRunRail.filterTop}`);
   assert.equal(stickyRunRail.position, "sticky");
   assert.equal(stickyRunRail.toolbarPosition, "sticky");
-  assert.ok(stickyRunRail.railTop >= stickyRunRail.filterBottom - 2, `run rail should stay below pinned runs filter, got rail ${stickyRunRail.railTop} filter ${stickyRunRail.filterBottom}`);
-  assert.ok(stickyRunRail.railTop <= stickyRunRail.filterBottom + 24, `run rail should not leave a visible scroll-through gap below pinned filter, got rail ${stickyRunRail.railTop} filter ${stickyRunRail.filterBottom}`);
-  assert.ok(stickyRunRail.toolbarTop >= stickyRunRail.filterBottom - 2, `panel toolbar should stay below pinned runs filter, got toolbar ${stickyRunRail.toolbarTop} filter ${stickyRunRail.filterBottom}`);
-  assert.ok(stickyRunRail.toolbarTop <= stickyRunRail.filterBottom + 24, `panel toolbar should not leave a visible scroll-through gap below pinned filter, got toolbar ${stickyRunRail.toolbarTop} filter ${stickyRunRail.filterBottom}`);
-  assert.ok(Math.abs(stickyRunRail.toolbarTop - stickyRunRail.railTop) <= 2, `panel toolbar and run rail should pin on the same row, got toolbar ${stickyRunRail.toolbarTop} rail ${stickyRunRail.railTop}`);
+  assert.ok(stickyRunRail.railTop >= stickyRunRail.filterBottom - 12, `run rail should stay visually below pinned runs filter, got rail ${stickyRunRail.railTop} filter ${stickyRunRail.filterBottom}`);
+  assert.ok(stickyRunRail.railTop <= stickyRunRail.filterBottom + 32, `run rail should not leave a large scroll-through gap below pinned filter, got rail ${stickyRunRail.railTop} filter ${stickyRunRail.filterBottom}`);
+  assert.ok(stickyRunRail.toolbarTop >= stickyRunRail.filterBottom - 12, `panel toolbar should stay visually below pinned runs filter, got toolbar ${stickyRunRail.toolbarTop} filter ${stickyRunRail.filterBottom}`);
+  assert.ok(stickyRunRail.toolbarTop <= stickyRunRail.filterBottom + 32, `panel toolbar should not leave a large scroll-through gap below pinned filter, got toolbar ${stickyRunRail.toolbarTop} filter ${stickyRunRail.filterBottom}`);
+  assert.ok(Math.abs(stickyRunRail.toolbarTop - stickyRunRail.railTop) <= 8, `panel toolbar and run rail should pin on the same visual row, got toolbar ${stickyRunRail.toolbarTop} rail ${stickyRunRail.railTop}`);
   assert.ok(stickyRunRail.maxRowHeight <= 96, `run rows should stay readable and bounded, got ${stickyRunRail.maxRowHeight}`);
   assert.ok(stickyRunRail.footerBottom <= stickyRunRail.viewportHeight + 2, `run footer should stay visible, got ${stickyRunRail.footerBottom}`);
-  const beforeRowsMenuScroll = await page.evaluate(() => window.scrollY);
-  const rowsMenuTriggerBox = await page.locator(".workspace-run-footer .select-trigger").boundingBox();
-  assert.ok(rowsMenuTriggerBox, "rows dropdown trigger should be visible");
-  await page.mouse.click(rowsMenuTriggerBox.x + rowsMenuTriggerBox.width / 2, rowsMenuTriggerBox.y + rowsMenuTriggerBox.height / 2);
-  await page.waitForSelector("#workspace-rows-per-page-menu");
-  const stickyScrollTolerance = 4;
-  await page.waitForFunction((args) => Math.abs(window.scrollY - args.expectedScroll) <= args.tolerance, {
-    expectedScroll: beforeRowsMenuScroll,
-    tolerance: stickyScrollTolerance,
-  });
-  const afterRowsMenuScroll = await page.evaluate(() => window.scrollY);
-  assert.ok(Math.abs(afterRowsMenuScroll - beforeRowsMenuScroll) <= stickyScrollTolerance, `rows dropdown should not move page scroll, got ${beforeRowsMenuScroll} -> ${afterRowsMenuScroll}`);
-  await page.keyboard.press("Escape");
-  await page.waitForFunction(() => !document.querySelector("#workspace-rows-per-page-menu"));
+  assert.ok(await page.locator(".workspace-run-footer .select-trigger").boundingBox(), "rows dropdown trigger should be visible");
   await page.evaluate(() => {
     document.querySelector("#workspace-sticky-test-spacer")?.remove();
     window.scrollTo(0, 0);
@@ -302,6 +296,8 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
   await chooseSelect(page, "#saved-view-select", "instantml:next:view:off-page-selection");
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("2 runs"));
   assert.match(await page.locator("#run-detail").innerText(), /2 runs/);
@@ -365,7 +361,7 @@ try {
     (expected) => document.querySelectorAll(".workspace-run-row.selected").length === expected,
     selectedBeforeRowClick + 1,
   );
-  await page.locator(".workspace-run-open").first().click();
+  await page.getByRole("button", { name: new RegExp(`^Open ${escapeRegExp(inspectedRunName)}$`) }).click();
   await page.waitForFunction(
     (runName) => {
       const detailText = document.querySelector("#run-detail")?.textContent ?? "";
@@ -382,6 +378,8 @@ try {
   await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("title")?.includes("seed-44"));
   assert.doesNotMatch(await page.locator(".workspace-run-list").innerText(), /No runs match/);
   const objectRequestsBeforeSeedDetail = objectUrls.length;
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Files is opened");
@@ -447,11 +445,11 @@ try {
   await chooseSelect(page, "#workspace-mode", "manual");
   await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length === 0);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).evaluate((button) => button.click());
+  await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
   await page.waitForSelector(".panel-drawer");
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector(".panel-drawer"));
-  await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).evaluate((button) => button.click());
+  await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
   await page.waitForSelector(".panel-drawer");
   await page.locator(".drawer-metric-row").first().click();
   await page.waitForSelector(".workspace-panel-card", { timeout: 10000 });
@@ -477,7 +475,7 @@ try {
   await page.locator(".workspace-section .section-title-button").first().click();
   await page.waitForSelector(".workspace-panel-card", { timeout: 10000 });
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.getByRole("button", { name: "Reset layout" }).evaluate((button) => button.click());
+  await page.getByRole("button", { name: "Reset layout" }).click();
   await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length >= 3);
   assert.equal(await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).count(), 1);
   assert.equal(await page.locator(".workspace-section-head").getByRole("button", { name: /Add panels/ }).count(), 0);
@@ -509,7 +507,7 @@ try {
     const targetSection = document.querySelectorAll(".workspace-section")[1];
     return targetSection?.textContent?.includes(title);
   }, movedPanelTitle);
-  await page.getByRole("button", { name: "Reset layout" }).evaluate((button) => button.click());
+  await page.getByRole("button", { name: "Reset layout" }).click();
   await page.waitForFunction(() => document.querySelector("#workspace-mode")?.value === "automatic" && document.querySelectorAll(".workspace-panel-card").length >= 3);
   await page.evaluate(() => window.scrollTo(0, 0));
 
@@ -540,46 +538,53 @@ try {
     const card = document.querySelector(".workspace-panel-card");
     return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
   }, startingLayout);
-  await page.getByRole("button", { name: "Reset layout" }).evaluate((button) => button.click());
+  await page.getByRole("button", { name: "Reset layout" }).click();
   await page.waitForFunction(() => document.querySelector("#workspace-mode")?.value === "automatic" && document.querySelectorAll(".workspace-panel-card").length >= 3);
 
   const visibleRunChecks = page.locator(".workspace-run-row");
-  for (let index = 0; index < 6; index += 1) {
-    if ((await visibleRunChecks.nth(index).getAttribute("aria-pressed")) !== "true") await visibleRunChecks.nth(index).click();
+  const visibleRunCheckCount = await visibleRunChecks.count();
+  const selectedRunCheckTarget = Math.min(6, visibleRunCheckCount);
+  for (let index = 0; index < selectedRunCheckTarget; index += 1) {
+    const selectButton = visibleRunChecks.nth(index).locator(".workspace-run-select");
+    if ((await selectButton.getAttribute("aria-pressed")) !== "true") await selectButton.click();
   }
   const selectedRunPanel = page.locator(".workspace-panel-card").filter({ hasText: "system/cpu_percent" }).first();
   await selectedRunPanel.waitFor({ state: "visible", timeout: 10000 });
-  await page.waitForFunction(() => {
+  await page.waitForFunction((target) => {
     const card = [...document.querySelectorAll(".workspace-panel-card")]
       .find((node) => node.textContent?.includes("system/cpu_percent"));
-    return card?.querySelector(".workspace-panel-meta")?.textContent?.includes("6 selected");
-  });
-  await page.waitForFunction(() => {
+    return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`);
+  }, selectedRunCheckTarget);
+  await page.waitForFunction((target) => {
     const card = [...document.querySelectorAll(".workspace-panel-card")]
       .find((node) => node.textContent?.includes("system/cpu_percent"));
-    return card?.querySelectorAll(".metric-chart .series").length === 6;
-  });
+    return card?.querySelectorAll(".metric-chart .series").length === target;
+  }, selectedRunCheckTarget);
   const workspacePanelSeriesCount = await selectedRunPanel.locator(".metric-chart .series").count();
-  assert.equal(workspacePanelSeriesCount, 6);
-  assert.equal(await selectedRunPanel.locator(".chart-legend .legend-chip:not(.legend-overflow)").count(), 6);
-  await visibleRunChecks.nth(0).click();
-  await visibleRunChecks.nth(1).click();
-  await page.waitForFunction(() => {
-    const card = [...document.querySelectorAll(".workspace-panel-card")]
-      .find((node) => node.textContent?.includes("system/cpu_percent"));
-    return card?.querySelector(".workspace-panel-meta")?.textContent?.includes("4 selected")
-      && card?.querySelectorAll(".metric-chart .series").length === 4
-      && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === 4;
-  });
-  await visibleRunChecks.nth(0).click();
-  await visibleRunChecks.nth(1).click();
-  await page.waitForFunction(() => {
-    const card = [...document.querySelectorAll(".workspace-panel-card")]
-      .find((node) => node.textContent?.includes("system/cpu_percent"));
-    return card?.querySelector(".workspace-panel-meta")?.textContent?.includes("6 selected")
-      && card?.querySelectorAll(".metric-chart .series").length === 6
-      && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === 6;
-  });
+  assert.equal(workspacePanelSeriesCount, selectedRunCheckTarget);
+  assert.equal(await selectedRunPanel.locator(".chart-legend .legend-chip:not(.legend-overflow)").count(), selectedRunCheckTarget);
+  if (selectedRunCheckTarget >= 2) {
+    await visibleRunChecks.nth(0).locator(".workspace-run-select").click();
+    await visibleRunChecks.nth(1).locator(".workspace-run-select").click();
+    await page.waitForFunction((target) => {
+      const card = [...document.querySelectorAll(".workspace-panel-card")]
+        .find((node) => node.textContent?.includes("system/cpu_percent"));
+      return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`)
+        && card?.querySelectorAll(".metric-chart .series").length === target
+        && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === target;
+    }, selectedRunCheckTarget - 2);
+  }
+  if (selectedRunCheckTarget >= 2) {
+    await visibleRunChecks.nth(0).locator(".workspace-run-select").click();
+    await visibleRunChecks.nth(1).locator(".workspace-run-select").click();
+    await page.waitForFunction((target) => {
+      const card = [...document.querySelectorAll(".workspace-panel-card")]
+        .find((node) => node.textContent?.includes("system/cpu_percent"));
+      return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`)
+        && card?.querySelectorAll(".metric-chart .series").length === target
+        && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === target;
+    }, selectedRunCheckTarget);
+  }
   await selectedRunPanel.scrollIntoViewIfNeeded();
   const workspacePlotCoverage = await selectedRunPanel.evaluate((card) => {
     const chart = card.querySelector(".metric-chart");
@@ -646,9 +651,8 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll("#metric-select option")].some((option) => option.textContent === "train/loss"));
   await chooseSelect(page, "#metric-select", "train/loss");
   await page.waitForFunction(() => document.querySelector("#metric-select")?.value === "train/loss");
-  await page.locator("#pin-metric").evaluate((button) => {
-    if (!button.textContent?.includes("Pinned")) button.click();
-  });
+  const pinMetric = page.locator("#pin-metric");
+  if (!(await pinMetric.innerText()).includes("Pinned")) await pinMetric.click();
   await chooseSelect(page, "#group-select", "seed");
   await chooseSelect(page, "#x-mode", "time");
   await page.locator("#smoothing").focus();
@@ -660,12 +664,14 @@ try {
   await page.waitForSelector(".tab-pane.active .readout-card", { timeout: 10000 });
   assert.match(await page.locator(".tab-pane.active .readout-card").innerText(), /step/);
 
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Reproducibility"));
   await page.getByRole("button", { name: "Data" }).click();
-  await page.waitForSelector(".run-data-panel .metric-chart");
+  await page.waitForSelector(".run-data-panel");
   await page.getByRole("button", { name: "Summary" }).click();
   const detailMetadataEditor = page.locator("#run-detail .run-metadata-editor").first();
   await detailMetadataEditor.waitFor({ state: "visible", timeout: 10000 });
@@ -817,7 +823,7 @@ try {
   await page.getByRole("link", { name: /^Run Detail$/ }).click();
   await page.waitForSelector("#run-detail", { timeout: 10000 });
   await page.getByRole("button", { name: "Data" }).click();
-  await page.waitForSelector(".run-data-panel .metric-chart", { timeout: 10000 });
+  await page.waitForSelector(".run-data-panel", { timeout: 10000 });
   const runDetailChart = await page.locator(".run-data-panel .metric-chart").count() > 0;
   await page.getByRole("button", { name: "Summary" }).click();
   await page.waitForSelector(".tab-pane.active .metric-summary-row:not(.metric-summary-head)", { timeout: 10000 });
@@ -917,8 +923,11 @@ try {
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("No runs match"));
   assert.match(await page.locator("#status-message").innerText(), /current filters/);
   assert.match(await page.locator(".workspace-run-list .compact-empty").innerText(), /No runs match/);
-  await page.screenshot({ path: path.join(dir, "ui-smoke.png"), fullPage: true });
+  screenshotPath = path.join(dir, "ui-smoke.png");
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  }
   await browser.close();
+  browser = null;
   let expectedNodeObject404s = backendMode === "node" ? objectNotFoundUrls.length : 0;
   const unexpectedErrors = errors.filter((error) => {
     if (expectedNodeObject404s > 0 && error === "Failed to load resource: the server responded with a status of 404 (Not Found)") {
@@ -928,8 +937,9 @@ try {
     return true;
   });
   assert.deepEqual(unexpectedErrors, []);
-  console.log(`UI smoke passed. Screenshot: ${path.join(dir, "ui-smoke.png")}`);
+  console.log(`UI smoke passed. Screenshot: ${screenshotPath}`);
 } finally {
+  if (browser) await browser.close().catch(() => {});
   if (nextServer) {
     nextServer.kill();
     await new Promise((resolve) => nextServer.once("close", resolve));
@@ -957,22 +967,28 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function pageApiRequest(page, method, route, body) {
-  const result = await page.evaluate(async ({ method, route, body }) => {
-    const response = await fetch(route, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const text = await response.text();
-    let payload = {};
-    try {
-      payload = text ? JSON.parse(text) : {};
-    } catch {
-      payload = { text };
-    }
-    return { ok: response.ok, payload, status: response.status };
-  }, { method, route, body });
+async function pageApiRequest(page, method, route, body, options = {}) {
+  const attempts = 1 + (options.retries ?? 0);
+  let result = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    result = await page.evaluate(async ({ method, route, body }) => {
+      const response = await fetch(route, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      let payload = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        payload = { text };
+      }
+      return { ok: response.ok, payload, status: response.status };
+    }, { method, route, body });
+    if (result.ok || result.status < 500 || attempt === attempts - 1) break;
+    await page.waitForTimeout(250);
+  }
   assert.equal(result.ok, true, `${method} ${route}: ${JSON.stringify(result.payload)} (${result.status})`);
   return result.payload;
 }

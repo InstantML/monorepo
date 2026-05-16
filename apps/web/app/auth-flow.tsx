@@ -1,7 +1,8 @@
 "use client";
 
-import { ArrowRight, CheckCircle2, Copy, KeyRound, UserPlus } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Show, SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
+import { ArrowRight, CheckCircle2, Copy, KeyRound, ShieldCheck, UserPlus } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient } from "../src/api.js";
 import { sanitizeNextPath } from "../src/routes.js";
@@ -20,12 +21,26 @@ type DevGoogleAuthPayload = {
   org_name?: string;
   seat_emails?: string[];
 };
+type OrgAvailability = {
+  available?: boolean;
+  message?: string;
+  slug?: string;
+};
+type AuthConfig = {
+  dev_auth_enabled: boolean;
+  managed_clerk_enabled: boolean;
+  loaded: boolean;
+};
+
 const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
 
 export function AuthFlow({ mode }: { mode: AuthMode }) {
   const api = useMemo(() => new ApiClient(), []);
-  const [config, setConfig] = useState({ dev_auth_enabled: false, managed_google_enabled: false, loaded: false });
+  const clerkExchangeAttemptedRef = useRef(false);
+  const { getToken, isLoaded: clerkLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+  const [config, setConfig] = useState<AuthConfig>({ dev_auth_enabled: false, managed_clerk_enabled: false, loaded: false });
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [accountType, setAccountType] = useState("customer");
   const [email, setEmail] = useState("");
@@ -36,7 +51,13 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [message, setMessage] = useState("Checking provider availability...");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [orgAvailability, setOrgAvailability] = useState<OrgAvailability>({});
   const nextPath = typeof window === "undefined" ? "/dashboard/runs" : sanitizeNextPath(new URLSearchParams(window.location.search).get("next"));
+  const signupMode = mode === "signup";
+  const isOnboarding = mode === "onboarding" || Boolean(session?.authenticated);
+  const orgNameRequired = signupMode;
+  const orgUnavailable = orgNameRequired && (!orgName.trim() || orgAvailability.available === false);
+  const managedClerkReady = config.managed_clerk_enabled && clerkLoaded;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -46,14 +67,14 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     ]).then(([configPayload, sessionPayload]) => {
       setConfig({
         dev_auth_enabled: Boolean((configPayload as any).dev_auth_enabled),
-        managed_google_enabled: Boolean((configPayload as any).managed_google_enabled),
+        managed_clerk_enabled: Boolean((configPayload as any).managed_clerk_enabled),
         loaded: true,
       });
       if ((sessionPayload as SessionPayload).authenticated) {
         setSession(sessionPayload as SessionPayload);
         setMessage("Signed in. Finish onboarding when you are ready.");
       } else {
-        setMessage("Use the local development Google-style flow to continue.");
+        setMessage((configPayload as any).managed_clerk_enabled ? "Sign in with Clerk to access your workspace." : "Use the local development Google-style flow to continue.");
       }
     }).catch((error) => {
       if (error?.name !== "AbortError") setMessage(error instanceof Error ? error.message : "Unable to load auth state.");
@@ -61,12 +82,43 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     return () => controller.abort();
   }, [api]);
 
+  useEffect(() => {
+    if (!signupMode || !orgName.trim()) {
+      setOrgAvailability({});
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setOrgAvailability({ message: "Checking organization name..." });
+      api.get(`/api/orgs/name-availability?name=${encodeURIComponent(orgName.trim())}`, { signal: controller.signal })
+        .then((payload) => setOrgAvailability(payload as OrgAvailability))
+        .catch((error) => {
+          if (error?.name !== "AbortError") setOrgAvailability({ available: false, message: "Unable to check this organization name." });
+        });
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, orgName, signupMode]);
+
+  useEffect(() => {
+    if (!managedClerkReady || !isSignedIn || signupMode || isOnboarding || clerkExchangeAttemptedRef.current) return;
+    clerkExchangeAttemptedRef.current = true;
+    void createManagedClerkSession();
+  }, [isOnboarding, isSignedIn, managedClerkReady, signupMode]);
+
   async function createDevGoogleSession(payload: DevGoogleAuthPayload) {
     setBusy(true);
     setMessage("Creating your workspace session...");
     try {
       const sessionPayload = await api.post("/api/auth/dev/google", payload);
       setSession(sessionPayload as SessionPayload);
+      if (isSharedDemoSession(sessionPayload as SessionPayload)) {
+        setMessage("Signed in to the read-only demo. Opening the dashboard...");
+        window.location.assign("/dashboard/runs");
+        return;
+      }
       setMessage("Signed in. Create your first SDK key to finish onboarding.");
       window.history.replaceState(null, "", "/onboarding");
     } catch (error) {
@@ -76,8 +128,42 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     }
   }
 
+  async function createManagedClerkSession() {
+    if (signupMode && orgUnavailable) {
+      setMessage("Choose an available organization name before continuing.");
+      return;
+    }
+    setBusy(true);
+    setMessage(signupMode ? "Creating your hosted workspace..." : "Signing in...");
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Clerk did not return a session token.");
+      const payload = await api.post("/api/auth/clerk", {
+        token,
+        mode: signupMode ? "signup" : "signin",
+        account_type: accountType,
+        org_name: signupMode ? orgName.trim() : undefined,
+        seat_emails: signupMode && accountType === "business"
+          ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
+          : [],
+      });
+      setSession(payload as SessionPayload);
+      setMessage(signupMode ? "Signed in. Create your first SDK key to finish onboarding." : "Signed in. Opening your dashboard...");
+      window.location.assign(signupMode ? "/onboarding" : nextPath);
+    } catch (error) {
+      clerkExchangeAttemptedRef.current = false;
+      setMessage(error instanceof Error ? error.message : "Unable to sign in with Clerk.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (orgUnavailable) {
+      setMessage("Choose an available organization name before continuing.");
+      return;
+    }
     await createDevGoogleSession({
       email,
       display_name: displayName,
@@ -106,6 +192,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         name: "Onboarding SDK key",
       });
       const secret = typeof (payload as any).api_key === "string" ? (payload as any).api_key : "";
+      if (!secret) {
+        setMessage(typeof (payload as any).message === "string" ? (payload as any).message : "No SDK API key was revealed.");
+        return;
+      }
       setApiKey(secret);
       setMessage("API key created. Save it before opening the dashboard.");
     } catch (error) {
@@ -122,8 +212,9 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     setMessage("API key copied.");
   }
 
-  const isOnboarding = mode === "onboarding" || Boolean(session?.authenticated);
   const title = isOnboarding ? "Finish onboarding" : mode === "signin" ? "Sign in to your workspace" : "Create your workspace";
+  const clerkEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? "";
+  const demoSession = isSharedDemoSession(session);
 
   return (
     <main className="auth-page" aria-busy={busy}>
@@ -133,42 +224,76 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         <p className="auth-copy">
           {isOnboarding
             ? "Create a scoped SDK key, reserve seats when needed, then open the dashboard."
-            : "Use the same product-shaped flow as Google auth while local development credentials are not configured."}
+            : config.managed_clerk_enabled
+              ? "Clerk handles sign in. InstantML then creates a scoped workspace session for your org."
+              : "Use the same product-shaped flow as hosted auth while local development credentials are not configured."}
         </p>
 
         {!isOnboarding ? (
           <form className="auth-form" onSubmit={submitAuth}>
-            <button className="shared-demo-button" disabled={busy || !config.dev_auth_enabled} onClick={submitSharedDemo} type="button">
-              <UserPlus size={15} /> Continue as shared demo <ArrowRight size={15} />
-            </button>
-            <div className="auth-form-divider" aria-hidden="true"><span /></div>
-            <label>
-              Email
-              <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
-            </label>
-            <label>
-              Name
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ada Lovelace" />
-            </label>
-            <fieldset className="segmented-field">
-              <legend>Account type</legend>
-              <label><input checked={accountType === "customer"} name="account-type" onChange={() => setAccountType("customer")} type="radio" /> Customer</label>
-              <label><input checked={accountType === "business"} name="account-type" onChange={() => setAccountType("business")} type="radio" /> Business</label>
-            </fieldset>
-            <label>
-              Organization
-              <input value={orgName} onChange={(event) => setOrgName(event.target.value)} placeholder={accountType === "business" ? "Acme Research" : "Personal Workspace"} />
-            </label>
-            {accountType === "business" ? (
-              <label>
-                Reserved seats
-                <textarea value={seatEmails} onChange={(event) => setSeatEmails(event.target.value)} placeholder="teammate@example.com" rows={3} />
-                <small>No invitations are sent yet; this only reserves org seats.</small>
-              </label>
+            {signupMode ? <SignupFields
+              accountType={accountType}
+              availability={orgAvailability}
+              onAccountType={setAccountType}
+              onOrgName={setOrgName}
+              onSeatEmails={setSeatEmails}
+              orgName={orgName}
+              seatEmails={seatEmails}
+            /> : null}
+            {config.managed_clerk_enabled ? (
+              <div className="clerk-auth-stack">
+                <Show when="signed-out">
+                  <div className="clerk-actions">
+                    <SignInButton mode="modal">
+                      <button className="secondary" disabled={!managedClerkReady || busy} type="button">Sign in</button>
+                    </SignInButton>
+                    <SignUpButton mode="modal">
+                      <button className="primary-button" disabled={!managedClerkReady || busy || orgUnavailable} type="button">
+                        <ShieldCheck size={15} /> Sign up with Clerk <ArrowRight size={15} />
+                      </button>
+                    </SignUpButton>
+                  </div>
+                </Show>
+                <Show when="signed-in">
+                  <div className="onboarding-summary">
+                    <UserButton />
+                    <div>
+                      <strong>{user?.fullName || clerkEmail || "Clerk account"}</strong>
+                      <span>{clerkEmail || "Signed in with Clerk"}</span>
+                    </div>
+                  </div>
+                  <button className="primary-button" disabled={busy || orgUnavailable} onClick={createManagedClerkSession} type="button">
+                    <ShieldCheck size={15} /> {signupMode ? "Create InstantML workspace" : "Continue to dashboard"} <ArrowRight size={15} />
+                  </button>
+                </Show>
+              </div>
             ) : null}
-            <button className="primary-button" disabled={busy || !config.dev_auth_enabled} type="submit">
-              <UserPlus size={15} /> Continue with Dev Google <ArrowRight size={15} />
-            </button>
+            {config.dev_auth_enabled ? (
+              <>
+                {config.managed_clerk_enabled ? <div className="auth-form-divider" aria-hidden="true"><span /></div> : null}
+                <button className="shared-demo-button" disabled={busy} onClick={submitSharedDemo} type="button">
+                  <UserPlus size={15} /> Continue as shared demo <ArrowRight size={15} />
+                </button>
+                <div className="auth-form-divider" aria-hidden="true"><span /></div>
+                <label>
+                  Email
+                  <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+                </label>
+                <label>
+                  Name
+                  <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ada Lovelace" />
+                </label>
+                {!signupMode ? (
+                  <label>
+                    Organization
+                    <input value={orgName} onChange={(event) => setOrgName(event.target.value)} placeholder="Personal Workspace" />
+                  </label>
+                ) : null}
+                <button className="primary-button" disabled={busy || orgUnavailable} type="submit">
+                  <UserPlus size={15} /> Continue with Dev Google <ArrowRight size={15} />
+                </button>
+              </>
+            ) : null}
           </form>
         ) : (
           <div className="onboarding-stack">
@@ -179,9 +304,16 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 <span>{session?.user?.primary_email ?? "Signed in"} · {session?.membership?.role ?? "owner"}</span>
               </div>
             </div>
-            <button className="primary-button" disabled={busy || !session?.organization?.id} onClick={createKey} type="button">
-              <KeyRound size={15} /> Create SDK API key
-            </button>
+            {demoSession ? (
+              <div className="api-key-reveal" role="status" aria-live="polite">
+                <strong>Read-only demo</strong>
+                <span>The shared demo does not reveal SDK keys. Use it for browsing sample data, not ingestion.</span>
+              </div>
+            ) : (
+              <button className="primary-button" disabled={busy || !session?.organization?.id} onClick={createKey} type="button">
+                <KeyRound size={15} /> Create SDK API key
+              </button>
+            )}
             {apiKey ? (
               <div className="api-key-reveal" role="status" aria-live="polite">
                 <strong>Copy-once API key</strong>
@@ -189,8 +321,9 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 <button className="secondary" onClick={copyKey} type="button"><Copy size={14} /> {copied ? "Copied" : "Copy key"}</button>
               </div>
             ) : null}
-            <pre className="sdk-snippet">export INSTANTML_API_KEY={apiKey || "instantml_..."}
+            {!demoSession ? <pre className="sdk-snippet">export INSTANTML_API_KEY={apiKey || "instantml_..."}
 python train.py</pre>
+              : null}
             <a className="button-link" href={apiKey ? nextPath : "/dashboard/runs"}>Open dashboard <ArrowRight size={15} /></a>
           </div>
         )}
@@ -201,8 +334,56 @@ python train.py</pre>
   );
 }
 
-function providerLabel(config: { dev_auth_enabled: boolean; managed_google_enabled: boolean }) {
+function SignupFields({
+  accountType,
+  availability,
+  onAccountType,
+  onOrgName,
+  onSeatEmails,
+  orgName,
+  seatEmails,
+}: {
+  accountType: string;
+  availability: OrgAvailability;
+  onAccountType: (value: string) => void;
+  onOrgName: (value: string) => void;
+  onSeatEmails: (value: string) => void;
+  orgName: string;
+  seatEmails: string;
+}) {
+  return (
+    <>
+      <fieldset className="segmented-field">
+        <legend>Account type</legend>
+        <label><input checked={accountType === "customer"} name="account-type" onChange={() => onAccountType("customer")} type="radio" /> Customer</label>
+        <label><input checked={accountType === "business"} name="account-type" onChange={() => onAccountType("business")} type="radio" /> Business</label>
+      </fieldset>
+      <label>
+        Organization
+        <input required value={orgName} onChange={(event) => onOrgName(event.target.value)} placeholder={accountType === "business" ? "Acme Research" : "Personal Workspace"} />
+        {availability.message ? (
+          <small className={availability.available ? "availability-ok" : "availability-error"}>{availability.message}</small>
+        ) : null}
+      </label>
+      {accountType === "business" ? (
+        <label>
+          Reserved seats
+          <textarea value={seatEmails} onChange={(event) => onSeatEmails(event.target.value)} placeholder="teammate@example.com" rows={3} />
+          <small>No invitations are sent yet; this only reserves org seats.</small>
+        </label>
+      ) : null}
+    </>
+  );
+}
+
+function providerLabel(config: AuthConfig) {
   if (config.dev_auth_enabled) return "Local dev Google-style auth";
-  if (config.managed_google_enabled) return "Managed Google auth";
+  if (config.managed_clerk_enabled) return "Managed Clerk auth";
   return "No provider configured";
+}
+
+function isSharedDemoSession(session: SessionPayload | null) {
+  return session?.user?.primary_email === SHARED_DEMO_EMAIL
+    || session?.organization?.name === SHARED_DEMO_ORG
+    || session?.organization?.slug === "instantml-demo";
 }

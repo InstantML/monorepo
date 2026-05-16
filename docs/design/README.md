@@ -25,6 +25,7 @@ Current implemented design sequence:
 - `2026-05-14-mlop-inspired-sdk-ergonomics.md`: MLOP-inspired SDK ergonomics while preserving sync/buffer/offline/process-spool architecture, including auto-step `Run.log()`, local file wrappers, optional local SQLite audit, system metrics, console capture, and lightweight framework adapters.
 - `2026-05-14-instantml-rescheme-and-chart-polish.md`: InstantML frontend rescheme, public brand-token reference, chart density polish, and project/saved-view acceptance criteria.
 - `2026-05-14-hosted-clickhouse-query-benchmarks.md`: hosted ClickHouse demo benchmark protocol for 100,000-run dashboard query latency, response validation, budgets, and sanitized result reporting.
+- `2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, browser session authorization, and ClickHouse Cloud Mini warehouse defaults.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

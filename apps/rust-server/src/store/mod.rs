@@ -45,14 +45,14 @@ use crate::{
         validate_membership_role, validate_name, validate_offset, validate_optional_name,
         validate_optional_step, validate_plan_tier, validate_slug, validate_status, validate_step,
         validate_tags, validate_timestamp, ArtifactRow, AttributeInput, AttributeRow, AuthContext,
-        AuthSessionPayload, ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest,
-        CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
-        CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-        CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest, MembershipRow,
-        MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow,
-        RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow, UpdateRunRequest,
-        UploadArtifactRequest, UserRow, UserSessionRow, DEFAULT_CONSOLE_LOG_LIMIT,
-        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
+        AuthSessionPayload, ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest,
+        CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
+        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
+        CreateUserRequest, CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest,
+        MembershipRow, MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
+        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow,
+        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
         MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
         MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT, MAX_TEXT_BYTES,
     },
@@ -72,6 +72,7 @@ const DEFAULT_API_KEY_SCOPES: &[&str] = &[
     "export:read",
 ];
 const ONBOARDING_API_KEY_SCOPES: &[&str] = &["sdk:ingest", "artifacts:write", "export:read"];
+const DEMO_API_KEY_SCOPES: &[&str] = &["export:read"];
 const ALLOWED_SCOPES: &[&str] = &[
     "sdk:ingest",
     "artifacts:write",
