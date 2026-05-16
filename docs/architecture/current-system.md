@@ -95,10 +95,10 @@ Python SDK/uploader -----------> Cloud Run Rust API, max instances 1
 
 Cloud Run Rust API -> ClickHouse Cloud User Data control table
 Cloud Run Rust API -> ClickHouse Cloud tenant services
-Cloud Run Rust API -> static Cloud NAT egress IP for ClickHouse allowlisting
+Cloud Run Rust API -> static Cloud NAT egress IP for ClickHouse service and API-key allowlisting
 ```
 
-This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, restricts hosted Clerk signup by allowlist, and disables hosted artifact byte uploads until object storage is designed.
+This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, restricts ClickHouse Cloud services and API keys to the Cloud Run static egress IP plus explicit operator IPs, restricts hosted Clerk signup by allowlist, and disables hosted artifact byte uploads until object storage is designed.
 
 ## Storage
 
@@ -131,7 +131,7 @@ The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
 ## Operational Commands
 
 - `npm run dev:api`: starts or reuses local ClickHouse, applies the ClickHouse schema, then serves the Rust API.
-- `npm run deploy:cloud-run`: deploys the Rust API to the internal single-instance Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud allowlists when credentials are present, and writes the hosted API URL to local frontend env files.
+- `npm run deploy:cloud-run`: deploys the Rust API to the internal single-instance Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud service and API-key allowlists when credentials are present, and writes the hosted API URL to local frontend env files.
 - `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui`: run through `tools/rust-service-smoke.mjs`, which creates disposable ClickHouse state, starts Rust, runs the smoke, and cleans up.
 - `npm run benchmark:large-runs`: seeds operational records and metric rows into disposable ClickHouse before measuring summary/search/sort/chart endpoints.
 - `npm run dev:api:node` and `npm run test:contract:node`: explicit deprecated Node compatibility paths.

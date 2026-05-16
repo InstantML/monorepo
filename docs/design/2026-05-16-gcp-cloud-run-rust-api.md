@@ -12,7 +12,7 @@ InstantML needs a first hosted Rust API deployment so local development can run 
 
 The hosted API connects to the existing live ClickHouse Cloud User Data service and provisions tenant ClickHouse Cloud warehouses through the already accepted hosted ClickHouse routing path. Because the Rust operational index remains documented as single-process safe, this deployment must pin Cloud Run to one instance until a reconciliation or direct-query hosted coordination design is accepted.
 
-ClickHouse Cloud access should be restricted to a static Cloud Run egress IP where possible. The deployment creates a regional VPC/subnet, static external address, Cloud Router, and Cloud NAT, then deploys Cloud Run with Direct VPC egress for all outbound traffic so ClickHouse Cloud can allowlist the static NAT address instead of opening the service to the internet.
+ClickHouse Cloud access should be restricted to a static Cloud Run egress IP where possible. The deployment creates a regional VPC/subnet, static external address, Cloud Router, and Cloud NAT, then deploys Cloud Run with Direct VPC egress for all outbound traffic so ClickHouse Cloud can allowlist the static NAT address instead of opening the service or Cloud API key to the internet.
 
 This first hosted release is internal-only. Public signup must be restricted by explicit email/domain allowlists so a public Cloud Run URL cannot create arbitrary paid ClickHouse Cloud warehouses. Tenant passwords may still be stored in User Data only under the accepted early-hosted secret-storage guard; that remains a blocker for public launch, not a permanent production posture.
 
@@ -144,8 +144,9 @@ Cloud Build uploads the repo root as build context, so the helper must fail unle
 The deploy helper prints the static egress IP and can optionally call ClickHouse Cloud's API when `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID` and `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET` are present. The production target is:
 
 - Existing User Data service allows the static egress IP.
+- ClickHouse Cloud API keys used by the Rust API allow the static egress IP.
 - New tenant services are created with the same static egress IP through `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`.
-- Temporary `0.0.0.0/0` access is acceptable only with an explicit operator override such as `INSTANTML_ALLOW_OPEN_CLICKHOUSE_ACCESS=1`; normal deploys must print whether any targeted service still has open access.
+- Temporary `0.0.0.0/0` access is acceptable only with an explicit operator override such as `INSTANTML_ALLOW_OPEN_CLICKHOUSE_ACCESS=1`; normal deploys must print whether any targeted service or API key still has open access.
 
 The UI path remains available for manual ClickHouse Cloud allowlist edits if the API shape changes or a service-specific update endpoint is unavailable.
 
@@ -162,11 +163,12 @@ The script should:
 5. Ensure runtime service account.
 6. Ensure static egress network resources unless disabled with `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`.
 7. Sync selected secrets to Secret Manager.
-8. Build the image with Cloud Build using the existing root `Dockerfile`.
-9. Deploy Cloud Run with explicit env vars and secret env mappings.
-10. Verify max instances, dev auth, auth config, `/health`, and `/readyz`.
-11. Write the Cloud Run URL to `.env` and `apps/web/.env.local` for local frontend use.
-12. Print service URL, image URL, service account, and static egress IP.
+8. Add the static egress IP to all ClickHouse Cloud services and Cloud API keys in the organization unless disabled with explicit operator env vars.
+9. Build the image with Cloud Build using the existing root `Dockerfile`.
+10. Deploy Cloud Run with explicit env vars and secret env mappings.
+11. Verify max instances, dev auth, auth config, `/health`, and `/readyz`.
+12. Write the Cloud Run URL to `.env` and `apps/web/.env.local` for local frontend use.
+13. Print service URL, image URL, service account, and static egress IP.
 
 The helper should be idempotent enough for normal releases: re-running creates a new image tag and Cloud Run revision without deleting existing services, networks, routers, NATs, repositories, or secrets.
 
@@ -240,6 +242,7 @@ Deferred complexity:
 - Missing Clerk secret: Cloud Run can deploy without managed Clerk, but hosted signup/sign-in are disabled and local frontend auth is not considered fully working.
 - Static egress setup failure: helper stops unless static egress is explicitly disabled and the operator accepts manual ClickHouse allowlisting.
 - ClickHouse Cloud allowlist does not include Cloud Run egress IP: `/readyz` or tenant routes fail to connect; operator must update allowlist and redeploy or retry.
+- ClickHouse Cloud API-key allowlist does not include Cloud Run egress IP: new tenant-service creation fails from Cloud Run even though service query traffic may work; operator must update the key allowlist and redeploy or retry.
 - Cloud Run cold starts: service may take longer while establishing Direct VPC egress and checking ClickHouse.
 - Container-local artifacts are ephemeral: hosted byte uploads stay disabled until object storage lands.
 - Multi-instance override: two API instances can serve stale operational state; keep `--max-instances 1`.
@@ -259,7 +262,7 @@ Deferred complexity:
 - Verify the deploy helper writes `apps/web/.env.local` so `npm run web:dev` points at the hosted API without a local Rust server.
 - Verify `INSTANTML_SIGNUP_ALLOWED_EMAILS` or `INSTANTML_SIGNUP_ALLOWED_DOMAINS` is set.
 - Verify hosted artifact byte upload returns a clear forbidden response until object storage lands.
-- Verify ClickHouse Cloud access lists include the static egress IP and do not contain `0.0.0.0/0` unless an explicit temporary override was used.
+- Verify ClickHouse Cloud service and API-key access lists include the static egress IP and do not contain `0.0.0.0/0` unless an explicit temporary override was used.
 - Run a narrow hosted API smoke with `INSTANTML_CONTRACT_BASE_URL=<cloud-run-url>` and `INSTANTML_CONTRACT_BOOTSTRAP_TOKEN` when a bootstrap token is configured.
 
 ## Documentation Plan

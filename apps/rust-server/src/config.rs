@@ -248,7 +248,11 @@ fn hosted_clickhouse_config(
             region: env_string("INSTANTML_CLICKHOUSE_CLOUD_REGION", "us-central1"),
             ip_access_list: env_string_list("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST")
                 .filter(|values| !values.is_empty())
-                .unwrap_or_else(|| vec!["0.0.0.0/0".to_string()]),
+                .ok_or_else(|| {
+                    AppError::config(
+                        "INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST is required for cloud-service provisioning",
+                    )
+                })?,
             min_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB", 12)?
                 as u32,
             max_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 12)?

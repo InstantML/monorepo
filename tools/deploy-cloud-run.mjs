@@ -15,6 +15,8 @@ Environment:
   INSTANTML_SIGNUP_ALLOWED_EMAILS      Comma-separated hosted signup allowlist.
   INSTANTML_ALLOWED_FRONTEND_ORIGINS   Comma-separated browser origins allowed for session mutations.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
+  INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none  Skip service access-list updates.
+  INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none      Skip Cloud API-key access-list updates.
 `);
   process.exit(0);
 }
@@ -44,7 +46,8 @@ const activeAccount = capture(["config", "get-value", "account"]).trim();
 const imageTag = value("INSTANTML_IMAGE_TAG") || gitShortSha() || timestampTag();
 const image = `${region}-docker.pkg.dev/${project}/${repository}/${service}:${imageTag}`;
 const useStaticEgress = boolValue("INSTANTML_CLOUD_RUN_STATIC_EGRESS", true);
-const updateClickHouseAllowlist = value("INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES") !== "none";
+const updateClickHouseServiceAllowlist = value("INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES") !== "none";
+const updateClickHouseKeyAllowlist = value("INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS") !== "none";
 const writeLocalEnv = boolValue("INSTANTML_WRITE_LOCAL_FRONTEND_ENV", true);
 
 preflightBuildContext();
@@ -56,8 +59,8 @@ ensureCloudBuildServiceAccount();
 const staticEgressIp = useStaticEgress ? ensureStaticEgress() : "";
 const secretEnv = syncSecrets(serviceAccountEmail);
 const envVars = buildRuntimeEnv(staticEgressIp, activeAccount);
-if (staticEgressIp && updateClickHouseAllowlist) {
-  await updateClickHouseIpAccessList(staticEgressIp);
+if (staticEgressIp && (updateClickHouseServiceAllowlist || updateClickHouseKeyAllowlist)) {
+  await updateClickHouseAccessLists(staticEgressIp);
 }
 buildImage();
 const url = deployService(serviceAccountEmail, staticEgressIp, envVars, secretEnv);
@@ -354,7 +357,7 @@ async function verifyService(url) {
   }
 }
 
-async function updateClickHouseIpAccessList(staticIp) {
+async function updateClickHouseAccessLists(staticIp) {
   const endpoint = value("CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT");
   const keyId = value("CLICKHOUSE_INSTANTML_GENERAL_KEY_ID");
   const keySecret = value("CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET");
@@ -366,21 +369,41 @@ async function updateClickHouseIpAccessList(staticIp) {
     console.warn("ClickHouse Cloud organization could not be discovered; skipped allowlist update.");
     return;
   }
+  if (updateClickHouseServiceAllowlist) {
+    await updateClickHouseServiceAccessLists(apiBase, auth, orgId, endpoint, staticIp);
+  }
+  if (updateClickHouseKeyAllowlist) {
+    await updateClickHouseApiKeyAccessLists(apiBase, auth, orgId, staticIp);
+  }
+}
+
+async function updateClickHouseApiKeyAccessLists(apiBase, auth, orgId, staticIp) {
+  const keys = await listClickHouseApiKeys(apiBase, auth, orgId);
+  for (const key of keys) {
+    const next = clickHouseAccessListWithStaticIp(key.ipAccessList || [], staticIp);
+    const ok = await patchClickHouseApiKeyAllowlist(apiBase, auth, orgId, key.id, next);
+    if (ok) {
+      console.log(`Updated ClickHouse API-key IP access list for ${key.name || key.id}.`);
+    } else {
+      console.warn(`Could not update ClickHouse API-key IP access list for ${key.name || key.id}; update it manually with ${staticIp}/32.`);
+    }
+  }
+}
+
+async function updateClickHouseServiceAccessLists(apiBase, auth, orgId, endpoint, staticIp) {
   const services = await listClickHouseServices(apiBase, auth, orgId);
   const mode = value("INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES") || "all";
   const userDataHost = new URL(endpoint).hostname;
   const selected = services.filter((serviceRow) => {
+    if (mode === "all") return true;
     if (mode === "user-data") return serviceHasHost(serviceRow, userDataHost);
     return serviceHasHost(serviceRow, userDataHost)
       || serviceRow.name?.toLowerCase().includes("instantml")
       || (serviceRow.ipAccessList || []).some((item) => item.source === "0.0.0.0/0");
   });
   for (const serviceRow of selected) {
-    const existing = (serviceRow.ipAccessList || [])
-      .filter((item) => item.source && item.source !== "0.0.0.0/0")
-      .map((item) => ({ source: item.source, description: item.description || "Existing access" }));
-    const next = dedupeBySource([...existing, { source: `${staticIp}/32`, description: "InstantML Cloud Run" }]);
-    const ok = await patchClickHouseAllowlist(apiBase, auth, orgId, serviceRow.id, next, serviceRow.ipAccessList || []);
+    const next = clickHouseAccessListWithStaticIp(serviceRow.ipAccessList || [], staticIp);
+    const ok = await patchClickHouseServiceAllowlist(apiBase, auth, orgId, serviceRow.id, next, serviceRow.ipAccessList || []);
     if (ok) {
       console.log(`Updated ClickHouse IP access list for ${serviceRow.name || serviceRow.id}.`);
     } else {
@@ -410,7 +433,26 @@ async function listClickHouseServices(apiBase, auth, orgId) {
   return [];
 }
 
-async function patchClickHouseAllowlist(apiBase, auth, orgId, serviceId, list, currentList = []) {
+async function listClickHouseApiKeys(apiBase, auth, orgId) {
+  const payload = await clickhouseApi(`${apiBase}/v1/organizations/${orgId}/keys`, auth);
+  const result = payload.result ?? payload;
+  if (Array.isArray(result)) return result;
+  for (const key of ["keys", "data", "items"]) {
+    if (Array.isArray(result?.[key])) return result[key];
+  }
+  return [];
+}
+
+async function patchClickHouseApiKeyAllowlist(apiBase, auth, orgId, keyId, list) {
+  const response = await fetch(`${apiBase}/v1/organizations/${orgId}/keys/${keyId}`, {
+    method: "PATCH",
+    headers: { authorization: auth, "content-type": "application/json" },
+    body: JSON.stringify({ ipAccessList: list }),
+  });
+  return response.ok;
+}
+
+async function patchClickHouseServiceAllowlist(apiBase, auth, orgId, serviceId, list, currentList = []) {
   const currentSources = new Set(list.map((item) => item.source));
   const removeSources = [
     "0.0.0.0/0",
@@ -431,6 +473,13 @@ async function patchClickHouseAllowlist(apiBase, auth, orgId, serviceId, list, c
     if (response.ok) return true;
   }
   return false;
+}
+
+function clickHouseAccessListWithStaticIp(list, staticIp) {
+  const existing = (list || [])
+    .filter((item) => item.source && item.source !== "0.0.0.0/0")
+    .map((item) => ({ source: item.source, description: item.description || "Existing access" }));
+  return dedupeBySource([...existing, { source: `${staticIp}/32`, description: "InstantML Cloud Run" }]);
 }
 
 async function clickhouseApi(url, auth) {

@@ -109,7 +109,7 @@ Training-observability roadmap first slice is implemented:
 - Neptune Exporter-shaped, transformed W&B, and transformed MLflow JSON importer endpoints and CLIs.
 - Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
 - Docker Compose for a one-command local Rust/ClickHouse API and artifact-storage stack.
-- Internal Cloud Run deployment for the Rust API with Secret Manager secrets, single-instance scaling, static egress to ClickHouse Cloud, and local frontend-only development against the hosted API.
+- Internal Cloud Run deployment for the Rust API with Secret Manager secrets, single-instance scaling, static egress to ClickHouse Cloud services/API keys, and local frontend-only development against the hosted API.
 
 Known follow-ups before broadening the roadmap:
 
