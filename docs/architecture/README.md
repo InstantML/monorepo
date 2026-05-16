@@ -2,9 +2,9 @@
 
 This directory is for longer-lived architecture references that remain useful after individual design docs are implemented.
 
-Current product direction: InstantML is a general training-loop observability product with an owned backend stack. Architecture docs should preserve that framing even when they discuss RL examples or Neptune import compatibility.
+Current product direction: InstantML is a general training-loop observability product with an owned backend stack and Free/Pro/Premium packaging. Architecture docs should preserve that framing even when they discuss RL examples, Neptune import compatibility, or warning-only pricing telemetry.
 
-Accepted backend direction: the default product path is now `Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage` and `Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage`. The Node server is deprecated compatibility infrastructure for route-shape checks, JSON migration fixtures, and legacy fallback. Architecture docs should say whether they describe the current Rust/ClickHouse system or the deprecated Node/JSON system.
+Accepted backend direction: the default product path is now `Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage` and `Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage`. Signup records plan and tenant-route warehouse intent, but applied hosted warehouse size stays operator-capped unless explicit spend gates allow plan-sized provisioning. The Node server is deprecated compatibility infrastructure for route-shape checks, JSON migration fixtures, and legacy fallback. Architecture docs should say whether they describe the current Rust/ClickHouse system or the deprecated Node/JSON system.
 
 `current-system.md` is the source of truth for current component ownership, runtime topology, generated local state, and the storage split after the repo move into `monorepo/`.
 
@@ -17,6 +17,6 @@ Current references:
 - `current-system.md`: implemented architecture, current ownership boundaries, runtime topology, API/storage shape, generated local state, and outstanding simplification follow-ups.
 - `current-api.md`: current Rust API route reference with auth requirements, inputs, query parameters, response envelopes, limits, and examples.
 - `current-schemas.md`: current control-plane and data-plane ClickHouse schemas, operational record kinds, JSON payload shapes, replay rules, and schema change checklist.
-- `auth-and-tenant-flow.md`: Clerk hosted auth, InstantML browser sessions, SDK API keys, org authorization, and hosted ClickHouse tenant routing.
+- `auth-and-tenant-flow.md`: Clerk hosted auth, plan-aware signup, invited-member activation, InstantML browser sessions, SDK API keys, org authorization, and hosted ClickHouse tenant routing.
 - `multi-instance-cloud-run.md`: split Cloud Run control/data topology, HTTPS public router, request flows, deploy commands, scaling guardrails, ClickHouse allowlisting, and launch checklist.
 - `../design/2026-05-14-clickhouse-only-storage.md`: accepted ClickHouse-only local/test storage slice and hosted control-plane/data-plane direction.

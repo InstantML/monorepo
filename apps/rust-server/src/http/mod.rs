@@ -107,7 +107,10 @@ fn control_routes() -> Router<Arc<AppState>> {
             "/api/orgs/:org_id/api-keys",
             post(create_api_key).get(list_api_keys),
         )
-        .route("/api/orgs/:org_id/seats", post(reserve_seat))
+        .route(
+            "/api/orgs/:org_id/seats",
+            post(reserve_seat).get(list_seats),
+        )
         .route(
             "/api/orgs/:org_id/api-keys/:api_key_id/revoke",
             post(revoke_api_key),

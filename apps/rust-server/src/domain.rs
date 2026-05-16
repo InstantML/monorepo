@@ -19,6 +19,68 @@ pub const DEFAULT_CONSOLE_LOG_LIMIT: i64 = 250;
 pub const MAX_CONSOLE_LOG_LIMIT: i64 = 1_000;
 pub const MAX_CONSOLE_LOG_LINES_PER_BATCH: usize = 50;
 pub const MAX_CONSOLE_LOG_MESSAGE_BYTES: usize = 16 * 1024;
+pub const GIB_BYTES: i64 = 1024 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct PlanTier {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub monthly_base_usd: i64,
+    pub included_seats: i32,
+    pub included_storage_bytes: i64,
+    pub projects: i64,
+    pub runs: i64,
+    pub metric_points: i64,
+    pub warehouse_kind: &'static str,
+    pub min_replica_memory_gb: u32,
+    pub max_replica_memory_gb: u32,
+    pub num_replicas: u32,
+}
+
+pub const PLAN_FREE: PlanTier = PlanTier {
+    id: "free",
+    label: "Free",
+    monthly_base_usd: 0,
+    included_seats: 2,
+    included_storage_bytes: 2 * GIB_BYTES,
+    projects: 2,
+    runs: 100,
+    metric_points: 1_000_000,
+    warehouse_kind: "shared",
+    min_replica_memory_gb: 8,
+    max_replica_memory_gb: 8,
+    num_replicas: 1,
+};
+
+pub const PLAN_PRO: PlanTier = PlanTier {
+    id: "pro",
+    label: "Pro",
+    monthly_base_usd: 199,
+    included_seats: 3,
+    included_storage_bytes: 1024 * GIB_BYTES,
+    projects: 100,
+    runs: 100_000,
+    metric_points: 250_000_000,
+    warehouse_kind: "standard",
+    min_replica_memory_gb: 12,
+    max_replica_memory_gb: 12,
+    num_replicas: 1,
+};
+
+pub const PLAN_PREMIUM: PlanTier = PlanTier {
+    id: "premium",
+    label: "Premium",
+    monthly_base_usd: 699,
+    included_seats: 10,
+    included_storage_bytes: 5 * 1024 * GIB_BYTES,
+    projects: 500,
+    runs: 1_000_000,
+    metric_points: 2_000_000_000,
+    warehouse_kind: "dedicated",
+    min_replica_memory_gb: 16,
+    max_replica_memory_gb: 16,
+    num_replicas: 2,
+};
 
 #[derive(Clone, Debug)]
 pub struct RequestContext {
@@ -156,9 +218,12 @@ pub struct CreatedAuthSession {
 pub struct DevGoogleAuthRequest {
     pub email: Option<String>,
     pub display_name: Option<String>,
+    pub mode: Option<String>,
     pub account_type: Option<String>,
     pub org_name: Option<String>,
+    pub plan_tier: Option<String>,
     pub seat_emails: Option<Vec<String>>,
+    pub accept_invite_org_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -167,13 +232,29 @@ pub struct ClerkAuthRequest {
     pub mode: Option<String>,
     pub account_type: Option<String>,
     pub org_name: Option<String>,
+    pub plan_tier: Option<String>,
     pub seat_emails: Option<Vec<String>>,
+    pub accept_invite_org_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ReserveSeatRequest {
     pub email: Option<String>,
     pub role: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SeatUserRow {
+    pub id: Uuid,
+    pub primary_email: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SeatRow {
+    pub membership: MembershipRow,
+    pub user: SeatUserRow,
 }
 
 #[derive(Debug, Deserialize)]
@@ -457,12 +538,21 @@ pub fn validate_slug(value: Option<&str>, field: &str) -> AppResult<String> {
 
 pub fn validate_plan_tier(value: Option<&str>) -> AppResult<String> {
     let tier = validate_name(Some(value.unwrap_or("free")), "plan_tier")?.to_ascii_lowercase();
-    if matches!(tier.as_str(), "free" | "lab" | "startup" | "growth") {
-        Ok(tier)
-    } else {
-        Err(AppError::validation(
-            "plan_tier must be one of: free, lab, startup, growth",
-        ))
+    match tier.as_str() {
+        "free" => Ok("free".to_string()),
+        "pro" | "lab" | "startup" => Ok("pro".to_string()),
+        "premium" | "growth" => Ok("premium".to_string()),
+        _ => Err(AppError::validation(
+            "plan_tier must be one of: free, pro, premium",
+        )),
+    }
+}
+
+pub fn plan_tier(value: &str) -> PlanTier {
+    match value {
+        "pro" | "lab" | "startup" => PLAN_PRO,
+        "premium" | "growth" => PLAN_PREMIUM,
+        _ => PLAN_FREE,
     }
 }
 

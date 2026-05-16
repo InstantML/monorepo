@@ -44,14 +44,34 @@ try {
   const signup = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hosted-smoke@example.com",
     display_name: "Hosted Smoke",
+    mode: "signup",
     account_type: "business",
     org_name: `Hosted Smoke ${Date.now()}`,
+    plan_tier: "pro",
     seat_emails: ["teammate@example.com"],
   });
   const cookie = signup.cookie;
   const orgId = signup.body.organization.id;
   assert.ok(orgId, "signup should return an organization id");
+  assert.equal(signup.body.organization.plan_tier, "pro");
+  assert.equal(signup.body.organization.seat_limit, 3);
   assertNoSensitiveProvisioningFields(signup.body);
+
+  let seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
+  assert.equal(seats.seats.length, 2);
+  assert.equal(seats.seats.some((seat) => seat.user.primary_email === "teammate@example.com" && seat.membership.status === "invited"), true);
+
+  const teammateSignin = await postJson(controlBaseUrl, "/api/auth/dev/google", {
+    email: "teammate@example.com",
+    display_name: "Teammate Smoke",
+    mode: "signin",
+  });
+  const teammateCookie = teammateSignin.cookie;
+  assert.equal(teammateSignin.body.organization.id, orgId);
+  assert.equal(teammateSignin.body.membership.role, "member");
+  assert.equal(teammateSignin.body.membership.status, "active");
+  seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
+  assert.equal(seats.seats.some((seat) => seat.user.primary_email === "teammate@example.com" && seat.membership.status === "active"), true);
 
   const firstKinds = await controlKinds();
   for (const kind of ["user", "organization", "membership", "session", "tenant_route"]) {
@@ -90,6 +110,22 @@ try {
   );
   const apiKey = keyPayload.body.api_key;
   assert.match(apiKey, /^instantml_/, "API key should be copy-once secret");
+  let listedKeys = await getJson(controlBaseUrl, `/api/orgs/${orgId}/api-keys`, { cookie });
+  assert.equal(listedKeys.api_keys.some((key) => key.id === keyPayload.body.key.id), true);
+  const extraKeyPayload = await postJson(
+    controlBaseUrl,
+    `/api/orgs/${orgId}/api-keys`,
+    { name: "Hosted smoke revoked key" },
+    { cookie },
+  );
+  await postJson(
+    controlBaseUrl,
+    `/api/orgs/${orgId}/api-keys/${extraKeyPayload.body.key.id}/revoke`,
+    {},
+    { cookie },
+  );
+  listedKeys = await getJson(controlBaseUrl, `/api/orgs/${orgId}/api-keys`, { cookie });
+  assert.ok(listedKeys.api_keys.find((key) => key.id === extraKeyPayload.body.key.id)?.revoked_at);
   await assertPostStatus(
     controlBaseUrl,
     `/api/orgs/${orgId}/api-keys`,
@@ -101,6 +137,10 @@ try {
   const route = await latestTenantRoute(orgId);
   assert.equal(route.status, "ready");
   assert.ok(route.database.startsWith("instantml_org_"));
+  assert.equal(route.plan_tier, "pro");
+  assert.equal(route.warehouse_kind, "standard");
+  assert.equal(route.requested_min_replica_memory_gb, 12);
+  assert.equal(route.applied_min_replica_memory_gb, 12);
 
   const run = (
     await postJson(
@@ -132,6 +172,14 @@ try {
   assert.equal(summary.runs[0].id, run.id);
   assert.equal(summary.runs[0].latest_metrics["eval/return_mean"], 42);
 
+  const teammateSummary = await getJson(
+    dataBaseUrl,
+    "/api/runs/summary?project=hosted-smoke&q=searchable&limit=10",
+    { cookie: teammateCookie },
+  );
+  assert.equal(teammateSummary.runs.length, 1);
+  assert.equal(teammateSummary.runs[0].id, run.id);
+
   runPythonSdk(apiKey);
   const pythonSummary = await getJson(
     dataBaseUrl,
@@ -161,6 +209,14 @@ try {
   );
   assert.equal(restartedPython.runs.length, 1);
   assert.equal(restartedPython.runs[0].latest_metrics["eval/return_mean"], 102);
+
+  const usage = await getJson(dataBaseUrl, "/api/usage", { cookie });
+  assert.equal(usage.billing_precision, "not_billable");
+  assert.equal(usage.plans.pro.included_seats, 3);
+  assert.equal(usage.organizations[0].plan_tier, "pro");
+  assert.equal(usage.organizations[0].usage.seats, 2);
+  assert.equal(usage.organizations[0].usage.api_keys, 1);
+  assert.equal(usage.organizations[0].limits.included_storage_bytes, 1024 ** 4);
 
   const finalKinds = await controlKinds();
   assert.ok(finalKinds.includes("api_key"), "User Data should contain api_key");

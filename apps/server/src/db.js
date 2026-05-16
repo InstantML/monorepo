@@ -18,39 +18,51 @@ export const PLAN_TIERS = Object.freeze({
   free: Object.freeze({
     id: "free",
     label: "Free",
-    included_seats: 1,
-    included_storage_bytes: 5 * GiB,
+    monthly_base_usd: 0,
+    included_seats: 2,
+    included_storage_bytes: 2 * GiB,
     projects: 2,
     runs: 100,
     metric_points: 1_000_000,
+    warehouse_kind: "shared",
+    min_replica_memory_gb: 8,
+    max_replica_memory_gb: 8,
+    num_replicas: 1,
   }),
-  lab: Object.freeze({
-    id: "lab",
-    label: "Lab",
+  pro: Object.freeze({
+    id: "pro",
+    label: "Pro",
+    monthly_base_usd: 199,
     included_seats: 3,
-    included_storage_bytes: 100 * GiB,
-    projects: 25,
-    runs: 10_000,
-    metric_points: 25_000_000,
-  }),
-  startup: Object.freeze({
-    id: "startup",
-    label: "Startup",
-    included_seats: 10,
-    included_storage_bytes: 500 * GiB,
+    included_storage_bytes: 1024 * GiB,
     projects: 100,
     runs: 100_000,
-    metric_points: 200_000_000,
+    metric_points: 250_000_000,
+    warehouse_kind: "standard",
+    min_replica_memory_gb: 12,
+    max_replica_memory_gb: 12,
+    num_replicas: 1,
   }),
-  growth: Object.freeze({
-    id: "growth",
-    label: "Growth",
-    included_seats: 25,
-    included_storage_bytes: 2 * 1024 * GiB,
+  premium: Object.freeze({
+    id: "premium",
+    label: "Premium",
+    monthly_base_usd: 699,
+    included_seats: 10,
+    included_storage_bytes: 5 * 1024 * GiB,
     projects: 500,
     runs: 1_000_000,
-    metric_points: 1_000_000_000,
+    metric_points: 2_000_000_000,
+    warehouse_kind: "dedicated",
+    min_replica_memory_gb: 16,
+    max_replica_memory_gb: 16,
+    num_replicas: 2,
   }),
+});
+
+const LEGACY_PLAN_ALIASES = Object.freeze({
+  lab: "pro",
+  startup: "pro",
+  growth: "premium",
 });
 
 export const USAGE_OVERAGE_POLICY = Object.freeze({
@@ -221,11 +233,14 @@ export function createOrganization(state, input) {
   if (existing) return clone(existing);
   const ownerUserId = input?.owner_user_id === undefined || input?.owner_user_id === null ? null : validateName(input.owner_user_id, "owner_user_id");
   if (ownerUserId) getUserRecord(state, ownerUserId);
+  const planTier = validatePlanTier(input?.plan_tier ?? "free");
   const organization = {
     id: randomUUID(),
     slug,
     name,
-    plan_tier: validatePlanTier(input?.plan_tier ?? "free"),
+    plan_tier: planTier,
+    account_type: "customer",
+    seat_limit: PLAN_TIERS[planTier].included_seats,
     created_by_user_id: ownerUserId,
     created_at: utcNow(),
   };
@@ -236,6 +251,7 @@ export function createOrganization(state, input) {
       org_id: organization.id,
       user_id: ownerUserId,
       role: "owner",
+      status: "active",
       created_at: utcNow(),
     });
   }
@@ -1643,6 +1659,8 @@ function defaultOrganization() {
     slug: DEFAULT_ORG_SLUG,
     name: "Local",
     plan_tier: "free",
+    account_type: "customer",
+    seat_limit: PLAN_TIERS.free.included_seats,
     created_by_user_id: null,
     created_at: "1970-01-01T00:00:00.000Z",
   };
@@ -1656,7 +1674,12 @@ function ensureDefaultOrg(state) {
 
 function normalizeState(state) {
   ensureDefaultOrg(state);
-  for (const organization of state.organizations) organization.plan_tier = validatePlanTier(organization.plan_tier ?? "free");
+  for (const organization of state.organizations) {
+    organization.plan_tier = validatePlanTier(organization.plan_tier ?? "free");
+    organization.account_type = organization.account_type ?? "customer";
+    organization.seat_limit = organization.seat_limit ?? PLAN_TIERS[organization.plan_tier].included_seats;
+  }
+  for (const membership of state.memberships) membership.status = membership.status ?? "active";
   for (const project of state.projects) project.org_id = project.org_id ?? DEFAULT_ORG_ID;
   for (const run of state.runs) run.org_id = run.org_id ?? state.projects.find((project) => project.id === run.project_id)?.org_id ?? DEFAULT_ORG_ID;
   for (const metric of state.metrics) metric.org_id = metric.org_id ?? state.runs.find((run) => run.id === metric.run_id)?.org_id ?? DEFAULT_ORG_ID;
@@ -1767,8 +1790,9 @@ function validateSlug(value, field) {
 }
 
 function validatePlanTier(value) {
-  const planTier = validateName(value, "plan_tier").toLowerCase();
-  if (!Object.hasOwn(PLAN_TIERS, planTier)) throw new ValidationError("plan_tier must be one of: free, lab, startup, growth");
+  const rawPlanTier = validateName(value, "plan_tier").toLowerCase();
+  const planTier = LEGACY_PLAN_ALIASES[rawPlanTier] ?? rawPlanTier;
+  if (!Object.hasOwn(PLAN_TIERS, planTier)) throw new ValidationError("plan_tier must be one of: free, pro, premium");
   return planTier;
 }
 

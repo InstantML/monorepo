@@ -183,11 +183,21 @@ Body:
 {
   "email": "hello@instantml.ai",
   "display_name": "InstantML Demo",
+  "mode": "signup",
+  "plan_tier": "pro",
   "account_type": "business",
   "org_name": "InstantML Demo",
-  "seat_emails": ["teammate@example.com"]
+  "seat_emails": ["teammate@example.com"],
+  "accept_invite_org_id": null
 }
 ```
+
+`mode` is `signup` or `signin`. `plan_tier` accepts `free`, `pro`, or
+`premium`; legacy `lab`/`startup` canonicalize to `pro` and `growth`
+canonicalizes to `premium`. On sign-in, `accept_invite_org_id` can activate a
+pending invited membership for the verified email address. If a verified user
+has multiple pending invites and does not choose one, the server returns `409`
+with `code: "multiple_pending_invites"`.
 
 Output: authenticated session payload plus `Set-Cookie: instantml_session=...`.
 
@@ -200,16 +210,20 @@ Body:
 ```json
 {
   "token": "clerk-session-jwt",
-  "mode": "signin",
+  "mode": "signup",
+  "plan_tier": "premium",
   "account_type": "customer",
   "org_name": "Acme Research",
-  "seat_emails": []
+  "seat_emails": ["teammate@example.com"],
+  "accept_invite_org_id": null
 }
 ```
 
 `mode` is `signin` or `signup`. `org_name` is required for signup and omitted
-for normal sign-in. Output is the authenticated session payload plus
-`Set-Cookie: instantml_session=...`.
+for normal sign-in. `plan_tier` is required only for plan-specific signup
+behavior and defaults to `free` when omitted. `accept_invite_org_id` is used on
+sign-in to activate a matching invited membership. Output is the authenticated
+session payload plus `Set-Cookie: instantml_session=...`.
 
 ### `GET /api/auth/session`
 
@@ -264,7 +278,8 @@ owner/admin browser session, an unrestricted org API key with
 | `POST` | `/api/orgs` | `{ "name"?, "slug"?, "plan_tier"?, "owner_user_id"? }` | `{ "organization": OrganizationRow }` |
 | `GET` | `/api/orgs` | none | `{ "organizations": [OrganizationRow] }` |
 | `GET` | `/api/orgs/name-availability` | `name` | `{ "name", "slug", "available", "message" }` |
-| `POST` | `/api/orgs/:org_id/seats` | `{ "email", "role"?: "owner" | "admin" | "member" | "viewer" }` | `{ "membership": MembershipRow }` |
+| `GET` | `/api/orgs/:org_id/seats` | none | `{ "seats": [SeatRow] }` |
+| `POST` | `/api/orgs/:org_id/seats` | `{ "email", "role"?: "owner" | "admin" | "member" | "viewer" }` | `{ "seat": SeatRow }` |
 | `POST` | `/api/orgs/:org_id/api-keys` | `{ "name"?, "scopes"?, "project_id"?, "project"?, "expires_at"? }` | `{ "api_key", "api_key_available", "key", "message", "service_account" }` |
 | `GET` | `/api/orgs/:org_id/api-keys` | none | `{ "api_keys": [PublicApiKeyRow] }` |
 | `POST` | `/api/orgs/:org_id/api-keys/:api_key_id/revoke` | none | `{ "key": PublicApiKeyRow }` |
@@ -853,25 +868,77 @@ Output:
   "schema_version": 1,
   "generated_at": "2026-05-16T00:00:00Z",
   "source": "computed_current_state",
+  "billing_precision": "warning_only_not_invoice_truth",
+  "plans": {
+    "free": {
+      "id": "free",
+      "label": "Free",
+      "monthly_base_usd": 0,
+      "included_seats": 2,
+      "included_storage_bytes": 2147483648,
+      "projects": 2,
+      "runs": 100,
+      "metric_points": 1000000,
+      "warehouse_kind": "shared",
+      "min_replica_memory_gb": 8,
+      "max_replica_memory_gb": 8,
+      "num_replicas": 1
+    },
+    "pro": {},
+    "premium": {}
+  },
+  "overage_policy": {
+    "seats": "paid_extra_seats",
+    "projects": "soft_warning_then_upgrade_prompt",
+    "runs": "soft_warning_then_upgrade_prompt",
+    "metric_points": "fair_use_warning",
+    "storage": "soft_warning_then_upgrade_prompt",
+    "artifacts": "visibility_only",
+    "api_keys": "visibility_only"
+  },
   "organizations": [
     {
       "org_id": "uuid",
       "org_slug": "demo",
       "plan_tier": "free",
+      "plan": {
+        "id": "free",
+        "label": "Free",
+        "monthly_base_usd": 0,
+        "included_seats": 2,
+        "included_storage_bytes": 2147483648
+      },
+      "limits": {
+        "included_seats": 2,
+        "included_storage_bytes": 2147483648,
+        "projects": 2,
+        "runs": 100,
+        "metric_points": 1000000
+      },
       "usage": {
-        "seats": 1,
+        "seats": 2,
+        "paid_extra_seats": 0,
         "projects": 1,
         "runs": 2,
         "metric_points": 6,
         "metric_series": 4,
         "artifacts": 0,
+        "api_keys": 1,
         "artifact_bytes_exact": 0,
-        "artifact_bytes_unknown": 0
-      }
+        "artifact_bytes_unknown": 0,
+        "artifact_bytes_unknown_count": 0,
+        "estimated_metadata_bytes": 2048,
+        "estimated_storage_bytes_for_warnings": 2048,
+        "billable_storage_bytes": null
+      },
+      "warnings": []
     }
   ]
 }
 ```
+
+The response is warning/debug telemetry only. `billable_storage_bytes` remains
+`null` until provider/object-store reconciliation is implemented.
 
 ### `GET /api/usage/export`
 
