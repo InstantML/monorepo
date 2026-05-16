@@ -146,12 +146,15 @@ Implemented health and platform endpoints:
 
 Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, browser sessions, org seat reservation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
-The durable route reference lives in `docs/architecture/current-api.md`. Keep
-that document, this README, `src/http/mod.rs`, `src/http/handlers.rs`, and
-`src/domain.rs` synchronized whenever an endpoint, request body, query
-parameter, response envelope, auth rule, or limit changes. The live service's
-`GET /openapi.json` returns a compact role-aware route index and includes
-`x-instantml-service-plane` for operator verification.
+The durable route reference lives in `docs/architecture/current-api.md`, and
+the durable control/data-plane schema reference lives in
+`docs/architecture/current-schemas.md`. Keep those documents, this README,
+`src/http/mod.rs`, `src/http/handlers.rs`, `src/domain.rs`,
+`src/control_store.rs`, `src/metric_store.rs`, and `clickhouse/0001_initial.sql`
+synchronized whenever an endpoint, request body, query parameter, response
+envelope, auth rule, limit, table, record kind, or payload field changes. The
+live service's `GET /openapi.json` returns a compact role-aware route index and
+includes `x-instantml-service-plane` for operator verification.
 
 In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
 

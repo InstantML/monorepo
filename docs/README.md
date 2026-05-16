@@ -32,6 +32,7 @@ Future agents must update documentation whenever they change:
 - Current implemented architecture: `architecture/current-system.md`.
 - Split Cloud Run architecture: `architecture/multi-instance-cloud-run.md`.
 - Current Rust API reference: `architecture/current-api.md`.
+- Current control/data-plane schemas: `architecture/current-schemas.md`.
 - Primary backend foundation: `design/2026-05-14-clickhouse-only-storage.md`.
 - Validation plan: `users/2026-05-09-validation-plan.md`.
 - Open-source and brand policy: `product/2026-05-09-open-source-brand.md`.

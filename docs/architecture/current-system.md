@@ -174,6 +174,11 @@ The maintained route reference is `docs/architecture/current-api.md`. The Rust
 service also exposes a compact live route index at `GET /openapi.json` so
 operators can verify the deployed surface.
 
+The maintained schema reference is `docs/architecture/current-schemas.md`. It
+documents the User Data control table, tenant operational records, metric/log
+tables, materialized summaries, JSON payload schemas, and plane placement by
+local/hosted mode.
+
 Core SDK-compatible endpoints:
 
 - `POST /runs`
@@ -196,6 +201,7 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-in esta
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance architecture direction, central-proxy rejection, route/auth/storage gates, and deterministic replay first slice.
 - `docs/design/2026-05-16-cloud-run-multi-instance-launch.md`: Cloud Run split deploy helper, Docker Compose split profile, scaling defaults, and launch wiring.
 - `docs/architecture/multi-instance-cloud-run.md`: current split Cloud Run overview with diagrams and launch checklist.
+- `docs/architecture/current-schemas.md`: current control/data-plane schema reference.
 - `docs/architecture/auth-and-tenant-flow.md`: current human/session/API-key tenant authorization flow.
 
 ## Notes For Future Agents

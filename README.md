@@ -11,6 +11,7 @@ Start with:
 - `AGENTS.md` for contributor and future-agent guidelines.
 - `docs/architecture/current-system.md` for the implemented architecture.
 - `docs/architecture/current-api.md` for the current Rust API routes, inputs, parameters, outputs, auth rules, and operational examples.
+- `docs/architecture/current-schemas.md` for the current control-plane and data-plane schemas.
 - `docs/design/` for architecture and feature design documents.
 - `docs/design/2026-05-14-clickhouse-only-storage.md` for the primary Rust/ClickHouse storage direction.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md` for the internal Cloud Run deployment slice.
