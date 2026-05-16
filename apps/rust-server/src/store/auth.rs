@@ -223,7 +223,7 @@ async fn create_verified_provider_session(
             .cloned()
             .ok_or_else(|| AppError::not_found("user not found"))?
     } else if let Some(user_id) = data.users_by_email.get(&email).copied() {
-        if input.strict_email_linking && user_has_identity(&data, user_id) {
+        if input.strict_email_linking && user_has_non_bootstrap_identity(&data, user_id) {
             return Err(AppError::conflict(
                 "email already belongs to an existing account",
             ));
@@ -410,10 +410,10 @@ async fn create_session_for_org(
     Ok(CreatedAuthSession { token, payload })
 }
 
-fn user_has_identity(data: &StoreData, user_id: Uuid) -> bool {
+fn user_has_non_bootstrap_identity(data: &StoreData, user_id: Uuid) -> bool {
     data.identities
-        .values()
-        .any(|candidate| *candidate == user_id)
+        .iter()
+        .any(|((provider, _), candidate)| *candidate == user_id && provider != "bootstrap")
 }
 
 fn existing_org_for_auth(
@@ -871,6 +871,23 @@ mod tests {
         assert_eq!(normalized.account_type, "customer");
         assert_eq!(normalized.org_name, "Personal Lab");
         assert_eq!(normalized.seat_emails, vec!["teammate@example.com"]);
+    }
+
+    #[test]
+    fn strict_email_linking_allows_operator_bootstrap_identity() {
+        let user_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        data.identities.insert(
+            ("bootstrap".to_string(), "person@example.com".to_string()),
+            user_id,
+        );
+
+        assert!(!user_has_non_bootstrap_identity(&data, user_id));
+
+        data.identities
+            .insert(("clerk".to_string(), "user_123".to_string()), user_id);
+
+        assert!(user_has_non_bootstrap_identity(&data, user_id));
     }
 
     #[test]
