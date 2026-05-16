@@ -425,16 +425,21 @@ p {
   gap: 8px;
 }
 
-.landing-nav nav a {
+.landing-nav nav a,
+.landing-nav nav button {
   border-radius: var(--control-radius);
+  border: 0;
+  background: transparent;
   color: var(--muted);
   padding: 7px 9px;
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
+  cursor: pointer;
 }
 
-.landing-nav nav a:hover {
+.landing-nav nav a:hover,
+.landing-nav nav button:hover {
   background: var(--surface-soft);
   color: var(--text);
 }
@@ -772,6 +777,32 @@ p {
   justify-content: center;
 }
 
+.clerk-auth-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.clerk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clerk-actions > * {
+  flex: 1 1 160px;
+}
+
+.clerk-actions button {
+  width: 100%;
+}
+
+.clerk-auth-stack .onboarding-summary {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .auth-form-divider {
   display: flex;
   align-items: center;
@@ -801,6 +832,14 @@ p {
 
 .auth-form textarea {
   resize: vertical;
+}
+
+.availability-ok {
+  color: var(--success);
+}
+
+.availability-error {
+  color: var(--danger);
 }
 
 .segmented-field {
@@ -1548,7 +1587,7 @@ p {
 
 .tab-pane.active {
   display: block;
-  --runs-filter-sticky-height: 112px;
+  --runs-filter-sticky-height: 115px;
   overflow-x: clip;
   overflow-anchor: none;
   padding: 12px 12px 22px;

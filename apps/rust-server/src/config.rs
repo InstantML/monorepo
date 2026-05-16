@@ -24,7 +24,11 @@ pub struct AppConfig {
     pub bootstrap_token: String,
     pub auth_mode: AuthMode,
     pub dev_auth_enabled: bool,
-    pub managed_google_enabled: bool,
+    pub managed_clerk_enabled: bool,
+    pub clerk_secret_key: Option<String>,
+    pub clerk_api_base: String,
+    pub clerk_jwt_issuer: Option<String>,
+    pub clerk_session_max_token_age: Duration,
     pub allowed_frontend_origins: Vec<String>,
     pub request_timeout: Duration,
     pub log_format: LogFormat,
@@ -107,6 +111,17 @@ impl AppConfig {
                 ))
             }
         };
+        let clerk_secret_key = env::var("CLERK_SECRET_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let managed_clerk_requested = env_bool_optional("INSTANTML_MANAGED_CLERK_ENABLED")?
+            .unwrap_or_else(|| clerk_secret_key.is_some() && matches!(auth_mode, AuthMode::ApiKey));
+        if managed_clerk_requested && clerk_secret_key.is_none() {
+            return Err(AppError::config(
+                "CLERK_SECRET_KEY is required when managed Clerk auth is enabled",
+            ));
+        }
         Ok(Self {
             clickhouse_url,
             bind_addr,
@@ -120,7 +135,17 @@ impl AppConfig {
             dev_auth_enabled: matches!(auth_mode, AuthMode::Local)
                 && env_bool_optional("INSTANTML_DEV_AUTH_ENABLED")?
                     .unwrap_or_else(|| bind_addr.ip().is_loopback()),
-            managed_google_enabled: false,
+            managed_clerk_enabled: managed_clerk_requested,
+            clerk_secret_key,
+            clerk_api_base: env_string("CLERK_API_BASE", "https://api.clerk.com"),
+            clerk_jwt_issuer: env::var("CLERK_JWT_ISSUER")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            clerk_session_max_token_age: Duration::from_secs(env_u64(
+                "INSTANTML_CLERK_SESSION_MAX_AGE_SECONDS",
+                600,
+            )?),
             allowed_frontend_origins: env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS"),
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
@@ -203,14 +228,14 @@ fn hosted_clickhouse_config(
                 .or_else(|_| env::var("CLICKHOUSE_CLOUD_ORGANIZATION_ID"))
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
-            provider: env_string("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER", "aws"),
-            region: env_string("INSTANTML_CLICKHOUSE_CLOUD_REGION", "us-east-1"),
+            provider: env_string("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER", "gcp"),
+            region: env_string("INSTANTML_CLICKHOUSE_CLOUD_REGION", "us-central1"),
             ip_access_list: env_string_list("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST")
                 .filter(|values| !values.is_empty())
                 .unwrap_or_else(|| vec!["0.0.0.0/0".to_string()]),
-            min_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB", 8)?
+            min_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB", 12)?
                 as u32,
-            max_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 8)?
+            max_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 12)?
                 as u32,
             num_replicas: env_u64("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS", 1)? as u32,
             wait_timeout: Duration::from_secs(env_u64(

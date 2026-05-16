@@ -1,4 +1,5 @@
 use super::*;
+use crate::managed_auth::ManagedAuthPrincipal;
 
 const SHARED_DEMO_EMAIL: &str = "hello@instantml.ai";
 const SHARED_DEMO_EMAIL_ALIASES: &[&str] = &[SHARED_DEMO_EMAIL, "hello@instantml.com"];
@@ -121,35 +122,141 @@ pub async fn list_organizations(store: &Store) -> AppResult<Vec<OrganizationRow>
         .collect())
 }
 
+pub async fn organization_name_availability(
+    store: &Store,
+    raw_name: Option<&str>,
+) -> AppResult<Value> {
+    let name = validate_name(raw_name, "organization")?;
+    let slug = slugify(&name);
+    let available = !store.data.lock().await.orgs_by_slug.contains_key(&slug);
+    let message = if available {
+        "Organization name is available."
+    } else {
+        "Organization name is unavailable."
+    };
+    Ok(json!({
+        "name": name,
+        "slug": slug,
+        "available": available,
+        "message": message
+    }))
+}
+
 pub async fn create_dev_google_session(
     store: &Store,
     input: DevGoogleAuthRequest,
 ) -> AppResult<CreatedAuthSession> {
     let input = normalize_dev_google_auth(input)?;
-    let email = input.email;
-    let display_name = input.display_name;
-    let account_type = input.account_type;
-    let seat_emails = input.seat_emails;
-    let org_name = input.org_name;
+    create_verified_provider_session(
+        store,
+        VerifiedProviderSessionInput {
+            provider: "dev-google".to_string(),
+            provider_subject: input.email.clone(),
+            email: input.email,
+            display_name: input.display_name,
+            avatar_url: None,
+            account_type: input.account_type,
+            org_name: Some(input.org_name),
+            seat_emails: input.seat_emails,
+            strict_email_linking: false,
+        },
+    )
+    .await
+}
+
+pub async fn create_clerk_session(
+    store: &Store,
+    principal: ManagedAuthPrincipal,
+    input: ClerkAuthRequest,
+) -> AppResult<CreatedAuthSession> {
+    if !principal.email_verified {
+        return Err(AppError::unauthorized("Clerk email is not verified"));
+    }
+    let mode = validate_optional_name(input.mode.as_deref(), "mode")?;
+    let signup_mode = mode.as_deref() == Some("signup") || input.org_name.is_some();
+    let org_name = if signup_mode {
+        Some(validate_name(input.org_name.as_deref(), "organization")?)
+    } else {
+        None
+    };
+    create_verified_provider_session(
+        store,
+        VerifiedProviderSessionInput {
+            provider: principal.provider,
+            provider_subject: principal.provider_subject,
+            email: principal.email,
+            display_name: principal.display_name,
+            avatar_url: principal.avatar_url,
+            account_type: validate_account_type(input.account_type.as_deref())?,
+            org_name,
+            seat_emails: input.seat_emails.unwrap_or_default(),
+            strict_email_linking: true,
+        },
+    )
+    .await
+}
+
+struct VerifiedProviderSessionInput {
+    provider: String,
+    provider_subject: String,
+    email: String,
+    display_name: Option<String>,
+    avatar_url: Option<String>,
+    account_type: String,
+    org_name: Option<String>,
+    seat_emails: Vec<String>,
+    strict_email_linking: bool,
+}
+
+async fn create_verified_provider_session(
+    store: &Store,
+    input: VerifiedProviderSessionInput,
+) -> AppResult<CreatedAuthSession> {
+    let provider = validate_name(Some(&input.provider), "provider")?;
+    let provider_subject = validate_name(Some(&input.provider_subject), "provider_subject")?;
+    let email = validate_email(Some(&input.email))?;
     let mut data = store.data.lock().await;
-    let user = if let Some(user_id) = data.users_by_email.get(&email).copied() {
+    let identity_key = (provider.clone(), provider_subject.clone());
+    let user = if let Some(user_id) = data.identities.get(&identity_key).copied() {
         data.users
             .get(&user_id)
             .cloned()
             .ok_or_else(|| AppError::not_found("user not found"))?
+    } else if let Some(user_id) = data.users_by_email.get(&email).copied() {
+        if input.strict_email_linking && user_has_identity(&data, user_id) {
+            return Err(AppError::conflict(
+                "email already belongs to an existing account",
+            ));
+        }
+        let user = data
+            .users
+            .get(&user_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("user not found"))?;
+        let identity = IdentityRecord {
+            user_id: user.id,
+            provider,
+            provider_subject,
+        };
+        store
+            .persist_locked("identity", LOCAL_ORG_ID, &user.id.to_string(), &identity)
+            .await?;
+        data.identities
+            .insert((identity.provider, identity.provider_subject), user.id);
+        user
     } else {
         let user = UserRow {
             id: Uuid::new_v4(),
             primary_email: email.clone(),
-            display_name,
-            avatar_url: None,
+            display_name: input.display_name,
+            avatar_url: input.avatar_url,
             created_at: Utc::now(),
             last_seen_at: Some(Utc::now()),
         };
         let identity = IdentityRecord {
             user_id: user.id,
-            provider: "dev-google".to_string(),
-            provider_subject: email.clone(),
+            provider,
+            provider_subject,
         };
         store
             .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
@@ -162,55 +269,59 @@ pub async fn create_dev_google_session(
             .insert((identity.provider, identity.provider_subject), user.id);
         user
     };
-    let existing_org = data
-        .memberships
-        .values()
-        .filter(|membership| membership.user_id == user.id && membership.status == "active")
-        .filter_map(|membership| data.organizations.get(&membership.org_id))
-        .find(|org| org.name == org_name && org.account_type == account_type)
-        .cloned()
-        .or_else(|| {
-            data.organizations
-                .values()
-                .find(|org| {
-                    org.created_by_user_id == Some(user.id)
-                        && org.name == org_name
-                        && org.account_type == account_type
-                })
-                .cloned()
-        });
+    let existing_org = existing_org_for_auth(
+        &data,
+        user.id,
+        input.org_name.as_deref(),
+        &input.account_type,
+    );
     if let Some(org) = existing_org {
         drop(data);
-        store.ensure_tenant_route(&org).await?;
-        let mut data = store.data.lock().await;
-        if !data.memberships.values().any(|membership| {
-            membership.org_id == org.id
-                && membership.user_id == user.id
-                && membership.status == "active"
-        }) {
-            let owner = membership_row(org.id, user.id, "owner", "active");
-            store
-                .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
-                .await?;
-            data.insert_membership(owner);
-        }
-        let (session, token) = new_session(user.id, org.id);
-        store
-            .persist_locked("session", org.id, &session.row.id.to_string(), &session)
-            .await?;
-        data.insert_session(session.clone());
-        let payload = session_payload_from_data(&data, session.row.clone())?;
-        return Ok(CreatedAuthSession { token, payload });
+        return create_session_for_org(store, user, org).await;
     }
-    let slug_base = slugify(&org_name);
-    let slug = unique_slug(&data, &slug_base);
-    let seat_limit = if account_type == "business" { 25 } else { 1 };
+    let org_name = input
+        .org_name
+        .ok_or_else(|| AppError::validation("organization is required for signup"))?;
+    let slug = slugify(&org_name);
+    if let Some(invited) = invited_org_for_auth(&data, user.id, &slug) {
+        if let Some(mut membership) = data
+            .memberships
+            .values()
+            .find(|membership| {
+                membership.org_id == invited.id
+                    && membership.user_id == user.id
+                    && membership.status == "invited"
+            })
+            .cloned()
+        {
+            membership.status = "active".to_string();
+            store
+                .persist_locked(
+                    "membership",
+                    invited.id,
+                    &membership.id.to_string(),
+                    &membership,
+                )
+                .await?;
+            data.insert_membership(membership);
+        }
+        drop(data);
+        return create_session_for_org(store, user, invited).await;
+    }
+    if data.orgs_by_slug.contains_key(&slug) {
+        return Err(AppError::conflict("organization name already exists"));
+    }
+    let seat_limit = if input.account_type == "business" {
+        25
+    } else {
+        1
+    };
     let org = OrganizationRow {
         id: Uuid::new_v4(),
         slug,
         name: org_name,
         plan_tier: "free".to_string(),
-        account_type: account_type.clone(),
+        account_type: input.account_type.clone(),
         seat_limit,
         created_by_user_id: Some(user.id),
         created_at: Utc::now(),
@@ -227,7 +338,7 @@ pub async fn create_dev_google_session(
     drop(data);
     store.ensure_tenant_route(&org).await?;
     let mut data = store.data.lock().await;
-    for email in seat_emails {
+    for email in input.seat_emails {
         if validate_email(Some(&email)).is_ok() {
             let normalized_email = email.to_ascii_lowercase();
             let invited_user = if let Some(id) = data.users_by_email.get(&normalized_email).copied()
@@ -269,6 +380,78 @@ pub async fn create_dev_google_session(
     Ok(CreatedAuthSession { token, payload })
 }
 
+async fn create_session_for_org(
+    store: &Store,
+    user: UserRow,
+    org: OrganizationRow,
+) -> AppResult<CreatedAuthSession> {
+    store.ensure_tenant_route(&org).await?;
+    let mut data = store.data.lock().await;
+    if !data.memberships.values().any(|membership| {
+        membership.org_id == org.id
+            && membership.user_id == user.id
+            && membership.status == "active"
+    }) {
+        let owner = membership_row(org.id, user.id, "owner", "active");
+        store
+            .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
+            .await?;
+        data.insert_membership(owner);
+    }
+    let (session, token) = new_session(user.id, org.id);
+    store
+        .persist_locked("session", org.id, &session.row.id.to_string(), &session)
+        .await?;
+    data.insert_session(session.clone());
+    let payload = session_payload_from_data(&data, session.row.clone())?;
+    Ok(CreatedAuthSession { token, payload })
+}
+
+fn user_has_identity(data: &StoreData, user_id: Uuid) -> bool {
+    data.identities
+        .values()
+        .any(|candidate| *candidate == user_id)
+}
+
+fn existing_org_for_auth(
+    data: &StoreData,
+    user_id: Uuid,
+    org_name: Option<&str>,
+    account_type: &str,
+) -> Option<OrganizationRow> {
+    data.memberships
+        .values()
+        .filter(|membership| membership.user_id == user_id && membership.status == "active")
+        .filter_map(|membership| data.organizations.get(&membership.org_id))
+        .find(|org| {
+            org_name
+                .map(|name| org.name == name && org.account_type == account_type)
+                .unwrap_or(true)
+        })
+        .cloned()
+        .or_else(|| {
+            org_name.and_then(|name| {
+                data.organizations
+                    .values()
+                    .find(|org| {
+                        org.created_by_user_id == Some(user_id)
+                            && org.name == name
+                            && org.account_type == account_type
+                    })
+                    .cloned()
+            })
+        })
+}
+
+fn invited_org_for_auth(data: &StoreData, user_id: Uuid, slug: &str) -> Option<OrganizationRow> {
+    data.memberships
+        .values()
+        .filter(|membership| membership.user_id == user_id && membership.status == "invited")
+        .filter_map(|membership| data.organizations.get(&membership.org_id))
+        .find(|org| org.slug == slug)
+        .cloned()
+}
+
 struct NormalizedDevGoogleAuth {
     email: String,
     display_name: Option<String>,
@@ -304,6 +487,28 @@ fn is_shared_demo_email(email: &str) -> bool {
     SHARED_DEMO_EMAIL_ALIASES
         .iter()
         .any(|candidate| email.eq_ignore_ascii_case(candidate))
+}
+
+pub fn is_shared_demo_org(org: &OrganizationRow) -> bool {
+    org.name == SHARED_DEMO_NAME && org.slug == slugify(SHARED_DEMO_NAME)
+}
+
+fn demo_api_key_scopes() -> Vec<String> {
+    DEMO_API_KEY_SCOPES
+        .iter()
+        .map(|scope| (*scope).to_string())
+        .collect()
+}
+
+fn effective_api_key_scopes(data: &StoreData, record: &ApiKeyRecord) -> Vec<String> {
+    if data
+        .organizations
+        .get(&record.row.org_id)
+        .is_some_and(is_shared_demo_org)
+    {
+        return demo_api_key_scopes();
+    }
+    record.row.scopes.clone()
 }
 
 pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthSessionPayload> {
@@ -428,15 +633,7 @@ async fn create_api_key_inner(
         input.name.as_deref().or(Some("SDK API key")),
         "api key name",
     )?;
-    let default_scopes = if created_by_user_id.is_some() {
-        ONBOARDING_API_KEY_SCOPES
-    } else {
-        DEFAULT_API_KEY_SCOPES
-    };
-    let scopes = match input.scopes.as_ref() {
-        Some(scopes) => validate_scopes(scopes.iter().map(String::as_str))?,
-        None => validate_scopes(default_scopes.iter().copied())?,
-    };
+    let requested_scopes = input.scopes.clone();
     let expires_at = input
         .expires_at
         .as_deref()
@@ -456,6 +653,22 @@ async fn create_api_key_inner(
     let mut data = store.data.lock().await;
     let project_id =
         resolve_key_project(&data, org_id, input.project_id, input.project.as_deref())?;
+    let demo_org = is_shared_demo_org(&org);
+    let default_scopes = if demo_org {
+        DEMO_API_KEY_SCOPES
+    } else if created_by_user_id.is_some() {
+        ONBOARDING_API_KEY_SCOPES
+    } else {
+        DEFAULT_API_KEY_SCOPES
+    };
+    let scopes = if demo_org {
+        validate_scopes(DEMO_API_KEY_SCOPES.iter().copied())?
+    } else {
+        match requested_scopes.as_ref() {
+            Some(scopes) => validate_scopes(scopes.iter().map(String::as_str))?,
+            None => validate_scopes(default_scopes.iter().copied())?,
+        }
+    };
     let service_account = ServiceAccountRow {
         id: Uuid::new_v4(),
         org_id,
@@ -497,18 +710,28 @@ async fn create_api_key_inner(
     data.service_accounts
         .insert(service_account.id, service_account.clone());
     data.insert_api_key(record);
-    Ok(json!({ "api_key": secret, "key": key, "service_account": service_account }))
+    let api_key = if demo_org { Value::Null } else { json!(secret) };
+    let message = demo_org.then_some("Demo workspace API keys are read-only and are not revealed.");
+    Ok(json!({
+        "api_key": api_key,
+        "api_key_available": !demo_org,
+        "key": key,
+        "message": message,
+        "service_account": service_account
+    }))
 }
 
 pub async fn list_api_keys(store: &Store, org_id: Uuid) -> AppResult<Vec<PublicApiKeyRow>> {
-    Ok(store
-        .data
-        .lock()
-        .await
+    let data = store.data.lock().await;
+    Ok(data
         .api_keys
         .values()
         .filter(|key| key.row.org_id == org_id)
-        .map(|key| key.row.clone())
+        .map(|key| {
+            let mut row = key.row.clone();
+            row.scopes = effective_api_key_scopes(&data, key);
+            row
+        })
         .collect())
 }
 
@@ -581,6 +804,7 @@ pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthC
     if account.disabled_at.is_some() {
         return Err(AppError::unauthorized("invalid API key"));
     }
+    let scopes = effective_api_key_scopes(&data, &record);
     record.row.last_used_at = Some(Utc::now());
     data.insert_api_key(record.clone());
     Ok(AuthContext {
@@ -588,7 +812,7 @@ pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthC
         api_key_id: record.row.id,
         service_account_id: record.row.service_account_id,
         project_id: record.row.project_id,
-        scopes: record.row.scopes,
+        scopes,
     })
 }
 
@@ -643,5 +867,96 @@ mod tests {
         assert_eq!(normalized.account_type, "customer");
         assert_eq!(normalized.org_name, "Personal Lab");
         assert_eq!(normalized.seat_emails, vec!["teammate@example.com"]);
+    }
+
+    #[test]
+    fn shared_demo_org_is_identified_by_canonical_name_and_slug() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: slugify(SHARED_DEMO_NAME),
+            name: SHARED_DEMO_NAME.to_string(),
+            plan_tier: "free".to_string(),
+            account_type: SHARED_DEMO_ACCOUNT_TYPE.to_string(),
+            seat_limit: 25,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+
+        assert!(is_shared_demo_org(&org));
+
+        let mut renamed = org;
+        renamed.name = "Customer Demo".to_string();
+        assert!(!is_shared_demo_org(&renamed));
+    }
+
+    #[test]
+    fn shared_demo_key_scopes_are_clamped_at_authorization_time() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: slugify(SHARED_DEMO_NAME),
+            name: SHARED_DEMO_NAME.to_string(),
+            plan_tier: "free".to_string(),
+            account_type: SHARED_DEMO_ACCOUNT_TYPE.to_string(),
+            seat_limit: 25,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        let record = api_key_record_for_org(
+            org.id,
+            vec![
+                "sdk:ingest".to_string(),
+                "artifacts:write".to_string(),
+                "api_keys:write".to_string(),
+                "export:read".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            effective_api_key_scopes(&data, &record),
+            demo_api_key_scopes()
+        );
+        assert!(!effective_api_key_scopes(&data, &record).contains(&"api_keys:write".to_string()));
+        assert!(!effective_api_key_scopes(&data, &record).contains(&"sdk:ingest".to_string()));
+    }
+
+    #[test]
+    fn non_demo_key_scopes_are_preserved_at_authorization_time() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "customer-lab".to_string(),
+            name: "Customer Lab".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "customer".to_string(),
+            seat_limit: 1,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        let requested = vec!["sdk:ingest".to_string(), "export:read".to_string()];
+        let record = api_key_record_for_org(org.id, requested.clone());
+
+        assert_eq!(effective_api_key_scopes(&data, &record), requested);
+    }
+
+    fn api_key_record_for_org(org_id: Uuid, scopes: Vec<String>) -> ApiKeyRecord {
+        ApiKeyRecord {
+            row: PublicApiKeyRow {
+                id: Uuid::new_v4(),
+                org_id,
+                service_account_id: Uuid::new_v4(),
+                name: "Legacy key".to_string(),
+                key_prefix: "instantml_test".to_string(),
+                scopes,
+                project_id: None,
+                created_at: Utc::now(),
+                expires_at: None,
+                last_used_at: None,
+                revoked_at: None,
+            },
+            key_hash: vec![1, 2, 3],
+        }
     }
 }

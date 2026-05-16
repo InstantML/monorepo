@@ -18,6 +18,7 @@ getrandom = "=0.2.15"
 home = "=0.5.9"
 http = "=1.2.0"
 indexmap = "=2.7.1"
+jsonwebtoken = "=9.3.1"
 mime_guess = "=2.0.5"
 reqwest = { version = "=0.12.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "=1.0.217", features = ["derive"] }

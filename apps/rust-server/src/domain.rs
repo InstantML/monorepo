@@ -61,6 +61,7 @@ pub struct SessionContext {
     pub session_id: Uuid,
     pub user_id: Uuid,
     pub role: String,
+    pub demo_read_only: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,8 +162,12 @@ pub struct DevGoogleAuthRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct GoogleAuthRequest {
-    pub id_token: Option<String>,
+pub struct ClerkAuthRequest {
+    pub token: Option<String>,
+    pub mode: Option<String>,
+    pub account_type: Option<String>,
+    pub org_name: Option<String>,
+    pub seat_emails: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

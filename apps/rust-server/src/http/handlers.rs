@@ -50,7 +50,7 @@ pub(super) async fn openapi_json() -> Json<Value> {
 pub(super) async fn auth_config(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(json!({
         "dev_auth_enabled": state.config.dev_auth_enabled,
-        "managed_google_enabled": state.config.managed_google_enabled
+        "managed_clerk_enabled": state.config.managed_clerk_enabled
     }))
 }
 
@@ -70,16 +70,37 @@ pub(super) async fn auth_dev_google(
     json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
 
-pub(super) async fn auth_google(
+pub(super) async fn auth_clerk(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     bytes: Bytes,
-) -> AppResult<Json<Value>> {
-    let _ = read_json::<GoogleAuthRequest>(&headers, bytes, state.config.max_body_bytes)?;
-    Err(AppError::new(
-        StatusCode::NOT_IMPLEMENTED,
-        "managed Google auth is not configured",
-    ))
+) -> AppResult<Response> {
+    if !state.config.managed_clerk_enabled {
+        return Err(AppError::unauthorized(
+            "managed Clerk auth is not configured",
+        ));
+    }
+    validate_mutation_origin_required(&state, &headers)?;
+    let input = read_json::<ClerkAuthRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let token = input
+        .token
+        .clone()
+        .ok_or_else(|| AppError::validation("token is required"))?;
+    let secret_key = state
+        .config
+        .clerk_secret_key
+        .as_deref()
+        .ok_or_else(|| AppError::unauthorized("managed Clerk auth is not configured"))?;
+    let principal = crate::managed_auth::verify_clerk_session_token(
+        secret_key,
+        &state.config.clerk_api_base,
+        state.config.clerk_jwt_issuer.as_deref(),
+        &token,
+        state.config.clerk_session_max_token_age,
+    )
+    .await?;
+    let created = store::create_clerk_session(&state.store, principal, input).await?;
+    json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
 
 pub(super) async fn auth_session(
@@ -161,6 +182,16 @@ pub(super) async fn list_orgs(
     ))
 }
 
+pub(super) async fn org_name_availability(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(
+        store::organization_name_availability(&state.store, query.get("name").map(String::as_str))
+            .await?,
+    ))
+}
+
 pub(super) async fn create_api_key(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -197,6 +228,10 @@ pub(super) async fn revoke_api_key(
     Path((org_id, api_key_id)): Path<(String, String)>,
 ) -> AppResult<Json<Value>> {
     let org_id = parse_uuid(&org_id, "organization not found")?;
+    if session_cookie(&headers).is_some() {
+        validate_mutation_origin(&state, &headers)?;
+        reject_demo_session_mutation(&state, &headers).await?;
+    }
     require_admin_or_bootstrap(&state, &headers, org_id).await?;
     let api_key_id = parse_uuid(&api_key_id, "api key not found")?;
     Ok(Json(
@@ -210,6 +245,10 @@ pub(super) async fn disable_service_account(
     Path((org_id, service_account_id)): Path<(String, String)>,
 ) -> AppResult<Json<Value>> {
     let org_id = parse_uuid(&org_id, "organization not found")?;
+    if session_cookie(&headers).is_some() {
+        validate_mutation_origin(&state, &headers)?;
+        reject_demo_session_mutation(&state, &headers).await?;
+    }
     require_admin_or_bootstrap(&state, &headers, org_id).await?;
     let service_account_id = parse_uuid(&service_account_id, "service account not found")?;
     Ok(Json(json!({
@@ -231,6 +270,11 @@ pub(super) async fn reserve_seat(
             "session belongs to a different organization",
         ));
     }
+    if store::is_shared_demo_org(&session.organization) {
+        return Err(AppError::forbidden(
+            "demo workspace browser sessions are read-only",
+        ));
+    }
     let input = read_json::<ReserveSeatRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(json!({
         "membership": store::reserve_seat(&state.store, session.user.id, org_id, input).await?
@@ -243,6 +287,7 @@ pub(super) async fn create_project(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateProjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
@@ -266,6 +311,7 @@ pub(super) async fn create_run(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
@@ -301,6 +347,7 @@ pub(super) async fn update_run(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<UpdateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -316,6 +363,7 @@ pub(super) async fn log_metrics(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let (input, raw) =
@@ -346,6 +394,7 @@ pub(super) async fn log_console_logs(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let (input, raw) = read_json_with_raw::<CreateConsoleLogsRequest>(
@@ -441,6 +490,7 @@ pub(super) async fn create_attributes(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<CreateAttributesRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -469,6 +519,7 @@ pub(super) async fn create_object(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<CreateObjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -512,6 +563,7 @@ pub(super) async fn create_artifact(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<CreateArtifactRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -527,6 +579,7 @@ pub(super) async fn upload_artifact(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input =
@@ -645,6 +698,7 @@ async fn import_with_source(
     source: &str,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "imports:write", &state)?;
     let raw = read_json_value(&headers, bytes, state.config.max_body_bytes)?;
     let dry_run = query
@@ -662,6 +716,7 @@ pub(super) async fn reset_demo(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     store::require_unrestricted_org_access(&ctx)?;
     let _ = read_json_value(&headers, bytes, state.config.max_body_bytes).ok();
@@ -752,8 +807,23 @@ async fn admin_actor(
             "session belongs to a different organization",
         ));
     }
+    if store::is_shared_demo_org(&session.organization) {
+        return Err(AppError::forbidden(
+            "demo workspace browser sessions are read-only",
+        ));
+    }
     store::require_org_admin(&state.store, session.user.id, org_id).await?;
     Ok(Some(session.user.id))
+}
+
+async fn reject_demo_session_mutation(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
+    let session = session_context(state, headers).await?;
+    if store::is_shared_demo_org(&session.organization) {
+        return Err(AppError::forbidden(
+            "demo workspace browser sessions are read-only",
+        ));
+    }
+    Ok(())
 }
 
 async fn context(
@@ -787,6 +857,7 @@ async fn context(
                     session_id: payload.session.id,
                     user_id: payload.user.id,
                     role: payload.membership.role,
+                    demo_read_only: store::is_shared_demo_org(&payload.organization),
                 }),
             }
         }
@@ -805,10 +876,39 @@ fn require_scope(ctx: &RequestContext, scope: &str, state: &AppState) -> AppResu
     if let Some(auth) = &ctx.auth {
         return auth.require_scope(scope);
     }
+    if let Some(session) = &ctx.session {
+        return require_session_scope(session, scope);
+    }
     if state.config.auth_mode.requires_api_key() {
         return Err(AppError::unauthorized("missing bearer token"));
     }
     Ok(())
+}
+
+fn require_session_scope(session: &SessionContext, scope: &str) -> AppResult<()> {
+    if session.demo_read_only {
+        return if scope == "export:read" {
+            Ok(())
+        } else {
+            Err(AppError::forbidden(
+                "demo workspace browser sessions are read-only",
+            ))
+        };
+    }
+    let role = session.role.as_str();
+    let allowed = match scope {
+        "sdk:ingest" | "artifacts:write" => matches!(role, "owner" | "admin" | "member"),
+        "imports:write" | "usage:read" | "api_keys:write" => matches!(role, "owner" | "admin"),
+        "export:read" => matches!(role, "owner" | "admin" | "member" | "viewer"),
+        _ => false,
+    };
+    if allowed {
+        Ok(())
+    } else {
+        Err(AppError::forbidden(format!(
+            "session role requires permission {scope}"
+        )))
+    }
 }
 
 async fn session_context(
@@ -820,10 +920,14 @@ async fn session_context(
 }
 
 fn session_cookie(headers: &HeaderMap) -> Option<&str> {
+    cookie_value(headers, SESSION_COOKIE)
+}
+
+fn cookie_value<'a>(headers: &'a HeaderMap, cookie_name: &str) -> Option<&'a str> {
     let raw = header_text(headers, "cookie")?;
     raw.split(';').find_map(|part| {
         let (name, value) = part.trim().split_once('=')?;
-        (name == SESSION_COOKIE && !value.is_empty()).then_some(value)
+        (name == cookie_name && !value.is_empty()).then_some(value)
     })
 }
 
@@ -878,8 +982,35 @@ fn is_secure_request(state: &AppState, headers: &HeaderMap) -> bool {
 }
 
 fn validate_mutation_origin(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
+    validate_mutation_origin_inner(state, headers, state.config.auth_mode.requires_api_key())
+}
+
+fn validate_mutation_origin_required(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
+    validate_mutation_origin_inner(state, headers, true)
+}
+
+fn validate_session_mutation_origin(
+    state: &AppState,
+    headers: &HeaderMap,
+    ctx: &RequestContext,
+) -> AppResult<()> {
+    if ctx.session.is_some() {
+        validate_mutation_origin(state, headers)?;
+    }
+    Ok(())
+}
+
+fn validate_mutation_origin_inner(
+    state: &AppState,
+    headers: &HeaderMap,
+    require_origin: bool,
+) -> AppResult<()> {
     let Some(origin) = header_text(headers, "origin") else {
-        return Ok(());
+        return if require_origin {
+            Err(AppError::forbidden("origin is required for this request"))
+        } else {
+            Ok(())
+        };
     };
     let origin = origin.trim_end_matches('/');
     if state
@@ -888,6 +1019,9 @@ fn validate_mutation_origin(state: &AppState, headers: &HeaderMap) -> AppResult<
         .iter()
         .any(|allowed| allowed == origin)
     {
+        return Ok(());
+    }
+    if request_origin(state, headers).as_deref() == Some(origin) {
         return Ok(());
     }
     if let Ok(url) = Url::parse(origin) {
@@ -901,6 +1035,16 @@ fn validate_mutation_origin(state: &AppState, headers: &HeaderMap) -> AppResult<
     Err(AppError::forbidden(
         "origin is not allowed for this request",
     ))
+}
+
+fn request_origin(state: &AppState, headers: &HeaderMap) -> Option<String> {
+    let host = header_text(headers, "host")?;
+    let scheme = if is_secure_request(state, headers) {
+        "https"
+    } else {
+        "http"
+    };
+    Some(format!("{scheme}://{host}"))
 }
 
 fn read_json<T: DeserializeOwned>(
@@ -965,4 +1109,40 @@ fn parse_uuid(raw: &str, missing_message: &str) -> AppResult<Uuid> {
 
 fn header_value(value: &str) -> AppResult<HeaderValue> {
     HeaderValue::from_str(value).map_err(|_| AppError::internal("invalid header value"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session(role: &str, demo_read_only: bool) -> SessionContext {
+        SessionContext {
+            session_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            role: role.to_string(),
+            demo_read_only,
+        }
+    }
+
+    #[test]
+    fn demo_browser_sessions_are_read_only() {
+        let demo = session("owner", true);
+        assert!(require_session_scope(&demo, "export:read").is_ok());
+        for scope in [
+            "sdk:ingest",
+            "artifacts:write",
+            "imports:write",
+            "usage:read",
+            "api_keys:write",
+        ] {
+            assert!(require_session_scope(&demo, scope).is_err());
+        }
+    }
+
+    #[test]
+    fn non_demo_session_roles_keep_expected_write_permissions() {
+        assert!(require_session_scope(&session("member", false), "sdk:ingest").is_ok());
+        assert!(require_session_scope(&session("member", false), "api_keys:write").is_err());
+        assert!(require_session_scope(&session("owner", false), "api_keys:write").is_ok());
+    }
 }

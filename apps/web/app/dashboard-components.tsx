@@ -1,4 +1,4 @@
-import { Activity, Box, Check, ChevronDown, ChevronRight, CircleHelp, Columns3, Copy, CopyPlus, Database, Download, FileText, Folder, GitBranch, GripVertical, Maximize2, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Search, Server, Star, Sun, Tag, Trash2, X } from "lucide-react";
+import { Activity, Box, Check, ChevronDown, ChevronRight, CircleHelp, Columns3, Copy, CopyPlus, Database, Download, FileText, Folder, GitBranch, GripVertical, LogOut, Maximize2, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Search, Server, Star, Sun, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, DragEvent, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -575,6 +575,7 @@ export function DashboardTopbar({
   onRefresh,
   onSaveView,
   onSelectTab,
+  onSignOut,
   onShortcutHelp,
   onSortBy,
   onStatus,
@@ -603,6 +604,7 @@ export function DashboardTopbar({
   onRefresh: () => void;
   onSaveView: () => void;
   onSelectTab: (tabId: TabId) => void;
+  onSignOut: () => void;
   onShortcutHelp: () => void;
   onSortBy: (value: string) => void;
   onStatus: (status: string) => void;
@@ -647,7 +649,7 @@ export function DashboardTopbar({
             <span className="sep" aria-hidden="true">/</span>
             {activeTab === "detail" ? (
               <>
-                <a className="crumb crumb-link" href={tabToPath("runs")} onClick={(event) => { event.preventDefault(); onSelectTab("runs"); }}>Runs</a>
+                <a aria-label="Back to Runs" className="crumb crumb-link" href={tabToPath("runs")} onClick={(event) => { event.preventDefault(); onSelectTab("runs"); }}>Runs</a>
                 <span className="sep" aria-hidden="true">/</span>
                 <span className="crumb cur" aria-current="page" title={detailRunName || "Run Detail"}>{detailRunName || "Run Detail"}</span>
               </>
@@ -678,7 +680,16 @@ export function DashboardTopbar({
             >
               {dark ? <Sun size={15} /> : <Moon size={15} />}
             </button>
-            <div className="avatar" aria-label="Account: AK">AK</div>
+            <button
+              aria-label="Sign out"
+              className="icon-button framed"
+              onClick={onSignOut}
+              title="Sign out"
+              type="button"
+            >
+              <LogOut size={15} />
+            </button>
+            <div className="avatar" aria-label="Account">AK</div>
           </div>
         </div>
       </div>

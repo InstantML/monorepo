@@ -149,12 +149,16 @@ SDK-compatible endpoints:
 
 Product endpoints include bootstrap users/orgs/API keys, auth/session/logout, org seats, run summaries, side-by-side comparison, attributes, artifacts, rich objects, imports, export, usage, and demo reset. See `apps/rust-server/README.md` for the maintained list.
 
+Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-in establishes an InstantML browser session for one active org membership, while SDKs continue to use org-scoped API keys. Session and API-key requests both resolve an org before tenant data is read or mutated.
+
 ## Design Links
 
 - `docs/design/2026-05-14-clickhouse-only-storage.md`: current storage architecture decision and hosted direction.
 - `docs/design/2026-05-11-large-run-query-performance.md`: run-list/query performance expectations.
 - `docs/design/2026-05-11-rich-logged-objects.md`: rich object/table/histogram behavior.
 - `docs/design/2026-05-11-landing-auth-onboarding.md`: local auth/onboarding route shape.
+- `docs/design/2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, and ClickHouse Cloud warehouse defaults.
+- `docs/architecture/auth-and-tenant-flow.md`: current human/session/API-key tenant authorization flow.
 
 ## Notes For Future Agents
 
