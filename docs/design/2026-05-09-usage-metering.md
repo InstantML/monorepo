@@ -8,16 +8,23 @@ Owner: Codex
 
 ## Summary
 
+Superseding note, 2026-05-16: the original Free/Lab/Startup/Growth planning
+thresholds below were replaced by the Free/Pro/Premium model in
+`docs/design/2026-05-16-pricing-signup-org-admin.md`. The usage endpoint is
+still warning-only, but it now returns the full plan catalog, current plan,
+limits, overage policy, active API-key count, estimated metadata/storage bytes,
+and `billable_storage_bytes: null`.
+
 Pricing needs to be credible before hosted beta. The smallest useful metering slice is an org-scoped usage summary computed from product data we already store: seats, projects, runs, metric points, retained metric series, artifact bytes, and estimated metadata bytes.
 
-This is not a billing engine and must not be treated as invoice truth. It gives admins and future billing code a stable usage shape, documents Free/Lab/Startup/Growth warning thresholds, and makes overage behavior explicit as fair-use warnings and plan-upgrade prompts.
+This is not a billing engine and must not be treated as invoice truth. It gives admins and future billing code a stable usage shape, now documents Free/Pro/Premium warning thresholds through the superseding pricing design, and makes overage behavior explicit as fair-use warnings and plan-upgrade prompts.
 
 ## Goals
 
 - Track org-level storage usage with artifact bytes separate from metric/metadata estimates.
 - Track metric point volume and retained metric history per org.
 - Return admin-visible summaries for storage, metric points, projects, runs, seats, artifacts, and API keys.
-- Define billing-safe limits for Free, Lab, Startup, and Growth planning tiers.
+- Define billing-safe limits for the active Free, Pro, and Premium planning tiers.
 - Expose a versioned JSON usage export for billing/debugging.
 
 ## Non-Goals
@@ -40,12 +47,12 @@ Usage endpoints require a bearer key with `usage:read` when `requireApiKey` is e
 
 Each organization has an effective `plan_tier`, defaulting to `free`. The endpoint does not accept caller-selected tier overrides in this slice, so warnings are authoritative for the stored effective tier. Future UI "what if" pricing can be a separate endpoint or can return `tier_source: "what_if"` and `authoritative: false`.
 
-Plan tiers are constants shared by tests and API responses:
+Plan tiers are constants shared by tests and API responses. The active values
+are defined in the superseding pricing design:
 
-- Free: 1 included seat, 5 GB storage, 2 projects, 100 runs, 1 million metric points.
-- Lab: 3 included seats, 100 GB storage, 25 projects, 10,000 runs, 25 million metric points.
-- Startup: 10 included seats, 500 GB storage, 100 projects, 100,000 runs, 200 million metric points.
-- Growth: 25 included seats, 2 TB storage, 500 projects, 1 million runs, 1 billion metric points.
+- Free: 2 included seats, 2 GiB storage, 2 projects, 100 runs, 1 million metric points.
+- Pro: 3 included seats, 1 TiB storage, 100 projects, 100,000 runs, 250 million metric points.
+- Premium: 10 included seats, 5 TiB storage, 500 projects, 1 million runs, 2 billion metric points.
 
 Overages are warnings only in this slice:
 

@@ -96,9 +96,12 @@ async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         DevGoogleAuthRequest {
             email: Some("hello@instantml.ai".to_string()),
             display_name: None,
+            mode: None,
             account_type: None,
             org_name: None,
+            plan_tier: None,
             seat_emails: None,
+            accept_invite_org_id: None,
         },
     )
     .await?;

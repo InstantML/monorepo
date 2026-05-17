@@ -105,6 +105,7 @@ pub struct ClickHouseCloudConfig {
     pub min_replica_memory_gb: u32,
     pub max_replica_memory_gb: u32,
     pub num_replicas: u32,
+    pub allow_plan_sizing: bool,
     pub wait_timeout: Duration,
 }
 
@@ -319,6 +320,8 @@ fn hosted_clickhouse_config(
             max_replica_memory_gb: env_u64("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB", 12)?
                 as u32,
             num_replicas: env_u64("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS", 1)? as u32,
+            allow_plan_sizing: env_bool_optional("INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING")?
+                .unwrap_or(false),
             wait_timeout: Duration::from_secs(env_u64(
                 "INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS",
                 600,
