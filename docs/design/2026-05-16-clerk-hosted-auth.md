@@ -101,6 +101,8 @@ The shared demo org is intentionally browse-only. Demo API-key creation returns 
 - `POST /api/auth/logout` revokes the InstantML session; the frontend also calls Clerk sign-out.
 - `GET /api/orgs/name-availability?name=...` returns `{ name, slug, available, message }`.
 
+**Extended by `docs/design/2026-05-16-auto-personal-workspace.md`:** `org_name` is now optional in `POST /api/auth/clerk`. When absent and the user has no existing membership, the server auto-derives a workspace name from the Clerk profile and returns `onboarding_api_key: { plaintext, prefix, id }` in the response for new signups only. Existing request shapes with `org_name` continue to work unchanged.
+
 ## Review Notes
 
 - Reviewer feedback: do not trust email or user profile data sent from the browser. Resolution: Rust verifies the Clerk token and fetches the Clerk user profile server-side.

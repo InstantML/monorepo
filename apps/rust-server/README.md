@@ -7,7 +7,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
-- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, track warning-only usage, and manage org API keys.
+- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, track warning-only usage, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
@@ -289,6 +289,7 @@ Coverage exception:
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-16-clerk-hosted-auth.md`
+- `docs/design/2026-05-16-auto-personal-workspace.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`

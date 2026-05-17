@@ -406,7 +406,6 @@ pub(super) fn slugify(value: &str) -> String {
     }
 }
 
-#[cfg(test)]
 pub(super) fn unique_slug(data: &StoreData, base: &str) -> String {
     if !data.orgs_by_slug.contains_key(base) {
         return base.to_string();

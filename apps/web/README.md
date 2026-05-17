@@ -7,7 +7,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 ## Responsibilities
 
 - Project dashboard.
-- Public landing page plus Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, onboarding, and copy-once SDK API-key creation.
+- Public landing page plus Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, onboarding, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and the auth response includes a ready-to-use `onboarding_api_key` that is rendered immediately without a separate button click.
 - Runs workspace with run selector, sections, line panels, and local workspace layout persistence.
 - Run detail view.
 - Run comparison view.
@@ -189,6 +189,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `src/shortcuts.js`
 - `src/state.js`
 - `src/terminal.js`
+- `src/workspace.js` — `deriveClerkSlug` and `slugify` helpers (mirrors server-side slug logic for UI preview)
 - `next.config.mjs`
 
 ## Relevant Design Docs
@@ -207,6 +208,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `docs/design/2026-05-14-instantml-rescheme-and-chart-polish.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`
+- `docs/design/2026-05-16-auto-personal-workspace.md`
 - `docs/product/pricing-and-margins.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 
