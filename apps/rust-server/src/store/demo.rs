@@ -2,6 +2,18 @@ use super::*;
 
 pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
+    let demo_project_exists = {
+        let data = store.data.lock().await;
+        data.projects_by_org_name
+            .contains_key(&(ctx.org_id, "demo".to_string()))
+    };
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        demo_usage_delta(demo_project_exists),
+        "reset the demo dataset",
+    )
+    .await?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let mut data = store.data.lock().await;
     let delete = ProjectDeleteRecord {
@@ -167,6 +179,38 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
     query.insert("project".to_string(), "demo".to_string());
     query.insert("limit".to_string(), "100".to_string());
     runs_summary(store, ctx, &query).await
+}
+
+fn demo_usage_delta(project_exists: bool) -> UsageDelta {
+    let mut metric_points = 0_i64;
+    let mut artifacts = 0_i64;
+    let mut artifact_bytes = 0_i64;
+    for index in 0..DEMO_RUN_COUNT {
+        let seed = 7 + ((index as i64 * 37) % 100_000);
+        let workload = if index % 10 < 6 { "llm" } else { "rl" };
+        for step in DEMO_STEPS {
+            metric_points += demo_metrics(workload, index, seed, step).len() as i64;
+        }
+        let rows = demo_artifacts(workload, seed);
+        artifacts += rows.len() as i64;
+        artifact_bytes += rows
+            .into_iter()
+            .filter_map(|artifact| artifact.size_bytes)
+            .sum::<i64>();
+    }
+    UsageDelta {
+        projects: if project_exists { 0 } else { 1 },
+        runs: DEMO_RUN_COUNT as i64,
+        metric_points,
+        storage_bytes: artifact_bytes
+            + artifacts * ARTIFACT_METADATA_BYTES
+            + DEMO_RUN_COUNT as i64 * RUN_METADATA_BYTES
+            + if project_exists {
+                0
+            } else {
+                PROJECT_METADATA_BYTES
+            },
+    }
 }
 
 fn demo_console_lines(workload: &str, seed: i64, status: &str) -> Vec<String> {

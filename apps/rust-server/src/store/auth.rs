@@ -296,7 +296,17 @@ async fn create_verified_provider_session(
             .flatten(),
         &account_type,
     );
-    if let Some(org) = existing_org {
+    if let Some(mut org) = existing_org {
+        if is_shared_demo_org(&org)
+            && (org.plan_tier != "premium" || org.seat_limit != PLAN_PREMIUM.included_seats)
+        {
+            org.plan_tier = "premium".to_string();
+            org.seat_limit = PLAN_PREMIUM.included_seats;
+            store
+                .persist_locked("organization", org.id, &org.id.to_string(), &org)
+                .await?;
+            data.insert_org(org.clone());
+        }
         drop(data);
         return create_session_for_org(store, user, org).await;
     }
@@ -565,7 +575,7 @@ fn normalize_dev_google_auth(input: DevGoogleAuthRequest) -> AppResult<Normalize
             account_type: SHARED_DEMO_ACCOUNT_TYPE.to_string(),
             mode: Some("signup".to_string()),
             org_name: Some(SHARED_DEMO_NAME.to_string()),
-            plan_tier: Some("free".to_string()),
+            plan_tier: Some("premium".to_string()),
             seat_emails: Vec::new(),
             accept_invite_org_id: None,
         });
@@ -996,7 +1006,7 @@ mod tests {
         assert_eq!(normalized.display_name.as_deref(), Some(SHARED_DEMO_NAME));
         assert_eq!(normalized.account_type, SHARED_DEMO_ACCOUNT_TYPE);
         assert_eq!(normalized.org_name.as_deref(), Some(SHARED_DEMO_NAME));
-        assert_eq!(normalized.plan_tier.as_deref(), Some("free"));
+        assert_eq!(normalized.plan_tier.as_deref(), Some("premium"));
         assert_eq!(normalized.accept_invite_org_id, None);
         assert!(normalized.seat_emails.is_empty());
     }

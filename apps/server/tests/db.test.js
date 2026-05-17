@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { ConflictError, ForbiddenError, UnauthorizedError, createStore, defaultDbPath, emptyState, loadState, openStore, ValidationError } from "../src/db.js";
+import { ConflictError, ForbiddenError, PlanLimitError, UnauthorizedError, createStore, defaultDbPath, emptyState, loadState, openStore, ValidationError } from "../src/db.js";
 
 test("file-backed store persists and tolerates partial state files", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-store-"));
@@ -36,7 +36,7 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   assert.equal(store.createUser({ email: "owner@example.com" }).id, user.id);
   assert.equal(store.listUsers().length, 1);
 
-  const org = store.createOrganization({ slug: "acme-labs", name: "Acme Labs", owner_user_id: user.id });
+  const org = store.createOrganization({ slug: "acme-labs", name: "Acme Labs", owner_user_id: user.id, plan_tier: "premium" });
   assert.equal(store.listOrganizations().some((organization) => organization.id === org.id), true);
   const member = store.createUser({ email: "member@example.com" });
   store.state.memberships.push({ id: "member-1", org_id: org.id, user_id: member.id, role: "member", created_at: "2026-05-09T00:00:00.000Z" });
@@ -82,7 +82,7 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   assert.equal(usage.organizations[0].usage.artifact_bytes_exact, 6 * 1024 ** 3);
   assert.equal(usage.organizations[0].usage.artifact_bytes_unknown_count, 1);
   assert.equal(usage.organizations[0].warnings.some((warning) => warning.target === "seats" && warning.status === "paid_extra_seats"), false);
-  assert.equal(usage.organizations[0].warnings.some((warning) => warning.target === "storage" && warning.status === "over_limit"), true);
+  assert.equal(usage.organizations[0].warnings.some((warning) => warning.target === "storage" && warning.status === "over_limit"), false);
   const usageExport = store.usageExport({ org_id: org.id });
   assert.equal(usageExport.source, "computed_current_state");
   assert.equal(usageExport.organizations[0].org_id, org.id);
@@ -92,6 +92,42 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   assert.equal(exported.organizations[0].id, org.id);
   assert.equal(exported.metric_series[0].key, "reward");
   assert.equal(exported.metrics.length, 1);
+});
+
+test("plan limits block new storage writes and mark blocking warnings", () => {
+  const store = createStore(emptyState());
+  const org = store.createOrganization({ slug: "tiny-lab", name: "Tiny Lab", plan_tier: "free" });
+  const run = store.createRun({ org_id: org.id, project: "tiny", name: "seed-1" });
+
+  assert.throws(() => store.createArtifact(run.id, {
+    type: "file",
+    name: "too-large.bin",
+    uri: "s3://bucket/too-large.bin",
+    size_bytes: 3 * 1024 ** 3,
+  }), PlanLimitError);
+  assert.equal(store.listArtifacts(run.id).length, 0);
+
+  store.state.artifacts.push({
+    id: "manual-over-limit",
+    org_id: org.id,
+    run_id: run.id,
+    type: "file",
+    name: "manual-over-limit.bin",
+    uri: "s3://bucket/manual-over-limit.bin",
+    step: null,
+    size_bytes: 3 * 1024 ** 3,
+    sha256: null,
+    mime_type: null,
+    storage_path: null,
+    metadata: {},
+    created_at: "2026-05-17T00:00:00.000Z",
+  });
+  const usage = store.usageSummary({ org_id: org.id });
+  const storage = usage.organizations[0].warnings.find((warning) => warning.target === "storage");
+  assert.equal(storage.status, "over_limit");
+  assert.equal(storage.policy, "blocked_at_limit");
+  assert.equal(storage.blocking, true);
+  assert.equal(storage.code, "storage_over_limit");
 });
 
 test("store supports runs, metrics, summaries, artifacts, and demo safety", () => {
@@ -127,7 +163,7 @@ test("store supports runs, metrics, summaries, artifacts, and demo safety", () =
   store.resetDemo();
   assert.equal(store.runsSummary({ project: "demo" }).runs.length, 100);
 
-  const org = store.createOrganization({ slug: "demo-org", name: "Demo Org" });
+  const org = store.createOrganization({ slug: "demo-org", name: "Demo Org", plan_tier: "premium" });
   const orgDemo = store.resetDemo({ org_id: org.id });
   assert.equal(orgDemo.runs.every((run) => run.org_id === org.id), true);
   assert.equal(orgDemo.total, 1000);

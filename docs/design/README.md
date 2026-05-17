@@ -29,11 +29,12 @@ Current implemented design sequence:
 - `2026-05-16-gcp-cloud-run-rust-api.md`: internal single-instance Cloud Run deployment for the Rust API, Secret Manager, static ClickHouse egress, and local-frontend-to-hosted-API workflow.
 - `2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance control/data-plane direction, central hot-path proxy rejection, single-instance guardrails, mutation gates, deterministic operational replay, split `combined`/`control`/`data` service-plane roles, and data-plane control-record refresh before auth.
 - `2026-05-16-cloud-run-multi-instance-launch.md`: split Cloud Run launch wiring, deploy helper target model, managed HTTPS public router, Docker Compose split profile, static egress reuse, scaling defaults, unsafe multi-writer guardrails, and frontend env behavior.
-- `2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, plan-aware tenant-route warehouse profile intent, seat invites, invite activation, usage/admin settings, API-key management, and warning-only billing boundaries.
+- `2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, plan-aware tenant-route warehouse profile intent, seat invites, invite activation, usage/admin settings, API-key management, and first pricing/admin boundaries.
+- `2026-05-17-plan-limit-enforcement.md`: blocked-at-limit guardrails for new project, run, metric-ingest, artifact, import, and demo-reset writes plus Premium local/shared demo defaults.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
-Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The current public tier model is Free, Pro, and Premium, with warning-only usage until billing/provider reconciliation is implemented. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
+Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The current public tier model is Free, Pro, and Premium, with blocked-at-limit usage guardrails until billing/provider reconciliation and paid overages are implemented. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
 
 Backend direction:
 

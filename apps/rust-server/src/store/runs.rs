@@ -14,6 +14,31 @@ pub async fn create_project(
     }
     let name = validate_name(input.name.as_deref(), "project name")?;
     let description = validate_optional_name(input.description.as_deref(), "project description")?;
+    {
+        let data = store.data.lock().await;
+        if let Some(project_id) = data
+            .projects_by_org_name
+            .get(&(ctx.org_id, name.clone()))
+            .copied()
+        {
+            return data
+                .projects
+                .get(&project_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("project not found"));
+        }
+    }
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            projects: 1,
+            storage_bytes: PROJECT_METADATA_BYTES,
+            ..UsageDelta::default()
+        },
+        "create a project",
+    )
+    .await?;
     let mut data = store.data.lock().await;
     if let Some(project_id) = data
         .projects_by_org_name
@@ -69,6 +94,50 @@ pub async fn create_run(
     let config = validate_json_object(input.config, "config")?;
     let tags = validate_tags(input.tags)?;
     let metadata = validate_json_object(input.metadata, "metadata")?;
+    let project_exists = {
+        let data = store.data.lock().await;
+        match data
+            .projects_by_org_name
+            .get(&(ctx.org_id, project_name.clone()))
+            .copied()
+        {
+            Some(project_id) => {
+                if let Some(auth) = &ctx.auth {
+                    if auth.project_id.is_some_and(|id| id != project_id) {
+                        return Err(AppError::forbidden("run belongs to a different project"));
+                    }
+                }
+                true
+            }
+            None => {
+                if let Some(auth) = &ctx.auth {
+                    if auth.project_id.is_some() {
+                        return Err(AppError::forbidden(
+                            "project-scoped API key cannot create a different project",
+                        ));
+                    }
+                }
+                false
+            }
+        }
+    };
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            projects: if project_exists { 0 } else { 1 },
+            runs: 1,
+            storage_bytes: RUN_METADATA_BYTES
+                + if project_exists {
+                    0
+                } else {
+                    PROJECT_METADATA_BYTES
+                },
+            ..UsageDelta::default()
+        },
+        "create a run",
+    )
+    .await?;
     let mut data = store.data.lock().await;
     let project_id = match data
         .projects_by_org_name
@@ -991,6 +1060,16 @@ pub async fn log_metrics(
                 let run = fetch_run_in_data(&data, ctx, run_id)?;
                 ensure_run_access_in_data(ctx, &run)?;
             }
+            enforce_plan_capacity(
+                store,
+                ctx.org_id,
+                UsageDelta {
+                    metric_points: points.len() as i64,
+                    ..UsageDelta::default()
+                },
+                "log metrics",
+            )
+            .await?;
             metric_store.insert_points(&points).await?;
             let record = IdempotencyRecord {
                 org_id: ctx.org_id,
@@ -1019,6 +1098,16 @@ pub async fn log_metrics(
         let run = fetch_run_in_data(&data, ctx, run_id)?;
         ensure_run_access_in_data(ctx, &run)?;
     }
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            metric_points: points.len() as i64,
+            ..UsageDelta::default()
+        },
+        "log metrics",
+    )
+    .await?;
     metric_store.insert_points(&points).await?;
     Ok(points.len())
 }

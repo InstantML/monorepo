@@ -7,7 +7,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
-- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, track warning-only usage, and manage org API keys.
+- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, enforce blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
@@ -123,7 +123,7 @@ Cloud-service retries recover from a service that was created before the route c
 
 Shared demo auth:
 
-- Local/dev Google-style auth canonicalizes `hello@instantml.ai` and the legacy typo alias `hello@instantml.com` to one `InstantML Demo` business org. Repeated demo sign-ins reuse that org and tenant route instead of creating another service.
+- Local/dev Google-style auth canonicalizes `hello@instantml.ai` and the legacy typo alias `hello@instantml.com` to one Premium-tier `InstantML Demo` business org. Repeated demo sign-ins reuse that org and tenant route instead of creating another service.
 - API keys created for the `InstantML Demo` org are forced to read-only `export:read` scope and the copy-once plaintext secret is not returned. Effective scopes are also clamped at API-key authentication/list time, so older demo keys cannot use stale write scopes to mutate the tenant warehouse or User Data control records such as API keys and service accounts. Demo browser sessions are also read-only for mutation routes, including SDK-style writes, imports, artifacts, API-key administration, and seat changes. This keeps the public demo browsable without encouraging writes into the shared warehouse.
 
 Root helper-only environment variables:
@@ -148,7 +148,7 @@ Implemented health and platform endpoints:
 - `GET /metrics`
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, warning-only usage summaries/export, API-key management, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with blocked-at-limit write guardrails, API-key management, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and
 the durable control/data-plane schema reference lives in

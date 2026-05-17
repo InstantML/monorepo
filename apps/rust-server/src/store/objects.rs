@@ -387,6 +387,21 @@ async fn artifact_from_input(
         .map(validate_size_bytes)
         .transpose()?;
     let metadata = validate_json_object(input.metadata, "metadata")?;
+    {
+        let data = store.data.lock().await;
+        let run = fetch_run_in_data(&data, ctx, run_id)?;
+        ensure_run_access_in_data(ctx, &run)?;
+    }
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            storage_bytes: size_bytes.unwrap_or(0) + ARTIFACT_METADATA_BYTES,
+            ..UsageDelta::default()
+        },
+        "create an artifact",
+    )
+    .await?;
     let mut data = store.data.lock().await;
     let run = fetch_run_in_data(&data, ctx, run_id)?;
     ensure_run_access_in_data(ctx, &run)?;

@@ -184,7 +184,7 @@ Body:
   "email": "hello@instantml.ai",
   "display_name": "InstantML Demo",
   "mode": "signup",
-  "plan_tier": "pro",
+  "plan_tier": "premium",
   "account_type": "business",
   "org_name": "InstantML Demo",
   "seat_emails": ["teammate@example.com"],
@@ -868,7 +868,7 @@ Output:
   "schema_version": 1,
   "generated_at": "2026-05-16T00:00:00Z",
   "source": "computed_current_state",
-  "billing_precision": "warning_only_not_invoice_truth",
+  "billing_precision": "not_billable",
   "plans": {
     "free": {
       "id": "free",
@@ -888,11 +888,12 @@ Output:
     "premium": {}
   },
   "overage_policy": {
+    "paid_extra_seats": "tracked_not_billed",
     "seats": "paid_extra_seats",
-    "projects": "soft_warning_then_upgrade_prompt",
-    "runs": "soft_warning_then_upgrade_prompt",
-    "metric_points": "fair_use_warning",
-    "storage": "soft_warning_then_upgrade_prompt",
+    "projects": "blocked_at_limit",
+    "runs": "blocked_at_limit",
+    "metric_points": "blocked_at_limit",
+    "storage": "blocked_at_limit",
     "artifacts": "visibility_only",
     "api_keys": "visibility_only"
   },
@@ -900,20 +901,20 @@ Output:
     {
       "org_id": "uuid",
       "org_slug": "demo",
-      "plan_tier": "free",
+      "plan_tier": "premium",
       "plan": {
-        "id": "free",
-        "label": "Free",
-        "monthly_base_usd": 0,
-        "included_seats": 2,
-        "included_storage_bytes": 2147483648
+        "id": "premium",
+        "label": "Premium",
+        "monthly_base_usd": 699,
+        "included_seats": 10,
+        "included_storage_bytes": 5497558138880
       },
       "limits": {
-        "included_seats": 2,
-        "included_storage_bytes": 2147483648,
-        "projects": 2,
-        "runs": 100,
-        "metric_points": 1000000
+        "included_seats": 10,
+        "included_storage_bytes": 5497558138880,
+        "projects": 500,
+        "runs": 1000000,
+        "metric_points": 2000000000
       },
       "usage": {
         "seats": 2,
@@ -937,8 +938,24 @@ Output:
 }
 ```
 
-The response is warning/debug telemetry only. `billable_storage_bytes` remains
-`null` until provider/object-store reconciliation is implemented.
+The response is guardrail/debug telemetry only, not invoice truth.
+`billable_storage_bytes` remains `null` until provider/object-store
+reconciliation is implemented. Warning rows include `target`, `status`, `value`,
+`limit`, `ratio`, `policy`, `blocking`, `code`, and `message`; blocked plan
+targets use `policy: "blocked_at_limit"` and `blocking: true`.
+
+New project, run, metric-ingest, artifact, import, and demo-reset writes that
+exceed blocked limits fail with:
+
+```json
+{
+  "error": "plan limit exceeded: storage would exceed the Free limit while trying to create an artifact",
+  "code": "plan_limit_exceeded"
+}
+```
+
+Status: `402 Payment Required`. Reads, exports, and usage summaries remain
+available for over-limit orgs.
 
 ### `GET /api/usage/export`
 

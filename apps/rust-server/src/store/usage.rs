@@ -1,119 +1,123 @@
 use super::*;
 
+pub const PROJECT_METADATA_BYTES: i64 = 512;
+pub const RUN_METADATA_BYTES: i64 = 1024;
+pub const METRIC_SERIES_METADATA_BYTES: i64 = 256;
+pub const ARTIFACT_METADATA_BYTES: i64 = 512;
+pub const API_KEY_METADATA_BYTES: i64 = 512;
+pub const SEAT_METADATA_BYTES: i64 = 256;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UsageDelta {
+    pub projects: i64,
+    pub runs: i64,
+    pub metric_points: i64,
+    pub storage_bytes: i64,
+}
+
 pub async fn usage_summary(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
-    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-    let metric_points = metric_store.count_points_for_org(ctx.org_id).await?;
-    let metric_series = metric_store.count_series_for_org(ctx.org_id).await?;
-    let data = store.data.lock().await;
-    let org = data
-        .organizations
-        .get(&ctx.org_id)
-        .ok_or_else(|| AppError::not_found("organization not found"))?;
-    let artifact_bytes_exact: i64 = data
-        .artifacts
-        .values()
-        .filter(|artifact| artifact.org_id == ctx.org_id)
-        .filter_map(|artifact| artifact.size_bytes)
-        .sum();
-    let seats = data
-        .memberships
-        .values()
-        .filter(|membership| {
-            membership.org_id == ctx.org_id
-                && matches!(membership.status.as_str(), "active" | "invited")
-        })
-        .count() as i64;
-    let projects = data
-        .projects
-        .values()
-        .filter(|project| project.org_id == ctx.org_id)
-        .count() as i64;
-    let runs = data
-        .runs
-        .values()
-        .filter(|run| run.org_id == ctx.org_id)
-        .count() as i64;
-    let artifacts = data
-        .artifacts
-        .values()
-        .filter(|artifact| artifact.org_id == ctx.org_id)
-        .count() as i64;
-    let api_keys = data
-        .api_keys
-        .values()
-        .filter(|key| key.row.org_id == ctx.org_id && key.row.revoked_at.is_none())
-        .count() as i64;
-    let plan = plan_tier(&org.plan_tier);
-    let estimated_metadata_bytes = projects * 512
-        + runs * 1024
-        + metric_series * 256
-        + artifacts * 512
-        + api_keys * 512
-        + seats * 256;
-    let estimated_storage_bytes_for_warnings = artifact_bytes_exact + estimated_metadata_bytes;
-    let mut warnings = Vec::new();
-    if seats > plan.included_seats as i64 {
-        warnings.push(json!({
-            "code": "seats_over_included",
-            "message": "Seat count is above the included plan seats."
-        }));
+    usage_summary_for_org(store, ctx.org_id).await
+}
+
+pub async fn enforce_plan_capacity(
+    store: &Store,
+    org_id: Uuid,
+    delta: UsageDelta,
+    action: &str,
+) -> AppResult<()> {
+    let counts = usage_counts_for_org(store, org_id).await?;
+    if let Some(violation) = first_blocking_violation(&counts, delta) {
+        return Err(AppError::with_code(
+            axum::http::StatusCode::PAYMENT_REQUIRED,
+            "plan_limit_exceeded",
+            format!(
+                "plan limit exceeded: {target} {reason} the {plan} limit while trying to {action}",
+                target = violation.target,
+                reason = violation.reason,
+                plan = counts.plan.label,
+            ),
+        ));
     }
-    if estimated_storage_bytes_for_warnings > plan.included_storage_bytes {
-        warnings.push(json!({
-            "code": "storage_over_included",
-            "message": "Tracked storage estimate is above the included plan storage."
-        }));
-    }
-    if metric_points > plan.metric_points {
-        warnings.push(json!({
-            "code": "metric_points_over_included",
-            "message": "Metric point count is above the monthly fair-use plan limit."
-        }));
-    }
+    Ok(())
+}
+
+async fn usage_summary_for_org(store: &Store, org_id: Uuid) -> AppResult<Value> {
+    let counts = usage_counts_for_org(store, org_id).await?;
     Ok(json!({
         "schema_version": 1,
         "billing_precision": "not_billable",
         "generated_at": Utc::now(),
         "source": "computed_current_state",
         "plans": plan_catalog(),
-        "overage_policy": {
-            "paid_extra_seats": "tracked_not_billed",
-            "storage": "warning_only",
-            "metric_points": "warning_only"
-        },
-        "organizations": [{
-            "org_id": ctx.org_id,
-            "org_slug": org.slug,
-            "plan_tier": org.plan_tier,
-            "plan": plan,
-            "usage": {
-                "seats": seats,
-                "paid_extra_seats": (seats - plan.included_seats as i64).max(0),
-                "projects": projects,
-                "runs": runs,
-                "metric_points": metric_points,
-                "metric_series": metric_series,
-                "artifacts": artifacts,
-                "api_keys": api_keys,
-                "artifact_bytes_exact": artifact_bytes_exact,
-                "artifact_bytes_unknown": 0,
-                "artifact_bytes_unknown_count": 0,
-                "estimated_metadata_bytes": estimated_metadata_bytes,
-                "estimated_storage_bytes_for_warnings": estimated_storage_bytes_for_warnings,
-                "billable_storage_bytes": Value::Null,
-                "billing_precision": "not_billable"
-            },
-            "limits": {
-                "included_seats": plan.included_seats,
-                "included_storage_bytes": plan.included_storage_bytes,
-                "projects": plan.projects,
-                "runs": plan.runs,
-                "metric_points": plan.metric_points
-            },
-            "warnings": warnings
-        }]
+        "overage_policy": overage_policy(),
+        "organizations": [usage_org_value(&counts)]
     }))
+}
+
+async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCounts> {
+    let metric_store = store.metric_store_for_org(org_id).await?;
+    let metric_points = metric_store.count_points_for_org(org_id).await?;
+    let metric_series = metric_store.count_series_for_org(org_id).await?;
+    let data = store.data.lock().await;
+    let org = data
+        .organizations
+        .get(&org_id)
+        .cloned()
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    let artifact_bytes_exact: i64 = data
+        .artifacts
+        .values()
+        .filter(|artifact| artifact.org_id == org_id)
+        .filter_map(|artifact| artifact.size_bytes)
+        .sum();
+    let seats = data
+        .memberships
+        .values()
+        .filter(|membership| {
+            membership.org_id == org_id
+                && matches!(membership.status.as_str(), "active" | "invited")
+        })
+        .count() as i64;
+    let projects = data
+        .projects
+        .values()
+        .filter(|project| project.org_id == org_id)
+        .count() as i64;
+    let runs = data
+        .runs
+        .values()
+        .filter(|run| run.org_id == org_id)
+        .count() as i64;
+    let artifacts = data
+        .artifacts
+        .values()
+        .filter(|artifact| artifact.org_id == org_id)
+        .count() as i64;
+    let api_keys = data
+        .api_keys
+        .values()
+        .filter(|key| key.row.org_id == org_id && key.row.revoked_at.is_none())
+        .count() as i64;
+    let plan = plan_tier(&org.plan_tier);
+    let estimated_metadata_bytes =
+        estimated_metadata_bytes(projects, runs, metric_series, artifacts, api_keys, seats);
+    let estimated_storage_bytes_for_warnings = artifact_bytes_exact + estimated_metadata_bytes;
+    Ok(UsageCounts {
+        org,
+        plan,
+        seats,
+        projects,
+        runs,
+        metric_points,
+        metric_series,
+        artifacts,
+        api_keys,
+        artifact_bytes_exact,
+        artifact_bytes_unknown_count: 0,
+        estimated_metadata_bytes,
+        estimated_storage_bytes_for_warnings,
+    })
 }
 
 pub async fn usage_export(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
@@ -129,12 +133,245 @@ pub async fn usage_export(store: &Store, ctx: &RequestContext) -> AppResult<Valu
     }))
 }
 
+fn usage_org_value(counts: &UsageCounts) -> Value {
+    json!({
+        "org_id": counts.org.id,
+        "org_slug": counts.org.slug,
+        "plan_tier": counts.org.plan_tier,
+        "plan": counts.plan,
+        "usage": {
+            "seats": counts.seats,
+            "paid_extra_seats": (counts.seats - counts.plan.included_seats as i64).max(0),
+            "projects": counts.projects,
+            "runs": counts.runs,
+            "metric_points": counts.metric_points,
+            "metric_series": counts.metric_series,
+            "artifacts": counts.artifacts,
+            "api_keys": counts.api_keys,
+            "artifact_bytes_exact": counts.artifact_bytes_exact,
+            "artifact_bytes_unknown": 0,
+            "artifact_bytes_unknown_count": counts.artifact_bytes_unknown_count,
+            "estimated_metadata_bytes": counts.estimated_metadata_bytes,
+            "estimated_storage_bytes_for_warnings": counts.estimated_storage_bytes_for_warnings,
+            "billable_storage_bytes": Value::Null,
+            "billing_precision": "not_billable"
+        },
+        "limits": {
+            "included_seats": counts.plan.included_seats,
+            "included_storage_bytes": counts.plan.included_storage_bytes,
+            "projects": counts.plan.projects,
+            "runs": counts.plan.runs,
+            "metric_points": counts.plan.metric_points
+        },
+        "warnings": usage_warnings(counts)
+    })
+}
+
+fn overage_policy() -> Value {
+    json!({
+        "paid_extra_seats": "tracked_not_billed",
+        "seats": "paid_extra_seats",
+        "projects": "blocked_at_limit",
+        "runs": "blocked_at_limit",
+        "storage": "blocked_at_limit",
+        "metric_points": "blocked_at_limit",
+        "artifacts": "visibility_only",
+        "api_keys": "visibility_only"
+    })
+}
+
 fn plan_catalog() -> Value {
     json!({
         "free": PLAN_FREE,
         "pro": PLAN_PRO,
         "premium": PLAN_PREMIUM
     })
+}
+
+fn estimated_metadata_bytes(
+    projects: i64,
+    runs: i64,
+    metric_series: i64,
+    artifacts: i64,
+    api_keys: i64,
+    seats: i64,
+) -> i64 {
+    projects * PROJECT_METADATA_BYTES
+        + runs * RUN_METADATA_BYTES
+        + metric_series * METRIC_SERIES_METADATA_BYTES
+        + artifacts * ARTIFACT_METADATA_BYTES
+        + api_keys * API_KEY_METADATA_BYTES
+        + seats * SEAT_METADATA_BYTES
+}
+
+fn usage_warnings(counts: &UsageCounts) -> Vec<Value> {
+    [
+        usage_limit_warning(
+            "seats",
+            counts.seats,
+            counts.plan.included_seats as i64,
+            "paid_extra_seats",
+            false,
+        ),
+        usage_limit_warning(
+            "projects",
+            counts.projects,
+            counts.plan.projects,
+            "blocked_at_limit",
+            true,
+        ),
+        usage_limit_warning(
+            "runs",
+            counts.runs,
+            counts.plan.runs,
+            "blocked_at_limit",
+            true,
+        ),
+        usage_limit_warning(
+            "metric_points",
+            counts.metric_points,
+            counts.plan.metric_points,
+            "blocked_at_limit",
+            true,
+        ),
+        usage_limit_warning(
+            "storage",
+            counts.estimated_storage_bytes_for_warnings,
+            counts.plan.included_storage_bytes,
+            "blocked_at_limit",
+            true,
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn usage_limit_warning(
+    target: &str,
+    value: i64,
+    limit: i64,
+    policy: &str,
+    blocking: bool,
+) -> Option<Value> {
+    if limit <= 0 {
+        return None;
+    }
+    let ratio = rounded_ratio(value, limit);
+    let status = if target == "seats" {
+        (value > limit).then_some("paid_extra_seats")
+    } else if value >= limit {
+        Some("over_limit")
+    } else if (value as f64 / limit as f64) >= 0.8 {
+        Some("approaching_limit")
+    } else {
+        None
+    }?;
+    let code = format!("{target}_{status}");
+    Some(json!({
+        "target": target,
+        "status": status,
+        "value": value,
+        "limit": limit,
+        "ratio": ratio,
+        "policy": policy,
+        "blocking": blocking,
+        "code": code,
+        "message": warning_message(target, status, blocking)
+    }))
+}
+
+fn warning_message(target: &str, status: &str, blocking: bool) -> String {
+    let label = target.replace('_', " ");
+    match (status, blocking) {
+        ("approaching_limit", true) => format!(
+            "{label} usage is approaching the plan limit. New writes will be blocked at the limit."
+        ),
+        ("over_limit", true) => format!(
+            "{label} usage is at or above the plan limit. New writes are blocked until usage drops or the plan is upgraded."
+        ),
+        ("paid_extra_seats", false) => {
+            "Seat count is above the included plan seats and is tracked for future billing.".to_string()
+        }
+        _ => format!("{label} usage is above the plan limit."),
+    }
+}
+
+fn rounded_ratio(value: i64, limit: i64) -> f64 {
+    ((value as f64 / limit as f64) * 10_000.0).round() / 10_000.0
+}
+
+fn first_blocking_violation(counts: &UsageCounts, delta: UsageDelta) -> Option<PlanViolation> {
+    [
+        blocking_violation(
+            "projects",
+            counts.projects,
+            delta.projects,
+            counts.plan.projects,
+        ),
+        blocking_violation("runs", counts.runs, delta.runs, counts.plan.runs),
+        blocking_violation(
+            "metric_points",
+            counts.metric_points,
+            delta.metric_points,
+            counts.plan.metric_points,
+        ),
+        blocking_violation(
+            "storage",
+            counts.estimated_storage_bytes_for_warnings,
+            delta.storage_bytes,
+            counts.plan.included_storage_bytes,
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+}
+
+fn blocking_violation(
+    target: &'static str,
+    current: i64,
+    delta: i64,
+    limit: i64,
+) -> Option<PlanViolation> {
+    if limit <= 0 {
+        return None;
+    }
+    if current > limit {
+        return Some(PlanViolation {
+            target,
+            reason: "is already above",
+        });
+    }
+    if delta > 0 && current.saturating_add(delta) > limit {
+        return Some(PlanViolation {
+            target,
+            reason: "would exceed",
+        });
+    }
+    None
+}
+
+#[derive(Clone)]
+struct UsageCounts {
+    org: OrganizationRow,
+    plan: crate::domain::PlanTier,
+    seats: i64,
+    projects: i64,
+    runs: i64,
+    metric_points: i64,
+    metric_series: i64,
+    artifacts: i64,
+    api_keys: i64,
+    artifact_bytes_exact: i64,
+    artifact_bytes_unknown_count: i64,
+    estimated_metadata_bytes: i64,
+    estimated_storage_bytes_for_warnings: i64,
+}
+
+struct PlanViolation {
+    target: &'static str,
+    reason: &'static str,
 }
 
 pub async fn write_usage_daily_snapshots(store: &Store) -> AppResult<usize> {
@@ -190,4 +427,93 @@ pub async fn delete_expired_or_revoked_sessions(store: &Store) -> AppResult<u64>
         }
     }
     Ok((before - data.sessions.len()) as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_warnings_mark_blocking_plan_targets() {
+        let mut counts = test_counts("free");
+        counts.seats = 3;
+        counts.projects = PLAN_FREE.projects;
+        counts.runs = (PLAN_FREE.runs as f64 * 0.85) as i64;
+
+        let warnings = usage_warnings(&counts);
+
+        let seat = warnings
+            .iter()
+            .find(|warning| warning["target"] == "seats")
+            .expect("seat warning");
+        assert_eq!(seat["status"], "paid_extra_seats");
+        assert_eq!(seat["blocking"], false);
+
+        let projects = warnings
+            .iter()
+            .find(|warning| warning["target"] == "projects")
+            .expect("project warning");
+        assert_eq!(projects["status"], "over_limit");
+        assert_eq!(projects["policy"], "blocked_at_limit");
+        assert_eq!(projects["blocking"], true);
+        assert_eq!(projects["code"], "projects_over_limit");
+
+        let runs = warnings
+            .iter()
+            .find(|warning| warning["target"] == "runs")
+            .expect("run warning");
+        assert_eq!(runs["status"], "approaching_limit");
+        assert_eq!(runs["blocking"], true);
+    }
+
+    #[test]
+    fn blocking_violation_uses_current_and_projected_usage() {
+        let mut counts = test_counts("free");
+        counts.estimated_storage_bytes_for_warnings = PLAN_FREE.included_storage_bytes - 1;
+
+        let projected = first_blocking_violation(
+            &counts,
+            UsageDelta {
+                storage_bytes: 2,
+                ..UsageDelta::default()
+            },
+        )
+        .expect("projected storage violation");
+        assert_eq!(projected.target, "storage");
+        assert_eq!(projected.reason, "would exceed");
+
+        counts.metric_points = PLAN_FREE.metric_points + 1;
+        let current = first_blocking_violation(&counts, UsageDelta::default())
+            .expect("current metric violation");
+        assert_eq!(current.target, "metric_points");
+        assert_eq!(current.reason, "is already above");
+    }
+
+    fn test_counts(tier: &str) -> UsageCounts {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "acme".to_string(),
+            name: "Acme".to_string(),
+            plan_tier: tier.to_string(),
+            account_type: "customer".to_string(),
+            seat_limit: plan_tier(tier).included_seats,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+        UsageCounts {
+            org,
+            plan: plan_tier(tier),
+            seats: 1,
+            projects: 1,
+            runs: 1,
+            metric_points: 1,
+            metric_series: 1,
+            artifacts: 0,
+            api_keys: 0,
+            artifact_bytes_exact: 0,
+            artifact_bytes_unknown_count: 0,
+            estimated_metadata_bytes: 0,
+            estimated_storage_bytes_for_warnings: 0,
+        }
+    }
 }

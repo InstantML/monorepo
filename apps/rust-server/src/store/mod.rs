@@ -191,16 +191,33 @@ impl Store {
 
     async fn ensure_local_org(&self) -> AppResult<()> {
         let mut data = self.data.lock().await;
-        if data.organizations.contains_key(&LOCAL_ORG_ID) {
+        if let Some(existing) = data.organizations.get(&LOCAL_ORG_ID).cloned() {
+            if existing.plan_tier != "premium"
+                || existing.seat_limit != plan_tier("premium").included_seats
+            {
+                let org = OrganizationRow {
+                    plan_tier: "premium".to_string(),
+                    seat_limit: plan_tier("premium").included_seats,
+                    ..existing
+                };
+                self.persist_locked(
+                    "organization",
+                    LOCAL_ORG_ID,
+                    &LOCAL_ORG_ID.to_string(),
+                    &org,
+                )
+                .await?;
+                data.insert_org(org);
+            }
             return Ok(());
         }
         let org = OrganizationRow {
             id: LOCAL_ORG_ID,
             slug: LOCAL_ORG_SLUG.to_string(),
             name: "Local".to_string(),
-            plan_tier: "free".to_string(),
+            plan_tier: "premium".to_string(),
             account_type: "customer".to_string(),
-            seat_limit: plan_tier("free").included_seats,
+            seat_limit: plan_tier("premium").included_seats,
             created_by_user_id: None,
             created_at: epoch(),
         };

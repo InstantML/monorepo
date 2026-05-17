@@ -10,7 +10,7 @@ This document explains the Free, Pro, and Premium pricing model, the current cos
 
 ## Implemented Tiers
 
-| Tier | Price | Included seats | Included warning storage | Product limits | Warehouse profile intent |
+| Tier | Price | Included seats | Included storage | Product limits | Warehouse profile intent |
 | --- | ---: | ---: | ---: | --- | --- |
 | Free | `$0/org/mo` | 2 | 2 GiB | 2 projects, 100 runs, 1M metric points | Shared, 8 GiB, 1 replica |
 | Pro | `$199/org/mo` | 3 | 1 TiB | 100 projects, 100k runs, 250M metric points | Standard, 12 GiB, 1 replica |
@@ -19,7 +19,7 @@ This document explains the Free, Pro, and Premium pricing model, the current cos
 Current overage policy:
 
 - Extra seats are tracked as `paid_extra_seats` but are not billed yet.
-- Storage and metric overages are warning-only until billable object-store/provider accounting is implemented.
+- Projects, runs, metric points, and estimated storage are `blocked_at_limit` for new writes until paid overages or custom terms are implemented.
 - API-key count and artifact counts are visibility-only.
 - Artifact registry is out of scope for this pricing slice.
 
@@ -99,10 +99,12 @@ Not implemented yet:
 - Paid extra-seat billing.
 - Storage overage billing.
 - Billable GB-day accounting from object storage/provider truth.
-- Hard enforcement for storage, project, run, or metric thresholds.
 - Enterprise contract terms.
 
-Until those exist, all usage outputs are product/admin warnings, not invoices.
+Until those exist, usage outputs are product/admin guardrails, not invoices.
+Writes that would exceed project, run, metric-point, or estimated-storage
+limits are rejected with `plan_limit_exceeded`; reads and exports remain
+available so teams can inspect and reduce usage.
 
 ## Launch Guardrails
 
@@ -114,4 +116,3 @@ Before public self-serve paid launch:
 - Add spend alerts and internal dashboards for per-org ClickHouse service cost.
 - Validate Pro and Premium COGS on at least three real workloads before publishing stronger margin claims.
 - Decide whether extra seats are `$79`, `$99`, or bundled-only for beta.
-

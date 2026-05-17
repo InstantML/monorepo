@@ -199,7 +199,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       mode: "signup",
       account_type: "business",
       org_name: SHARED_DEMO_ORG,
-      plan_tier: "free",
+      plan_tier: "premium",
     });
   }
 

@@ -33,7 +33,7 @@ Current implementation status:
 - Rust/ClickHouse server is the current primary API and storage backend.
 - Next/React frontend is the current UI.
 - Python SDK supports run creation, scalar metrics, searchable tags/notes, typed helpers, buffering, explicit `flush()`, offline replay for post-run-create events, process-isolated post-init upload spooling, source metadata, artifacts, checkpoints, rollouts, tables, and local file upload.
-- Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, warning-only usage summaries, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
+- Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, blocked-at-limit usage guardrails, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
 - UI supports tabbed run browsing, a W&B/Grafana-inspired Runs workspace with sections and movable/resizable line panels, chart smoothing, step/time x-axis, grouped averages, range zoom, point hover readouts, saved local views, tags/notes editing, artifact previews, checkpoints, rollouts, keyboard workflow shortcuts, side-by-side diffs, signup plan selection, org seat invites, usage visibility, and API-key management.
 - Rust/ClickHouse backend is implemented as the primary backend under `apps/rust-server`, with ClickHouse operational records, ClickHouse metric storage, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, plan-aware signup, invited-member activation, tenant-route warehouse profile metadata, and Rust contract/SDK/UI smokes.
 
@@ -177,24 +177,27 @@ These are the current product defaults implemented in Rust and mirrored in the d
 
 | Tier | Draft price | Included |
 | --- | ---: | --- |
-| Free | `$0/org/mo` | 2 seats, 2 GiB warning storage, 2 projects, 100 runs, 1M metric points, shared 8 GiB warehouse intent |
-| Pro | `$199/org/mo` | 3 seats, 1 TiB warning storage, 100 projects, 100k runs, 250M metric points, standard 12 GiB warehouse intent |
-| Premium | `$699/org/mo` | 10 seats, 5 TiB warning storage, 500 projects, 1M runs, 2B metric points, dedicated 16 GiB x 2 replica warehouse intent |
+| Free | `$0/org/mo` | 2 seats, 2 GiB included storage, 2 projects, 100 runs, 1M metric points, shared 8 GiB warehouse intent |
+| Pro | `$199/org/mo` | 3 seats, 1 TiB included storage, 100 projects, 100k runs, 250M metric points, standard 12 GiB warehouse intent |
+| Premium | `$699/org/mo` | 10 seats, 5 TiB included storage, 500 projects, 1M runs, 2B metric points, dedicated 16 GiB x 2 replica warehouse intent |
 | Enterprise | Custom | SSO/SAML, VPC or self-host option, custom retention, compliance, dedicated support, custom warehouse and storage terms |
 
 Overage defaults:
 
-- Extra seats: warning-only in the product today; price target is `$79-$99/seat/month` once billing is implemented.
-- Storage overage: warning-only in the product today; price target is `$0.02-$0.03/GB-month` after billable object/accounting reconciliation.
-- Metric/event overage: start with fair-use warnings and plan-upgrade prompts.
+- Extra seats: tracked but not billed yet; price target is `$79-$99/seat/month` once billing is implemented.
+- Storage overage: new writes are blocked at the included limit until billable object/accounting reconciliation and paid overages exist.
+- Metric/event overage: new metric writes are blocked at the fair-use threshold until paid overages or custom terms exist.
+- Project/run limits: new projects and runs are blocked at the stored plan limit.
 - Import/storage-heavy workloads: require Premium or custom quote.
 
 Current implementation status:
 
-- The Rust/ClickHouse server exposes warning-only org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
+- The Rust/ClickHouse server exposes org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
 - Usage is scoped by org and requires `usage:read` in hosted API-key mode.
-- The summary returns the full plan catalog, current org plan, limits, overage policy, seats, projects, runs, scalar metric points, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, warning-only storage estimates, and `billable_storage_bytes: null`.
+- The summary returns the full plan catalog, current org plan, limits, overage policy, seats, projects, runs, scalar metric points, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, blocked-at-limit storage estimates, and `billable_storage_bytes: null`.
+- New project, run, metric-ingest, artifact, import, and demo-reset writes fail with HTTP 402 and `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit.
 - Signup accepts `plan_tier` for Free, Pro, and Premium. Legacy plan values `lab` and `startup` canonicalize to Pro; `growth` canonicalizes to Premium for migration compatibility.
+- Local InstantML and the shared `InstantML Demo` org now default to Premium so the seeded demo exercises the Premium-scale warehouse profile and does not trip Free limits.
 - Hosted tenant routes record both requested warehouse profile and applied warehouse profile. Real ClickHouse Cloud create bodies stay capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
 - The dashboard includes plan selection in signup, usage and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
 - These values are for pricing validation and debugging, not invoice truth. Rust now writes immutable `usage_daily` snapshots, but billable storage still requires a separate billing implementation and provider/object-store reconciliation.

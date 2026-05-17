@@ -18,7 +18,7 @@ Compatibility rule: treat this server as the v1 wire-contract oracle. Future Rus
 - Provide side-by-side comparison and metric aggregate summaries for the UI.
 - Provide importer endpoints for Neptune Exporter-shaped, transformed W&B, and transformed MLflow JSON payloads with dry-run support.
 - Provide user-owned JSON export for experiment history.
-- Provide warning-only org usage summaries and versioned usage export for pricing/debug planning.
+- Provide org usage summaries, blocked-at-limit write guardrails, and versioned usage export for pricing/debug planning.
 - Generate/reset rich synthetic demo data only within the `demo` project.
 
 ## Storage
@@ -48,10 +48,12 @@ Artifact bytes go through `src/artifact-store.js`. The current implementation is
 - `POST /api/imports/wandb` imports or dry-runs a transformed W&B JSON payload with scalar history and artifact references. It does not download W&B artifact bytes.
 - `POST /api/imports/mlflow` imports or dry-runs a transformed MLflow JSON payload with metric history, latest-metric fallback, params, tags, timestamps, and artifact references. It does not crawl an MLflow server or download artifact bytes.
 - `GET /api/export` returns a portable JSON export filtered by project, project ID, or org ID.
-- `GET /api/usage` returns org-scoped warning-only usage counts for seats, projects, runs, scalar metric points, retained metric series, artifacts, API keys, exact artifact bytes, and estimated metadata bytes.
+- `GET /api/usage` returns org-scoped usage counts for seats, projects, runs, scalar metric points, retained metric series, artifacts, API keys, exact artifact bytes, estimated metadata bytes, and blocked-at-limit warning metadata.
 - `GET /api/usage/export` returns the same usage shape as versioned JSON for billing/debug planning. It is not invoice truth.
 
 Set `INSTANTML_REQUIRE_API_KEY=true` or pass `requireApiKey: true` to `createServer()` to require bearer API keys on tenant reads, SDK writes, imports, exports, usage summaries, and artifact downloads. In that mode, local admin scaffolding routes for users, orgs, and API keys require `X-INSTANTML-Bootstrap-Token` matching `INSTANTML_BOOTSTRAP_TOKEN` or the `bootstrapToken` server option. SDK run/metric/attribute mutations require `sdk:ingest`, and artifact metadata/upload routes require `artifacts:write`. Import routes require `imports:write`; default locally-created SDK keys include it for local migration testing, while usage-only keys cannot import. Usage routes require `usage:read`; default SDK ingest keys cannot read seat/API-key counts. Local dev defaults remain unauthenticated for compatibility.
+
+New project, run, metric-ingest, artifact, import, and demo-reset writes are blocked with HTTP 402 and `code: "plan_limit_exceeded"` when the current or projected org usage exceeds the stored Free/Pro/Premium project, run, metric-point, or estimated-storage limit. Reads, exports, and usage summaries remain available so over-limit orgs can inspect usage.
 
 Batch attribute writes and importer writes are all-or-nothing in the Node store. Import dry-runs and real imports use the same normalized validation path, and invalid second-run metric/artifact payloads do not leave partial projects, runs, metrics, summaries, artifacts, or import records. Importers preserve external run IDs under source/import metadata instead of writing source-owned `_rlobs` keys at the top level. Artifact upload validates run, artifact metadata, and path before writing local bytes.
 
@@ -93,7 +95,7 @@ npm run test:contract:node
 npm run test:ui:node
 ```
 
-The tests cover server persistence, org/API-key auth, usage scope enforcement, warning-only usage summaries/export, idempotent metric replay, strict numeric validation for SDK writes/imports, maintained metric summaries, export, typed attributes, artifact upload/download, Neptune/W&B/MLflow importer dry-run/import, side-by-side comparison, API contract behavior, Python SDK compatibility, frontend helper logic, demo reset safety, bounded metric queries, and static-file guardrails for custom static roots.
+The tests cover server persistence, org/API-key auth, usage scope enforcement, plan-limit write blocking, usage summaries/export, idempotent metric replay, strict numeric validation for SDK writes/imports, maintained metric summaries, export, typed attributes, artifact upload/download, Neptune/W&B/MLflow importer dry-run/import, side-by-side comparison, API contract behavior, Python SDK compatibility, frontend helper logic, demo reset safety, bounded metric queries, and static-file guardrails for custom static roots.
 
 ## Notes for Future Agents
 

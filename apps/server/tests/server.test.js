@@ -131,6 +131,7 @@ test("org API keys protect SDK ingestion and idempotent metric replay", async ()
       slug: "acme",
       name: "Acme",
       owner_user_id: user.id,
+      plan_tier: "premium",
     }, bootstrapHeaders)).organization;
     assert.equal((await request(baseUrl, "GET", "/api/users", undefined, bootstrapHeaders)).users.length, 1);
     assert.equal((await request(baseUrl, "GET", "/api/orgs", undefined, bootstrapHeaders)).organizations.some((org) => org.id === organization.id), true);
@@ -308,6 +309,47 @@ test("org API keys protect SDK ingestion and idempotent metric replay", async ()
     const exported = await request(baseUrl, "GET", "/api/export?project=secure", undefined, authHeaders);
     assert.equal(exported.organizations[0].id, organization.id);
     assert.equal(exported.metric_series[0].count, 1);
+  }, { requireApiKey: true, bootstrapToken: "test-bootstrap" });
+});
+
+test("HTTP plan limit errors are structured and non-retryable", async () => {
+  await withServer(async (baseUrl) => {
+    const bootstrapHeaders = { "X-INSTANTML-Bootstrap-Token": "test-bootstrap" };
+    const user = (await request(baseUrl, "POST", "/api/users", {
+      email: "free-owner@example.com",
+      provider: "google",
+      provider_subject: "free-sub-1",
+    }, bootstrapHeaders)).user;
+    const organization = (await request(baseUrl, "POST", "/api/orgs", {
+      slug: "free-limits",
+      name: "Free Limits",
+      owner_user_id: user.id,
+      plan_tier: "free",
+    }, bootstrapHeaders)).organization;
+    const keyResponse = await request(baseUrl, "POST", `/api/orgs/${organization.id}/api-keys`, {
+      name: "sdk",
+      scopes: ["sdk:ingest", "artifacts:write", "usage:read"],
+    }, bootstrapHeaders);
+    const authHeaders = { Authorization: `Bearer ${keyResponse.api_key}` };
+    const run = (await request(baseUrl, "POST", "/runs", { project: "limits", name: "seed-1" }, authHeaders)).run;
+
+    const response = await fetch(baseUrl + `/api/runs/${run.id}/artifacts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify({
+        type: "file",
+        name: "too-large.bin",
+        uri: "s3://bucket/too-large.bin",
+        size_bytes: 3 * 1024 ** 3,
+      }),
+    });
+
+    assert.equal(response.status, 402);
+    const payload = await response.json();
+    assert.equal(payload.code, "plan_limit_exceeded");
+    assert.match(payload.error, /storage would exceed/);
+    const usage = await request(baseUrl, "GET", "/api/usage", undefined, authHeaders);
+    assert.equal(usage.organizations[0].warnings.length, 0);
   }, { requireApiKey: true, bootstrapToken: "test-bootstrap" });
 });
 

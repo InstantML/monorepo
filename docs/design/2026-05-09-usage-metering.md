@@ -54,14 +54,18 @@ are defined in the superseding pricing design:
 - Pro: 3 included seats, 1 TiB storage, 100 projects, 100,000 runs, 250 million metric points.
 - Premium: 10 included seats, 5 TiB storage, 500 projects, 1 million runs, 2 billion metric points.
 
-Overages are warnings only in this slice:
+Superseded enforcement note: `2026-05-17-plan-limit-enforcement.md` keeps this
+usage shape but changes project, run, metric-point, and estimated-storage
+overages from soft warnings to blocked-at-limit guardrails for new writes.
+
+Original slice behavior:
 
 - 80% of a limit: `approaching_limit`.
 - 100% or more: `over_limit`.
 - Storage overage remains `$0.02-$0.03/GB-month` as a planning range.
 - Metric/event overage remains fair-use warning plus plan-upgrade prompt.
 - Included seats report `paid_extra_seats` rather than blocking usage.
-- Projects, runs, metric points, and warning storage bytes are soft warnings in this slice.
+- Projects, runs, metric points, and warning storage bytes were soft warnings in the original slice.
 - Artifact count and API-key count are visibility-only fields with no enforced or warning limit yet.
 
 Canonical count sources:
@@ -121,10 +125,10 @@ Returns:
   "units": {"bytes": "bytes", "metric_points": "rows"},
   "overage_policy": {
     "seats": "paid_extra_seats",
-    "projects": "soft_warning_then_upgrade_prompt",
-    "runs": "soft_warning_then_upgrade_prompt",
-    "metric_points": "fair_use_warning",
-    "storage": "soft_warning_then_upgrade_prompt",
+    "projects": "blocked_at_limit",
+    "runs": "blocked_at_limit",
+    "metric_points": "blocked_at_limit",
+    "storage": "blocked_at_limit",
     "artifacts": "visibility_only",
     "api_keys": "visibility_only"
   },
