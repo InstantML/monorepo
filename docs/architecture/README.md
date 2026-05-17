@@ -2,7 +2,7 @@
 
 This directory is for longer-lived architecture references that remain useful after individual design docs are implemented.
 
-Current product direction: InstantML is a general training-loop observability product with an owned backend stack and Free/Pro/Premium packaging. Architecture docs should preserve that framing even when they discuss RL examples, Neptune import compatibility, or warning-only pricing telemetry.
+Current product direction: InstantML is a general training-loop observability product with an owned backend stack and Free/Pro/Premium packaging. Architecture docs should preserve that framing even when they discuss RL examples, Neptune import compatibility, or pricing/usage telemetry. Metric-point plan limits are current UTC calendar-month counters; storage, project, run, seat, artifact, metric-series, and API-key usage is retained-resource posture.
 
 Accepted backend direction: the default product path is now `Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage` and `Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage`. Signup records plan and tenant-route warehouse intent, but applied hosted warehouse size stays operator-capped unless explicit spend gates allow plan-sized provisioning. The Node server is deprecated compatibility infrastructure for route-shape checks, JSON migration fixtures, and legacy fallback. Architecture docs should say whether they describe the current Rust/ClickHouse system or the deprecated Node/JSON system.
 

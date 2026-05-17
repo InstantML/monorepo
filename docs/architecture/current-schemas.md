@@ -1,6 +1,6 @@
 # Current Control And Data-Plane Schema Reference
 
-Date: 2026-05-16
+Date: 2026-05-17
 
 Status: Current implemented schema surface for `apps/rust-server`
 
@@ -583,15 +583,28 @@ writes horizontally.
   "schema_version": 1,
   "generated_at": "2026-05-16T00:00:00Z",
   "source": "computed_current_state",
-  "billing_precision": "warning_only_not_invoice_truth",
+  "billing_precision": "not_billable",
+  "usage_period": {
+    "kind": "calendar_month",
+    "timezone": "UTC",
+    "starts_at": "2026-05-01T00:00:00Z",
+    "ends_at": "2026-06-01T00:00:00Z",
+    "reset_at": "2026-06-01T00:00:00Z"
+  },
   "plans": {
     "free": {},
     "pro": {},
     "premium": {}
   },
   "overage_policy": {
+    "paid_extra_seats": "tracked_not_billed",
     "seats": "paid_extra_seats",
-    "storage": "soft_warning_then_upgrade_prompt"
+    "projects": "blocked_at_limit",
+    "runs": "blocked_at_limit",
+    "metric_points": "blocked_at_limit",
+    "storage": "blocked_at_limit",
+    "artifacts": "visibility_only",
+    "api_keys": "visibility_only"
   },
   "organizations": [
     {
@@ -605,6 +618,13 @@ writes horizontally.
         "included_seats": 3,
         "included_storage_bytes": 1099511627776
       },
+      "usage_period": {
+        "kind": "calendar_month",
+        "timezone": "UTC",
+        "starts_at": "2026-05-01T00:00:00Z",
+        "ends_at": "2026-06-01T00:00:00Z",
+        "reset_at": "2026-06-01T00:00:00Z"
+      },
       "limits": {
         "included_seats": 3,
         "included_storage_bytes": 1099511627776,
@@ -616,8 +636,10 @@ writes horizontally.
         "seats": 2,
         "paid_extra_seats": 0,
         "projects": 1,
-        "runs": 100,
+        "runs": 85000,
         "metric_points": 1000,
+        "metric_points_current_period": 1000,
+        "metric_points_retained_total": 250000,
         "metric_series": 10,
         "artifacts": 3,
         "api_keys": 1,
@@ -628,13 +650,36 @@ writes horizontally.
         "estimated_storage_bytes_for_warnings": 20537,
         "billable_storage_bytes": null
       },
-      "warnings": []
+      "warnings": [
+        {
+          "target": "runs",
+          "status": "approaching_limit",
+          "value": 85000,
+          "limit": 100000,
+          "ratio": 0.85,
+          "policy": "blocked_at_limit",
+          "blocking": true,
+          "code": "runs_approaching_limit",
+          "message": "runs usage is approaching the plan limit. New writes will be blocked at the limit."
+        }
+      ]
     }
   ]
 }
 ```
 
-Usage is warning/debugging data, not invoice truth.
+Usage is guardrail/debugging data, not invoice truth. Metric-point usage is
+counted for the current UTC calendar-month `usage_period`; the same current
+period value is exposed as `usage.metric_points` and
+`usage.metric_points_current_period`, while
+`usage.metric_points_retained_total` records retained history. Plan-owned
+data-plane writes are checked against the stored tier before commit. New
+project, run, metric-ingest, artifact, import, and demo-reset writes return
+HTTP 402 with `code: "plan_limit_exceeded"` when current or projected usage
+crosses a blocked `projects`, `runs`, current-month `metric_points`, or
+retained `storage` limit. Seats remain tracked as `paid_extra_seats` until
+billing is implemented. Storage, projects, runs, seats, artifacts, metric
+series, and API keys are retained-resource counts and do not reset monthly.
 
 ## Analytical Data Tables
 

@@ -589,6 +589,31 @@ impl MetricStore {
         Ok(count as i64)
     }
 
+    /// Count metric points created within a half-open UTC usage period.
+    pub async fn count_points_for_org_period(
+        &self,
+        org_id: Uuid,
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
+    ) -> AppResult<i64> {
+        let count: u64 = self
+            .client
+            .query(
+                "SELECT count() \
+                 FROM metric_points \
+                 WHERE org_id = ? \
+                 AND created_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
+                 AND created_at < parseDateTime64BestEffort(?, 6, 'UTC')",
+            )
+            .bind(org_id)
+            .bind(period_start.to_rfc3339())
+            .bind(period_end.to_rfc3339())
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(count as i64)
+    }
+
     pub async fn count_points_for_project(&self, org_id: Uuid, project: &str) -> AppResult<i64> {
         let count: u64 = self
             .client

@@ -486,6 +486,11 @@ def test_main_no_args_prints_help(capsys):
     assert "login" in captured.out
 
 
+def test_sdk_version_returns_unknown_when_metadata_is_unavailable():
+    with patch("importlib.metadata.version", side_effect=RuntimeError("missing metadata")):
+        assert cli_module._sdk_version() == "unknown"
+
+
 # ---------------------------------------------------------------------------
 # credentials_path
 # ---------------------------------------------------------------------------

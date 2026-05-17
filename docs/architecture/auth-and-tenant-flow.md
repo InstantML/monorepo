@@ -139,7 +139,7 @@ Session-backed mutating browser requests also validate `Origin` against the conf
 | API-key admin | `api_keys:write` org key | Allowed | Denied | Denied |
 | Seat reservation | Not public SDK flow | Allowed | Denied | Denied |
 
-Shared demo credentials are a special case: any key for the canonical `InstantML Demo` organization is treated as `export:read` at authorization time, even if an older stored key row still contains write scopes, and demo browser sessions are denied mutation permissions. That means demo users can browse/export demo data but cannot write runs, artifacts, imports, API-key records, service-account records, seats, or other User Data control-plane mutations.
+Shared demo credentials are a special case: the canonical `InstantML Demo` organization is normalized to Premium tier for the seeded demo dataset, any key for it is treated as `export:read` at authorization time even if an older stored key row still contains write scopes, and demo browser sessions are denied mutation permissions. That means demo users can browse/export demo data but cannot write runs, artifacts, imports, API-key records, service-account records, seats, or other User Data control-plane mutations.
 
 The browser session role is intentionally coarse in this slice. More granular permissions can be added when the settings/admin surface grows.
 

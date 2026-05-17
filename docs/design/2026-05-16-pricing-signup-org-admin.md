@@ -86,8 +86,12 @@ Use three public plan IDs:
 | Premium | `$699/org/mo` | 10 | 5 TB | 2B/month |
 
 Tracked data is the first billable planning unit for hosted storage. In this
-slice it is still warning data, not invoice truth. Metric point limits are
-fair-use limits in the usage summary, not hard ingest blocks.
+slice it is guardrail/debug data, not invoice truth. The follow-up enforcement
+slice makes projects, runs, estimated storage, and current UTC calendar-month
+metric points blocked-at-limit for new writes until paid overages or custom
+terms exist. Metric-point counters reset on the first day of each month at
+00:00 UTC; tracked data, projects, runs, seats, artifacts, metric series, and
+API keys are retained-resource posture and do not reset monthly.
 
 Legacy plan names (`lab`, `startup`, `growth`) may appear in old local or
 hosted records. New writes should use only `free`, `pro`, or `premium`. Usage
@@ -206,6 +210,13 @@ Example response fragment:
 {
   "schema_version": 1,
   "billing_precision": "not_billable",
+  "usage_period": {
+    "kind": "calendar_month",
+    "timezone": "UTC",
+    "starts_at": "2026-05-01T00:00:00Z",
+    "ends_at": "2026-06-01T00:00:00Z",
+    "reset_at": "2026-06-01T00:00:00Z"
+  },
   "plans": {
     "free": {
       "id": "free",
@@ -235,12 +246,21 @@ Example response fragment:
   "organizations": [{
     "org_id": "uuid",
     "plan_tier": "pro",
+    "usage_period": {
+      "kind": "calendar_month",
+      "timezone": "UTC",
+      "starts_at": "2026-05-01T00:00:00Z",
+      "ends_at": "2026-06-01T00:00:00Z",
+      "reset_at": "2026-06-01T00:00:00Z"
+    },
     "usage": {
       "seats": 2,
       "paid_extra_seats": 0,
       "projects": 4,
       "runs": 118,
       "metric_points": 1200000,
+      "metric_points_current_period": 1200000,
+      "metric_points_retained_total": 9000000,
       "metric_series": 64,
       "artifacts": 0,
       "api_keys": 2,
@@ -261,8 +281,10 @@ Example response fragment:
 }
 ```
 
-The dashboard Settings tab reads usage with the owner/admin session and renders
-current plan, tracked data, metric points, seats, projects, runs, and warnings.
+The dashboard topbar renders a compact plan usage badge near account controls.
+The Settings tab reads usage with the owner/admin session and renders current
+plan, tracked data, current-month metric points, seats, projects, runs, the UTC
+metric reset date, and warnings.
 
 ### Warehouse Profiles
 
@@ -365,7 +387,9 @@ Changed route:
   - Adds `plans`, `limits`, `usage.api_keys`,
     `usage.estimated_metadata_bytes`,
     `usage.estimated_storage_bytes_for_warnings`,
-    `usage.billable_storage_bytes`, and `warnings`.
+    `usage.billable_storage_bytes`, `usage_period`,
+    `usage.metric_points_current_period`,
+    `usage.metric_points_retained_total`, and `warnings`.
   - Keeps existing top-level organization array shape.
 
 ## Performance Considerations
@@ -376,10 +400,12 @@ Changed route:
   ClickHouse metric count queries; no metric history is returned.
 - Signup provisions exactly one tenant route as today. Existing routes are not
   reprovisioned.
-- Dashboard usage/seats/API keys load only on the Settings/API admin tabs.
-- Existing per-request metric caps remain enforced. Free/internal beta hard
-  stops for monthly metric or storage limits are deferred to a billing/safety
-  enforcement design, but this slice keeps warnings explicit and visible.
+- Dashboard usage/seats/API keys load on the Settings/API admin tabs, with a
+  compact topbar usage badge fed by the same usage route when available.
+- Existing per-request metric caps remain enforced. The follow-up
+  `2026-05-17-plan-limit-enforcement.md` slice now blocks new writes at
+  project, run, current-month metric, and retained-storage limits while keeping
+  warnings explicit and visible.
 
 ## Simplicity Review
 

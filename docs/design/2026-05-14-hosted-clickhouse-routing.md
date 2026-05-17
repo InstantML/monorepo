@@ -14,7 +14,7 @@ The smallest useful implementation keeps one Rust API process as the public cont
 
 Provisioning uses a narrow `TenantProvisioner` boundary. The accepted first slice uses `database` mode: it creates an isolated per-org database on an existing ClickHouse endpoint and records the route. This is explicitly local/test or early-internal only unless paired with per-org least-privilege ClickHouse users and cross-database denial tests. `cloud-service` provisioning may be scaffolded behind explicit opt-in, but real production use remains blocked until secret storage, idempotent cleanup, and service lifecycle handling are hardened.
 
-Shared demo addendum: the local Google-style demo path treats `hello@instantml.ai` as a canonical demo user and organization named `InstantML Demo`. The alias `hello@instantml.com` maps to the same canonical email for operator convenience. This path must reuse the existing org and tenant route so repeated demos do not create duplicate ClickHouse services. A guarded hosted benchmark seed tool may create or reuse that org's ClickHouse Cloud service and bulk seed the 100,000-run demo benchmark once for latency testing.
+Shared demo addendum: the local Google-style demo path treats `hello@instantml.ai` as a canonical demo user and Premium-tier organization named `InstantML Demo`. The alias `hello@instantml.com` maps to the same canonical email for operator convenience. This path must reuse the existing org and tenant route so repeated demos do not create duplicate ClickHouse services. A guarded hosted benchmark seed tool may create or reuse that org's ClickHouse Cloud service and bulk seed the 100,000-run demo benchmark once for latency testing.
 
 ## Goals
 
@@ -427,7 +427,7 @@ Implemented in this branch:
 - Cloud-service schema migration failures preserve the created service id in the failed route so operators have a cleanup handle.
 - Cloud-service route retries first attempt to resume stored service credentials and check for an existing deterministic ClickHouse Cloud service name before POSTing a new service, preventing accidental duplicate paid services after a timeout or crash. The deterministic name includes the org-id prefix so normalized/truncated org-name collisions cannot route two orgs to the same service during recovery.
 - Cloud-service server startup skips the primary/default metric-store schema migration so the User Data service keeps only control-plane tables; per-org metric schema is migrated after routing to the tenant service.
-- Local/dev demo auth canonicalizes `hello@instantml.ai` and `hello@instantml.com` to one `InstantML Demo` business org, preventing repeated demo sign-ins from creating multiple orgs or ClickHouse services.
+- Local/dev demo auth canonicalizes `hello@instantml.ai` and `hello@instantml.com` to one Premium-tier `InstantML Demo` business org, preventing repeated demo sign-ins from creating multiple orgs or ClickHouse services.
 - Cloud-service provisioning can discover the ClickHouse Cloud organization id from the API when `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is not set.
 - `npm run test:hosted-clickhouse` verifies signup, User Data control rows, API-key creation, API-key scope enforcement, direct API-key ingest, Python SDK ingest, safe non-secret provisioning payloads, dashboard readback, and API restart replay.
 - `npm run benchmark:large-runs` now defaults to 100,000 run records and a 20,000-step long-run series across multiple metric keys.

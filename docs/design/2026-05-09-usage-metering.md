@@ -10,19 +10,22 @@ Owner: Codex
 
 Superseding note, 2026-05-16: the original Free/Lab/Startup/Growth planning
 thresholds below were replaced by the Free/Pro/Premium model in
-`docs/design/2026-05-16-pricing-signup-org-admin.md`. The usage endpoint is
-still warning-only, but it now returns the full plan catalog, current plan,
-limits, overage policy, active API-key count, estimated metadata/storage bytes,
-and `billable_storage_bytes: null`.
+`docs/design/2026-05-16-pricing-signup-org-admin.md`. The usage endpoint now
+returns the full plan catalog, current plan, limits, overage policy, active
+API-key count, estimated metadata/storage bytes, and
+`billable_storage_bytes: null`. A later enforcement slice counts metric points
+within the current UTC calendar month, exposes `usage_period`, keeps retained
+metric totals visible, and blocks new writes at project, run, current-month
+metric, and retained-storage limits.
 
-Pricing needs to be credible before hosted beta. The smallest useful metering slice is an org-scoped usage summary computed from product data we already store: seats, projects, runs, metric points, retained metric series, artifact bytes, and estimated metadata bytes.
+Pricing needs to be credible before hosted beta. The smallest useful metering slice is an org-scoped usage summary computed from product data we already store: seats, projects, runs, current-period metric points, retained metric series, artifact bytes, and estimated metadata bytes.
 
 This is not a billing engine and must not be treated as invoice truth. It gives admins and future billing code a stable usage shape, now documents Free/Pro/Premium warning thresholds through the superseding pricing design, and makes overage behavior explicit as fair-use warnings and plan-upgrade prompts.
 
 ## Goals
 
 - Track org-level storage usage with artifact bytes separate from metric/metadata estimates.
-- Track metric point volume and retained metric history per org.
+- Track current UTC calendar-month metric point volume and retained metric history per org.
 - Return admin-visible summaries for storage, metric points, projects, runs, seats, artifacts, and API keys.
 - Define billing-safe limits for the active Free, Pro, and Premium planning tiers.
 - Expose a versioned JSON usage export for billing/debugging.
@@ -54,19 +57,28 @@ are defined in the superseding pricing design:
 - Pro: 3 included seats, 1 TiB storage, 100 projects, 100,000 runs, 250 million metric points.
 - Premium: 10 included seats, 5 TiB storage, 500 projects, 1 million runs, 2 billion metric points.
 
-Overages are warnings only in this slice:
+Superseded enforcement note: `2026-05-17-plan-limit-enforcement.md` keeps this
+usage shape but adds `usage_period`, splits current-period and retained metric
+point counts, and changes project, run, current-month metric-point, and
+estimated-storage overages from soft warnings to blocked-at-limit guardrails
+for new writes.
+
+Original slice behavior:
 
 - 80% of a limit: `approaching_limit`.
 - 100% or more: `over_limit`.
 - Storage overage remains `$0.02-$0.03/GB-month` as a planning range.
 - Metric/event overage remains fair-use warning plus plan-upgrade prompt.
 - Included seats report `paid_extra_seats` rather than blocking usage.
-- Projects, runs, metric points, and warning storage bytes are soft warnings in this slice.
+- Projects, runs, metric points, and warning storage bytes were soft warnings in the original slice.
 - Artifact count and API-key count are visibility-only fields with no enforced or warning limit yet.
 
 Canonical count sources:
 
-- Metric point usage counts scalar rows in `metrics` only.
+- Metric point usage counts scalar rows in `metrics` only, limited to the
+  current UTC calendar month for plan warnings/enforcement.
+- Retained metric point totals remain available as visibility/debug data and do
+  not drive monthly metric limit enforcement.
 - Retained metric history counts maintained rows in `metricSeries`.
 - Float-series attributes created for comparison/search are not counted as metric points.
 - Artifact bytes use exact `size_bytes` when present and count missing sizes as unknown, not zero.
@@ -119,12 +131,19 @@ Returns:
   "schema_version": 1,
   "billing_precision": "not_billable",
   "units": {"bytes": "bytes", "metric_points": "rows"},
+  "usage_period": {
+    "kind": "calendar_month",
+    "timezone": "UTC",
+    "starts_at": "2026-05-01T00:00:00.000Z",
+    "ends_at": "2026-06-01T00:00:00.000Z",
+    "reset_at": "2026-06-01T00:00:00.000Z"
+  },
   "overage_policy": {
     "seats": "paid_extra_seats",
-    "projects": "soft_warning_then_upgrade_prompt",
-    "runs": "soft_warning_then_upgrade_prompt",
-    "metric_points": "fair_use_warning",
-    "storage": "soft_warning_then_upgrade_prompt",
+    "projects": "blocked_at_limit",
+    "runs": "blocked_at_limit",
+    "metric_points": "blocked_at_limit",
+    "storage": "blocked_at_limit",
     "artifacts": "visibility_only",
     "api_keys": "visibility_only"
   },
@@ -136,12 +155,21 @@ Returns:
       "plan_tier": "lab",
       "tier_source": "organization",
       "authoritative_for_plan": true,
+      "usage_period": {
+        "kind": "calendar_month",
+        "timezone": "UTC",
+        "starts_at": "2026-05-01T00:00:00.000Z",
+        "ends_at": "2026-06-01T00:00:00.000Z",
+        "reset_at": "2026-06-01T00:00:00.000Z"
+      },
       "usage": {
         "seats": 1,
         "paid_extra_seats": 0,
         "projects": 1,
         "runs": 6,
         "metric_points": 450,
+        "metric_points_current_period": 450,
+        "metric_points_retained_total": 900,
         "metric_series": 3,
         "artifacts": 24,
         "api_keys": 1,
@@ -171,6 +199,13 @@ Returns versioned JSON:
   "units": {"bytes": "bytes", "metric_points": "rows"},
   "source": "computed_current_state",
   "billing_precision": "not_billable",
+  "usage_period": {
+    "kind": "calendar_month",
+    "timezone": "UTC",
+    "starts_at": "2026-05-01T00:00:00.000Z",
+    "ends_at": "2026-06-01T00:00:00.000Z",
+    "reset_at": "2026-06-01T00:00:00.000Z"
+  },
   "organizations": []
 }
 ```

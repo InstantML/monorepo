@@ -4,7 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 
-import { ApiClient } from "../../src/api.js";
+import { ApiClient } from "../../../src/api.js";
 
 type PageState =
   | { kind: "checking" }

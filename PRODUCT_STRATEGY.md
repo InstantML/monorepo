@@ -2,7 +2,7 @@
 
 ## Current Plan Snapshot
 
-Date: 2026-05-16
+Date: 2026-05-17
 
 Working name: **InstantML**.
 
@@ -33,8 +33,8 @@ Current implementation status:
 - Rust/ClickHouse server is the current primary API and storage backend.
 - Next/React frontend is the current UI.
 - Python SDK supports run creation, scalar metrics, searchable tags/notes, typed helpers, buffering, explicit `flush()`, offline replay for post-run-create events, process-isolated post-init upload spooling, source metadata, artifacts, checkpoints, rollouts, tables, and local file upload.
-- Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, warning-only usage summaries, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
-- UI supports tabbed run browsing, a W&B/Grafana-inspired Runs workspace with sections and movable/resizable line panels, chart smoothing, step/time x-axis, grouped averages, range zoom, point hover readouts, saved local views, tags/notes editing, artifact previews, checkpoints, rollouts, keyboard workflow shortcuts, side-by-side diffs, signup plan selection, org seat invites, usage visibility, and API-key management.
+- Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, blocked-at-limit usage guardrails, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
+- UI supports tabbed run browsing, a W&B/Grafana-inspired Runs workspace with sections and movable/resizable line panels, chart smoothing, step/time x-axis, grouped averages, range zoom, point hover readouts, saved local views, tags/notes editing, artifact previews, checkpoints, rollouts, keyboard workflow shortcuts, side-by-side diffs, signup plan selection, org seat invites, topbar and Settings usage visibility, and API-key management.
 - Rust/ClickHouse backend is implemented as the primary backend under `apps/rust-server`, with ClickHouse operational records, ClickHouse metric storage, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, plan-aware signup, invited-member activation, tenant-route warehouse profile metadata, and Rust contract/SDK/UI smokes.
 
 Target stack snapshot:
@@ -177,26 +177,30 @@ These are the current product defaults implemented in Rust and mirrored in the d
 
 | Tier | Draft price | Included |
 | --- | ---: | --- |
-| Free | `$0/org/mo` | 2 seats, 2 GiB warning storage, 2 projects, 100 runs, 1M metric points, shared 8 GiB warehouse intent |
-| Pro | `$199/org/mo` | 3 seats, 1 TiB warning storage, 100 projects, 100k runs, 250M metric points, standard 12 GiB warehouse intent |
-| Premium | `$699/org/mo` | 10 seats, 5 TiB warning storage, 500 projects, 1M runs, 2B metric points, dedicated 16 GiB x 2 replica warehouse intent |
+| Free | `$0/org/mo` | 2 seats, 2 GiB included storage, 2 projects, 100 runs, 1M metric points, shared 8 GiB warehouse intent |
+| Pro | `$199/org/mo` | 3 seats, 1 TiB included storage, 100 projects, 100k runs, 250M metric points, standard 12 GiB warehouse intent |
+| Premium | `$699/org/mo` | 10 seats, 5 TiB included storage, 500 projects, 1M runs, 2B metric points, dedicated 16 GiB x 2 replica warehouse intent |
 | Enterprise | Custom | SSO/SAML, VPC or self-host option, custom retention, compliance, dedicated support, custom warehouse and storage terms |
 
 Overage defaults:
 
-- Extra seats: warning-only in the product today; price target is `$79-$99/seat/month` once billing is implemented.
-- Storage overage: warning-only in the product today; price target is `$0.02-$0.03/GB-month` after billable object/accounting reconciliation.
-- Metric/event overage: start with fair-use warnings and plan-upgrade prompts.
+- Extra seats: tracked but not billed yet; price target is `$79-$99/seat/month` once billing is implemented.
+- Storage overage: new writes are blocked at the included limit until billable object/accounting reconciliation and paid overages exist.
+- Metric/event overage: new metric writes are blocked at the current UTC calendar-month fair-use threshold until paid overages or custom terms exist. Metric-point usage resets at 00:00 UTC on the first day of each month.
+- Project/run limits: new projects and runs are blocked at the stored plan limit.
 - Import/storage-heavy workloads: require Premium or custom quote.
 
 Current implementation status:
 
-- The Rust/ClickHouse server exposes warning-only org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
+- The Rust/ClickHouse server exposes org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
 - Usage is scoped by org and requires `usage:read` in hosted API-key mode.
-- The summary returns the full plan catalog, current org plan, limits, overage policy, seats, projects, runs, scalar metric points, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, warning-only storage estimates, and `billable_storage_bytes: null`.
+- The summary returns the full plan catalog, current org plan, limits, overage policy, the UTC calendar-month usage period, seats, projects, runs, current-period scalar metric points, retained metric-point totals, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, blocked-at-limit storage estimates, and `billable_storage_bytes: null`.
+- New project, run, metric-ingest, artifact, import, and demo-reset writes fail with HTTP 402 and `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit.
+- Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes.
 - Signup accepts `plan_tier` for Free, Pro, and Premium. Legacy plan values `lab` and `startup` canonicalize to Pro; `growth` canonicalizes to Premium for migration compatibility.
+- Local InstantML and the shared `InstantML Demo` org now default to Premium so the seeded demo exercises the Premium-scale warehouse profile and does not trip Free limits.
 - Hosted tenant routes record both requested warehouse profile and applied warehouse profile. Real ClickHouse Cloud create bodies stay capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
-- The dashboard includes plan selection in signup, usage and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
+- The dashboard includes plan selection in signup, a compact plan usage badge in the topbar near account controls, full usage and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
 - These values are for pricing validation and debugging, not invoice truth. Rust now writes immutable `usage_daily` snapshots, but billable storage still requires a separate billing implementation and provider/object-store reconciliation.
 - Detailed pricing and margin assumptions live in `docs/product/pricing-and-margins.md`.
 
@@ -410,15 +414,19 @@ Make pricing credible before public launch.
 Current state:
 
 - Free, Pro, and Premium are the active planning and implementation tiers.
-- Org-level warning summaries are computed from Rust/ClickHouse data.
+- Org-level usage summaries are computed from Rust/ClickHouse data, with UTC
+  calendar-month metric counters and retained-resource storage/project/run
+  counters.
 - Immutable `usage_daily` snapshots exist for warning/debug rollups.
 - Signup records selected plan and tenant-route warehouse intent.
-- Settings exposes usage and seat invites; the API tab exposes API-key list/create/revoke.
+- The topbar and Settings expose usage; Settings exposes seat invites; the API
+  tab exposes API-key list/create/revoke.
 
 Do next:
 
 - Reconcile usage snapshots with object-storage accounting before treating any value as invoice truth.
-- Add real billing, paid extra-seat handling, email delivery, and plan-change flows after the warning-only contract stabilizes.
+- Add real billing, paid extra-seat handling, email delivery, and plan-change
+  flows after the guardrail/debug usage contract stabilizes.
 - Validate the Free/Pro/Premium thresholds against real team workloads.
 
 Exit criteria:
