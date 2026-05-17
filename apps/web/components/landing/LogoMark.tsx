@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 type LogoMarkProps = {
   size?: number;
   className?: string;
@@ -6,62 +8,23 @@ type LogoMarkProps = {
   title?: string;
 };
 
-// InstantML mark: three ascending bars (a metric curve) with a lightning
-// slash through them — "training metrics, instantly".
+// InstantML mark: 4×4 dot grid — diagonal in Bolt (#1fb877), others in Ink (#0e1116).
 export function LogoMark({
   size = 24,
   className = "",
   draw = false,
-  color = "var(--accent)",
+  // color prop kept for API compatibility; the SVG encodes colors directly
+  color: _color,
   title = "InstantML",
 }: LogoMarkProps) {
   return (
-    <svg
+    <Image
+      src="/instantml-mark.svg"
+      alt={title}
       width={size}
       height={size}
-      viewBox="0 0 240 240"
-      fill="none"
-      role="img"
+      className={`${draw ? "logo-draw " : ""}${className}`.trim() || undefined}
       aria-label={title}
-      className={`${draw ? "logo-draw " : ""}${className}`.trim()}
-    >
-      <rect
-        x="24"
-        y="132"
-        width="44"
-        height="92"
-        rx="6"
-        fill={color}
-        opacity="0.55"
-        className="logo-mark-path logo-mark-left"
-      />
-      <rect
-        x="98"
-        y="86"
-        width="44"
-        height="138"
-        rx="6"
-        fill={color}
-        opacity="0.78"
-        className="logo-mark-path logo-mark-left"
-      />
-      <rect
-        x="172"
-        y="40"
-        width="44"
-        height="184"
-        rx="6"
-        fill={color}
-        className="logo-mark-path logo-mark-right"
-      />
-      <path
-        d="M 152 16 L 88 124 L 128 124 L 80 232 L 144 116 L 104 116 Z"
-        fill="var(--bg, #07080c)"
-        stroke={color}
-        strokeWidth="6"
-        strokeLinejoin="round"
-        className="logo-mark-path logo-mark-right"
-      />
-    </svg>
+    />
   );
 }

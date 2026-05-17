@@ -1,4 +1,4 @@
-import { LogoMark } from "./LogoMark";
+import Image from "next/image";
 
 // Animation classes are rendered on the server. The boot script in
 // layout.tsx adds .no-logo-anim to <html> on repeat visits and when
@@ -11,12 +11,29 @@ export function NavLogo({
   size?: number;
   showWordmark?: boolean;
 }) {
+  if (showWordmark) {
+    return (
+      <span className="landing-nav-logo wordmark-draw">
+        <Image
+          src="/instantml-lockup.svg"
+          alt="InstantML"
+          width={130}
+          height={30}
+          priority
+          style={{ height: size * 1.25, width: "auto" }}
+        />
+      </span>
+    );
+  }
   return (
     <span className="landing-nav-logo">
-      <LogoMark size={size} draw />
-      {showWordmark ? (
-        <span className="landing-wordmark wordmark-draw">InstantML</span>
-      ) : null}
+      <Image
+        src="/instantml-mark.svg"
+        alt="InstantML"
+        width={size}
+        height={size}
+        priority
+      />
     </span>
   );
 }

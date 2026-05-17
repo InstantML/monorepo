@@ -123,6 +123,20 @@ Note: The standalone landing uses `@tailwindcss/postcss` v4 and Tailwind utility
 
 **Keep separate landing repo.** Rejected because it creates two codebases with divergent CSS, duplicate component versions, and split DNS management. A single repo is simpler.
 
+## Brand Identity (Follow-Up Commit)
+
+Brand identity applied in a follow-up commit on top of the landing port (`style(web): apply InstantML brand identity`):
+
+- **Primitives block** added at the top of `globals.css`: `--color-ink`, `--color-bolt`, `--color-deep`, `--color-soft`, `--color-paper`, `--tracking-wordmark`.
+- **Accent tokens** in both light and dark mode remapped: `--accent → var(--color-bolt)`, `--accent-strong` updated, all `rgba(52, 211, 153, …)` instances replaced with `rgba(31, 184, 119, …)`.
+- **Fonts**: `Geist`/`Geist_Mono` replaced with `Space_Grotesk` (400/500/600/700) and `JetBrains_Mono` (500/700) via `next/font/google`. CSS variables `--font-sans-next` and `--font-mono-next` unchanged; font stack still resolves via `var(--font-sans)` / `var(--font-mono)`.
+- **SVG assets** installed: `public/instantml-mark.svg`, `public/instantml-lockup.svg`. `public/logo.svg` replaced with the new 4×4 dot-grid mark.
+- **`app/icon.svg`** and **`app/apple-icon.svg`** updated to new mark (Next.js App Router auto-favicon).
+- **NavLogo** and **LogoMark** components updated to render `<Image src="/instantml-lockup.svg" />` and `<Image src="/instantml-mark.svg" />` respectively.
+- **DashboardTopbar** brand cell updated: mark SVG for `brand-mark`, lockup SVG for `brand-wordmark`.
+- **Metadata** in `layout.tsx`: `title.template`, full description, `icons` pointing to new mark.
+- **Test updated**: `landing-page.test.js` assertion for `logo.svg` brand color updated from `#34D399` to `#1fb877`.
+
 ## Review Notes
 
 Fresh reviewer 1 (simulated):

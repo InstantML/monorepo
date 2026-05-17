@@ -29,6 +29,7 @@ import {
 import { navGroups, tabs } from "./dashboard-config";
 import { savedViewLabel } from "./dashboard/state/storage-keys";
 import { InstantMlMark } from "./instantml-mark";
+import Image from "next/image";
 import type {
   AlertRow,
   ApiRow,
@@ -675,10 +676,14 @@ export function DashboardTopbar({
           {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
         <a className="brand-cell" href="/dashboard/runs" aria-label="InstantML">
-          <span className="brand-mark" aria-hidden="true"><InstantMlMark /></span>
+          <span className="brand-mark" aria-hidden="true">
+            <Image src="/instantml-mark.svg" alt="" width={24} height={24} priority />
+          </span>
         </a>
         <div className="brandbar-row">
-          <span className="brand-wordmark">InstantML</span>
+          <span className="brand-wordmark">
+            <Image src="/instantml-lockup.svg" alt="InstantML" width={110} height={25} priority />
+          </span>
           <nav className="breadcrumb" aria-label="Breadcrumb">
             <span className="crumb">{project || "demo"}</span>
             <span className="sep" aria-hidden="true">/</span>

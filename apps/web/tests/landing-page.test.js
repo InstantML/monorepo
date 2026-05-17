@@ -299,7 +299,8 @@ test("public/logo.svg exists", () => {
   assert.ok(fs.existsSync(logoPath), "apps/web/public/logo.svg must exist");
   const content = fs.readFileSync(logoPath, "utf8");
   assert.ok(content.includes("<svg"), "logo.svg must contain SVG markup");
-  assert.ok(content.includes("#34D399"), "logo.svg must use the emerald brand color");
+  // Updated to new brand mark: Bolt green #1fb877 replaces legacy #34D399
+  assert.ok(content.includes("#1fb877"), "logo.svg must use the brand Bolt color (#1fb877)");
 });
 
 // ── Design doc existence ──────────────────────────────────────────────────────
