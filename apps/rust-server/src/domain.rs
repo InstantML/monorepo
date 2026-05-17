@@ -402,6 +402,31 @@ pub struct MetricSeriesRow {
     pub best_step: Option<f64>,
 }
 
+// --- Device-code (RFC 8628) domain types ---
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodeStartRequest {
+    pub client_info: Option<DeviceCodeClientInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodeClientInfo {
+    pub name: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodePollRequest {
+    pub device_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodeConfirmRequest {
+    pub user_code: Option<String>,
+}
+
+// --- Attribute types ---
+
 #[derive(Debug, Deserialize)]
 pub struct AttributeInput {
     pub path: String,

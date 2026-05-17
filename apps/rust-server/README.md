@@ -108,6 +108,7 @@ Environment variables:
 - `CLERK_API_BASE`: Clerk Backend API base URL. Default: `https://api.clerk.com`.
 - `CLERK_JWT_ISSUER`: optional exact Clerk session-token issuer. When unset, tokens must still use an HTTPS Clerk-owned issuer host.
 - `INSTANTML_CLERK_SESSION_MAX_AGE_SECONDS`: maximum accepted age for a Clerk session token exchanged into an InstantML session. Default: `600`.
+- `INSTANTML_FRONTEND_BASE_URL`: base URL of the web frontend used to build the `verification_uri` in device-code responses (e.g. `https://app.instantml.ai`). Falls back to the first entry in `INSTANTML_ALLOWED_FRONTEND_ORIGINS`, then `http://localhost:3000`.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS`: comma-separated exact email allowlist for hosted Clerk signups. Sign-in for existing memberships is still allowed.
 - `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: comma-separated hosted Clerk signup domain allowlist. Domains may be written with or without a leading `@`.
@@ -148,7 +149,9 @@ Implemented health and platform endpoints:
 - `GET /metrics`
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, warning-only usage summaries/export, API-key management, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, warning-only usage summaries/export, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+
+Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a browser session and mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and
 the durable control/data-plane schema reference lives in
@@ -290,6 +293,7 @@ Coverage exception:
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-16-clerk-hosted-auth.md`
 - `docs/design/2026-05-16-auto-personal-workspace.md`
+- `docs/design/2026-05-16-device-code-cli-login.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`
