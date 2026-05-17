@@ -28,7 +28,7 @@ InstantML uses two logical storage planes.
 ```text
 Control plane:
   ClickHouse table instantml_user_data
-  -> users, identities, orgs, memberships, sessions, API keys, tenant routes
+  -> users, identities, orgs, memberships, sessions, API keys, plan-aware tenant routes
 
 Data plane:
   ClickHouse table operational_records
@@ -164,9 +164,9 @@ cursor while `event_id` is random. Full replay is the current safe path.
   "id": "uuid",
   "slug": "acme-research",
   "name": "Acme Research",
-  "plan_tier": "free",
+  "plan_tier": "pro",
   "account_type": "customer",
-  "seat_limit": 1,
+  "seat_limit": 3,
   "created_by_user_id": "uuid",
   "created_at": "2026-05-16T00:00:00Z"
 }
@@ -177,9 +177,9 @@ cursor while `event_id` is random. Full replay is the current safe path.
 | `id` | UUID string | Organization id and tenant owner. |
 | `slug` | string | Unique URL-safe-ish workspace slug. |
 | `name` | string | Display name. |
-| `plan_tier` | string | Current planning tier such as `free`. |
+| `plan_tier` | string | Current tier: `free`, `pro`, or `premium`. Legacy `lab`/`startup` values canonicalize to `pro`; `growth` canonicalizes to `premium` on new writes. |
 | `account_type` | string | `customer`, `business`, or validated account type. |
-| `seat_limit` | integer | Max active seats. |
+| `seat_limit` | integer | Max active plus invited seats from the selected plan: Free 2, Pro 3, Premium 10 by default. |
 | `created_by_user_id` | UUID string or null | Creator when known. |
 | `created_at` | datetime | Creation time. |
 
@@ -198,6 +198,35 @@ cursor while `event_id` is random. Full replay is the current safe path.
 
 Roles are validated membership roles. Current auth paths expect owner/admin
 roles for privileged organization administration.
+
+Invites are stored as normal `MembershipRow` records with `status:
+"invited"` and a placeholder user whose primary email is the invite target.
+When that email signs in with a verified identity, the membership is activated
+and the user joins the same org and projects.
+
+### `SeatRow`
+
+`GET /api/orgs/:org_id/seats` and `POST /api/orgs/:org_id/seats` return a
+membership plus the joined user snapshot:
+
+```json
+{
+  "membership": {
+    "id": "uuid",
+    "org_id": "uuid",
+    "user_id": "uuid",
+    "role": "member",
+    "status": "invited",
+    "created_at": "2026-05-16T00:00:00Z"
+  },
+  "user": {
+    "id": "uuid",
+    "primary_email": "teammate@example.com",
+    "display_name": null,
+    "avatar_url": null
+  }
+}
+```
 
 ### `SessionRecord`
 
@@ -283,6 +312,14 @@ clamped to read-only export behavior at authorization time.
   "org_id": "uuid",
   "status": "ready",
   "provisioner": "cloud-service",
+  "plan_tier": "premium",
+  "warehouse_kind": "dedicated",
+  "requested_min_replica_memory_gb": 16,
+  "requested_max_replica_memory_gb": 16,
+  "requested_num_replicas": 2,
+  "applied_min_replica_memory_gb": 8,
+  "applied_max_replica_memory_gb": 8,
+  "applied_num_replicas": 1,
   "endpoint": "https://example.clickhouse.cloud:8443",
   "database": "default",
   "username": "default",
@@ -300,6 +337,14 @@ clamped to read-only export behavior at authorization time.
 | `org_id` | UUID string | Tenant owner. |
 | `status` | string | `provisioning`, `ready`, or `failed`. |
 | `provisioner` | string | `database`, `cloud-service`, or `local`. |
+| `plan_tier` | string or null | Plan selected when the route was created. |
+| `warehouse_kind` | string or null | `shared`, `standard`, or `dedicated` intent from the plan. |
+| `requested_min_replica_memory_gb` | integer or null | Plan-requested minimum replica memory. |
+| `requested_max_replica_memory_gb` | integer or null | Plan-requested maximum replica memory. |
+| `requested_num_replicas` | integer or null | Plan-requested replica count. |
+| `applied_min_replica_memory_gb` | integer or null | Actual provisioner minimum replica memory. |
+| `applied_max_replica_memory_gb` | integer or null | Actual provisioner maximum replica memory. |
+| `applied_num_replicas` | integer or null | Actual provisioner replica count. |
 | `endpoint` | string | ClickHouse HTTP endpoint. |
 | `database` | string | Tenant database name, often `default` for cloud-service mode. |
 | `username` | string | ClickHouse username. |
@@ -309,6 +354,11 @@ clamped to read-only export behavior at authorization time.
 | `created_at` | datetime | Initial route creation time. |
 | `updated_at` | datetime | Last route state update time. |
 | `error` | string or null | Last provisioning error for failed routes. |
+
+By default, `applied_*` is capped by operator configuration so signup cannot
+create arbitrary paid warehouse sizes. Set
+`INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true` only after payment and
+spend gates are in place.
 
 ## Data Plane
 
@@ -533,21 +583,52 @@ writes horizontally.
   "schema_version": 1,
   "generated_at": "2026-05-16T00:00:00Z",
   "source": "computed_current_state",
+  "billing_precision": "warning_only_not_invoice_truth",
+  "plans": {
+    "free": {},
+    "pro": {},
+    "premium": {}
+  },
+  "overage_policy": {
+    "seats": "paid_extra_seats",
+    "storage": "soft_warning_then_upgrade_prompt"
+  },
   "organizations": [
     {
       "org_id": "uuid",
       "org_slug": "acme-research",
-      "plan_tier": "free",
+      "plan_tier": "pro",
+      "plan": {
+        "id": "pro",
+        "label": "Pro",
+        "monthly_base_usd": 199,
+        "included_seats": 3,
+        "included_storage_bytes": 1099511627776
+      },
+      "limits": {
+        "included_seats": 3,
+        "included_storage_bytes": 1099511627776,
+        "projects": 100,
+        "runs": 100000,
+        "metric_points": 250000000
+      },
       "usage": {
-        "seats": 1,
+        "seats": 2,
+        "paid_extra_seats": 0,
         "projects": 1,
         "runs": 100,
         "metric_points": 1000,
         "metric_series": 10,
         "artifacts": 3,
+        "api_keys": 1,
         "artifact_bytes_exact": 12345,
-        "artifact_bytes_unknown": 0
-      }
+        "artifact_bytes_unknown": 0,
+        "artifact_bytes_unknown_count": 0,
+        "estimated_metadata_bytes": 8192,
+        "estimated_storage_bytes_for_warnings": 20537,
+        "billable_storage_bytes": null
+      },
+      "warnings": []
     }
   ]
 }

@@ -266,16 +266,28 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
     openapi_insert(
         &mut paths,
         "/api/orgs/{org_id}/seats",
-        &[(
-            "post",
-            openapi_operation(
-                "Reserve an invited organization seat",
-                Some(("x-instantml-auth", "owner/admin browser session")),
-                &[],
-                &[("200", "membership row")],
-                false,
+        &[
+            (
+                "get",
+                openapi_operation(
+                    "List organization seats",
+                    Some(("x-instantml-auth", "owner/admin session or bootstrap token")),
+                    &[],
+                    &[("200", "seat rows")],
+                    false,
+                ),
             ),
-        )],
+            (
+                "post",
+                openapi_operation(
+                    "Reserve an invited organization seat",
+                    Some(("x-instantml-auth", "owner/admin session or bootstrap token")),
+                    &[],
+                    &[("200", "seat row")],
+                    false,
+                ),
+            ),
+        ],
     );
     openapi_insert(
         &mut paths,
@@ -1084,21 +1096,22 @@ pub(super) async fn reserve_seat(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let org_id = parse_uuid(&org_id, "organization not found")?;
-    validate_mutation_origin(&state, &headers)?;
-    let session = session_context(&state, &headers).await?;
-    if session.organization.id != org_id {
-        return Err(AppError::forbidden(
-            "session belongs to a different organization",
-        ));
-    }
-    if store::is_shared_demo_org(&session.organization) {
-        return Err(AppError::forbidden(
-            "demo workspace browser sessions are read-only",
-        ));
-    }
     let input = read_json::<ReserveSeatRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let actor = admin_actor(&state, &headers, org_id).await?;
     Ok(Json(json!({
-        "membership": store::reserve_seat(&state.store, session.user.id, org_id, input).await?
+        "seat": store::reserve_seat(&state.store, actor, org_id, input).await?
+    })))
+}
+
+pub(super) async fn list_seats(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(org_id): Path<String>,
+) -> AppResult<Json<Value>> {
+    let org_id = parse_uuid(&org_id, "organization not found")?;
+    require_admin_or_bootstrap(&state, &headers, org_id).await?;
+    Ok(Json(json!({
+        "seats": store::list_seats(&state.store, org_id).await?
     })))
 }
 
@@ -2061,7 +2074,9 @@ mod tests {
             mode: Some("signup".to_string()),
             account_type: None,
             org_name: Some("Acme".to_string()),
+            plan_tier: None,
             seat_emails: None,
+            accept_invite_org_id: None,
         };
         assert!(validate_clerk_signup_allowed(&config, "founder@example.com", &signup).is_ok());
         assert!(validate_clerk_signup_allowed(&config, "teammate@instantml.ai", &signup).is_ok());
@@ -2072,7 +2087,9 @@ mod tests {
             mode: Some("signin".to_string()),
             account_type: None,
             org_name: None,
+            plan_tier: None,
             seat_emails: None,
+            accept_invite_org_id: None,
         };
         assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signin).is_ok());
     }

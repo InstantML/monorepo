@@ -1,24 +1,27 @@
 "use client";
 
 import { Show, SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
-import { ArrowRight, CheckCircle2, Copy, KeyRound, ShieldCheck, UserPlus } from "lucide-react";
+import { ArrowRight, CheckCircle2, Copy, Crown, HardDrive, KeyRound, Rocket, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient } from "../src/api.js";
 import { sanitizeNextPath } from "../src/routes.js";
 
 type AuthMode = "signin" | "signup" | "onboarding";
+type PlanTier = "free" | "pro" | "premium";
 type SessionPayload = {
   authenticated?: boolean;
-  organization?: { id: string; name: string; slug: string; account_type?: string; seat_limit?: number };
+  organization?: { id: string; name: string; slug: string; account_type?: string; plan_tier?: string; seat_limit?: number };
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
 };
 type DevGoogleAuthPayload = {
   email: string;
   display_name?: string;
+  mode?: "signin" | "signup";
   account_type?: string;
   org_name?: string;
+  plan_tier?: PlanTier;
   seat_emails?: string[];
 };
 type OrgAvailability = {
@@ -34,6 +37,18 @@ type AuthConfig = {
 
 const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
+const PLAN_OPTIONS: Array<{
+  id: PlanTier;
+  label: string;
+  price: string;
+  storage: string;
+  seats: string;
+  icon: typeof Rocket;
+}> = [
+  { id: "free", label: "Free", price: "$0", storage: "2 GB", seats: "2 seats", icon: Users },
+  { id: "pro", label: "Pro", price: "$199", storage: "1 TB", seats: "3 seats", icon: Rocket },
+  { id: "premium", label: "Premium", price: "$699", storage: "5 TB", seats: "10 seats", icon: Crown },
+];
 
 export function AuthFlow({ mode }: { mode: AuthMode }) {
   const api = useMemo(() => new ApiClient(), []);
@@ -43,6 +58,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [config, setConfig] = useState<AuthConfig>({ dev_auth_enabled: false, managed_clerk_enabled: false, loaded: false });
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [accountType, setAccountType] = useState("customer");
+  const [planTier, setPlanTier] = useState<PlanTier>("free");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [orgName, setOrgName] = useState("");
@@ -143,6 +159,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         mode: signupMode ? "signup" : "signin",
         account_type: accountType,
         org_name: signupMode ? orgName.trim() : undefined,
+        plan_tier: signupMode ? planTier : undefined,
         seat_emails: signupMode && accountType === "business"
           ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
           : [],
@@ -167,9 +184,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     await createDevGoogleSession({
       email,
       display_name: displayName,
+      mode: signupMode ? "signup" : "signin",
       account_type: accountType,
-      org_name: orgName || undefined,
-      seat_emails: seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean),
+      org_name: signupMode ? orgName.trim() : orgName || undefined,
+      plan_tier: signupMode ? planTier : undefined,
+      seat_emails: signupMode ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean) : [],
     });
   }
 
@@ -177,8 +196,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     await createDevGoogleSession({
       email: SHARED_DEMO_EMAIL,
       display_name: SHARED_DEMO_ORG,
+      mode: "signup",
       account_type: "business",
       org_name: SHARED_DEMO_ORG,
+      plan_tier: "free",
     });
   }
 
@@ -236,8 +257,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
               availability={orgAvailability}
               onAccountType={setAccountType}
               onOrgName={setOrgName}
+              onPlanTier={setPlanTier}
               onSeatEmails={setSeatEmails}
               orgName={orgName}
+              planTier={planTier}
               seatEmails={seatEmails}
             /> : null}
             {config.managed_clerk_enabled ? (
@@ -301,7 +324,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
               <CheckCircle2 size={16} />
               <div>
                 <strong>{session?.organization?.name ?? "Workspace ready"}</strong>
-                <span>{session?.user?.primary_email ?? "Signed in"} · {session?.membership?.role ?? "owner"}</span>
+                <span>{session?.user?.primary_email ?? "Signed in"} · {session?.membership?.role ?? "owner"} · {planLabel(session?.organization?.plan_tier)}</span>
               </div>
             </div>
             {demoSession ? (
@@ -339,20 +362,39 @@ function SignupFields({
   availability,
   onAccountType,
   onOrgName,
+  onPlanTier,
   onSeatEmails,
   orgName,
+  planTier,
   seatEmails,
 }: {
   accountType: string;
   availability: OrgAvailability;
   onAccountType: (value: string) => void;
   onOrgName: (value: string) => void;
+  onPlanTier: (value: PlanTier) => void;
   onSeatEmails: (value: string) => void;
   orgName: string;
+  planTier: PlanTier;
   seatEmails: string;
 }) {
   return (
     <>
+      <fieldset className="plan-picker">
+        <legend>Plan</legend>
+        {PLAN_OPTIONS.map((plan) => {
+          const Icon = plan.icon;
+          return (
+            <label className={planTier === plan.id ? "selected" : ""} key={plan.id}>
+              <input checked={planTier === plan.id} name="plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
+              <span className="plan-picker-head"><Icon size={15} /> {plan.label}</span>
+              <strong>{plan.price}<small>/mo</small></strong>
+              <span><Users size={13} /> {plan.seats}</span>
+              <span><HardDrive size={13} /> {plan.storage}</span>
+            </label>
+          );
+        })}
+      </fieldset>
       <fieldset className="segmented-field">
         <legend>Account type</legend>
         <label><input checked={accountType === "customer"} name="account-type" onChange={() => onAccountType("customer")} type="radio" /> Customer</label>
@@ -380,6 +422,10 @@ function providerLabel(config: AuthConfig) {
   if (config.dev_auth_enabled) return "Local dev Google-style auth";
   if (config.managed_clerk_enabled) return "Managed Clerk auth";
   return "No provider configured";
+}
+
+function planLabel(value?: string) {
+  return PLAN_OPTIONS.find((plan) => plan.id === value)?.label ?? "Free";
 }
 
 function isSharedDemoSession(session: SessionPayload | null) {

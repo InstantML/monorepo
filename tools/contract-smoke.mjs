@@ -225,10 +225,17 @@ async function runContract(root) {
   const authorizedDownload = await fetch(`${root}/api/artifacts/${upload.id}/download`, { headers: auth });
   assert.equal(await authorizedDownload.text(), "contract artifact");
   const usage = await request(root, "GET", "/api/usage", undefined, usageAuth);
+  assert.equal(usage.billing_precision, "not_billable");
+  assert.equal(usage.plans.free.included_seats, 2);
+  assert.equal(usage.plans.pro.monthly_base_usd, 199);
+  assert.equal(usage.plans.premium.included_storage_bytes, 5 * 1024 ** 4);
   assert.equal(usage.organizations.length, 1);
   assert.equal(usage.organizations[0].org_id, org.id);
+  assert.equal(usage.organizations[0].plan_tier, "free");
+  assert.equal(usage.organizations[0].limits.included_seats, 2);
   assert.equal(usage.organizations[0].usage.metric_points, 1);
   assert.equal(usage.organizations[0].usage.artifact_bytes_exact, Buffer.byteLength("contract artifact"));
+  assert.equal(usage.organizations[0].usage.billing_precision, "not_billable");
   const usageExport = await request(root, "GET", "/api/usage/export", undefined, usageAuth);
   assert.equal(usageExport.source, "computed_current_state");
   assert.equal(usageExport.organizations[0].org_id, org.id);
