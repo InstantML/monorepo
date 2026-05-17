@@ -1,0 +1,27 @@
+# Code paths Vercel doesn't need
+apps/api/
+apps/rust-server/
+apps/server/
+benchmarks/
+examples/
+packages/python-sdk/
+tools/
+
+# Build artifacts and caches
+.instantml/
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+target/
+.next/
+.turbo/
+
+# Editor + OS
+.DS_Store
+.vscode/
+.idea/
+
+# Tests not needed for production
+**/tests/
+**/test/

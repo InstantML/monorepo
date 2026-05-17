@@ -25,3 +25,4 @@ __pycache__/
 docker-compose.override.yml
 .rlobs
 .claude/
+.vercel
