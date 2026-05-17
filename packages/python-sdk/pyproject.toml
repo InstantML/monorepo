@@ -1,17 +1,65 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "instantml"
 version = "0.1.0"
-description = "InstantML — fast, cheap experiment tracking"
-readme = "README.md"
-requires-python = ">=3.10"
+description = "Python SDK and CLI for logging InstantML training runs, metrics, artifacts, and rich objects."
+readme = "PYPI_README.md"
+requires-python = ">=3.11"
+license = "LicenseRef-Proprietary"
+authors = [
+  { name = "InstantML" },
+]
+keywords = [
+  "experiment-tracking",
+  "machine-learning",
+  "mlops",
+  "training",
+  "observability",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = []
+
+[project.optional-dependencies]
+media = [
+  "Pillow==10.3.0",
+  "imageio==2.36.1",
+  "moviepy==2.1.2",
+  "soundfile==0.12.1",
+]
+system = [
+  "psutil==6.0.0",
+  "pynvml==12.0.0",
+]
+all = [
+  "GitPython==3.1.43",
+  "Pillow==10.3.0",
+  "httpx==0.27.2",
+  "imageio==2.36.1",
+  "moviepy==2.1.2",
+  "psutil==6.0.0",
+  "pynvml==12.0.0",
+  "rich==13.9.4",
+  "soundfile==0.12.1",
+]
 
 [project.scripts]
 instantml = "instantml.cli:main"
+instantml-uploader = "instantml.uploader:main"
+
+[project.urls]
+Homepage = "https://instantml.ai"
 
 [tool.setuptools.packages.find]
 where = ["."]

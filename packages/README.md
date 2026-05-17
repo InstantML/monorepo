@@ -6,6 +6,13 @@ Expected packages:
 
 - `python-sdk/`: Python SDK for logging runs, auto-step metrics, rich objects, local files/artifacts, optional system metrics, optional console capture, checkpoints, videos, and tables.
 
+Package distribution:
+
+- Build the SDK wheel and source distribution with `npm run sdk:build`.
+- Check package metadata with `npm run sdk:check`.
+- Install the built wheel locally with `npm run sdk:test-install`.
+- Public upload is handled by `.github/workflows/python-sdk-release.yml` after PyPI/TestPyPI Trusted Publishers are configured for the `instantml` project and the public license/terms decision is approved.
+
 Future agents must update this README when packages are added, renamed, removed, or when shared package-level commands change.
 
 Current SDK caveats to keep documented:

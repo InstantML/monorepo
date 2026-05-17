@@ -1,6 +1,8 @@
 # Development/test requirements for Python 3.11.
+build==1.5.0
 coverage==7.13.5
 numpy==2.0.0
 Pillow==10.3.0
 pytest==9.0.2
 pytest-cov==7.1.0
+twine==6.2.0

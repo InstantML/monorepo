@@ -26,6 +26,7 @@ Current implemented design sequence:
 - `2026-05-14-instantml-rescheme-and-chart-polish.md`: InstantML frontend rescheme, public brand-token reference, chart density polish, and project/saved-view acceptance criteria.
 - `2026-05-14-hosted-clickhouse-query-benchmarks.md`: hosted ClickHouse demo benchmark protocol for 100,000-run dashboard query latency, response validation, budgets, and sanitized result reporting.
 - `2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, browser session authorization, and ClickHouse Cloud Mini warehouse defaults.
+- `2026-05-16-python-sdk-packaging.md`: Python SDK package metadata, local build checks, and PyPI/TestPyPI trusted-publishing workflow.
 - `2026-05-16-gcp-cloud-run-rust-api.md`: internal single-instance Cloud Run deployment for the Rust API, Secret Manager, static ClickHouse egress, and local-frontend-to-hosted-API workflow.
 - `2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance control/data-plane direction, central hot-path proxy rejection, single-instance guardrails, mutation gates, deterministic operational replay, split `combined`/`control`/`data` service-plane roles, and data-plane control-record refresh before auth.
 - `2026-05-16-cloud-run-multi-instance-launch.md`: split Cloud Run launch wiring, deploy helper target model, managed HTTPS public router, Docker Compose split profile, static egress reuse, scaling defaults, unsafe multi-writer guardrails, and frontend env behavior.

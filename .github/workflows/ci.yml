@@ -73,3 +73,9 @@ jobs:
 
       - name: Python Tests
         run: npm run test:python
+
+      - name: Python SDK Package Build
+        run: |
+          npm run sdk:build
+          npm run sdk:check
+          npm run sdk:test-install

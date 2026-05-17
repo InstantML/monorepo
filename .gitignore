@@ -11,6 +11,9 @@ node_modules/
 apps/web/.next/
 apps/web/next-env.d.ts
 coverage/
+dist/
+build/
+*.egg-info/
 target/
 playwright-report/
 test-results/
