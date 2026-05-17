@@ -7,7 +7,8 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 ## Responsibilities
 
 - Project dashboard.
-- Public landing page plus Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, onboarding, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and the auth response includes a ready-to-use `onboarding_api_key` that is rendered immediately without a separate button click.
+- Public landing page (merged from the standalone `github.com/InstantML/landing` repo). The `/` route is an auth-aware Next.js server component: signed-in Clerk users are redirected to `/signin` (which in turn forwards to `/dashboard/runs` if an InstantML session is active), and visitors with no Clerk session are served the full polished landing page. The landing visual system — italic-serif headlines, emerald palette, grid+glow background, bento cards, animated hero spotlight — is preserved in `components/landing/`. See `docs/design/2026-05-17-landing-merge-into-web.md`.
+- Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, onboarding, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and the auth response includes a ready-to-use `onboarding_api_key` that is rendered immediately without a separate button click.
 - RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
 - Runs workspace with run selector, sections, line panels, and local workspace layout persistence.
 - Run detail view.
@@ -151,6 +152,8 @@ npm run test:rust:ui
 npm run test:hosted-clickhouse
 ```
 
+`apps/web/tests/landing-page.test.js` covers: all 8 ported component exports, `"use client"` directives, ThemeToggle localStorage key alignment, `app/page.tsx` server-component wiring (no `"use client"`, imports `auth` and `redirect`, redirects signed-in users, renders `LandingPage` for signed-out), polyline helper correctness, timestamp helper correctness, TtlRing circumference math, CSS selector presence, and logo.svg + design doc existence. 41 assertions, all via `node --test` without a browser.
+
 The default browser smoke starts disposable ClickHouse and the Rust API, builds the Next app, starts `next start`, verifies the public landing page does not fetch dashboard summaries, signs up through the local dev Google-style flow with a Pro plan, creates a copy-once SDK API key, seeds demo data through the signed-in session, verifies Settings usage/seats and the topbar usage badge, verifies API-key create/revoke UI, verifies the initial dashboard load, asserts hidden rich-object/log fetches stay gated, and captures a screenshot. Set `INSTANTML_UI_SMOKE_FULL_WORKSPACE=1` to run the longer workspace regression that exercises route-backed tabs, run inspection, Runs workspace add/edit/collapse/fullscreen panel flows, drag-and-resize layout persistence, focus traps, tokenized search, tag/note editing, selected-run plotting, chart hover/zoom, rich-object previews, Compare layouts/sorting/reference switching, artifact/API affordances, and responsive viewports. `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` all use the Rust/ClickHouse harness.
 
 The hosted ClickHouse smoke is API/SDK-facing rather than browser-facing: it signs up, creates an SDK key, verifies User Data control rows, writes direct and Python SDK runs into the routed tenant database, restarts the API, and verifies the dashboard summary endpoint can still read the ingested runs.
@@ -165,10 +168,10 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 
 ## Current Files
 
-- `app/layout.tsx`
+- `app/layout.tsx` — includes logo-intro animation boot script
 - `app/loading.tsx`
 - `app/loading-screen.tsx`
-- `app/page.tsx`
+- `app/page.tsx` — auth-aware server component; unauthenticated renders `LandingPage`, Clerk-authenticated redirects to `/signin`
 - `app/auth-flow.tsx`
 - `app/signin/page.tsx`
 - `app/signup/page.tsx`
@@ -181,8 +184,17 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/dashboard-config.tsx`
 - `app/dashboard-models.ts`
 - `app/dashboard-types.ts`
-- `app/globals.css`
+- `app/globals.css` — includes landing-page visual system (appended block; all selectors prefixed `.landing-*` or unique to landing)
 - `app/icon.svg`
+- `components/landing/LogoMark.tsx` — InstantML mark SVG (server component)
+- `components/landing/NavLogo.tsx` — logo + wordmark with intro animation (server component)
+- `components/landing/ThemeToggle.tsx` — CSS-only icon-swap toggle, writes `instantml:next:theme` (client)
+- `components/landing/HeroSpotlight.tsx` — Lissajous-drift radial spotlights + scroll parallax (client)
+- `components/landing/MaskingDemo.tsx` — decorative animated loss-chart SVG (client)
+- `components/landing/AuditFeed.tsx` — decorative SDK-event marquee terminal (client)
+- `components/landing/TtlRing.tsx` — p95-latency dial with animated sweep (client)
+- `components/landing/LandingPage.tsx` — full landing page layout (client, composes all above)
+- `public/logo.svg` — standalone SVG logo for favicon/meta use
 - `proxy.ts`
 - `src/api.js`
 - `src/charts.js`
@@ -196,6 +208,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 
 ## Relevant Design Docs
 
+- `docs/design/2026-05-17-landing-merge-into-web.md` — landing port, auth-aware `/` route, CSS scoping, migration plan, coverage exceptions
 - `docs/design/2026-05-07-next-react-ui-migration.md`
 - `docs/design/2026-05-08-full-navigation-tabs.md`
 - `docs/design/2026-05-10-runs-workspace-panels.md`
