@@ -107,6 +107,7 @@ import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspaceView } from "../dashboard-types";
 import { RunWorkspace, type RunWorkspaceTabId } from "./components/run-workspace";
 import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY } from "./state/storage-keys";
+import { useIsMobile } from "./state/use-mobile";
 import { PageHead } from "./ui/page-head";
 
 type ThemeMode = "light" | "dark";
@@ -311,6 +312,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [pinnedMetrics, setPinnedMetrics] = useState<string[]>([]);
   const [navPinned, setNavPinned] = useState(false);
   const [navAutoOpen, setNavAutoOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isMobile = useIsMobile();
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [themeReady, setThemeReady] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => buildAutomaticWorkspace([], ""));
@@ -1758,6 +1761,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const label = tabs.find((tab) => tab.id === tabId)?.label ?? tabId;
     closeTransientSurfaces();
     setActiveTab(tabId);
+    setMobileNavOpen(false);
     setMessage(tabId === "runs" && summary.total ? runsPageMessage(summary.total, pageOffset, sortedRuns.length) : `Opened ${label}.`);
     window.history.replaceState(null, "", tabToPath(tabId));
     focusRouteStatus();
@@ -1917,8 +1921,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         activeTab={activeTab}
         detailRunName={primaryRun?.name ?? ""}
         message={message}
+        mobileNavOpen={mobileNavOpen}
         onApplySavedView={applySavedView}
         onLoadDemo={loadDemo}
+        onMobileMenuToggle={() => setMobileNavOpen((open) => !open)}
         onProject={changeProject}
         onQuery={changeRunQueryInput}
         onQuickSearch={() => setQuickSearchOpen(true)}
@@ -1943,8 +1949,26 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         viewName={viewName}
       />
 
-      <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""}`}>
-        <DashboardNav activeTab={activeTab} onAutoOpenChange={setNavAutoOpen} onPinnedChange={setNavPinned} onSelect={selectTab} pinned={navPinned} />
+      {isMobile && mobileNavOpen ? (
+        <div
+          className="mobile-nav-scrim"
+          aria-hidden="true"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      ) : null}
+
+      <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
+        <DashboardNav
+          activeTab={activeTab}
+          onAutoOpenChange={setNavAutoOpen}
+          onPinnedChange={setNavPinned}
+          onSelect={selectTab}
+          onShortcutHelp={() => { setMobileNavOpen(false); openShortcutHelp(); }}
+          onSignOut={signOut}
+          onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+          pinned={navPinned}
+          theme={theme}
+        />
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
           {activeTab === "runs" ? (
