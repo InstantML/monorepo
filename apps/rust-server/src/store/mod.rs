@@ -7,6 +7,7 @@ mod access;
 mod auth;
 mod console_logs;
 mod demo;
+mod device_code;
 mod export;
 mod imports;
 mod objects;
@@ -20,6 +21,7 @@ use access::*;
 pub use auth::*;
 pub use console_logs::*;
 pub use demo::*;
+pub use device_code::*;
 pub use export::*;
 pub use imports::*;
 pub use objects::*;
@@ -306,6 +308,8 @@ struct StoreData {
     service_accounts: BTreeMap<Uuid, ServiceAccountRow>,
     api_keys: BTreeMap<Uuid, ApiKeyRecord>,
     api_keys_by_hash: HashMap<Vec<u8>, Uuid>,
+    pub(super) device_codes: BTreeMap<Vec<u8>, DeviceCodeRecord>,
+    pub(super) device_codes_by_user_code: HashMap<String, Vec<u8>>,
     projects: BTreeMap<Uuid, ProjectRow>,
     projects_by_org_name: HashMap<(Uuid, String), Uuid>,
     runs: BTreeMap<Uuid, RunRow>,

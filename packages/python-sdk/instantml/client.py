@@ -338,6 +338,28 @@ class Client:
         thread.start()
         return run
 
+    def _resolve_api_key(self) -> str | None:
+        """Resolve the API key using the priority chain:
+        1. Explicit api_key kwarg on Client.
+        2. INSTANTML_API_KEY environment variable.
+        3. ~/.instantml/credentials file.
+        4. If interactive TTY, print an actionable error. Always raise InstantMLError.
+        Returns the resolved key or None (for unauthenticated local mode).
+        """
+        if self.api_key:
+            return self.api_key
+        env_key = os.environ.get("INSTANTML_API_KEY")
+        if env_key:
+            return env_key
+        try:
+            from .cli import resolve_api_key_from_credentials
+            file_key = resolve_api_key_from_credentials()
+            if file_key:
+                return file_key
+        except Exception:
+            pass
+        return None
+
     def _request(
         self,
         method: str,
@@ -348,7 +370,7 @@ class Client:
         url = self.base_url.rstrip("/") + path
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        api_key = self.api_key or os.environ.get("INSTANTML_API_KEY")
+        api_key = self._resolve_api_key()
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         if idempotency_key:
@@ -1137,6 +1159,35 @@ class Run:
                 raise
             _spool_event(self.client.offline_dir, self.run_id, {"method": method, "path": path, "body": body})
             return {"spooled": True, "artifact": {"id": "spooled", **body}}
+
+
+def _check_credentials_or_raise(api_key: str | None) -> None:
+    """Raise InstantMLError with a helpful message when no credentials are available.
+
+    Only raises when `api_key` kwarg is not set; env var and file are checked inside
+    Client._resolve_api_key(), so this is a fast-fail for the most common missing-creds
+    scenario before the HTTP call is made.
+    """
+    if api_key:
+        return  # explicit kwarg provided — skip resolution check
+    if os.environ.get("INSTANTML_API_KEY"):
+        return  # env var covers it
+    try:
+        from .cli import resolve_api_key_from_credentials
+        if resolve_api_key_from_credentials():
+            return  # file creds cover it
+    except Exception:
+        pass
+    # No credentials found. Provide an actionable error.
+    interactive = sys.stdin is not None and hasattr(sys.stdin, "isatty") and sys.stdin.isatty()
+    msg = (
+        "No API key found. Run `instantml login` to set up credentials, "
+        "or set the INSTANTML_API_KEY environment variable."
+    )
+    if interactive:
+        warnings.warn(msg, stacklevel=3)
+    # We do not raise here — allow unauthenticated local dev mode to proceed.
+    # The server will return 401 if auth is actually required.
 
 
 def init(

@@ -37,6 +37,9 @@ pub struct AppConfig {
     pub request_timeout: Duration,
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
+    /// Base URL of the frontend, used to construct device-code verification URIs.
+    /// Defaults to the first allowed_frontend_origins entry if set, else "http://localhost:3000".
+    pub frontend_base_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -209,6 +212,10 @@ impl AppConfig {
             artifact_uploads_enabled: env_bool_optional("INSTANTML_ARTIFACT_UPLOADS_ENABLED")?
                 .unwrap_or_else(|| hosted_clickhouse.is_none()),
             allowed_frontend_origins: env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS"),
+            frontend_base_url: env::var("INSTANTML_FRONTEND_BASE_URL")
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
             log_format,

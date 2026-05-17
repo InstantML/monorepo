@@ -29,7 +29,8 @@ use crate::{
         ClerkAuthRequest, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
         CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest,
         CreateProjectRequest, CreateRunRequest, CreateUserRequest, DevGoogleAuthRequest,
-        LogMetricsRequest, RequestContext, ReserveSeatRequest, SessionContext, UpdateRunRequest,
+        DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest, LogMetricsRequest,
+        RequestContext, ReserveSeatRequest, SessionContext, UpdateRunRequest,
         UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
@@ -100,6 +101,9 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))
         .route("/api/auth/logout", post(auth_logout))
+        .route("/api/auth/device-code/start", post(device_code_start))
+        .route("/api/auth/device-code/poll", post(device_code_poll))
+        .route("/api/auth/device-code/confirm", post(device_code_confirm))
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
         .route("/api/orgs/name-availability", get(org_name_availability))
