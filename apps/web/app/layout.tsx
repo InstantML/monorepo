@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./auth.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
@@ -42,6 +43,13 @@ const themeBootstrap = `
 export const metadata = {
   title: "InstantML",
   description: "Training observability that's actually fast.",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#07080c",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

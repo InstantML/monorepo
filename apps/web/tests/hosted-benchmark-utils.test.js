@@ -14,6 +14,7 @@ test("budget helpers use explicit, grouped, and fallback budgets", () => {
   assert.equal(budgetForCase({ budget_ms: 123 }), 123);
   assert.equal(budgetForCase({ budget_group: "summary" }), 750);
   assert.equal(budgetForCase({ kind: "chart" }), 750);
+  assert.equal(budgetForCase({ kind: "batched_series" }), 750);
   assert.equal(budgetForCase({ group: "unknown" }), 1000);
   assert.equal(percentile([], 0.95), 0);
 });
@@ -151,20 +152,65 @@ test("validateBenchmarkPayload validates overview and chart shapes", () => {
   );
 });
 
+test("validateBenchmarkPayload validates batched selected-run series", () => {
+  assert.deepEqual(
+    validateBenchmarkPayload(
+      { name: "batched", kind: "batched_series", limit: 3, expected_series: 2 },
+      { series: [{ run_id: "run-1", metrics: [{ step: 1 }, { step: 2 }] }, { run_id: "run-2", metrics: [{ step: 1 }] }] },
+    ),
+    {
+      kind: "batched_series",
+      series: 2,
+      non_empty_series: 2,
+      rows: 3,
+      max_rows_per_series: 2,
+    },
+  );
+  assert.throws(
+    () => validateBenchmarkPayload({ name: "bad_batch", kind: "batched_series" }, { series: null }),
+    /malformed batched series/,
+  );
+  assert.throws(
+    () => validateBenchmarkPayload({ name: "wrong_count", kind: "batched_series", expected_series: 2 }, { series: [{ metrics: [] }] }),
+    /expected 2/,
+  );
+  assert.throws(
+    () => validateBenchmarkPayload({ name: "too_many_rows", kind: "batched_series", limit: 1 }, { series: [{ metrics: [{}, {}] }] }),
+    /limit 1/,
+  );
+  assert.throws(
+    () => validateBenchmarkPayload({ name: "missing_metrics", kind: "batched_series" }, { series: [{}] }),
+    /without metrics/,
+  );
+  assert.throws(
+    () => validateBenchmarkPayload({ name: "empty_batch", kind: "batched_series" }, { series: [{ metrics: [] }] }),
+    /empty batched series/,
+  );
+});
+
 test("sanitizeHostedBenchmarkResult keeps benchmark metadata but strips sensitive identifiers", () => {
   const sanitized = sanitizeHostedBenchmarkResult({
     status: "ok",
     generated_at: "2026-05-14T12:00:00.000Z",
     git: { commit: "abc123", branch: "codex/clickhouse-query-benchmarks" },
-    environment: { platform: "darwin", arch: "arm64", node_version: "v22.0.0", api_mode: "temporary-rust", warmed: true },
+    environment: { platform: "darwin", arch: "arm64", node_version: "v22.0.0", api_mode: "cloud-run-direct", api_host: "https://service.run.app/path?secret=nope", api_transport: "https", warmed: true },
     measurement_protocol: { warmups: 2, samples: 8, p95: "nearest-rank", endpoint_order: "fixed" },
     dataset: {
       project: "instantml-demo-100k",
+      projects: ["hosted-scale-control", "hosted-scale-data"],
       configured_runs: 100000,
+      configured_min_runs: 100000,
       seeded_runs: 100000,
+      observed_runs: 100000,
       seeded_metric_points: 180000,
+      observed_metric_points: 600000,
       long_run_steps: 20000,
+      expected_steps_per_run: 1000,
+      chart_limit: 1000,
+      selected_run_count: 8,
       metric_key: "eval/return_mean",
+      system_metric_key: "system/gpu_util",
+      metric_keys: ["eval/return_mean", "system/gpu_util"],
       status_counts: { finished: 90000 },
       org_id: "should-not-leak",
     },
@@ -194,6 +240,8 @@ test("sanitizeHostedBenchmarkResult keeps benchmark metadata but strips sensitiv
   });
   const json = JSON.stringify(sanitized);
   assert.equal(sanitized.route.endpoint_host, "clickhouse.example.com");
+  assert.equal(sanitized.environment.api_host, "service.run.app");
+  assert.deepEqual(sanitized.dataset.projects, ["hosted-scale-control", "hosted-scale-data"]);
   assert.equal(sanitized.passed, true);
   assert.equal(json.includes("super-secret-password"), false);
   assert.equal(json.includes("secret-cookie"), false);

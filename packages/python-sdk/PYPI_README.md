@@ -30,6 +30,14 @@ run = im.init(
 )
 ```
 
+The package also installs the `instantml` CLI for browser-based device login:
+
+```bash
+instantml login --api-host https://api.example.com
+instantml whoami
+instantml logout
+```
+
 The core package has no required third-party runtime dependencies. Optional extras are available for richer local conversions and system metrics:
 
 ```bash

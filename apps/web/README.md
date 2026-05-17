@@ -7,7 +7,8 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 ## Responsibilities
 
 - Project dashboard.
-- Public landing page plus Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, onboarding, and copy-once SDK API-key creation.
+- Public landing page plus Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, onboarding, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and the auth response includes a ready-to-use `onboarding_api_key` that is rendered immediately without a separate button click.
+- RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
 - Runs workspace with run selector, sections, line panels, and local workspace layout persistence.
 - Run detail view.
 - Run comparison view.
@@ -19,8 +20,8 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 
 Current navigation and comparison controls:
 
-- Route-backed navigation for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark so filters and saved-view controls have more room.
-- Unauthenticated visitors land on `/`, can sign in or sign up through Clerk in hosted mode, or through the explicitly labeled local dev Google-style flow in local mode, reserve business seats, create a copy-once SDK API key, and then enter `/dashboard/runs`. The shared demo action signs in as `hello@instantml.ai`, reuses the `InstantML Demo` org/service, skips SDK-key reveal, and is enforced read-only server-side so demo visitors browse sample data instead of pushing data. In hosted ClickHouse mode, auth writes users/orgs/sessions/API keys to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
+- Route-backed navigation for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
+- Unauthenticated visitors land on `/`, can sign in or sign up through Clerk in hosted mode, or through the explicitly labeled local dev Google-style flow in local mode. Signup chooses Free, Pro, or Premium, can reserve included teammate seats by email, creates a copy-once SDK API key, and then enters `/dashboard/runs`. The shared demo action signs in as `hello@instantml.ai`, reuses the Premium-tier `InstantML Demo` org/service, skips SDK-key reveal, and is enforced read-only server-side so demo visitors browse sample data instead of pushing data. In hosted ClickHouse mode, auth writes users/orgs/sessions/API keys and tenant-route plan metadata to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
 - Light/dark mode toggle with a persisted local preference. Dark mode uses neutral dark surfaces with explicit accent states; primary button styling is opt-in via `.primary-button` instead of a broad global button selector.
 - Refresh/loading experience: the root layout applies the saved theme before paint and the app shows a branded loading shell during the first dashboard API load instead of flashing an empty white page.
@@ -53,6 +54,7 @@ Current navigation and comparison controls:
 - Browse active-run rich logged objects in Run Detail and Artifacts. The first slice renders table previews, histogram bars, and media cards from `GET /api/runs/:id/objects` plus bounded `GET /api/objects/:id/rows` table reads. Hidden tabs do not fetch object manifests, and Compare keeps using existing artifact context to avoid extra selected-run fan-out.
 - Address tabs through real routes such as `/dashboard/runs`, `/dashboard/alerts`, and `/dashboard/api`; legacy hashes such as `#runs` normalize to the matching dashboard route.
 - Derived workspace tabs use current summaries, selected-run artifacts, local saved views, and documented API routes. They do not yet imply persistent alert, dataset, report, model registry, or integration credential storage.
+- Settings now includes plan and usage visibility plus seat invite/list controls. Metric-point usage is shown for the current UTC calendar month with its reset date; tracked storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts that do not reset monthly. The topbar mirrors the highest usage percentage in a compact badge near account controls. The API tab now lists keys, creates copy-once keys, revokes keys, and still shows request snippets for SDK/API users.
 
 ## Design Requirement
 
@@ -99,13 +101,38 @@ INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
 ```
 
-Then open `http://127.0.0.1:3000`, sign up with Clerk when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` are configured, or use the labeled local dev Google-style flow in local mode. Create the copy-once SDK key and enter the dashboard.
+Then open `http://127.0.0.1:3000`, sign up with Clerk when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` are configured, or use the labeled local dev Google-style flow in local mode. Choose a Free/Pro/Premium plan, optionally invite included seats, create the copy-once SDK key, and enter the dashboard.
 
 Fast development server:
 
 ```bash
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
+
+Run against the hosted Cloud Run Rust API:
+
+```bash
+npm run web:dev
+```
+
+After `npm run deploy:cloud-run` succeeds, the deploy helper writes hosted API
+settings into `apps/web/.env.local`. Single-service deploys write
+`INSTANTML_API_BASE`; split control/data deploys write
+`INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE`. If the managed HTTPS
+public router is created, the helper writes `INSTANTML_API_BASE`,
+`INSTANTML_CONTROL_API_BASE`, and `INSTANTML_DATA_API_BASE` to the same router
+URL. Next loads that file automatically, so local frontend development no longer
+needs a local Rust server.
+If you point at a different hosted API manually, set `INSTANTML_API_BASE` for a
+combined service or set both split bases for control/data before running
+`web:dev`, `web:build`, or `web:start`. Non-loopback API origins must also be
+listed in `INSTANTML_API_ALLOWED_ORIGINS`.
+
+When the hosted API returns `code: "warehouse_unavailable"` with HTTP `503`, the
+dashboard treats the API as reachable and shows a "Starting data warehouse"
+loading state while retrying. This is the expected user-facing state when an
+org's tenant ClickHouse warehouse is waking after idle; User Data/control
+failures should remain separate operational alerts.
 
 The Playwright smoke uses the production-style build/start path.
 
@@ -124,7 +151,7 @@ npm run test:rust:ui
 npm run test:hosted-clickhouse
 ```
 
-The default browser smoke starts disposable ClickHouse and the Rust API, builds the Next app, starts `next start`, verifies the public landing page does not fetch dashboard summaries, signs up through the local dev Google-style flow, creates a copy-once SDK API key, seeds demo data through the signed-in session, verifies the initial dashboard load, asserts hidden rich-object/log fetches stay gated, and captures a screenshot. Set `INSTANTML_UI_SMOKE_FULL_WORKSPACE=1` to run the longer workspace regression that exercises route-backed tabs, run inspection, Runs workspace add/edit/collapse/fullscreen panel flows, drag-and-resize layout persistence, focus traps, tokenized search, tag/note editing, selected-run plotting, chart hover/zoom, rich-object previews, Compare layouts/sorting/reference switching, artifact/API affordances, and responsive viewports. `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` all use the Rust/ClickHouse harness.
+The default browser smoke starts disposable ClickHouse and the Rust API, builds the Next app, starts `next start`, verifies the public landing page does not fetch dashboard summaries, signs up through the local dev Google-style flow with a Pro plan, creates a copy-once SDK API key, seeds demo data through the signed-in session, verifies Settings usage/seats and the topbar usage badge, verifies API-key create/revoke UI, verifies the initial dashboard load, asserts hidden rich-object/log fetches stay gated, and captures a screenshot. Set `INSTANTML_UI_SMOKE_FULL_WORKSPACE=1` to run the longer workspace regression that exercises route-backed tabs, run inspection, Runs workspace add/edit/collapse/fullscreen panel flows, drag-and-resize layout persistence, focus traps, tokenized search, tag/note editing, selected-run plotting, chart hover/zoom, rich-object previews, Compare layouts/sorting/reference switching, artifact/API affordances, and responsive viewports. `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocation of `node apps/web/tests/ui-smoke.mjs` all use the Rust/ClickHouse harness.
 
 The hosted ClickHouse smoke is API/SDK-facing rather than browser-facing: it signs up, creates an SDK key, verifies User Data control rows, writes direct and Python SDK runs into the routed tenant database, restarts the API, and verifies the dashboard summary endpoint can still read the ingested runs.
 
@@ -146,6 +173,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/signin/page.tsx`
 - `app/signup/page.tsx`
 - `app/onboarding/page.tsx`
+- `app/auth/device/page.tsx`
 - `app/dashboard/[[...tab]]/page.tsx`
 - `app/dashboard/components/run-workspace.tsx`
 - `app/dashboard/dashboard-shell.tsx`
@@ -163,6 +191,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `src/shortcuts.js`
 - `src/state.js`
 - `src/terminal.js`
+- `src/workspace.js` — `deriveClerkSlug` and `slugify` helpers (mirrors server-side slug logic for UI preview)
 - `next.config.mjs`
 
 ## Relevant Design Docs
@@ -179,6 +208,11 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
 - `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
 - `docs/design/2026-05-14-instantml-rescheme-and-chart-polish.md`
+- `docs/design/2026-05-16-device-code-cli-login.md`
+- `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
+- `docs/design/2026-05-16-pricing-signup-org-admin.md`
+- `docs/design/2026-05-16-auto-personal-workspace.md`
+- `docs/product/pricing-and-margins.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 
 ## Notes for Future Agents

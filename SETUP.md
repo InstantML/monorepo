@@ -99,7 +99,15 @@ Open:
 http://127.0.0.1:3000
 ```
 
-Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard. Click `Reset demo` in the signed-in UI to seed the local `demo` project. The reset generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. Generated state is ignored by git.
+Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard.
+
+To populate the shared demo workspace, run the seed subcommand once from a terminal:
+
+```bash
+cargo run --manifest-path apps/rust-server/Cargo.toml -- seed-demo
+```
+
+It provisions the `hello@instantml.ai` / `InstantML Demo` org if missing and generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. From the landing page, click `Continue as shared demo` to browse the seeded data — those browser sessions are read-only by design. Generated state is ignored by git.
 
 For a production-style local web run:
 
@@ -133,6 +141,17 @@ http://127.0.0.1:8010   # or http://127.0.0.1:8000 with the default port mapping
 
 Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8010`
 (or `:8000` if you skipped the override).
+
+The compose file also includes a split control/data profile for understanding
+the hosted service-plane layout:
+
+```bash
+docker compose --profile split up --build instantml-control instantml-data
+```
+
+That starts `instantml-control` on host port `8001` and `instantml-data` on
+host port `8002` against the same ClickHouse container. Use
+`npm run test:hosted-clickhouse` for automated split-process verification.
 
 **Do not enable `INSTANTML_DEV_AUTH_ENABLED` on any host reachable from the
 public internet** — the endpoint lets anyone mint an authenticated

@@ -7,6 +7,7 @@ mod access;
 mod auth;
 mod console_logs;
 mod demo;
+mod device_code;
 mod export;
 mod imports;
 mod objects;
@@ -20,6 +21,7 @@ use access::*;
 pub use auth::*;
 pub use console_logs::*;
 pub use demo::*;
+pub use device_code::*;
 pub use export::*;
 pub use imports::*;
 pub use objects::*;
@@ -41,20 +43,22 @@ use crate::{
     config::{AppConfig, HostedClickHouseConfig},
     control_store::{ControlRecordRow, ControlStore},
     domain::{
-        validate_account_type, validate_email, validate_json_object, validate_limit,
-        validate_membership_role, validate_name, validate_offset, validate_optional_name,
-        validate_optional_step, validate_plan_tier, validate_slug, validate_status, validate_step,
-        validate_tags, validate_timestamp, ArtifactRow, AttributeInput, AttributeRow, AuthContext,
-        AuthSessionPayload, ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest,
-        CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
-        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
-        CreateUserRequest, CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest,
-        MembershipRow, MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+        is_personal_account_type, plan_tier, validate_account_type, validate_email,
+        validate_json_object, validate_limit, validate_membership_role, validate_name,
+        validate_offset, validate_optional_name, validate_optional_step, validate_plan_tier,
+        validate_slug, validate_status, validate_step, validate_tags, validate_timestamp,
+        ArtifactRow, AttributeInput, AttributeRow, AuthContext, AuthSessionPayload,
+        ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest,
+        CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
+        CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
+        CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest, MembershipRow,
+        MetricSeriesRow, OnboardingApiKey, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
+        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, SeatRow, SeatUserRow,
+        ServiceAccountRow, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
         DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
         MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
-        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT, MAX_TEXT_BYTES,
+        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE,
+        PLAN_PREMIUM, PLAN_PRO,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -111,6 +115,10 @@ pub struct Store {
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
+    /// MetricStore wired to the shared ClickHouse cell.
+    /// All personal/free orgs route here instead of getting a dedicated service.
+    shared_cell_metric_store: Option<MetricStore>,
+    inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
 }
@@ -121,12 +129,17 @@ impl Store {
         control_store: Option<ControlStore>,
         hosted_clickhouse: Option<HostedClickHouseConfig>,
     ) -> AppResult<Self> {
+        // Build the shared-cell MetricStore when INSTANTML_SHARED_CELL_URL is set.
+        let shared_cell_metric_store =
+            build_shared_cell_metric_store(hosted_clickhouse.as_ref()).await?;
         let store = Self {
             metric_store,
             control_store,
             hosted_clickhouse,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
         };
@@ -137,56 +150,93 @@ impl Store {
         Ok(store)
     }
 
+    /// Returns the MetricStore for the shared cell, if one is configured.
+    pub fn shared_cell_metric_store(&self) -> Option<&MetricStore> {
+        self.shared_cell_metric_store.as_ref()
+    }
+
     pub fn metric_store(&self) -> &MetricStore {
         &self.metric_store
     }
 
     async fn rebuild(&self) -> AppResult<()> {
-        let records = if let Some(control_store) = &self.control_store {
-            control_store
-                .load_records()
-                .await?
-                .into_iter()
-                .map(|record| OperationalRecordRow {
-                    kind: record.kind,
-                    org_id: record.org_id,
-                    entity_id: record.entity_id,
-                    payload: record.payload,
-                    created_at: record.created_at,
-                })
-                .collect::<Vec<_>>()
+        let (data, latest_record_micros) = if let Some(control_store) = &self.control_store {
+            let records = control_store.load_records().await?;
+            let mut data = StoreData::default();
+            let stats = data.apply_control_records(records)?;
+            (data, stats.latest_record_micros)
         } else {
-            self.metric_store.load_operational_records().await?
+            let records = self.metric_store.load_operational_records().await?;
+            let mut data = StoreData::default();
+            let stats = data.apply_operational_records(records, ReplayScope::All)?;
+            (data, stats.latest_record_micros)
         };
-        let latest_record_micros = records
-            .iter()
-            .map(|record| record.created_at.timestamp_micros())
-            .max()
-            .unwrap_or(0);
-        let mut data = StoreData::default();
-        for record in records {
-            data.apply_record(&record.kind, record.org_id, &record.payload)?;
-        }
-        data.recompute_counters();
         *self.data.lock().await = data;
         *self.record_clock_micros.lock().await = latest_record_micros;
         Ok(())
     }
 
+    pub async fn refresh_control_records(&self) -> AppResult<()> {
+        let Some(control_store) = &self.control_store else {
+            return Ok(());
+        };
+        let records = control_store.load_records().await?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let (stats, changed_tenant_routes) = {
+            let mut data = self.data.lock().await;
+            let previous_routes = data.tenant_routes.clone();
+            let stats = data.apply_control_records(records)?;
+            let changed_routes = changed_tenant_routes(&previous_routes, &data.tenant_routes);
+            (stats, changed_routes)
+        };
+        if !changed_tenant_routes.is_empty() {
+            let mut loaded = self.tenant_loaded.lock().await;
+            let mut stores = self.tenant_metric_stores.lock().await;
+            for org_id in &changed_tenant_routes {
+                loaded.remove(org_id);
+                stores.remove(org_id);
+            }
+        }
+        let mut clock = self.record_clock_micros.lock().await;
+        *clock = (*clock).max(stats.latest_record_micros);
+        Ok(())
+    }
+
     async fn ensure_local_org(&self) -> AppResult<()> {
         let mut data = self.data.lock().await;
-        if data.organizations.contains_key(&LOCAL_ORG_ID) {
+        if let Some(existing) = data.organizations.get(&LOCAL_ORG_ID).cloned() {
+            if existing.plan_tier != "premium"
+                || existing.seat_limit != plan_tier("premium").included_seats
+            {
+                let org = OrganizationRow {
+                    plan_tier: "premium".to_string(),
+                    seat_limit: plan_tier("premium").included_seats,
+                    ..existing
+                };
+                self.persist_locked(
+                    "organization",
+                    LOCAL_ORG_ID,
+                    &LOCAL_ORG_ID.to_string(),
+                    &org,
+                )
+                .await?;
+                data.insert_org(org);
+            }
             return Ok(());
         }
         let org = OrganizationRow {
             id: LOCAL_ORG_ID,
             slug: LOCAL_ORG_SLUG.to_string(),
             name: "Local".to_string(),
-            plan_tier: "free".to_string(),
+            plan_tier: "premium".to_string(),
             account_type: "customer".to_string(),
-            seat_limit: 1,
+            seat_limit: plan_tier("premium").included_seats,
             created_by_user_id: None,
             created_at: epoch(),
+            // Local dev org uses dedicated (= local) routing.
+            tenant_routing_tier: "dedicated".to_string(),
         };
         self.persist_locked(
             "organization",
@@ -243,6 +293,23 @@ impl Store {
         *clock = next;
         datetime_from_micros(next)
     }
+
+    pub(super) async fn reserve_idempotency_key(&self, org_id: Uuid, key: &str) -> AppResult<()> {
+        let mut inflight = self.inflight_idempotency.lock().await;
+        if !inflight.insert((org_id, key.to_string())) {
+            return Err(AppError::conflict(
+                "idempotency key is already being processed",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) async fn release_idempotency_key(&self, org_id: Uuid, key: &str) {
+        self.inflight_idempotency
+            .lock()
+            .await
+            .remove(&(org_id, key.to_string()));
+    }
 }
 
 #[derive(Default)]
@@ -258,6 +325,8 @@ struct StoreData {
     service_accounts: BTreeMap<Uuid, ServiceAccountRow>,
     api_keys: BTreeMap<Uuid, ApiKeyRecord>,
     api_keys_by_hash: HashMap<Vec<u8>, Uuid>,
+    pub(super) device_codes: BTreeMap<Vec<u8>, DeviceCodeRecord>,
+    pub(super) device_codes_by_user_code: HashMap<String, Vec<u8>>,
     projects: BTreeMap<Uuid, ProjectRow>,
     projects_by_org_name: HashMap<(Uuid, String), Uuid>,
     runs: BTreeMap<Uuid, RunRow>,
@@ -278,6 +347,53 @@ struct StoreData {
 }
 
 impl StoreData {
+    fn apply_operational_records(
+        &mut self,
+        mut records: Vec<OperationalRecordRow>,
+        scope: ReplayScope,
+    ) -> AppResult<ReplayStats> {
+        records.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.kind.cmp(&right.kind))
+                .then_with(|| left.org_id.cmp(&right.org_id))
+                .then_with(|| left.entity_id.cmp(&right.entity_id))
+                .then_with(|| left.payload.cmp(&right.payload))
+        });
+        let mut stats = ReplayStats::default();
+        for record in records {
+            if let ReplayScope::Tenant(expected_org_id) = scope {
+                validate_tenant_record_for_replay(expected_org_id, &record)?;
+            }
+            stats.latest_record_micros = stats
+                .latest_record_micros
+                .max(record.created_at.timestamp_micros());
+            self.apply_record(&record.kind, record.org_id, &record.payload)?;
+        }
+        self.recompute_counters();
+        Ok(stats)
+    }
+
+    fn apply_control_records(
+        &mut self,
+        mut records: Vec<ControlRecordRow>,
+    ) -> AppResult<ReplayStats> {
+        records.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.event_id.cmp(&right.event_id))
+        });
+        let mut stats = ReplayStats::default();
+        for record in records {
+            stats.latest_record_micros = stats
+                .latest_record_micros
+                .max(record.created_at.timestamp_micros());
+            self.apply_record(&record.kind, record.org_id, &record.payload)?;
+        }
+        self.recompute_counters();
+        Ok(stats)
+    }
+
     fn apply_record(&mut self, kind: &str, org_id: Uuid, payload: &str) -> AppResult<()> {
         match kind {
             "user" => self.insert_user(parse_payload(payload)?),
@@ -483,6 +599,17 @@ impl StoreData {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ReplayScope {
+    All,
+    Tenant(Uuid),
+}
+
+#[derive(Default)]
+struct ReplayStats {
+    latest_record_micros: i64,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct IdentityRecord {
     user_id: Uuid,
@@ -548,10 +675,110 @@ fn parse_payload<T: for<'de> Deserialize<'de>>(payload: &str) -> AppResult<T> {
         .map_err(|_| AppError::internal("stored operational record is invalid"))
 }
 
+fn validate_tenant_record_for_replay(
+    expected_org_id: Uuid,
+    record: &OperationalRecordRow,
+) -> AppResult<()> {
+    if record.org_id != expected_org_id {
+        return Err(AppError::internal(
+            "tenant operational record belonged to a different org",
+        ));
+    }
+    let payload = serde_json::from_str::<Value>(&record.payload)
+        .map_err(|_| AppError::internal("tenant operational record payload is invalid"))?;
+    if let Some(payload_org_id) = payload_org_id(&payload)? {
+        if payload_org_id != expected_org_id {
+            return Err(AppError::internal(
+                "tenant operational record payload belonged to a different org",
+            ));
+        }
+    }
+    validate_tenant_record_entity(record, &payload)
+}
+
+fn payload_org_id(payload: &Value) -> AppResult<Option<Uuid>> {
+    payload
+        .get("org_id")
+        .or_else(|| payload.get("row").and_then(|row| row.get("org_id")))
+        .and_then(Value::as_str)
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| AppError::internal("tenant operational record org_id is invalid"))
+}
+
+fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value) -> AppResult<()> {
+    match record.kind.as_str() {
+        "project" | "run" | "artifact" => validate_payload_string_id(record, payload, "id"),
+        "attribute" | "import" => validate_payload_i64_id(record, payload, "id"),
+        "idempotency" => validate_payload_string_id(record, payload, "key"),
+        "project_delete" => validate_payload_string_id(record, payload, "project_name"),
+        "table_rows" => validate_payload_i64_id(record, payload, "attribute_id"),
+        "usage_daily" => validate_usage_daily_orgs(record.org_id, payload),
+        _ => Ok(()),
+    }
+}
+
+fn validate_payload_string_id(
+    record: &OperationalRecordRow,
+    payload: &Value,
+    field: &str,
+) -> AppResult<()> {
+    let payload_id = payload
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("tenant operational record entity id is missing"))?;
+    if payload_id != record.entity_id {
+        return Err(AppError::internal(
+            "tenant operational record entity id mismatch",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_payload_i64_id(
+    record: &OperationalRecordRow,
+    payload: &Value,
+    field: &str,
+) -> AppResult<()> {
+    let payload_id = payload
+        .get(field)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| AppError::internal("tenant operational record entity id is missing"))?;
+    if payload_id.to_string() != record.entity_id {
+        return Err(AppError::internal(
+            "tenant operational record entity id mismatch",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_usage_daily_orgs(expected_org_id: Uuid, payload: &Value) -> AppResult<()> {
+    let Some(organizations) = payload.get("organizations").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    for organization in organizations {
+        let Some(raw_org_id) = organization.get("org_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let org_id = Uuid::parse_str(raw_org_id)
+            .map_err(|_| AppError::internal("tenant usage snapshot org_id is invalid"))?;
+        if org_id != expected_org_id {
+            return Err(AppError::internal(
+                "tenant usage snapshot belonged to a different org",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub async fn ready(store: &Store) -> bool {
     if !crate::metric_store::ready(store.metric_store()).await {
         return false;
     }
+    control_ready(store).await
+}
+
+pub async fn control_ready(store: &Store) -> bool {
     match &store.control_store {
         Some(control_store) => control_store.ready().await,
         None => true,
@@ -565,9 +792,111 @@ fn control_record_scope(kind: &str) -> &'static str {
     }
 }
 
+fn changed_tenant_routes(
+    previous: &BTreeMap<Uuid, TenantRouteRecord>,
+    current: &BTreeMap<Uuid, TenantRouteRecord>,
+) -> BTreeSet<Uuid> {
+    previous
+        .keys()
+        .chain(current.keys())
+        .filter(|org_id| previous.get(org_id) != current.get(org_id))
+        .copied()
+        .collect()
+}
+
+/// Build a MetricStore connected to the shared cell when the env var is set.
+/// Applies the schema migration so the shared cell is ready for writes.
+async fn build_shared_cell_metric_store(
+    hosted: Option<&HostedClickHouseConfig>,
+) -> AppResult<Option<MetricStore>> {
+    let Some(hosted) = hosted else {
+        return Ok(None);
+    };
+    let Some(url) = hosted.shared_cell_url.as_deref() else {
+        return Ok(None);
+    };
+    use crate::metric_store::{
+        self, connect_connection, parse_clickhouse_url, ClickHouseConnection,
+    };
+    let parsed = parse_clickhouse_url(url, "INSTANTML_SHARED_CELL_URL")?;
+    let database = std::env::var("INSTANTML_SHARED_CELL_DATABASE")
+        .unwrap_or_else(|_| "instantml_shared".to_string());
+    let connection = ClickHouseConnection {
+        endpoint: parsed.endpoint,
+        username: parsed.username,
+        password: parsed.password,
+        database,
+    };
+    let store = connect_connection(&connection)?;
+    metric_store::migrate(&store).await?;
+    Ok(Some(store))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn replay_row<T: Serialize>(
+        kind: &str,
+        org_id: Uuid,
+        entity_id: impl Into<String>,
+        payload: &T,
+        created_at_micros: i64,
+    ) -> OperationalRecordRow {
+        OperationalRecordRow {
+            kind: kind.to_string(),
+            org_id,
+            entity_id: entity_id.into(),
+            payload: serde_json::to_string(payload).unwrap(),
+            created_at: datetime_from_micros(created_at_micros),
+        }
+    }
+
+    fn control_replay_row<T: Serialize>(
+        kind: &str,
+        org_id: Uuid,
+        entity_id: impl Into<String>,
+        event_id: Uuid,
+        payload: &T,
+        created_at_micros: i64,
+    ) -> ControlRecordRow {
+        ControlRecordRow {
+            event_id,
+            scope: "org".to_string(),
+            kind: kind.to_string(),
+            org_id,
+            entity_id: entity_id.into(),
+            payload: serde_json::to_string(payload).unwrap(),
+            created_at: datetime_from_micros(created_at_micros),
+        }
+    }
+
+    fn replay_project(org_id: Uuid, project_id: Uuid, name: &str) -> ProjectRow {
+        ProjectRow {
+            id: project_id,
+            org_id,
+            name: name.to_string(),
+            description: None,
+            created_at: epoch(),
+        }
+    }
+
+    fn replay_run(org_id: Uuid, run_id: Uuid, status: &str) -> RunRow {
+        RunRow {
+            id: run_id,
+            org_id,
+            project_id: Uuid::from_u128(200),
+            project: "project".to_string(),
+            name: "train".to_string(),
+            status: status.to_string(),
+            config: json!({}),
+            tags: vec![],
+            metadata: json!({}),
+            created_at: epoch(),
+            started_at: epoch(),
+            finished_at: None,
+        }
+    }
 
     #[test]
     fn control_record_scope_keeps_user_identity_global() {
@@ -617,5 +946,398 @@ mod tests {
         assert_eq!(data.attributes[&(org_b, 1)].run_id, run_b);
         assert_eq!(data.allocate_attribute_id(org_a), 2);
         assert_eq!(data.allocate_attribute_id(org_b), 2);
+    }
+
+    #[test]
+    fn operational_replay_sorts_records_and_keeps_latest_projection() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let older = replay_run(org_id, run_id, "running");
+        let newer = replay_run(org_id, run_id, "finished");
+        let mut data = StoreData::default();
+
+        let stats = data
+            .apply_operational_records(
+                vec![
+                    replay_row("run", org_id, run_id.to_string(), &newer, 20),
+                    replay_row("run", org_id, run_id.to_string(), &older, 10),
+                ],
+                ReplayScope::All,
+            )
+            .unwrap();
+
+        assert_eq!(stats.latest_record_micros, 20);
+        assert_eq!(data.runs.len(), 1);
+        assert_eq!(data.runs[&run_id].status, "finished");
+        assert_eq!(
+            data.runs_by_org_created
+                .get(&(org_id, epoch(), run_id))
+                .copied(),
+            Some(run_id)
+        );
+    }
+
+    #[test]
+    fn operational_replay_is_deterministic_for_equal_timestamps() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let first = replay_row(
+            "run",
+            org_id,
+            run_id.to_string(),
+            &replay_run(org_id, run_id, "alpha"),
+            10,
+        );
+        let second = replay_row(
+            "run",
+            org_id,
+            run_id.to_string(),
+            &replay_run(org_id, run_id, "zulu"),
+            10,
+        );
+        let mut left = StoreData::default();
+        let mut right = StoreData::default();
+
+        left.apply_operational_records(vec![first.clone(), second.clone()], ReplayScope::All)
+            .unwrap();
+        right
+            .apply_operational_records(vec![second, first], ReplayScope::All)
+            .unwrap();
+
+        assert_eq!(left.runs[&run_id].status, right.runs[&run_id].status);
+    }
+
+    #[test]
+    fn control_replay_uses_event_id_as_equal_timestamp_tiebreaker() {
+        let org_id = Uuid::from_u128(1);
+        let older = OrganizationRow {
+            id: org_id,
+            slug: "org".to_string(),
+            name: "Older".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 1,
+            created_by_user_id: None,
+            created_at: epoch(),
+            tenant_routing_tier: "dedicated".to_string(),
+        };
+        let newer = OrganizationRow {
+            name: "Newer".to_string(),
+            ..older.clone()
+        };
+        let older_event_id = Uuid::from_u128(1);
+        let newer_event_id = Uuid::from_u128(2);
+        let mut data = StoreData::default();
+
+        let stats = data
+            .apply_control_records(vec![
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    newer_event_id,
+                    &newer,
+                    10,
+                ),
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    older_event_id,
+                    &older,
+                    10,
+                ),
+            ])
+            .unwrap();
+
+        assert_eq!(data.organizations[&org_id].name, "Newer");
+        assert_eq!(stats.latest_record_micros, 10);
+    }
+
+    #[test]
+    fn changed_tenant_routes_returns_only_final_route_differences() {
+        fn test_route(org_id: Uuid, endpoint: &str) -> TenantRouteRecord {
+            TenantRouteRecord {
+                org_id,
+                status: "ready".to_string(),
+                provisioner: "database".to_string(),
+                plan_tier: Some("free".to_string()),
+                warehouse_kind: Some("shared".to_string()),
+                requested_min_replica_memory_gb: Some(8),
+                requested_max_replica_memory_gb: Some(8),
+                requested_num_replicas: Some(1),
+                applied_min_replica_memory_gb: Some(8),
+                applied_max_replica_memory_gb: Some(8),
+                applied_num_replicas: Some(1),
+                endpoint: endpoint.to_string(),
+                database: "default".to_string(),
+                username: "default".to_string(),
+                password_secret_ref: Some("config:tenant_base_url_password".to_string()),
+                password_ciphertext: None,
+                service_id: None,
+                created_at: epoch(),
+                updated_at: epoch(),
+                error: None,
+            }
+        }
+
+        let stable_org_id = Uuid::from_u128(1);
+        let changed_org_id = Uuid::from_u128(2);
+        let new_org_id = Uuid::from_u128(3);
+        let stable = test_route(stable_org_id, "https://stable.example.com:8443");
+        let changed_before = test_route(changed_org_id, "https://old.example.com:8443");
+        let changed_after = test_route(changed_org_id, "https://new.example.com:8443");
+        let new_route = test_route(new_org_id, "https://new.example.com:8443");
+        let previous = BTreeMap::from([
+            (stable_org_id, stable.clone()),
+            (changed_org_id, changed_before),
+        ]);
+        let current = BTreeMap::from([
+            (stable_org_id, stable),
+            (changed_org_id, changed_after),
+            (new_org_id, new_route),
+        ]);
+
+        assert_eq!(
+            changed_tenant_routes(&previous, &current),
+            BTreeSet::from([changed_org_id, new_org_id])
+        );
+    }
+
+    #[test]
+    fn tenant_replay_rejects_record_from_another_org() {
+        let expected = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        let project_id = Uuid::from_u128(20);
+        let project = replay_project(other, project_id, "other");
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row(
+                    "project",
+                    other,
+                    project_id.to_string(),
+                    &project,
+                    10,
+                )],
+                ReplayScope::Tenant(expected),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn tenant_replay_rejects_payload_from_another_org() {
+        let expected = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        let project_id = Uuid::from_u128(20);
+        let project = replay_project(other, project_id, "misrouted");
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row(
+                    "project",
+                    expected,
+                    project_id.to_string(),
+                    &project,
+                    10,
+                )],
+                ReplayScope::Tenant(expected),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn tenant_replay_rejects_table_rows_entity_mismatch() {
+        let org_id = Uuid::from_u128(1);
+        let rows = TableRowsRecord {
+            attribute_id: 7,
+            rows: Vec::new(),
+        };
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row("table_rows", org_id, "8", &rows, 10)],
+                ReplayScope::Tenant(org_id),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn tenant_replay_rejects_usage_snapshot_for_another_org() {
+        let expected = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        let snapshot = json!({
+            "organizations": [{
+                "org_id": other.to_string(),
+                "usage": {}
+            }]
+        });
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row("usage_daily", expected, "daily", &snapshot, 10)],
+                ReplayScope::Tenant(expected),
+            )
+            .is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Shared-cell cross-org isolation regression test (non-negotiable).
+    //
+    // This test verifies that operational records for org A and org B can
+    // coexist in the same StoreData (as they do in the shared cell) without
+    // leaking across tenant boundaries.
+    //
+    // The shared cell stores records for many orgs in one ClickHouse database,
+    // isolated only by org_id predicates. The `ReplayScope::Tenant` guard
+    // already enforces org_id on replay; this test verifies the in-process
+    // index also keeps them separate for every entity type we use today.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn shared_cell_cross_org_isolation_in_process_index() {
+        let org_a = Uuid::from_u128(0xAAAA);
+        let org_b = Uuid::from_u128(0xBBBB);
+        let project_a = Uuid::from_u128(0xA000);
+        let project_b = Uuid::from_u128(0xB000);
+        let run_a = Uuid::from_u128(0xA001);
+        let run_b = Uuid::from_u128(0xB001);
+
+        // Build shared-cell records for both orgs using ReplayScope::All
+        // (the shared cell replays all orgs together on startup).
+        let mut data = StoreData::default();
+
+        let project_a_row = replay_project(org_a, project_a, "project-a");
+        let project_b_row = replay_project(org_b, project_b, "project-b");
+        let run_a_row = replay_run(org_a, run_a, "finished");
+        let run_b_row = replay_run(org_b, run_b, "running");
+
+        data.apply_operational_records(
+            vec![
+                replay_row("project", org_a, project_a.to_string(), &project_a_row, 1),
+                replay_row("project", org_b, project_b.to_string(), &project_b_row, 2),
+                replay_row("run", org_a, run_a.to_string(), &run_a_row, 3),
+                replay_row("run", org_b, run_b.to_string(), &run_b_row, 4),
+            ],
+            ReplayScope::All,
+        )
+        .unwrap();
+
+        // Org A can see its own run.
+        let a_runs: Vec<_> = data.runs.values().filter(|r| r.org_id == org_a).collect();
+        assert_eq!(a_runs.len(), 1, "org A should see exactly 1 run");
+        assert_eq!(a_runs[0].id, run_a);
+        assert_eq!(a_runs[0].status, "finished");
+
+        // Org A cannot see org B's run.
+        let a_sees_b = data
+            .runs
+            .values()
+            .any(|r| r.org_id == org_a && r.id == run_b);
+        assert!(!a_sees_b, "org A must not see org B's run");
+
+        // Org B can see its own run.
+        let b_runs: Vec<_> = data.runs.values().filter(|r| r.org_id == org_b).collect();
+        assert_eq!(b_runs.len(), 1, "org B should see exactly 1 run");
+        assert_eq!(b_runs[0].id, run_b);
+        assert_eq!(b_runs[0].status, "running");
+
+        // Org B cannot see org A's run.
+        let b_sees_a = data
+            .runs
+            .values()
+            .any(|r| r.org_id == org_b && r.id == run_a);
+        assert!(!b_sees_a, "org B must not see org A's run");
+
+        // Projects are also isolated.
+        let a_projects: Vec<_> = data
+            .projects
+            .values()
+            .filter(|p| p.org_id == org_a)
+            .collect();
+        let b_projects: Vec<_> = data
+            .projects
+            .values()
+            .filter(|p| p.org_id == org_b)
+            .collect();
+        assert_eq!(a_projects.len(), 1);
+        assert_eq!(b_projects.len(), 1);
+        assert_eq!(a_projects[0].id, project_a);
+        assert_eq!(b_projects[0].id, project_b);
+
+        // Attributes are keyed by (org_id, attribute_id), so the same
+        // attribute_id value for two different orgs must not collide.
+        data.insert_attribute(AttributeRow {
+            id: 1,
+            org_id: org_a,
+            run_id: run_a,
+            path: "loss".to_string(),
+            kind: "float_series".to_string(),
+            step: Some(1.0),
+            logged_at: Some(epoch()),
+            value: json!(0.1),
+            summary: json!({}),
+            artifact_id: None,
+            created_at: epoch(),
+        });
+        data.insert_attribute(AttributeRow {
+            id: 1,
+            org_id: org_b,
+            run_id: run_b,
+            path: "loss".to_string(),
+            kind: "float_series".to_string(),
+            step: Some(1.0),
+            logged_at: Some(epoch()),
+            value: json!(0.9),
+            summary: json!({}),
+            artifact_id: None,
+            created_at: epoch(),
+        });
+
+        // Each org has its own attribute slot with id=1.
+        assert_eq!(data.attributes.len(), 2);
+        assert_eq!(data.attributes[&(org_a, 1)].run_id, run_a);
+        assert_eq!(data.attributes[&(org_b, 1)].run_id, run_b);
+        // Values do not cross.
+        assert_ne!(
+            data.attributes[&(org_a, 1)].value,
+            data.attributes[&(org_b, 1)].value
+        );
+    }
+
+    #[test]
+    fn shared_cell_tenant_replay_validation_rejects_cross_org_records() {
+        // When replaying a specific org from the shared cell, records from
+        // another org must be rejected by ReplayScope::Tenant.
+        let org_a = Uuid::from_u128(0xAAAA);
+        let org_b = Uuid::from_u128(0xBBBB);
+        let project_b = Uuid::from_u128(0xB000);
+        let project_b_row = replay_project(org_b, project_b, "project-b");
+        let mut data = StoreData::default();
+
+        // Trying to replay an org_b record while scoped to org_a must fail.
+        let result = data.apply_operational_records(
+            vec![replay_row(
+                "project",
+                org_b,
+                project_b.to_string(),
+                &project_b_row,
+                10,
+            )],
+            ReplayScope::Tenant(org_a),
+        );
+        assert!(
+            result.is_err(),
+            "replaying a cross-org record in shared cell must be rejected"
+        );
+
+        // And the record must not have been inserted into the index.
+        assert!(
+            data.projects.is_empty(),
+            "cross-org project must not leak into org_a index"
+        );
     }
 }

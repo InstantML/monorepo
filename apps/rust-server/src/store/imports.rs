@@ -37,6 +37,21 @@ pub async fn import_payload(
         ensure_import_project_access(store, ctx, &canonical.project).await?;
         return Ok(json!({ "dry_run": true, "summary": summary }));
     }
+    ensure_import_project_access(store, ctx, &canonical.project).await?;
+    let project_exists = {
+        let data = store.data.lock().await;
+        ctx.auth.as_ref().and_then(|auth| auth.project_id).is_some()
+            || data
+                .projects_by_org_name
+                .contains_key(&(ctx.org_id, canonical.project.clone()))
+    };
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        import_usage_delta(&canonical, project_exists),
+        "import runs",
+    )
+    .await?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let mut data = store.data.lock().await;
     let project = match ctx.auth.as_ref().and_then(|auth| auth.project_id) {
@@ -153,6 +168,39 @@ pub async fn import_payload(
         .await?;
     data.imports.insert((ctx.org_id, import.id), import.clone());
     Ok(json!({ "dry_run": false, "summary": summary, "import": import }))
+}
+
+fn import_usage_delta(canonical: &CanonicalImport, project_exists: bool) -> UsageDelta {
+    let runs = canonical.runs.len() as i64;
+    let metric_points = canonical
+        .runs
+        .iter()
+        .map(|run| run.metrics.len() as i64)
+        .sum::<i64>();
+    let artifacts = canonical
+        .runs
+        .iter()
+        .map(|run| run.artifacts.len() as i64)
+        .sum::<i64>();
+    let artifact_bytes = canonical
+        .runs
+        .iter()
+        .flat_map(|run| run.artifacts.iter())
+        .filter_map(|artifact| artifact.size_bytes)
+        .sum::<i64>();
+    UsageDelta {
+        projects: if project_exists { 0 } else { 1 },
+        runs,
+        metric_points,
+        storage_bytes: artifact_bytes
+            + artifacts * ARTIFACT_METADATA_BYTES
+            + runs * RUN_METADATA_BYTES
+            + if project_exists {
+                0
+            } else {
+                PROJECT_METADATA_BYTES
+            },
+    }
 }
 
 #[derive(Default)]

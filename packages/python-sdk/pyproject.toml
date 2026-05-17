@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "instantml"
 version = "0.1.0"
-description = "Python SDK for logging InstantML training runs, metrics, artifacts, and rich objects."
+description = "Python SDK and CLI for logging InstantML training runs, metrics, artifacts, and rich objects."
 readme = "PYPI_README.md"
 requires-python = ">=3.11"
 license = "LicenseRef-Proprietary"
@@ -55,10 +55,12 @@ all = [
 ]
 
 [project.scripts]
+instantml = "instantml.cli:main"
 instantml-uploader = "instantml.uploader:main"
 
 [project.urls]
 Homepage = "https://instantml.ai"
 
-[tool.setuptools]
-packages = ["instantml"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["instantml*"]

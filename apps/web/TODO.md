@@ -415,7 +415,7 @@ These items came from the full frontend audit for issues like fixed minimum grid
   - Tests: smoke covers onboarding key creation; add scope/revocation UI tests when management lands.
 
 - [ ] Add usage summary UI.
-  - Global alignment: root P5/P7 tracks warning-only usage before billing truth.
+  - Global alignment: root P5/P7 tracks usage guardrails before billing truth.
   - Current app: no admin usage view.
   - Build: seats, projects, runs, metric points, metric series, artifacts, artifact bytes, active API keys, plan thresholds, and warning copy.
   - Tests: unknown artifact bytes are visible, warning states render, no invoice-truth language appears.

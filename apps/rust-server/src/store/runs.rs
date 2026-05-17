@@ -14,6 +14,31 @@ pub async fn create_project(
     }
     let name = validate_name(input.name.as_deref(), "project name")?;
     let description = validate_optional_name(input.description.as_deref(), "project description")?;
+    {
+        let data = store.data.lock().await;
+        if let Some(project_id) = data
+            .projects_by_org_name
+            .get(&(ctx.org_id, name.clone()))
+            .copied()
+        {
+            return data
+                .projects
+                .get(&project_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("project not found"));
+        }
+    }
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            projects: 1,
+            storage_bytes: PROJECT_METADATA_BYTES,
+            ..UsageDelta::default()
+        },
+        "create a project",
+    )
+    .await?;
     let mut data = store.data.lock().await;
     if let Some(project_id) = data
         .projects_by_org_name
@@ -69,6 +94,50 @@ pub async fn create_run(
     let config = validate_json_object(input.config, "config")?;
     let tags = validate_tags(input.tags)?;
     let metadata = validate_json_object(input.metadata, "metadata")?;
+    let project_exists = {
+        let data = store.data.lock().await;
+        match data
+            .projects_by_org_name
+            .get(&(ctx.org_id, project_name.clone()))
+            .copied()
+        {
+            Some(project_id) => {
+                if let Some(auth) = &ctx.auth {
+                    if auth.project_id.is_some_and(|id| id != project_id) {
+                        return Err(AppError::forbidden("run belongs to a different project"));
+                    }
+                }
+                true
+            }
+            None => {
+                if let Some(auth) = &ctx.auth {
+                    if auth.project_id.is_some() {
+                        return Err(AppError::forbidden(
+                            "project-scoped API key cannot create a different project",
+                        ));
+                    }
+                }
+                false
+            }
+        }
+    };
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            projects: if project_exists { 0 } else { 1 },
+            runs: 1,
+            storage_bytes: RUN_METADATA_BYTES
+                + if project_exists {
+                    0
+                } else {
+                    PROJECT_METADATA_BYTES
+                },
+            ..UsageDelta::default()
+        },
+        "create a run",
+    )
+    .await?;
     let mut data = store.data.lock().await;
     let project_id = match data
         .projects_by_org_name
@@ -229,10 +298,7 @@ pub async fn overview(
             .into_iter()
             .next()
             .map(|row| row.max);
-        let metric_points = metric_store
-            .count_points_for_org(ctx.org_id)
-            .await
-            .unwrap_or(0);
+        let metric_points = metric_store.count_points_for_org(ctx.org_id).await?;
         return Ok(json!({
             "overview": {
                 "total_runs": total_runs,
@@ -284,8 +350,7 @@ pub async fn overview(
                 });
             let metric_points = metric_store
                 .count_points_for_project(ctx.org_id, project)
-                .await
-                .unwrap_or(0);
+                .await?;
             return Ok(json!({
                 "overview": {
                     "total_runs": total_runs,
@@ -309,9 +374,7 @@ pub async fn overview(
         .iter()
         .filter_map(|row| row.best)
         .max_by(|a, b| a.total_cmp(b));
-    let metric_points = count_points_for_runs_chunked(&metric_store, ctx.org_id, &run_ids)
-        .await
-        .unwrap_or(0);
+    let metric_points = count_points_for_runs_chunked(&metric_store, ctx.org_id, &run_ids).await?;
     Ok(json!({
         "overview": {
             "total_runs": total_runs,
@@ -500,7 +563,7 @@ async fn sort_runs(
                 .then_with(|| b.created_at.cmp(&a.created_at))
         }),
         "created" => runs.sort_by_key(|run| std::cmp::Reverse(run.created_at)),
-        _ => unreachable!("validate_run_sort restricts values"),
+        _ => runs.sort_by_key(|run| std::cmp::Reverse(run.created_at)),
     }
     Ok(())
 }
@@ -956,7 +1019,7 @@ pub async fn log_metrics(
     let metrics = validate_metrics(input.metrics)?;
     let step = validate_step(&input.step, "step")?;
     let timestamp = validate_timestamp(input.timestamp.as_deref())?;
-    let request_hash = hash_idempotency(run_id, &raw);
+    let request_hash = hash_idempotency(run_id, &raw)?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let points = metrics
         .iter()
@@ -970,47 +1033,82 @@ pub async fn log_metrics(
             created_at: Utc::now(),
         })
         .collect::<Vec<_>>();
+    if let Some(key) = idempotency_key {
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            {
+                let data = store.data.lock().await;
+                if let Some(existing) = data
+                    .idempotency
+                    .get(&(ctx.org_id, key.clone()))
+                    .filter(|record| record.expires_at > Utc::now())
+                {
+                    if existing.request_hash == request_hash {
+                        return existing
+                            .response_json
+                            .get("inserted")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize)
+                            .ok_or_else(|| {
+                                AppError::internal("stored idempotency response is invalid")
+                            });
+                    }
+                    return Err(AppError::conflict(
+                        "idempotency key was already used with a different request body",
+                    ));
+                }
+                let run = fetch_run_in_data(&data, ctx, run_id)?;
+                ensure_run_access_in_data(ctx, &run)?;
+            }
+            enforce_plan_capacity(
+                store,
+                ctx.org_id,
+                UsageDelta {
+                    metric_points: points.len() as i64,
+                    ..UsageDelta::default()
+                },
+                "log metrics",
+            )
+            .await?;
+            metric_store.insert_points(&points).await?;
+            let record = IdempotencyRecord {
+                org_id: ctx.org_id,
+                key: key.clone(),
+                request_hash,
+                response_json: json!({ "inserted": points.len() }),
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            };
+            store
+                .persist_locked("idempotency", ctx.org_id, &key, &record)
+                .await?;
+            store
+                .data
+                .lock()
+                .await
+                .idempotency
+                .insert((ctx.org_id, key.clone()), record);
+            Ok(points.len())
+        }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
     {
         let data = store.data.lock().await;
-        if let Some(key) = &idempotency_key {
-            if let Some(existing) = data
-                .idempotency
-                .get(&(ctx.org_id, key.clone()))
-                .filter(|record| record.expires_at > Utc::now())
-            {
-                if existing.request_hash == request_hash {
-                    return existing
-                        .response_json
-                        .get("inserted")
-                        .and_then(Value::as_u64)
-                        .map(|value| value as usize)
-                        .ok_or_else(|| {
-                            AppError::internal("stored idempotency response is invalid")
-                        });
-                }
-                return Err(AppError::conflict(
-                    "idempotency key was already used with a different request body",
-                ));
-            }
-        }
         let run = fetch_run_in_data(&data, ctx, run_id)?;
         ensure_run_access_in_data(ctx, &run)?;
     }
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            metric_points: points.len() as i64,
+            ..UsageDelta::default()
+        },
+        "log metrics",
+    )
+    .await?;
     metric_store.insert_points(&points).await?;
-    if let Some(key) = idempotency_key {
-        let record = IdempotencyRecord {
-            org_id: ctx.org_id,
-            key: key.clone(),
-            request_hash,
-            response_json: json!({ "inserted": points.len() }),
-            expires_at: Utc::now() + ChronoDuration::days(7),
-        };
-        let mut data = store.data.lock().await;
-        store
-            .persist_locked("idempotency", ctx.org_id, &key, &record)
-            .await?;
-        data.idempotency.insert((ctx.org_id, key), record);
-    }
     Ok(points.len())
 }
 

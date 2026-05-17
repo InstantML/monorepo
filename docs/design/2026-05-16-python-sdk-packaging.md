@@ -36,7 +36,7 @@ PyPA's current packaging tutorial recommends a `pyproject.toml` build backend, b
 
 ## Proposed Design
 
-Add `packages/python-sdk/pyproject.toml` using `setuptools.build_meta`. The project name is `instantml`, version `0.1.0`, `requires-python >=3.11`, and the only included import package is `instantml`. The core package has no required dependencies because current SDK runtime code uses the standard library unless optional media/system helpers are invoked.
+Add `packages/python-sdk/pyproject.toml` using `setuptools.build_meta`. The project name is `instantml`, version `0.1.0`, `requires-python >=3.11`, and package discovery includes the `instantml` package plus any future `instantml.*` subpackages. The core package has no required dependencies because current SDK runtime code uses the standard library unless optional media/system helpers are invoked.
 
 Add `MANIFEST.in` so source distributions include user-facing docs and optional dependency pins while excluding tests, build output, caches, and generated files.
 
@@ -48,7 +48,7 @@ Add optional extras:
 
 Use a PyPI-specific README so the package page is user-facing and does not expose internal contributor workflow text from `packages/python-sdk/README.md`.
 
-Add `instantml-uploader = "instantml.uploader:main"` as a console entry point while preserving `python -m instantml.uploader`.
+Keep the upstream `instantml = "instantml.cli:main"` console entry point for device-code login and add `instantml-uploader = "instantml.uploader:main"` as a console entry point while preserving `python -m instantml.uploader`.
 
 ## Release Workflow
 

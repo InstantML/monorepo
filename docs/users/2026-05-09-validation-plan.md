@@ -38,7 +38,7 @@ Positioning validation is credible only after:
 Pricing validation is credible only after:
 
 - At least 5 pricing conversations with team size, storage, run volume, and current tool cost ranges.
-- At least 3 teams respond to concrete Free/Lab/Startup/Growth tier drafts.
+- At least 3 teams respond to concrete Free/Pro/Premium tier drafts.
 - At least 2 teams say what would trigger upgrade, churn, or self-host/VPC need.
 
 ## Interview Script
@@ -95,7 +95,7 @@ Record each call with:
 | Hosted-backend trust | 1-5 |
 | Willing to import | yes/no/maybe |
 | Willing to dual-log | yes/no/maybe |
-| Likely tier | Free/Lab/Startup/Growth/Enterprise |
+| Likely tier | Free/Pro/Premium/Enterprise |
 | Quote | Short anonymized quote |
 | Follow-up | Concrete next step |
 

@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>InstantML — Auth & Onboarding Redesign (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet" />
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   InstantML tokens (mirror of docs/design/assets/ui-overhaul-mocks/tokens.css)
+   Engineering-brutalism: confident dark, emerald accent, mono eyebrows,
+   italic-serif emphasis, hairline borders, grid + glow.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  color-scheme: dark;
+  --bg:#07080c; --bg-soft:#0a0c12; --surface:#0d0f15; --surface-2:#12141c;
+  --surface-3:#171a24; --surface-hover:#1a1d28; --surface-selected:#11231d;
+  --line:#1c1f2a; --line-soft:#151923; --line-strong:#242937;
+  --text:#f8fafc; --text-2:#cbd5e1; --muted:#94a3b8; --faint:#8b97a8; --dim:#5b6678;
+  --accent:#34d399; --accent-strong:#6ee7b7; --accent-soft:rgba(52,211,153,.12);
+  --accent-line:rgba(52,211,153,.32);
+  --warm:#e0b07a; --warm-soft:rgba(224,176,122,.14);
+  --danger:#f87171; --danger-soft:rgba(248,113,113,.14); --info:#7da1e8;
+  --font-sans:"Geist","Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"Geist Mono","JetBrains Mono",ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  --font-serif:"Instrument Serif",Georgia,"Times New Roman",serif;
+  --fs-11:11px; --fs-12:12px; --fs-13:13px; --fs-14:14px; --fs-16:16px;
+  --fs-20:20px; --fs-28:28px; --fs-40:40px;
+  --tracking-eyebrow:.1em; --tracking-tight:-.01em; --tracking-display:-.02em;
+  --topbar-h:48px;
+  --radius-sm:4px; --radius:6px; --radius-lg:10px; --radius-pill:999px;
+  --shadow-pop:0 1px 0 rgba(0,0,0,.6),0 12px 32px rgba(0,0,0,.4);
+  --shadow-card:0 1px 0 rgba(255,255,255,.02) inset,0 24px 70px -28px rgba(0,0,0,.8);
+  --bg-grid:
+    radial-gradient(900px 600px at 50% -8%, rgba(52,211,153,.07), transparent 70%),
+    linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),
+    var(--bg);
+  --bg-grid-size:auto,48px 48px,48px 48px,auto;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; color:var(--text);
+  background:var(--bg-grid); background-size:var(--bg-grid-size); background-attachment:fixed;
+  font:13px/1.45 var(--font-sans);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+button{font:inherit;color:inherit;background:transparent;border:0;padding:0;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+a{color:inherit;text-decoration:none}
+svg{display:block}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+/* ── Primitives ─────────────────────────────────────────────────────────── */
+.eyebrow{font:600 var(--fs-11)/1 var(--font-mono);letter-spacing:var(--tracking-eyebrow);
+  text-transform:uppercase;color:var(--muted)}
+.eyebrow--accent{color:var(--accent)}
+.eyebrow--danger{color:var(--danger)}
+.serif-em{font-family:var(--font-serif);font-style:italic;font-weight:400;
+  font-size:1.08em;letter-spacing:0;color:var(--text-2)}
+.headline{font:700 var(--fs-28)/1.08 var(--font-sans);letter-spacing:var(--tracking-display);
+  color:var(--text);margin:0}
+.subcopy{color:var(--muted);font-size:var(--fs-13);line-height:1.6;margin:0;max-width:46ch}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;
+  padding:0 14px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--radius);color:var(--text);font:600 var(--fs-13)/1 var(--font-sans);
+  cursor:pointer;transition:background .14s ease,border-color .14s ease,color .14s ease,transform .14s ease;
+  white-space:nowrap}
+.btn:hover{background:var(--surface-hover);border-color:var(--line-strong)}
+.btn:active{transform:translateY(1px)}
+.btn--ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn--ghost:hover{background:var(--surface-hover);color:var(--text)}
+.btn--outline{background:transparent;border-color:var(--line-strong);color:var(--text-2)}
+.btn--outline:hover{background:var(--surface-hover);color:var(--text)}
+.btn--primary{background:var(--accent);border-color:var(--accent);color:#051d12}
+.btn--primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+.btn--lg{height:44px;padding:0 18px;font-size:var(--fs-14)}
+.btn--block{width:100%}
+.btn .arrow{transition:transform .16s ease}
+.btn:hover .arrow{transform:translateX(3px)}
+
+.chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+  color:var(--text-2);font:500 var(--fs-11)/1 var(--font-mono);letter-spacing:.02em;white-space:nowrap}
+.chip--accent{color:var(--accent);border-color:var(--accent-line);background:var(--accent-soft)}
+.chip--warm{color:var(--warm);border-color:rgba(224,176,122,.34);background:var(--warm-soft)}
+.chip--muted{color:var(--muted)}
+
+.dot{width:7px;height:7px;border-radius:999px;background:var(--faint);flex:0 0 auto}
+.dot--running{background:var(--accent);animation:pulse 1.8s ease-out infinite}
+.dot--ok{background:var(--accent)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.45)}
+  70%{box-shadow:0 0 0 7px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+
+.field{display:grid;gap:7px}
+.field > label{font:600 var(--fs-12)/1 var(--font-sans);color:var(--text-2);
+  display:flex;align-items:center;justify-content:space-between;gap:10px}
+.input{height:40px;padding:0 12px;background:var(--bg-soft);border:1px solid var(--line);
+  border-radius:var(--radius);color:var(--text);font:500 var(--fs-14)/1 var(--font-sans);
+  outline:none;transition:border-color .14s ease,box-shadow .14s ease;width:100%}
+.input::placeholder{color:var(--faint)}
+.input:focus{border-color:var(--accent-line);box-shadow:0 0 0 3px rgba(52,211,153,.13)}
+textarea.input{height:auto;padding:10px 12px;line-height:1.5;resize:vertical;min-height:74px;
+  font-family:var(--font-mono);font-size:var(--fs-12)}
+.hint{font:500 var(--fs-11)/1.4 var(--font-mono);color:var(--muted);letter-spacing:.01em}
+.hint--ok{color:var(--accent)}
+.hint--err{color:var(--danger)}
+
+/* ── Page chrome (auth literally looks like the dashboard's exterior wall) ── */
+.brandbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;
+  justify-content:space-between;gap:14px;height:var(--topbar-h);padding:0 18px;
+  border-bottom:1px solid var(--line);background:rgba(7,8,12,.86);
+  backdrop-filter:blur(10px) saturate(140%)}
+.brand{display:flex;align-items:center;gap:10px;font:700 var(--fs-14)/1 var(--font-sans);
+  letter-spacing:var(--tracking-tight)}
+.brand-mark{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:7px;
+  border:1px solid var(--accent-line);color:var(--accent);
+  background:linear-gradient(180deg,rgba(52,211,153,.12),rgba(52,211,153,.02))}
+.brand-mark svg{width:17px;height:17px}
+.nav-actions{display:flex;align-items:center;gap:8px}
+
+.stage{min-height:calc(100vh - var(--topbar-h));display:grid;place-items:center;
+  padding:46px 18px 90px}
+
+/* ── Auth card ─────────────────────────────────────────────────────────── */
+.auth{width:min(880px,100%);border:1px solid var(--line);border-radius:var(--radius-lg);
+  background:linear-gradient(180deg,rgba(18,20,28,.6),rgba(13,15,21,.92));
+  box-shadow:var(--shadow-card);overflow:hidden;
+  display:grid;grid-template-columns:300px 1fr}
+.auth--single{grid-template-columns:1fr;width:min(520px,100%)}
+
+.auth-aside{padding:30px 26px;border-right:1px solid var(--line-soft);
+  background:radial-gradient(420px 280px at 0% 0%,rgba(52,211,153,.07),transparent 60%);
+  display:flex;flex-direction:column;gap:22px}
+.aside-brand{display:flex;align-items:center;gap:10px}
+.aside-mark{width:34px;height:34px}
+.aside-name{font:700 var(--fs-16)/1 var(--font-sans);letter-spacing:var(--tracking-tight)}
+.aside-tag{font:500 var(--fs-12)/1.6 var(--font-sans);color:var(--muted)}
+.aside-tag .serif-em{color:var(--warm)}
+
+/* numbered steps — public-site numbered-card motif */
+.steps{display:grid;gap:2px;margin-top:auto}
+.step{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;
+  padding:12px 0;border-top:1px solid var(--line-soft)}
+.step:first-child{border-top:0}
+.step .idx{font:400 22px/1 var(--font-serif);font-style:italic;color:var(--muted)}
+.step .st-title{font:600 var(--fs-13)/1.2 var(--font-sans);color:var(--text-2)}
+.step .st-sub{font:500 var(--fs-11)/1.4 var(--font-mono);color:var(--muted);margin-top:4px}
+.step.is-active .idx{color:var(--accent)}
+.step.is-active .st-title{color:var(--text)}
+.step.is-done .idx{color:var(--accent);font-style:normal;font-family:var(--font-sans);font-size:15px}
+.step.is-done .st-title{color:var(--muted)}
+
+.aside-proof{border:1px solid var(--line);border-radius:var(--radius);background:var(--bg-soft);
+  overflow:hidden}
+.proof-head{display:flex;align-items:center;gap:8px;padding:8px 10px;
+  border-bottom:1px solid var(--line-soft);font:600 var(--fs-11)/1 var(--font-mono);
+  letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.proof-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;
+  padding:7px 10px;border-top:1px solid var(--line-soft);font:500 var(--fs-12)/1 var(--font-mono)}
+.proof-row:first-of-type{border-top:0}
+.proof-row .nm{color:var(--text-2)}
+.proof-row .sc{color:var(--accent)}
+.proof-row .sc.dim{color:var(--muted)}
+
+.auth-main{padding:34px 38px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.auth-head{display:grid;gap:12px}
+.auth-head .eyebrow{display:flex;align-items:center;gap:8px}
+.auth-actions{display:grid;gap:10px;margin-top:2px}
+.auth-foot{display:flex;align-items:center;gap:6px;font-size:var(--fs-12);color:var(--muted)}
+.auth-foot a{color:var(--text-2);font-weight:600;border-bottom:1px solid var(--line-strong)}
+.auth-foot a:hover{color:var(--accent)}
+
+.status{display:flex;align-items:center;gap:9px;min-height:34px;padding:9px 12px;
+  border:1px solid var(--line-soft);border-radius:var(--radius);background:var(--bg-soft);
+  font:500 var(--fs-12)/1.4 var(--font-mono);color:var(--muted)}
+.status--busy{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-strong)}
+.status--err{border-color:rgba(248,113,113,.34);background:var(--danger-soft);color:#fca5a5}
+.spinner{width:13px;height:13px;border-radius:50%;border:2px solid rgba(52,211,153,.25);
+  border-top-color:var(--accent);animation:spin .7s linear infinite;flex:0 0 auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Segmented control (account type) ──────────────────────────────────── */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg button{display:grid;gap:5px;padding:12px 14px;text-align:left;border:1px solid var(--line);
+  border-radius:var(--radius);background:var(--bg-soft);transition:border-color .14s,background .14s}
+.seg button:hover{border-color:var(--line-strong);background:var(--surface-2)}
+.seg button.is-on{border-color:var(--accent-line);background:var(--accent-soft);
+  box-shadow:0 0 0 1px rgba(52,211,153,.18) inset}
+.seg .seg-t{display:flex;align-items:center;gap:8px;font:600 var(--fs-13)/1 var(--font-sans);color:var(--text)}
+.seg .seg-d{font:500 var(--fs-11)/1.4 var(--font-mono);color:var(--muted)}
+.seg button.is-on .seg-t{color:var(--accent-strong)}
+.seg .tick{width:14px;height:14px;border-radius:50%;border:1px solid var(--line-strong);
+  display:grid;place-items:center;color:transparent;font-size:9px}
+.seg button.is-on .tick{border-color:var(--accent);background:var(--accent);color:#04130d}
+
+/* ── Org summary (onboarding) ──────────────────────────────────────────── */
+.org-card{display:flex;align-items:center;gap:13px;padding:14px 16px;border:1px solid var(--line);
+  border-radius:var(--radius);background:var(--surface-2)}
+.org-badge{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  border:1px solid var(--accent-line);background:var(--accent-soft);color:var(--accent);flex:0 0 auto}
+.org-meta{display:grid;gap:3px;min-width:0}
+.org-meta strong{font:700 var(--fs-14)/1 var(--font-sans)}
+.org-meta span{font:500 var(--fs-12)/1 var(--font-mono);color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── Terminal / copy-once key ──────────────────────────────────────────── */
+.term{border:1px solid var(--line);border-radius:var(--radius);background:#06070b;overflow:hidden}
+.term-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;
+  border-bottom:1px solid var(--line-soft);background:var(--bg-soft)}
+.term-bar .tl{font:600 var(--fs-11)/1 var(--font-mono);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted)}
+.term-bar .spacer{flex:1}
+.copy-btn{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;
+  border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface-2);
+  color:var(--text-2);font:600 var(--fs-11)/1 var(--font-mono);cursor:pointer}
+.copy-btn:hover{color:var(--accent);border-color:var(--accent-line);background:var(--accent-soft)}
+.term-body{padding:13px 14px;font:500 var(--fs-12)/1.7 var(--font-mono);overflow-x:auto}
+.term-body .ln{white-space:pre;color:var(--text-2)}
+.term-body .pr{color:var(--accent);user-select:none}
+.term-body .key{color:var(--accent-strong)}
+.term-body .cm{color:var(--muted)}
+
+.divider{display:flex;align-items:center;gap:12px;color:var(--muted);
+  font:600 var(--fs-11)/1 var(--font-mono);letter-spacing:.1em}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line-soft)}
+
+/* ── Landing hero (compact, for nav context) ───────────────────────────── */
+.hero{width:min(880px,100%);display:grid;gap:18px;text-align:left}
+.hero h1{font:700 clamp(40px,6vw,62px)/1 var(--font-sans);letter-spacing:var(--tracking-display);
+  margin:0;max-width:14ch}
+.hero .lede{color:var(--muted);font-size:var(--fs-16);line-height:1.6;max-width:54ch;margin:0}
+.hero-cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.hero-proof{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+
+/* ── Mockup-only state switcher ────────────────────────────────────────── */
+.switch{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99;
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;
+  max-width:calc(100% - 24px);padding:8px 10px;border:1px dashed var(--line-strong);
+  border-radius:var(--radius-pill);background:rgba(10,12,18,.94);
+  backdrop-filter:blur(8px);box-shadow:var(--shadow-pop)}
+.switch .lbl{font:600 9px/1 var(--font-mono);letter-spacing:.14em;color:var(--dim);
+  text-transform:uppercase;padding:0 6px}
+.switch button{height:26px;padding:0 11px;border-radius:var(--radius-pill);
+  border:1px solid var(--line);background:var(--surface-2);color:var(--muted);
+  font:600 11px/1 var(--font-mono);cursor:pointer}
+.switch button:hover{color:var(--text);border-color:var(--line-strong)}
+.switch button.is-on{background:var(--accent);border-color:var(--accent);color:#04130d}
+
+.scene{display:none;width:100%;justify-content:center}
+.scene.is-on{display:flex;animation:rise .4s cubic-bezier(.16,.84,.44,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.scene .auth,.scene .hero{animation:rise .5s cubic-bezier(.16,.84,.44,1) .04s both}
+
+@media (max-width:760px){
+  .auth,.auth--single{grid-template-columns:1fr;width:min(520px,100%)}
+  .auth-aside{border-right:0;border-bottom:1px solid var(--line-soft);flex-direction:column}
+  .auth-main{padding:26px 22px}
+  .seg{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<!-- chrome -->
+<header class="brandbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 240 240"><rect x="24" y="132" width="44" height="92" rx="6" fill="currentColor" opacity=".55"/><rect x="98" y="86" width="44" height="138" rx="6" fill="currentColor" opacity=".78"/><rect x="172" y="40" width="44" height="184" rx="6" fill="currentColor"/><path d="M152 16 88 124h40L80 232l64-116h-40Z" fill="#0d0f15" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+    </span>
+    InstantML
+  </div>
+  <div class="nav-actions" id="navActions"><!-- swapped per scene --></div>
+</header>
+
+<main class="stage">
+
+  <!-- ══ Landing — signed out ══ -->
+  <section class="scene" data-scene="landing-out">
+    <div class="hero">
+      <p class="eyebrow eyebrow--accent">Training observability for serious ML teams</p>
+      <h1>The training tool you keep <span class="serif-em">open all day.</span></h1>
+      <p class="lede">Fast logging, fast comparison, clear artifacts, and a Rust/ClickHouse backend your team can trust. One <code style="font-family:var(--font-mono);color:var(--text-2)">pip install</code>, three SDK calls.</p>
+      <div class="hero-cta">
+        <button class="btn btn--primary btn--lg">Start a workspace <svg class="arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <button class="btn btn--outline btn--lg">Sign in</button>
+      </div>
+      <div class="hero-proof">
+        <span class="chip chip--accent"><span class="dot dot--running"></span> Bounded metric charts</span>
+        <span class="chip">Copy-once SDK keys</span>
+        <span class="chip">Rust / ClickHouse storage</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Landing — signed in (working Open app + Sign out) ══ -->
+  <section class="scene" data-scene="landing-in">
+    <div class="hero">
+      <p class="eyebrow eyebrow--accent">Welcome back</p>
+      <h1>Your workspace is <span class="serif-em">ready.</span></h1>
+      <p class="lede">Signed in as <strong style="color:var(--text-2)">instantml.ai@gmail.com</strong> · <strong style="color:var(--text-2)">InstantML.ai</strong>. Jump back into your runs or sign out of this device.</p>
+      <div class="hero-cta">
+        <button class="btn btn--primary btn--lg">Open app <svg class="arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <button class="btn btn--outline btn--lg">Sign out</button>
+      </div>
+      <p class="hint">Sign out clears this browser session and your Clerk session — you'll return here signed out.</p>
+    </div>
+  </section>
+
+  <!-- ══ Sign in ══ -->
+  <section class="scene" data-scene="signin">
+    <div class="auth">
+      <aside class="auth-aside">
+        <div class="aside-brand">
+          <span class="brand-mark aside-mark" aria-hidden="true">
+            <svg viewBox="0 0 240 240"><rect x="24" y="132" width="44" height="92" rx="6" fill="currentColor" opacity=".55"/><rect x="98" y="86" width="44" height="138" rx="6" fill="currentColor" opacity=".78"/><rect x="172" y="40" width="44" height="184" rx="6" fill="currentColor"/><path d="M152 16 88 124h40L80 232l64-116h-40Z" fill="#0d0f15" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="aside-name">InstantML</span>
+        </div>
+        <p class="aside-tag">Pick up exactly where your <span class="serif-em">last run</span> left off.</p>
+        <div class="aside-proof" aria-hidden="true">
+          <div class="proof-head"><span class="dot dot--running"></span> Recent runs</div>
+          <div class="proof-row"><span class="nm">rl-ppo-seed-44</span><span class="sc">0.91</span></div>
+          <div class="proof-row"><span class="nm">llm-ft-seed-21</span><span class="sc dim">0.87</span></div>
+          <div class="proof-row"><span class="nm">reward-ablation-13</span><span class="sc dim">0.82</span></div>
+        </div>
+      </aside>
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow">Managed Clerk auth</p>
+          <h2 class="headline">Sign in to your <span class="serif-em">workspace</span></h2>
+          <p class="subcopy">One step: Clerk verifies your identity, then InstantML opens the scoped session for your org. No second confirmation.</p>
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3 4 6v6c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+            Continue with Clerk
+            <svg class="arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="status" role="status">Sign in with Clerk to access your workspace.</div>
+        <div class="auth-foot">New to InstantML? <a href="#">Create a workspace</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Sign in — redirecting (busy) ══ -->
+  <section class="scene" data-scene="signin-busy">
+    <div class="auth" aria-busy="true">
+      <aside class="auth-aside">
+        <div class="aside-brand">
+          <span class="brand-mark aside-mark" aria-hidden="true">
+            <svg viewBox="0 0 240 240"><rect x="24" y="132" width="44" height="92" rx="6" fill="currentColor" opacity=".55"/><rect x="98" y="86" width="44" height="138" rx="6" fill="currentColor" opacity=".78"/><rect x="172" y="40" width="44" height="184" rx="6" fill="currentColor"/><path d="M152 16 88 124h40L80 232l64-116h-40Z" fill="#0d0f15" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="aside-name">InstantML</span>
+        </div>
+        <p class="aside-tag">Pick up exactly where your <span class="serif-em">last run</span> left off.</p>
+        <div class="aside-proof" aria-hidden="true">
+          <div class="proof-head"><span class="dot dot--running"></span> Recent runs</div>
+          <div class="proof-row"><span class="nm">rl-ppo-seed-44</span><span class="sc">0.91</span></div>
+          <div class="proof-row"><span class="nm">llm-ft-seed-21</span><span class="sc dim">0.87</span></div>
+          <div class="proof-row"><span class="nm">reward-ablation-13</span><span class="sc dim">0.82</span></div>
+        </div>
+      </aside>
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow">Managed Clerk auth</p>
+          <h2 class="headline">Opening your workspace</h2>
+          <p class="subcopy">Exchanging your verified Clerk session for a scoped InstantML workspace session.</p>
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block" disabled style="opacity:.7;cursor:progress">
+            <span class="spinner" style="border-top-color:#04130d;border-color:rgba(4,19,13,.3)"></span> Signing in…
+          </button>
+        </div>
+        <div class="status status--busy" role="status"><span class="spinner"></span> Signed in. Opening your dashboard…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Sign up — Customer ══ -->
+  <section class="scene" data-scene="signup-customer">
+    <div class="auth">
+      <aside class="auth-aside">
+        <div class="aside-brand">
+          <span class="brand-mark aside-mark" aria-hidden="true">
+            <svg viewBox="0 0 240 240"><rect x="24" y="132" width="44" height="92" rx="6" fill="currentColor" opacity=".55"/><rect x="98" y="86" width="44" height="138" rx="6" fill="currentColor" opacity=".78"/><rect x="172" y="40" width="44" height="184" rx="6" fill="currentColor"/><path d="M152 16 88 124h40L80 232l64-116h-40Z" fill="#0d0f15" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="aside-name">InstantML</span>
+        </div>
+        <p class="aside-tag">A workspace your whole team can <span class="serif-em">trust.</span></p>
+        <div class="steps">
+          <div class="step is-active"><span class="idx">01</span><div><div class="st-title">Name your workspace</div><div class="st-sub">Account type + org</div></div></div>
+          <div class="step"><span class="idx">02</span><div><div class="st-title">Verify with Clerk</div><div class="st-sub">Google / email</div></div></div>
+          <div class="step"><span class="idx">03</span><div><div class="st-title">Create an SDK key</div><div class="st-sub">Start logging</div></div></div>
+        </div>
+      </aside>
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow">Create workspace</p>
+          <h2 class="headline">Set up your <span class="serif-em">org</span></h2>
+          <p class="subcopy">Name it now — Clerk verifies you next, then your workspace is created in one pass.</p>
+        </div>
+        <div class="field">
+          <label>Account type</label>
+          <div class="seg">
+            <button class="is-on" type="button">
+              <span class="seg-t"><span class="tick">&#10003;</span> Customer</span>
+              <span class="seg-d">Personal workspace · 1 seat</span>
+            </button>
+            <button type="button">
+              <span class="seg-t"><span class="tick">&#10003;</span> Business</span>
+              <span class="seg-d">Team org · 3 seats, reservable</span>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Organization name <span class="hint">required</span></label>
+          <input class="input" value="Ada Personal" />
+          <span class="hint hint--ok">&#10003; instantml.ai/ada-personal is available</span>
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3 4 6v6c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+            Continue with Clerk
+            <svg class="arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="status" role="status">Choose a name, then continue — Clerk handles verification.</div>
+        <div class="auth-foot">Already have a workspace? <a href="#">Sign in</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Sign up — Business (seats) ══ -->
+  <section class="scene" data-scene="signup-business">
+    <div class="auth">
+      <aside class="auth-aside">
+        <div class="aside-brand">
+          <span class="brand-mark aside-mark" aria-hidden="true">
+            <svg viewBox="0 0 240 240"><rect x="24" y="132" width="44" height="92" rx="6" fill="currentColor" opacity=".55"/><rect x="98" y="86" width="44" height="138" rx="6" fill="currentColor" opacity=".78"/><rect x="172" y="40" width="44" height="184" rx="6" fill="currentColor"/><path d="M152 16 88 124h40L80 232l64-116h-40Z" fill="#0d0f15" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="aside-name">InstantML</span>
+        </div>
+        <p class="aside-tag">A workspace your whole team can <span class="serif-em">trust.</span></p>
+        <div class="steps">
+          <div class="step is-active"><span class="idx">01</span><div><div class="st-title">Name your workspace</div><div class="st-sub">Account type + org</div></div></div>
+          <div class="step"><span class="idx">02</span><div><div class="st-title">Verify with Clerk</div><div class="st-sub">Google / email</div></div></div>
+          <div class="step"><span class="idx">03</span><div><div class="st-title">Create an SDK key</div><div class="st-sub">Start logging</div></div></div>
+        </div>
+      </aside>
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow">Create workspace</p>
+          <h2 class="headline">Set up your <span class="serif-em">team org</span></h2>
+          <p class="subcopy">Name it now — Clerk verifies you next, then your workspace is created in one pass.</p>
+        </div>
+        <div class="field">
+          <label>Account type</label>
+          <div class="seg">
+            <button type="button">
+              <span class="seg-t"><span class="tick">&#10003;</span> Customer</span>
+              <span class="seg-d">Personal workspace · 1 seat</span>
+            </button>
+            <button class="is-on" type="button">
+              <span class="seg-t"><span class="tick">&#10003;</span> Business</span>
+              <span class="seg-d">Team org · 3 seats, reservable</span>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Organization name <span class="hint">required</span></label>
+          <input class="input" value="Acme Research" />
+          <span class="hint hint--ok">&#10003; instantml.ai/acme-research is available</span>
+        </div>
+        <div class="field">
+          <label>Reserve seats <span class="chip chip--muted">1 / 3 used</span></label>
+          <textarea class="input" rows="3">priya@acme.com
+sam@acme.com</textarea>
+          <span class="hint">No invitations are sent yet — this only reserves org seats for these emails.</span>
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3 4 6v6c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+            Continue with Clerk
+            <svg class="arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="status" role="status">2 seats reserved · 1 seat left. Continue when ready.</div>
+        <div class="auth-foot">Already have a workspace? <a href="#">Sign in</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Onboarding — start ══ -->
+  <section class="scene" data-scene="onboard">
+    <div class="auth">
+      <aside class="auth-aside">
+        <div class="aside-brand">
+          <span class="brand-mark aside-mark" aria-hidden="true">
+            <svg viewBox="0 0 240 240"><rect x="24" y="132" width="44" height="92" rx="6" fill="currentColor" opacity=".55"/><rect x="98" y="86" width="44" height="138" rx="6" fill="currentColor" opacity=".78"/><rect x="172" y="40" width="44" height="184" rx="6" fill="currentColor"/><path d="M152 16 88 124h40L80 232l64-116h-40Z" fill="#0d0f15" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="aside-name">InstantML</span>
+        </div>
+        <p class="aside-tag">You're <span class="serif-em">almost</span> logging.</p>
+        <div class="steps">
+          <div class="step is-done"><span class="idx">&#10003;</span><div><div class="st-title">Workspace created</div><div class="st-sub">InstantML.ai · owner</div></div></div>
+          <div class="step is-done"><span class="idx">&#10003;</span><div><div class="st-title">Identity verified</div><div class="st-sub">via Clerk</div></div></div>
+          <div class="step is-active"><span class="idx">03</span><div><div class="st-title">Create an SDK key</div><div class="st-sub">Then open the dashboard</div></div></div>
+        </div>
+      </aside>
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow eyebrow--accent">Finish onboarding</p>
+          <h2 class="headline">Create your <span class="serif-em">SDK key</span></h2>
+          <p class="subcopy">A scoped, copy-once key for <code style="font-family:var(--font-mono);color:var(--text-2)">sdk:ingest</code>, <code style="font-family:var(--font-mono);color:var(--text-2)">artifacts:write</code>, and <code style="font-family:var(--font-mono);color:var(--text-2)">export:read</code>. Save it before you open the dashboard.</p>
+        </div>
+        <div class="org-card">
+          <span class="org-badge"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4L19 7"/></svg></span>
+          <div class="org-meta"><strong>InstantML.ai</strong><span>instantml.ai@gmail.com · owner</span></div>
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 4l3 3M14 6l2 2"/></svg>
+            Create SDK API key
+          </button>
+        </div>
+        <div class="status" role="status">A copy-once key is created and shown exactly once. We never store the plaintext.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Onboarding — key revealed ══ -->
+  <section class="scene" data-scene="onboard-key">
+    <div class="auth">
+      <aside class="auth-aside">
+        <div class="aside-brand">
+          <span class="brand-mark aside-mark" aria-hidden="true">
+            <svg viewBox="0 0 240 240"><rect x="24" y="132" width="44" height="92" rx="6" fill="currentColor" opacity=".55"/><rect x="98" y="86" width="44" height="138" rx="6" fill="currentColor" opacity=".78"/><rect x="172" y="40" width="44" height="184" rx="6" fill="currentColor"/><path d="M152 16 88 124h40L80 232l64-116h-40Z" fill="#0d0f15" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="aside-name">InstantML</span>
+        </div>
+        <p class="aside-tag">Three SDK calls and you're <span class="serif-em">live.</span></p>
+        <div class="steps">
+          <div class="step is-done"><span class="idx">&#10003;</span><div><div class="st-title">Workspace created</div><div class="st-sub">InstantML.ai · owner</div></div></div>
+          <div class="step is-done"><span class="idx">&#10003;</span><div><div class="st-title">Identity verified</div><div class="st-sub">via Clerk</div></div></div>
+          <div class="step is-done"><span class="idx">&#10003;</span><div><div class="st-title">SDK key created</div><div class="st-sub">Copy it now</div></div></div>
+        </div>
+      </aside>
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow eyebrow--accent">Copy-once key</p>
+          <h2 class="headline">Save it, then <span class="serif-em">go.</span></h2>
+          <p class="subcopy">This is the only time the plaintext key is shown. Copy it into your environment and you're logging.</p>
+        </div>
+        <div class="term">
+          <div class="term-bar"><span class="tl">instantml · sdk key</span><span class="spacer"></span>
+            <button class="copy-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg> Copy key</button>
+          </div>
+          <div class="term-body">
+<div class="ln"><span class="cm"># copy-once — store it in your secret manager</span></div>
+<div class="ln"><span class="key">instantml_sk_9f3c1a7e42b8d5604c1e9a7f3b2d8e60</span></div>
+          </div>
+        </div>
+        <div class="term">
+          <div class="term-bar"><span class="tl">your machine</span><span class="spacer"></span>
+            <button class="copy-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg> Copy</button>
+          </div>
+          <div class="term-body">
+<div class="ln"><span class="pr">$ </span>export INSTANTML_API_KEY=<span class="key">instantml_sk_…</span></div>
+<div class="ln"><span class="pr">$ </span>python train.py</div>
+          </div>
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block">Open dashboard
+            <svg class="arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="status status--busy" role="status"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m5 13 4 4L19 7"/></svg> API key copied. Save it before opening the dashboard.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Onboarding — read-only demo ══ -->
+  <section class="scene" data-scene="onboard-demo">
+    <div class="auth auth--single">
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow">Read-only demo</p>
+          <h2 class="headline">Browsing the demo workspace</h2>
+          <p class="subcopy">The shared demo signs you into sample data. It does not reveal SDK keys and is read-only — perfect for a look around, not for ingestion.</p>
+        </div>
+        <div class="org-card">
+          <span class="org-badge"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span>
+          <div class="org-meta"><strong>InstantML Demo</strong><span>hello@instantml.ai · read-only</span></div>
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block">Open the demo dashboard
+            <svg class="arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+          <button class="btn btn--ghost btn--block">Create a real workspace instead</button>
+        </div>
+        <div class="status" role="status">Demo sessions browse sample runs; sign up for a workspace to push your own.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Error ══ -->
+  <section class="scene" data-scene="error">
+    <div class="auth auth--single">
+      <div class="auth-main">
+        <div class="auth-head">
+          <p class="eyebrow eyebrow--danger">Sign-in error</p>
+          <h2 class="headline">That didn't work.</h2>
+          <p class="subcopy">We couldn't open your workspace session. Your sign-in was not completed and nothing was changed.</p>
+        </div>
+        <div class="status status--err" role="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+          You do not have access to this workspace. Request a seat from your org owner.
+        </div>
+        <div class="auth-actions">
+          <button class="btn btn--primary btn--lg btn--block">Try again</button>
+          <button class="btn btn--ghost btn--block">Back to sign in</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- mockup-only state switcher -->
+<nav class="switch" aria-label="Mockup state switcher">
+  <span class="lbl">Mockup</span>
+  <button data-go="landing-out">Landing · out</button>
+  <button data-go="landing-in">Landing · in</button>
+  <button data-go="signin">Sign in</button>
+  <button data-go="signin-busy">Sign in · busy</button>
+  <button data-go="signup-customer">Sign up · customer</button>
+  <button data-go="signup-business">Sign up · business</button>
+  <button data-go="onboard">Onboard</button>
+  <button data-go="onboard-key">Onboard · key</button>
+  <button data-go="onboard-demo">Onboard · demo</button>
+  <button data-go="error">Error</button>
+</nav>
+
+<script>
+(function(){
+  var navOut = '<button class="btn btn--ghost">Sign in</button><button class="btn btn--primary">Start workspace</button>';
+  var navIn  = '<button class="btn btn--primary">Open app</button><button class="btn btn--ghost">Sign out</button>';
+  var scenes = document.querySelectorAll('.scene');
+  var btns = document.querySelectorAll('.switch [data-go]');
+  var navEl = document.getElementById('navActions');
+  function show(name){
+    scenes.forEach(function(s){ s.classList.toggle('is-on', s.dataset.scene===name); });
+    btns.forEach(function(b){ b.classList.toggle('is-on', b.dataset.go===name); });
+    navEl.innerHTML = (name==='landing-in') ? navIn : navOut;
+    try{ location.hash = name; }catch(e){}
+  }
+  btns.forEach(function(b){ b.addEventListener('click', function(){ show(b.dataset.go); }); });
+  var start = (location.hash||'').replace('#','');
+  var valid = Array.prototype.some.call(scenes, function(s){return s.dataset.scene===start;});
+  show(valid ? start : 'signin');
+})();
+</script>
+</body>
+</html>

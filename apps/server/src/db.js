@@ -13,52 +13,68 @@ const DEMO_RUN_COUNT = 1_000;
 const DEMO_STEPS = [0, 40, 80, 120, 160, 200];
 const METRIC_SERIES_INDEX = Symbol("metricSeriesIndex");
 const MAX_TEXT_BYTES = 512;
+const PROJECT_METADATA_BYTES = 512;
+const RUN_METADATA_BYTES = 1024;
+const ARTIFACT_METADATA_BYTES = 512;
 
 export const PLAN_TIERS = Object.freeze({
   free: Object.freeze({
     id: "free",
     label: "Free",
-    included_seats: 1,
-    included_storage_bytes: 5 * GiB,
+    monthly_base_usd: 0,
+    included_seats: 2,
+    included_storage_bytes: 2 * GiB,
     projects: 2,
     runs: 100,
     metric_points: 1_000_000,
+    warehouse_kind: "shared",
+    min_replica_memory_gb: 8,
+    max_replica_memory_gb: 8,
+    num_replicas: 1,
   }),
-  lab: Object.freeze({
-    id: "lab",
-    label: "Lab",
+  pro: Object.freeze({
+    id: "pro",
+    label: "Pro",
+    monthly_base_usd: 199,
     included_seats: 3,
-    included_storage_bytes: 100 * GiB,
-    projects: 25,
-    runs: 10_000,
-    metric_points: 25_000_000,
-  }),
-  startup: Object.freeze({
-    id: "startup",
-    label: "Startup",
-    included_seats: 10,
-    included_storage_bytes: 500 * GiB,
+    included_storage_bytes: 1024 * GiB,
     projects: 100,
     runs: 100_000,
-    metric_points: 200_000_000,
+    metric_points: 250_000_000,
+    warehouse_kind: "standard",
+    min_replica_memory_gb: 12,
+    max_replica_memory_gb: 12,
+    num_replicas: 1,
   }),
-  growth: Object.freeze({
-    id: "growth",
-    label: "Growth",
-    included_seats: 25,
-    included_storage_bytes: 2 * 1024 * GiB,
+  premium: Object.freeze({
+    id: "premium",
+    label: "Premium",
+    monthly_base_usd: 699,
+    included_seats: 10,
+    included_storage_bytes: 5 * 1024 * GiB,
     projects: 500,
     runs: 1_000_000,
-    metric_points: 1_000_000_000,
+    metric_points: 2_000_000_000,
+    warehouse_kind: "dedicated",
+    min_replica_memory_gb: 16,
+    max_replica_memory_gb: 16,
+    num_replicas: 2,
   }),
 });
 
+const LEGACY_PLAN_ALIASES = Object.freeze({
+  lab: "pro",
+  startup: "pro",
+  growth: "premium",
+});
+
 export const USAGE_OVERAGE_POLICY = Object.freeze({
+  paid_extra_seats: "tracked_not_billed",
   seats: "paid_extra_seats",
-  projects: "soft_warning_then_upgrade_prompt",
-  runs: "soft_warning_then_upgrade_prompt",
-  metric_points: "fair_use_warning",
-  storage: "soft_warning_then_upgrade_prompt",
+  projects: "blocked_at_limit",
+  runs: "blocked_at_limit",
+  metric_points: "blocked_at_limit",
+  storage: "blocked_at_limit",
   artifacts: "visibility_only",
   api_keys: "visibility_only",
 });
@@ -68,6 +84,7 @@ export class NotFoundError extends Error {}
 export class ConflictError extends Error {}
 export class UnauthorizedError extends Error {}
 export class ForbiddenError extends Error {}
+export class PlanLimitError extends Error {}
 
 export function defaultDbPath() {
   return path.join(".instantml", "instantml.json");
@@ -221,11 +238,14 @@ export function createOrganization(state, input) {
   if (existing) return clone(existing);
   const ownerUserId = input?.owner_user_id === undefined || input?.owner_user_id === null ? null : validateName(input.owner_user_id, "owner_user_id");
   if (ownerUserId) getUserRecord(state, ownerUserId);
+  const planTier = validatePlanTier(input?.plan_tier ?? "free");
   const organization = {
     id: randomUUID(),
     slug,
     name,
-    plan_tier: validatePlanTier(input?.plan_tier ?? "free"),
+    plan_tier: planTier,
+    account_type: "customer",
+    seat_limit: PLAN_TIERS[planTier].included_seats,
     created_by_user_id: ownerUserId,
     created_at: utcNow(),
   };
@@ -236,6 +256,7 @@ export function createOrganization(state, input) {
       org_id: organization.id,
       user_id: ownerUserId,
       role: "owner",
+      status: "active",
       created_at: utcNow(),
     });
   }
@@ -310,13 +331,16 @@ export function authenticateApiKey(state, token) {
   throw new UnauthorizedError("invalid api key");
 }
 
-export function createProject(state, input) {
+export function createProject(state, input, options = {}) {
   const orgId = resolveOrgId(state, input?.org_id);
   const name = validateName(input?.name, "project name");
   const description = input?.description ?? null;
   if (description !== null && typeof description !== "string") throw new ValidationError("description must be a string");
   const existing = state.projects.find((project) => project.org_id === orgId && project.name === name);
   if (existing) return clone(existing);
+  if (!options.skipPlanCapacity) {
+    assertPlanCapacity(state, orgId, { projects: 1, storage_bytes: PROJECT_METADATA_BYTES }, "create a project");
+  }
   const project = { id: randomUUID(), org_id: orgId, name, description, created_at: utcNow() };
   state.projects.push(project);
   return clone(project);
@@ -330,9 +354,18 @@ export function listProjects(state, input = {}) {
     .map(clone);
 }
 
-export function createRun(state, input) {
+export function createRun(state, input, options = {}) {
   const orgId = resolveOrgId(state, input?.org_id);
-  const project = createProject(state, { org_id: orgId, name: input?.project });
+  const projectName = validateName(input?.project, "project name");
+  const projectExists = state.projects.some((project) => project.org_id === orgId && project.name === projectName);
+  if (!options.skipPlanCapacity) {
+    assertPlanCapacity(state, orgId, {
+      projects: projectExists ? 0 : 1,
+      runs: 1,
+      storage_bytes: RUN_METADATA_BYTES + (projectExists ? 0 : PROJECT_METADATA_BYTES),
+    }, "create a run");
+  }
+  const project = createProject(state, { org_id: orgId, name: projectName }, { skipPlanCapacity: true });
   const now = utcNow();
   const run = {
     id: randomUUID(),
@@ -413,6 +446,9 @@ export function logMetrics(state, runId, input, options = {}) {
   const metrics = validateMetrics(input?.metrics);
   const now = input?.timestamp ? validateTimestamp(input.timestamp) : utcNow();
   const previewCompletion = input?.preview_completion === undefined ? null : validatePreviewCompletion(input.preview_completion);
+  if (!options.skipPlanCapacity) {
+    assertPlanCapacity(state, run.org_id, { metric_points: Object.keys(metrics).length }, "log metrics");
+  }
   for (const [key, value] of Object.entries(metrics)) {
     const metric = { id: state.nextMetricId++, org_id: run.org_id, run_id: runId, key, step, value, created_at: now };
     state.metrics.push(metric);
@@ -485,8 +521,13 @@ export function listAttributes(state, runId, input = {}) {
     .map(clone);
 }
 
-export function createArtifact(state, runId, input) {
+export function createArtifact(state, runId, input, options = {}) {
   const artifact = validateArtifactInput(state, runId, input);
+  if (!options.skipPlanCapacity) {
+    assertPlanCapacity(state, artifact.org_id, {
+      storage_bytes: (artifact.size_bytes ?? 0) + ARTIFACT_METADATA_BYTES,
+    }, "create an artifact");
+  }
   state.artifacts.push(artifact);
   appendAttribute(state, validateAttributeInput(state, runId, {
     path: input?.path ?? `artifacts/${artifact.name}`,
@@ -1018,14 +1059,16 @@ export function exportData(state, input = {}) {
 export function usageSummary(state, input = {}) {
   ensureDefaultOrg(state);
   const orgs = input.org_id ? [getOrganization(state, input.org_id)] : [...state.organizations].sort((a, b) => a.slug.localeCompare(b.slug));
+  const usagePeriod = currentUsagePeriod();
   return {
     schema_version: 1,
     generated_at: utcNow(),
     billing_precision: "not_billable",
     units: { bytes: "bytes", metric_points: "rows" },
+    usage_period: usagePeriod,
     plans: publicPlanTiers(),
     overage_policy: clone(USAGE_OVERAGE_POLICY),
-    organizations: orgs.map((org) => usageForOrganization(state, org)),
+    organizations: orgs.map((org) => usageForOrganization(state, org, usagePeriod)),
   };
 }
 
@@ -1039,6 +1082,7 @@ export function usageExport(state, input = {}) {
     units: summary.units,
     source: "computed_current_state",
     billing_precision: summary.billing_precision,
+    usage_period: summary.usage_period,
     plans: summary.plans,
     overage_policy: summary.overage_policy,
     organizations: summary.organizations,
@@ -1053,6 +1097,7 @@ export function usageExport(state, input = {}) {
 export function resetDemo(state, input = {}) {
   const orgId = resolveOrgId(state, input.org_id);
   const demoProject = state.projects.find((project) => project.org_id === orgId && project.name === "demo");
+  assertPlanCapacity(state, orgId, demoUsageDelta(!demoProject), "reset the demo dataset");
   if (demoProject) {
     const demoRunIds = new Set(state.runs.filter((run) => run.project_id === demoProject.id).map((run) => run.id));
     state.projects = state.projects.filter((project) => project.id !== demoProject.id);
@@ -1074,17 +1119,37 @@ export function resetDemo(state, input = {}) {
       config: demoConfig(workload, index, seed),
       tags: demoTags(workload, index, seed),
       metadata: demoMetadata(workload, index, seed),
-    });
+    }, { skipPlanCapacity: true });
     for (const step of DEMO_STEPS) {
       logMetrics(state, run.id, {
         step,
         metrics: demoMetrics(workload, index, seed, step),
-      }, { skipMetricAttributes: true });
+      }, { skipMetricAttributes: true, skipPlanCapacity: true });
     }
     updateRun(state, run.id, { status: demoStatus(index) });
-    for (const artifact of demoArtifacts(workload, index, seed)) createArtifact(state, run.id, artifact);
+    for (const artifact of demoArtifacts(workload, index, seed)) createArtifact(state, run.id, artifact, { skipPlanCapacity: true });
   }
   return runsSummary(state, { org_id: orgId, project: "demo", limit: 100, offset: 0 });
+}
+
+function demoUsageDelta(projectIsNew) {
+  let metricPoints = 0;
+  let artifacts = 0;
+  let artifactBytes = 0;
+  for (let index = 0; index < DEMO_RUN_COUNT; index += 1) {
+    const seed = demoSeed(index);
+    const workload = demoWorkload(index);
+    for (const step of DEMO_STEPS) metricPoints += Object.keys(demoMetrics(workload, index, seed, step)).length;
+    const rows = demoArtifacts(workload, index, seed);
+    artifacts += rows.length;
+    artifactBytes += rows.reduce((sum, artifact) => sum + (Number.isInteger(artifact.size_bytes) ? artifact.size_bytes : 0), 0);
+  }
+  return {
+    projects: projectIsNew ? 1 : 0,
+    runs: DEMO_RUN_COUNT,
+    metric_points: metricPoints,
+    storage_bytes: artifactBytes + artifacts * ARTIFACT_METADATA_BYTES + DEMO_RUN_COUNT * RUN_METADATA_BYTES + (projectIsNew ? PROJECT_METADATA_BYTES : 0),
+  };
 }
 
 function demoSeed(index) {
@@ -1461,13 +1526,14 @@ function artifactCountsForRun(state, runId) {
   return counts;
 }
 
-function usageForOrganization(state, org) {
+function usageForOrganization(state, org, usagePeriod = currentUsagePeriod()) {
   const planTier = validatePlanTier(org.plan_tier ?? "free");
   const limits = clone(PLAN_TIERS[planTier]);
   const projects = state.projects.filter((project) => project.org_id === org.id);
   const runs = state.runs.filter((run) => run.org_id === org.id);
   const runIds = new Set(runs.map((run) => run.id));
   const metrics = state.metrics.filter((metric) => metric.org_id === org.id);
+  const metricPointsCurrentPeriod = metrics.filter((metric) => isWithinUsagePeriod(metric.created_at, usagePeriod)).length;
   const metricSeries = state.metricSeries.filter((series) => series.org_id === org.id);
   const artifacts = state.artifacts.filter((artifact) => artifact.org_id === org.id);
   const attributes = state.attributes.filter((attribute) => attribute.org_id === org.id);
@@ -1493,7 +1559,9 @@ function usageForOrganization(state, org) {
     paid_extra_seats: Math.max(0, seats - limits.included_seats),
     projects: projects.length,
     runs: runs.length,
-    metric_points: metrics.length,
+    metric_points: metricPointsCurrentPeriod,
+    metric_points_current_period: metricPointsCurrentPeriod,
+    metric_points_retained_total: metrics.length,
     metric_series: metricSeries.filter((series) => runIds.has(series.run_id)).length,
     artifacts: artifacts.length,
     api_keys: apiKeys.length,
@@ -1511,6 +1579,7 @@ function usageForOrganization(state, org) {
     plan_tier: planTier,
     tier_source: "organization",
     authoritative_for_plan: true,
+    usage_period: usagePeriod,
     usage,
     limits,
     warnings: usageWarnings(usage, limits),
@@ -1527,16 +1596,76 @@ function usageWarnings(usage, limits) {
   ].filter(Boolean);
 }
 
+function currentUsagePeriod(now = new Date()) {
+  const startsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  const endsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+  return {
+    kind: "calendar_month",
+    timezone: "UTC",
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    reset_at: endsAt.toISOString(),
+  };
+}
+
+function isWithinUsagePeriod(value, period) {
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) && millis >= Date.parse(period.starts_at) && millis < Date.parse(period.ends_at);
+}
+
 function usageLimitWarning(target, value, limit, policy) {
   if (!Number.isFinite(limit) || limit <= 0) return null;
   const ratio = value / limit;
+  const blocking = policy === "blocked_at_limit";
   if (target === "seats") {
     if (value <= limit) return null;
-    return { target, status: "paid_extra_seats", value, limit, ratio: Number(ratio.toFixed(4)), policy };
+    return usageWarningRow(target, "paid_extra_seats", value, limit, ratio, policy, blocking);
   }
-  if (ratio >= 1) return { target, status: "over_limit", value, limit, ratio: Number(ratio.toFixed(4)), policy };
-  if (ratio >= 0.8) return { target, status: "approaching_limit", value, limit, ratio: Number(ratio.toFixed(4)), policy };
+  if (ratio >= 1) return usageWarningRow(target, "over_limit", value, limit, ratio, policy, blocking);
+  if (ratio >= 0.8) return usageWarningRow(target, "approaching_limit", value, limit, ratio, policy, blocking);
   return null;
+}
+
+function usageWarningRow(target, status, value, limit, ratio, policy, blocking) {
+  return {
+    target,
+    status,
+    value,
+    limit,
+    ratio: Number(ratio.toFixed(4)),
+    policy,
+    blocking,
+    code: `${target}_${status}`,
+    message: usageWarningMessage(target, status, blocking),
+  };
+}
+
+function usageWarningMessage(target, status, blocking) {
+  const label = target.replaceAll("_", " ");
+  if (status === "approaching_limit" && blocking) return `${label} usage is approaching the plan limit. New writes will be blocked at the limit.`;
+  if (status === "over_limit" && blocking) return `${label} usage is at or above the plan limit. New writes are blocked until usage drops or the plan is upgraded.`;
+  if (status === "paid_extra_seats") return "Seat count is above the included plan seats and is tracked for future billing.";
+  return `${label} usage is above the plan limit.`;
+}
+
+function assertPlanCapacity(state, orgId, delta = {}, action = "write data") {
+  const org = getOrganization(state, orgId);
+  const snapshot = usageForOrganization(state, org);
+  const checks = [
+    ["projects", snapshot.usage.projects, delta.projects ?? 0, snapshot.limits.projects],
+    ["runs", snapshot.usage.runs, delta.runs ?? 0, snapshot.limits.runs],
+    ["metric_points", snapshot.usage.metric_points, delta.metric_points ?? 0, snapshot.limits.metric_points],
+    ["storage", snapshot.usage.estimated_storage_bytes_for_warnings, delta.storage_bytes ?? 0, snapshot.limits.included_storage_bytes],
+  ];
+  for (const [target, current, change, limit] of checks) {
+    if (!Number.isFinite(limit) || limit <= 0) continue;
+    if (current > limit) throw planLimitError(target, "is already above", snapshot.limits.label, action);
+    if (change > 0 && current + change > limit) throw planLimitError(target, "would exceed", snapshot.limits.label, action);
+  }
+}
+
+function planLimitError(target, reason, planLabel, action) {
+  return new PlanLimitError(`plan limit exceeded: ${target} ${reason} the ${planLabel} limit while trying to ${action}`);
 }
 
 function estimateJsonBytes(value) {
@@ -1642,7 +1771,9 @@ function defaultOrganization() {
     id: DEFAULT_ORG_ID,
     slug: DEFAULT_ORG_SLUG,
     name: "Local",
-    plan_tier: "free",
+    plan_tier: "premium",
+    account_type: "customer",
+    seat_limit: PLAN_TIERS.premium.included_seats,
     created_by_user_id: null,
     created_at: "1970-01-01T00:00:00.000Z",
   };
@@ -1656,7 +1787,16 @@ function ensureDefaultOrg(state) {
 
 function normalizeState(state) {
   ensureDefaultOrg(state);
-  for (const organization of state.organizations) organization.plan_tier = validatePlanTier(organization.plan_tier ?? "free");
+  for (const organization of state.organizations) {
+    organization.plan_tier = validatePlanTier(organization.plan_tier ?? "free");
+    organization.account_type = organization.account_type ?? "customer";
+    organization.seat_limit = organization.seat_limit ?? PLAN_TIERS[organization.plan_tier].included_seats;
+    if (organization.id === DEFAULT_ORG_ID) {
+      organization.plan_tier = "premium";
+      organization.seat_limit = PLAN_TIERS.premium.included_seats;
+    }
+  }
+  for (const membership of state.memberships) membership.status = membership.status ?? "active";
   for (const project of state.projects) project.org_id = project.org_id ?? DEFAULT_ORG_ID;
   for (const run of state.runs) run.org_id = run.org_id ?? state.projects.find((project) => project.id === run.project_id)?.org_id ?? DEFAULT_ORG_ID;
   for (const metric of state.metrics) metric.org_id = metric.org_id ?? state.runs.find((run) => run.id === metric.run_id)?.org_id ?? DEFAULT_ORG_ID;
@@ -1767,8 +1907,9 @@ function validateSlug(value, field) {
 }
 
 function validatePlanTier(value) {
-  const planTier = validateName(value, "plan_tier").toLowerCase();
-  if (!Object.hasOwn(PLAN_TIERS, planTier)) throw new ValidationError("plan_tier must be one of: free, lab, startup, growth");
+  const rawPlanTier = validateName(value, "plan_tier").toLowerCase();
+  const planTier = LEGACY_PLAN_ALIASES[rawPlanTier] ?? rawPlanTier;
+  if (!Object.hasOwn(PLAN_TIERS, planTier)) throw new ValidationError("plan_tier must be one of: free, pro, premium");
   return planTier;
 }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::managed_auth::ManagedAuthPrincipal;
+use axum::http::StatusCode;
 
 const SHARED_DEMO_EMAIL: &str = "hello@instantml.ai";
 const SHARED_DEMO_EMAIL_ALIASES: &[&str] = &[SHARED_DEMO_EMAIL, "hello@instantml.com"];
@@ -70,7 +71,8 @@ pub async fn create_organization(
         Some(raw) => validate_slug(Some(&raw), "organization slug")?,
         None => slugify(&name),
     };
-    let plan_tier = validate_plan_tier(input.plan_tier.as_deref())?;
+    let canonical_plan_tier = validate_plan_tier(input.plan_tier.as_deref())?;
+    let plan = plan_tier(&canonical_plan_tier);
     let mut data = store.data.lock().await;
     if data.orgs_by_slug.contains_key(&slug) {
         return Err(AppError::conflict("organization already exists"));
@@ -80,15 +82,22 @@ pub async fn create_organization(
             return Err(AppError::not_found("owner user not found"));
         }
     }
+    let account_type = "customer".to_string();
+    let tenant_routing_tier = if is_personal_account_type(&account_type) {
+        "shared".to_string()
+    } else {
+        "dedicated".to_string()
+    };
     let org = OrganizationRow {
         id: Uuid::new_v4(),
         slug,
         name,
-        plan_tier,
-        account_type: "customer".to_string(),
-        seat_limit: 1,
+        plan_tier: canonical_plan_tier,
+        account_type,
+        seat_limit: plan.included_seats,
         created_by_user_id: input.owner_user_id,
         created_at: Utc::now(),
+        tenant_routing_tier,
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -152,13 +161,18 @@ pub async fn create_dev_google_session(
         VerifiedProviderSessionInput {
             provider: "dev-google".to_string(),
             provider_subject: input.email.clone(),
-            email: input.email,
-            display_name: input.display_name,
+            email: input.email.clone(),
+            display_name: input.display_name.clone(),
             avatar_url: None,
             account_type: input.account_type,
-            org_name: Some(input.org_name),
+            mode: input.mode,
+            org_name: input.org_name,
+            plan_tier: input.plan_tier,
             seat_emails: input.seat_emails,
+            accept_invite_org_id: input.accept_invite_org_id,
             strict_email_linking: false,
+            auto_derive_display_name: input.display_name,
+            auto_derive_email: input.email,
         },
     )
     .await
@@ -174,7 +188,10 @@ pub async fn create_clerk_session(
     }
     let mode = validate_optional_name(input.mode.as_deref(), "mode")?;
     let signup_mode = mode.as_deref() == Some("signup") || input.org_name.is_some();
-    let org_name = if signup_mode {
+    // When org_name is absent and we're in signup mode, auto-derive from Clerk profile.
+    // The actual derivation happens inside create_verified_provider_session once we know
+    // whether this is truly a fresh user; passing None here signals auto-derive.
+    let org_name = if signup_mode && input.org_name.is_some() {
         Some(validate_name(input.org_name.as_deref(), "organization")?)
     } else {
         None
@@ -184,13 +201,19 @@ pub async fn create_clerk_session(
         VerifiedProviderSessionInput {
             provider: principal.provider,
             provider_subject: principal.provider_subject,
-            email: principal.email,
-            display_name: principal.display_name,
+            email: principal.email.clone(),
+            display_name: principal.display_name.clone(),
             avatar_url: principal.avatar_url,
             account_type: validate_account_type(input.account_type.as_deref())?,
+            mode,
             org_name,
+            plan_tier: input.plan_tier,
             seat_emails: input.seat_emails.unwrap_or_default(),
+            accept_invite_org_id: input.accept_invite_org_id,
             strict_email_linking: true,
+            // Provide Clerk profile fields for auto-derivation fallback.
+            auto_derive_display_name: principal.display_name,
+            auto_derive_email: principal.email,
         },
     )
     .await
@@ -203,9 +226,16 @@ struct VerifiedProviderSessionInput {
     display_name: Option<String>,
     avatar_url: Option<String>,
     account_type: String,
+    mode: Option<String>,
     org_name: Option<String>,
+    plan_tier: Option<String>,
     seat_emails: Vec<String>,
+    accept_invite_org_id: Option<Uuid>,
     strict_email_linking: bool,
+    /// Clerk display name used to auto-derive a workspace name when org_name is absent.
+    auto_derive_display_name: Option<String>,
+    /// Clerk email used to auto-derive a workspace name from the handle when display_name is absent.
+    auto_derive_email: String,
 }
 
 async fn create_verified_provider_session(
@@ -215,6 +245,14 @@ async fn create_verified_provider_session(
     let provider = validate_name(Some(&input.provider), "provider")?;
     let provider_subject = validate_name(Some(&input.provider_subject), "provider_subject")?;
     let email = validate_email(Some(&input.email))?;
+    let mode = validate_auth_mode(input.mode.as_deref(), input.org_name.is_some())?;
+    let account_type = validate_account_type(Some(&input.account_type))?;
+    let canonical_plan_tier = validate_plan_tier(input.plan_tier.as_deref())?;
+    let plan = plan_tier(&canonical_plan_tier);
+    let seat_emails = normalized_invite_emails(input.seat_emails, &email)?;
+    if 1 + seat_emails.len() > plan.included_seats as usize {
+        return Err(AppError::conflict("organization seat limit reached"));
+    }
     let mut data = store.data.lock().await;
     let identity_key = (provider.clone(), provider_subject.clone());
     let user = if let Some(user_id) = data.identities.get(&identity_key).copied() {
@@ -223,7 +261,7 @@ async fn create_verified_provider_session(
             .cloned()
             .ok_or_else(|| AppError::not_found("user not found"))?
     } else if let Some(user_id) = data.users_by_email.get(&email).copied() {
-        if input.strict_email_linking && user_has_identity(&data, user_id) {
+        if input.strict_email_linking && user_has_non_bootstrap_identity(&data, user_id) {
             return Err(AppError::conflict(
                 "email already belongs to an existing account",
             ));
@@ -272,59 +310,92 @@ async fn create_verified_provider_session(
     let existing_org = existing_org_for_auth(
         &data,
         user.id,
-        input.org_name.as_deref(),
-        &input.account_type,
+        (mode == "signup")
+            .then_some(input.org_name.as_deref())
+            .flatten(),
+        &account_type,
     );
-    if let Some(org) = existing_org {
+    if let Some(mut org) = existing_org {
+        if is_shared_demo_org(&org)
+            && (org.plan_tier != "premium" || org.seat_limit != PLAN_PREMIUM.included_seats)
+        {
+            org.plan_tier = "premium".to_string();
+            org.seat_limit = PLAN_PREMIUM.included_seats;
+            store
+                .persist_locked("organization", org.id, &org.id.to_string(), &org)
+                .await?;
+            data.insert_org(org.clone());
+        }
         drop(data);
         return create_session_for_org(store, user, org).await;
     }
-    let org_name = input
-        .org_name
-        .ok_or_else(|| AppError::validation("organization is required for signup"))?;
-    let slug = slugify(&org_name);
-    if let Some(invited) = invited_org_for_auth(&data, user.id, &slug) {
-        if let Some(mut membership) = data
-            .memberships
-            .values()
-            .find(|membership| {
-                membership.org_id == invited.id
-                    && membership.user_id == user.id
-                    && membership.status == "invited"
-            })
-            .cloned()
+    if let Some(invite_org_id) = input.accept_invite_org_id {
+        if let Some(org) =
+            activate_invited_membership(store, &mut data, user.id, invite_org_id).await?
         {
-            membership.status = "active".to_string();
-            store
-                .persist_locked(
-                    "membership",
-                    invited.id,
-                    &membership.id.to_string(),
-                    &membership,
-                )
-                .await?;
-            data.insert_membership(membership);
+            drop(data);
+            return create_session_for_org(store, user, org).await;
         }
-        drop(data);
-        return create_session_for_org(store, user, invited).await;
+        return Err(AppError::not_found("invitation not found"));
     }
-    if data.orgs_by_slug.contains_key(&slug) {
-        return Err(AppError::conflict("organization name already exists"));
+    if mode != "signup" {
+        let invites = pending_invites_for_user(&data, user.id);
+        match invites.len() {
+            0 => return Err(AppError::validation("organization is required for signup")),
+            1 => {
+                let org = activate_invited_membership(store, &mut data, user.id, invites[0].org_id)
+                    .await?
+                    .ok_or_else(|| AppError::not_found("invitation not found"))?;
+                drop(data);
+                return create_session_for_org(store, user, org).await;
+            }
+            _ => {
+                return Err(AppError::with_code(
+                    StatusCode::CONFLICT,
+                    "multiple_pending_invites",
+                    "multiple pending invitations",
+                ))
+            }
+        }
     }
-    let seat_limit = if input.account_type == "business" {
-        25
+    // Resolve org name: use explicit org_name if provided, else auto-derive from Clerk profile.
+    let (org_name, org_slug, auto_derived) = if let Some(name) = input.org_name {
+        let slug = slugify(&name);
+        if data.orgs_by_slug.contains_key(&slug) {
+            return Err(AppError::conflict("organization name already exists"));
+        }
+        (name, slug, false)
     } else {
-        1
+        // Auto-derive workspace name from Clerk display name or email handle.
+        let base_slug = derive_workspace_slug(
+            input.auto_derive_display_name.as_deref(),
+            &input.auto_derive_email,
+        );
+        let slug = unique_slug(&data, &base_slug);
+        let name = slug_to_name(&slug);
+        (name, slug, true)
+    };
+    let effective_account_type = if auto_derived {
+        "personal".to_string()
+    } else {
+        account_type.clone()
+    };
+    // Route personal/free orgs to the shared cell; business orgs get dedicated.
+    let tenant_routing_tier = if is_personal_account_type(&effective_account_type) {
+        "shared".to_string()
+    } else {
+        "dedicated".to_string()
     };
     let org = OrganizationRow {
         id: Uuid::new_v4(),
-        slug,
+        slug: org_slug,
         name: org_name,
-        plan_tier: "free".to_string(),
-        account_type: input.account_type.clone(),
-        seat_limit,
+        plan_tier: canonical_plan_tier,
+        account_type: effective_account_type,
+        seat_limit: plan.included_seats,
         created_by_user_id: Some(user.id),
         created_at: Utc::now(),
+        tenant_routing_tier,
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -338,38 +409,20 @@ async fn create_verified_provider_session(
     drop(data);
     store.ensure_tenant_route(&org).await?;
     let mut data = store.data.lock().await;
-    for email in input.seat_emails {
-        if validate_email(Some(&email)).is_ok() {
-            let normalized_email = email.to_ascii_lowercase();
-            let invited_user = if let Some(id) = data.users_by_email.get(&normalized_email).copied()
-            {
-                data.users.get(&id).cloned().expect("indexed user")
-            } else {
-                let invited_user = UserRow {
-                    id: Uuid::new_v4(),
-                    primary_email: normalized_email,
-                    display_name: None,
-                    avatar_url: None,
-                    created_at: Utc::now(),
-                    last_seen_at: None,
-                };
-                store
-                    .persist_locked(
-                        "user",
-                        LOCAL_ORG_ID,
-                        &invited_user.id.to_string(),
-                        &invited_user,
-                    )
-                    .await?;
-                data.insert_user(invited_user.clone());
-                invited_user
-            };
-            let invited = membership_row(org.id, invited_user.id, "member", "invited");
-            store
-                .persist_locked("membership", org.id, &invited.id.to_string(), &invited)
-                .await?;
-            data.insert_membership(invited);
+    for email in seat_emails {
+        let invited_user = get_or_create_placeholder_user(store, &mut data, &email).await?;
+        if data.memberships.values().any(|membership| {
+            membership.org_id == org.id
+                && membership.user_id == invited_user.id
+                && matches!(membership.status.as_str(), "active" | "invited")
+        }) {
+            continue;
         }
+        let invited = membership_row(org.id, invited_user.id, "member", "invited");
+        store
+            .persist_locked("membership", org.id, &invited.id.to_string(), &invited)
+            .await?;
+        data.insert_membership(invited);
     }
     let (session, token) = new_session(user.id, org.id);
     store
@@ -377,7 +430,14 @@ async fn create_verified_provider_session(
         .await?;
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
-    Ok(CreatedAuthSession { token, payload })
+    drop(data);
+    // Atomically mint an onboarding SDK key for the new org.
+    let onboarding_api_key = mint_onboarding_api_key(store, org.id, user.id).await.ok();
+    Ok(CreatedAuthSession {
+        token,
+        payload,
+        onboarding_api_key,
+    })
 }
 
 async fn create_session_for_org(
@@ -392,6 +452,11 @@ async fn create_session_for_org(
             && membership.user_id == user.id
             && membership.status == "active"
     }) {
+        if org.created_by_user_id != Some(user.id) {
+            return Err(AppError::forbidden(
+                "user is not an active member of the organization",
+            ));
+        }
         let owner = membership_row(org.id, user.id, "owner", "active");
         store
             .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
@@ -404,13 +469,17 @@ async fn create_session_for_org(
         .await?;
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
-    Ok(CreatedAuthSession { token, payload })
+    Ok(CreatedAuthSession {
+        token,
+        payload,
+        onboarding_api_key: None,
+    })
 }
 
-fn user_has_identity(data: &StoreData, user_id: Uuid) -> bool {
+fn user_has_non_bootstrap_identity(data: &StoreData, user_id: Uuid) -> bool {
     data.identities
-        .values()
-        .any(|candidate| *candidate == user_id)
+        .iter()
+        .any(|((provider, _), candidate)| *candidate == user_id && provider != "bootstrap")
 }
 
 fn existing_org_for_auth(
@@ -443,21 +512,110 @@ fn existing_org_for_auth(
         })
 }
 
-fn invited_org_for_auth(data: &StoreData, user_id: Uuid, slug: &str) -> Option<OrganizationRow> {
+fn validate_auth_mode(value: Option<&str>, signup_hint: bool) -> AppResult<String> {
+    let mode = validate_optional_name(value, "mode")?
+        .unwrap_or_else(|| if signup_hint { "signup" } else { "signin" }.to_string())
+        .to_ascii_lowercase();
+    if matches!(mode.as_str(), "signin" | "signup") {
+        Ok(mode)
+    } else {
+        Err(AppError::validation("mode must be one of: signin, signup"))
+    }
+}
+
+fn normalized_invite_emails(raw_emails: Vec<String>, owner_email: &str) -> AppResult<Vec<String>> {
+    let mut seen = BTreeSet::new();
+    let mut emails = Vec::new();
+    for raw in raw_emails {
+        let email = validate_email(Some(&raw))?;
+        if email == owner_email || !seen.insert(email.clone()) {
+            continue;
+        }
+        emails.push(email);
+    }
+    Ok(emails)
+}
+
+fn pending_invites_for_user(data: &StoreData, user_id: Uuid) -> Vec<MembershipRow> {
     data.memberships
         .values()
         .filter(|membership| membership.user_id == user_id && membership.status == "invited")
-        .filter_map(|membership| data.organizations.get(&membership.org_id))
-        .find(|org| org.slug == slug)
         .cloned()
+        .collect()
+}
+
+async fn activate_invited_membership(
+    store: &Store,
+    data: &mut StoreData,
+    user_id: Uuid,
+    org_id: Uuid,
+) -> AppResult<Option<OrganizationRow>> {
+    let Some(mut membership) = data
+        .memberships
+        .values()
+        .find(|membership| {
+            membership.org_id == org_id
+                && membership.user_id == user_id
+                && membership.status == "invited"
+        })
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    let org = data
+        .organizations
+        .get(&org_id)
+        .cloned()
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    membership.status = "active".to_string();
+    store
+        .persist_locked(
+            "membership",
+            org_id,
+            &membership.id.to_string(),
+            &membership,
+        )
+        .await?;
+    data.insert_membership(membership);
+    Ok(Some(org))
+}
+
+async fn get_or_create_placeholder_user(
+    store: &Store,
+    data: &mut StoreData,
+    email: &str,
+) -> AppResult<UserRow> {
+    if let Some(id) = data.users_by_email.get(email).copied() {
+        return data
+            .users
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| AppError::internal("user email index is inconsistent"));
+    }
+    let user = UserRow {
+        id: Uuid::new_v4(),
+        primary_email: email.to_string(),
+        display_name: None,
+        avatar_url: None,
+        created_at: Utc::now(),
+        last_seen_at: None,
+    };
+    store
+        .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
+        .await?;
+    data.insert_user(user.clone());
+    Ok(user)
 }
 
 struct NormalizedDevGoogleAuth {
     email: String,
     display_name: Option<String>,
     account_type: String,
-    org_name: String,
+    mode: Option<String>,
+    org_name: Option<String>,
+    plan_tier: Option<String>,
     seat_emails: Vec<String>,
+    accept_invite_org_id: Option<Uuid>,
 }
 
 fn normalize_dev_google_auth(input: DevGoogleAuthRequest) -> AppResult<NormalizedDevGoogleAuth> {
@@ -467,19 +625,26 @@ fn normalize_dev_google_auth(input: DevGoogleAuthRequest) -> AppResult<Normalize
             email: SHARED_DEMO_EMAIL.to_string(),
             display_name: Some(SHARED_DEMO_NAME.to_string()),
             account_type: SHARED_DEMO_ACCOUNT_TYPE.to_string(),
-            org_name: SHARED_DEMO_NAME.to_string(),
+            mode: Some("signup".to_string()),
+            org_name: Some(SHARED_DEMO_NAME.to_string()),
+            plan_tier: Some("premium".to_string()),
             seat_emails: Vec::new(),
+            accept_invite_org_id: None,
         });
     }
     Ok(NormalizedDevGoogleAuth {
         email,
         display_name: validate_optional_name(input.display_name.as_deref(), "display_name")?,
         account_type: validate_account_type(input.account_type.as_deref())?,
-        org_name: validate_name(
-            input.org_name.as_deref().or(Some("Personal Workspace")),
-            "organization",
-        )?,
+        mode: input.mode,
+        org_name: input
+            .org_name
+            .as_deref()
+            .map(|name| validate_name(Some(name), "organization"))
+            .transpose()?,
+        plan_tier: input.plan_tier,
         seat_emails: input.seat_emails.unwrap_or_default(),
+        accept_invite_org_id: input.accept_invite_org_id,
     })
 }
 
@@ -491,6 +656,94 @@ fn is_shared_demo_email(email: &str) -> bool {
 
 pub fn is_shared_demo_org(org: &OrganizationRow) -> bool {
     org.name == SHARED_DEMO_NAME && org.slug == slugify(SHARED_DEMO_NAME)
+}
+
+/// Derive a workspace slug from a Clerk display name or email handle.
+/// Preference order: display_name → email handle.
+pub(crate) fn derive_workspace_slug(display_name: Option<&str>, email: &str) -> String {
+    let source = display_name
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| {
+            email
+                .split_once('@')
+                .map(|(handle, _)| handle)
+                .unwrap_or(email)
+        });
+    let slug = slugify(source);
+    if slug.is_empty() || slug == "workspace" {
+        // Fallback: use email handle directly.
+        let handle = email.split_once('@').map(|(h, _)| h).unwrap_or(email);
+        slugify(handle)
+    } else {
+        slug
+    }
+}
+
+/// Convert a slug such as "tony-xin" to a human-readable name "Tony Xin".
+pub(crate) fn slug_to_name(slug: &str) -> String {
+    slug.split('-')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Mint a fresh `sdk:ingest`-scoped onboarding API key for a newly created org.
+/// Returns `None` (and logs) on failure rather than aborting the signup.
+async fn mint_onboarding_api_key(
+    store: &Store,
+    org_id: Uuid,
+    user_id: Uuid,
+) -> AppResult<OnboardingApiKey> {
+    let result = create_api_key_inner(
+        store,
+        org_id,
+        CreateApiKeyRequest {
+            name: Some("Onboarding SDK key".to_string()),
+            scopes: Some(
+                ONBOARDING_API_KEY_SCOPES
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            ),
+            created_by_user_id: Some(user_id),
+            project_id: None,
+            project: None,
+            expires_at: None,
+        },
+        Some(user_id),
+    )
+    .await?;
+    let plaintext = result
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let prefix = result
+        .get("key")
+        .and_then(|k| k.get("key_prefix"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let id_str = result
+        .get("key")
+        .and_then(|k| k.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let id = Uuid::parse_str(id_str).map_err(|_| AppError::internal("invalid key id"))?;
+    if plaintext.is_empty() {
+        return Err(AppError::internal("onboarding key plaintext was empty"));
+    }
+    Ok(OnboardingApiKey {
+        plaintext,
+        prefix,
+        id,
+    })
 }
 
 fn demo_api_key_scopes() -> Vec<String> {
@@ -513,13 +766,13 @@ fn effective_api_key_scopes(data: &StoreData, record: &ApiKeyRecord) -> Vec<Stri
 
 pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthSessionPayload> {
     let token_hash = hash_secret(token);
-    let mut data = store.data.lock().await;
+    let data = store.data.lock().await;
     let session_id = data
         .sessions_by_hash
         .get(&token_hash)
         .copied()
         .ok_or_else(|| AppError::unauthorized("invalid session"))?;
-    let mut session = data
+    let session = data
         .sessions
         .get(&session_id)
         .cloned()
@@ -527,9 +780,9 @@ pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthS
     if session.row.revoked_at.is_some() || session.row.expires_at <= Utc::now() {
         return Err(AppError::unauthorized("invalid session"));
     }
-    session.row.last_seen_at = Some(Utc::now());
-    data.insert_session(session.clone());
-    session_payload_from_data(&data, session.row)
+    let mut row = session.row;
+    row.last_seen_at = Some(Utc::now());
+    session_payload_from_data(&data, row)
 }
 
 pub async fn revoke_session(store: &Store, token: &str) -> AppResult<()> {
@@ -555,43 +808,50 @@ pub async fn revoke_session(store: &Store, token: &str) -> AppResult<()> {
 
 pub async fn reserve_seat(
     store: &Store,
-    user_id: Uuid,
+    user_id: Option<Uuid>,
     org_id: Uuid,
     input: ReserveSeatRequest,
-) -> AppResult<MembershipRow> {
+) -> AppResult<SeatRow> {
     let email = validate_email(input.email.as_deref())?;
     let role = validate_membership_role(input.role.as_deref().or(Some("member")))?;
+    if role == "owner" {
+        return Err(AppError::validation(
+            "invited seats can use admin, member, or viewer roles",
+        ));
+    }
     let mut data = store.data.lock().await;
-    let org = data
+    let seat_limit = data
         .organizations
         .get(&org_id)
-        .ok_or_else(|| AppError::not_found("organization not found"))?;
-    require_admin_in_data(&data, user_id, org_id)?;
+        .ok_or_else(|| AppError::not_found("organization not found"))?
+        .seat_limit as usize;
+    if let Some(user_id) = user_id {
+        require_admin_in_data(&data, user_id, org_id)?;
+    }
+    let invited_user = get_or_create_placeholder_user(store, &mut data, &email).await?;
+    if let Some(existing) = data
+        .memberships
+        .values()
+        .find(|membership| {
+            membership.org_id == org_id
+                && membership.user_id == invited_user.id
+                && matches!(membership.status.as_str(), "active" | "invited")
+        })
+        .cloned()
+    {
+        return seat_row_from_data(&data, existing);
+    }
     let active_or_invited = data
         .memberships
         .values()
-        .filter(|m| m.org_id == org_id)
+        .filter(|membership| {
+            membership.org_id == org_id
+                && matches!(membership.status.as_str(), "active" | "invited")
+        })
         .count();
-    if active_or_invited >= org.seat_limit as usize {
+    if active_or_invited >= seat_limit {
         return Err(AppError::conflict("organization seat limit reached"));
     }
-    let invited_user = if let Some(id) = data.users_by_email.get(&email).copied() {
-        data.users.get(&id).cloned().expect("indexed user")
-    } else {
-        let user = UserRow {
-            id: Uuid::new_v4(),
-            primary_email: email,
-            display_name: None,
-            avatar_url: None,
-            created_at: Utc::now(),
-            last_seen_at: None,
-        };
-        store
-            .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
-            .await?;
-        data.insert_user(user.clone());
-        user
-    };
     let membership = membership_row(org_id, invited_user.id, &role, "invited");
     store
         .persist_locked(
@@ -602,7 +862,44 @@ pub async fn reserve_seat(
         )
         .await?;
     data.insert_membership(membership.clone());
-    Ok(membership)
+    seat_row_from_data(&data, membership)
+}
+
+pub async fn list_seats(store: &Store, org_id: Uuid) -> AppResult<Vec<SeatRow>> {
+    let data = store.data.lock().await;
+    if !data.organizations.contains_key(&org_id) {
+        return Err(AppError::not_found("organization not found"));
+    }
+    let mut seats = data
+        .memberships
+        .values()
+        .filter(|membership| membership.org_id == org_id)
+        .cloned()
+        .map(|membership| seat_row_from_data(&data, membership))
+        .collect::<AppResult<Vec<_>>>()?;
+    seats.sort_by(|left, right| {
+        left.membership
+            .created_at
+            .cmp(&right.membership.created_at)
+            .then_with(|| left.user.primary_email.cmp(&right.user.primary_email))
+    });
+    Ok(seats)
+}
+
+fn seat_row_from_data(data: &StoreData, membership: MembershipRow) -> AppResult<SeatRow> {
+    let user = data
+        .users
+        .get(&membership.user_id)
+        .ok_or_else(|| AppError::not_found("seat user not found"))?;
+    Ok(SeatRow {
+        membership,
+        user: SeatUserRow {
+            id: user.id,
+            primary_email: user.primary_email.clone(),
+            display_name: user.display_name.clone(),
+            avatar_url: user.avatar_url.clone(),
+        },
+    })
 }
 
 pub async fn create_api_key(
@@ -777,13 +1074,13 @@ pub async fn disable_service_account(
 
 pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthContext> {
     let key_hash = hash_secret(token);
-    let mut data = store.data.lock().await;
+    let data = store.data.lock().await;
     let key_id = data
         .api_keys_by_hash
         .get(&key_hash)
         .copied()
         .ok_or_else(|| AppError::unauthorized("invalid API key"))?;
-    let mut record = data
+    let record = data
         .api_keys
         .get(&key_id)
         .cloned()
@@ -805,8 +1102,6 @@ pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthC
         return Err(AppError::unauthorized("invalid API key"));
     }
     let scopes = effective_api_key_scopes(&data, &record);
-    record.row.last_used_at = Some(Utc::now());
-    data.insert_api_key(record.clone());
     Ok(AuthContext {
         org_id: record.row.org_id,
         api_key_id: record.row.id,
@@ -838,16 +1133,21 @@ mod tests {
         let normalized = normalize_dev_google_auth(DevGoogleAuthRequest {
             email: Some("HELLO@instantml.com".to_string()),
             display_name: Some("Someone Else".to_string()),
+            mode: Some("signup".to_string()),
             account_type: Some("customer".to_string()),
             org_name: Some("Another Org".to_string()),
+            plan_tier: Some("premium".to_string()),
             seat_emails: Some(vec!["teammate@example.com".to_string()]),
+            accept_invite_org_id: Some(Uuid::new_v4()),
         })
         .unwrap();
 
         assert_eq!(normalized.email, SHARED_DEMO_EMAIL);
         assert_eq!(normalized.display_name.as_deref(), Some(SHARED_DEMO_NAME));
         assert_eq!(normalized.account_type, SHARED_DEMO_ACCOUNT_TYPE);
-        assert_eq!(normalized.org_name, SHARED_DEMO_NAME);
+        assert_eq!(normalized.org_name.as_deref(), Some(SHARED_DEMO_NAME));
+        assert_eq!(normalized.plan_tier.as_deref(), Some("premium"));
+        assert_eq!(normalized.accept_invite_org_id, None);
         assert!(normalized.seat_emails.is_empty());
     }
 
@@ -856,17 +1156,39 @@ mod tests {
         let normalized = normalize_dev_google_auth(DevGoogleAuthRequest {
             email: Some("person@example.com".to_string()),
             display_name: Some("Person Example".to_string()),
+            mode: Some("signup".to_string()),
             account_type: Some("customer".to_string()),
             org_name: Some("Personal Lab".to_string()),
+            plan_tier: Some("pro".to_string()),
             seat_emails: Some(vec!["teammate@example.com".to_string()]),
+            accept_invite_org_id: None,
         })
         .unwrap();
 
         assert_eq!(normalized.email, "person@example.com");
         assert_eq!(normalized.display_name.as_deref(), Some("Person Example"));
         assert_eq!(normalized.account_type, "customer");
-        assert_eq!(normalized.org_name, "Personal Lab");
+        assert_eq!(normalized.mode.as_deref(), Some("signup"));
+        assert_eq!(normalized.org_name.as_deref(), Some("Personal Lab"));
+        assert_eq!(normalized.plan_tier.as_deref(), Some("pro"));
         assert_eq!(normalized.seat_emails, vec!["teammate@example.com"]);
+    }
+
+    #[test]
+    fn strict_email_linking_allows_operator_bootstrap_identity() {
+        let user_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        data.identities.insert(
+            ("bootstrap".to_string(), "person@example.com".to_string()),
+            user_id,
+        );
+
+        assert!(!user_has_non_bootstrap_identity(&data, user_id));
+
+        data.identities
+            .insert(("clerk".to_string(), "user_123".to_string()), user_id);
+
+        assert!(user_has_non_bootstrap_identity(&data, user_id));
     }
 
     #[test]
@@ -880,6 +1202,7 @@ mod tests {
             seat_limit: 25,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
         };
 
         assert!(is_shared_demo_org(&org));
@@ -900,6 +1223,7 @@ mod tests {
             seat_limit: 25,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());
@@ -932,6 +1256,7 @@ mod tests {
             seat_limit: 1,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());
@@ -939,6 +1264,64 @@ mod tests {
         let record = api_key_record_for_org(org.id, requested.clone());
 
         assert_eq!(effective_api_key_scopes(&data, &record), requested);
+    }
+
+    #[test]
+    fn personal_account_type_routes_to_shared_tier() {
+        // "personal" and "customer" both map to the shared cell.
+        assert!(is_personal_account_type("personal"));
+        assert!(is_personal_account_type("customer"));
+        assert!(!is_personal_account_type("business"));
+    }
+
+    #[test]
+    fn org_routing_tier_defaults_to_dedicated_for_pre_existing_records() {
+        // An OrganizationRow deserialized from JSON without tenant_routing_tier
+        // must default to "dedicated" so existing orgs keep their dedicated routes.
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "slug": "legacy",
+            "name": "Legacy Org",
+            "plan_tier": "free",
+            "account_type": "customer",
+            "seat_limit": 2,
+            "created_by_user_id": null,
+            "created_at": "2026-01-01T00:00:00Z"
+        }"#;
+        let org: OrganizationRow = serde_json::from_str(json).unwrap();
+        assert_eq!(org.tenant_routing_tier, "dedicated");
+    }
+
+    #[test]
+    fn new_personal_org_row_has_shared_routing_tier() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "my-lab".to_string(),
+            name: "My Lab".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+        };
+        assert_eq!(org.tenant_routing_tier, "shared");
+    }
+
+    #[test]
+    fn new_business_org_row_has_dedicated_routing_tier() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "acme".to_string(),
+            name: "Acme Corp".to_string(),
+            plan_tier: "pro".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 3,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+        };
+        assert_eq!(org.tenant_routing_tier, "dedicated");
     }
 
     fn api_key_record_for_org(org_id: Uuid, scopes: Vec<String>) -> ApiKeyRecord {
@@ -958,5 +1341,71 @@ mod tests {
             },
             key_hash: vec![1, 2, 3],
         }
+    }
+
+    // --- Auto-derive workspace name tests ---
+
+    #[test]
+    fn auto_derive_workspace_name_from_display_name() {
+        // Clerk display name "Tony Xin" → slug "tony-xin"
+        let slug = derive_workspace_slug(Some("Tony Xin"), "tony@example.com");
+        assert_eq!(slug, "tony-xin");
+
+        // Name with special chars: "Ada Lovelace!" → "ada-lovelace"
+        let slug = derive_workspace_slug(Some("Ada Lovelace!"), "ada@example.com");
+        assert_eq!(slug, "ada-lovelace");
+    }
+
+    #[test]
+    fn auto_derive_workspace_name_from_email_handle() {
+        // No display name: email "ada@example.com" → slug "ada"
+        let slug = derive_workspace_slug(None, "ada@example.com");
+        assert_eq!(slug, "ada");
+
+        // Blank display name falls through to email handle
+        let slug = derive_workspace_slug(Some("  "), "researcher@lab.ai");
+        assert_eq!(slug, "researcher");
+
+        // Email without @: treat whole string as handle
+        let slug = derive_workspace_slug(None, "standalone");
+        assert_eq!(slug, "standalone");
+    }
+
+    #[test]
+    fn slug_to_name_converts_slug_parts_to_title_case() {
+        assert_eq!(slug_to_name("tony-xin"), "Tony Xin");
+        assert_eq!(slug_to_name("ada"), "Ada");
+        assert_eq!(
+            slug_to_name("my-personal-workspace"),
+            "My Personal Workspace"
+        );
+    }
+
+    #[test]
+    fn slug_collision_falls_back_to_unique_suffix() {
+        // Pre-seed "tony-xin" in store data; unique_slug must produce a different slug.
+        let mut data = StoreData::default();
+        let existing_org = OrganizationRow {
+            id: Uuid::from_u128(42),
+            slug: "tony-xin".to_string(),
+            name: "Tony Xin".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+        };
+        data.insert_org(existing_org);
+
+        // derive base slug
+        let base = derive_workspace_slug(Some("Tony Xin"), "tony@example.com");
+        assert_eq!(base, "tony-xin");
+
+        // unique_slug must return something different
+        let slug = unique_slug(&data, &base);
+        assert_ne!(slug, "tony-xin");
+        // Must start with the base
+        assert!(slug.starts_with("tony-xin-"));
     }
 }

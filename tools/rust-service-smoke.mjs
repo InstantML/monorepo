@@ -70,6 +70,8 @@ try {
       env: {
         ...process.env,
         INSTANTML_UI_SMOKE_API_BASE: baseUrl,
+        INSTANTML_API_BASE: baseUrl,
+        INSTANTML_API_ALLOWED_ORIGINS: baseUrl,
       },
     });
   }

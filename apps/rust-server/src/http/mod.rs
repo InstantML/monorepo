@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{
     body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, Query, State},
-    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -29,11 +29,12 @@ use crate::{
         ClerkAuthRequest, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
         CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest,
         CreateProjectRequest, CreateRunRequest, CreateUserRequest, DevGoogleAuthRequest,
-        LogMetricsRequest, RequestContext, ReserveSeatRequest, SessionContext, UpdateRunRequest,
+        DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest, LogMetricsRequest,
+        RequestContext, ReserveSeatRequest, SessionContext, UpdateRunRequest,
         UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
-    metric_store, store,
+    store,
 };
 
 mod handlers;
@@ -58,8 +59,33 @@ pub fn router(state: AppState) -> Router {
     let max_body = state.config.max_body_bytes;
     let max_upload = state.config.max_upload_body_bytes;
     let request_timeout = state.config.request_timeout;
+    let service_plane = state.config.service_plane;
     let shared = Arc::new(state);
     let cors = cors_layer(&shared.config);
+
+    let mut app = platform_routes();
+    if service_plane.includes_control() {
+        app = app.merge(control_routes());
+    }
+    if service_plane.includes_data() {
+        app = app.merge(data_routes(max_upload));
+    }
+
+    app.fallback(not_found)
+        .with_state(shared)
+        .layer(
+            ServiceBuilder::new()
+                .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+                .layer(PropagateRequestIdLayer::x_request_id())
+                .layer(TraceLayer::new_for_http())
+                .layer(cors)
+                .layer(CompressionLayer::new())
+                .layer(TimeoutLayer::new(request_timeout)),
+        )
+        .layer(DefaultBodyLimit::max(max_body))
+}
+
+fn platform_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health", get(health))
         .route("/healthz", get(health))
@@ -67,10 +93,17 @@ pub fn router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .route("/openapi.json", get(openapi_json))
         .route("/api/auth/config", get(auth_config))
+}
+
+fn control_routes() -> Router<Arc<AppState>> {
+    Router::new()
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))
         .route("/api/auth/logout", post(auth_logout))
+        .route("/api/auth/device-code/start", post(device_code_start))
+        .route("/api/auth/device-code/poll", post(device_code_poll))
+        .route("/api/auth/device-code/confirm", post(device_code_confirm))
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
         .route("/api/orgs/name-availability", get(org_name_availability))
@@ -78,7 +111,10 @@ pub fn router(state: AppState) -> Router {
             "/api/orgs/:org_id/api-keys",
             post(create_api_key).get(list_api_keys),
         )
-        .route("/api/orgs/:org_id/seats", post(reserve_seat))
+        .route(
+            "/api/orgs/:org_id/seats",
+            post(reserve_seat).get(list_seats),
+        )
         .route(
             "/api/orgs/:org_id/api-keys/:api_key_id/revoke",
             post(revoke_api_key),
@@ -87,6 +123,10 @@ pub fn router(state: AppState) -> Router {
             "/api/orgs/:org_id/service-accounts/:service_account_id/disable",
             post(disable_service_account),
         )
+}
+
+fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
+    Router::new()
         .route("/projects", post(create_project).get(list_projects))
         .route("/runs", post(create_run).get(list_runs))
         .route("/runs/:run_id", get(get_run).patch(update_run))
@@ -127,19 +167,6 @@ pub fn router(state: AppState) -> Router {
         .route("/api/imports/neptune", post(import_neptune))
         .route("/api/imports/wandb", post(import_wandb))
         .route("/api/imports/mlflow", post(import_mlflow))
-        .route("/api/demo/reset", post(reset_demo))
-        .fallback(not_found)
-        .with_state(shared)
-        .layer(
-            ServiceBuilder::new()
-                .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
-                .layer(PropagateRequestIdLayer::x_request_id())
-                .layer(TraceLayer::new_for_http())
-                .layer(cors)
-                .layer(CompressionLayer::new())
-                .layer(TimeoutLayer::new(request_timeout)),
-        )
-        .layer(DefaultBodyLimit::max(max_body))
 }
 
 fn cors_layer(config: &AppConfig) -> CorsLayer {

@@ -2,7 +2,7 @@
 
 ## Current Plan Snapshot
 
-Date: 2026-05-10
+Date: 2026-05-17
 
 Working name: **InstantML**.
 
@@ -33,9 +33,9 @@ Current implementation status:
 - Rust/ClickHouse server is the current primary API and storage backend.
 - Next/React frontend is the current UI.
 - Python SDK supports run creation, scalar metrics, searchable tags/notes, typed helpers, buffering, explicit `flush()`, offline replay for post-run-create events, process-isolated post-init upload spooling, source metadata, artifacts, checkpoints, rollouts, tables, and local file upload.
-- Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, warning-only usage summaries, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
-- UI supports tabbed run browsing, a W&B/Grafana-inspired Runs workspace with sections and movable/resizable line panels, chart smoothing, step/time x-axis, grouped averages, range zoom, point hover readouts, saved local views, tags/notes editing, artifact previews, checkpoints, rollouts, keyboard workflow shortcuts, and side-by-side diffs.
-- Rust/ClickHouse backend is implemented as the primary backend under `apps/rust-server`, with ClickHouse operational records, ClickHouse metric storage, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, and Rust contract/SDK/UI smokes.
+- Server supports typed attributes, maintained metric aggregates, side-by-side comparison, local artifact upload/download, strict org/API-key scopes, blocked-at-limit usage guardrails, trigger-backed run search text, and Neptune/W&B/MLflow JSON imports.
+- UI supports tabbed run browsing, a W&B/Grafana-inspired Runs workspace with sections and movable/resizable line panels, chart smoothing, step/time x-axis, grouped averages, range zoom, point hover readouts, saved local views, tags/notes editing, artifact previews, checkpoints, rollouts, keyboard workflow shortcuts, side-by-side diffs, signup plan selection, org seat invites, topbar and Settings usage visibility, and API-key management.
+- Rust/ClickHouse backend is implemented as the primary backend under `apps/rust-server`, with ClickHouse operational records, ClickHouse metric storage, health/readiness/metrics/OpenAPI endpoints, hosted API-key auth, project/run/scalar metric compatibility routes, maintained summaries, idempotency, typed attributes, artifacts, imports, export, usage, plan-aware signup, invited-member activation, tenant-route warehouse profile metadata, and Rust contract/SDK/UI smokes.
 
 Target stack snapshot:
 
@@ -149,9 +149,11 @@ InstantML should stay focused on training unless users clearly pull it toward ru
 
 ## Pricing Strategy
 
-Research date: 2026-05-09.
+Research date: 2026-05-16.
 
-W&B's public pricing page currently lists Free, Pro, and Enterprise plans. The page shows Pro starting at `$60/month`, Pro including unlimited tracked hours and 100 GB/month storage, additional storage at `$0.03/GB`, and Enterprise as custom. W&B billing docs describe usage categories including storage, tracked hours, Weave ingestion, and inference.
+W&B's public pricing page currently lists cloud-hosted Free, Pro, and Enterprise plans. It shows Pro starting at `$60/month`, up to 10 model seats, 100 GB/month storage, and additional storage at `$0.03/GB`. W&B billing docs also describe usage categories and alerts for storage, tracked hours, Weave ingestion, inference, and training.
+
+Pluto is ambiguous in the current market scan. Pluto Bio publishes a personalized-pricing page for a hosted scientific discovery platform with Premium and Enterprise packaging, unlimited users on Premium, automated cloud pipelines, and single-tenant/multi-cloud storage on Enterprise, but it does not publish self-serve prices. Pluto's web-data/API product documentation describes a developer API for web data, embedded automations, and functions, but no official public pricing page was found in this research pass. Treat any Pluto comparison as qualitative unless the intended Pluto vendor is narrowed.
 
 Sources:
 
@@ -166,33 +168,41 @@ Use a sustainable discount, not a race to zero:
 - Avoid tracked-hour billing in v1.
 - Keep metric/event limits generous with fair-use thresholds.
 - Use storage overages only when needed.
-- Make Free/Lab/Startup easy to self-serve.
-- Keep Growth/Enterprise for compliance, SSO, VPC/self-host, and support.
+- Make Free, Pro, and Premium easy to understand at signup.
+- Keep Enterprise/custom for SSO, VPC/self-host, compliance, dedicated support, and unusually heavy data footprints.
 
-### Draft Planning Tiers
+### Implemented Initial Tiers
 
-These are planning assumptions, not public pricing.
+These are the current product defaults implemented in Rust and mirrored in the deprecated Node compatibility server.
 
 | Tier | Draft price | Included |
 | --- | ---: | --- |
-| Free | `$0` | 1 user, local/dev use, 5 GB hosted storage, capped private projects, community support |
-| Lab | `$29/org/mo` including 3 seats, then `$9/seat/mo` | 100 GB storage, unlimited tracked hours, generous metric/event limits, private projects, API keys |
-| Startup | `$149/org/mo` including 10 seats, then `$12/seat/mo` | 500 GB storage, longer retention, priority support, larger metric limits, imports |
-| Growth | `$399/org/mo` including 25 seats, then `$15/seat/mo` | 2 TB storage, audit logs, advanced roles, longer retention, higher limits |
-| Enterprise | Custom | SSO/SAML, VPC or self-host option, custom retention, compliance, dedicated support |
+| Free | `$0/org/mo` | 2 seats, 2 GiB included storage, 2 projects, 100 runs, 1M metric points, shared 8 GiB warehouse intent |
+| Pro | `$199/org/mo` | 3 seats, 1 TiB included storage, 100 projects, 100k runs, 250M metric points, standard 12 GiB warehouse intent |
+| Premium | `$699/org/mo` | 10 seats, 5 TiB included storage, 500 projects, 1M runs, 2B metric points, dedicated 16 GiB x 2 replica warehouse intent |
+| Enterprise | Custom | SSO/SAML, VPC or self-host option, custom retention, compliance, dedicated support, custom warehouse and storage terms |
 
 Overage defaults:
 
-- Artifact/storage overage: `$0.02-$0.03/GB-month`.
-- Metric/event overage: start with fair-use warnings and plan-upgrade prompts.
-- Import/storage-heavy workloads: require Startup/Growth or custom quote.
+- Extra seats: tracked but not billed yet; price target is `$79-$99/seat/month` once billing is implemented.
+- Storage overage: new writes are blocked at the included limit until billable object/accounting reconciliation and paid overages exist.
+- Metric/event overage: new metric writes are blocked at the current UTC calendar-month fair-use threshold until paid overages or custom terms exist. Metric-point usage resets at 00:00 UTC on the first day of each month.
+- Project/run limits: new projects and runs are blocked at the stored plan limit.
+- Import/storage-heavy workloads: require Premium or custom quote.
 
 Current implementation status:
 
-- The Rust/ClickHouse server exposes warning-only org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
+- The Rust/ClickHouse server exposes org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
 - Usage is scoped by org and requires `usage:read` in hosted API-key mode.
-- The summary counts seats, projects, runs, scalar metric points, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, and estimated metadata bytes.
+- The summary returns the full plan catalog, current org plan, limits, overage policy, the UTC calendar-month usage period, seats, projects, runs, current-period scalar metric points, retained metric-point totals, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, blocked-at-limit storage estimates, and `billable_storage_bytes: null`.
+- New project, run, metric-ingest, artifact, import, and demo-reset writes fail with HTTP 402 and `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit.
+- Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes.
+- Signup accepts `plan_tier` for Free, Pro, and Premium. Legacy plan values `lab` and `startup` canonicalize to Pro; `growth` canonicalizes to Premium for migration compatibility.
+- Local InstantML and the shared `InstantML Demo` org now default to Premium so the seeded demo exercises the Premium-scale warehouse profile and does not trip Free limits.
+- Hosted tenant routes record both requested warehouse profile and applied warehouse profile. Real ClickHouse Cloud create bodies stay capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
+- The dashboard includes plan selection in signup, a compact plan usage badge in the topbar near account controls, full usage and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
 - These values are for pricing validation and debugging, not invoice truth. Rust now writes immutable `usage_daily` snapshots, but billable storage still requires a separate billing implementation and provider/object-store reconciliation.
+- Detailed pricing and margin assumptions live in `docs/product/pricing-and-margins.md`.
 
 ### Cost Basis
 
@@ -213,6 +223,7 @@ Why:
 Sources:
 
 - [Google Cloud Run pricing](https://cloud.google.com/run/pricing)
+- [ClickHouse Cloud pricing](https://clickhouse.com/pricing)
 - [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/)
 - [Clerk pricing](https://clerk.com/pricing)
 - [Render pricing](https://render.com/pricing)
@@ -385,7 +396,8 @@ Do next:
 
 - Prove server-backed pagination/search/sort at the 90,000-run design-partner scale.
 - Split remaining complex `apps/web/app/page.tsx` logic when a workflow justifies a dedicated container component.
-- Add hosted org/auth/usage/import UI once those workflows are ready for beta.
+- Harden hosted org/auth/settings UI with billing enforcement, invite delivery, and org-member management beyond seat reservation.
+- Add hosted import UI once that workflow is ready for beta.
 - Add first-class media/table/query/text panels only after the field catalog and persisted workspace-view API are designed.
 - Add URL-addressable high-value state for workspaces/fullscreen panels after the local saved-view shape stabilizes.
 
@@ -401,15 +413,21 @@ Make pricing credible before public launch.
 
 Current state:
 
-- Org-level warning summaries are computed from Rust/ClickHouse data.
+- Free, Pro, and Premium are the active planning and implementation tiers.
+- Org-level usage summaries are computed from Rust/ClickHouse data, with UTC
+  calendar-month metric counters and retained-resource storage/project/run
+  counters.
 - Immutable `usage_daily` snapshots exist for warning/debug rollups.
-- Usage UI is not yet exposed in the hosted workflow.
+- Signup records selected plan and tenant-route warehouse intent.
+- The topbar and Settings expose usage; Settings exposes seat invites; the API
+  tab exposes API-key list/create/revoke.
 
 Do next:
 
 - Reconcile usage snapshots with object-storage accounting before treating any value as invoice truth.
-- Add a small admin UI for the existing `GET /api/usage` summary when auth/org settings land.
-- Validate the Free/Lab/Startup/Growth thresholds against real team workloads.
+- Add real billing, paid extra-seat handling, email delivery, and plan-change
+  flows after the guardrail/debug usage contract stabilizes.
+- Validate the Free/Pro/Premium thresholds against real team workloads.
 
 Exit criteria:
 
@@ -488,7 +506,7 @@ Do next:
 
 ### Pricing Targets
 
-- Entry paid tier is clearly below W&B Pro's public monthly entry price.
+- Pro offers a substantially larger included storage pool than W&B Pro while remaining simple enough to explain in one signup card.
 - No tracked-hour billing in v1.
 - Included storage is generous enough for serious small-team evaluation.
 - Overage model is understandable before users hit it.
@@ -515,7 +533,7 @@ Make dual-logging and import easy. Win one project or one team workflow before a
 
 Mitigation:
 
-Use generous but explicit included storage, fair-use thresholds, usage dashboards, and Growth/Enterprise plans for heavy teams.
+Use generous but explicit included storage, fair-use thresholds, usage dashboards, Premium/Enterprise plans for heavy teams, and warehouse profile guardrails so paid cloud services cannot be oversized by public signup alone.
 
 ### Risk: UI quality takes too long.
 
@@ -541,7 +559,7 @@ Emphasize exportability, transparent schemas, API access, future VPC/self-host o
 2. Should W&B compatibility be dual-logging first, import first, or API-shim first?
 3. Should the first beta use shared hosted ClickHouse cells, dedicated customer services, or a hybrid based on validation and cost constraints?
 4. Which managed auth provider gives enough Google/org/API-key support with the least lock-in?
-5. What storage/metric limits feel generous but safe for the Lab tier?
+5. What storage/metric limits feel generous but safe for the Pro tier?
 6. What public name best conveys fast, affordable training observability?
 
 ## Final Viability Assessment

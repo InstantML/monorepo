@@ -12,9 +12,18 @@ InstantML now has a hosted ClickHouse demo tenant seeded with the large 100,000-
 
 The smallest useful version extends the existing guarded hosted demo benchmark instead of adding a second ClickHouse client or a new query layer. It writes sanitized benchmark output into a committed `benchmarks/` folder. This slice started as measurement/report-only. The first full hosted pass exposed two narrow route implementation issues that made the benchmark fail its own budgets, so the accepted implementation also includes scoped, contract-preserving query fixes described below.
 
+2026-05-16 update: after the split Cloud Run deployment became the default
+hosted shape, the benchmark suite now also includes
+`tools/hosted-cloud-run-benchmark.mjs`. That command does not provision or seed.
+It assumes the guarded hosted-scale seed already exists and measures the actual
+deployed API path with bearer auth: benchmark client -> Cloud Run data service
+or HTTPS router -> ClickHouse Cloud tenant.
+
 ## Goals
 
 - Benchmark the existing hosted ClickHouse demo tenant with 100,000 seeded runs.
+- Benchmark the deployed Cloud Run data API against the 100,000+ run
+  hosted-scale tenant without starting a temporary Rust server.
 - Cover run list, search, filter, combined search/filter, metric sort, overview, and chart-series endpoints.
 - Preserve the guarded seed/provision behavior already documented for `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1`.
 - Record sanitized results and budgets without committing secrets, raw ClickHouse URLs, cookies, or API keys.
@@ -92,6 +101,23 @@ Implementation adjustment after measurement:
 - Broad created-sort search/status pages were using the fallback path that collected and sorted all matching runs. The implemented fix lets the existing created index serve text/status filtered pages while preserving exact totals, status matching, project scoping, auth scoping, and precomputed search-text matching.
 - Project overview was counting metric points through many run-id chunks. The implemented fix adds direct project-scoped ClickHouse aggregate reads for top metric series and total metric point count, avoiding chunk fanout without changing the overview response shape.
 
+Add `tools/hosted-cloud-run-benchmark.mjs` for the deployed API path:
+
+- Use `INSTANTML_DATA_API_BASE` or `INSTANTML_API_BASE` by default, with
+  `INSTANTML_CLOUD_RUN_BENCH_API_BASE` as an explicit override.
+- Use `INSTANTML_API_KEY` by default, with
+  `INSTANTML_CLOUD_RUN_BENCH_API_KEY` as an explicit override.
+- Reject non-HTTPS API bases unless a local proxy override is set.
+- Validate at least `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`, default `100000`,
+  across the configured benchmark projects before timing.
+- Measure org and project summary pages, 100-row pages, cursor page 2 when
+  available, name/tag/config/notes searches, status filters, combined
+  search/filter, selected-metric sort, org/project overview, single-run chart
+  series, and selected-run batched `POST /api/metrics/series`.
+- Reuse the same p50/p95/min/max protocol, hosted budgets, response validation,
+  and sanitization rules as the hosted demo benchmark. Add host-only API
+  metadata to results, but never API keys, raw URLs, org IDs, or response bodies.
+
 ## Component Impact
 
 Backend:
@@ -145,6 +171,8 @@ This design extends an existing guarded benchmark script and adds a committed re
 ## Testing Plan
 
 - Add unit/smoke coverage for benchmark result sanitization and response validation where practical without reaching hosted ClickHouse.
+- Add unit coverage for batched selected-run series payload validation and
+  host-only Cloud Run API metadata sanitization.
 - Run a small hosted benchmark sample to verify the expanded measurement set.
 - Run the full hosted demo benchmark against the 100,000-run project when credentials are available.
 - Run `npm run test:node`, `npm run web:build`, and targeted script smoke checks after edits.
