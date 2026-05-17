@@ -85,6 +85,10 @@ pub struct HostedClickHouseConfig {
     pub provisioner: ClickHouseProvisioner,
     pub allow_stored_tenant_passwords: bool,
     pub cloud: Option<ClickHouseCloudConfig>,
+    /// Connection URL for the shared ClickHouse cell.
+    /// When `Some`, personal/free signups route here instead of provisioning
+    /// a new Cloud service. Format: `http://user:pass@host:port/database`.
+    pub shared_cell_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -330,12 +334,19 @@ fn hosted_clickhouse_config(
     } else {
         None
     };
+    // Shared cell URL for personal/free signups. When absent, those signups
+    // fall through to the existing dedicated provisioning path.
+    let shared_cell_url = env::var("INSTANTML_SHARED_CELL_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     Ok(Some(HostedClickHouseConfig {
         user_data_url,
         tenant_base_url,
         provisioner,
         allow_stored_tenant_passwords,
         cloud,
+        shared_cell_url,
     }))
 }
 
