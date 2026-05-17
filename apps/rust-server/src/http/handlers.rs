@@ -933,7 +933,18 @@ pub(super) async fn auth_clerk(
     .await?;
     validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
     let created = store::create_clerk_session(&state.store, principal, input).await?;
-    json_with_session_cookie(&state, &headers, created.payload, &created.token)
+    let mut response_body = serde_json::to_value(&created.payload)
+        .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
+    if let Some(onboarding_key) = &created.onboarding_api_key {
+        if let Some(obj) = response_body.as_object_mut() {
+            obj.insert(
+                "onboarding_api_key".to_string(),
+                serde_json::to_value(onboarding_key)
+                    .map_err(|_| AppError::internal("failed to serialize onboarding key"))?,
+            );
+        }
+    }
+    json_with_session_cookie(&state, &headers, response_body, &created.token)
 }
 
 pub(super) async fn auth_session(

@@ -101,7 +101,7 @@ Training-observability roadmap first slice is implemented:
 - ClickHouse schema for the primary Rust service under `apps/rust-server/clickhouse/0001_initial.sql`.
 - Black-box contract smoke at `npm run test:contract` for Rust and `npm run test:contract:node` for the deprecated Node compatibility server.
 - Primary Rust service P0-P3 commands, health/readiness/metrics/OpenAPI endpoints, API-key auth, ClickHouse-backed projects/runs/scalar metrics/summaries/idempotency, typed attributes, artifacts, imports, bounded export, usage, and Rust-backed contract/SDK/UI smokes.
-- Public landing page, local Google-style sign-in/sign-up, opaque browser sessions, org seat reservation, copy-once SDK API-key onboarding, and route-backed dashboard tabs at `/dashboard/:tab`.
+- Public landing page, local Google-style sign-in/sign-up, opaque browser sessions, org seat reservation, copy-once SDK API-key onboarding, and route-backed dashboard tabs at `/dashboard/:tab`. For managed Clerk signups, the workspace name is auto-derived from the Clerk display name or email handle and a ready-to-use SDK key is returned in the auth response (`onboarding_api_key`) so users reach the dashboard in one step without a separate key-creation click.
 - Side-by-side comparison, metric aggregate summaries, chart smoothing, grouped averages, x-axis mode, sorting, and saved local views.
 - Runs workspace sections, top-level add-panel drawer, line-panel editing, fullscreen inspection, movable/resizable panels, local layout persistence, selected-run-only plotting, hover tooltips, and range zoom.
 - Visible/searchable run tags and notes, with editing from Run Detail and Compare and Rust-backed indexed search over name/tags/config/notes text.

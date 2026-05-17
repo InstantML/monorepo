@@ -208,10 +208,18 @@ pub struct ProvisioningStatusPayload {
     pub service_id: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct OnboardingApiKey {
+    pub plaintext: String,
+    pub prefix: String,
+    pub id: Uuid,
+}
+
 #[derive(Clone, Debug)]
 pub struct CreatedAuthSession {
     pub token: String,
     pub payload: AuthSessionPayload,
+    pub onboarding_api_key: Option<OnboardingApiKey>,
 }
 
 #[derive(Debug, Deserialize)]
