@@ -7,9 +7,10 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
+- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, track warning-only usage, and manage org API keys.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
-- Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-14-clickhouse-only-storage.md`; the in-process operational index is accepted for local/test and narrow single-process use only.
+- Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
 
 ## Local Setup
 
@@ -39,11 +40,15 @@ From the repo root:
 ```bash
 npm run dev:api
 npm run rust:fmt
+npm run rust:fmt:check
 npm run rust:lint
 npm run rust:test
+npm run rust:verify
 npm run rust:migrate
 npm run rust:serve
 npm run deploy:cloud-run
+npm run deploy:cloud-run:single
+npm run deploy:cloud-run:multi
 ```
 
 Binary subcommands:
@@ -59,11 +64,28 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 ## Hosted Cloud Run Deployment
 
-`npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, deploys Cloud Run with `--max-instances 1`, and verifies `/health`, `/readyz`, and `/api/auth/config`.
+`npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. It is now the default split control/data deployment path. `npm run deploy:cloud-run:multi` is the explicit equivalent. `npm run deploy:cloud-run:single` keeps the legacy combined-service path available when an operator needs one service.
 
-The first hosted slice is intentionally internal and single-instance. Keep Cloud Run at one max instance until the hosted operational-index coordination work is accepted and implemented. The helper writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
+The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`.
+
+The first split hosted launch shape is:
+
+- `instantml-control` with `INSTANTML_SERVICE_PLANE=control`, manual scaling, and 1 active instance by default.
+- `instantml-data-<region>-a` with `INSTANTML_SERVICE_PLANE=data`, manual scaling, and 1 active instance by default.
+
+Control and data-plane cells stay single-writer by default until the durable multi-writer gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are complete. A Cloud Run `maxScale=1` setting reduces risk but is not a correctness mechanism under automatic scaling; customer-facing single-writer cells should use manual scaling or an app-level write lease before relying on one writer. The deploy helper rejects control/data scaling above one active instance unless the matching unsafe test flag is set for a controlled test.
+
+Split deploys write local frontend env with direct control/data Cloud Run service URLs by default. When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper creates a managed HTTPS external Application Load Balancer and writes that one public API base. The helper refuses HTTP-only public routing because hosted auth, session cookies, and API keys must not cross a cleartext `http://<ip>` endpoint. The single-service deploy writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
 
 Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
+
+Logical control/data-plane division is available before deployment:
+
+- `INSTANTML_SERVICE_PLANE=combined` is the default and exposes the current full route set from one Rust process.
+- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, user/org, seat, API-key, service-account, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
+- `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, metrics, logs, attributes, objects, artifacts, export, usage, imports, and demo reset. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
+
+The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
 
 ## Config
 
@@ -71,6 +93,8 @@ Environment variables:
 
 - `CLICKHOUSE_URL`: ClickHouse HTTP connection string of the form `http://user:pass@host:port/database`. Default: `http://default:@127.0.0.1:8123/instantml`. The named database is created if missing on startup.
 - `INSTANTML_BIND_ADDR`: API bind address. Default: `127.0.0.1:8001`.
+- `INSTANTML_SERVICE_PLANE`: `combined`, `control`, or `data`. Default: `combined`. `control` and `data` require `INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true`.
+- `INSTANTML_CELL_ID`: optional operator label for a data-plane cell. The deploy helper sets it for split data services.
 - `INSTANTML_AUTH_MODE`: `local` or `api-key`. Default: `local`.
 - `INSTANTML_BOOTSTRAP_TOKEN`: required for bootstrap routes when `INSTANTML_AUTH_MODE=api-key`.
 - `INSTANTML_ARTIFACT_ROOT`: local artifact byte root. Default: `.instantml/rust-artifacts`.
@@ -92,7 +116,7 @@ Environment variables:
 - `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`, `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`: ClickHouse endpoint and credentials for the `instantml_user_data` control table. Values may live in local `.env`; process env wins when both are set.
 - `INSTANTML_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted experiments; falling back to the User Data endpoint is only a local/test convenience.
 - `INSTANTML_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default: `database`, which is local/test only unless paired with per-org least-privilege ClickHouse users and cross-database denial tests.
-- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` is required in cloud-service mode and should include the Cloud Run static egress CIDR, currently `136.115.243.188/32`, so every new tenant service is created with API-only ClickHouse access. Cloud-service mode is opt-in because it can create external paid services.
+- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` is required in cloud-service mode and should include the Cloud Run static egress CIDR, currently `136.115.243.188/32`, so every new tenant service is created with API-only ClickHouse access. Cloud-service mode is opt-in because it can create external paid services. `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=false` keeps selected Free/Pro/Premium warehouse sizes as recorded route intent while actual creation stays capped by operator memory/replica defaults.
 - `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
 
 Cloud-service retries recover from a service that was created before the route credentials were persisted by resetting that service password through the ClickHouse Cloud API, then writing a ready tenant route. This handles browser/API request timeouts during first provisioning without requiring manual User Data edits.
@@ -106,6 +130,13 @@ Root helper-only environment variables:
 
 - `INSTANTML_DEV_CHDATA`, `INSTANTML_DEV_CH_LOG_DIR`: generated ClickHouse state and logs for `npm run dev:api`.
 - `INSTANTML_DEV_CH_TCP_PORT`, `INSTANTML_DEV_CH_INTERSERVER_PORT`, `INSTANTML_DEV_CH_MYSQL_PORT`: optional non-HTTP ports for avoiding local collisions.
+- `INSTANTML_CLOUD_RUN_TOPOLOGY`: `single` or `split` for `tools/deploy-cloud-run.mjs`. `deploy:cloud-run` and `deploy:cloud-run:multi` pass `split`.
+- `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
+- `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Both default to `manual`.
+- `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual data instance count. Values above `1` are blocked unless `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1` is set.
+- `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE`: permits control scaling above one instance for controlled tests only.
+- `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: managed HTTPS public router controls.
+- `INSTANTML_PUBLIC_API_BASE`: public load balancer/router URL written to local frontend env after a split deploy.
 
 ## HTTP Surface
 
@@ -117,16 +148,19 @@ Implemented health and platform endpoints:
 - `GET /metrics`
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, browser sessions, org seat reservation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, warning-only usage summaries/export, API-key management, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
-The durable route reference lives in `docs/architecture/current-api.md`. Keep
-that document, this README, `src/http/mod.rs`, `src/http/handlers.rs`, and
-`src/domain.rs` synchronized whenever an endpoint, request body, query
-parameter, response envelope, auth rule, or limit changes. The live service's
-`GET /openapi.json` returns a compact route index with the same route set for
-operator verification.
+The durable route reference lives in `docs/architecture/current-api.md`, and
+the durable control/data-plane schema reference lives in
+`docs/architecture/current-schemas.md`. Keep those documents, this README,
+`src/http/mod.rs`, `src/http/handlers.rs`, `src/domain.rs`,
+`src/control_store.rs`, `src/metric_store.rs`, and `clickhouse/0001_initial.sql`
+synchronized whenever an endpoint, request body, query parameter, response
+envelope, auth rule, limit, table, record kind, or payload field changes. The
+live service's `GET /openapi.json` returns a compact role-aware route index and
+includes `x-instantml-service-plane` for operator verification.
 
-In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
+In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
 
 Console logs are stored in tenant ClickHouse through `console_log_lines`.
 `POST /api/runs/:run_id/logs` requires `sdk:ingest`, accepts client-supplied
@@ -142,6 +176,14 @@ Rust unit tests:
 npm run rust:test
 ```
 
+Rust static verification:
+
+```bash
+npm run rust:fmt:check
+npm run rust:lint
+npm run rust:verify
+```
+
 Run shared smokes against Rust:
 
 ```bash
@@ -155,7 +197,7 @@ npm run test:rust:ui
 npm run test:hosted-clickhouse
 ```
 
-These commands start disposable ClickHouse and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the default Playwright smoke with Rust as `INSTANTML_API_BASE`, including landing, local auth, onboarding, initial dashboard load, and fetch-gating checks. Set `INSTANTML_UI_SMOKE_FULL_WORKSPACE=1` for the longer workspace interaction regression. `test:hosted-clickhouse` exercises hosted-shaped routing end to end: local sign-up writes User Data control records, API-key creation writes User Data records, API-key scopes are enforced, direct and Python SDK ingestion write to the tenant database, safe provisioning payloads omit tenant secrets, and dashboard summary reads survive an API restart. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
+These commands start disposable ClickHouse and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the default Playwright smoke with Rust as `INSTANTML_API_BASE`, including landing, local auth, plan selection, onboarding, settings usage/seats, API-key management, initial dashboard load, and fetch-gating checks. Set `INSTANTML_UI_SMOKE_FULL_WORKSPACE=1` for the longer workspace interaction regression. `test:hosted-clickhouse` exercises hosted-shaped routing end to end with separate local `control` and `data` Rust processes: local sign-up writes User Data control records, selected plan metadata and tenant route requested/applied warehouse profiles are preserved, invited teammates can activate into the same org, API-key creation writes User Data records, role-specific route tables are enforced, data-plane auth refreshes control records, direct and Python SDK ingestion write to the tenant database, safe provisioning payloads omit tenant secrets, and dashboard summary reads survive a data-plane API restart. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
 
 Large-run benchmark:
 
@@ -175,18 +217,40 @@ This command reads the local `.env`, signs in as `hello@instantml.ai`, creates o
 
 The hosted benchmark now validates and times the dashboard's critical 100,000-run query shapes: newest run pages, larger pages, name/tag/config/notes search, failed/running/finished filters, combined search+filter, selected-metric sort, project overview, and a bounded chart series. Set `INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-benchmark.json` to save the sanitized JSON result, and `INSTANTML_HOSTED_DEMO_ENFORCE=1` to fail if hosted p95 budgets are missed.
 
+Cloud Run API benchmark:
+
+```bash
+INSTANTML_API_KEY=instantml_... npm run benchmark:cloud-run
+```
+
+Use this after `seed:hosted-scale` has created the large tenant dataset. It
+measures the deployed Cloud Run data service or HTTPS router with bearer auth,
+so the measured path is client -> Cloud Run -> ClickHouse Cloud. It covers org
+and project run summaries, searches, status filters, metric sort, overview,
+single-run chart series, and batched selected-run series calls against the
+100,000+ run hosted-scale projects. Set
+`INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json`
+to save sanitized JSON output.
+
 In `cloud-service` hosted mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse service, not in the User Data database.
+
+Hosted tenant warehouse wakeups are reported as `503` errors with the stable
+JSON code `warehouse_unavailable`. Public error text stays sanitized, but the
+code lets the frontend show "Starting data warehouse" and retry instead of
+presenting the condition as a generic API outage.
 
 ## Coverage Expectations
 
 Rust first-party service logic targets 100% meaningful coverage for validation, storage orchestration, idempotency handling, auth decisions, artifact byte handling, and API compatibility. Contract, SDK, UI, and benchmark smokes are part of the required verification because the current ClickHouse-only operational index is a storage-layer change with broad route impact.
 
+Agent/contributor guidance lives in `CLAUDE.md`. Production Rust code should propagate `AppResult` instead of panicking, keep 5xx response details out of public JSON, avoid silent storage fallbacks, and preserve deterministic full User Data replay until a durable monotonic control cursor is designed.
+
 Coverage exception:
-- Uncovered area: durable multi-process reconciliation and hosted service routing for the ClickHouse operational log.
-- Reason: the accepted first slice is local/test single-process only.
-- Risk: multiple Rust API processes pointed at the same operational table can serve stale index state until a later coordination design lands.
-- Follow-up: implement the hosted control-plane/data-plane design in `docs/design/2026-05-14-clickhouse-only-storage.md`.
-- Owner/date: future storage owner, 2026-05-14.
+- Uncovered area: live multi-writer freshness, write uniqueness, public cell routing/SDK redirects, and atomic metric/log idempotency.
+- Reason: the accepted multi-instance slice adds deterministic full operational replay, tenant-scoped replay validation, role-specific control/data HTTP surfaces, and data-plane control-record refresh before auth. It still does not enable shared cells with multiple concurrent writers.
+- Risk: multiple Rust data-plane writers pointed at the same tenant operational table can still create duplicate low-volume entities or duplicate metric/log rows if scaled outside the accepted gates.
+- Follow-up: add a stable operational event id or per-org sequence, close the mutation matrix gates, and run two-instance ClickHouse-backed integration tests before enabling shared cells.
+- Owner/date: hosted backend owner, 2026-05-16.
 
 ## Key Files
 
@@ -196,7 +260,7 @@ Coverage exception:
 - `src/control_store.rs`: User Data ClickHouse control-plane table and replay helpers for hosted mode.
 - `src/http/mod.rs`: HTTP app state, route table, and middleware wiring.
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.
-- `src/store/mod.rs`: ClickHouse-backed operational index core and module re-exports.
+- `src/store/mod.rs`: ClickHouse-backed operational index core, deterministic replay helpers, tenant replay validation, and module re-exports.
 - `src/store/auth.rs`: users, organizations, sessions, API keys, and admin authorization helpers.
 - `src/store/console_logs.rs`: stdout/stderr validation, idempotent writes, cursor encoding, and read response shaping.
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, scalar metric writes, and metric read endpoints.
@@ -226,7 +290,10 @@ Coverage exception:
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-16-clerk-hosted-auth.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
+- `docs/design/2026-05-16-multi-instance-control-data-plane.md`
+- `docs/design/2026-05-16-pricing-signup-org-admin.md`
 - `docs/architecture/current-api.md`
+- `docs/product/pricing-and-margins.md`
 
 ## Notes For Future Agents
 

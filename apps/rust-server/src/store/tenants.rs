@@ -1,5 +1,3 @@
-use axum::http::StatusCode;
-
 use super::*;
 use crate::{
     config::{ClickHouseCloudConfig, ClickHouseProvisioner},
@@ -12,11 +10,27 @@ const TENANT_ROUTE_PROVISIONING: &str = "provisioning";
 const TENANT_ROUTE_FAILED: &str = "failed";
 const TENANT_BASE_PASSWORD_REF: &str = "config:tenant_base_url_password";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantRouteRecord {
     pub org_id: Uuid,
     pub status: String,
     pub provisioner: String,
+    #[serde(default)]
+    pub plan_tier: Option<String>,
+    #[serde(default)]
+    pub warehouse_kind: Option<String>,
+    #[serde(default)]
+    pub requested_min_replica_memory_gb: Option<u32>,
+    #[serde(default)]
+    pub requested_max_replica_memory_gb: Option<u32>,
+    #[serde(default)]
+    pub requested_num_replicas: Option<u32>,
+    #[serde(default)]
+    pub applied_min_replica_memory_gb: Option<u32>,
+    #[serde(default)]
+    pub applied_max_replica_memory_gb: Option<u32>,
+    #[serde(default)]
+    pub applied_num_replicas: Option<u32>,
     pub endpoint: String,
     pub database: String,
     pub username: String,
@@ -72,26 +86,17 @@ impl Store {
 
         let metric_store = self.metric_store_from_route(&route).await?;
         let records = metric_store.load_operational_records().await?;
-        let latest_record_micros = records
-            .iter()
-            .map(|record| record.created_at.timestamp_micros())
-            .max()
-            .unwrap_or(0);
-        {
+        let stats = {
             let mut data = self.data.lock().await;
-            for record in records {
-                validate_tenant_record_org(org_id, &record)?;
-                data.apply_record(&record.kind, record.org_id, &record.payload)?;
-            }
-            data.recompute_counters();
-        }
+            data.apply_operational_records(records, ReplayScope::Tenant(org_id))?
+        };
         self.tenant_metric_stores
             .lock()
             .await
             .insert(org_id, metric_store);
         self.tenant_loaded.lock().await.insert(org_id);
         let mut clock = self.record_clock_micros.lock().await;
-        *clock = (*clock).max(latest_record_micros);
+        *clock = (*clock).max(stats.latest_record_micros);
         Ok(())
     }
 
@@ -117,7 +122,7 @@ impl Store {
         org: &OrganizationRow,
     ) -> AppResult<TenantRouteRecord> {
         if !self.hosted_clickhouse_enabled() {
-            return Ok(local_route(org.id));
+            return Ok(local_route(org));
         }
         let existing_route = {
             let data = self.data.lock().await;
@@ -141,20 +146,37 @@ impl Store {
         }
 
         let now = Utc::now();
-        let provisioning = TenantRouteRecord {
-            org_id: org.id,
-            status: TENANT_ROUTE_PROVISIONING.to_string(),
-            provisioner: self.provisioner_name(),
-            endpoint: String::new(),
-            database: String::new(),
-            username: String::new(),
-            password_secret_ref: None,
-            password_ciphertext: None,
-            service_id: None,
-            created_at: now,
-            updated_at: now,
-            error: None,
-        };
+        let profile = tenant_route_profile(
+            org,
+            self.hosted_clickhouse
+                .as_ref()
+                .and_then(|hosted| hosted.cloud.as_ref()),
+        );
+        let provisioning = with_profile(
+            TenantRouteRecord {
+                org_id: org.id,
+                status: TENANT_ROUTE_PROVISIONING.to_string(),
+                provisioner: self.provisioner_name(),
+                plan_tier: None,
+                warehouse_kind: None,
+                requested_min_replica_memory_gb: None,
+                requested_max_replica_memory_gb: None,
+                requested_num_replicas: None,
+                applied_min_replica_memory_gb: None,
+                applied_max_replica_memory_gb: None,
+                applied_num_replicas: None,
+                endpoint: String::new(),
+                database: String::new(),
+                username: String::new(),
+                password_secret_ref: None,
+                password_ciphertext: None,
+                service_id: None,
+                created_at: now,
+                updated_at: now,
+                error: None,
+            },
+            profile,
+        );
         self.persist_locked(
             TENANT_ROUTE_KIND,
             org.id,
@@ -189,19 +211,32 @@ impl Store {
                     .get(&org.id)
                     .cloned()
                     .filter(|route| route.status == TENANT_ROUTE_FAILED)
-                    .unwrap_or_else(|| TenantRouteRecord {
-                        org_id: org.id,
-                        status: TENANT_ROUTE_FAILED.to_string(),
-                        provisioner: self.provisioner_name(),
-                        endpoint: String::new(),
-                        database: String::new(),
-                        username: String::new(),
-                        password_secret_ref: None,
-                        password_ciphertext: None,
-                        service_id: None,
-                        created_at: now,
-                        updated_at: Utc::now(),
-                        error: Some(error.message().to_string()),
+                    .unwrap_or_else(|| {
+                        with_profile(
+                            TenantRouteRecord {
+                                org_id: org.id,
+                                status: TENANT_ROUTE_FAILED.to_string(),
+                                provisioner: self.provisioner_name(),
+                                plan_tier: None,
+                                warehouse_kind: None,
+                                requested_min_replica_memory_gb: None,
+                                requested_max_replica_memory_gb: None,
+                                requested_num_replicas: None,
+                                applied_min_replica_memory_gb: None,
+                                applied_max_replica_memory_gb: None,
+                                applied_num_replicas: None,
+                                endpoint: String::new(),
+                                database: String::new(),
+                                username: String::new(),
+                                password_secret_ref: None,
+                                password_ciphertext: None,
+                                service_id: None,
+                                created_at: now,
+                                updated_at: Utc::now(),
+                                error: Some(error.message().to_string()),
+                            },
+                            profile,
+                        )
                     });
                 self.persist_locked(TENANT_ROUTE_KIND, org.id, &org.id.to_string(), &failed)
                     .await?;
@@ -240,20 +275,32 @@ impl Store {
         };
         let metric_store = connect_connection(&connection)?;
         metric_store::migrate(&metric_store).await?;
-        Ok(TenantRouteRecord {
-            org_id: org.id,
-            status: TENANT_ROUTE_READY.to_string(),
-            provisioner: "database".to_string(),
-            endpoint: connection.endpoint,
-            database: connection.database,
-            username: connection.username,
-            password_secret_ref: Some(TENANT_BASE_PASSWORD_REF.to_string()),
-            password_ciphertext: None,
-            service_id: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            error: None,
-        })
+        let profile = tenant_route_profile(org, None);
+        Ok(with_profile(
+            TenantRouteRecord {
+                org_id: org.id,
+                status: TENANT_ROUTE_READY.to_string(),
+                provisioner: "database".to_string(),
+                plan_tier: None,
+                warehouse_kind: None,
+                requested_min_replica_memory_gb: None,
+                requested_max_replica_memory_gb: None,
+                requested_num_replicas: None,
+                applied_min_replica_memory_gb: None,
+                applied_max_replica_memory_gb: None,
+                applied_num_replicas: None,
+                endpoint: connection.endpoint,
+                database: connection.database,
+                username: connection.username,
+                password_secret_ref: Some(TENANT_BASE_PASSWORD_REF.to_string()),
+                password_ciphertext: None,
+                service_id: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                error: None,
+            },
+            profile,
+        ))
     }
 
     async fn persist_tenant_route(&self, route: TenantRouteRecord) -> AppResult<()> {
@@ -315,23 +362,35 @@ impl Store {
             .ok_or_else(|| AppError::config("cloud-service provisioner is missing cloud config"))?;
         let created = create_cloud_service(cloud, org).await?;
         let now = Utc::now();
-        let draft = TenantRouteRecord {
-            org_id: org.id,
-            status: TENANT_ROUTE_PROVISIONING.to_string(),
-            provisioner: "cloud-service".to_string(),
-            endpoint: created.endpoint.clone(),
-            database: "default".to_string(),
-            username: created.username.clone(),
-            password_secret_ref: created
-                .service_id
-                .as_ref()
-                .map(|id| format!("clickhouse-cloud:service:{id}")),
-            password_ciphertext: Some(created.password.clone()),
-            service_id: created.service_id.clone(),
-            created_at: now,
-            updated_at: now,
-            error: None,
-        };
+        let profile = tenant_route_profile(org, Some(cloud));
+        let draft = with_profile(
+            TenantRouteRecord {
+                org_id: org.id,
+                status: TENANT_ROUTE_PROVISIONING.to_string(),
+                provisioner: "cloud-service".to_string(),
+                plan_tier: None,
+                warehouse_kind: None,
+                requested_min_replica_memory_gb: None,
+                requested_max_replica_memory_gb: None,
+                requested_num_replicas: None,
+                applied_min_replica_memory_gb: None,
+                applied_max_replica_memory_gb: None,
+                applied_num_replicas: None,
+                endpoint: created.endpoint.clone(),
+                database: "default".to_string(),
+                username: created.username.clone(),
+                password_secret_ref: created
+                    .service_id
+                    .as_ref()
+                    .map(|id| format!("clickhouse-cloud:service:{id}")),
+                password_ciphertext: Some(created.password.clone()),
+                service_id: created.service_id.clone(),
+                created_at: now,
+                updated_at: now,
+                error: None,
+            },
+            profile,
+        );
         self.persist_tenant_route(draft.clone()).await?;
         let connection = ClickHouseConnection {
             endpoint: created.endpoint.clone(),
@@ -423,53 +482,91 @@ fn tenant_database_name(org_id: Uuid) -> String {
 }
 
 fn tenant_unavailable(message: impl Into<String>) -> AppError {
-    AppError::new(StatusCode::SERVICE_UNAVAILABLE, message)
+    AppError::warehouse_unavailable(message)
 }
 
-fn validate_tenant_record_org(
-    expected_org_id: Uuid,
-    record: &crate::metric_store::OperationalRecordRow,
-) -> AppResult<()> {
-    if record.org_id != expected_org_id {
-        return Err(AppError::internal(
-            "tenant operational record belonged to a different org",
-        ));
-    }
-    let payload = serde_json::from_str::<Value>(&record.payload)
-        .map_err(|_| AppError::internal("tenant operational record payload is invalid"))?;
-    let payload_org_id = payload
-        .get("org_id")
-        .or_else(|| payload.get("row").and_then(|row| row.get("org_id")))
-        .and_then(Value::as_str)
-        .map(Uuid::parse_str)
-        .transpose()
-        .map_err(|_| AppError::internal("tenant operational record org_id is invalid"))?;
-    if payload_org_id
-        .map(|org_id| org_id != expected_org_id)
-        .unwrap_or(false)
-    {
-        return Err(AppError::internal(
-            "tenant operational record payload belonged to a different org",
-        ));
-    }
-    Ok(())
+fn local_route(org: &OrganizationRow) -> TenantRouteRecord {
+    with_profile(
+        TenantRouteRecord {
+            org_id: org.id,
+            status: TENANT_ROUTE_READY.to_string(),
+            provisioner: "local".to_string(),
+            plan_tier: None,
+            warehouse_kind: None,
+            requested_min_replica_memory_gb: None,
+            requested_max_replica_memory_gb: None,
+            requested_num_replicas: None,
+            applied_min_replica_memory_gb: None,
+            applied_max_replica_memory_gb: None,
+            applied_num_replicas: None,
+            endpoint: String::new(),
+            database: String::new(),
+            username: String::new(),
+            password_secret_ref: None,
+            password_ciphertext: None,
+            service_id: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            error: None,
+        },
+        tenant_route_profile(org, None),
+    )
 }
 
-fn local_route(org_id: Uuid) -> TenantRouteRecord {
-    TenantRouteRecord {
-        org_id,
-        status: TENANT_ROUTE_READY.to_string(),
-        provisioner: "local".to_string(),
-        endpoint: String::new(),
-        database: String::new(),
-        username: String::new(),
-        password_secret_ref: None,
-        password_ciphertext: None,
-        service_id: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        error: None,
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TenantWarehouseProfile {
+    plan_tier: &'static str,
+    warehouse_kind: &'static str,
+    requested_min_replica_memory_gb: u32,
+    requested_max_replica_memory_gb: u32,
+    requested_num_replicas: u32,
+    applied_min_replica_memory_gb: u32,
+    applied_max_replica_memory_gb: u32,
+    applied_num_replicas: u32,
+}
+
+fn tenant_route_profile(
+    org: &OrganizationRow,
+    cloud: Option<&ClickHouseCloudConfig>,
+) -> TenantWarehouseProfile {
+    let plan = plan_tier(&org.plan_tier);
+    let (applied_min, applied_max, applied_replicas) = match cloud {
+        Some(cloud) if !cloud.allow_plan_sizing => (
+            cloud.min_replica_memory_gb,
+            cloud.max_replica_memory_gb,
+            cloud.num_replicas,
+        ),
+        _ => (
+            plan.min_replica_memory_gb,
+            plan.max_replica_memory_gb,
+            plan.num_replicas,
+        ),
+    };
+    TenantWarehouseProfile {
+        plan_tier: plan.id,
+        warehouse_kind: plan.warehouse_kind,
+        requested_min_replica_memory_gb: plan.min_replica_memory_gb,
+        requested_max_replica_memory_gb: plan.max_replica_memory_gb,
+        requested_num_replicas: plan.num_replicas,
+        applied_min_replica_memory_gb: applied_min,
+        applied_max_replica_memory_gb: applied_max,
+        applied_num_replicas: applied_replicas,
     }
+}
+
+fn with_profile(
+    mut route: TenantRouteRecord,
+    profile: TenantWarehouseProfile,
+) -> TenantRouteRecord {
+    route.plan_tier = Some(profile.plan_tier.to_string());
+    route.warehouse_kind = Some(profile.warehouse_kind.to_string());
+    route.requested_min_replica_memory_gb = Some(profile.requested_min_replica_memory_gb);
+    route.requested_max_replica_memory_gb = Some(profile.requested_max_replica_memory_gb);
+    route.requested_num_replicas = Some(profile.requested_num_replicas);
+    route.applied_min_replica_memory_gb = Some(profile.applied_min_replica_memory_gb);
+    route.applied_max_replica_memory_gb = Some(profile.applied_max_replica_memory_gb);
+    route.applied_num_replicas = Some(profile.applied_num_replicas);
+    route
 }
 
 struct CloudTenant {
@@ -518,14 +615,15 @@ async fn create_cloud_service(
             service_id: Some(service_id.to_string()),
         });
     }
+    let profile = tenant_route_profile(org, Some(cloud));
     let body = json!({
         "name": service_name,
         "provider": cloud.provider,
         "region": cloud.region,
         "ipAccessList": cloud_ip_access_list(cloud),
-        "minReplicaMemoryGb": cloud.min_replica_memory_gb,
-        "maxReplicaMemoryGb": cloud.max_replica_memory_gb,
-        "numReplicas": cloud.num_replicas
+        "minReplicaMemoryGb": profile.applied_min_replica_memory_gb,
+        "maxReplicaMemoryGb": profile.applied_max_replica_memory_gb,
+        "numReplicas": profile.applied_num_replicas
     });
     let value = cloud_request(
         client
@@ -896,6 +994,7 @@ mod tests {
             min_replica_memory_gb: 12,
             max_replica_memory_gb: 12,
             num_replicas: 1,
+            allow_plan_sizing: false,
             wait_timeout: std::time::Duration::from_secs(1),
         };
 
@@ -966,5 +1065,47 @@ mod tests {
             created_at: Utc::now(),
         };
         assert_ne!(cloud_service_name(&first), cloud_service_name(&second));
+    }
+
+    #[test]
+    fn tenant_route_profile_records_requested_and_operator_applied_capacity() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "premium-lab".to_string(),
+            name: "Premium Lab".to_string(),
+            plan_tier: "premium".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 10,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+        };
+        let cloud = ClickHouseCloudConfig {
+            endpoint: "https://api.clickhouse.cloud".to_string(),
+            key_id: "key".to_string(),
+            key_secret: "secret".to_string(),
+            organization_id: Some("org".to_string()),
+            provider: "gcp".to_string(),
+            region: "us-central1".to_string(),
+            ip_access_list: vec!["0.0.0.0/0".to_string()],
+            min_replica_memory_gb: 12,
+            max_replica_memory_gb: 12,
+            num_replicas: 1,
+            allow_plan_sizing: false,
+            wait_timeout: std::time::Duration::from_secs(1),
+        };
+
+        let capped = tenant_route_profile(&org, Some(&cloud));
+        assert_eq!(capped.plan_tier, "premium");
+        assert_eq!(capped.warehouse_kind, "dedicated");
+        assert_eq!(capped.requested_min_replica_memory_gb, 16);
+        assert_eq!(capped.requested_num_replicas, 2);
+        assert_eq!(capped.applied_min_replica_memory_gb, 12);
+        assert_eq!(capped.applied_num_replicas, 1);
+
+        let mut allowed_cloud = cloud;
+        allowed_cloud.allow_plan_sizing = true;
+        let applied = tenant_route_profile(&org, Some(&allowed_cloud));
+        assert_eq!(applied.applied_min_replica_memory_gb, 16);
+        assert_eq!(applied.applied_num_replicas, 2);
     }
 }

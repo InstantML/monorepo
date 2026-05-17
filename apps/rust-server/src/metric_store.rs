@@ -181,16 +181,17 @@ impl MetricStore {
         let mut inserter = self
             .client
             .insert("metric_points")
-            .map_err(|err| AppError::internal(format!("clickhouse insert init failed: {err}")))?;
+            .map_err(|err| clickhouse_storage_error("clickhouse insert init failed", err))?;
         for point in points {
-            inserter.write(point).await.map_err(|err| {
-                AppError::internal(format!("clickhouse insert write failed: {err}"))
-            })?;
+            inserter
+                .write(point)
+                .await
+                .map_err(|err| clickhouse_storage_error("clickhouse insert write failed", err))?;
         }
         inserter
             .end()
             .await
-            .map_err(|err| AppError::internal(format!("clickhouse insert flush failed: {err}")))?;
+            .map_err(|err| clickhouse_storage_error("clickhouse insert flush failed", err))?;
         Ok(())
     }
 
@@ -198,29 +199,31 @@ impl MetricStore {
         if rows.is_empty() {
             return Ok(());
         }
-        let mut inserter = self.client.insert("console_log_lines").map_err(|err| {
-            AppError::internal(format!("clickhouse log insert init failed: {err}"))
-        })?;
+        let mut inserter = self
+            .client
+            .insert("console_log_lines")
+            .map_err(|err| clickhouse_storage_error("clickhouse log insert init failed", err))?;
         for row in rows {
             inserter.write(row).await.map_err(|err| {
-                AppError::internal(format!("clickhouse log insert write failed: {err}"))
+                clickhouse_storage_error("clickhouse log insert write failed", err)
             })?;
         }
-        inserter.end().await.map_err(|err| {
-            AppError::internal(format!("clickhouse log insert flush failed: {err}"))
-        })?;
+        inserter
+            .end()
+            .await
+            .map_err(|err| clickhouse_storage_error("clickhouse log insert flush failed", err))?;
         Ok(())
     }
 
     pub async fn insert_operational_record(&self, row: &OperationalRecordRow) -> AppResult<()> {
         let mut inserter = self.client.insert("operational_records").map_err(|err| {
-            AppError::internal(format!("clickhouse operational insert init failed: {err}"))
+            clickhouse_storage_error("clickhouse operational insert init failed", err)
         })?;
         inserter.write(row).await.map_err(|err| {
-            AppError::internal(format!("clickhouse operational insert write failed: {err}"))
+            clickhouse_storage_error("clickhouse operational insert write failed", err)
         })?;
         inserter.end().await.map_err(|err| {
-            AppError::internal(format!("clickhouse operational insert flush failed: {err}"))
+            clickhouse_storage_error("clickhouse operational insert flush failed", err)
         })?;
         Ok(())
     }
@@ -656,7 +659,38 @@ fn bind_optional_step(step: Option<f64>) -> (u8, f64) {
 }
 
 fn clickhouse_read_error(err: clickhouse::error::Error) -> AppError {
-    AppError::internal(format!("clickhouse query failed: {err}"))
+    clickhouse_storage_error("clickhouse query failed", err)
+}
+
+fn clickhouse_storage_error(action: &str, err: clickhouse::error::Error) -> AppError {
+    let message = format!("{action}: {err}");
+    if is_clickhouse_unavailable_message(&message) {
+        AppError::warehouse_unavailable(message)
+    } else {
+        AppError::internal(message)
+    }
+}
+
+fn is_clickhouse_unavailable_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    [
+        "503",
+        "502 bad gateway",
+        "504 gateway timeout",
+        "service unavailable",
+        "temporarily unavailable",
+        "connection refused",
+        "connection reset",
+        "connection closed",
+        "timed out",
+        "timeout",
+        "operation timed out",
+        "not ready",
+        "no route to host",
+        "failed to lookup address information",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
 }
 
 /// Build a [`MetricStore`] from `CLICKHOUSE_URL`.
@@ -729,7 +763,7 @@ pub async fn migrate(store: &MetricStore) -> AppResult<()> {
             .query(&statement)
             .execute()
             .await
-            .map_err(|err| AppError::internal(format!("clickhouse migration failed: {err}")))?;
+            .map_err(|err| clickhouse_storage_error("clickhouse migration failed", err))?;
     }
     Ok(())
 }
@@ -751,7 +785,7 @@ pub async fn ensure_database(store: &MetricStore) -> AppResult<()> {
         .query(&statement)
         .execute()
         .await
-        .map_err(|err| AppError::internal(format!("clickhouse create database failed: {err}")))?;
+        .map_err(|err| clickhouse_storage_error("clickhouse create database failed", err))?;
     Ok(())
 }
 
@@ -800,5 +834,27 @@ mod tests {
         assert_eq!(statements.len(), 2);
         assert!(statements[0].starts_with("CREATE TABLE a"));
         assert!(statements[1].starts_with("CREATE TABLE b"));
+    }
+
+    #[test]
+    fn clickhouse_unavailable_classifier_catches_transient_warehouse_states() {
+        for message in [
+            "clickhouse query failed: HTTP status 503 Service Unavailable",
+            "clickhouse migration failed: operation timed out",
+            "clickhouse insert failed: connection refused",
+            "clickhouse query failed: temporarily unavailable",
+        ] {
+            assert!(
+                is_clickhouse_unavailable_message(message),
+                "expected transient classification for {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn clickhouse_unavailable_classifier_leaves_query_errors_internal() {
+        assert!(!is_clickhouse_unavailable_message(
+            "clickhouse query failed: DB::Exception: Unknown identifier metric"
+        ));
     }
 }

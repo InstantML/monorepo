@@ -3,6 +3,7 @@ export const HOSTED_BENCHMARK_BUDGETS_MS = Object.freeze({
   search_filter_sort: 1000,
   overview: 1000,
   chart: 750,
+  batched_series: 750,
 });
 
 export function budgetForCase(caseDefinition) {
@@ -45,6 +46,7 @@ export function validateBenchmarkPayload(caseDefinition, payload) {
   }
   if (caseDefinition.kind === "overview") return validateOverview(caseDefinition, payload);
   if (caseDefinition.kind === "chart") return validateChart(caseDefinition, payload);
+  if (caseDefinition.kind === "batched_series") return validateBatchedSeries(caseDefinition, payload);
   return validateSummary(caseDefinition, payload);
 }
 
@@ -68,6 +70,8 @@ export function sanitizeHostedBenchmarkResult(raw) {
       arch: raw.environment?.arch,
       node_version: raw.environment?.node_version,
       api_mode: raw.environment?.api_mode,
+      api_host: hostOnly(raw.environment?.api_host),
+      api_transport: raw.environment?.api_transport,
       warmed: raw.environment?.warmed,
     }),
     measurement_protocol: compactObject({
@@ -78,11 +82,20 @@ export function sanitizeHostedBenchmarkResult(raw) {
     }),
     dataset: compactObject({
       project: raw.dataset?.project,
+      projects: raw.dataset?.projects,
       configured_runs: raw.dataset?.configured_runs,
+      configured_min_runs: raw.dataset?.configured_min_runs,
       seeded_runs: raw.dataset?.seeded_runs,
+      observed_runs: raw.dataset?.observed_runs,
       seeded_metric_points: raw.dataset?.seeded_metric_points,
+      observed_metric_points: raw.dataset?.observed_metric_points,
       long_run_steps: raw.dataset?.long_run_steps,
+      expected_steps_per_run: raw.dataset?.expected_steps_per_run,
+      chart_limit: raw.dataset?.chart_limit,
+      selected_run_count: raw.dataset?.selected_run_count,
       metric_key: raw.dataset?.metric_key,
+      system_metric_key: raw.dataset?.system_metric_key,
+      metric_keys: raw.dataset?.metric_keys,
       status_counts: raw.dataset?.status_counts,
     }),
     route: compactObject({
@@ -166,6 +179,38 @@ function validateChart(caseDefinition, payload) {
     rows: payload.metrics.length,
     first_step: payload.metrics[0]?.step,
     last_step: payload.metrics.at(-1)?.step,
+  };
+}
+
+function validateBatchedSeries(caseDefinition, payload) {
+  if (!Array.isArray(payload.series)) {
+    throw new Error(`${caseDefinition.name} returned malformed batched series payload`);
+  }
+  if (caseDefinition.expected_series !== undefined && payload.series.length !== caseDefinition.expected_series) {
+    throw new Error(`${caseDefinition.name} returned ${payload.series.length} series, expected ${caseDefinition.expected_series}`);
+  }
+  const limit = Number(caseDefinition.limit || Number.POSITIVE_INFINITY);
+  let rows = 0;
+  let non_empty_series = 0;
+  for (const series of payload.series) {
+    if (!Array.isArray(series.metrics)) {
+      throw new Error(`${caseDefinition.name} returned a series without metrics`);
+    }
+    if (series.metrics.length > limit) {
+      throw new Error(`${caseDefinition.name} returned ${series.metrics.length} metrics for limit ${limit}`);
+    }
+    rows += series.metrics.length;
+    if (series.metrics.length > 0) non_empty_series += 1;
+  }
+  if (caseDefinition.expect_non_empty !== false && rows === 0) {
+    throw new Error(`${caseDefinition.name} returned empty batched series`);
+  }
+  return {
+    kind: "batched_series",
+    series: payload.series.length,
+    non_empty_series,
+    rows,
+    max_rows_per_series: payload.series.reduce((max, series) => Math.max(max, series.metrics.length), 0),
   };
 }
 

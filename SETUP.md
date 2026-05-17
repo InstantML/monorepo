@@ -134,6 +134,17 @@ http://127.0.0.1:8010   # or http://127.0.0.1:8000 with the default port mapping
 Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8010`
 (or `:8000` if you skipped the override).
 
+The compose file also includes a split control/data profile for understanding
+the hosted service-plane layout:
+
+```bash
+docker compose --profile split up --build instantml-control instantml-data
+```
+
+That starts `instantml-control` on host port `8001` and `instantml-data` on
+host port `8002` against the same ClickHouse container. Use
+`npm run test:hosted-clickhouse` for automated split-process verification.
+
 **Do not enable `INSTANTML_DEV_AUTH_ENABLED` on any host reachable from the
 public internet** — the endpoint lets anyone mint an authenticated
 session with an arbitrary email.

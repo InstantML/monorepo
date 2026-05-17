@@ -12,12 +12,15 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-hosted-clickhou
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
-const apiPort = await freePort();
-const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+const controlPort = await freePort();
+const dataPort = await freePort();
+const controlBaseUrl = `http://127.0.0.1:${controlPort}`;
+const dataBaseUrl = `http://127.0.0.1:${dataPort}`;
 const clickhouseBase = `http://default:@127.0.0.1:${clickhouseHttpPort}`;
 const controlUrl = `${clickhouseBase}/instantml_user_data_smoke`;
 const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
-let server = null;
+let controlServer = null;
+let dataServer = null;
 let clickhouse = null;
 
 try {
@@ -30,31 +33,58 @@ try {
     interserverHttpPort: clickhouseInterserverPort,
   });
 
-  server = await startServer();
-  const signup = await postJson("/api/auth/dev/google", {
+  controlServer = await startServer("control");
+  dataServer = await startServer("data");
+
+  await assertServicePlane(controlBaseUrl, "control");
+  await assertServicePlane(dataBaseUrl, "data");
+  await assertRouteStatus(controlBaseUrl, "/runs", { method: "GET" }, 404);
+  await assertRouteStatus(dataBaseUrl, "/api/orgs", { method: "GET" }, 404);
+
+  const signup = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hosted-smoke@example.com",
     display_name: "Hosted Smoke",
+    mode: "signup",
     account_type: "business",
     org_name: `Hosted Smoke ${Date.now()}`,
+    plan_tier: "pro",
     seat_emails: ["teammate@example.com"],
   });
   const cookie = signup.cookie;
   const orgId = signup.body.organization.id;
   assert.ok(orgId, "signup should return an organization id");
+  assert.equal(signup.body.organization.plan_tier, "pro");
+  assert.equal(signup.body.organization.seat_limit, 3);
   assertNoSensitiveProvisioningFields(signup.body);
+
+  let seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
+  assert.equal(seats.seats.length, 2);
+  assert.equal(seats.seats.some((seat) => seat.user.primary_email === "teammate@example.com" && seat.membership.status === "invited"), true);
+
+  const teammateSignin = await postJson(controlBaseUrl, "/api/auth/dev/google", {
+    email: "teammate@example.com",
+    display_name: "Teammate Smoke",
+    mode: "signin",
+  });
+  const teammateCookie = teammateSignin.cookie;
+  assert.equal(teammateSignin.body.organization.id, orgId);
+  assert.equal(teammateSignin.body.membership.role, "member");
+  assert.equal(teammateSignin.body.membership.status, "active");
+  seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
+  assert.equal(seats.seats.some((seat) => seat.user.primary_email === "teammate@example.com" && seat.membership.status === "active"), true);
 
   const firstKinds = await controlKinds();
   for (const kind of ["user", "organization", "membership", "session", "tenant_route"]) {
     assert.ok(firstKinds.includes(kind), `User Data should contain ${kind}`);
   }
 
-  const demoFirst = await postJson("/api/auth/dev/google", {
+  const demoFirst = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hello@instantml.ai",
     display_name: "Different Demo Name",
     account_type: "individual",
     org_name: "Per Login Demo Org",
   });
-  const demoSecond = await postJson("/api/auth/dev/google", {
+  const demoSecond = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hello@instantml.com",
     display_name: "Alias Demo Name",
     account_type: "business",
@@ -73,13 +103,31 @@ try {
   );
 
   const keyPayload = await postJson(
+    controlBaseUrl,
     `/api/orgs/${orgId}/api-keys`,
     { name: "Hosted smoke SDK key" },
     { cookie },
   );
   const apiKey = keyPayload.body.api_key;
   assert.match(apiKey, /^instantml_/, "API key should be copy-once secret");
+  let listedKeys = await getJson(controlBaseUrl, `/api/orgs/${orgId}/api-keys`, { cookie });
+  assert.equal(listedKeys.api_keys.some((key) => key.id === keyPayload.body.key.id), true);
+  const extraKeyPayload = await postJson(
+    controlBaseUrl,
+    `/api/orgs/${orgId}/api-keys`,
+    { name: "Hosted smoke revoked key" },
+    { cookie },
+  );
+  await postJson(
+    controlBaseUrl,
+    `/api/orgs/${orgId}/api-keys/${extraKeyPayload.body.key.id}/revoke`,
+    {},
+    { cookie },
+  );
+  listedKeys = await getJson(controlBaseUrl, `/api/orgs/${orgId}/api-keys`, { cookie });
+  assert.ok(listedKeys.api_keys.find((key) => key.id === extraKeyPayload.body.key.id)?.revoked_at);
   await assertPostStatus(
+    controlBaseUrl,
     `/api/orgs/${orgId}/api-keys`,
     { name: "Hosted smoke forbidden key" },
     { apiKey },
@@ -89,9 +137,14 @@ try {
   const route = await latestTenantRoute(orgId);
   assert.equal(route.status, "ready");
   assert.ok(route.database.startsWith("instantml_org_"));
+  assert.equal(route.plan_tier, "pro");
+  assert.equal(route.warehouse_kind, "standard");
+  assert.equal(route.requested_min_replica_memory_gb, 12);
+  assert.equal(route.applied_min_replica_memory_gb, 12);
 
   const run = (
     await postJson(
+      dataBaseUrl,
       "/runs",
       {
         project: "hosted-smoke",
@@ -104,12 +157,14 @@ try {
     )
   ).body.run;
   await postJson(
+    dataBaseUrl,
     `/runs/${run.id}/metrics`,
     { step: 1, metrics: { "eval/return_mean": 42, "train/loss": 0.2 } },
     { apiKey },
   );
 
   const summary = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-smoke&q=searchable&limit=10",
     { cookie },
   );
@@ -117,8 +172,17 @@ try {
   assert.equal(summary.runs[0].id, run.id);
   assert.equal(summary.runs[0].latest_metrics["eval/return_mean"], 42);
 
+  const teammateSummary = await getJson(
+    dataBaseUrl,
+    "/api/runs/summary?project=hosted-smoke&q=searchable&limit=10",
+    { cookie: teammateCookie },
+  );
+  assert.equal(teammateSummary.runs.length, 1);
+  assert.equal(teammateSummary.runs[0].id, run.id);
+
   runPythonSdk(apiKey);
   const pythonSummary = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-python&q=python-sdk&limit=10",
     { cookie },
   );
@@ -129,20 +193,30 @@ try {
   assert.equal(await clickhouseCount(tenantUrl, "operational_records", "kind = 'run'"), 3);
   assert.equal(await clickhouseCount(tenantUrl, "metric_points", "key = 'eval/return_mean'"), 4);
 
-  await stopServer();
-  server = await startServer();
+  await stopServer("data");
+  dataServer = await startServer("data");
   const restarted = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-smoke&q=query target&limit=10",
     { cookie },
   );
   assert.equal(restarted.runs.length, 1);
   assert.equal(restarted.runs[0].id, run.id);
   const restartedPython = await getJson(
+    dataBaseUrl,
     "/api/runs/summary?project=hosted-python&q=python-sdk&limit=10",
     { cookie },
   );
   assert.equal(restartedPython.runs.length, 1);
   assert.equal(restartedPython.runs[0].latest_metrics["eval/return_mean"], 102);
+
+  const usage = await getJson(dataBaseUrl, "/api/usage", { cookie });
+  assert.equal(usage.billing_precision, "not_billable");
+  assert.equal(usage.plans.pro.included_seats, 3);
+  assert.equal(usage.organizations[0].plan_tier, "pro");
+  assert.equal(usage.organizations[0].usage.seats, 2);
+  assert.equal(usage.organizations[0].usage.api_keys, 1);
+  assert.equal(usage.organizations[0].limits.included_storage_bytes, 1024 ** 4);
 
   const finalKinds = await controlKinds();
   assert.ok(finalKinds.includes("api_key"), "User Data should contain api_key");
@@ -160,7 +234,8 @@ try {
     ),
   );
 } finally {
-  await stopServer();
+  await stopServer("data");
+  await stopServer("control");
   if (clickhouse) await clickhouse.stop();
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
@@ -188,7 +263,7 @@ run.finish()
 `;
   const result = spawnSync("python3", ["-c", script], {
     cwd: repo,
-    env: { ...process.env, INSTANTML_BASE_URL: apiBaseUrl, INSTANTML_API_KEY: apiKey },
+    env: { ...process.env, INSTANTML_BASE_URL: dataBaseUrl, INSTANTML_API_KEY: apiKey },
     stdio: "inherit",
   });
   if (result.status !== 0) {
@@ -196,42 +271,49 @@ run.finish()
   }
 }
 
-async function startServer() {
-  const serverLog = path.join(tempDir, `api-${Date.now()}.log`);
+async function startServer(servicePlane) {
+  const port = servicePlane === "control" ? controlPort : dataPort;
+  const baseUrl = servicePlane === "control" ? controlBaseUrl : dataBaseUrl;
+  const serverLog = path.join(tempDir, `${servicePlane}-api-${Date.now()}.log`);
   const output = fs.openSync(serverLog, "w");
   const child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
     env: {
       ...process.env,
-      CLICKHOUSE_URL: `${clickhouseBase}/instantml_default`,
+      CLICKHOUSE_URL: `${clickhouseBase}/instantml_${servicePlane}_default`,
       CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: controlUrl,
       INSTANTML_TENANT_CLICKHOUSE_URL: tenantBaseUrl,
       INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
       INSTANTML_CLICKHOUSE_PROVISIONER: "database",
-      INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
+      INSTANTML_SERVICE_PLANE: servicePlane,
+      INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
       INSTANTML_AUTH_MODE: "local",
-      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, `${servicePlane}-artifacts`),
     },
     stdio: ["ignore", output, output],
   });
   fs.closeSync(output);
-  await waitForHttp(`${apiBaseUrl}/readyz`, child, serverLog);
+  await waitForHttp(`${baseUrl}/readyz`, child, serverLog);
   return child;
 }
 
-async function stopServer() {
-  if (!server) return;
-  const child = server;
-  server = null;
+async function stopServer(servicePlane) {
+  const child = servicePlane === "control" ? controlServer : dataServer;
+  if (!child) return;
+  if (servicePlane === "control") {
+    controlServer = null;
+  } else {
+    dataServer = null;
+  }
   if (child.exitCode === null && child.signalCode === null) child.kill();
   await onceClose(child);
 }
 
-async function postJson(pathname, body, options = {}) {
+async function postJson(baseUrl, pathname, body, options = {}) {
   const headers = { "content-type": "application/json" };
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
-  const response = await fetch(apiBaseUrl + pathname, {
+  const response = await fetch(baseUrl + pathname, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -244,11 +326,11 @@ async function postJson(pathname, body, options = {}) {
   };
 }
 
-async function assertPostStatus(pathname, body, options, status) {
+async function assertPostStatus(baseUrl, pathname, body, options, status) {
   const headers = { "content-type": "application/json" };
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
-  const response = await fetch(apiBaseUrl + pathname, {
+  const response = await fetch(baseUrl + pathname, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -257,13 +339,33 @@ async function assertPostStatus(pathname, body, options, status) {
   assert.equal(response.status, status, `${pathname} expected ${status}, got ${response.status}: ${text}`);
 }
 
-async function getJson(pathname, options = {}) {
+async function getJson(baseUrl, pathname, options = {}) {
   const headers = {};
   if (options.cookie) headers.cookie = options.cookie;
-  const response = await fetch(apiBaseUrl + pathname, { headers });
+  const response = await fetch(baseUrl + pathname, { headers });
   const text = await response.text();
   if (!response.ok) throw new Error(`${pathname} failed with ${response.status}: ${text}`);
   return text ? JSON.parse(text) : {};
+}
+
+async function assertServicePlane(baseUrl, expected) {
+  const config = await getJson(baseUrl, "/api/auth/config");
+  assert.equal(config.service_plane, expected);
+  const openapi = await getJson(baseUrl, "/openapi.json");
+  assert.equal(openapi["x-instantml-service-plane"], expected);
+  if (expected === "control") {
+    assert.ok(openapi.paths["/api/orgs/{org_id}/api-keys"]);
+    assert.equal(openapi.paths["/runs"], undefined);
+  } else {
+    assert.ok(openapi.paths["/runs"]);
+    assert.equal(openapi.paths["/api/orgs/{org_id}/api-keys"], undefined);
+  }
+}
+
+async function assertRouteStatus(baseUrl, pathname, options, status) {
+  const response = await fetch(baseUrl + pathname, options);
+  const text = await response.text();
+  assert.equal(response.status, status, `${pathname} expected ${status}, got ${response.status}: ${text}`);
 }
 
 async function controlKinds() {

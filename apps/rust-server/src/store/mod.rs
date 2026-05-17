@@ -41,7 +41,7 @@ use crate::{
     config::{AppConfig, HostedClickHouseConfig},
     control_store::{ControlRecordRow, ControlStore},
     domain::{
-        validate_account_type, validate_email, validate_json_object, validate_limit,
+        plan_tier, validate_account_type, validate_email, validate_json_object, validate_limit,
         validate_membership_role, validate_name, validate_offset, validate_optional_name,
         validate_optional_step, validate_plan_tier, validate_slug, validate_status, validate_step,
         validate_tags, validate_timestamp, ArtifactRow, AttributeInput, AttributeRow, AuthContext,
@@ -50,11 +50,12 @@ use crate::{
         CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
         CreateUserRequest, CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest,
         MembershipRow, MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, ServiceAccountRow,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, SeatRow, SeatUserRow,
+        ServiceAccountRow, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
         DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
         MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
-        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT, MAX_TEXT_BYTES,
+        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE,
+        PLAN_PREMIUM, PLAN_PRO,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -111,6 +112,7 @@ pub struct Store {
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
+    inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
 }
@@ -127,6 +129,7 @@ impl Store {
             hosted_clickhouse,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
         };
@@ -142,34 +145,47 @@ impl Store {
     }
 
     async fn rebuild(&self) -> AppResult<()> {
-        let records = if let Some(control_store) = &self.control_store {
-            control_store
-                .load_records()
-                .await?
-                .into_iter()
-                .map(|record| OperationalRecordRow {
-                    kind: record.kind,
-                    org_id: record.org_id,
-                    entity_id: record.entity_id,
-                    payload: record.payload,
-                    created_at: record.created_at,
-                })
-                .collect::<Vec<_>>()
+        let (data, latest_record_micros) = if let Some(control_store) = &self.control_store {
+            let records = control_store.load_records().await?;
+            let mut data = StoreData::default();
+            let stats = data.apply_control_records(records)?;
+            (data, stats.latest_record_micros)
         } else {
-            self.metric_store.load_operational_records().await?
+            let records = self.metric_store.load_operational_records().await?;
+            let mut data = StoreData::default();
+            let stats = data.apply_operational_records(records, ReplayScope::All)?;
+            (data, stats.latest_record_micros)
         };
-        let latest_record_micros = records
-            .iter()
-            .map(|record| record.created_at.timestamp_micros())
-            .max()
-            .unwrap_or(0);
-        let mut data = StoreData::default();
-        for record in records {
-            data.apply_record(&record.kind, record.org_id, &record.payload)?;
-        }
-        data.recompute_counters();
         *self.data.lock().await = data;
         *self.record_clock_micros.lock().await = latest_record_micros;
+        Ok(())
+    }
+
+    pub async fn refresh_control_records(&self) -> AppResult<()> {
+        let Some(control_store) = &self.control_store else {
+            return Ok(());
+        };
+        let records = control_store.load_records().await?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let (stats, changed_tenant_routes) = {
+            let mut data = self.data.lock().await;
+            let previous_routes = data.tenant_routes.clone();
+            let stats = data.apply_control_records(records)?;
+            let changed_routes = changed_tenant_routes(&previous_routes, &data.tenant_routes);
+            (stats, changed_routes)
+        };
+        if !changed_tenant_routes.is_empty() {
+            let mut loaded = self.tenant_loaded.lock().await;
+            let mut stores = self.tenant_metric_stores.lock().await;
+            for org_id in &changed_tenant_routes {
+                loaded.remove(org_id);
+                stores.remove(org_id);
+            }
+        }
+        let mut clock = self.record_clock_micros.lock().await;
+        *clock = (*clock).max(stats.latest_record_micros);
         Ok(())
     }
 
@@ -184,7 +200,7 @@ impl Store {
             name: "Local".to_string(),
             plan_tier: "free".to_string(),
             account_type: "customer".to_string(),
-            seat_limit: 1,
+            seat_limit: plan_tier("free").included_seats,
             created_by_user_id: None,
             created_at: epoch(),
         };
@@ -243,6 +259,23 @@ impl Store {
         *clock = next;
         datetime_from_micros(next)
     }
+
+    pub(super) async fn reserve_idempotency_key(&self, org_id: Uuid, key: &str) -> AppResult<()> {
+        let mut inflight = self.inflight_idempotency.lock().await;
+        if !inflight.insert((org_id, key.to_string())) {
+            return Err(AppError::conflict(
+                "idempotency key is already being processed",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) async fn release_idempotency_key(&self, org_id: Uuid, key: &str) {
+        self.inflight_idempotency
+            .lock()
+            .await
+            .remove(&(org_id, key.to_string()));
+    }
 }
 
 #[derive(Default)]
@@ -278,6 +311,53 @@ struct StoreData {
 }
 
 impl StoreData {
+    fn apply_operational_records(
+        &mut self,
+        mut records: Vec<OperationalRecordRow>,
+        scope: ReplayScope,
+    ) -> AppResult<ReplayStats> {
+        records.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.kind.cmp(&right.kind))
+                .then_with(|| left.org_id.cmp(&right.org_id))
+                .then_with(|| left.entity_id.cmp(&right.entity_id))
+                .then_with(|| left.payload.cmp(&right.payload))
+        });
+        let mut stats = ReplayStats::default();
+        for record in records {
+            if let ReplayScope::Tenant(expected_org_id) = scope {
+                validate_tenant_record_for_replay(expected_org_id, &record)?;
+            }
+            stats.latest_record_micros = stats
+                .latest_record_micros
+                .max(record.created_at.timestamp_micros());
+            self.apply_record(&record.kind, record.org_id, &record.payload)?;
+        }
+        self.recompute_counters();
+        Ok(stats)
+    }
+
+    fn apply_control_records(
+        &mut self,
+        mut records: Vec<ControlRecordRow>,
+    ) -> AppResult<ReplayStats> {
+        records.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.event_id.cmp(&right.event_id))
+        });
+        let mut stats = ReplayStats::default();
+        for record in records {
+            stats.latest_record_micros = stats
+                .latest_record_micros
+                .max(record.created_at.timestamp_micros());
+            self.apply_record(&record.kind, record.org_id, &record.payload)?;
+        }
+        self.recompute_counters();
+        Ok(stats)
+    }
+
     fn apply_record(&mut self, kind: &str, org_id: Uuid, payload: &str) -> AppResult<()> {
         match kind {
             "user" => self.insert_user(parse_payload(payload)?),
@@ -483,6 +563,17 @@ impl StoreData {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ReplayScope {
+    All,
+    Tenant(Uuid),
+}
+
+#[derive(Default)]
+struct ReplayStats {
+    latest_record_micros: i64,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct IdentityRecord {
     user_id: Uuid,
@@ -548,10 +639,110 @@ fn parse_payload<T: for<'de> Deserialize<'de>>(payload: &str) -> AppResult<T> {
         .map_err(|_| AppError::internal("stored operational record is invalid"))
 }
 
+fn validate_tenant_record_for_replay(
+    expected_org_id: Uuid,
+    record: &OperationalRecordRow,
+) -> AppResult<()> {
+    if record.org_id != expected_org_id {
+        return Err(AppError::internal(
+            "tenant operational record belonged to a different org",
+        ));
+    }
+    let payload = serde_json::from_str::<Value>(&record.payload)
+        .map_err(|_| AppError::internal("tenant operational record payload is invalid"))?;
+    if let Some(payload_org_id) = payload_org_id(&payload)? {
+        if payload_org_id != expected_org_id {
+            return Err(AppError::internal(
+                "tenant operational record payload belonged to a different org",
+            ));
+        }
+    }
+    validate_tenant_record_entity(record, &payload)
+}
+
+fn payload_org_id(payload: &Value) -> AppResult<Option<Uuid>> {
+    payload
+        .get("org_id")
+        .or_else(|| payload.get("row").and_then(|row| row.get("org_id")))
+        .and_then(Value::as_str)
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| AppError::internal("tenant operational record org_id is invalid"))
+}
+
+fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value) -> AppResult<()> {
+    match record.kind.as_str() {
+        "project" | "run" | "artifact" => validate_payload_string_id(record, payload, "id"),
+        "attribute" | "import" => validate_payload_i64_id(record, payload, "id"),
+        "idempotency" => validate_payload_string_id(record, payload, "key"),
+        "project_delete" => validate_payload_string_id(record, payload, "project_name"),
+        "table_rows" => validate_payload_i64_id(record, payload, "attribute_id"),
+        "usage_daily" => validate_usage_daily_orgs(record.org_id, payload),
+        _ => Ok(()),
+    }
+}
+
+fn validate_payload_string_id(
+    record: &OperationalRecordRow,
+    payload: &Value,
+    field: &str,
+) -> AppResult<()> {
+    let payload_id = payload
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("tenant operational record entity id is missing"))?;
+    if payload_id != record.entity_id {
+        return Err(AppError::internal(
+            "tenant operational record entity id mismatch",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_payload_i64_id(
+    record: &OperationalRecordRow,
+    payload: &Value,
+    field: &str,
+) -> AppResult<()> {
+    let payload_id = payload
+        .get(field)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| AppError::internal("tenant operational record entity id is missing"))?;
+    if payload_id.to_string() != record.entity_id {
+        return Err(AppError::internal(
+            "tenant operational record entity id mismatch",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_usage_daily_orgs(expected_org_id: Uuid, payload: &Value) -> AppResult<()> {
+    let Some(organizations) = payload.get("organizations").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    for organization in organizations {
+        let Some(raw_org_id) = organization.get("org_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let org_id = Uuid::parse_str(raw_org_id)
+            .map_err(|_| AppError::internal("tenant usage snapshot org_id is invalid"))?;
+        if org_id != expected_org_id {
+            return Err(AppError::internal(
+                "tenant usage snapshot belonged to a different org",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub async fn ready(store: &Store) -> bool {
     if !crate::metric_store::ready(store.metric_store()).await {
         return false;
     }
+    control_ready(store).await
+}
+
+pub async fn control_ready(store: &Store) -> bool {
     match &store.control_store {
         Some(control_store) => control_store.ready().await,
         None => true,
@@ -565,9 +756,83 @@ fn control_record_scope(kind: &str) -> &'static str {
     }
 }
 
+fn changed_tenant_routes(
+    previous: &BTreeMap<Uuid, TenantRouteRecord>,
+    current: &BTreeMap<Uuid, TenantRouteRecord>,
+) -> BTreeSet<Uuid> {
+    previous
+        .keys()
+        .chain(current.keys())
+        .filter(|org_id| previous.get(org_id) != current.get(org_id))
+        .copied()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn replay_row<T: Serialize>(
+        kind: &str,
+        org_id: Uuid,
+        entity_id: impl Into<String>,
+        payload: &T,
+        created_at_micros: i64,
+    ) -> OperationalRecordRow {
+        OperationalRecordRow {
+            kind: kind.to_string(),
+            org_id,
+            entity_id: entity_id.into(),
+            payload: serde_json::to_string(payload).unwrap(),
+            created_at: datetime_from_micros(created_at_micros),
+        }
+    }
+
+    fn control_replay_row<T: Serialize>(
+        kind: &str,
+        org_id: Uuid,
+        entity_id: impl Into<String>,
+        event_id: Uuid,
+        payload: &T,
+        created_at_micros: i64,
+    ) -> ControlRecordRow {
+        ControlRecordRow {
+            event_id,
+            scope: "org".to_string(),
+            kind: kind.to_string(),
+            org_id,
+            entity_id: entity_id.into(),
+            payload: serde_json::to_string(payload).unwrap(),
+            created_at: datetime_from_micros(created_at_micros),
+        }
+    }
+
+    fn replay_project(org_id: Uuid, project_id: Uuid, name: &str) -> ProjectRow {
+        ProjectRow {
+            id: project_id,
+            org_id,
+            name: name.to_string(),
+            description: None,
+            created_at: epoch(),
+        }
+    }
+
+    fn replay_run(org_id: Uuid, run_id: Uuid, status: &str) -> RunRow {
+        RunRow {
+            id: run_id,
+            org_id,
+            project_id: Uuid::from_u128(200),
+            project: "project".to_string(),
+            name: "train".to_string(),
+            status: status.to_string(),
+            config: json!({}),
+            tags: vec![],
+            metadata: json!({}),
+            created_at: epoch(),
+            started_at: epoch(),
+            finished_at: None,
+        }
+    }
 
     #[test]
     fn control_record_scope_keeps_user_identity_global() {
@@ -617,5 +882,241 @@ mod tests {
         assert_eq!(data.attributes[&(org_b, 1)].run_id, run_b);
         assert_eq!(data.allocate_attribute_id(org_a), 2);
         assert_eq!(data.allocate_attribute_id(org_b), 2);
+    }
+
+    #[test]
+    fn operational_replay_sorts_records_and_keeps_latest_projection() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let older = replay_run(org_id, run_id, "running");
+        let newer = replay_run(org_id, run_id, "finished");
+        let mut data = StoreData::default();
+
+        let stats = data
+            .apply_operational_records(
+                vec![
+                    replay_row("run", org_id, run_id.to_string(), &newer, 20),
+                    replay_row("run", org_id, run_id.to_string(), &older, 10),
+                ],
+                ReplayScope::All,
+            )
+            .unwrap();
+
+        assert_eq!(stats.latest_record_micros, 20);
+        assert_eq!(data.runs.len(), 1);
+        assert_eq!(data.runs[&run_id].status, "finished");
+        assert_eq!(
+            data.runs_by_org_created
+                .get(&(org_id, epoch(), run_id))
+                .copied(),
+            Some(run_id)
+        );
+    }
+
+    #[test]
+    fn operational_replay_is_deterministic_for_equal_timestamps() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let first = replay_row(
+            "run",
+            org_id,
+            run_id.to_string(),
+            &replay_run(org_id, run_id, "alpha"),
+            10,
+        );
+        let second = replay_row(
+            "run",
+            org_id,
+            run_id.to_string(),
+            &replay_run(org_id, run_id, "zulu"),
+            10,
+        );
+        let mut left = StoreData::default();
+        let mut right = StoreData::default();
+
+        left.apply_operational_records(vec![first.clone(), second.clone()], ReplayScope::All)
+            .unwrap();
+        right
+            .apply_operational_records(vec![second, first], ReplayScope::All)
+            .unwrap();
+
+        assert_eq!(left.runs[&run_id].status, right.runs[&run_id].status);
+    }
+
+    #[test]
+    fn control_replay_uses_event_id_as_equal_timestamp_tiebreaker() {
+        let org_id = Uuid::from_u128(1);
+        let older = OrganizationRow {
+            id: org_id,
+            slug: "org".to_string(),
+            name: "Older".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 1,
+            created_by_user_id: None,
+            created_at: epoch(),
+        };
+        let newer = OrganizationRow {
+            name: "Newer".to_string(),
+            ..older.clone()
+        };
+        let older_event_id = Uuid::from_u128(1);
+        let newer_event_id = Uuid::from_u128(2);
+        let mut data = StoreData::default();
+
+        let stats = data
+            .apply_control_records(vec![
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    newer_event_id,
+                    &newer,
+                    10,
+                ),
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    older_event_id,
+                    &older,
+                    10,
+                ),
+            ])
+            .unwrap();
+
+        assert_eq!(data.organizations[&org_id].name, "Newer");
+        assert_eq!(stats.latest_record_micros, 10);
+    }
+
+    #[test]
+    fn changed_tenant_routes_returns_only_final_route_differences() {
+        fn test_route(org_id: Uuid, endpoint: &str) -> TenantRouteRecord {
+            TenantRouteRecord {
+                org_id,
+                status: "ready".to_string(),
+                provisioner: "database".to_string(),
+                plan_tier: Some("free".to_string()),
+                warehouse_kind: Some("shared".to_string()),
+                requested_min_replica_memory_gb: Some(8),
+                requested_max_replica_memory_gb: Some(8),
+                requested_num_replicas: Some(1),
+                applied_min_replica_memory_gb: Some(8),
+                applied_max_replica_memory_gb: Some(8),
+                applied_num_replicas: Some(1),
+                endpoint: endpoint.to_string(),
+                database: "default".to_string(),
+                username: "default".to_string(),
+                password_secret_ref: Some("config:tenant_base_url_password".to_string()),
+                password_ciphertext: None,
+                service_id: None,
+                created_at: epoch(),
+                updated_at: epoch(),
+                error: None,
+            }
+        }
+
+        let stable_org_id = Uuid::from_u128(1);
+        let changed_org_id = Uuid::from_u128(2);
+        let new_org_id = Uuid::from_u128(3);
+        let stable = test_route(stable_org_id, "https://stable.example.com:8443");
+        let changed_before = test_route(changed_org_id, "https://old.example.com:8443");
+        let changed_after = test_route(changed_org_id, "https://new.example.com:8443");
+        let new_route = test_route(new_org_id, "https://new.example.com:8443");
+        let previous = BTreeMap::from([
+            (stable_org_id, stable.clone()),
+            (changed_org_id, changed_before),
+        ]);
+        let current = BTreeMap::from([
+            (stable_org_id, stable),
+            (changed_org_id, changed_after),
+            (new_org_id, new_route),
+        ]);
+
+        assert_eq!(
+            changed_tenant_routes(&previous, &current),
+            BTreeSet::from([changed_org_id, new_org_id])
+        );
+    }
+
+    #[test]
+    fn tenant_replay_rejects_record_from_another_org() {
+        let expected = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        let project_id = Uuid::from_u128(20);
+        let project = replay_project(other, project_id, "other");
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row(
+                    "project",
+                    other,
+                    project_id.to_string(),
+                    &project,
+                    10,
+                )],
+                ReplayScope::Tenant(expected),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn tenant_replay_rejects_payload_from_another_org() {
+        let expected = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        let project_id = Uuid::from_u128(20);
+        let project = replay_project(other, project_id, "misrouted");
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row(
+                    "project",
+                    expected,
+                    project_id.to_string(),
+                    &project,
+                    10,
+                )],
+                ReplayScope::Tenant(expected),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn tenant_replay_rejects_table_rows_entity_mismatch() {
+        let org_id = Uuid::from_u128(1);
+        let rows = TableRowsRecord {
+            attribute_id: 7,
+            rows: Vec::new(),
+        };
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row("table_rows", org_id, "8", &rows, 10)],
+                ReplayScope::Tenant(org_id),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn tenant_replay_rejects_usage_snapshot_for_another_org() {
+        let expected = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        let snapshot = json!({
+            "organizations": [{
+                "org_id": other.to_string(),
+                "usage": {}
+            }]
+        });
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row("usage_daily", expected, "daily", &snapshot, 10)],
+                ReplayScope::Tenant(expected),
+            )
+            .is_err());
     }
 }

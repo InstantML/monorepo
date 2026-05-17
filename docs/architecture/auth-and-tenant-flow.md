@@ -2,11 +2,11 @@
 
 Date: 2026-05-16
 
-Status: Current hosted-auth architecture after the Clerk first slice
+Status: Current hosted-auth architecture after the Clerk and pricing/signup admin slices
 
 ## Purpose
 
-This document explains how Clerk identity, InstantML browser sessions, SDK API keys, organization isolation, and hosted ClickHouse tenant routing fit together. The accepted design is `docs/design/2026-05-16-clerk-hosted-auth.md`.
+This document explains how Clerk identity, InstantML browser sessions, SDK API keys, organization isolation, Free/Pro/Premium signup, invited seats, and hosted ClickHouse tenant routing fit together. The accepted designs are `docs/design/2026-05-16-clerk-hosted-auth.md` and `docs/design/2026-05-16-pricing-signup-org-admin.md`.
 
 InstantML uses two different credentials on purpose:
 
@@ -30,7 +30,7 @@ sequenceDiagram
     Browser->>Clerk: "Sign in or sign up"
     Clerk-->>Browser: "Clerk session"
     Browser->>Clerk: "getToken()"
-    Browser->>Rust: "POST /api/auth/clerk { token, org_name? }"
+    Browser->>Rust: "POST /api/auth/clerk { token, mode, org_name?, plan_tier?, accept_invite_org_id? }"
     Rust->>Clerk: "Fetch JWKS and verify JWT"
     Rust->>Clerk: "Fetch user profile"
     Rust->>UserData: "Upsert user, identity, org, membership, session"
@@ -40,37 +40,59 @@ sequenceDiagram
 
 The Rust API verifies the Clerk token before trusting it. It checks the signature against Clerk JWKS using `CLERK_SECRET_KEY`, requires an HTTPS Clerk issuer or the exact configured `CLERK_JWT_ISSUER`, rejects expired or stale tokens, fetches the Clerk user profile server-side, and requires the primary email to be verified. Clerk user id is stored as the stable identity key.
 
-## Signup And Warehouse Provisioning
+## Signup, Invites, And Warehouse Provisioning
 
 ```mermaid
 flowchart TD
-    A["User enters org name"] --> B["GET /api/orgs/name-availability"]
-    B --> C{"Slug available?"}
-    C -- "No" --> D["Show unavailable state"]
-    C -- "Yes" --> E["User completes Clerk sign-up"]
-    E --> F["Rust verifies Clerk session token"]
-    F --> G{"Existing active membership?"}
-    G -- "Yes" --> H["Create new session for existing org"]
-    G -- "No" --> I["Create org and owner membership"]
-    I --> J["Create tenant route"]
-    J --> K["ClickHouse Cloud service name: <Org Name> - Warehouse <org-id-prefix>"]
-    K --> L["Provider gcp, region us-central1, Mini 12GB, 1 replica"]
-    L --> M["Create browser session"]
+    A["User selects Free, Pro, or Premium"] --> B["User enters org name and invite emails"]
+    B --> C["GET /api/orgs/name-availability"]
+    C --> D{"Slug available?"}
+    D -- "No" --> E["Show unavailable state"]
+    D -- "Yes" --> F["User completes Clerk sign-up"]
+    F --> G["Rust verifies Clerk session token and email"]
+    G --> H{"Existing active membership?"}
+    H -- "Yes" --> I["Create new session for existing org"]
+    H -- "No" --> J["Create org, owner membership, invited memberships"]
+    J --> K["Create tenant route"]
+    K --> L["Record requested plan warehouse profile"]
+    L --> M["Apply operator-capped warehouse profile unless plan sizing is enabled"]
+    M --> N["Create browser session"]
 ```
 
 The availability check is a UX hint. The signup transaction still enforces the duplicate-slug check so races fail closed.
 
-ClickHouse Cloud service-mode defaults match the hosted first slice:
+New signups use the selected plan to set `organization.plan_tier`,
+`organization.seat_limit`, and tenant-route warehouse profile metadata.
+Currently implemented plans:
+
+| Plan | Price | Seats | Storage warning limit | Requested warehouse |
+| --- | ---: | ---: | ---: | --- |
+| Free | `$0/org/mo` | 2 | 2 GiB | Shared, 8 GiB, 1 replica |
+| Pro | `$199/org/mo` | 3 | 1 TiB | Standard, 12 GiB, 1 replica |
+| Premium | `$699/org/mo` | 10 | 5 TiB | Dedicated, 16 GiB, 2 replicas |
+
+ClickHouse Cloud service-mode operator defaults still apply unless
+`INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`:
 
 | Field | Value |
 | --- | --- |
 | Service name | `<Org Name> - Warehouse <org-id-prefix>` |
-| Cloud provider | `gcp` |
-| Region | `us-central1` |
-| Memory | `12 GiB` min and max replica memory |
-| Replicas | `1` |
+| Cloud provider | `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER` |
+| Region | `INSTANTML_CLICKHOUSE_CLOUD_REGION` |
+| Applied memory | `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB` and `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB` |
+| Applied replicas | `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS` |
 
 Cloud-service mode can create paid external services, so automated tests use local/database-mode provisioning. Operators must explicitly configure ClickHouse Cloud credentials and the stored-tenant-password guard until a secret manager replaces that temporary storage path.
+
+Existing tenant routes and warehouses are preserved. The signup path creates a
+route only when an org has no route; it does not delete or recreate an existing
+warehouse to match a changed plan.
+
+Invited teammates are inserted as `MembershipRow` records with `status:
+"invited"` and a placeholder user keyed by email. A verified sign-in for that
+email activates the existing membership and gives the teammate access to the
+same org and projects. If the user has multiple pending invites, the client
+must send `accept_invite_org_id`.
 
 ## API Authorization
 

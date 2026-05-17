@@ -1,7 +1,7 @@
 "use client";
 
 import { Show, SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
-import { AlertCircle, ArrowRight, CheckCircle2, Copy, KeyRound, ShieldCheck, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Copy, Crown, HardDrive, KeyRound, Rocket, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient } from "../src/api.js";
@@ -9,17 +9,20 @@ import { sanitizeNextPath } from "../src/routes.js";
 import { InstantMlMark } from "./instantml-mark";
 
 type AuthMode = "signin" | "signup" | "onboarding";
+type PlanTier = "free" | "pro" | "premium";
 type SessionPayload = {
   authenticated?: boolean;
-  organization?: { id: string; name: string; slug: string; account_type?: string; seat_limit?: number };
+  organization?: { id: string; name: string; slug: string; account_type?: string; plan_tier?: string; seat_limit?: number };
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
 };
 type DevGoogleAuthPayload = {
   email: string;
   display_name?: string;
+  mode?: "signin" | "signup";
   account_type?: string;
   org_name?: string;
+  plan_tier?: PlanTier;
   seat_emails?: string[];
 };
 type OrgAvailability = {
@@ -35,6 +38,18 @@ type AuthConfig = {
 
 const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
+const PLAN_OPTIONS: Array<{
+  id: PlanTier;
+  label: string;
+  price: string;
+  storage: string;
+  seats: string;
+  icon: typeof Rocket;
+}> = [
+  { id: "free", label: "Free", price: "$0", storage: "2 GB", seats: "2 seats", icon: Users },
+  { id: "pro", label: "Pro", price: "$199", storage: "1 TB", seats: "3 seats", icon: Rocket },
+  { id: "premium", label: "Premium", price: "$699", storage: "5 TB", seats: "10 seats", icon: Crown },
+];
 
 function Brand() {
   return (
@@ -54,6 +69,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [config, setConfig] = useState<AuthConfig>({ dev_auth_enabled: false, managed_clerk_enabled: false, loaded: false });
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [accountType, setAccountType] = useState("customer");
+  const [planTier, setPlanTier] = useState<PlanTier>("free");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [orgName, setOrgName] = useState("");
@@ -226,6 +242,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         mode: signupMode ? "signup" : "signin",
         account_type: accountType,
         org_name: signupMode ? orgName.trim() : undefined,
+        plan_tier: signupMode ? planTier : undefined,
         seat_emails: signupMode && accountType === "business"
           ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
           : [],
@@ -250,9 +267,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     await createDevGoogleSession({
       email,
       display_name: displayName,
+      mode: signupMode ? "signup" : "signin",
       account_type: accountType,
-      org_name: orgName || undefined,
-      seat_emails: seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean),
+      org_name: signupMode ? orgName.trim() : orgName || undefined,
+      plan_tier: signupMode ? planTier : undefined,
+      seat_emails: signupMode ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean) : [],
     });
   }
 
@@ -260,8 +279,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     await createDevGoogleSession({
       email: SHARED_DEMO_EMAIL,
       display_name: SHARED_DEMO_ORG,
+      mode: "signup",
       account_type: "business",
       org_name: SHARED_DEMO_ORG,
+      plan_tier: "free",
     });
   }
 
@@ -384,8 +405,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                     seatEmails={seatEmails}
                     seatCount={seatCount}
                     seatLimit={seatLimit}
+                    planTier={planTier}
                     onAccountType={setAccountType}
                     onOrgName={setOrgName}
+                    onPlanTier={setPlanTier}
                     onSeatEmails={setSeatEmails}
                   />
                 ) : null}
@@ -546,7 +569,7 @@ function OnboardingAside({ session, keyDone, demo }: { session: SessionPayload |
       </div>
       <p className="iml-aside-tag">You’re <span className="iml-em">almost</span> logging.</p>
       <ol className="iml-steps" aria-label="Onboarding steps">
-        <li className="iml-step is-done"><span className="idx" aria-hidden="true">✓</span><div><div className="st-t">Workspace created</div><div className="st-s">{session?.organization?.name ?? "Your org"} · {session?.membership?.role ?? "owner"}</div></div></li>
+        <li className="iml-step is-done"><span className="idx" aria-hidden="true">✓</span><div><div className="st-t">Workspace created</div><div className="st-s">{session?.organization?.name ?? "Your org"} · {planLabel(session?.organization?.plan_tier)} plan</div></div></li>
         <li className="iml-step is-done"><span className="idx" aria-hidden="true">✓</span><div><div className="st-t">Identity verified</div><div className="st-s">via Clerk</div></div></li>
         <li className={`iml-step ${keyDone ? "is-done" : "is-active"}`}><span className="idx" aria-hidden="true">{keyDone ? "✓" : "03"}</span><div><div className="st-t">{keyDone ? "SDK key created" : "Create an SDK key"}</div><div className="st-s">{keyDone ? "Copy it now" : "Then open the dashboard"}</div></div></li>
       </ol>
@@ -574,7 +597,7 @@ function OnboardingBody({
         </span>
         <div className="iml-org-m">
           <strong>{session?.organization?.name ?? "Workspace ready"}</strong>
-          <span>{session?.user?.primary_email ?? "Signed in"} · {demo ? "read-only" : (session?.membership?.role ?? "owner")}</span>
+          <span>{session?.user?.primary_email ?? "Signed in"} · {demo ? "read-only" : (session?.membership?.role ?? "owner")}{demo ? null : ` · ${planLabel(session?.organization?.plan_tier)} plan`}</span>
         </div>
       </div>
 
@@ -626,8 +649,8 @@ function OnboardingBody({
 }
 
 function SignupFields({
-  accountType, availability, orgName, seatEmails, seatCount, seatLimit,
-  onAccountType, onOrgName, onSeatEmails,
+  accountType, availability, orgName, seatEmails, seatCount, seatLimit, planTier,
+  onAccountType, onOrgName, onPlanTier, onSeatEmails,
 }: {
   accountType: string;
   availability: OrgAvailability;
@@ -637,11 +660,30 @@ function SignupFields({
   seatLimit: number;
   onAccountType: (value: string) => void;
   onOrgName: (value: string) => void;
+  onPlanTier: (value: PlanTier) => void;
   onSeatEmails: (value: string) => void;
+  planTier: PlanTier;
 }) {
   const overLimit = seatCount > Math.max(0, seatLimit - 1);
   return (
     <>
+      <fieldset className="iml-field iml-fieldset">
+        <legend className="iml-legend">Plan</legend>
+        <div className="iml-plans">
+          {PLAN_OPTIONS.map((plan) => {
+            const Icon = plan.icon;
+            return (
+              <label className="iml-plan" key={plan.id}>
+                <input checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
+                <span className="iml-plan-h"><Icon size={15} aria-hidden="true" /> {plan.label}</span>
+                <strong className="iml-plan-p">{plan.price}<small>/mo</small></strong>
+                <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {plan.seats}</span>
+                <span className="iml-plan-m"><HardDrive size={12} aria-hidden="true" /> {plan.storage}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
       <fieldset className="iml-field iml-fieldset">
         <legend className="iml-legend">Account type</legend>
         <div className="iml-seg">
@@ -706,6 +748,10 @@ function providerLabel(config: AuthConfig) {
   if (config.managed_clerk_enabled) return "Managed Clerk auth";
   if (config.dev_auth_enabled) return "Local dev Google-style auth";
   return "No provider configured";
+}
+
+function planLabel(value?: string) {
+  return PLAN_OPTIONS.find((plan) => plan.id === value)?.label ?? "Free";
 }
 
 function isSharedDemoSession(session: SessionPayload | null) {

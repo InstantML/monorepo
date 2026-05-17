@@ -200,10 +200,32 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
    it, so without it the account-type selection/focus would be invisible.
    Show the native radio instead. */
 @supports not (selector(:has(*))){
-  .iml-seg-opt input{position:static;width:16px;height:16px;opacity:1;
-    accent-color:var(--accent);align-self:start}
+  .iml-seg-opt input,.iml-plan input{position:static;width:16px;height:16px;
+    opacity:1;accent-color:var(--accent);align-self:start}
   .iml-tick{display:none}
 }
+
+/* Plan picker (Free / Pro / Premium) — same dark card language as .iml-seg */
+.iml-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.iml-plan{position:relative;display:grid;gap:6px;align-content:start;padding:13px 14px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--bg-soft);
+  cursor:pointer;transition:border-color .14s,background .14s}
+.iml-plan:hover{border-color:var(--line-strong);background:var(--surface-2)}
+.iml-plan input{position:absolute;top:12px;inset-inline-end:12px;width:14px;height:14px;
+  opacity:0;margin:0}
+.iml-plan:has(input:checked){border-color:var(--accent-line);background:var(--accent-soft);
+  box-shadow:0 0 0 1px rgba(52,211,153,.18) inset}
+.iml-plan:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.iml-plan-h{display:flex;align-items:center;gap:7px;font:600 13px/1 var(--f-sans);
+  color:var(--text)}
+.iml-plan:has(input:checked) .iml-plan-h{color:var(--accent-strong)}
+.iml-plan-h svg{color:var(--muted)}
+.iml-plan:has(input:checked) .iml-plan-h svg{color:var(--accent)}
+.iml-plan-p{font:700 18px/1 var(--f-sans);letter-spacing:-.02em;color:var(--text)}
+.iml-plan-p small{font:500 11px/1 var(--f-mono);color:var(--muted);margin-inline-start:3px}
+.iml-plan-m{display:flex;align-items:center;gap:6px;font:500 11px/1.3 var(--f-mono);
+  color:var(--muted)}
+.iml-plan-m svg{color:var(--faint);flex:0 0 auto}
 
 .iml-org{display:flex;align-items:center;gap:13px;padding:14px 16px;
   border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
@@ -246,6 +268,7 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
   .iml-aside{border-right:0;border-bottom:1px solid var(--line-soft)}
   .iml-main{padding:26px 22px}
   .iml-seg{grid-template-columns:1fr}
+  .iml-plans{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){
   .iml-auth *,.iml-landing *{animation:none!important;transition:none!important}

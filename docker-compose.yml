@@ -31,7 +31,57 @@ services:
       CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
       INSTANTML_BIND_ADDR: 0.0.0.0:8000
       INSTANTML_AUTH_MODE: local
+      INSTANTML_SERVICE_PLANE: combined
       INSTANTML_ARTIFACT_ROOT: /data/artifacts
+      INSTANTML_LOG_FORMAT: json
+
+  instantml-control:
+    profiles: ["split"]
+    build: .
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "8001:8000"
+    volumes:
+      - instantml-artifacts:/data/artifacts
+    environment:
+      CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
+      CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: http://instantml:instantml@clickhouse:8123/instantml_user_data
+      INSTANTML_TENANT_CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
+      INSTANTML_BIND_ADDR: 0.0.0.0:8000
+      INSTANTML_AUTH_MODE: local
+      INSTANTML_DEV_AUTH_ENABLED: "true"
+      INSTANTML_SERVICE_PLANE: control
+      INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true"
+      INSTANTML_CLICKHOUSE_PROVISIONER: database
+      INSTANTML_ALLOWED_FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8001,http://localhost:8002
+      INSTANTML_ARTIFACT_ROOT: /data/artifacts
+      INSTANTML_ARTIFACT_UPLOADS_ENABLED: "false"
+      INSTANTML_LOG_FORMAT: json
+
+  instantml-data:
+    profiles: ["split"]
+    build: .
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "8002:8000"
+    volumes:
+      - instantml-artifacts:/data/artifacts
+    environment:
+      CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
+      CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: http://instantml:instantml@clickhouse:8123/instantml_user_data
+      INSTANTML_TENANT_CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
+      INSTANTML_BIND_ADDR: 0.0.0.0:8000
+      INSTANTML_AUTH_MODE: local
+      INSTANTML_SERVICE_PLANE: data
+      INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true"
+      INSTANTML_CLICKHOUSE_PROVISIONER: database
+      INSTANTML_ALLOWED_FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8001,http://localhost:8002
+      INSTANTML_ARTIFACT_ROOT: /data/artifacts
+      INSTANTML_ARTIFACT_UPLOADS_ENABLED: "false"
       INSTANTML_LOG_FORMAT: json
 
 volumes:

@@ -29,6 +29,7 @@ export class ApiClient {
     const response = await fetch(this.baseUrl + path, options);
     const payload = await readPayload(response);
     if (!response.ok) throw new ApiError(clientSafeError(response.status, payload), {
+      code: typeof payload?.code === "string" ? payload.code : "",
       requestId: typeof payload?.request_id === "string" ? payload.request_id : "",
       status: response.status,
     });
@@ -53,9 +54,10 @@ async function readPayload(response) {
 }
 
 export class ApiError extends Error {
-  constructor(message, { requestId = "", status = 0 } = {}) {
+  constructor(message, { code = "", requestId = "", status = 0 } = {}) {
     super(requestId ? `${message} Request ${requestId}.` : message);
     this.name = "ApiError";
+    this.code = code;
     this.requestId = requestId;
     this.status = status;
   }
@@ -68,6 +70,8 @@ export function isAbortError(error) {
 function clientSafeError(status, payload) {
   const code = typeof payload?.code === "string" ? payload.code : "";
   if (code === "validation_error" || status === 400) return "Request was invalid. Check the current filters and try again.";
+  if (code === "warehouse_unavailable") return "Starting data warehouse. Your runs will load once the warehouse is awake.";
+  if (code === "service_unavailable" || status === 503) return "InstantML API is starting. Try again shortly.";
   if (status === 401) return "Sign in required.";
   if (status === 403) return "You do not have access to this workspace.";
   if (status === 404) return "Requested data was not found.";

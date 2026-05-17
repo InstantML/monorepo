@@ -33,18 +33,25 @@ try {
   if (apiServer) await new Promise((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
   const apiBaseUrl = externalApiBaseUrl || `http://127.0.0.1:${apiServer.address().port}`;
   const paginationRunIds = [];
+  const nextEnv = {
+    ...process.env,
+    INSTANTML_API_BASE: apiBaseUrl,
+    INSTANTML_CONTROL_API_BASE: apiBaseUrl,
+    INSTANTML_DATA_API_BASE: apiBaseUrl,
+    INSTANTML_API_ALLOWED_ORIGINS: apiBaseUrl,
+  };
 
   const webPort = await freePort();
   const nextBin = path.join(repo, "node_modules/.bin/next");
   const build = spawnSync(nextBin, ["build"], {
     cwd: path.join(repo, "apps/web"),
-    env: { ...process.env, INSTANTML_API_BASE: apiBaseUrl },
+    env: nextEnv,
     encoding: "utf8",
   });
   assert.equal(build.status, 0, `${build.stdout}\n${build.stderr}`);
   nextServer = spawn(nextBin, ["start", "--port", String(webPort)], {
     cwd: path.join(repo, "apps/web"),
-    env: { ...process.env, INSTANTML_API_BASE: apiBaseUrl },
+    env: nextEnv,
     stdio: ["ignore", "pipe", "pipe"],
   });
   await waitForHttp(`http://127.0.0.1:${webPort}`);
@@ -80,6 +87,7 @@ try {
   await page.getByLabel("Name").fill("UI Smoke");
   await page.getByLabel("Business").check();
   await page.getByLabel("Organization").fill(`UI Smoke ${Date.now()}`);
+  await page.getByRole("radio", { name: /Pro/ }).check();
   await page.getByLabel("Reserved seats").fill("teammate@example.com");
   await page.getByRole("button", { name: /Continue with Dev Google/ }).click();
   await page.waitForURL(/\/onboarding$/, { timeout: 10000 });
@@ -159,6 +167,23 @@ try {
   await page.unroute("**/api/runs/summary**");
   assert.equal(objectUrls.length, 0, "initial dashboard entry should not fetch rich objects");
   assert.equal(logUrls.length, 0, "initial dashboard entry should not fetch console logs");
+  await page.getByRole("link", { name: /^Settings$/ }).click();
+  await page.waitForSelector("text=Plan Usage", { timeout: 10000 });
+  await page.waitForSelector("text=teammate@example.com", { timeout: 10000 });
+  assert.match(await page.locator(".tab-pane.active").innerText(), /Pro/);
+  assert.match(await page.locator(".tab-pane.active").innerText(), /teammate@example\.com/);
+  await page.getByLabel("Invite email").fill("second@example.com");
+  await page.getByRole("button", { name: /^Invite$/ }).click();
+  await page.waitForSelector("text=second@example.com", { timeout: 10000 });
+  await page.getByRole("link", { name: /^API$/ }).click();
+  await page.waitForSelector("text=API Keys", { timeout: 10000 });
+  assert.match(await page.locator(".tab-pane.active").innerText(), /Onboarding SDK key/);
+  await page.getByLabel("API key name").fill("UI smoke dashboard key");
+  await page.getByRole("button", { name: /^Create$/ }).click();
+  await page.waitForSelector(".tab-pane.active .api-key-reveal code", { timeout: 10000 });
+  assert.match(await page.locator(".tab-pane.active .api-key-reveal code").innerText(), /^instantml_/);
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
   let screenshotPath = path.join(dir, "ui-smoke-core.png");
 
   if (!fullWorkspaceSmoke) {

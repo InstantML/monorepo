@@ -24,20 +24,28 @@ npm run deploy:cloud-run
 npm run deploy:cloud-run -- --help
 ```
 
-The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud service and Cloud API-key IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run with `--max-instances 1`, verifies `/health`, `/readyz`, and `/api/auth/config`, then writes the hosted API URL to `.env` and `apps/web/.env.local`.
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud service and Cloud API-key IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL.
 
 Important environment variables:
 
 - `GCP_PROJECT`: target project, otherwise the active `gcloud` project.
 - `GCP_REGION`: deployment region. Default: `us-central1`.
-- `INSTANTML_CLOUD_RUN_SERVICE`: Cloud Run service name. Default: `instantml-rust-api`.
+- `INSTANTML_CLOUD_RUN_SERVICE`: legacy combined Cloud Run service name. Default: `instantml-rust-api`.
+- `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`: split control Cloud Run service name. Default: `instantml-control`.
+- `INSTANTML_CLOUD_RUN_DATA_SERVICE`: split data Cloud Run service name. Default: `instantml-data-<region>-a`.
+- `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1`: permits control scaling above one instance for controlled tests only.
+- `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual data instance count. Values above `1` fail unless `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1` is set for a controlled test.
+- `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1`: creates or updates the managed HTTPS public router.
+- `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`: DNS host for the router, for example `api.instantml.ai`. Required when public router creation is enabled.
+- `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: optional Google-managed SSL certificate resource name.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated browser origins allowed for cookie-authenticated mutations. Default includes local Next and `https://instantml.ai`.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
 - `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup and requires manual ClickHouse Cloud allowlisting.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips ClickHouse Cloud access-list updates.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips ClickHouse Cloud API-key access-list updates.
+- `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation can wait for ClickHouse Cloud tenant provisioning.
 
-Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision a public Cloud Run URL. The service is intentionally pinned to one instance until the hosted operational-index coordination work lands, and artifact byte uploads remain disabled in hosted mode until object storage is designed.
+Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision public Cloud Run or load-balancer URLs. The default deployment is the split `control` plus `data` shape; both services remain manual single-instance by default until the hosted operational-index coordination work lands. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Artifact byte uploads remain disabled in hosted mode until object storage is designed.
 
 ## Import Helpers
 
@@ -105,6 +113,79 @@ Useful environment variables:
 - `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`: service location. When unset, the tool infers these from the User Data ClickHouse Cloud host when possible.
 - `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`: comma-separated CIDRs allowed to query the tenant service. Required for `cloud-service` provisioning; the Cloud Run deployment uses `136.115.243.188/32`.
 
+## Hosted Cloud Run API Benchmark
+
+`hosted-cloud-run-benchmark.mjs` is the default hosted performance signal after
+the split Cloud Run deployment. It does not seed data. Instead, it expects a
+live 100,000+ run tenant, usually created by `seed:hosted-scale`, and measures
+the real path the SDK/frontend use in production:
+
+```text
+benchmark client -> Cloud Run data service or HTTPS router -> ClickHouse Cloud tenant
+```
+
+Run it from the repo root after setting an SDK API key for the tenant:
+
+```bash
+INSTANTML_API_KEY=instantml_... npm run benchmark:cloud-run
+INSTANTML_API_KEY=instantml_... \
+INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json \
+npm run benchmark:cloud-run
+```
+
+The benchmark reads `INSTANTML_DATA_API_BASE` or `INSTANTML_API_BASE` from
+`.env` by default. It rejects non-HTTPS API bases unless
+`INSTANTML_CLOUD_RUN_BENCH_ALLOW_HTTP=1` is set for a local proxy. Measured
+routes include org and project run summaries, 100-row pages, cursor page 2,
+name/tag/config/notes searches, status filters, combined search/filter,
+selected-metric sorting, org/project overview, single-run chart series, and
+batched selected-run `POST /api/metrics/series` calls. Results are sanitized to
+host-only API metadata and never include API keys, raw URLs, cookies, org IDs,
+or response bodies.
+
+Useful environment variables:
+
+- `INSTANTML_CLOUD_RUN_BENCH_API_BASE`: override the API base. Defaults to `INSTANTML_DATA_API_BASE` then `INSTANTML_API_BASE`.
+- `INSTANTML_CLOUD_RUN_BENCH_API_KEY`: override the bearer API key. Defaults to `INSTANTML_API_KEY`.
+- `INSTANTML_CLOUD_RUN_BENCH_PROJECTS`: comma-separated project names. Defaults to `INSTANTML_HOSTED_SCALE_PROJECTS` or `hosted-scale-control,hosted-scale-data`.
+- `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`: minimum runs expected across benchmark projects. Default: `100000`.
+- `INSTANTML_CLOUD_RUN_BENCH_EXPECTED_STEPS`: expected metric steps per run for chart/window choices. Default: `1000`.
+- `INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS`: selected runs for batched chart calls. Default: `8`.
+- `INSTANTML_CLOUD_RUN_BENCH_CHART_LIMIT`: per-series chart row limit. Default: `1000`.
+- `INSTANTML_CLOUD_RUN_BENCH_SAMPLES`: measured requests per endpoint. Default: `8`.
+- `INSTANTML_CLOUD_RUN_BENCH_WARMUPS`: warmup requests per endpoint before timing. Default: `2`.
+- `INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH`: optional sanitized JSON output path.
+- `INSTANTML_CLOUD_RUN_BENCH_ENFORCE=1`: exit nonzero if hosted p95 budgets fail.
+
+## Hosted Tenant Scale Seed
+
+`hosted-tenant-scale-seed.mjs` is a guarded live cutover/load-test helper for an
+already-provisioned hosted tenant. It reads the latest ready tenant route from
+User Data, optionally verifies `INSTANTML_API_KEY` against the deployed data
+service, can truncate tenant data tables, then seeds two projects with
+100,000 total runs and 1,000 steps per run by generating metric rows inside the
+tenant ClickHouse warehouse. This avoids millions of one-step public API calls
+while preserving the deployed storage and dashboard read path.
+
+```bash
+INSTANTML_HOSTED_SCALE_SEED_ALLOW=1 \
+INSTANTML_HOSTED_SCALE_TRUNCATE=1 \
+INSTANTML_API_KEY=instantml_... \
+npm run seed:hosted-scale
+```
+
+Useful environment variables:
+
+- `INSTANTML_HOSTED_SCALE_SEED_ALLOW=1`: required confirmation because this writes to live ClickHouse Cloud.
+- `INSTANTML_HOSTED_SCALE_TRUNCATE=1`: wipe tenant `operational_records`, `metric_points`, `metric_series`, and `console_log_lines` before seeding.
+- `INSTANTML_HOSTED_SCALE_ORG_ID`: target a specific org route; otherwise the latest ready tenant route is used.
+- `INSTANTML_HOSTED_SCALE_RUNS`: total runs. Default: `100000`.
+- `INSTANTML_HOSTED_SCALE_STEPS`: metric steps per run. Default: `1000`.
+- `INSTANTML_HOSTED_SCALE_PROJECTS`: comma-separated project names. Default: `hosted-scale-control,hosted-scale-data`.
+- `INSTANTML_HOSTED_SCALE_METRIC_KEYS`: comma-separated metric keys. Defaults include `eval/return_mean`, `eval/success_rate`, training metrics, and system metrics.
+- `INSTANTML_HOSTED_SCALE_RUN_BATCH`: run batch size per server-side metric insert. Default: `500`.
+- `INSTANTML_HOSTED_SCALE_KEEP_SEED_TABLE=1`: keep the temporary ClickHouse seed table for debugging.
+
 ## Rust Rich-Object Benchmark
 
 `rust-rich-objects-benchmark.mjs` is the regression gate for the first table/histogram/media object slice. It starts disposable ClickHouse, applies the Rust ClickHouse schema, seeds one run with rich object attributes and a bounded table preview, starts the Rust API, and prints object-list/table-row p95 timings.
@@ -155,6 +236,8 @@ npm run test:rust:ui
 
 The web smoke in `apps/web/tests/ui-smoke.mjs` follows the same default: no API base means Rust/ClickHouse. Set `INSTANTML_UI_SMOKE_API_BASE` to test an already-running Rust-compatible backend. The full UI smoke covers landing, local auth, onboarding, and dashboard routes, so it depends on Rust session/auth endpoints rather than the deprecated Node compatibility server.
 
+When `rust-service-smoke.mjs` launches the UI smoke against a disposable Rust API, it overrides `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` together so hosted values in the repo-root `.env` cannot break local smoke builds.
+
 Rust service commands:
 
 ```bash
@@ -164,6 +247,15 @@ npm run rust:test
 npm run rust:migrate
 npm run rust:serve
 ```
+
+`hosted-clickhouse-smoke.mjs` is the local control/data rollout gate behind
+`npm run test:hosted-clickhouse`. It starts disposable ClickHouse plus two Rust
+processes: `INSTANTML_SERVICE_PLANE=control` for auth/session/org/API-key and
+tenant provisioning, and `INSTANTML_SERVICE_PLANE=data` for project/run/metric
+and dashboard routes. It verifies role-specific route tables, data-plane
+control-record refresh before auth, Python SDK ingestion through the data role,
+and dashboard readback after a data-process restart. It does not deploy or touch
+live ClickHouse Cloud/GCP resources.
 
 Expected import JSON shape:
 

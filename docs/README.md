@@ -4,6 +4,8 @@ This directory contains product, architecture, user research, and design documen
 
 Current product direction: InstantML is a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The intended wedge is speed, UI quality, and predictable pricing. RL, robotics, simulation, Neptune migration, W&B import/dual-logging, and MLflow import remain important workflows, but they are not the top-level brand boundary.
 
+Current pricing direction: the first self-serve packaging model is Free, Pro, and Premium. Signup records the selected plan, Settings exposes warning-only usage and seat invites, the API tab exposes API-key management, and warehouse sizing is recorded as plan intent unless explicit operator spend gates allow plan-sized provisioning.
+
 Future agents must update documentation whenever they change:
 
 - Product behavior
@@ -30,8 +32,12 @@ Future agents must update documentation whenever they change:
 - Working tasks: `../TODO.md`.
 - Fresh setup: `../SETUP.md`.
 - Current implemented architecture: `architecture/current-system.md`.
+- Split Cloud Run architecture: `architecture/multi-instance-cloud-run.md`.
 - Current Rust API reference: `architecture/current-api.md`.
+- Current control/data-plane schemas: `architecture/current-schemas.md`.
+- Pricing and margin model: `product/pricing-and-margins.md`.
 - Primary backend foundation: `design/2026-05-14-clickhouse-only-storage.md`.
+- Pricing/signup/admin implementation design: `design/2026-05-16-pricing-signup-org-admin.md`.
 - Validation plan: `users/2026-05-09-validation-plan.md`.
 - Open-source and brand policy: `product/2026-05-09-open-source-brand.md`.
 - Future-agent workflow: `../AGENTS.md`.
@@ -44,6 +50,6 @@ Default:    Next/React + Python SDK -> Rust API -> ClickHouse operational layer 
 Deprecated: Next/React + Python SDK -> Node compatibility API -> JSON state/local artifacts
 ```
 
-Docs should keep that distinction explicit. The ClickHouse-only storage design is accepted for the local/test first slice, with hosted control-plane/data-plane service routing deferred to a later coordination design. The Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback until migration tooling and any remaining route-shape checks are retired.
+Docs should keep that distinction explicit. The ClickHouse-only storage design is accepted for the local/test first slice, and hosted control-plane/data-plane service routing now has split Cloud Run launch wiring with single-writer data-cell defaults. The Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback until migration tooling and any remaining route-shape checks are retired.
 
 When these disagree, update the older document or create a superseding design before building.

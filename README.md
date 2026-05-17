@@ -11,9 +11,11 @@ Start with:
 - `AGENTS.md` for contributor and future-agent guidelines.
 - `docs/architecture/current-system.md` for the implemented architecture.
 - `docs/architecture/current-api.md` for the current Rust API routes, inputs, parameters, outputs, auth rules, and operational examples.
+- `docs/architecture/current-schemas.md` for the current control-plane and data-plane schemas.
 - `docs/design/` for architecture and feature design documents.
 - `docs/design/2026-05-14-clickhouse-only-storage.md` for the primary Rust/ClickHouse storage direction.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md` for the internal Cloud Run deployment slice.
+- `docs/architecture/multi-instance-cloud-run.md` for the current split Cloud Run control/data topology.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
 ## Repository Structure
@@ -52,7 +54,7 @@ Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse met
 Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 ```
 
-The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment should split a global user/control-plane ClickHouse layer from org/cell data-plane services only after the coordination/reconciliation design is implemented.
+The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment now supports both a combined single Cloud Run service, split `control`/`data` Cloud Run services, and an optional managed HTTPS public router. Data-plane cells remain single-writer by default until the coordination/reconciliation gates for shared multi-writer cells are implemented.
 
 Migration rule: the Node server is deprecated but remains the compatibility oracle and JSON migration source until P4 migration tooling and any remaining legacy fallback needs are retired.
 
@@ -103,7 +105,7 @@ Training-observability roadmap first slice is implemented:
 - Side-by-side comparison, metric aggregate summaries, chart smoothing, grouped averages, x-axis mode, sorting, and saved local views.
 - Runs workspace sections, top-level add-panel drawer, line-panel editing, fullscreen inspection, movable/resizable panels, local layout persistence, selected-run-only plotting, hover tooltips, and range zoom.
 - Visible/searchable run tags and notes, with editing from Run Detail and Compare and Rust-backed indexed search over name/tags/config/notes text.
-- Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, a raw Python `Api.runs()` query helper, and a repeatable 90,000-run benchmark. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms.
+- Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, a raw Python `Api.runs()` query helper, a repeatable local 100,000-run benchmark, and a hosted Cloud Run API benchmark for the deployed Cloud Run -> ClickHouse path. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms.
 - Rich-object benchmark evidence from 2026-05-11 measured selected-run object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, and table row p95 1.9 ms for 1,000 bounded rows.
 - Keyboard workflow MVP covering quick search, shortcut help, overlay dismissal, workspace undo/redo, run selector collapse, focus handoff, and fullscreen panel traversal.
 - Tab-aware frontend data fetching so hidden Metrics, Run Detail, Compare, and artifact surfaces no longer fan out requests during every dashboard entry.
@@ -121,7 +123,7 @@ Known follow-ups before broadening the roadmap:
 - Keep frontend async loaders cancellation-safe as workflow components continue to split.
 - Validate W&B/MLflow/Neptune import and future W&B dual logging with real teams before broadening migration claims.
 - Implement real Neptune Exporter Parquet import after a dependency/schema design.
-- Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 90,000-run design-partner scale before making public hosted speed claims. The first local run-list/search/sort benchmark slice is complete, but high metric-key cardinality, Compare payloads, and workspace panel series fan-out still need dedicated gates.
+- Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 100,000+ run design-partner scale before making public hosted speed claims. The local run-list/search/sort benchmark slice is complete, and `npm run benchmark:cloud-run` is the default hosted backend signal for API calls through Cloud Run into ClickHouse Cloud. High metric-key cardinality, Compare payloads, and richer workspace panel fan-out still need dedicated gates.
 
 ## Quickstart
 
@@ -159,6 +161,7 @@ npm run test:node
 npm run test:contract:node
 npm run test:scale
 npm run benchmark:large-runs
+npm run benchmark:cloud-run -- --help
 ```
 
 Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust format/lint/unit tests, Node tests, and Python tests. The Rust service, SDK, and UI smokes still run locally because they require disposable service dependencies and are being hardened alongside the ClickHouse metric-store harness.
@@ -186,14 +189,22 @@ For faster frontend iteration:
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
-Run the local frontend against the hosted Cloud Run API:
+Deploy the default split control/data Cloud Run topology:
 
 ```bash
 npm run deploy:cloud-run
-npm run web:dev
 ```
 
-The deploy helper writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local` after a successful deploy, so subsequent frontend sessions only need the web command. The hosted Rust API remains pinned to one Cloud Run instance until the operational-index coordination design is implemented. Hosted artifact byte uploads are disabled until object storage lands.
+`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Control and data services default to manual one-instance scaling until durable multi-process gates land; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads are disabled until object storage lands.
+
+The explicit aliases are:
+
+```bash
+npm run deploy:cloud-run:multi
+npm run deploy:cloud-run:single
+```
+
+Use `deploy:cloud-run:single` only for the legacy combined Cloud Run service. A single-service deploy writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local`, so subsequent frontend sessions only need `npm run web:dev`.
 
 Run the one-command local stack:
 
@@ -203,6 +214,14 @@ docker compose up --build
 ```
 
 The Docker stack starts ClickHouse and the Rust API with durable ClickHouse rows, metric rows, and artifact bytes in Docker volumes. The example override enables the dev Google-style auth flow inside the container and remaps the host port to 8010 (the gitignored override file is per-machine). Without it the stack ships with secure defaults — `/signup` will render disabled buttons because the dev auth endpoint stays gated. See `SETUP.md` for the full Docker path and security notes.
+
+Run the split local container shape:
+
+```bash
+docker compose --profile split up --build instantml-control instantml-data
+```
+
+This starts `instantml-control` on host port `8001` and `instantml-data` on host port `8002` against the same ClickHouse container. It is useful for understanding service-plane wiring; `npm run test:hosted-clickhouse` remains the stronger automated split-process verification.
 
 Run Rust checks and smokes:
 
@@ -215,10 +234,17 @@ npm run test:rust:sdk
 npm run test:rust:ui
 ```
 
-Run the 90,000-run local benchmark:
+Run the 100,000-run local benchmark:
 
 ```bash
-INSTANTML_BENCH_RUNS=90000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
+INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
+```
+
+Run the hosted Cloud Run -> ClickHouse benchmark after `seed:hosted-scale` has
+created the large tenant dataset and `.env` points at the deployed data API:
+
+```bash
+INSTANTML_API_KEY=instantml_... npm run benchmark:cloud-run
 ```
 
 `npm run test:ui:direct` and `npm run test:contract:direct` also default to the same Rust/ClickHouse harness unless `INSTANTML_UI_SMOKE_API_BASE` or `INSTANTML_CONTRACT_BASE_URL` points them at an already-running compatible server.

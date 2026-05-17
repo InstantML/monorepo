@@ -815,7 +815,8 @@ p {
 }
 
 .auth-form label,
-.segmented-field {
+.segmented-field,
+.plan-picker {
   display: grid;
   gap: 6px;
   color: var(--text);
@@ -864,6 +865,75 @@ p {
   border-radius: var(--control-radius);
   background: var(--surface-soft);
   padding: 7px 10px;
+}
+
+.plan-picker {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.plan-picker legend {
+  grid-column: 1 / -1;
+  padding: 0;
+}
+
+.plan-picker label {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.plan-picker label.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+
+.plan-picker input {
+  position: absolute;
+  inset: 8px 8px auto auto;
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+}
+
+.plan-picker-head,
+.plan-picker span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.plan-picker-head {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.plan-picker svg {
+  flex: 0 0 auto;
+}
+
+.plan-picker strong {
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.plan-picker small {
+  margin-left: 2px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .onboarding-summary {
@@ -975,7 +1045,8 @@ p {
     padding: 20px;
   }
 
-  .segmented-field {
+  .segmented-field,
+  .plan-picker {
     grid-template-columns: 1fr;
   }
 }
@@ -8244,6 +8315,55 @@ textarea:focus {
 .insight-stack { gap: 12px; }
 .settings-list, .api-list { gap: 10px; }
 
+.admin-stack,
+.admin-list,
+.admin-alert-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.42fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.admin-form-row input {
+  width: 100%;
+}
+
+.usage-meter {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.usage-meter span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.api-row.muted {
+  opacity: 0.62;
+}
+
+.api-row button {
+  min-width: 32px;
+  padding: 5px;
+}
+
+@media (max-width: 860px) {
+  .admin-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Empty states — mock voice */
 .empty,
 .compact-empty {
@@ -8630,6 +8750,74 @@ textarea:focus {
 /* ══════════════════════════════════════════════════════════════════════════
  * QA pass — a11y, leak, and consistency corrections (2026-05-15)
  * ══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 720px) {
+  .brandbar-actions .ghost-kbd,
+  .brandbar-actions .avatar {
+    display: none;
+  }
+
+  .workbar {
+    gap: 6px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .workbar .control.compact {
+    flex: 0 1 92px;
+    min-width: 0;
+  }
+
+  .workbar .select-trigger {
+    min-width: 0;
+  }
+
+  .workbar-search {
+    flex: 1 1 120px;
+    min-width: 96px;
+  }
+
+  .workbar-spacer,
+  .workbar .system-status,
+  .workbar-name,
+  .workbar #demo-reset,
+  .workbar #save-view,
+  .workbar .custom-select-control.compact,
+  .workbar > .icon-button {
+    display: none;
+  }
+
+  .tab-grid.two-col,
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setting-row,
+  .api-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    justify-content: stretch;
+  }
+
+  .api-row code,
+  .api-row small,
+  .api-row strong,
+  .setting-row strong {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .api-row .method {
+    justify-self: start;
+  }
+
+  .api-row button {
+    width: 100%;
+  }
+}
 
 /* Respect reduced-motion (WCAG 2.3.3 / vestibular safety) */
 @media (prefers-reduced-motion: reduce) {

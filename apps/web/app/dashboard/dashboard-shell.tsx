@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Code2,
+  Copy,
   Database,
   ExternalLink,
   FileBarChart,
@@ -25,12 +26,13 @@ import {
   Settings,
   ShieldCheck,
   Star,
+  UserPlus,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
-import { ApiClient, isAbortError, queryString } from "../../src/api.js";
+import { ApiClient, ApiError, isAbortError, queryString } from "../../src/api.js";
 import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
@@ -124,12 +126,43 @@ type QuickSearchItem = {
   label: string;
   onSelect: () => void;
 };
+type DashboardSessionPayload = {
+  authenticated?: boolean;
+  organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number };
+  user?: { primary_email: string; display_name?: string | null };
+  membership?: { role: string; status: string };
+};
+type SeatRow = {
+  membership: { id: string; role: string; status: string; created_at: string };
+  user: { id: string; primary_email: string; display_name?: string | null };
+};
+type ApiKeyRow = {
+  id: string;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  created_at: string;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+};
+type UsageOrg = {
+  org_id: string;
+  plan_tier: string;
+  usage: Record<string, number | null | string>;
+  limits: Record<string, number>;
+  warnings?: Array<{ code?: string; message?: string }>;
+};
+type UsagePayload = {
+  billing_precision?: string;
+  organizations?: UsageOrg[];
+};
 const SEARCH_DEBOUNCE_MS = 250;
 const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 12;
 const ARTIFACT_PAGE_LIMIT = 100;
 const WORKSPACE_HISTORY_LIMIT = 50;
+const WAREHOUSE_RETRY_MS = 5_000;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
@@ -141,9 +174,14 @@ function boundedOptions(options: string[], activeValue: string, limit = MAX_METR
 }
 
 function messageTone(message: string): "error" | "loading" | "ok" {
+  if (/starting data warehouse|warehouse is awake/i.test(message)) return "loading";
   if (/unable|invalid|failed|unavailable|not found|access|sign in/i.test(message)) return "error";
-  if (/loading|resetting|syncing/i.test(message)) return "loading";
+  if (/loading|resetting|syncing|starting/i.test(message)) return "loading";
   return "ok";
+}
+
+function isWarehouseStartingError(error: unknown) {
+  return error instanceof ApiError && error.code === "warehouse_unavailable";
 }
 
 function quickSearchTokenMatches(haystack: string, token: string) {
@@ -213,9 +251,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const workspaceViewRef = useRef<WorkspaceView | null>(null);
   const workspaceFocusRegionRef = useRef<"runs" | "canvas">("canvas");
   const summaryTotalRef = useRef(0);
+  const warehouseRetryTimerRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
+  const [sessionPayload, setSessionPayload] = useState<DashboardSessionPayload | null>(null);
   const [project, setProject] = useState("");
   const [status, setStatus] = useState("");
   const [queryInput, setQueryInput] = useState("");
@@ -261,6 +301,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [hover, setHover] = useState<HoverPoint>(null);
   const [hoverMetricKey, setHoverMetricKey] = useState(metricKey);
   const [message, setMessage] = useState("Loading runs...");
+  const [loadingDetail, setLoadingDetail] = useState("Loading workspace");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [savedViews, setSavedViews] = useState<string[]>([]);
   const [savedViewKey, setSavedViewKey] = useState("");
@@ -289,6 +330,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [chartZoomRange, setChartZoomRange] = useState<ChartZoomRange>(null);
   const [primaryChartZoomRange, setPrimaryChartZoomRange] = useState<ChartZoomRange>(null);
   const [pinnedChartZoomRanges, setPinnedChartZoomRanges] = useState<Record<string, ChartZoomRange>>({});
+  const [usagePayload, setUsagePayload] = useState<UsagePayload | null>(null);
+  const [seats, setSeats] = useState<SeatRow[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [apiKeyName, setApiKeyName] = useState("Dashboard SDK key");
+  const [newApiKey, setNewApiKey] = useState("");
+  const [adminBusy, setAdminBusy] = useState(false);
 
   const summaryMatchesProject = !project || summary.runs.every((run) => run.project === project);
   const actualMetricOptions = useMemo(() => (summaryMatchesProject ? metricKeysFromSummary(summary) : []), [summary, summaryMatchesProject]);
@@ -406,6 +455,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const reportRows = useMemo(() => buildReportRows(savedViews), [savedViews]);
   const integrationRows = useMemo(() => buildIntegrationRows(), []);
   const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
+  const activeOrgId = sessionPayload?.organization?.id ?? "";
+  const activeUsageOrg = useMemo(() => usagePayload?.organizations?.find((org) => org.org_id === activeOrgId) ?? usagePayload?.organizations?.[0] ?? null, [activeOrgId, usagePayload]);
+  const activeUsage = activeUsageOrg?.usage ?? {};
+  const activeLimits = activeUsageOrg?.limits ?? {};
+  const storageUsed = Number(activeUsage.estimated_storage_bytes_for_warnings ?? activeUsage.artifact_bytes_exact ?? 0);
+  const storageLimit = Number(activeLimits.included_storage_bytes ?? 0);
+  const storagePercent = storageLimit ? Math.min(100, Math.round((storageUsed / storageLimit) * 100)) : 0;
+  const metricUsed = Number(activeUsage.metric_points ?? 0);
+  const metricLimit = Number(activeLimits.metric_points ?? 0);
+  const metricPercent = metricLimit ? Math.min(100, Math.round((metricUsed / metricLimit) * 100)) : 0;
+  const activePlan = planDisplayName(activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier);
   const pageStart = summary.total ? pageOffset + 1 : 0;
   const pageEnd = summary.total ? Math.min(pageOffset + sortedRuns.length, summary.total) : 0;
   const hasPreviousPage = pageOffset > 0;
@@ -587,9 +647,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const loadDashboard = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     const requestOptions = options && "signal" in options ? options : {};
     const requestId = dashboardRequestRef.current + 1;
+    if (warehouseRetryTimerRef.current) {
+      window.clearTimeout(warehouseRetryTimerRef.current);
+      warehouseRetryTimerRef.current = null;
+    }
     dashboardRequestRef.current = requestId;
     setDashboardLoading(true);
+    setLoadingDetail("Loading runs");
     setMessage("Loading runs...");
+    let keepLoadingScreen = false;
     try {
       const params = currentPageCursor
         ? { project, status, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
@@ -612,16 +678,27 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
       setMessage(runsPageMessage(nextSummary.total, pageOffset, nextSummary.runs.length));
     } catch (error) {
-      if (requestId === dashboardRequestRef.current && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load runs.");
+      if (requestId === dashboardRequestRef.current && !isAbortError(error)) {
+        const detail = error instanceof Error ? error.message : "Unable to load runs.";
+        setMessage(detail);
+        if (isWarehouseStartingError(error) && !options.signal?.aborted) {
+          setLoadingDetail("Starting data warehouse");
+          keepLoadingScreen = !initialLoadDone;
+          warehouseRetryTimerRef.current = window.setTimeout(() => {
+            warehouseRetryTimerRef.current = null;
+            if (!options.signal?.aborted) void loadDashboard();
+          }, WAREHOUSE_RETRY_MS);
+        }
+      }
     } finally {
       if (requestId === dashboardRequestRef.current) {
-        setDashboardLoading(false);
+        setDashboardLoading(keepLoadingScreen);
         pageNavigationPendingRef.current = false;
         setPageNavigationPending(false);
-        if (!options.signal?.aborted) setInitialLoadDone(true);
+        if (!keepLoadingScreen && !options.signal?.aborted) setInitialLoadDone(true);
       }
     }
-  }, [api, currentPageCursor, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
+  }, [api, currentPageCursor, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -629,6 +706,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       try {
         const session = await api.get("/api/auth/session", { signal: controller.signal });
         if (session.authenticated) {
+          setSessionPayload(session as DashboardSessionPayload);
           setDashboardAuthorized(true);
           return;
         }
@@ -706,6 +784,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     summaryTotalRef.current = summary.total;
   }, [summary.total]);
+
+  useEffect(() => {
+    return () => {
+      if (warehouseRetryTimerRef.current) window.clearTimeout(warehouseRetryTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     function applyRouteTab() {
@@ -1175,6 +1259,103 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } catch (error) {
       if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to reset demo data.");
     }
+  }
+
+  const loadOrgSettings = useCallback(async (options: { signal?: AbortSignal } = {}) => {
+    if (!activeOrgId) return;
+    try {
+      const [usage, seatPayload] = await Promise.all([
+        api.get("/api/usage", options),
+        api.get(`/api/orgs/${activeOrgId}/seats`, options),
+      ]);
+      setUsagePayload(usage as UsagePayload);
+      setSeats(Array.isArray(seatPayload.seats) ? seatPayload.seats as SeatRow[] : []);
+    } catch (error) {
+      if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load workspace settings.");
+    }
+  }, [activeOrgId, api]);
+
+  const loadApiKeys = useCallback(async (options: { signal?: AbortSignal } = {}) => {
+    if (!activeOrgId) return;
+    try {
+      const payload = await api.get(`/api/orgs/${activeOrgId}/api-keys`, options);
+      setApiKeys(Array.isArray(payload.api_keys) ? payload.api_keys as ApiKeyRow[] : []);
+    } catch (error) {
+      if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load API keys.");
+    }
+  }, [activeOrgId, api]);
+
+  useEffect(() => {
+    if (!dashboardAuthorized || activeTab !== "settings" || !activeOrgId) return;
+    const controller = new AbortController();
+    void loadOrgSettings({ signal: controller.signal });
+    return () => controller.abort();
+  }, [activeOrgId, activeTab, dashboardAuthorized, loadOrgSettings]);
+
+  useEffect(() => {
+    if (!dashboardAuthorized || activeTab !== "api" || !activeOrgId) return;
+    const controller = new AbortController();
+    void loadApiKeys({ signal: controller.signal });
+    return () => controller.abort();
+  }, [activeOrgId, activeTab, dashboardAuthorized, loadApiKeys]);
+
+  async function inviteSeat() {
+    if (!activeOrgId || !inviteEmail.trim()) return;
+    setAdminBusy(true);
+    setMessage("Reserving seat...");
+    try {
+      await api.post(`/api/orgs/${activeOrgId}/seats`, {
+        email: inviteEmail.trim(),
+        role: inviteRole,
+      });
+      setInviteEmail("");
+      await loadOrgSettings();
+      setMessage("Seat reserved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to reserve seat.");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function createDashboardApiKey() {
+    if (!activeOrgId) return;
+    setAdminBusy(true);
+    setNewApiKey("");
+    setMessage("Creating API key...");
+    try {
+      const payload = await api.post(`/api/orgs/${activeOrgId}/api-keys`, {
+        name: apiKeyName.trim() || "Dashboard SDK key",
+      });
+      if (typeof payload.api_key === "string") setNewApiKey(payload.api_key);
+      await loadApiKeys();
+      setMessage("API key created.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to create API key.");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function revokeDashboardApiKey(keyId: string) {
+    if (!activeOrgId || !keyId) return;
+    setAdminBusy(true);
+    setMessage("Revoking API key...");
+    try {
+      await api.post(`/api/orgs/${activeOrgId}/api-keys/${keyId}/revoke`, {});
+      await loadApiKeys();
+      setMessage("API key revoked.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to revoke API key.");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function copyNewApiKey() {
+    if (!newApiKey) return;
+    await navigator.clipboard?.writeText(newApiKey);
+    setMessage("API key copied.");
   }
 
   function saveView() {
@@ -1715,7 +1896,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
   const ActiveIcon = activeTabIcon;
 
-  if (!initialLoadDone) return <AppLoadingScreen />;
+  if (!initialLoadDone) return <AppLoadingScreen detail={loadingDetail} />;
   if (!dashboardAuthorized) {
     return (
       <main className="auth-page" aria-busy="false">
@@ -2387,11 +2568,68 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
           {activeTab === "settings" ? (
             <>
-          <PageHead eyebrow="Admin" title="Workspace" emphasis="settings" lede="filters · defaults" />
+          <PageHead eyebrow="Admin" title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
           <div className="tab-grid settings-grid">
+            <section className="panel">
+              <div className="panel-head"><h2><Gauge size={15} /> Plan Usage</h2><button className="ghost" disabled={adminBusy} onClick={() => loadOrgSettings()} type="button"><RefreshCw size={14} /> Refresh</button></div>
+              <div className="panel-body insight-stack">
+                <MetricCard label="Plan" value={activePlan} tone="good" />
+                <MetricCard label="Seats" value={`${formatNumber(Number(activeUsage.seats ?? seats.length), 0)} / ${formatNumber(Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0), 0)}`} tone="neutral" />
+                <MetricCard label="Tracked data" value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
+                <div className="usage-meter" aria-label="Tracked data usage">
+                  <span style={{ width: `${storagePercent}%` }} />
+                </div>
+                <MetricCard label="Metric points" value={`${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}`} tone={metricPercent > 90 ? "bad" : metricPercent > 70 ? "live" : "neutral"} />
+                <div className="usage-meter" aria-label="Metric point usage">
+                  <span style={{ width: `${metricPercent}%` }} />
+                </div>
+                {(activeUsageOrg?.warnings ?? []).length ? (
+                  <div className="admin-alert-list">
+                    {(activeUsageOrg?.warnings ?? []).map((warning, index) => (
+                      <div className="api-row" key={`${warning.code ?? "warning"}-${index}`}>
+                        <AlertTriangle size={14} />
+                        <strong>{warning.message ?? warning.code ?? "Usage warning"}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panel-head"><h2><UserPlus size={15} /> Seats</h2></div>
+              <div className="panel-body admin-stack">
+                <div className="admin-form-row">
+                  <input aria-label="Invite email" onChange={(event) => setInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" value={inviteEmail} />
+                  <CustomSelect
+                    id="seat-role"
+                    label="Role"
+                    onChange={setInviteRole}
+                    options={[
+                      { value: "member", label: "Member" },
+                      { value: "admin", label: "Admin" },
+                      { value: "viewer", label: "Viewer" },
+                    ]}
+                    value={inviteRole}
+                  />
+                  <button className="primary-button" disabled={adminBusy || !inviteEmail.trim()} onClick={inviteSeat} type="button"><UserPlus size={14} /> Invite</button>
+                </div>
+                <div className="admin-list">
+                  {seats.map((seat) => (
+                    <div className="api-row" key={seat.membership.id}>
+                      <span>{seat.membership.status}</span>
+                      <strong>{seat.user.primary_email}</strong>
+                      <code>{seat.membership.role}</code>
+                    </div>
+                  ))}
+                  {!seats.length ? <p className="empty">No seats loaded.</p> : null}
+                </div>
+              </div>
+            </section>
             <section className="panel">
               <div className="panel-head"><h2><Settings size={15} /> Workspace</h2></div>
               <div className="panel-body settings-list">
+                <SettingRow label="Organization" value={sessionPayload?.organization?.name ?? "Workspace"} />
+                <SettingRow label="Plan tier" value={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"} />
                 <SettingRow label="Project filter" value={project || "All projects"} />
                 <SettingRow label="Status filter" value={status || "All statuses"} />
                 <SettingRow label="Selected runs" value={formatNumber(selectedRunIds.length, 0)} />
@@ -2447,18 +2685,42 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "api" ? "active" : ""}`} aria-label="API">
           {activeTab === "api" ? (
             <>
-          <PageHead eyebrow="Admin" title="API" emphasis="surface" lede="documented REST routes" />
+          <PageHead eyebrow="Admin" title="API" emphasis="keys" lede={`${apiKeys.filter((key) => !key.revoked_at).length} active · documented REST routes`} />
           <div className="tab-grid two-col">
+            <section className="panel">
+              <div className="panel-head"><h2><KeyRound size={15} /> API Keys</h2><button className="ghost" disabled={adminBusy} onClick={() => loadApiKeys()} type="button"><RefreshCw size={14} /> Refresh</button></div>
+              <div className="panel-body admin-stack">
+                <div className="admin-form-row">
+                  <input aria-label="API key name" onChange={(event) => setApiKeyName(event.target.value)} value={apiKeyName} />
+                  <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={createDashboardApiKey} type="button"><Plus size={14} /> Create</button>
+                </div>
+                {newApiKey ? (
+                  <div className="api-key-reveal" role="status" aria-live="polite">
+                    <strong>Copy-once API key</strong>
+                    <code>{newApiKey}</code>
+                    <button className="secondary" onClick={copyNewApiKey} type="button"><Copy size={14} /> Copy</button>
+                  </div>
+                ) : null}
+                <div className="admin-list">
+                  {apiKeys.map((key) => (
+                    <div className={`api-row ${key.revoked_at ? "muted" : ""}`} key={key.id}>
+                      <span>{key.revoked_at ? "Revoked" : "Active"}</span>
+                      <strong>{key.name}</strong>
+                      <code>{key.key_prefix}</code>
+                      <button className="ghost" disabled={adminBusy || Boolean(key.revoked_at)} onClick={() => revokeDashboardApiKey(key.id)} type="button" aria-label={`Revoke ${key.name}`}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {!apiKeys.length ? <p className="empty">No API keys loaded.</p> : null}
+                </div>
+              </div>
+            </section>
             <section className="panel">
               <div className="panel-head"><h2><Code2 size={15} /> API Surface</h2></div>
               <div className="panel-body">
                 <ApiTable rows={apiRows} />
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><KeyRound size={15} /> Request Context</h2></div>
-              <div className="panel-body">
-                <pre>{JSON.stringify({ project: project || null, status: status || null, metric_key: metricKey, inspected_run_id: primaryRun?.id ?? null, selected_run_ids: selectedRunIds }, null, 2)}</pre>
+                <pre>{JSON.stringify({ org_id: activeOrgId || null, project: project || null, status: status || null, metric_key: metricKey, inspected_run_id: primaryRun?.id ?? null, selected_run_ids: selectedRunIds }, null, 2)}</pre>
               </div>
             </section>
           </div>
@@ -2490,6 +2752,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
 function isNotFoundError(error: unknown) {
   return Boolean(error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 404);
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`;
+}
+
+function planDisplayName(value?: string) {
+  if (value === "premium" || value === "growth") return "Premium";
+  if (value === "pro" || value === "lab" || value === "startup") return "Pro";
+  return "Free";
 }
 
 function runsPageMessage(total: number, offset: number, visibleCount: number) {

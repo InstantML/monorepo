@@ -24,3 +24,24 @@ The committed Markdown summaries should include:
 - whether hosted budgets passed
 
 Do not commit the optional JSON output unless it has been reviewed for the same sanitization rules.
+
+## Hosted Cloud Run API Benchmark
+
+Use the Cloud Run benchmark after the hosted-scale tenant has already been
+seeded:
+
+```bash
+INSTANTML_API_KEY=instantml_... \
+INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json \
+npm run benchmark:cloud-run
+```
+
+This is now the preferred hosted backend latency signal because it measures the
+actual deployed request path: benchmark client -> Cloud Run data service or
+HTTPS router -> ClickHouse Cloud tenant. It assumes `INSTANTML_DATA_API_BASE` or
+`INSTANTML_API_BASE` points at the hosted API and validates at least 100,000
+runs across the configured benchmark projects before timing requests.
+
+Committed summaries for this benchmark should include the same sanitized fields
+as the hosted ClickHouse benchmark plus the API host only, never full URLs or API
+keys.

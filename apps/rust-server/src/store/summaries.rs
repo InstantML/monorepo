@@ -12,10 +12,9 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
         let data = store.data.lock().await;
         artifact_counts_for_runs(&data, &run_ids)
     };
-    Ok(runs
-        .into_iter()
+    runs.into_iter()
         .map(|run| summarize_run(run, &series, &counts))
-        .collect())
+        .collect::<AppResult<Vec<_>>>()
 }
 
 pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<Value> {
@@ -26,14 +25,14 @@ pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<V
         let data = store.data.lock().await;
         artifact_counts_for_runs(&data, &run_ids)
     };
-    Ok(summarize_run(run, &series, &counts))
+    summarize_run(run, &series, &counts)
 }
 
 pub(super) fn summarize_run(
     run: RunRow,
     series: &[MetricSeriesRow],
     artifact_counts: &HashMap<Uuid, BTreeMap<String, i64>>,
-) -> Value {
+) -> AppResult<Value> {
     let mut latest = Map::new();
     let mut aggregates = Map::new();
     let mut keys = Vec::new();
@@ -61,14 +60,15 @@ pub(super) fn summarize_run(
             ("file".to_string(), 0),
         ])
     });
-    let mut value = serde_json::to_value(run).expect("run serializes");
+    let mut value = serde_json::to_value(run)
+        .map_err(|_| AppError::internal("run summary serialization failed"))?;
     if let Value::Object(map) = &mut value {
         map.insert("latest_metrics".to_string(), Value::Object(latest));
         map.insert("metric_aggregates".to_string(), Value::Object(aggregates));
         map.insert("metric_keys".to_string(), json!(keys));
         map.insert("artifact_counts".to_string(), json!(counts));
     }
-    value
+    Ok(value)
 }
 
 pub(super) fn artifact_counts_for_runs(

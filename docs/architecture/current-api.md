@@ -25,19 +25,46 @@ Local default:
 http://127.0.0.1:8000
 ```
 
-Internal hosted Cloud Run:
+Hosted Cloud Run direct services:
 
 ```text
-https://instantml-rust-api-hfv667633q-uc.a.run.app
+https://instantml-control-<hash>-uc.a.run.app
+https://instantml-data-us-central1-a-<hash>-uc.a.run.app
+```
+
+Hosted public router, when DNS and the managed HTTPS load balancer are
+configured:
+
+```text
+https://api.instantml.ai
 ```
 
 The local Next app should normally call the Rust API through same-origin Next
-rewrites. After `npm run deploy:cloud-run`, `apps/web/.env.local` receives:
+rewrites. After a direct split `npm run deploy:cloud-run`,
+`apps/web/.env.local` receives:
 
 ```text
-INSTANTML_API_BASE=https://instantml-rust-api-hfv667633q-uc.a.run.app
-INSTANTML_API_ALLOWED_ORIGINS=https://instantml-rust-api-hfv667633q-uc.a.run.app
+INSTANTML_CONTROL_API_BASE=https://instantml-control-<hash>-uc.a.run.app
+INSTANTML_DATA_API_BASE=https://instantml-data-us-central1-a-<hash>-uc.a.run.app
+INSTANTML_API_ALLOWED_ORIGINS=https://instantml-control-<hash>-uc.a.run.app,https://instantml-data-us-central1-a-<hash>-uc.a.run.app
 ```
+
+When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and
+`INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper writes
+`INSTANTML_API_BASE`, `INSTANTML_CONTROL_API_BASE`, and
+`INSTANTML_DATA_API_BASE` to the same `https://<api-domain>` value.
+
+The current public client contract is one stable API base URL. This
+multi-instance first slice does not expose public data-plane cell URLs and does
+not redirect SDK or browser requests to a cell. Any future direct-to-cell or
+redirect behavior must preserve bearer auth, session/cookie rules,
+`Idempotency-Key`, request bodies, and project-scoped/demo authorization.
+
+For local split-service verification, the Rust binary also supports
+`INSTANTML_SERVICE_PLANE=control` and `INSTANTML_SERVICE_PLANE=data`. The
+control role exposes platform, auth/session, user/org, seat, API-key, and
+service-account routes. The data role exposes platform and tenant product
+routes. `combined` remains the default and the current deployed shape.
 
 ## Auth Model
 
@@ -60,7 +87,10 @@ except for export reads.
 ## Common Shapes
 
 All JSON API errors use HTTP status codes and a JSON body with at least an
-`error` string. Most handlers also attach `x-request-id`.
+`error` string. Some errors also include a stable `code` string. Most handlers
+also attach `x-request-id`. Hosted tenant ClickHouse wake/start failures return
+`503` with `code: "warehouse_unavailable"` so clients can distinguish a waking
+tenant warehouse from a down control/API service.
 
 Important row shapes:
 
@@ -122,20 +152,23 @@ Validation limits that affect callers:
 | `GET` | `/healthz` | none | none | Same as `/health` |
 | `GET` | `/readyz` | none | none | `{ "status": "ok" }` when operational and metric ClickHouse stores are reachable |
 | `GET` | `/metrics` | none | none | Prometheus text metrics |
-| `GET` | `/openapi.json` | none | none | Compact OpenAPI 3.1 route index |
+| `GET` | `/openapi.json` | none | none | Compact role-aware OpenAPI 3.1 route index with `x-instantml-service-plane` |
 
 ## Auth And Session
 
 ### `GET /api/auth/config`
 
-Returns provider availability for the frontend.
+Returns provider availability for the frontend on the current service-plane
+role. Data-plane-only services return auth providers as disabled because they do
+not expose session exchange routes.
 
 Output:
 
 ```json
 {
   "dev_auth_enabled": false,
-  "managed_clerk_enabled": true
+  "managed_clerk_enabled": true,
+  "service_plane": "combined"
 }
 ```
 
@@ -150,11 +183,21 @@ Body:
 {
   "email": "hello@instantml.ai",
   "display_name": "InstantML Demo",
+  "mode": "signup",
+  "plan_tier": "pro",
   "account_type": "business",
   "org_name": "InstantML Demo",
-  "seat_emails": ["teammate@example.com"]
+  "seat_emails": ["teammate@example.com"],
+  "accept_invite_org_id": null
 }
 ```
+
+`mode` is `signup` or `signin`. `plan_tier` accepts `free`, `pro`, or
+`premium`; legacy `lab`/`startup` canonicalize to `pro` and `growth`
+canonicalizes to `premium`. On sign-in, `accept_invite_org_id` can activate a
+pending invited membership for the verified email address. If a verified user
+has multiple pending invites and does not choose one, the server returns `409`
+with `code: "multiple_pending_invites"`.
 
 Output: authenticated session payload plus `Set-Cookie: instantml_session=...`.
 
@@ -167,16 +210,20 @@ Body:
 ```json
 {
   "token": "clerk-session-jwt",
-  "mode": "signin",
+  "mode": "signup",
+  "plan_tier": "premium",
   "account_type": "customer",
   "org_name": "Acme Research",
-  "seat_emails": []
+  "seat_emails": ["teammate@example.com"],
+  "accept_invite_org_id": null
 }
 ```
 
 `mode` is `signin` or `signup`. `org_name` is required for signup and omitted
-for normal sign-in. Output is the authenticated session payload plus
-`Set-Cookie: instantml_session=...`.
+for normal sign-in. `plan_tier` is required only for plan-specific signup
+behavior and defaults to `free` when omitted. `accept_invite_org_id` is used on
+sign-in to activate a matching invited membership. Output is the authenticated
+session payload plus `Set-Cookie: instantml_session=...`.
 
 ### `GET /api/auth/session`
 
@@ -231,7 +278,8 @@ owner/admin browser session, an unrestricted org API key with
 | `POST` | `/api/orgs` | `{ "name"?, "slug"?, "plan_tier"?, "owner_user_id"? }` | `{ "organization": OrganizationRow }` |
 | `GET` | `/api/orgs` | none | `{ "organizations": [OrganizationRow] }` |
 | `GET` | `/api/orgs/name-availability` | `name` | `{ "name", "slug", "available", "message" }` |
-| `POST` | `/api/orgs/:org_id/seats` | `{ "email", "role"?: "owner" | "admin" | "member" | "viewer" }` | `{ "membership": MembershipRow }` |
+| `GET` | `/api/orgs/:org_id/seats` | none | `{ "seats": [SeatRow] }` |
+| `POST` | `/api/orgs/:org_id/seats` | `{ "email", "role"?: "owner" | "admin" | "member" | "viewer" }` | `{ "seat": SeatRow }` |
 | `POST` | `/api/orgs/:org_id/api-keys` | `{ "name"?, "scopes"?, "project_id"?, "project"?, "expires_at"? }` | `{ "api_key", "api_key_available", "key", "message", "service_account" }` |
 | `GET` | `/api/orgs/:org_id/api-keys` | none | `{ "api_keys": [PublicApiKeyRow] }` |
 | `POST` | `/api/orgs/:org_id/api-keys/:api_key_id/revoke` | none | `{ "key": PublicApiKeyRow }` |
@@ -820,25 +868,77 @@ Output:
   "schema_version": 1,
   "generated_at": "2026-05-16T00:00:00Z",
   "source": "computed_current_state",
+  "billing_precision": "warning_only_not_invoice_truth",
+  "plans": {
+    "free": {
+      "id": "free",
+      "label": "Free",
+      "monthly_base_usd": 0,
+      "included_seats": 2,
+      "included_storage_bytes": 2147483648,
+      "projects": 2,
+      "runs": 100,
+      "metric_points": 1000000,
+      "warehouse_kind": "shared",
+      "min_replica_memory_gb": 8,
+      "max_replica_memory_gb": 8,
+      "num_replicas": 1
+    },
+    "pro": {},
+    "premium": {}
+  },
+  "overage_policy": {
+    "seats": "paid_extra_seats",
+    "projects": "soft_warning_then_upgrade_prompt",
+    "runs": "soft_warning_then_upgrade_prompt",
+    "metric_points": "fair_use_warning",
+    "storage": "soft_warning_then_upgrade_prompt",
+    "artifacts": "visibility_only",
+    "api_keys": "visibility_only"
+  },
   "organizations": [
     {
       "org_id": "uuid",
       "org_slug": "demo",
       "plan_tier": "free",
+      "plan": {
+        "id": "free",
+        "label": "Free",
+        "monthly_base_usd": 0,
+        "included_seats": 2,
+        "included_storage_bytes": 2147483648
+      },
+      "limits": {
+        "included_seats": 2,
+        "included_storage_bytes": 2147483648,
+        "projects": 2,
+        "runs": 100,
+        "metric_points": 1000000
+      },
       "usage": {
-        "seats": 1,
+        "seats": 2,
+        "paid_extra_seats": 0,
         "projects": 1,
         "runs": 2,
         "metric_points": 6,
         "metric_series": 4,
         "artifacts": 0,
+        "api_keys": 1,
         "artifact_bytes_exact": 0,
-        "artifact_bytes_unknown": 0
-      }
+        "artifact_bytes_unknown": 0,
+        "artifact_bytes_unknown_count": 0,
+        "estimated_metadata_bytes": 2048,
+        "estimated_storage_bytes_for_warnings": 2048,
+        "billable_storage_bytes": null
+      },
+      "warnings": []
     }
   ]
 }
 ```
+
+The response is warning/debug telemetry only. `billable_storage_bytes` remains
+`null` until provider/object-store reconciliation is implemented.
 
 ### `GET /api/usage/export`
 

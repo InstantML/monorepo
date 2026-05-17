@@ -68,9 +68,11 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   store.createArtifact(run.id, { type: "file", name: "unknown.bin", uri: "s3://bucket/unknown.bin" });
   const usage = store.usageSummary({ org_id: org.id });
   assert.equal(usage.billing_precision, "not_billable");
+  assert.equal(usage.plans.free.included_seats, 2);
+  assert.equal(usage.plans.pro.monthly_base_usd, 199);
   assert.equal(usage.organizations.length, 1);
   assert.equal(usage.organizations[0].usage.seats, 2);
-  assert.equal(usage.organizations[0].usage.paid_extra_seats, 1);
+  assert.equal(usage.organizations[0].usage.paid_extra_seats, 0);
   assert.equal(usage.organizations[0].usage.projects, 1);
   assert.equal(usage.organizations[0].usage.runs, 1);
   assert.equal(usage.organizations[0].usage.metric_points, 1);
@@ -79,7 +81,7 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   assert.equal(usage.organizations[0].usage.api_keys, 1);
   assert.equal(usage.organizations[0].usage.artifact_bytes_exact, 6 * 1024 ** 3);
   assert.equal(usage.organizations[0].usage.artifact_bytes_unknown_count, 1);
-  assert.equal(usage.organizations[0].warnings.some((warning) => warning.target === "seats" && warning.status === "paid_extra_seats"), true);
+  assert.equal(usage.organizations[0].warnings.some((warning) => warning.target === "seats" && warning.status === "paid_extra_seats"), false);
   assert.equal(usage.organizations[0].warnings.some((warning) => warning.target === "storage" && warning.status === "over_limit"), true);
   const usageExport = store.usageExport({ org_id: org.id });
   assert.equal(usageExport.source, "computed_current_state");
@@ -475,6 +477,7 @@ test("validation errors match the API contract", () => {
   assert.throws(() => store.createProject({ name: "" }), /project name/);
   assert.throws(() => store.createProject({ name: "x", description: 1 }), /description/);
   assert.throws(() => store.createOrganization({ slug: "bad-plan", name: "Bad Plan", plan_tier: "huge" }), /plan_tier/);
+  assert.equal(store.createOrganization({ slug: "legacy-lab", name: "Legacy Lab", plan_tier: "lab" }).plan_tier, "pro");
   assert.throws(() => store.createRun({ project: "x", config: [] }), /config/);
   assert.throws(() => store.createRun({ project: "x", tags: [""] }), /tags/);
   assert.throws(() => store.createRun({ project: "x", metadata: [] }), /metadata/);
