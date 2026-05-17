@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient } from "../src/api.js";
 import { sanitizeNextPath } from "../src/routes.js";
+import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
 
 type AuthMode = "signin" | "signup" | "onboarding";
@@ -15,6 +16,7 @@ type SessionPayload = {
   organization?: { id: string; name: string; slug: string; account_type?: string; plan_tier?: string; seat_limit?: number };
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
+  onboarding_api_key?: { plaintext: string; prefix: string; id: string } | null;
 };
 type DevGoogleAuthPayload = {
   email: string;
@@ -73,6 +75,8 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [orgName, setOrgName] = useState("");
+  // orgNameOverride: non-empty string means the user has manually overridden the auto-derived name.
+  const [orgNameOverride, setOrgNameOverride] = useState("");
   const [seatEmails, setSeatEmails] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState("Checking provider availability...");
@@ -84,8 +88,21 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [reloadKey, setReloadKey] = useState(0);
   const nextPath = typeof window === "undefined" ? "/dashboard/runs" : sanitizeNextPath(new URLSearchParams(window.location.search).get("next"));
   const signupMode = mode === "signup";
-  const isOnboarding = mode === "onboarding";
-  const orgNameRequired = signupMode;
+  // Route-based onboarding, plus the in-place post-signup reveal: after a
+  // managed Clerk sign-up exchange we replaceState to /onboarding WITHOUT a
+  // reload (to preserve the copy-once key in memory), so signup+authenticated
+  // must also render the onboarding view. Sign-in stays route-only so a
+  // returning signed-in visitor is still redirected to the app, not onboarding.
+  const isOnboarding = mode === "onboarding" || (signupMode && Boolean(session?.authenticated));
+
+  // For managed Clerk signups the server auto-derives the workspace slug from
+  // the Clerk profile; mirror it for a live preview + optional override.
+  const clerkDisplayName = user?.fullName ?? "";
+  const clerkEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? "";
+  const autoSlug = useMemo(() => deriveClerkSlug(clerkDisplayName, clerkEmail), [clerkDisplayName, clerkEmail]);
+  const managedClerkSignup = config.managed_clerk_enabled && signupMode;
+  const effectiveOrgName = managedClerkSignup ? (orgNameOverride.trim() || autoSlug) : orgName;
+  const orgNameRequired = signupMode && !managedClerkSignup;
   const orgUnavailable = orgNameRequired && (!orgName.trim() || orgAvailability.available === false);
   const managedClerkReady = config.managed_clerk_enabled && clerkLoaded;
   const demoSession = isSharedDemoSession(session);
@@ -161,14 +178,17 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   }, [api, reloadKey]);
 
   useEffect(() => {
-    if (!signupMode || !orgName.trim()) {
+    // For managed Clerk signups: only check availability when the user has explicitly overridden
+    // the auto-derived name (the server handles collision fallback for the auto-derived path).
+    const nameToCheck = managedClerkSignup ? orgNameOverride.trim() : orgName.trim();
+    if (!signupMode || !nameToCheck) {
       setOrgAvailability({});
       return;
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setOrgAvailability({ message: "Checking organization name..." });
-      api.get(`/api/orgs/name-availability?name=${encodeURIComponent(orgName.trim())}`, { signal: controller.signal })
+      api.get(`/api/orgs/name-availability?name=${encodeURIComponent(nameToCheck)}`, { signal: controller.signal })
         .then((payload) => setOrgAvailability(payload as OrgAvailability))
         .catch((error) => {
           if (error?.name !== "AbortError") setOrgAvailability({ available: false, message: "Unable to check this organization name." });
@@ -178,7 +198,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [api, orgName, signupMode]);
+  }, [api, orgName, orgNameOverride, managedClerkSignup, signupMode]);
 
   // Auto-exchange the verified Clerk session for a scoped InstantML session so
   // there is no second "continue" click. Sign-up only exchanges once an
@@ -237,19 +257,33 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     try {
       const token = await getToken();
       if (!token) throw new Error("Clerk did not return a session token.");
+      // For managed Clerk signups: send org_name only when the user has explicitly overridden
+      // the auto-derived name. When absent, the server auto-derives from the Clerk profile.
+      const explicitOrgName = managedClerkSignup
+        ? (orgNameOverride.trim() || undefined)
+        : (signupMode ? orgName.trim() : undefined);
       const payload = await api.post("/api/auth/clerk", {
         token,
         mode: signupMode ? "signup" : "signin",
-        account_type: accountType,
-        org_name: signupMode ? orgName.trim() : undefined,
+        account_type: managedClerkSignup ? undefined : accountType,
+        org_name: explicitOrgName,
         plan_tier: signupMode ? planTier : undefined,
         seat_emails: signupMode && accountType === "business"
           ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
           : [],
-      });
-      setSession(payload as SessionPayload);
-      note(signupMode ? "Workspace created. Opening onboarding..." : "Signed in. Opening your dashboard...");
-      window.location.assign(signupMode ? "/onboarding" : nextPath);
+      }) as SessionPayload;
+      setSession(payload);
+      // If the server auto-issued an onboarding key, reveal it immediately
+      // in-place (no reload — keeps the copy-once plaintext in memory).
+      const onboardingKey = payload.onboarding_api_key?.plaintext;
+      if (onboardingKey) {
+        setApiKey(onboardingKey);
+        note("Workspace created. Save your API key before opening the dashboard.");
+        window.history.replaceState(null, "", "/onboarding");
+      } else {
+        note(signupMode ? "Workspace created. Opening onboarding..." : "Signed in. Opening your dashboard...");
+        window.location.assign(signupMode ? "/onboarding" : nextPath);
+      }
     } catch (error) {
       clerkExchangeAttemptedRef.current = false;
       fail(error instanceof Error ? error.message : "Unable to sign in with Clerk.");
@@ -321,7 +355,6 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   }
 
   const eyebrow = config.loaded ? providerLabel(config) : "Checking provider";
-  const clerkEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? "";
   const seatCount = seatEmails.split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length;
   const seatLimit = session?.organization?.seat_limit ?? (accountType === "business" ? 3 : 1);
 
@@ -397,7 +430,15 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
               />
             ) : (
               <>
-                {signupMode && (managedClerkReady || config.dev_auth_enabled) ? (
+                {signupMode && managedClerkSignup ? (
+                  <WorkspacePreview
+                    autoSlug={autoSlug}
+                    availability={orgAvailability}
+                    effectiveName={effectiveOrgName}
+                    override={orgNameOverride}
+                    onOverride={setOrgNameOverride}
+                  />
+                ) : signupMode && config.dev_auth_enabled ? (
                   <SignupFields
                     accountType={accountType}
                     availability={orgAvailability}
@@ -648,6 +689,43 @@ function OnboardingBody({
   );
 }
 
+function WorkspacePreview({
+  autoSlug, availability, effectiveName, override, onOverride,
+}: {
+  autoSlug: string;
+  availability: OrgAvailability;
+  effectiveName: string;
+  override: string;
+  onOverride: (value: string) => void;
+}) {
+  return (
+    <div className="iml-field">
+      <span className="iml-legend">Your workspace</span>
+      <div className="iml-wsprev">
+        <span className="iml-wsprev-host">instantml.ai/</span>
+        <strong className="iml-wsprev-slug">{effectiveName || autoSlug || "workspace"}</strong>
+      </div>
+      <details className="iml-wsprev-adv">
+        <summary>Use a different name</summary>
+        <input
+          className="iml-input"
+          id="iml-ws-override"
+          value={override}
+          onChange={(e) => onOverride(e.target.value)}
+          placeholder={autoSlug}
+          aria-label="Override workspace name"
+          aria-describedby={availability.message ? "iml-ws-avail" : undefined}
+        />
+        {availability.message ? (
+          <span id="iml-ws-avail" className={`iml-hint ${availability.available ? "is-ok" : availability.available === false ? "is-err" : ""}`}>
+            {availability.available ? "✓ " : ""}{availability.message}
+          </span>
+        ) : null}
+      </details>
+    </div>
+  );
+}
+
 function SignupFields({
   accountType, availability, orgName, seatEmails, seatCount, seatLimit, planTier,
   onAccountType, onOrgName, onPlanTier, onSeatEmails,
@@ -759,3 +837,4 @@ function isSharedDemoSession(session: SessionPayload | null) {
     || session?.organization?.name === SHARED_DEMO_ORG
     || session?.organization?.slug === "instantml-demo";
 }
+

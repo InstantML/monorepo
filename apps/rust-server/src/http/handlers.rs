@@ -756,23 +756,6 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
             ),
         )],
     );
-    openapi_insert(
-        &mut paths,
-        "/api/demo/reset",
-        &[(
-            "post",
-            openapi_operation(
-                "Reset and seed demo project data",
-                Some((
-                    "x-instantml-scope",
-                    "sdk:ingest and unrestricted org access",
-                )),
-                &[],
-                &[("200", "demo reset payload")],
-                false,
-            ),
-        )],
-    );
 
     let service_plane = state.config.service_plane;
     paths.retain(|path, _| openapi_path_available_for_plane(path, service_plane));
@@ -933,7 +916,18 @@ pub(super) async fn auth_clerk(
     .await?;
     validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
     let created = store::create_clerk_session(&state.store, principal, input).await?;
-    json_with_session_cookie(&state, &headers, created.payload, &created.token)
+    let mut response_body = serde_json::to_value(&created.payload)
+        .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
+    if let Some(onboarding_key) = &created.onboarding_api_key {
+        if let Some(obj) = response_body.as_object_mut() {
+            obj.insert(
+                "onboarding_api_key".to_string(),
+                serde_json::to_value(onboarding_key)
+                    .map_err(|_| AppError::internal("failed to serialize onboarding key"))?,
+            );
+        }
+    }
+    json_with_session_cookie(&state, &headers, response_body, &created.token)
 }
 
 pub(super) async fn auth_session(
@@ -1547,19 +1541,6 @@ async fn import_with_source(
     Ok(Json(
         store::import_payload(&state.store, &ctx, source, dry_run, raw).await?,
     ))
-}
-
-pub(super) async fn reset_demo(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    bytes: Bytes,
-) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
-    validate_session_mutation_origin(&state, &headers, &ctx)?;
-    require_scope(&ctx, "sdk:ingest", &state)?;
-    store::require_unrestricted_org_access(&ctx)?;
-    let _ = read_json_value(&headers, bytes, state.config.max_body_bytes).ok();
-    Ok(Json(store::reset_demo(&state.store, &ctx).await?))
 }
 
 pub(super) async fn not_found() -> AppError {

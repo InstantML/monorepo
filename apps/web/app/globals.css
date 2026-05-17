@@ -9046,3 +9046,492 @@ textarea:focus {
   border-radius: var(--radius);
 }
 .workspace-run-select:focus-visible .workspace-eye span { border-color: var(--accent); }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Mobile redesign (≤720px)
+ *
+ * Phone-sized viewports get a distinct layout: collapsible top bar, hidden
+ * sidebar that opens as a slide-in drawer, filters that slide down on demand,
+ * and full vertical stacking for the run workspace. Anything above 720px keeps
+ * the existing desktop/tablet treatment.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/* Mobile menu trigger lives in the brandbar but is only visible on phones. */
+.mobile-menu-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-left: 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.mobile-menu-button:active { background: var(--surface-hover); }
+
+.mobile-nav-scrim {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --topbar-height: 96px;
+  }
+
+  body { -webkit-text-size-adjust: 100%; }
+
+  /* ── Topbar / brandbar ────────────────────────────────────────────────── */
+  .topbar {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    backdrop-filter: none;
+    box-shadow: 0 1px 0 var(--line);
+  }
+  .topbar.topbar--brandonly { --topbar-height: 56px; }
+
+  .topbar-main,
+  .shell {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .mobile-menu-button { display: inline-flex; }
+
+  .brandbar {
+    grid-template-columns: 40px 40px 1fr;
+    height: 56px;
+    flex: 0 0 56px;
+    padding: 0 12px 0 4px;
+    align-items: center;
+  }
+  .brandbar .brand-cell {
+    width: 40px;
+    height: 40px;
+    border-right: 0;
+  }
+  .brandbar .brand-mark { width: 30px; height: 30px; }
+
+  .brandbar-row {
+    flex-direction: row;
+    gap: 8px;
+    padding: 0;
+    min-width: 0;
+    flex: 1;
+  }
+  .brand-wordmark {
+    font-size: 13px;
+    flex: 0 0 auto;
+  }
+  .breadcrumb {
+    font-size: 12px;
+    gap: 4px;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .breadcrumb .crumb {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Hide the project crumb + first separator on tight phones; keep the
+   * page label so users always know where they are. */
+  .breadcrumb .crumb:not(.cur):not(.crumb-link),
+  .breadcrumb .sep:first-of-type {
+    display: none;
+  }
+
+  .brandbar-actions { gap: 4px; }
+  .brandbar-actions .brandbar-action-desktop { display: none; }
+  .ghost-kbd {
+    height: 36px;
+    padding: 0 8px;
+    gap: 4px;
+  }
+  .ghost-kbd .ghost-kbd-label,
+  .ghost-kbd .kbd {
+    display: none;
+  }
+  .ghost-kbd svg { width: 16px; height: 16px; }
+
+  .topbar .icon-button.framed,
+  .topbar .icon-button.framed.mobile-filters-toggle {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Workbar collapses by default; the SlidersHorizontal toggle reveals it. */
+  .topbar--workbar { --topbar-height: 56px; }
+  .topbar--workbar .workbar {
+    display: none;
+  }
+  .topbar--workbar.mobile-filters-open {
+    --topbar-height: 56px;
+  }
+  .topbar--workbar.mobile-filters-open .workbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: auto;
+    gap: 8px;
+    height: auto;
+    flex: 0 0 auto;
+    overflow: visible;
+    padding: 10px 12px 14px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    align-items: stretch;
+  }
+  .topbar--workbar.mobile-filters-open .workbar > * { min-width: 0; }
+  .topbar--workbar.mobile-filters-open .workbar .control {
+    flex: initial;
+    width: 100%;
+  }
+  .topbar--workbar.mobile-filters-open .workbar .control input,
+  .topbar--workbar.mobile-filters-open .workbar .control .select-trigger,
+  .topbar--workbar.mobile-filters-open .workbar #demo-reset,
+  .topbar--workbar.mobile-filters-open .workbar #save-view {
+    width: 100%;
+    height: 40px;
+    min-height: 40px;
+  }
+  /* Long-form / wide controls take the full row. */
+  .topbar--workbar.mobile-filters-open .workbar-search,
+  .topbar--workbar.mobile-filters-open .workbar .workbar-name,
+  .topbar--workbar.mobile-filters-open .workbar #save-view,
+  .topbar--workbar.mobile-filters-open .workbar .system-status,
+  .topbar--workbar.mobile-filters-open .workbar .status-message,
+  .topbar--workbar.mobile-filters-open .workbar #saved-view-select.control,
+  .topbar--workbar.mobile-filters-open .workbar .custom-select-control.compact:has(#saved-view-select) {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .topbar--workbar.mobile-filters-open .workbar-search {
+    height: 40px;
+    min-height: 40px;
+  }
+  .topbar--workbar.mobile-filters-open .workbar-divider,
+  .topbar--workbar.mobile-filters-open .workbar-spacer,
+  .topbar--workbar.mobile-filters-open .workbar .status-message,
+  .topbar--workbar.mobile-filters-open .workbar .system-status,
+  .topbar--workbar.mobile-filters-open .workbar #demo-reset {
+    display: none;
+  }
+  .topbar--workbar.mobile-filters-open .icon-button.framed.mobile-filters-toggle {
+    color: var(--accent);
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+  }
+
+  /* ── Sidebar drawer ───────────────────────────────────────────────────── */
+  .shell {
+    grid-template-columns: 1fr;
+    position: relative;
+  }
+  .tabs {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 50;
+    width: min(82vw, 320px);
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    min-height: 0;
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    background: var(--surface);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.32);
+    padding: 16px 10px 12px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    gap: 8px;
+  }
+  .tabs::after { display: none; }
+  .shell.mobile-nav-open .tabs {
+    transform: translateX(0);
+  }
+
+  .tab-scroll {
+    display: grid;
+    gap: 4px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+  }
+  .tab-group {
+    display: grid;
+    gap: 2px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+    padding: 0 0 8px;
+  }
+  .tab-group:last-child { border-bottom: 0; }
+  .tab-button {
+    width: 100%;
+    min-height: 44px;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-left: 0;
+    border-bottom: 0;
+    font-size: 14px;
+  }
+  .tab-button.active {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+  }
+  .tab-button.active svg { color: var(--accent); }
+  .tab-label {
+    max-width: none;
+    opacity: 1;
+  }
+
+  .nav-footer { display: none; }
+  .nav-mobile-actions {
+    display: grid;
+    gap: 2px;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+  .nav-mobile-actions .tab-button { min-height: 44px; }
+
+  .mobile-nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(8, 12, 18, 0.5);
+    backdrop-filter: blur(2px);
+  }
+
+  /* ── Tab pane / page padding ─────────────────────────────────────────── */
+  .tab-pane.active {
+    padding: 10px 10px 24px;
+    --runs-filter-sticky-height: 0px;
+  }
+  .page-head {
+    padding: 4px 4px 6px;
+  }
+
+  /* ── Stats / commandbar / filter island ──────────────────────────────── */
+  .runs-workspace-filter {
+    position: static;
+    padding: 8px;
+    border-radius: var(--radius);
+    gap: 8px;
+  }
+  .stat-grid,
+  .runs-workspace-filter .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .stat {
+    min-height: 52px;
+    padding: 8px 10px;
+  }
+  .stat strong { font-size: 16px; }
+
+  .runs-commandbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+  .runs-commandbar .command-select,
+  .runs-commandbar .columns-menu,
+  .runs-commandbar > * {
+    width: 100%;
+  }
+  .runs-commandbar .command-spacer { display: none; }
+  .runs-commandbar .compact-button,
+  .runs-commandbar .icon-button,
+  .runs-commandbar .select-trigger,
+  .runs-commandbar .columns-menu .compact-button {
+    width: 100%;
+    min-height: 40px;
+  }
+  .column-popover {
+    position: fixed;
+    inset: 12px;
+    width: auto;
+    max-height: 70vh;
+    overflow-y: auto;
+    z-index: 60;
+  }
+
+  /* ── Run workspace stacks vertically; rail becomes a horizontal bar ──── */
+  .runs-workspace,
+  .runs-workspace.drawer-open,
+  .runs-workspace.run-rail-collapsed,
+  .runs-workspace.run-rail-collapsed.drawer-open {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    border-radius: var(--radius);
+    border-top: 1px solid var(--line);
+  }
+  .workspace-run-rail {
+    position: static;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .workspace-run-list {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .workspace-run-footer {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  /* Hover hint isn't reachable on touch; show a static chevron instead. */
+  .workspace-run-open-hint {
+    position: static;
+    opacity: 1;
+    transform: none;
+    margin-inline-start: auto;
+  }
+  .workspace-run-open:hover .workspace-run-body,
+  .workspace-run-open:focus-visible .workspace-run-body {
+    padding-inline-end: 0;
+  }
+
+  /* Panels and drawer */
+  .panel-drawer,
+  .runs-workspace.drawer-open .panel-drawer {
+    position: static;
+    width: auto;
+    height: auto;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .workspace-panel-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 0 8px 12px;
+  }
+  .workspace-panel-card { grid-column: 1 / -1; }
+  .workspace-panel-toolbar {
+    position: static;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .workspace-panel-toolbar > * { min-width: 0; }
+  .workspace-panel-toolbar .compact-button,
+  .workspace-panel-toolbar button,
+  .workspace-panel-toolbar .select-trigger,
+  .workspace-panel-toolbar .workspace-panel-search,
+  .workspace-panel-toolbar .workspace-mode-select {
+    width: 100%;
+  }
+  .workspace-panel-search { flex-basis: 100%; }
+  .workspace-section-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .section-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  /* ── Tables become horizontally scrollable (preserve readable widths) ── */
+  .table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  table { min-width: 720px; }
+  th, td { padding: 9px 10px; }
+
+  /* ── Cards / KPI grid / dialogs / drawers ────────────────────────────── */
+  .run-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pinned-chart-grid { grid-template-columns: 1fr; }
+  .compare-summary,
+  .analysis-stat-strip,
+  .compare-metadata-editor,
+  .compare-annotation-details > summary,
+  .run-detail-hero,
+  .system-identity {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-drawer {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: auto;
+    max-height: 86vh;
+    border-radius: var(--radius) var(--radius) 0 0;
+    z-index: 55;
+  }
+
+  /* ── Quick search & modal dialogs full-width on phones ───────────────── */
+  .quick-search,
+  .shortcut-help {
+    width: min(100%, 480px);
+    max-width: 100%;
+  }
+  .quick-search-input { font-size: 16px; }
+
+  /* ── Generic touch target boost ──────────────────────────────────────── */
+  .topbar .control select,
+  .topbar button,
+  .runs-commandbar .control input,
+  .runs-commandbar .control select,
+  .runs-commandbar .select-trigger,
+  .runs-commandbar button {
+    min-height: 40px;
+  }
+
+  /* ── Misc layout tightening ──────────────────────────────────────────── */
+  .toolbar,
+  .action-cluster,
+  .panel-controls,
+  .chart-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .system-status {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .status-message {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 480px) {
+  .run-kpi-grid,
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .runs-commandbar {
+    grid-template-columns: 1fr;
+  }
+  .brandbar-row { gap: 6px; }
+  .brand-wordmark { display: none; }
+}
+
+/* Prevent body scroll while the nav drawer is open on mobile */
+@media (max-width: 720px) {
+  html:has(.shell.mobile-nav-open) {
+    overflow: hidden;
+  }
+}

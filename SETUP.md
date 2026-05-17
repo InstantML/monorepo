@@ -99,7 +99,15 @@ Open:
 http://127.0.0.1:3000
 ```
 
-Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard. Click `Reset demo` in the signed-in UI to seed the local `demo` project. The reset generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. Generated state is ignored by git.
+Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard.
+
+To populate the shared demo workspace, run the seed subcommand once from a terminal:
+
+```bash
+cargo run --manifest-path apps/rust-server/Cargo.toml -- seed-demo
+```
+
+It provisions the `hello@instantml.ai` / `InstantML Demo` org if missing and generates 1,000 deterministic synthetic LLM/RL runs with rich train/eval/system metrics, tags, notes, hardware metadata, checkpoints, MP3 audio artifact metadata, and MP4 rollout artifact metadata. From the landing page, click `Continue as shared demo` to browse the seeded data — those browser sessions are read-only by design. Generated state is ignored by git.
 
 For a production-style local web run:
 

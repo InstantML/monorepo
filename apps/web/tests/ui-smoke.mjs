@@ -95,11 +95,14 @@ try {
   await page.waitForSelector(".iml-term-body code", { timeout: 10000 });
   assert.match(await page.locator(".iml-term-body code").innerText(), /^instantml_/);
 
-  await pageApiRequest(page, "POST", "/api/demo/reset", {}, { retries: 2 });
   if (backendMode !== "node") {
-    const seedRuns = await pageApiGet(page, "/api/runs/summary?project=demo&q=seed-44&limit=1");
-    const seedRunId = seedRuns.runs?.[0]?.id;
-    assert.ok(seedRunId, "seed-44 demo run should exist for rich-object smoke coverage");
+    const seedRun = (await pageApiRequest(page, "POST", "/runs", {
+      project: "demo",
+      name: "seed-44",
+      config: { seed: 44, model: "rl", workload: "ppo" },
+      tags: ["demo", "rl", "seed-44"],
+    })).run;
+    const seedRunId = seedRun.id;
     const imageArtifact = (await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
       type: "file",
       name: "qa-preview.png",

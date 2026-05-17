@@ -41,15 +41,16 @@ use crate::{
     config::{AppConfig, HostedClickHouseConfig},
     control_store::{ControlRecordRow, ControlStore},
     domain::{
-        plan_tier, validate_account_type, validate_email, validate_json_object, validate_limit,
-        validate_membership_role, validate_name, validate_offset, validate_optional_name,
-        validate_optional_step, validate_plan_tier, validate_slug, validate_status, validate_step,
-        validate_tags, validate_timestamp, ArtifactRow, AttributeInput, AttributeRow, AuthContext,
-        AuthSessionPayload, ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest,
-        CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
-        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
-        CreateUserRequest, CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest,
-        MembershipRow, MetricSeriesRow, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
+        is_personal_account_type, plan_tier, validate_account_type, validate_email,
+        validate_json_object, validate_limit, validate_membership_role, validate_name,
+        validate_offset, validate_optional_name, validate_optional_step, validate_plan_tier,
+        validate_slug, validate_status, validate_step, validate_tags, validate_timestamp,
+        ArtifactRow, AttributeInput, AttributeRow, AuthContext, AuthSessionPayload,
+        ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest,
+        CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
+        CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
+        CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest, MembershipRow,
+        MetricSeriesRow, OnboardingApiKey, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
         PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, SeatRow, SeatUserRow,
         ServiceAccountRow, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
         DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
@@ -112,6 +113,9 @@ pub struct Store {
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
+    /// MetricStore wired to the shared ClickHouse cell.
+    /// All personal/free orgs route here instead of getting a dedicated service.
+    shared_cell_metric_store: Option<MetricStore>,
     inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
@@ -123,12 +127,16 @@ impl Store {
         control_store: Option<ControlStore>,
         hosted_clickhouse: Option<HostedClickHouseConfig>,
     ) -> AppResult<Self> {
+        // Build the shared-cell MetricStore when INSTANTML_SHARED_CELL_URL is set.
+        let shared_cell_metric_store =
+            build_shared_cell_metric_store(hosted_clickhouse.as_ref()).await?;
         let store = Self {
             metric_store,
             control_store,
             hosted_clickhouse,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
@@ -138,6 +146,11 @@ impl Store {
             store.ensure_local_org().await?;
         }
         Ok(store)
+    }
+
+    /// Returns the MetricStore for the shared cell, if one is configured.
+    pub fn shared_cell_metric_store(&self) -> Option<&MetricStore> {
+        self.shared_cell_metric_store.as_ref()
     }
 
     pub fn metric_store(&self) -> &MetricStore {
@@ -203,6 +216,8 @@ impl Store {
             seat_limit: plan_tier("free").included_seats,
             created_by_user_id: None,
             created_at: epoch(),
+            // Local dev org uses dedicated (= local) routing.
+            tenant_routing_tier: "dedicated".to_string(),
         };
         self.persist_locked(
             "organization",
@@ -768,6 +783,34 @@ fn changed_tenant_routes(
         .collect()
 }
 
+/// Build a MetricStore connected to the shared cell when the env var is set.
+/// Applies the schema migration so the shared cell is ready for writes.
+async fn build_shared_cell_metric_store(
+    hosted: Option<&HostedClickHouseConfig>,
+) -> AppResult<Option<MetricStore>> {
+    let Some(hosted) = hosted else {
+        return Ok(None);
+    };
+    let Some(url) = hosted.shared_cell_url.as_deref() else {
+        return Ok(None);
+    };
+    use crate::metric_store::{
+        self, connect_connection, parse_clickhouse_url, ClickHouseConnection,
+    };
+    let parsed = parse_clickhouse_url(url, "INSTANTML_SHARED_CELL_URL")?;
+    let database = std::env::var("INSTANTML_SHARED_CELL_DATABASE")
+        .unwrap_or_else(|_| "instantml_shared".to_string());
+    let connection = ClickHouseConnection {
+        endpoint: parsed.endpoint,
+        username: parsed.username,
+        password: parsed.password,
+        database,
+    };
+    let store = connect_connection(&connection)?;
+    metric_store::migrate(&store).await?;
+    Ok(Some(store))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -955,6 +998,7 @@ mod tests {
             seat_limit: 1,
             created_by_user_id: None,
             created_at: epoch(),
+            tenant_routing_tier: "dedicated".to_string(),
         };
         let newer = OrganizationRow {
             name: "Newer".to_string(),
@@ -1118,5 +1162,161 @@ mod tests {
                 ReplayScope::Tenant(expected),
             )
             .is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Shared-cell cross-org isolation regression test (non-negotiable).
+    //
+    // This test verifies that operational records for org A and org B can
+    // coexist in the same StoreData (as they do in the shared cell) without
+    // leaking across tenant boundaries.
+    //
+    // The shared cell stores records for many orgs in one ClickHouse database,
+    // isolated only by org_id predicates. The `ReplayScope::Tenant` guard
+    // already enforces org_id on replay; this test verifies the in-process
+    // index also keeps them separate for every entity type we use today.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn shared_cell_cross_org_isolation_in_process_index() {
+        let org_a = Uuid::from_u128(0xAAAA);
+        let org_b = Uuid::from_u128(0xBBBB);
+        let project_a = Uuid::from_u128(0xA000);
+        let project_b = Uuid::from_u128(0xB000);
+        let run_a = Uuid::from_u128(0xA001);
+        let run_b = Uuid::from_u128(0xB001);
+
+        // Build shared-cell records for both orgs using ReplayScope::All
+        // (the shared cell replays all orgs together on startup).
+        let mut data = StoreData::default();
+
+        let project_a_row = replay_project(org_a, project_a, "project-a");
+        let project_b_row = replay_project(org_b, project_b, "project-b");
+        let run_a_row = replay_run(org_a, run_a, "finished");
+        let run_b_row = replay_run(org_b, run_b, "running");
+
+        data.apply_operational_records(
+            vec![
+                replay_row("project", org_a, project_a.to_string(), &project_a_row, 1),
+                replay_row("project", org_b, project_b.to_string(), &project_b_row, 2),
+                replay_row("run", org_a, run_a.to_string(), &run_a_row, 3),
+                replay_row("run", org_b, run_b.to_string(), &run_b_row, 4),
+            ],
+            ReplayScope::All,
+        )
+        .unwrap();
+
+        // Org A can see its own run.
+        let a_runs: Vec<_> = data.runs.values().filter(|r| r.org_id == org_a).collect();
+        assert_eq!(a_runs.len(), 1, "org A should see exactly 1 run");
+        assert_eq!(a_runs[0].id, run_a);
+        assert_eq!(a_runs[0].status, "finished");
+
+        // Org A cannot see org B's run.
+        let a_sees_b = data
+            .runs
+            .values()
+            .any(|r| r.org_id == org_a && r.id == run_b);
+        assert!(!a_sees_b, "org A must not see org B's run");
+
+        // Org B can see its own run.
+        let b_runs: Vec<_> = data.runs.values().filter(|r| r.org_id == org_b).collect();
+        assert_eq!(b_runs.len(), 1, "org B should see exactly 1 run");
+        assert_eq!(b_runs[0].id, run_b);
+        assert_eq!(b_runs[0].status, "running");
+
+        // Org B cannot see org A's run.
+        let b_sees_a = data
+            .runs
+            .values()
+            .any(|r| r.org_id == org_b && r.id == run_a);
+        assert!(!b_sees_a, "org B must not see org A's run");
+
+        // Projects are also isolated.
+        let a_projects: Vec<_> = data
+            .projects
+            .values()
+            .filter(|p| p.org_id == org_a)
+            .collect();
+        let b_projects: Vec<_> = data
+            .projects
+            .values()
+            .filter(|p| p.org_id == org_b)
+            .collect();
+        assert_eq!(a_projects.len(), 1);
+        assert_eq!(b_projects.len(), 1);
+        assert_eq!(a_projects[0].id, project_a);
+        assert_eq!(b_projects[0].id, project_b);
+
+        // Attributes are keyed by (org_id, attribute_id), so the same
+        // attribute_id value for two different orgs must not collide.
+        data.insert_attribute(AttributeRow {
+            id: 1,
+            org_id: org_a,
+            run_id: run_a,
+            path: "loss".to_string(),
+            kind: "float_series".to_string(),
+            step: Some(1.0),
+            logged_at: Some(epoch()),
+            value: json!(0.1),
+            summary: json!({}),
+            artifact_id: None,
+            created_at: epoch(),
+        });
+        data.insert_attribute(AttributeRow {
+            id: 1,
+            org_id: org_b,
+            run_id: run_b,
+            path: "loss".to_string(),
+            kind: "float_series".to_string(),
+            step: Some(1.0),
+            logged_at: Some(epoch()),
+            value: json!(0.9),
+            summary: json!({}),
+            artifact_id: None,
+            created_at: epoch(),
+        });
+
+        // Each org has its own attribute slot with id=1.
+        assert_eq!(data.attributes.len(), 2);
+        assert_eq!(data.attributes[&(org_a, 1)].run_id, run_a);
+        assert_eq!(data.attributes[&(org_b, 1)].run_id, run_b);
+        // Values do not cross.
+        assert_ne!(
+            data.attributes[&(org_a, 1)].value,
+            data.attributes[&(org_b, 1)].value
+        );
+    }
+
+    #[test]
+    fn shared_cell_tenant_replay_validation_rejects_cross_org_records() {
+        // When replaying a specific org from the shared cell, records from
+        // another org must be rejected by ReplayScope::Tenant.
+        let org_a = Uuid::from_u128(0xAAAA);
+        let org_b = Uuid::from_u128(0xBBBB);
+        let project_b = Uuid::from_u128(0xB000);
+        let project_b_row = replay_project(org_b, project_b, "project-b");
+        let mut data = StoreData::default();
+
+        // Trying to replay an org_b record while scoped to org_a must fail.
+        let result = data.apply_operational_records(
+            vec![replay_row(
+                "project",
+                org_b,
+                project_b.to_string(),
+                &project_b_row,
+                10,
+            )],
+            ReplayScope::Tenant(org_a),
+        );
+        assert!(
+            result.is_err(),
+            "replaying a cross-org record in shared cell must be rejected"
+        );
+
+        // And the record must not have been inserted into the index.
+        assert!(
+            data.projects.is_empty(),
+            "cross-org project must not leak into org_a index"
+        );
     }
 }

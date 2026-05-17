@@ -227,6 +227,23 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
   color:var(--muted)}
 .iml-plan-m svg{color:var(--faint);flex:0 0 auto}
 
+/* Auto-derived workspace preview (managed Clerk signup) */
+.iml-wsprev{display:flex;align-items:baseline;gap:2px;padding:13px 14px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--bg-soft);
+  font-family:var(--f-mono);overflow:hidden}
+.iml-wsprev-host{font:500 13px/1.2 var(--f-mono);color:var(--muted)}
+.iml-wsprev-slug{font:600 14px/1.2 var(--f-mono);color:var(--accent-strong);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iml-wsprev-adv{margin-top:2px}
+.iml-wsprev-adv>summary{display:inline-flex;align-items:center;gap:6px;
+  font:600 11px/1 var(--f-mono);letter-spacing:.04em;color:var(--muted);
+  cursor:pointer;list-style:none;width:fit-content}
+.iml-wsprev-adv>summary::-webkit-details-marker{display:none}
+.iml-wsprev-adv>summary::before{content:"+";color:var(--faint);font-weight:700}
+.iml-wsprev-adv[open]>summary::before{content:"–"}
+.iml-wsprev-adv>summary:hover{color:var(--text-2)}
+.iml-wsprev-adv>*+*{margin-top:7px}
+
 .iml-org{display:flex;align-items:center;gap:13px;padding:14px 16px;
   border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
 .iml-org-badge{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
