@@ -82,15 +82,22 @@ pub async fn create_organization(
             return Err(AppError::not_found("owner user not found"));
         }
     }
+    let account_type = "customer".to_string();
+    let tenant_routing_tier = if is_personal_account_type(&account_type) {
+        "shared".to_string()
+    } else {
+        "dedicated".to_string()
+    };
     let org = OrganizationRow {
         id: Uuid::new_v4(),
         slug,
         name,
         plan_tier: canonical_plan_tier,
-        account_type: "customer".to_string(),
+        account_type,
         seat_limit: plan.included_seats,
         created_by_user_id: input.owner_user_id,
         created_at: Utc::now(),
+        tenant_routing_tier,
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -363,6 +370,12 @@ async fn create_verified_provider_session(
     } else {
         account_type.clone()
     };
+    // Route personal/free orgs to the shared cell; business orgs get dedicated.
+    let tenant_routing_tier = if is_personal_account_type(&effective_account_type) {
+        "shared".to_string()
+    } else {
+        "dedicated".to_string()
+    };
     let org = OrganizationRow {
         id: Uuid::new_v4(),
         slug: org_slug,
@@ -372,6 +385,7 @@ async fn create_verified_provider_session(
         seat_limit: plan.included_seats,
         created_by_user_id: Some(user.id),
         created_at: Utc::now(),
+        tenant_routing_tier,
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -1178,6 +1192,7 @@ mod tests {
             seat_limit: 25,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
         };
 
         assert!(is_shared_demo_org(&org));
@@ -1198,6 +1213,7 @@ mod tests {
             seat_limit: 25,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());
@@ -1230,6 +1246,7 @@ mod tests {
             seat_limit: 1,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());
@@ -1237,6 +1254,64 @@ mod tests {
         let record = api_key_record_for_org(org.id, requested.clone());
 
         assert_eq!(effective_api_key_scopes(&data, &record), requested);
+    }
+
+    #[test]
+    fn personal_account_type_routes_to_shared_tier() {
+        // "personal" and "customer" both map to the shared cell.
+        assert!(is_personal_account_type("personal"));
+        assert!(is_personal_account_type("customer"));
+        assert!(!is_personal_account_type("business"));
+    }
+
+    #[test]
+    fn org_routing_tier_defaults_to_dedicated_for_pre_existing_records() {
+        // An OrganizationRow deserialized from JSON without tenant_routing_tier
+        // must default to "dedicated" so existing orgs keep their dedicated routes.
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "slug": "legacy",
+            "name": "Legacy Org",
+            "plan_tier": "free",
+            "account_type": "customer",
+            "seat_limit": 2,
+            "created_by_user_id": null,
+            "created_at": "2026-01-01T00:00:00Z"
+        }"#;
+        let org: OrganizationRow = serde_json::from_str(json).unwrap();
+        assert_eq!(org.tenant_routing_tier, "dedicated");
+    }
+
+    #[test]
+    fn new_personal_org_row_has_shared_routing_tier() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "my-lab".to_string(),
+            name: "My Lab".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+        };
+        assert_eq!(org.tenant_routing_tier, "shared");
+    }
+
+    #[test]
+    fn new_business_org_row_has_dedicated_routing_tier() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "acme".to_string(),
+            name: "Acme Corp".to_string(),
+            plan_tier: "pro".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 3,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+        };
+        assert_eq!(org.tenant_routing_tier, "dedicated");
     }
 
     fn api_key_record_for_org(org_id: Uuid, scopes: Vec<String>) -> ApiKeyRecord {
@@ -1309,6 +1384,7 @@ mod tests {
             seat_limit: 2,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
         };
         data.insert_org(existing_org);
 

@@ -2,11 +2,11 @@
 
 Date: 2026-05-16
 
-Status: Current hosted-auth architecture after the Clerk and pricing/signup admin slices
+Status: Current hosted-auth architecture after the Clerk, pricing/signup admin, and shared-cell tenant routing slices
 
 ## Purpose
 
-This document explains how Clerk identity, InstantML browser sessions, SDK API keys, organization isolation, Free/Pro/Premium signup, invited seats, and hosted ClickHouse tenant routing fit together. The accepted designs are `docs/design/2026-05-16-clerk-hosted-auth.md` and `docs/design/2026-05-16-pricing-signup-org-admin.md`.
+This document explains how Clerk identity, InstantML browser sessions, SDK API keys, organization isolation, Free/Pro/Premium signup, invited seats, and hosted ClickHouse tenant routing fit together. The accepted designs are `docs/design/2026-05-16-clerk-hosted-auth.md`, `docs/design/2026-05-16-pricing-signup-org-admin.md`, and `docs/design/2026-05-16-shared-cell-tenant-routing.md`.
 
 InstantML uses two different credentials on purpose:
 
@@ -52,24 +52,33 @@ flowchart TD
     F --> G["Rust verifies Clerk session token and email"]
     G --> H{"Existing active membership?"}
     H -- "Yes" --> I["Create new session for existing org"]
-    H -- "No" --> J["Create org, owner membership, invited memberships"]
-    J --> K["Create tenant route"]
-    K --> L["Record requested plan warehouse profile"]
-    L --> M["Apply operator-capped warehouse profile unless plan sizing is enabled"]
-    M --> N["Create browser session"]
+    H -- "No" --> J["Create org with tenant_routing_tier, owner membership, invited memberships"]
+    J --> K{"account_type == business?"}
+    K -- "Yes" --> L["Provision dedicated ClickHouse Cloud service"]
+    K -- "No" --> M["Point at shared cell — no Cloud provisioning"]
+    L --> N["Create browser session"]
+    M --> N
 ```
 
 The availability check is a UX hint. The signup transaction still enforces the duplicate-slug check so races fail closed.
 
-New signups use the selected plan to set `organization.plan_tier`,
-`organization.seat_limit`, and tenant-route warehouse profile metadata.
+New signups use the selected plan and `account_type` to set
+`organization.plan_tier`, `organization.seat_limit`,
+`organization.tenant_routing_tier`, and tenant-route warehouse profile metadata.
 Currently implemented plans:
 
-| Plan | Price | Seats | Storage warning limit | Requested warehouse |
-| --- | ---: | ---: | ---: | --- |
-| Free | `$0/org/mo` | 2 | 2 GiB | Shared, 8 GiB, 1 replica |
-| Pro | `$199/org/mo` | 3 | 1 TiB | Standard, 12 GiB, 1 replica |
-| Premium | `$699/org/mo` | 10 | 5 TiB | Dedicated, 16 GiB, 2 replicas |
+| Plan | Price | Seats | Storage warning limit | Requested warehouse | Routing tier |
+| --- | ---: | ---: | ---: | --- | --- |
+| Free (personal) | `$0/org/mo` | 2 | 2 GiB | Shared cell | `shared` |
+| Pro | `$199/org/mo` | 3 | 1 TiB | Standard, 12 GiB, 1 replica | `dedicated` |
+| Premium | `$699/org/mo` | 10 | 5 TiB | Dedicated, 16 GiB, 2 replicas | `dedicated` |
+
+When `account_type=personal` (or absent, which defaults to personal), the signup
+path sets `tenant_routing_tier="shared"` on the new org and writes a
+`tenant_route` record pointing at the env-configured shared ClickHouse cell
+(`INSTANTML_SHARED_CELL_URL`). No ClickHouse Cloud provisioning call is made.
+When `account_type=business`, the existing per-org dedicated provisioning path
+is used unchanged.
 
 ClickHouse Cloud service-mode operator defaults still apply unless
 `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`:
