@@ -40,6 +40,24 @@ const themeBootstrap = `
 })();
 `;
 
+// Suppress the landing logo intro animation on repeat visits and when
+// prefers-reduced-motion is set. Runs synchronously before first paint so
+// there is no FOUC on the logo wordmark.
+const logoIntroFlag = `
+(function() {
+  try {
+    var k = 'instantml_logo_intro_v1';
+    var seen = sessionStorage.getItem(k);
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (seen || reduce) {
+      document.documentElement.classList.add('no-logo-anim');
+    } else {
+      sessionStorage.setItem(k, '1');
+    }
+  } catch (e) {}
+})();
+`;
+
 export const metadata = {
   title: "InstantML",
   description: "Training observability that's actually fast.",
@@ -57,6 +75,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <script dangerouslySetInnerHTML={{ __html: logoIntroFlag }} />
       </head>
       <body>
         <ClerkProvider>{children}</ClerkProvider>
