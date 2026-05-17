@@ -815,8 +815,7 @@ p {
 }
 
 .auth-form label,
-.segmented-field,
-.plan-picker {
+.segmented-field {
   display: grid;
   gap: 6px;
   color: var(--text);
@@ -865,75 +864,6 @@ p {
   border-radius: var(--control-radius);
   background: var(--surface-soft);
   padding: 7px 10px;
-}
-
-.plan-picker {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.plan-picker legend {
-  grid-column: 1 / -1;
-  padding: 0;
-}
-
-.plan-picker label {
-  position: relative;
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-soft);
-  padding: 10px;
-}
-
-.plan-picker label.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--accent-line);
-}
-
-.plan-picker input {
-  position: absolute;
-  inset: 8px 8px auto auto;
-  width: 14px;
-  height: 14px;
-  min-height: 14px;
-}
-
-.plan-picker-head,
-.plan-picker span {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.plan-picker-head {
-  color: var(--text);
-  font-size: 12px;
-}
-
-.plan-picker svg {
-  flex: 0 0 auto;
-}
-
-.plan-picker strong {
-  color: var(--text);
-  font-size: 20px;
-  line-height: 1;
-}
-
-.plan-picker small {
-  margin-left: 2px;
-  color: var(--muted);
-  font-size: 11px;
 }
 
 .onboarding-summary {
@@ -1045,8 +975,7 @@ p {
     padding: 20px;
   }
 
-  .segmented-field,
-  .plan-picker {
+  .segmented-field {
     grid-template-columns: 1fr;
   }
 }
@@ -8319,13 +8248,13 @@ textarea:focus {
 .admin-list,
 .admin-alert-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .admin-form-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(140px, 0.42fr) auto;
-  gap: 10px;
+  gap: 8px;
   align-items: end;
 }
 
@@ -8334,11 +8263,11 @@ textarea:focus {
 }
 
 .usage-meter {
-  height: 8px;
+  height: 6px;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--surface-soft);
 }
 
 .usage-meter span {
@@ -8349,8 +8278,20 @@ textarea:focus {
   background: var(--accent);
 }
 
+/* Usage warnings should read as warnings, matching the redesign's
+   semantic color use (warm accent, soft fill, left rail). */
+.admin-alert-list .api-row {
+  border-color: rgba(224, 176, 122, 0.34);
+  background: var(--warm-soft);
+  box-shadow: inset 2px 0 0 var(--warm);
+}
+
+.admin-alert-list .api-row strong {
+  color: var(--warm);
+}
+
 .api-row.muted {
-  opacity: 0.62;
+  opacity: 0.6;
 }
 
 .api-row button {
