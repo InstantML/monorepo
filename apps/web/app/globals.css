@@ -7800,6 +7800,64 @@ textarea:focus {
 .breadcrumb .crumb.cur { color: var(--text); }
 .breadcrumb .sep { color: var(--faint); }
 .brandbar-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.plan-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: clamp(146px, 14vw, 198px);
+  height: 30px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+.plan-usage-badge:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+.plan-usage-ring {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--plan-usage-percent), var(--line) 0);
+}
+.plan-usage-ring::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+.plan-usage-badge.warn .plan-usage-ring {
+  background: conic-gradient(var(--amber) var(--plan-usage-percent), var(--line) 0);
+}
+.plan-usage-badge.bad .plan-usage-ring {
+  background: conic-gradient(var(--danger) var(--plan-usage-percent), var(--line) 0);
+}
+.plan-usage-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  line-height: 1;
+}
+.plan-usage-copy strong,
+.plan-usage-copy em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-usage-copy strong {
+  font: 700 11px/1 var(--font-sans);
+}
+.plan-usage-copy em {
+  color: var(--muted);
+  font: 600 10px/1 var(--font-sans);
+  font-style: normal;
+}
 .ghost-kbd {
   display: inline-flex;
   align-items: center;
@@ -8753,6 +8811,7 @@ textarea:focus {
 
 @media (max-width: 720px) {
   .brandbar-actions .ghost-kbd,
+  .brandbar-actions .plan-usage-badge,
   .brandbar-actions .avatar {
     display: none;
   }

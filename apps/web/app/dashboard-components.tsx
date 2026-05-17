@@ -581,6 +581,7 @@ export function DashboardTopbar({
   onStatus,
   onThemeToggle,
   onViewName,
+  planLabel,
   project,
   projects,
   query,
@@ -588,8 +589,12 @@ export function DashboardTopbar({
   savedViews,
   sortBy,
   status,
+  metricUsagePercent,
+  storageUsagePercent,
   theme,
   tone,
+  usageAvailable,
+  usageResetLabel,
   viewName,
 }: {
   activeIcon: LucideIcon;
@@ -610,6 +615,7 @@ export function DashboardTopbar({
   onStatus: (status: string) => void;
   onThemeToggle: () => void;
   onViewName: (value: string) => void;
+  planLabel: string;
   project: string;
   projects: string[];
   query: string;
@@ -617,8 +623,12 @@ export function DashboardTopbar({
   savedViews: string[];
   sortBy: string;
   status: string;
+  metricUsagePercent: number;
+  storageUsagePercent: number;
   theme: "light" | "dark";
   tone: "error" | "loading" | "ok";
+  usageAvailable: boolean;
+  usageResetLabel: string;
   viewName: string;
 }) {
   const dark = theme === "dark";
@@ -658,6 +668,13 @@ export function DashboardTopbar({
             )}
           </nav>
           <div className="brandbar-actions">
+            <PlanUsageBadge
+              metricPercent={metricUsagePercent}
+              plan={planLabel}
+              resetLabel={usageResetLabel}
+              storagePercent={storageUsagePercent}
+              usageAvailable={usageAvailable}
+            />
             <button className="ghost-kbd" type="button" onClick={onQuickSearch} aria-label="Quick search">
               <Search size={13} /> Search <span className="kbd">⌘K</span>
             </button>
@@ -751,6 +768,35 @@ export function DashboardTopbar({
         </div>
       ) : null}
     </header>
+  );
+}
+
+function PlanUsageBadge({
+  metricPercent,
+  plan,
+  resetLabel,
+  storagePercent,
+  usageAvailable,
+}: {
+  metricPercent: number;
+  plan: string;
+  resetLabel: string;
+  storagePercent: number;
+  usageAvailable: boolean;
+}) {
+  const percent = Math.max(0, Math.min(100, Math.round(Math.max(metricPercent, storagePercent))));
+  const tone = percent >= 100 ? "bad" : percent >= 80 ? "warn" : "ok";
+  const detail = usageAvailable
+    ? resetLabel ? `${percent}% used · resets ${resetLabel}` : `${percent}% used`
+    : "Usage unavailable";
+  return (
+    <a className={`plan-usage-badge ${tone}`} href={tabToPath("settings")} title={`Plan usage: ${detail}`}>
+      <span className="plan-usage-ring" style={{ "--plan-usage-percent": `${percent}%` } as CSSProperties} aria-hidden="true" />
+      <span className="plan-usage-copy">
+        <strong>{plan}</strong>
+        <em>{detail}</em>
+      </span>
+    </a>
   );
 }
 

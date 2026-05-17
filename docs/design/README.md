@@ -13,7 +13,7 @@ Current implemented design sequence:
 - `2026-05-07-next-react-ui-migration.md`: Next/React UI migration with tabs, chart axes, point hover, and API rewrites.
 - `2026-05-08-full-navigation-tabs.md`: frontend navigation expansion and derived workspace tabs.
 - `2026-05-14-clickhouse-only-storage.md`: accepted primary Rust/ClickHouse storage plan, local/test first slice, and hosted control-plane/data-plane direction.
-- `2026-05-09-usage-metering.md`: warning-only Rust/ClickHouse usage summaries, immutable daily rollup snapshots, and Node compatibility coverage for pricing validation.
+- `2026-05-09-usage-metering.md`: Rust/ClickHouse usage summaries, immutable daily rollup snapshots, UTC calendar-month metric-point periods, and Node compatibility coverage for pricing validation.
 - `2026-05-09-migration-adoption-p4.md`: SDK metadata reservation, atomic importer core, Neptune hardening, and W&B JSON import first slice.
 - `2026-05-09-mlflow-import-and-dual-logging.md`: MLflow JSON import follow-up and W&B dual-logging recommendation.
 - `2026-05-10-runs-workspace-panels.md`: W&B/Grafana-inspired Runs workspace sections, line panels, add/edit/fullscreen flows, local layout persistence, and future persisted workspace API shape.
@@ -30,11 +30,11 @@ Current implemented design sequence:
 - `2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance control/data-plane direction, central hot-path proxy rejection, single-instance guardrails, mutation gates, deterministic operational replay, split `combined`/`control`/`data` service-plane roles, and data-plane control-record refresh before auth.
 - `2026-05-16-cloud-run-multi-instance-launch.md`: split Cloud Run launch wiring, deploy helper target model, managed HTTPS public router, Docker Compose split profile, static egress reuse, scaling defaults, unsafe multi-writer guardrails, and frontend env behavior.
 - `2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, plan-aware tenant-route warehouse profile intent, seat invites, invite activation, usage/admin settings, API-key management, and first pricing/admin boundaries.
-- `2026-05-17-plan-limit-enforcement.md`: blocked-at-limit guardrails for new project, run, metric-ingest, artifact, import, and demo-reset writes plus Premium local/shared demo defaults.
+- `2026-05-17-plan-limit-enforcement.md`: blocked-at-limit guardrails for new project, run, current-month metric-ingest, artifact, import, and demo-reset writes plus Premium local/shared demo defaults.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
-Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The current public tier model is Free, Pro, and Premium, with blocked-at-limit usage guardrails until billing/provider reconciliation and paid overages are implemented. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
+Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The current public tier model is Free, Pro, and Premium, with blocked-at-limit usage guardrails until billing/provider reconciliation and paid overages are implemented. Metric-point limits are scoped to the current UTC calendar month and reset on the first day of the next month; storage/project/run quotas are retained-resource posture. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
 
 Backend direction:
 

@@ -1,6 +1,6 @@
 # Current Rust API Reference
 
-Date: 2026-05-16
+Date: 2026-05-17
 
 Status: Current implemented API surface for `apps/rust-server`
 
@@ -869,6 +869,13 @@ Output:
   "generated_at": "2026-05-16T00:00:00Z",
   "source": "computed_current_state",
   "billing_precision": "not_billable",
+  "usage_period": {
+    "kind": "calendar_month",
+    "timezone": "UTC",
+    "starts_at": "2026-05-01T00:00:00Z",
+    "ends_at": "2026-06-01T00:00:00Z",
+    "reset_at": "2026-06-01T00:00:00Z"
+  },
   "plans": {
     "free": {
       "id": "free",
@@ -909,6 +916,13 @@ Output:
         "included_seats": 10,
         "included_storage_bytes": 5497558138880
       },
+      "usage_period": {
+        "kind": "calendar_month",
+        "timezone": "UTC",
+        "starts_at": "2026-05-01T00:00:00Z",
+        "ends_at": "2026-06-01T00:00:00Z",
+        "reset_at": "2026-06-01T00:00:00Z"
+      },
       "limits": {
         "included_seats": 10,
         "included_storage_bytes": 5497558138880,
@@ -922,6 +936,8 @@ Output:
         "projects": 1,
         "runs": 2,
         "metric_points": 6,
+        "metric_points_current_period": 6,
+        "metric_points_retained_total": 18,
         "metric_series": 4,
         "artifacts": 0,
         "api_keys": 1,
@@ -940,9 +956,15 @@ Output:
 
 The response is guardrail/debug telemetry only, not invoice truth.
 `billable_storage_bytes` remains `null` until provider/object-store
-reconciliation is implemented. Warning rows include `target`, `status`, `value`,
-`limit`, `ratio`, `policy`, `blocking`, `code`, and `message`; blocked plan
-targets use `policy: "blocked_at_limit"` and `blocking: true`.
+reconciliation is implemented. Metric-point limits are evaluated against the
+current UTC calendar-month `usage_period`; `usage.metric_points` is the same
+value as `usage.metric_points_current_period`, while
+`usage.metric_points_retained_total` is retained history for debugging.
+Projects, runs, storage, seats, artifacts, metric series, and API keys are
+current retained-resource counts and do not reset monthly. Warning rows include
+`target`, `status`, `value`, `limit`, `ratio`, `policy`, `blocking`, `code`,
+and `message`; blocked plan targets use `policy: "blocked_at_limit"` and
+`blocking: true`.
 
 New project, run, metric-ingest, artifact, import, and demo-reset writes that
 exceed blocked limits fail with:
@@ -959,8 +981,8 @@ available for over-limit orgs.
 
 ### `GET /api/usage/export`
 
-Auth and output shape match `/api/usage`. The endpoint is versioned for future
-billing/debug exports.
+Auth and output shape match `/api/usage`, including `usage_period`. The
+endpoint is versioned for future billing/debug exports.
 
 ### `GET /api/imports`
 

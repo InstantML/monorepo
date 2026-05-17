@@ -130,6 +130,24 @@ test("plan limits block new storage writes and mark blocking warnings", () => {
   assert.equal(storage.code, "storage_over_limit");
 });
 
+test("usage metric point limits reset on UTC calendar months", () => {
+  const store = createStore(emptyState());
+  const org = store.createOrganization({ slug: "monthly-lab", name: "Monthly Lab", plan_tier: "free" });
+  const run = store.createRun({ org_id: org.id, project: "monthly", name: "seed-1" });
+  store.logMetrics(run.id, { step: 1, metrics: { reward: 1 } });
+  const now = new Date();
+  store.state.metrics[0].created_at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15, 0, 0, 0, 0)).toISOString();
+  store.logMetrics(run.id, { step: 2, metrics: { reward: 2 } });
+
+  const usage = store.usageSummary({ org_id: org.id });
+  assert.equal(usage.usage_period.kind, "calendar_month");
+  assert.match(usage.usage_period.starts_at, /^\d{4}-\d{2}-01T00:00:00\.000Z$/);
+  assert.equal(usage.usage_period.reset_at, usage.usage_period.ends_at);
+  assert.equal(usage.organizations[0].usage.metric_points, 1);
+  assert.equal(usage.organizations[0].usage.metric_points_current_period, 1);
+  assert.equal(usage.organizations[0].usage.metric_points_retained_total, 2);
+});
+
 test("store supports runs, metrics, summaries, artifacts, and demo safety", () => {
   const store = createStore(emptyState());
   const userRun = store.createRun({ project: "user", name: "private-run", config: { seed: 1 }, tags: ["keep"] });

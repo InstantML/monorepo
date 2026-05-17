@@ -1059,14 +1059,16 @@ export function exportData(state, input = {}) {
 export function usageSummary(state, input = {}) {
   ensureDefaultOrg(state);
   const orgs = input.org_id ? [getOrganization(state, input.org_id)] : [...state.organizations].sort((a, b) => a.slug.localeCompare(b.slug));
+  const usagePeriod = currentUsagePeriod();
   return {
     schema_version: 1,
     generated_at: utcNow(),
     billing_precision: "not_billable",
     units: { bytes: "bytes", metric_points: "rows" },
+    usage_period: usagePeriod,
     plans: publicPlanTiers(),
     overage_policy: clone(USAGE_OVERAGE_POLICY),
-    organizations: orgs.map((org) => usageForOrganization(state, org)),
+    organizations: orgs.map((org) => usageForOrganization(state, org, usagePeriod)),
   };
 }
 
@@ -1080,6 +1082,7 @@ export function usageExport(state, input = {}) {
     units: summary.units,
     source: "computed_current_state",
     billing_precision: summary.billing_precision,
+    usage_period: summary.usage_period,
     plans: summary.plans,
     overage_policy: summary.overage_policy,
     organizations: summary.organizations,
@@ -1523,13 +1526,14 @@ function artifactCountsForRun(state, runId) {
   return counts;
 }
 
-function usageForOrganization(state, org) {
+function usageForOrganization(state, org, usagePeriod = currentUsagePeriod()) {
   const planTier = validatePlanTier(org.plan_tier ?? "free");
   const limits = clone(PLAN_TIERS[planTier]);
   const projects = state.projects.filter((project) => project.org_id === org.id);
   const runs = state.runs.filter((run) => run.org_id === org.id);
   const runIds = new Set(runs.map((run) => run.id));
   const metrics = state.metrics.filter((metric) => metric.org_id === org.id);
+  const metricPointsCurrentPeriod = metrics.filter((metric) => isWithinUsagePeriod(metric.created_at, usagePeriod)).length;
   const metricSeries = state.metricSeries.filter((series) => series.org_id === org.id);
   const artifacts = state.artifacts.filter((artifact) => artifact.org_id === org.id);
   const attributes = state.attributes.filter((attribute) => attribute.org_id === org.id);
@@ -1555,7 +1559,9 @@ function usageForOrganization(state, org) {
     paid_extra_seats: Math.max(0, seats - limits.included_seats),
     projects: projects.length,
     runs: runs.length,
-    metric_points: metrics.length,
+    metric_points: metricPointsCurrentPeriod,
+    metric_points_current_period: metricPointsCurrentPeriod,
+    metric_points_retained_total: metrics.length,
     metric_series: metricSeries.filter((series) => runIds.has(series.run_id)).length,
     artifacts: artifacts.length,
     api_keys: apiKeys.length,
@@ -1573,6 +1579,7 @@ function usageForOrganization(state, org) {
     plan_tier: planTier,
     tier_source: "organization",
     authoritative_for_plan: true,
+    usage_period: usagePeriod,
     usage,
     limits,
     warnings: usageWarnings(usage, limits),
@@ -1587,6 +1594,23 @@ function usageWarnings(usage, limits) {
     usageLimitWarning("metric_points", usage.metric_points, limits.metric_points, USAGE_OVERAGE_POLICY.metric_points),
     usageLimitWarning("storage", usage.estimated_storage_bytes_for_warnings, limits.included_storage_bytes, USAGE_OVERAGE_POLICY.storage),
   ].filter(Boolean);
+}
+
+function currentUsagePeriod(now = new Date()) {
+  const startsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  const endsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+  return {
+    kind: "calendar_month",
+    timezone: "UTC",
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    reset_at: endsAt.toISOString(),
+  };
+}
+
+function isWithinUsagePeriod(value, period) {
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) && millis >= Date.parse(period.starts_at) && millis < Date.parse(period.ends_at);
 }
 
 function usageLimitWarning(target, value, limit, policy) {

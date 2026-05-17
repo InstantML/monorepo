@@ -1,6 +1,6 @@
 # Pricing And Margins
 
-Date: 2026-05-16
+Date: 2026-05-17
 
 Status: Current pricing model and margin plan for the first hosted beta.
 
@@ -12,9 +12,9 @@ This document explains the Free, Pro, and Premium pricing model, the current cos
 
 | Tier | Price | Included seats | Included storage | Product limits | Warehouse profile intent |
 | --- | ---: | ---: | ---: | --- | --- |
-| Free | `$0/org/mo` | 2 | 2 GiB | 2 projects, 100 runs, 1M metric points | Shared, 8 GiB, 1 replica |
-| Pro | `$199/org/mo` | 3 | 1 TiB | 100 projects, 100k runs, 250M metric points | Standard, 12 GiB, 1 replica |
-| Premium | `$699/org/mo` | 10 | 5 TiB | 500 projects, 1M runs, 2B metric points | Dedicated, 16 GiB, 2 replicas |
+| Free | `$0/org/mo` | 2 | 2 GiB | 2 projects, 100 runs, 1M metric points/month | Shared, 8 GiB, 1 replica |
+| Pro | `$199/org/mo` | 3 | 1 TiB | 100 projects, 100k runs, 250M metric points/month | Standard, 12 GiB, 1 replica |
+| Premium | `$699/org/mo` | 10 | 5 TiB | 500 projects, 1M runs, 2B metric points/month | Dedicated, 16 GiB, 2 replicas |
 
 Current overage policy:
 
@@ -22,6 +22,12 @@ Current overage policy:
 - Projects, runs, metric points, and estimated storage are `blocked_at_limit` for new writes until paid overages or custom terms are implemented.
 - API-key count and artifact counts are visibility-only.
 - Artifact registry is out of scope for this pricing slice.
+
+Usage-period semantics:
+
+- Metric-point usage is counted only inside the current UTC calendar month, from the first day at 00:00 UTC to the first day of the next month at 00:00 UTC. The API returns this window as `usage_period` with `reset_at`.
+- `usage.metric_points` and `usage.metric_points_current_period` are the current monthly value used for warnings and blocking. `usage.metric_points_retained_total` is retained history for visibility and debugging.
+- Storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource posture. They do not reset monthly; usage drops only when data is deleted/expired, seats or keys are removed, or the org changes plan.
 
 ## Competitive Context
 
@@ -104,7 +110,9 @@ Not implemented yet:
 Until those exist, usage outputs are product/admin guardrails, not invoices.
 Writes that would exceed project, run, metric-point, or estimated-storage
 limits are rejected with `plan_limit_exceeded`; reads and exports remain
-available so teams can inspect and reduce usage.
+available so teams can inspect and reduce usage. Metric-point blocking uses the
+current UTC calendar-month counter, while storage/project/run blocking uses the
+current retained-resource counter.
 
 ## Launch Guardrails
 

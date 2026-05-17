@@ -148,12 +148,21 @@ type ApiKeyRow = {
 type UsageOrg = {
   org_id: string;
   plan_tier: string;
+  usage_period?: UsagePeriod;
   usage: Record<string, number | null | string>;
   limits: Record<string, number>;
   warnings?: Array<{ code?: string; message?: string }>;
 };
+type UsagePeriod = {
+  kind?: string;
+  timezone?: string;
+  starts_at?: string;
+  ends_at?: string;
+  reset_at?: string;
+};
 type UsagePayload = {
   billing_precision?: string;
+  usage_period?: UsagePeriod;
   organizations?: UsageOrg[];
 };
 const SEARCH_DEBOUNCE_MS = 250;
@@ -459,6 +468,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const activeUsageOrg = useMemo(() => usagePayload?.organizations?.find((org) => org.org_id === activeOrgId) ?? usagePayload?.organizations?.[0] ?? null, [activeOrgId, usagePayload]);
   const activeUsage = activeUsageOrg?.usage ?? {};
   const activeLimits = activeUsageOrg?.limits ?? {};
+  const usageAvailable = Boolean(activeUsageOrg);
   const storageUsed = Number(activeUsage.estimated_storage_bytes_for_warnings ?? activeUsage.artifact_bytes_exact ?? 0);
   const storageLimit = Number(activeLimits.included_storage_bytes ?? 0);
   const storagePercent = storageLimit ? Math.min(100, Math.round((storageUsed / storageLimit) * 100)) : 0;
@@ -466,6 +476,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const metricLimit = Number(activeLimits.metric_points ?? 0);
   const metricPercent = metricLimit ? Math.min(100, Math.round((metricUsed / metricLimit) * 100)) : 0;
   const activePlan = planDisplayName(activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier);
+  const usagePeriod = activeUsageOrg?.usage_period ?? usagePayload?.usage_period;
+  const usageResetLabel = formatUsageResetLabel(usagePeriod?.reset_at ?? usagePeriod?.ends_at);
   const pageStart = summary.total ? pageOffset + 1 : 0;
   const pageEnd = summary.total ? Math.min(pageOffset + sortedRuns.length, summary.total) : 0;
   const hasPreviousPage = pageOffset > 0;
@@ -1261,6 +1273,16 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
   }
 
+  const loadUsage = useCallback(async (options: { signal?: AbortSignal } = {}) => {
+    if (!activeOrgId) return;
+    try {
+      const usage = await api.get("/api/usage", options);
+      setUsagePayload(usage as UsagePayload);
+    } catch (error) {
+      if (!isAbortError(error)) setUsagePayload(null);
+    }
+  }, [activeOrgId, api]);
+
   const loadOrgSettings = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     if (!activeOrgId) return;
     try {
@@ -1274,6 +1296,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load workspace settings.");
     }
   }, [activeOrgId, api]);
+
+  useEffect(() => {
+    if (!dashboardAuthorized || !activeOrgId) return;
+    const controller = new AbortController();
+    void loadUsage({ signal: controller.signal });
+    return () => controller.abort();
+  }, [activeOrgId, dashboardAuthorized, loadUsage]);
 
   const loadApiKeys = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     if (!activeOrgId) return;
@@ -1931,6 +1960,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onStatus={changeStatus}
         onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onViewName={setViewName}
+        metricUsagePercent={metricPercent}
+        planLabel={activePlan}
         project={project}
         projects={projects}
         query={queryInput}
@@ -1938,8 +1969,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         savedViews={savedViews}
         sortBy={sortBy}
         status={status}
+        storageUsagePercent={storagePercent}
         theme={theme}
         tone={currentMessageTone}
+        usageAvailable={usageAvailable}
+        usageResetLabel={usageResetLabel}
         viewName={viewName}
       />
 
@@ -2579,10 +2613,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 <div className="usage-meter" aria-label="Tracked data usage">
                   <span style={{ width: `${storagePercent}%` }} />
                 </div>
-                <MetricCard label="Metric points" value={`${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}`} tone={metricPercent > 90 ? "bad" : metricPercent > 70 ? "live" : "neutral"} />
+                <MetricCard label="Metric points this month" value={`${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}`} tone={metricPercent > 90 ? "bad" : metricPercent > 70 ? "live" : "neutral"} />
                 <div className="usage-meter" aria-label="Metric point usage">
                   <span style={{ width: `${metricPercent}%` }} />
                 </div>
+                <SettingRow label="Metric reset" value={usageResetLabel ? `${usageResetLabel} UTC` : "-"} />
                 {(activeUsageOrg?.warnings ?? []).length ? (
                   <div className="admin-alert-list">
                     {(activeUsageOrg?.warnings ?? []).map((warning, index) => (
@@ -2770,6 +2805,13 @@ function planDisplayName(value?: string) {
   if (value === "premium" || value === "growth") return "Premium";
   if (value === "pro" || value === "lab" || value === "startup") return "Pro";
   return "Free";
+}
+
+function formatUsageResetLabel(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
 function runsPageMessage(total: number, offset: number, visibleCount: number) {

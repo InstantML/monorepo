@@ -1,4 +1,5 @@
 use super::*;
+use chrono::{Datelike, TimeZone};
 
 pub const PROJECT_METADATA_BYTES: i64 = 512;
 pub const RUN_METADATA_BYTES: i64 = 1024;
@@ -44,11 +45,13 @@ pub async fn enforce_plan_capacity(
 
 async fn usage_summary_for_org(store: &Store, org_id: Uuid) -> AppResult<Value> {
     let counts = usage_counts_for_org(store, org_id).await?;
+    let period = usage_period_value(&counts.period);
     Ok(json!({
         "schema_version": 1,
         "billing_precision": "not_billable",
         "generated_at": Utc::now(),
         "source": "computed_current_state",
+        "usage_period": period,
         "plans": plan_catalog(),
         "overage_policy": overage_policy(),
         "organizations": [usage_org_value(&counts)]
@@ -56,8 +59,12 @@ async fn usage_summary_for_org(store: &Store, org_id: Uuid) -> AppResult<Value> 
 }
 
 async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCounts> {
+    let period = current_usage_period(Utc::now());
     let metric_store = store.metric_store_for_org(org_id).await?;
-    let metric_points = metric_store.count_points_for_org(org_id).await?;
+    let metric_points_retained_total = metric_store.count_points_for_org(org_id).await?;
+    let metric_points = metric_store
+        .count_points_for_org_period(org_id, period.starts_at, period.ends_at)
+        .await?;
     let metric_series = metric_store.count_series_for_org(org_id).await?;
     let data = store.data.lock().await;
     let org = data
@@ -110,6 +117,7 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         projects,
         runs,
         metric_points,
+        metric_points_retained_total,
         metric_series,
         artifacts,
         api_keys,
@@ -117,6 +125,7 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         artifact_bytes_unknown_count: 0,
         estimated_metadata_bytes,
         estimated_storage_bytes_for_warnings,
+        period,
     })
 }
 
@@ -127,6 +136,7 @@ pub async fn usage_export(store: &Store, ctx: &RequestContext) -> AppResult<Valu
         "billing_precision": summary["billing_precision"],
         "generated_at": summary["generated_at"],
         "source": "computed_current_state",
+        "usage_period": summary["usage_period"],
         "plans": summary["plans"],
         "overage_policy": summary["overage_policy"],
         "organizations": summary["organizations"]
@@ -139,12 +149,15 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
         "org_slug": counts.org.slug,
         "plan_tier": counts.org.plan_tier,
         "plan": counts.plan,
+        "usage_period": usage_period_value(&counts.period),
         "usage": {
             "seats": counts.seats,
             "paid_extra_seats": (counts.seats - counts.plan.included_seats as i64).max(0),
             "projects": counts.projects,
             "runs": counts.runs,
             "metric_points": counts.metric_points,
+            "metric_points_current_period": counts.metric_points,
+            "metric_points_retained_total": counts.metric_points_retained_total,
             "metric_series": counts.metric_series,
             "artifacts": counts.artifacts,
             "api_keys": counts.api_keys,
@@ -301,6 +314,33 @@ fn rounded_ratio(value: i64, limit: i64) -> f64 {
     ((value as f64 / limit as f64) * 10_000.0).round() / 10_000.0
 }
 
+fn current_usage_period(now: DateTime<Utc>) -> UsagePeriod {
+    let starts_at = Utc
+        .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
+        .single()
+        .expect("valid UTC month start");
+    let (next_year, next_month) = if now.month() == 12 {
+        (now.year() + 1, 1)
+    } else {
+        (now.year(), now.month() + 1)
+    };
+    let ends_at = Utc
+        .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
+        .single()
+        .expect("valid UTC next month start");
+    UsagePeriod { starts_at, ends_at }
+}
+
+fn usage_period_value(period: &UsagePeriod) -> Value {
+    json!({
+        "kind": "calendar_month",
+        "timezone": "UTC",
+        "starts_at": period.starts_at,
+        "ends_at": period.ends_at,
+        "reset_at": period.ends_at
+    })
+}
+
 fn first_blocking_violation(counts: &UsageCounts, delta: UsageDelta) -> Option<PlanViolation> {
     [
         blocking_violation(
@@ -360,6 +400,7 @@ struct UsageCounts {
     projects: i64,
     runs: i64,
     metric_points: i64,
+    metric_points_retained_total: i64,
     metric_series: i64,
     artifacts: i64,
     api_keys: i64,
@@ -367,11 +408,18 @@ struct UsageCounts {
     artifact_bytes_unknown_count: i64,
     estimated_metadata_bytes: i64,
     estimated_storage_bytes_for_warnings: i64,
+    period: UsagePeriod,
 }
 
 struct PlanViolation {
     target: &'static str,
     reason: &'static str,
+}
+
+#[derive(Clone)]
+struct UsagePeriod {
+    starts_at: DateTime<Utc>,
+    ends_at: DateTime<Utc>,
 }
 
 pub async fn write_usage_daily_snapshots(store: &Store) -> AppResult<usize> {
@@ -489,6 +537,24 @@ mod tests {
         assert_eq!(current.reason, "is already above");
     }
 
+    #[test]
+    fn current_usage_period_uses_utc_calendar_month() {
+        let period = current_usage_period(
+            Utc.with_ymd_and_hms(2026, 5, 17, 12, 30, 0)
+                .single()
+                .unwrap(),
+        );
+
+        assert_eq!(
+            period.starts_at,
+            Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).single().unwrap()
+        );
+        assert_eq!(
+            period.ends_at,
+            Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).single().unwrap()
+        );
+    }
+
     fn test_counts(tier: &str) -> UsageCounts {
         let org = OrganizationRow {
             id: Uuid::new_v4(),
@@ -507,6 +573,7 @@ mod tests {
             projects: 1,
             runs: 1,
             metric_points: 1,
+            metric_points_retained_total: 1,
             metric_series: 1,
             artifacts: 0,
             api_keys: 0,
@@ -514,6 +581,7 @@ mod tests {
             artifact_bytes_unknown_count: 0,
             estimated_metadata_bytes: 0,
             estimated_storage_bytes_for_warnings: 0,
+            period: current_usage_period(Utc::now()),
         }
     }
 }

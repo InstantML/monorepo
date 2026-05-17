@@ -17,13 +17,16 @@ hosted data plane with always-on ClickHouse warehouses.
 This design adds a narrow enforcement layer before new data-plane writes. The
 server computes current usage, applies the pending write delta, and rejects the
 request with a structured plan-limit error if the org is already over a blocked
-limit or the write would exceed one. Usage summaries keep their warning role,
-but warnings now tell callers whether the target is blocking.
+limit or the write would exceed one. Metric-point limits use the current UTC
+calendar month and reset at 00:00 UTC on the first day of the next month;
+storage, projects, runs, seats, artifacts, metric series, and API keys are
+retained-resource counts. Usage summaries keep their warning role, but warnings
+now tell callers whether the target is blocking.
 
 ## Goals
 
-- Block new data-plane writes that would exceed project, run, metric-point, or
-  storage limits for the org's stored plan tier.
+- Block new data-plane writes that would exceed project, run, current-month
+  metric-point, or retained-storage limits for the org's stored plan tier.
 - Return a stable machine-readable error for clients and the dashboard.
 - Keep idempotent metric replays free when the original request was already
   accepted.
@@ -51,8 +54,9 @@ Premium-scale sample without special-case warehouse deletion or recreation.
 
 Add a shared usage-capacity helper in the Rust store:
 
-- Count current projects, runs, metric points, metric series, artifacts,
-  artifact bytes, API keys, and active/invited seats for an org.
+- Count current projects, runs, current UTC calendar-month metric points,
+  retained metric-point totals, metric series, artifacts, artifact bytes, API
+  keys, and active/invited seats for an org.
 - Estimate metadata bytes with the same constants used by usage summaries.
 - Accept a write delta for projects, runs, metric points, and storage bytes.
 - Block when current usage is already above a blocked limit or projected usage
@@ -76,9 +80,14 @@ Idempotent metric replay is checked before enforcement. If an idempotency key
 matches a stored successful response, the replay returns that response without
 consuming additional usage.
 
+Usage summaries include a top-level and per-org `usage_period` object with
+`kind: "calendar_month"`, `timezone: "UTC"`, `starts_at`, `ends_at`, and
+`reset_at`. `usage.metric_points` is the current-period value used for warnings
+and enforcement; `usage.metric_points_retained_total` is visibility/debug data.
+
 Usage warnings become structured records with `target`, `status`, `value`,
 `limit`, `ratio`, `policy`, `blocking`, `code`, and `message`. Storage, project,
-run, and metric warnings use `policy: "blocked_at_limit"` and
+run, and current-month metric warnings use `policy: "blocked_at_limit"` and
 `blocking: true`; seat warnings remain tracked as paid extra seats and
 non-blocking in this slice.
 
@@ -103,7 +112,9 @@ Python SDK:
 Storage:
 
 - No new durable tables. Current enforcement is computed from current state and
-  ClickHouse metric counts.
+  ClickHouse metric counts. Metric-point enforcement reads the current UTC
+  calendar-month window; retained metric totals stay visible but are not the
+  monthly limit counter.
 
 Docs:
 
@@ -136,16 +147,17 @@ Plan-limit errors use:
 HTTP status: `402 Payment Required`.
 
 `GET /api/usage` and `GET /api/usage/export` continue to return schema version
-1. Warning rows are more explicit but remain backward-compatible for callers
-that only inspect `target` and `status`.
+1. They now include `usage_period`, `usage.metric_points_current_period`, and
+`usage.metric_points_retained_total`. Warning rows are more explicit but remain
+backward-compatible for callers that only inspect `target` and `status`.
 
 ## Performance Considerations
 
 Each guarded write reads current org usage. Operational counts are in memory in
-the Rust store and JSON arrays in the Node compatibility store. Metric point and
-series counts are queried from the metric store in Rust. This is acceptable for
-the first hosted beta because writes already go through the API and plan checks
-are small compared with ClickHouse insert costs.
+the Rust store and JSON arrays in the Node compatibility store. Current-month
+metric point counts and retained series counts are queried from the metric store
+in Rust. This is acceptable for the first hosted beta because writes already go
+through the API and plan checks are small compared with ClickHouse insert costs.
 
 Expected write frequency:
 
@@ -155,8 +167,8 @@ Expected write frequency:
 
 Future optimization:
 
-- Maintain durable usage counters as part of ingestion once the multi-writer
-  data-plane design has atomic idempotency and reconciliation.
+- Maintain durable monthly usage counters as part of ingestion once the
+  multi-writer data-plane design has atomic idempotency and reconciliation.
 
 ## Simplicity Review
 
@@ -169,6 +181,9 @@ real paid-account data.
 
 - If current metric counts cannot be read, the write fails instead of allowing
   unbounded usage.
+- Metric-point usage resets when the UTC calendar month rolls over; retained
+  storage/project/run posture does not reset unless data is deleted, retained
+  records expire, or the plan changes.
 - If an artifact upload is staged locally and then blocked, the existing upload
   cleanup path removes the finalized file.
 - If an org is already over limit, additional writes for that blocked target
@@ -178,9 +193,10 @@ real paid-account data.
 
 ## Testing Plan
 
-- Rust unit tests cover warning shape and storage-limit enforcement.
-- Node store tests cover storage-limit enforcement, warnings, and local Premium
-  defaults.
+- Rust unit tests cover warning shape, UTC calendar-month period calculation,
+  and storage-limit enforcement.
+- Node store tests cover monthly metric-point counting, storage-limit
+  enforcement, warnings, and local Premium defaults.
 - Node HTTP tests cover the 402 error body.
 - Existing auth, usage, importer, artifact, and idempotency tests continue to
   run.

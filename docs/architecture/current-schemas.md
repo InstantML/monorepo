@@ -1,6 +1,6 @@
 # Current Control And Data-Plane Schema Reference
 
-Date: 2026-05-16
+Date: 2026-05-17
 
 Status: Current implemented schema surface for `apps/rust-server`
 
@@ -584,6 +584,13 @@ writes horizontally.
   "generated_at": "2026-05-16T00:00:00Z",
   "source": "computed_current_state",
   "billing_precision": "not_billable",
+  "usage_period": {
+    "kind": "calendar_month",
+    "timezone": "UTC",
+    "starts_at": "2026-05-01T00:00:00Z",
+    "ends_at": "2026-06-01T00:00:00Z",
+    "reset_at": "2026-06-01T00:00:00Z"
+  },
   "plans": {
     "free": {},
     "pro": {},
@@ -611,6 +618,13 @@ writes horizontally.
         "included_seats": 3,
         "included_storage_bytes": 1099511627776
       },
+      "usage_period": {
+        "kind": "calendar_month",
+        "timezone": "UTC",
+        "starts_at": "2026-05-01T00:00:00Z",
+        "ends_at": "2026-06-01T00:00:00Z",
+        "reset_at": "2026-06-01T00:00:00Z"
+      },
       "limits": {
         "included_seats": 3,
         "included_storage_bytes": 1099511627776,
@@ -624,6 +638,8 @@ writes horizontally.
         "projects": 1,
         "runs": 85000,
         "metric_points": 1000,
+        "metric_points_current_period": 1000,
+        "metric_points_retained_total": 250000,
         "metric_series": 10,
         "artifacts": 3,
         "api_keys": 1,
@@ -652,12 +668,18 @@ writes horizontally.
 }
 ```
 
-Usage is guardrail/debugging data, not invoice truth. Plan-owned data-plane
-writes are checked against the stored tier before commit. New project, run,
-metric-ingest, artifact, import, and demo-reset writes return HTTP 402 with
-`code: "plan_limit_exceeded"` when current or projected usage crosses a
-blocked `projects`, `runs`, `metric_points`, or `storage` limit. Seats remain
-tracked as `paid_extra_seats` until billing is implemented.
+Usage is guardrail/debugging data, not invoice truth. Metric-point usage is
+counted for the current UTC calendar-month `usage_period`; the same current
+period value is exposed as `usage.metric_points` and
+`usage.metric_points_current_period`, while
+`usage.metric_points_retained_total` records retained history. Plan-owned
+data-plane writes are checked against the stored tier before commit. New
+project, run, metric-ingest, artifact, import, and demo-reset writes return
+HTTP 402 with `code: "plan_limit_exceeded"` when current or projected usage
+crosses a blocked `projects`, `runs`, current-month `metric_points`, or
+retained `storage` limit. Seats remain tracked as `paid_extra_seats` until
+billing is implemented. Storage, projects, runs, seats, artifacts, metric
+series, and API keys are retained-resource counts and do not reset monthly.
 
 ## Analytical Data Tables
 
