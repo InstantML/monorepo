@@ -641,7 +641,6 @@ export function buildApiRows(metricKey: string, project: string, status: string)
     { method: "GET", path: "/api/runs/:id/objects", description: "Rich object manifests for one selected run." },
     { method: "GET", path: "/api/objects/:id/rows", description: "Bounded table rows for one logged table object." },
     { method: "GET", path: "/api/runs/side-by-side?run_ids=<ids>", description: "Config and metric comparison rows." },
-    { method: "POST", path: "/api/demo/reset", description: "Reset local demo data." },
   ];
 }
 

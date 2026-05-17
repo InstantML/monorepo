@@ -562,6 +562,7 @@ mod tests {
             name: "Acme".to_string(),
             plan_tier: tier.to_string(),
             account_type: "customer".to_string(),
+            tenant_routing_tier: "dedicated".to_string(),
             seat_limit: plan_tier(tier).included_seats,
             created_by_user_id: None,
             created_at: Utc::now(),

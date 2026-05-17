@@ -58,15 +58,56 @@ run.flush()
 run.finish()
 ```
 
-Hosted or auth-required servers can use an API key directly or through `INSTANTML_API_KEY`:
+## CLI: Login, logout, whoami
+
+The `instantml` CLI provides a frictionless setup path via the OAuth 2.0 device-authorization grant (RFC 8628). No API key copy/paste required.
+
+```bash
+# Authenticate: opens browser, prints a user code, polls until confirmed.
+instantml login [--api-host URL]
+
+# Remove stored credentials.
+instantml logout
+
+# Print the current org and user from stored credentials.
+instantml whoami
+```
+
+After `instantml login`, credentials are written to `~/.instantml/credentials` (mode 0600) in TOML format:
+
+```toml
+api_key = "instantml_..."
+api_host = "https://api.instantml.ai"
+org_id = "..."
+user_email = "alice@example.com"
+```
+
+## Credential resolution
+
+`init()` resolves credentials in this order:
+
+1. Explicit `api_key=` kwarg.
+2. `INSTANTML_API_KEY` environment variable.
+3. `~/.instantml/credentials` file (written by `instantml login`).
+4. No credentials → the server will return 401 if auth is required.
 
 ```python
+# Option 1: explicit kwarg
 run = ro.init(project="cartpole", api_key="instantml_...", base_url="https://api.example.com")
+
+# Option 2: environment variable
+# export INSTANTML_API_KEY=instantml_...
+run = ro.init(project="cartpole", base_url="https://api.example.com")
+
+# Option 3: after `instantml login`
+run = ro.init(project="cartpole", base_url="https://api.example.com")
 ```
 
 ```bash
 INSTANTML_API_KEY=instantml_... PYTHONPATH=packages/python-sdk python3 train.py
 ```
+
+Design doc: `docs/design/2026-05-16-device-code-cli-login.md`
 
 The hosted ClickHouse smoke proves this path against the Rust API's User Data and tenant-routing layer:
 

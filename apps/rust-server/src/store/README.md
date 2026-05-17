@@ -16,6 +16,7 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
 - `access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
 - `summaries.rs`: run summaries, artifact counts, metric-series conversion, and export metric reads.
 - `tenants.rs`: hosted tenant route payloads, database/cloud-service provisioning, lazy tenant loading, and per-org MetricStore resolution.
+- `device_code.rs`: RFC 8628 device-code grant state machine — pending/authorized/denied/expired lifecycle, rate-limit enforcement, user-code generation, and API key issuance on confirm.
 - `validation.rs`: shared validation, JSON value shaping, slugging, and focused unit tests.
 
 ## Testing

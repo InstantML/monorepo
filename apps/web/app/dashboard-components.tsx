@@ -1,4 +1,4 @@
-import { Activity, Box, Check, ChevronDown, ChevronRight, CircleHelp, Columns3, Copy, CopyPlus, Database, Download, FileText, Folder, GitBranch, GripVertical, LogOut, Maximize2, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Search, Server, Star, Sun, Tag, Trash2, X } from "lucide-react";
+import { Activity, Box, Check, ChevronDown, ChevronRight, CircleHelp, Columns3, Copy, CopyPlus, Database, Download, FileText, Folder, GitBranch, GripVertical, LogOut, Maximize2, Menu, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Search, Server, SlidersHorizontal, Star, Sun, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, DragEvent, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -567,8 +567,9 @@ export function DashboardTopbar({
   activeTab,
   detailRunName,
   message,
+  mobileNavOpen,
   onApplySavedView,
-  onLoadDemo,
+  onMobileMenuToggle,
   onProject,
   onQuery,
   onQuickSearch,
@@ -601,8 +602,9 @@ export function DashboardTopbar({
   activeTab: TabId;
   detailRunName: string;
   message: string;
+  mobileNavOpen: boolean;
   onApplySavedView: (key: string) => void;
-  onLoadDemo: () => void;
+  onMobileMenuToggle: () => void;
   onProject: (project: string) => void;
   onQuery: (value: string) => void;
   onQuickSearch: () => void;
@@ -631,6 +633,7 @@ export function DashboardTopbar({
   usageResetLabel: string;
   viewName: string;
 }) {
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
@@ -640,15 +643,37 @@ export function DashboardTopbar({
 
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--topbar-height", showWorkbar ? "92px" : "48px");
+    const media = window.matchMedia("(max-width: 720px)");
+    function applyHeight() {
+      if (media.matches) {
+        // On mobile the workbar collapses behind the filters toggle. Keep the
+        // sticky offset at the brandbar height; when filters open they push
+        // content down naturally without needing a calc-able offset.
+        root.style.setProperty("--topbar-height", "56px");
+      } else {
+        root.style.setProperty("--topbar-height", showWorkbar ? "92px" : "48px");
+      }
+    }
+    applyHeight();
+    media.addEventListener("change", applyHeight);
     return () => {
+      media.removeEventListener("change", applyHeight);
       root.style.removeProperty("--topbar-height");
     };
   }, [showWorkbar]);
 
   return (
-    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"}`}>
+    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""}`}>
       <div className="brandbar">
+        <button
+          type="button"
+          className="mobile-menu-button"
+          aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+          aria-expanded={mobileNavOpen}
+          onClick={onMobileMenuToggle}
+        >
+          {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
         <a className="brand-cell" href="/dashboard/runs" aria-label="InstantML">
           <span className="brand-mark" aria-hidden="true"><InstantMlMark /></span>
         </a>
@@ -676,11 +701,23 @@ export function DashboardTopbar({
               usageAvailable={usageAvailable}
             />
             <button className="ghost-kbd" type="button" onClick={onQuickSearch} aria-label="Quick search">
-              <Search size={13} /> Search <span className="kbd">⌘K</span>
+              <Search size={13} /> <span className="ghost-kbd-label">Search</span> <span className="kbd">⌘K</span>
             </button>
+            {showWorkbar ? (
+              <button
+                aria-label={mobileFiltersOpen ? "Hide filters" : "Show filters"}
+                aria-expanded={mobileFiltersOpen}
+                className="icon-button framed mobile-filters-toggle"
+                onClick={() => setMobileFiltersOpen((open) => !open)}
+                title="Filters"
+                type="button"
+              >
+                <SlidersHorizontal size={15} />
+              </button>
+            ) : null}
             <button
               aria-label="Keyboard shortcuts"
-              className="icon-button framed"
+              className="icon-button framed brandbar-action-desktop"
               onClick={onShortcutHelp}
               title="Keyboard shortcuts"
               type="button"
@@ -690,7 +727,7 @@ export function DashboardTopbar({
             <button
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
               aria-pressed={dark}
-              className="icon-button framed"
+              className="icon-button framed brandbar-action-desktop"
               onClick={onThemeToggle}
               title={dark ? "Light mode" : "Dark mode"}
               type="button"
@@ -699,14 +736,14 @@ export function DashboardTopbar({
             </button>
             <button
               aria-label="Sign out"
-              className="icon-button framed"
+              className="icon-button framed brandbar-action-desktop"
               onClick={onSignOut}
               title="Sign out"
               type="button"
             >
               <LogOut size={15} />
             </button>
-            <div className="avatar" aria-label="Account">AK</div>
+            <div className="avatar brandbar-action-desktop" aria-label="Account">AK</div>
           </div>
         </div>
       </div>
@@ -749,7 +786,6 @@ export function DashboardTopbar({
           <span className={`system-status ${tone}`} title={message}><span /> {operationalLabel}</span>
           <span className={`status-message ${tone}`} id="status-message" role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} tabIndex={-1} title={message}>{message}</span>
           <div className="workbar-spacer" />
-          <button id="demo-reset" type="button" className="secondary workbar-ghost" onClick={onLoadDemo} title="Reset demo data"><Download size={14} /></button>
           <label className="control compact workbar-name">
             Name
             <input id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
@@ -805,13 +841,21 @@ export function DashboardNav({
   onAutoOpenChange,
   onPinnedChange,
   onSelect,
+  onShortcutHelp,
+  onSignOut,
+  onThemeToggle,
   pinned,
+  theme,
 }: {
   activeTab: TabId;
   onAutoOpenChange: (open: boolean) => void;
   onPinnedChange: (pinned: boolean) => void;
   onSelect: (tabId: TabId) => void;
+  onShortcutHelp?: () => void;
+  onSignOut?: () => void;
+  onThemeToggle?: () => void;
   pinned: boolean;
+  theme?: "light" | "dark";
 }) {
   const navRef = useRef<HTMLElement>(null);
 
@@ -876,6 +920,33 @@ export function DashboardNav({
           <span className="tab-label">{pinned ? "Unpin" : "Pin"}</span>
         </button>
       </div>
+      {onThemeToggle || onShortcutHelp || onSignOut ? (
+        <div className="nav-mobile-actions">
+          {onThemeToggle ? (
+            <button
+              className="tab-button"
+              type="button"
+              onClick={onThemeToggle}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+              <span className="tab-label">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+            </button>
+          ) : null}
+          {onShortcutHelp ? (
+            <button className="tab-button" type="button" onClick={onShortcutHelp} aria-label="Keyboard shortcuts">
+              <CircleHelp size={15} />
+              <span className="tab-label">Shortcuts</span>
+            </button>
+          ) : null}
+          {onSignOut ? (
+            <button className="tab-button" type="button" onClick={onSignOut} aria-label="Sign out">
+              <LogOut size={15} />
+              <span className="tab-label">Sign out</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </nav>
   );
 }

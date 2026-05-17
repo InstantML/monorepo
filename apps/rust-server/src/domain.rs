@@ -165,6 +165,17 @@ pub struct OrganizationRow {
     pub seat_limit: i32,
     pub created_by_user_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+    /// Routing tier for this org's ClickHouse data plane.
+    /// `"shared"` — routes to the shared cell (free/personal orgs).
+    /// `"dedicated"` — routes to a per-org provisioned service.
+    /// Older records that pre-date this field deserialize to `"dedicated"`
+    /// (the safe fallback) via the serde default.
+    #[serde(default = "default_routing_tier")]
+    pub tenant_routing_tier: String,
+}
+
+fn default_routing_tier() -> String {
+    "dedicated".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -208,10 +219,18 @@ pub struct ProvisioningStatusPayload {
     pub service_id: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct OnboardingApiKey {
+    pub plaintext: String,
+    pub prefix: String,
+    pub id: Uuid,
+}
+
 #[derive(Clone, Debug)]
 pub struct CreatedAuthSession {
     pub token: String,
     pub payload: AuthSessionPayload,
+    pub onboarding_api_key: Option<OnboardingApiKey>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -394,6 +413,31 @@ pub struct MetricSeriesRow {
     pub best_step: Option<f64>,
 }
 
+// --- Device-code (RFC 8628) domain types ---
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodeStartRequest {
+    pub client_info: Option<DeviceCodeClientInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodeClientInfo {
+    pub name: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodePollRequest {
+    pub device_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceCodeConfirmRequest {
+    pub user_code: Option<String>,
+}
+
+// --- Attribute types ---
+
 #[derive(Debug, Deserialize)]
 pub struct AttributeInput {
     pub path: String,
@@ -558,14 +602,19 @@ pub fn plan_tier(value: &str) -> PlanTier {
 
 pub fn validate_account_type(value: Option<&str>) -> AppResult<String> {
     let account_type =
-        validate_name(Some(value.unwrap_or("customer")), "account_type")?.to_ascii_lowercase();
-    if matches!(account_type.as_str(), "customer" | "business") {
+        validate_name(Some(value.unwrap_or("personal")), "account_type")?.to_ascii_lowercase();
+    if matches!(account_type.as_str(), "customer" | "personal" | "business") {
         Ok(account_type)
     } else {
         Err(AppError::validation(
-            "account_type must be one of: business, customer",
+            "account_type must be one of: business, customer, personal",
         ))
     }
+}
+
+/// Returns true when the account type maps to shared-cell routing.
+pub fn is_personal_account_type(account_type: &str) -> bool {
+    matches!(account_type, "personal" | "customer")
 }
 
 pub fn validate_membership_role(value: Option<&str>) -> AppResult<String> {

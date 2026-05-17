@@ -7,7 +7,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
-- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys.
+- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
@@ -108,6 +108,7 @@ Environment variables:
 - `CLERK_API_BASE`: Clerk Backend API base URL. Default: `https://api.clerk.com`.
 - `CLERK_JWT_ISSUER`: optional exact Clerk session-token issuer. When unset, tokens must still use an HTTPS Clerk-owned issuer host.
 - `INSTANTML_CLERK_SESSION_MAX_AGE_SECONDS`: maximum accepted age for a Clerk session token exchanged into an InstantML session. Default: `600`.
+- `INSTANTML_FRONTEND_BASE_URL`: base URL of the web frontend used to build the `verification_uri` in device-code responses (e.g. `https://app.instantml.ai`). Falls back to the first entry in `INSTANTML_ALLOWED_FRONTEND_ORIGINS`, then `http://localhost:3000`.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS`: comma-separated exact email allowlist for hosted Clerk signups. Sign-in for existing memberships is still allowed.
 - `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: comma-separated hosted Clerk signup domain allowlist. Domains may be written with or without a leading `@`.
@@ -118,6 +119,8 @@ Environment variables:
 - `INSTANTML_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default: `database`, which is local/test only unless paired with per-org least-privilege ClickHouse users and cross-database denial tests.
 - `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` is required in cloud-service mode and should include the Cloud Run static egress CIDR, currently `136.115.243.188/32`, so every new tenant service is created with API-only ClickHouse access. Cloud-service mode is opt-in because it can create external paid services. `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=false` keeps selected Free/Pro/Premium warehouse sizes as recorded route intent while actual creation stays capped by operator memory/replica defaults.
 - `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
+- `INSTANTML_SHARED_CELL_URL`: ClickHouse HTTP connection string for the shared cell used by personal/free orgs. When set, new signups with `account_type=personal` (or no `account_type`) write a `tenant_route` record pointing at this cell and do not trigger a ClickHouse Cloud provisioning call. Format: `http://user:pass@host:port/database`. If absent, personal signups fall through to the existing dedicated provisioning path.
+- `INSTANTML_SHARED_CELL_DATABASE`: database name inside the shared cell. Defaults to `instantml_shared`. Only relevant when `INSTANTML_SHARED_CELL_URL` is set.
 
 Cloud-service retries recover from a service that was created before the route credentials were persisted by resetting that service password through the ClickHouse Cloud API, then writing a ready tenant route. This handles browser/API request timeouts during first provisioning without requiring manual User Data edits.
 
@@ -148,7 +151,9 @@ Implemented health and platform endpoints:
 - `GET /metrics`
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage and blocked-at-limit write guardrails, API-key management, and demo reset. List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+
+Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a browser session and mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and
 the durable control/data-plane schema reference lives in
@@ -245,7 +250,14 @@ Rust first-party service logic targets 100% meaningful coverage for validation, 
 
 Agent/contributor guidance lives in `CLAUDE.md`. Production Rust code should propagate `AppResult` instead of panicking, keep 5xx response details out of public JSON, avoid silent storage fallbacks, and preserve deterministic full User Data replay until a durable monotonic control cursor is designed.
 
-Coverage exception:
+Coverage exception (shared-cell isolation):
+- Uncovered area: ClickHouse row-level security and EXPLAIN-plan org_id predicate verification for the shared cell.
+- Reason: ClickHouse does not expose EXPLAIN output in a test-friendly way in the current harness.
+- Risk: a future metric read helper written without an org_id predicate would silently cross tenant boundaries in the shared cell. The cross-org isolation test (`shared_cell_cross_org_isolation_in_process_index`) covers the in-process index layer but not the ClickHouse query layer.
+- Follow-up: add ClickHouse row policies or an EXPLAIN-plan test gate before raising the shared cell to production scale.
+- Owner/date: hosted backend owner, 2026-05-16.
+
+Coverage exception (multi-writer):
 - Uncovered area: live multi-writer freshness, write uniqueness, public cell routing/SDK redirects, and atomic metric/log idempotency.
 - Reason: the accepted multi-instance slice adds deterministic full operational replay, tenant-scoped replay validation, role-specific control/data HTTP surfaces, and data-plane control-record refresh before auth. It still does not enable shared cells with multiple concurrent writers.
 - Risk: multiple Rust data-plane writers pointed at the same tenant operational table can still create duplicate low-volume entities or duplicate metric/log rows if scaled outside the accepted gates.
@@ -289,9 +301,12 @@ Coverage exception:
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-16-clerk-hosted-auth.md`
+- `docs/design/2026-05-16-auto-personal-workspace.md`
+- `docs/design/2026-05-16-device-code-cli-login.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`
+- `docs/design/2026-05-16-shared-cell-tenant-routing.md`
 - `docs/architecture/current-api.md`
 - `docs/product/pricing-and-margins.md`
 

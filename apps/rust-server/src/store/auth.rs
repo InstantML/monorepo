@@ -82,15 +82,22 @@ pub async fn create_organization(
             return Err(AppError::not_found("owner user not found"));
         }
     }
+    let account_type = "customer".to_string();
+    let tenant_routing_tier = if is_personal_account_type(&account_type) {
+        "shared".to_string()
+    } else {
+        "dedicated".to_string()
+    };
     let org = OrganizationRow {
         id: Uuid::new_v4(),
         slug,
         name,
         plan_tier: canonical_plan_tier,
-        account_type: "customer".to_string(),
+        account_type,
         seat_limit: plan.included_seats,
         created_by_user_id: input.owner_user_id,
         created_at: Utc::now(),
+        tenant_routing_tier,
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -154,8 +161,8 @@ pub async fn create_dev_google_session(
         VerifiedProviderSessionInput {
             provider: "dev-google".to_string(),
             provider_subject: input.email.clone(),
-            email: input.email,
-            display_name: input.display_name,
+            email: input.email.clone(),
+            display_name: input.display_name.clone(),
             avatar_url: None,
             account_type: input.account_type,
             mode: input.mode,
@@ -164,6 +171,8 @@ pub async fn create_dev_google_session(
             seat_emails: input.seat_emails,
             accept_invite_org_id: input.accept_invite_org_id,
             strict_email_linking: false,
+            auto_derive_display_name: input.display_name,
+            auto_derive_email: input.email,
         },
     )
     .await
@@ -179,7 +188,10 @@ pub async fn create_clerk_session(
     }
     let mode = validate_optional_name(input.mode.as_deref(), "mode")?;
     let signup_mode = mode.as_deref() == Some("signup") || input.org_name.is_some();
-    let org_name = if signup_mode {
+    // When org_name is absent and we're in signup mode, auto-derive from Clerk profile.
+    // The actual derivation happens inside create_verified_provider_session once we know
+    // whether this is truly a fresh user; passing None here signals auto-derive.
+    let org_name = if signup_mode && input.org_name.is_some() {
         Some(validate_name(input.org_name.as_deref(), "organization")?)
     } else {
         None
@@ -189,8 +201,8 @@ pub async fn create_clerk_session(
         VerifiedProviderSessionInput {
             provider: principal.provider,
             provider_subject: principal.provider_subject,
-            email: principal.email,
-            display_name: principal.display_name,
+            email: principal.email.clone(),
+            display_name: principal.display_name.clone(),
             avatar_url: principal.avatar_url,
             account_type: validate_account_type(input.account_type.as_deref())?,
             mode,
@@ -199,6 +211,9 @@ pub async fn create_clerk_session(
             seat_emails: input.seat_emails.unwrap_or_default(),
             accept_invite_org_id: input.accept_invite_org_id,
             strict_email_linking: true,
+            // Provide Clerk profile fields for auto-derivation fallback.
+            auto_derive_display_name: principal.display_name,
+            auto_derive_email: principal.email,
         },
     )
     .await
@@ -217,6 +232,10 @@ struct VerifiedProviderSessionInput {
     seat_emails: Vec<String>,
     accept_invite_org_id: Option<Uuid>,
     strict_email_linking: bool,
+    /// Clerk display name used to auto-derive a workspace name when org_name is absent.
+    auto_derive_display_name: Option<String>,
+    /// Clerk email used to auto-derive a workspace name from the handle when display_name is absent.
+    auto_derive_email: String,
 }
 
 async fn create_verified_provider_session(
@@ -339,22 +358,44 @@ async fn create_verified_provider_session(
             }
         }
     }
-    let org_name = input
-        .org_name
-        .ok_or_else(|| AppError::validation("organization is required for signup"))?;
-    let slug = slugify(&org_name);
-    if data.orgs_by_slug.contains_key(&slug) {
-        return Err(AppError::conflict("organization name already exists"));
-    }
+    // Resolve org name: use explicit org_name if provided, else auto-derive from Clerk profile.
+    let (org_name, org_slug, auto_derived) = if let Some(name) = input.org_name {
+        let slug = slugify(&name);
+        if data.orgs_by_slug.contains_key(&slug) {
+            return Err(AppError::conflict("organization name already exists"));
+        }
+        (name, slug, false)
+    } else {
+        // Auto-derive workspace name from Clerk display name or email handle.
+        let base_slug = derive_workspace_slug(
+            input.auto_derive_display_name.as_deref(),
+            &input.auto_derive_email,
+        );
+        let slug = unique_slug(&data, &base_slug);
+        let name = slug_to_name(&slug);
+        (name, slug, true)
+    };
+    let effective_account_type = if auto_derived {
+        "personal".to_string()
+    } else {
+        account_type.clone()
+    };
+    // Route personal/free orgs to the shared cell; business orgs get dedicated.
+    let tenant_routing_tier = if is_personal_account_type(&effective_account_type) {
+        "shared".to_string()
+    } else {
+        "dedicated".to_string()
+    };
     let org = OrganizationRow {
         id: Uuid::new_v4(),
-        slug,
+        slug: org_slug,
         name: org_name,
         plan_tier: canonical_plan_tier,
-        account_type: account_type.clone(),
+        account_type: effective_account_type,
         seat_limit: plan.included_seats,
         created_by_user_id: Some(user.id),
         created_at: Utc::now(),
+        tenant_routing_tier,
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -389,7 +430,14 @@ async fn create_verified_provider_session(
         .await?;
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
-    Ok(CreatedAuthSession { token, payload })
+    drop(data);
+    // Atomically mint an onboarding SDK key for the new org.
+    let onboarding_api_key = mint_onboarding_api_key(store, org.id, user.id).await.ok();
+    Ok(CreatedAuthSession {
+        token,
+        payload,
+        onboarding_api_key,
+    })
 }
 
 async fn create_session_for_org(
@@ -421,7 +469,11 @@ async fn create_session_for_org(
         .await?;
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
-    Ok(CreatedAuthSession { token, payload })
+    Ok(CreatedAuthSession {
+        token,
+        payload,
+        onboarding_api_key: None,
+    })
 }
 
 fn user_has_non_bootstrap_identity(data: &StoreData, user_id: Uuid) -> bool {
@@ -604,6 +656,94 @@ fn is_shared_demo_email(email: &str) -> bool {
 
 pub fn is_shared_demo_org(org: &OrganizationRow) -> bool {
     org.name == SHARED_DEMO_NAME && org.slug == slugify(SHARED_DEMO_NAME)
+}
+
+/// Derive a workspace slug from a Clerk display name or email handle.
+/// Preference order: display_name → email handle.
+pub(crate) fn derive_workspace_slug(display_name: Option<&str>, email: &str) -> String {
+    let source = display_name
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| {
+            email
+                .split_once('@')
+                .map(|(handle, _)| handle)
+                .unwrap_or(email)
+        });
+    let slug = slugify(source);
+    if slug.is_empty() || slug == "workspace" {
+        // Fallback: use email handle directly.
+        let handle = email.split_once('@').map(|(h, _)| h).unwrap_or(email);
+        slugify(handle)
+    } else {
+        slug
+    }
+}
+
+/// Convert a slug such as "tony-xin" to a human-readable name "Tony Xin".
+pub(crate) fn slug_to_name(slug: &str) -> String {
+    slug.split('-')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Mint a fresh `sdk:ingest`-scoped onboarding API key for a newly created org.
+/// Returns `None` (and logs) on failure rather than aborting the signup.
+async fn mint_onboarding_api_key(
+    store: &Store,
+    org_id: Uuid,
+    user_id: Uuid,
+) -> AppResult<OnboardingApiKey> {
+    let result = create_api_key_inner(
+        store,
+        org_id,
+        CreateApiKeyRequest {
+            name: Some("Onboarding SDK key".to_string()),
+            scopes: Some(
+                ONBOARDING_API_KEY_SCOPES
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            ),
+            created_by_user_id: Some(user_id),
+            project_id: None,
+            project: None,
+            expires_at: None,
+        },
+        Some(user_id),
+    )
+    .await?;
+    let plaintext = result
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let prefix = result
+        .get("key")
+        .and_then(|k| k.get("key_prefix"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let id_str = result
+        .get("key")
+        .and_then(|k| k.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let id = Uuid::parse_str(id_str).map_err(|_| AppError::internal("invalid key id"))?;
+    if plaintext.is_empty() {
+        return Err(AppError::internal("onboarding key plaintext was empty"));
+    }
+    Ok(OnboardingApiKey {
+        plaintext,
+        prefix,
+        id,
+    })
 }
 
 fn demo_api_key_scopes() -> Vec<String> {
@@ -1062,6 +1202,7 @@ mod tests {
             seat_limit: 25,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
         };
 
         assert!(is_shared_demo_org(&org));
@@ -1082,6 +1223,7 @@ mod tests {
             seat_limit: 25,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());
@@ -1114,6 +1256,7 @@ mod tests {
             seat_limit: 1,
             created_by_user_id: None,
             created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());
@@ -1121,6 +1264,64 @@ mod tests {
         let record = api_key_record_for_org(org.id, requested.clone());
 
         assert_eq!(effective_api_key_scopes(&data, &record), requested);
+    }
+
+    #[test]
+    fn personal_account_type_routes_to_shared_tier() {
+        // "personal" and "customer" both map to the shared cell.
+        assert!(is_personal_account_type("personal"));
+        assert!(is_personal_account_type("customer"));
+        assert!(!is_personal_account_type("business"));
+    }
+
+    #[test]
+    fn org_routing_tier_defaults_to_dedicated_for_pre_existing_records() {
+        // An OrganizationRow deserialized from JSON without tenant_routing_tier
+        // must default to "dedicated" so existing orgs keep their dedicated routes.
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "slug": "legacy",
+            "name": "Legacy Org",
+            "plan_tier": "free",
+            "account_type": "customer",
+            "seat_limit": 2,
+            "created_by_user_id": null,
+            "created_at": "2026-01-01T00:00:00Z"
+        }"#;
+        let org: OrganizationRow = serde_json::from_str(json).unwrap();
+        assert_eq!(org.tenant_routing_tier, "dedicated");
+    }
+
+    #[test]
+    fn new_personal_org_row_has_shared_routing_tier() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "my-lab".to_string(),
+            name: "My Lab".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+        };
+        assert_eq!(org.tenant_routing_tier, "shared");
+    }
+
+    #[test]
+    fn new_business_org_row_has_dedicated_routing_tier() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "acme".to_string(),
+            name: "Acme Corp".to_string(),
+            plan_tier: "pro".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 3,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+        };
+        assert_eq!(org.tenant_routing_tier, "dedicated");
     }
 
     fn api_key_record_for_org(org_id: Uuid, scopes: Vec<String>) -> ApiKeyRecord {
@@ -1140,5 +1341,71 @@ mod tests {
             },
             key_hash: vec![1, 2, 3],
         }
+    }
+
+    // --- Auto-derive workspace name tests ---
+
+    #[test]
+    fn auto_derive_workspace_name_from_display_name() {
+        // Clerk display name "Tony Xin" → slug "tony-xin"
+        let slug = derive_workspace_slug(Some("Tony Xin"), "tony@example.com");
+        assert_eq!(slug, "tony-xin");
+
+        // Name with special chars: "Ada Lovelace!" → "ada-lovelace"
+        let slug = derive_workspace_slug(Some("Ada Lovelace!"), "ada@example.com");
+        assert_eq!(slug, "ada-lovelace");
+    }
+
+    #[test]
+    fn auto_derive_workspace_name_from_email_handle() {
+        // No display name: email "ada@example.com" → slug "ada"
+        let slug = derive_workspace_slug(None, "ada@example.com");
+        assert_eq!(slug, "ada");
+
+        // Blank display name falls through to email handle
+        let slug = derive_workspace_slug(Some("  "), "researcher@lab.ai");
+        assert_eq!(slug, "researcher");
+
+        // Email without @: treat whole string as handle
+        let slug = derive_workspace_slug(None, "standalone");
+        assert_eq!(slug, "standalone");
+    }
+
+    #[test]
+    fn slug_to_name_converts_slug_parts_to_title_case() {
+        assert_eq!(slug_to_name("tony-xin"), "Tony Xin");
+        assert_eq!(slug_to_name("ada"), "Ada");
+        assert_eq!(
+            slug_to_name("my-personal-workspace"),
+            "My Personal Workspace"
+        );
+    }
+
+    #[test]
+    fn slug_collision_falls_back_to_unique_suffix() {
+        // Pre-seed "tony-xin" in store data; unique_slug must produce a different slug.
+        let mut data = StoreData::default();
+        let existing_org = OrganizationRow {
+            id: Uuid::from_u128(42),
+            slug: "tony-xin".to_string(),
+            name: "Tony Xin".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+        };
+        data.insert_org(existing_org);
+
+        // derive base slug
+        let base = derive_workspace_slug(Some("Tony Xin"), "tony@example.com");
+        assert_eq!(base, "tony-xin");
+
+        // unique_slug must return something different
+        let slug = unique_slug(&data, &base);
+        assert_ne!(slug, "tony-xin");
+        // Must start with the base
+        assert!(slug.starts_with("tony-xin-"));
     }
 }

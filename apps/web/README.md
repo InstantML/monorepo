@@ -7,7 +7,8 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 ## Responsibilities
 
 - Project dashboard.
-- Public landing page plus Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, onboarding, and copy-once SDK API-key creation.
+- Public landing page plus Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, onboarding, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and the auth response includes a ready-to-use `onboarding_api_key` that is rendered immediately without a separate button click.
+- RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
 - Runs workspace with run selector, sections, line panels, and local workspace layout persistence.
 - Run detail view.
 - Run comparison view.
@@ -172,6 +173,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/signin/page.tsx`
 - `app/signup/page.tsx`
 - `app/onboarding/page.tsx`
+- `app/auth/device/page.tsx`
 - `app/dashboard/[[...tab]]/page.tsx`
 - `app/dashboard/components/run-workspace.tsx`
 - `app/dashboard/dashboard-shell.tsx`
@@ -189,6 +191,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `src/shortcuts.js`
 - `src/state.js`
 - `src/terminal.js`
+- `src/workspace.js` — `deriveClerkSlug` and `slugify` helpers (mirrors server-side slug logic for UI preview)
 - `next.config.mjs`
 
 ## Relevant Design Docs
@@ -205,8 +208,10 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
 - `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
 - `docs/design/2026-05-14-instantml-rescheme-and-chart-polish.md`
+- `docs/design/2026-05-16-device-code-cli-login.md`
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`
+- `docs/design/2026-05-16-auto-personal-workspace.md`
 - `docs/product/pricing-and-margins.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 

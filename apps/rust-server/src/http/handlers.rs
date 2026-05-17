@@ -167,6 +167,57 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
     );
     openapi_insert(
         &mut paths,
+        "/api/auth/device-code/start",
+        &[(
+            "post",
+            openapi_operation(
+                "Start a device-code authorization grant (RFC 8628)",
+                None,
+                &[],
+                &[(
+                    "200",
+                    "device_code, user_code, verification_uri, expires_in, interval",
+                )],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/auth/device-code/poll",
+        &[(
+            "post",
+            openapi_operation(
+                "Poll device-code authorization status",
+                None,
+                &[],
+                &[
+                    ("200", "status: pending | authorized | denied | expired"),
+                    ("429", "slow_down: poll too fast"),
+                ],
+                true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/auth/device-code/confirm",
+        &[(
+            "post",
+            openapi_operation(
+                "Confirm a device-code grant from an authenticated browser session",
+                Some(("x-instantml-auth", "session-cookie")),
+                &[],
+                &[
+                    ("200", "confirmed=true"),
+                    ("404", "user_code not found or expired"),
+                ],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
         "/api/users",
         &[
             (
@@ -756,23 +807,6 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
             ),
         )],
     );
-    openapi_insert(
-        &mut paths,
-        "/api/demo/reset",
-        &[(
-            "post",
-            openapi_operation(
-                "Reset and seed demo project data",
-                Some((
-                    "x-instantml-scope",
-                    "sdk:ingest and unrestricted org access",
-                )),
-                &[],
-                &[("200", "demo reset payload")],
-                false,
-            ),
-        )],
-    );
 
     let service_plane = state.config.service_plane;
     paths.retain(|path, _| openapi_path_available_for_plane(path, service_plane));
@@ -933,7 +967,18 @@ pub(super) async fn auth_clerk(
     .await?;
     validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
     let created = store::create_clerk_session(&state.store, principal, input).await?;
-    json_with_session_cookie(&state, &headers, created.payload, &created.token)
+    let mut response_body = serde_json::to_value(&created.payload)
+        .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
+    if let Some(onboarding_key) = &created.onboarding_api_key {
+        if let Some(obj) = response_body.as_object_mut() {
+            obj.insert(
+                "onboarding_api_key".to_string(),
+                serde_json::to_value(onboarding_key)
+                    .map_err(|_| AppError::internal("failed to serialize onboarding key"))?,
+            );
+        }
+    }
+    json_with_session_cookie(&state, &headers, response_body, &created.token)
 }
 
 pub(super) async fn auth_session(
@@ -969,6 +1014,70 @@ pub(super) async fn auth_logout(
         .append(header::SET_COOKIE, header_value(&clear_session_cookie())?);
     Ok(response)
 }
+
+// --- Device-code (RFC 8628) handlers ---
+
+pub(super) async fn device_code_start(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let input = read_json::<DeviceCodeStartRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let client_info = input
+        .client_info
+        .map(|info| json!({ "name": info.name, "version": info.version }));
+    let frontend_base_url = state
+        .config
+        .frontend_base_url
+        .as_deref()
+        .or_else(|| {
+            state
+                .config
+                .allowed_frontend_origins
+                .first()
+                .map(String::as_str)
+        })
+        .unwrap_or("http://localhost:3000");
+    let result = store::device_code_start(&state.store, frontend_base_url, client_info).await?;
+    Ok(Json(result))
+}
+
+pub(super) async fn device_code_poll(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let input = read_json::<DeviceCodePollRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let raw_device_code = input
+        .device_code
+        .ok_or_else(|| AppError::validation("device_code is required"))?;
+    let result = store::device_code_poll(&state.store, &raw_device_code).await?;
+    Ok(Json(result))
+}
+
+pub(super) async fn device_code_confirm(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let input =
+        read_json::<DeviceCodeConfirmRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let raw_user_code = input
+        .user_code
+        .ok_or_else(|| AppError::validation("user_code is required"))?;
+    // Requires a valid browser session.
+    let session_payload = session_context(&state, &headers).await?;
+    let result = store::device_code_confirm(
+        &state.store,
+        session_payload.user.id,
+        session_payload.organization.id,
+        &raw_user_code,
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+// --- End device-code handlers ---
 
 pub(super) async fn create_user(
     State(state): State<Arc<AppState>>,
@@ -1549,19 +1658,6 @@ async fn import_with_source(
     ))
 }
 
-pub(super) async fn reset_demo(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    bytes: Bytes,
-) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
-    validate_session_mutation_origin(&state, &headers, &ctx)?;
-    require_scope(&ctx, "sdk:ingest", &state)?;
-    store::require_unrestricted_org_access(&ctx)?;
-    let _ = read_json_value(&headers, bytes, state.config.max_body_bytes).ok();
-    Ok(Json(store::reset_demo(&state.store, &ctx).await?))
-}
-
 pub(super) async fn not_found() -> AppError {
     AppError::not_found("route not found")
 }
@@ -2117,6 +2213,69 @@ mod tests {
             request_timeout: std::time::Duration::from_secs(30),
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
+            frontend_base_url: Some("http://localhost:3000".to_string()),
         }
+    }
+
+    #[test]
+    fn device_code_endpoints_on_control_plane() {
+        use crate::config::ServicePlaneRole;
+
+        for path in [
+            "/api/auth/device-code/start",
+            "/api/auth/device-code/poll",
+            "/api/auth/device-code/confirm",
+        ] {
+            assert!(
+                openapi_path_available_for_plane(path, ServicePlaneRole::Control),
+                "{path} should be available on control plane"
+            );
+            assert!(
+                openapi_path_available_for_plane(path, ServicePlaneRole::Combined),
+                "{path} should be available on combined plane"
+            );
+            assert!(
+                !openapi_path_available_for_plane(path, ServicePlaneRole::Data),
+                "{path} should not be available on data plane"
+            );
+        }
+    }
+
+    #[test]
+    fn frontend_base_url_fallback_chain() {
+        // Test that the config's frontend_base_url is used when set.
+        let config = test_config();
+        let url = config
+            .frontend_base_url
+            .as_deref()
+            .or_else(|| config.allowed_frontend_origins.first().map(String::as_str))
+            .unwrap_or("http://localhost:3000");
+        assert_eq!(url, "http://localhost:3000");
+    }
+
+    #[test]
+    fn frontend_base_url_falls_back_to_allowed_origins() {
+        let mut config = test_config();
+        config.frontend_base_url = None;
+        config.allowed_frontend_origins = vec!["https://app.example.com".to_string()];
+        let url = config
+            .frontend_base_url
+            .as_deref()
+            .or_else(|| config.allowed_frontend_origins.first().map(String::as_str))
+            .unwrap_or("http://localhost:3000");
+        assert_eq!(url, "https://app.example.com");
+    }
+
+    #[test]
+    fn frontend_base_url_falls_back_to_localhost_when_nothing_set() {
+        let mut config = test_config();
+        config.frontend_base_url = None;
+        config.allowed_frontend_origins = vec![];
+        let url = config
+            .frontend_base_url
+            .as_deref()
+            .or_else(|| config.allowed_frontend_origins.first().map(String::as_str))
+            .unwrap_or("http://localhost:3000");
+        assert_eq!(url, "http://localhost:3000");
     }
 }

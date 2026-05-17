@@ -215,7 +215,9 @@ try {
   assert.equal(usage.plans.pro.included_seats, 3);
   assert.equal(usage.organizations[0].plan_tier, "pro");
   assert.equal(usage.organizations[0].usage.seats, 2);
-  assert.equal(usage.organizations[0].usage.api_keys, 1);
+  // One onboarding key is minted at signup, and one SDK key is created below;
+  // the revoked key should not count as active usage.
+  assert.equal(usage.organizations[0].usage.api_keys, 2);
   assert.equal(usage.organizations[0].limits.included_storage_bytes, 1024 ** 4);
 
   const finalKinds = await controlKinds();

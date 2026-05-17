@@ -406,7 +406,6 @@ pub(super) fn slugify(value: &str) -> String {
     }
 }
 
-#[cfg(test)]
 pub(super) fn unique_slug(data: &StoreData, base: &str) -> String {
     if !data.orgs_by_slug.contains_key(base) {
         return base.to_string();
@@ -474,6 +473,7 @@ mod tests {
             seat_limit: 1,
             created_by_user_id: None,
             created_at: epoch(),
+            tenant_routing_tier: "shared".to_string(),
         };
         data.insert_org(org);
 

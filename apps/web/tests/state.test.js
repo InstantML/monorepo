@@ -30,6 +30,7 @@ import { ApiClient, ApiError, isAbortError, queryString } from "../src/api.js";
 import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
+import { deriveClerkSlug, slugify } from "../src/workspace.js";
 
 test("selection is capped and toggled", () => {
   let selected = [];
@@ -366,4 +367,25 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(sanitizeNextPath("//evil.example/dashboard"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("/signin"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("/dashboard/runs\u0000"), "/dashboard/runs");
+});
+
+test("deriveClerkSlug derives workspace slug from display name", () => {
+  // Display name preferred over email handle.
+  assert.equal(deriveClerkSlug("Tony Xin", "tony@example.com"), "tony-xin");
+  assert.equal(deriveClerkSlug("Ada Lovelace!", "ada@example.com"), "ada-lovelace");
+  // Multiple spaces/specials collapse.
+  assert.equal(deriveClerkSlug("  My Research  Lab  ", "user@example.com"), "my-research-lab");
+});
+
+test("deriveClerkSlug falls back to email handle when display name is blank", () => {
+  assert.equal(deriveClerkSlug("", "ada@example.com"), "ada");
+  assert.equal(deriveClerkSlug("   ", "researcher@lab.ai"), "researcher");
+});
+
+test("slugify matches server-side rules", () => {
+  assert.equal(slugify("Tony Xin"), "tony-xin");
+  assert.equal(slugify("!!!"), "workspace");
+  assert.equal(slugify("  My Fancy Workspace! "), "my-fancy-workspace");
+  // Long strings are clamped to 63 characters.
+  assert.equal(slugify("a".repeat(100)).length, 63);
 });
