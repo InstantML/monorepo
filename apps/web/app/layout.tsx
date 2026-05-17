@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./auth.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
