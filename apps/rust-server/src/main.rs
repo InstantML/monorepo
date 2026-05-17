@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use instantml_rust_server::{
     config::{AppConfig, ClickHouseProvisioner, ServicePlaneRole},
     control_store::ControlStore,
+    domain::{DevGoogleAuthRequest, RequestContext},
     http::AppState,
     metric_store, store, telemetry,
 };
@@ -30,12 +31,13 @@ async fn run() -> instantml_rust_server::AppResult<()> {
         "all" => serve(config).await,
         "migrate" => migrate_all(config).await,
         "worker" => worker(config).await,
+        "seed-demo" => seed_demo(config).await,
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
         }
         other => Err(instantml_rust_server::AppError::config(format!(
-            "unknown command {other}; expected serve, worker, migrate, or all"
+            "unknown command {other}; expected serve, worker, migrate, seed-demo, or all"
         ))),
     }
 }
@@ -75,6 +77,45 @@ async fn migrate_all(config: AppConfig) -> instantml_rust_server::AppResult<()> 
     if let Some(control_store) = ControlStore::connect(&config)? {
         control_store.migrate().await?;
     }
+    Ok(())
+}
+
+async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
+    let metrics = metric_store::connect(&config)?;
+    if should_migrate_primary_metric_store(&config) {
+        metric_store::migrate(&metrics).await?;
+    }
+    let control_store = ControlStore::connect(&config)?;
+    if let Some(control_store) = &control_store {
+        control_store.migrate().await?;
+    }
+    let store =
+        store::Store::connect(metrics, control_store, config.hosted_clickhouse.clone()).await?;
+    let session = store::create_dev_google_session(
+        &store,
+        DevGoogleAuthRequest {
+            email: Some("hello@instantml.ai".to_string()),
+            display_name: None,
+            account_type: None,
+            org_name: None,
+            seat_emails: None,
+        },
+    )
+    .await?;
+    let org_id = session.payload.organization.id;
+    let ctx = RequestContext {
+        org_id,
+        auth: None,
+        session: None,
+    };
+    let result = store::reset_demo(&store, &ctx).await?;
+    let runs = result
+        .get("runs")
+        .and_then(|value| value.as_array())
+        .map(|array| array.len())
+        .unwrap_or(0);
+    tracing::info!(%org_id, runs, "seeded shared demo workspace");
+    println!("Seeded shared demo workspace ({runs} runs) into org {org_id}");
     Ok(())
 }
 
@@ -133,7 +174,7 @@ async fn shutdown_signal() {
 
 fn print_help() {
     println!(
-        "Usage: instantml-rust-server [serve|all|migrate|worker]\n\n\
+        "Usage: instantml-rust-server [serve|all|migrate|worker|seed-demo]\n\n\
          Environment: CLICKHOUSE_URL, INSTANTML_BIND_ADDR, INSTANTML_AUTH_MODE, \
          INSTANTML_BOOTSTRAP_TOKEN, INSTANTML_ARTIFACT_ROOT, INSTANTML_MAX_BODY_BYTES, INSTANTML_MAX_UPLOAD_BODY_BYTES, \
          INSTANTML_HOSTED_CLICKHOUSE_ENABLED, INSTANTML_SERVICE_PLANE, CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT"

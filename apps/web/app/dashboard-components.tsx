@@ -568,7 +568,6 @@ export function DashboardTopbar({
   detailRunName,
   message,
   onApplySavedView,
-  onLoadDemo,
   onProject,
   onQuery,
   onQuickSearch,
@@ -597,7 +596,6 @@ export function DashboardTopbar({
   detailRunName: string;
   message: string;
   onApplySavedView: (key: string) => void;
-  onLoadDemo: () => void;
   onProject: (project: string) => void;
   onQuery: (value: string) => void;
   onQuickSearch: () => void;
@@ -732,7 +730,6 @@ export function DashboardTopbar({
           <span className={`system-status ${tone}`} title={message}><span /> {operationalLabel}</span>
           <span className={`status-message ${tone}`} id="status-message" role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} tabIndex={-1} title={message}>{message}</span>
           <div className="workbar-spacer" />
-          <button id="demo-reset" type="button" className="secondary workbar-ghost" onClick={onLoadDemo} title="Reset demo data"><Download size={14} /></button>
           <label className="control compact workbar-name">
             Name
             <input id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />

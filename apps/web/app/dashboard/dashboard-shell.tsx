@@ -1182,32 +1182,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     resetRunPagination();
   }, [resetRunPagination]);
 
-  async function loadDemo() {
-    try {
-      setMessage("Resetting demo data...");
-      await api.post("/api/demo/reset");
-      await loadProjects();
-      setProject("demo");
-      setStatus("");
-      setQueryInput("");
-      setQuery("");
-      setPageCursorStack([]);
-      setPageOffset(0);
-      setSelectedRunIds([]);
-      setSelectedRunDetails({});
-      setPrimaryRunId("");
-      setReferenceRunId("");
-      setCompareEditRunId("");
-      setCompareSortMetricKey("eval/return_mean");
-      setCompareTableMetrics([]);
-      setSideBySide(null);
-      setCompareArtifactsByRun({});
-      setMessage("Demo reset. Showing demo runs.");
-    } catch (error) {
-      if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to reset demo data.");
-    }
-  }
-
   function saveView() {
     const fallbackName = `${project || "all"}:${metricKey || "metric"}`;
     const name = (viewName.trim() || fallbackName).replace(/[^A-Za-z0-9._:-]+/g, "-").slice(0, 64);
@@ -1768,7 +1742,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         detailRunName={primaryRun?.name ?? ""}
         message={message}
         onApplySavedView={applySavedView}
-        onLoadDemo={loadDemo}
         onProject={changeProject}
         onQuery={changeRunQueryInput}
         onQuickSearch={() => setQuickSearchOpen(true)}

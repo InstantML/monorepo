@@ -744,23 +744,6 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
             ),
         )],
     );
-    openapi_insert(
-        &mut paths,
-        "/api/demo/reset",
-        &[(
-            "post",
-            openapi_operation(
-                "Reset and seed demo project data",
-                Some((
-                    "x-instantml-scope",
-                    "sdk:ingest and unrestricted org access",
-                )),
-                &[],
-                &[("200", "demo reset payload")],
-                false,
-            ),
-        )],
-    );
 
     let service_plane = state.config.service_plane;
     paths.retain(|path, _| openapi_path_available_for_plane(path, service_plane));
@@ -1534,19 +1517,6 @@ async fn import_with_source(
     Ok(Json(
         store::import_payload(&state.store, &ctx, source, dry_run, raw).await?,
     ))
-}
-
-pub(super) async fn reset_demo(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    bytes: Bytes,
-) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
-    validate_session_mutation_origin(&state, &headers, &ctx)?;
-    require_scope(&ctx, "sdk:ingest", &state)?;
-    store::require_unrestricted_org_access(&ctx)?;
-    let _ = read_json_value(&headers, bytes, state.config.max_body_bytes).ok();
-    Ok(Json(store::reset_demo(&state.store, &ctx).await?))
 }
 
 pub(super) async fn not_found() -> AppError {

@@ -160,7 +160,6 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/api/imports/neptune", post(import_neptune))
         .route("/api/imports/wandb", post(import_wandb))
         .route("/api/imports/mlflow", post(import_mlflow))
-        .route("/api/demo/reset", post(reset_demo))
 }
 
 fn cors_layer(config: &AppConfig) -> CorsLayer {
