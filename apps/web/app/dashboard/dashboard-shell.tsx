@@ -1238,32 +1238,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     resetRunPagination();
   }, [resetRunPagination]);
 
-  async function loadDemo() {
-    try {
-      setMessage("Resetting demo data...");
-      await api.post("/api/demo/reset");
-      await loadProjects();
-      setProject("demo");
-      setStatus("");
-      setQueryInput("");
-      setQuery("");
-      setPageCursorStack([]);
-      setPageOffset(0);
-      setSelectedRunIds([]);
-      setSelectedRunDetails({});
-      setPrimaryRunId("");
-      setReferenceRunId("");
-      setCompareEditRunId("");
-      setCompareSortMetricKey("eval/return_mean");
-      setCompareTableMetrics([]);
-      setSideBySide(null);
-      setCompareArtifactsByRun({});
-      setMessage("Demo reset. Showing demo runs.");
-    } catch (error) {
-      if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to reset demo data.");
-    }
-  }
-
   const loadOrgSettings = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     if (!activeOrgId) return;
     try {
@@ -1923,7 +1897,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         message={message}
         mobileNavOpen={mobileNavOpen}
         onApplySavedView={applySavedView}
-        onLoadDemo={loadDemo}
         onMobileMenuToggle={() => setMobileNavOpen((open) => !open)}
         onProject={changeProject}
         onQuery={changeRunQueryInput}

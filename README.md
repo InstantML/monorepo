@@ -181,7 +181,7 @@ INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
 ```
 
-Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create a copy-once SDK API key, and open the dashboard. Use `Reset demo` inside the signed-in dashboard to generate 1,000 deterministic demo runs locally; the generated database rows are not committed to git.
+Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create a copy-once SDK API key, and open the dashboard. To populate the shared demo workspace, run `cargo run --manifest-path apps/rust-server/Cargo.toml -- seed-demo` once from a terminal; from the landing page, click `Continue as shared demo` to browse the seeded read-only data. The generated database rows are not committed to git.
 
 For faster frontend iteration:
 
