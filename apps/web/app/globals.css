@@ -1037,11 +1037,9 @@ p {
   width: 32px;
   height: 32px;
   place-items: center;
-  border: 1.5px solid var(--accent);
-  border-radius: 5px;
-  background: #ffffff;
-  color: var(--accent);
-  --brand-mark-bg: #ffffff;
+  border: 0;
+  background: transparent;
+  color: var(--text);
 }
 
 .brand h1 {
