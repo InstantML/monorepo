@@ -439,18 +439,12 @@ p {
 
 .instantml-mark-svg {
   display: block;
-  width: 70%;
-  height: 70%;
-  color: currentColor;
+  width: 100%;
+  height: 100%;
+  color: var(--text);
 }
-
-.instantml-mark-bar {
-  fill: currentColor;
-}
-
-.instantml-mark-bolt {
-  fill: var(--brand-mark-bg, var(--surface));
-  stroke: currentColor;
+:root[data-theme="dark"] .instantml-mark-svg {
+  color: var(--color-paper, #FFFFFF);
 }
 
 .landing-nav nav {

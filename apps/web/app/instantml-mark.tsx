@@ -1,21 +1,34 @@
+// InstantML mark: 4×4 dot grid. Diagonal (top-left → bottom-right) in
+// Bolt (#1FB877); the other 12 dots use currentColor so the parent's
+// theme color (Ink in light, Paper in dark) flows through.
+//
+// This file is the legacy import path used by auth-flow.tsx and other
+// pre-brand-refresh callers. The newer landing-side component lives at
+// components/landing/LogoMark.tsx and renders the same shape.
 export function InstantMlMark({ className = "" }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
       className={`instantml-mark-svg ${className}`.trim()}
       focusable="false"
-      viewBox="0 0 240 240"
+      viewBox="0 0 96 96"
     >
-      <rect className="instantml-mark-bar" x="24" y="132" width="44" height="92" rx="6" opacity="0.55" />
-      <rect className="instantml-mark-bar" x="98" y="86" width="44" height="138" rx="6" opacity="0.78" />
-      <rect className="instantml-mark-bar" x="172" y="40" width="44" height="184" rx="6" />
-      <path
-        className="instantml-mark-bolt"
-        d="M152 16 88 124h40L80 232l64-116h-40Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="6"
-      />
+      <circle cx="12" cy="12" r="8" fill="#1FB877" />
+      <circle cx="36" cy="12" r="5" fill="currentColor" />
+      <circle cx="60" cy="12" r="5" fill="currentColor" />
+      <circle cx="84" cy="12" r="5" fill="currentColor" />
+      <circle cx="12" cy="36" r="5" fill="currentColor" />
+      <circle cx="36" cy="36" r="8" fill="#1FB877" />
+      <circle cx="60" cy="36" r="5" fill="currentColor" />
+      <circle cx="84" cy="36" r="5" fill="currentColor" />
+      <circle cx="12" cy="60" r="5" fill="currentColor" />
+      <circle cx="36" cy="60" r="5" fill="currentColor" />
+      <circle cx="60" cy="60" r="8" fill="#1FB877" />
+      <circle cx="84" cy="60" r="5" fill="currentColor" />
+      <circle cx="12" cy="84" r="5" fill="currentColor" />
+      <circle cx="36" cy="84" r="5" fill="currentColor" />
+      <circle cx="60" cy="84" r="5" fill="currentColor" />
+      <circle cx="84" cy="84" r="8" fill="#1FB877" />
     </svg>
   );
 }
