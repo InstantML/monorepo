@@ -1374,6 +1374,14 @@ pub(super) struct MetricsSeriesRequest {
     start_step: Option<f64>,
     #[serde(default)]
     end_step: Option<f64>,
+    /// Optional M4 downsampling bucket count.
+    ///
+    /// When present and the series has more than `4 * buckets` points, the
+    /// response uses M4 aggregation instead of a naive prefix limit. Value
+    /// must be between 1 and 4096 inclusive. When absent the existing
+    /// prefix-limited behaviour is unchanged.
+    #[serde(default)]
+    buckets: Option<u32>,
 }
 
 pub(super) async fn metrics_series(
@@ -1393,6 +1401,9 @@ pub(super) async fn metrics_series(
     }
     if let Some(end) = body.end_step {
         query.insert("end_step".to_string(), end.to_string());
+    }
+    if let Some(b) = body.buckets {
+        query.insert("buckets".to_string(), b.to_string());
     }
     Ok(Json(
         store::metrics_series_batched(&state.store, &ctx, &query).await?,

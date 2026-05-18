@@ -153,6 +153,8 @@ Implemented health and platform endpoints:
 
 Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
+`POST /api/metrics/series` accepts an optional `buckets` integer (1-4096). When provided and the series has more than `4 * buckets` points, the endpoint applies M4 downsampling (Jugel et al., 2014): the step axis is divided into `buckets` equal-width intervals and up to four representative points per interval (first, last, min-value, max-value) are returned. The resulting line chart is pixel-for-pixel identical to the full raw series for any chart `buckets` pixels wide. When `buckets` is absent the existing prefix-limited behaviour is unchanged. See `docs/design/2026-05-18-m4-chart-aggregation.md`.
+
 Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a browser session and mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and
@@ -209,6 +211,16 @@ Large-run benchmark:
 ```bash
 INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_LONG_RUN_STEPS=20000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
 ```
+
+M4 chart-aggregation benchmark (seeds 200k points including a spike, then measures M4 vs raw):
+
+```bash
+npm run benchmark:m4
+# Or with enforcement:
+INSTANTML_M4_BENCH_ENFORCE=1 INSTANTML_M4_RESULT_PATH=/tmp/m4-result.json npm run benchmark:m4
+```
+
+Expected locally: M4 p95 < 100 ms at 200k points with `buckets=1000`. Raw prefix p95 is typically < 15 ms at the default 1000-point limit.
 
 The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints. The large-run benchmark uses 100,000 run records by default and gives the newest run 20,000 steps across several metric keys so chart reads exercise the same bounded dashboard path without forcing a multi-billion-row write in normal verification.
 
@@ -307,6 +319,7 @@ Coverage exception (multi-writer):
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`
 - `docs/design/2026-05-16-shared-cell-tenant-routing.md`
+- `docs/design/2026-05-18-m4-chart-aggregation.md`
 - `docs/architecture/current-api.md`
 - `docs/product/pricing-and-margins.md`
 

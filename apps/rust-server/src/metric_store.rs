@@ -81,6 +81,34 @@ pub struct PointReadRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// One bucket row returned by the M4 ClickHouse aggregation query.
+///
+/// Each bucket spans an equal-width step interval and captures four extremes:
+/// the point with the smallest step (first), the point with the largest step
+/// (last), the point with the smallest value (min), and the point with the
+/// largest value (max). Any two of these may coincide (same step); callers
+/// must deduplicate before emitting the final point list.
+#[derive(Row, Deserialize)]
+pub struct M4BucketRow {
+    pub bucket: u32,
+    pub first_step: f64,
+    pub first_val: f64,
+    pub last_step: f64,
+    pub last_val: f64,
+    pub min_step: f64,
+    pub min_val: f64,
+    pub max_step: f64,
+    pub max_val: f64,
+}
+
+/// Compact per-run count used to decide whether to apply M4.
+#[derive(Row, Deserialize)]
+pub struct RunPointCountRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    pub count: u64,
+}
+
 /// Read shape for multi-run batched point queries — same as `PointReadRow` but
 /// with the run id included so callers can fan out by run.
 #[derive(Row, Deserialize)]
@@ -312,6 +340,94 @@ impl MetricStore {
             .bind(end_val)
             .bind(limit_per_run)
             .fetch_all::<PointReadRowWithRun>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    /// Fetch the total point count per run for a specific metric key.
+    ///
+    /// Used by the M4 threshold check: if count > 4 * buckets for a run, the
+    /// handler switches to the M4 downsampling path for that run.
+    ///
+    /// Reads from the `metric_series` AggregatingMergeTree — a single key
+    /// lookup per run, typically sub-millisecond.
+    pub async fn count_points_for_runs_key(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        key: &str,
+    ) -> AppResult<Vec<RunPointCountRow>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.client
+            .query(
+                "SELECT run_id, toUInt64(countMerge(count)) AS count \
+                 FROM metric_series \
+                 WHERE org_id = ? AND run_id IN ? AND key = ? \
+                 GROUP BY run_id",
+            )
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(key)
+            .fetch_all::<RunPointCountRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    /// Run the M4 downsampling query for a single run and metric key.
+    ///
+    /// Divides the step axis into `buckets` equal-width intervals and returns
+    /// one [`M4BucketRow`] per non-empty bucket. Each row carries the four
+    /// extreme (step, value) pairs: first, last, min-value, max-value.
+    ///
+    /// The query uses a CTE to fetch `min(step)` and `max(step)` in a single
+    /// pass alongside the aggregate. ClickHouse evaluates the CTE once and
+    /// joins it as a cross join with the main scan, keeping the query a single
+    /// contiguous range read on the `(org_id, run_id, key, step)` sort key.
+    ///
+    /// Edge cases handled in SQL:
+    /// - `hi = lo` (all steps identical): `if(hi = lo, 0, floor(...))` maps
+    ///   every point to bucket 0. All four extremes collapse to one point after
+    ///   caller deduplication.
+    /// - `step = hi`: the `+1` in the divisor keeps the final step inside
+    ///   bucket `buckets - 1` instead of overflowing to bucket `buckets`.
+    pub async fn query_points_m4(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+        key: &str,
+        buckets: u32,
+    ) -> AppResult<Vec<M4BucketRow>> {
+        let sql = "WITH bounds AS ( \
+                     SELECT min(step) AS lo, max(step) AS hi \
+                     FROM metric_points \
+                     WHERE org_id = ? AND run_id = ? AND key = ? \
+                   ) \
+                   SELECT \
+                     toUInt32(if(bounds.hi = bounds.lo, 0, \
+                       floor((step - bounds.lo) * ? / (bounds.hi - bounds.lo + 1)))) AS bucket, \
+                     argMin(step, step)  AS first_step, argMin(value, step)  AS first_val, \
+                     argMax(step, step)  AS last_step,  argMax(value, step)  AS last_val, \
+                     argMin(step, value) AS min_step,   min(value)           AS min_val, \
+                     argMax(step, value) AS max_step,   max(value)           AS max_val \
+                   FROM metric_points, bounds \
+                   WHERE org_id = ? AND run_id = ? AND key = ? \
+                   GROUP BY bucket \
+                   ORDER BY bucket";
+        self.client
+            .query(sql)
+            // CTE bindings
+            .bind(org_id)
+            .bind(run_id)
+            .bind(key)
+            // bucket formula binding (W)
+            .bind(buckets)
+            // main WHERE bindings
+            .bind(org_id)
+            .bind(run_id)
+            .bind(key)
+            .fetch_all::<M4BucketRow>()
             .await
             .map_err(clickhouse_read_error)
     }

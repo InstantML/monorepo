@@ -1151,6 +1151,9 @@ pub async fn get_metrics(
     Ok(json!({ "metrics": rows.into_iter().map(metric_point_value).collect::<Vec<_>>() }))
 }
 
+/// Maximum accepted `buckets` value for M4 downsampling.
+const MAX_M4_BUCKETS: u32 = 4096;
+
 pub async fn metrics_series_batched(
     store: &Store,
     ctx: &RequestContext,
@@ -1170,6 +1173,27 @@ pub async fn metrics_series_batched(
             ensure_run_access_in_data(ctx, &run)?;
         }
     }
+
+    // Parse and validate the optional M4 bucket count.
+    let buckets: Option<u32> = query
+        .get("buckets")
+        .map(|raw| {
+            raw.parse::<u32>()
+                .map_err(|_| AppError::validation("buckets must be a positive integer"))
+                .and_then(|b| {
+                    if b == 0 {
+                        Err(AppError::validation("buckets must be at least 1"))
+                    } else if b > MAX_M4_BUCKETS {
+                        Err(AppError::validation(format!(
+                            "buckets cannot exceed {MAX_M4_BUCKETS}"
+                        )))
+                    } else {
+                        Ok(b)
+                    }
+                })
+        })
+        .transpose()?;
+
     let limit = validate_limit(
         query.get("limit").map(String::as_str),
         DEFAULT_METRIC_LIMIT,
@@ -1177,20 +1201,65 @@ pub async fn metrics_series_batched(
     )?;
     let start_step = query_step(query, "start_step")?;
     let end_step = query_step(query, "end_step")?;
-    let rows = store
-        .metric_store_for_org(ctx.org_id)
-        .await?
-        .query_points_for_runs(ctx.org_id, &run_ids, &key, start_step, end_step, limit)
-        .await?;
+
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+
+    // When M4 is requested, fetch counts for all runs in one query to decide
+    // per-run whether to use M4 or the raw prefix path.
+    let m4_counts: HashMap<Uuid, u64> = if let Some(b) = buckets {
+        let threshold = (b as u64).saturating_mul(4);
+        let count_rows = metric_store
+            .count_points_for_runs_key(ctx.org_id, &run_ids, &key)
+            .await?;
+        count_rows
+            .into_iter()
+            .filter(|row| row.count > threshold)
+            .map(|row| (row.run_id, row.count))
+            .collect()
+    } else {
+        HashMap::new()
+    };
+
+    // Build the response. Runs that exceed the M4 threshold are downsampled;
+    // the rest use the existing raw prefix-limited path.
     let mut grouped: BTreeMap<Uuid, Vec<Value>> = BTreeMap::new();
-    for row in rows {
-        grouped.entry(row.run_id).or_default().push(json!({
-            "key": row.key,
-            "step": row.step,
-            "value": row.value,
-            "created_at": row.created_at
-        }));
+
+    // Collect run IDs that need the raw path.
+    let raw_run_ids: Vec<Uuid> = run_ids
+        .iter()
+        .copied()
+        .filter(|id| !m4_counts.contains_key(id))
+        .collect();
+
+    if !raw_run_ids.is_empty() {
+        let rows = metric_store
+            .query_points_for_runs(ctx.org_id, &raw_run_ids, &key, start_step, end_step, limit)
+            .await?;
+        for row in rows {
+            grouped.entry(row.run_id).or_default().push(json!({
+                "key": row.key,
+                "step": row.step,
+                "value": row.value,
+                "created_at": row.created_at
+            }));
+        }
     }
+
+    // M4 path: one query per qualifying run.
+    if let Some(b) = buckets {
+        for run_id in run_ids
+            .iter()
+            .copied()
+            .filter(|id| m4_counts.contains_key(id))
+        {
+            let bucket_rows = metric_store
+                .query_points_m4(ctx.org_id, run_id, &key, b)
+                .await?;
+            let points = m4_bucket_rows_to_points(&key, bucket_rows);
+            grouped.insert(run_id, points);
+        }
+    }
+
     Ok(json!({
         "series": run_ids.into_iter().map(|run_id| json!({
             "run_id": run_id,
@@ -1199,9 +1268,57 @@ pub async fn metrics_series_batched(
     }))
 }
 
+/// Convert M4 bucket rows into a sorted, step-deduplicated point list.
+///
+/// For each bucket we emit up to four `{step, value}` pairs (first, last,
+/// min, max). Within each bucket the four candidates are sorted by step and
+/// then deduplicated on step — so if `first_step == min_step` we emit only
+/// one point at that step rather than two. The output is already globally
+/// ordered because ClickHouse returns buckets in ascending bucket order and
+/// within each bucket we sort before appending.
+///
+/// The `created_at` field is set to the Unix epoch for M4-aggregated points
+/// because the aggregation discards per-point timestamps. Callers that care
+/// about `created_at` must use the raw path.
+pub(super) fn m4_bucket_rows_to_points(
+    key: &str,
+    bucket_rows: Vec<crate::metric_store::M4BucketRow>,
+) -> Vec<Value> {
+    use chrono::DateTime;
+    let epoch_ts = DateTime::from_timestamp(0, 0).unwrap_or_default();
+    let mut out = Vec::with_capacity(bucket_rows.len() * 4);
+    for row in bucket_rows {
+        // Collect up to 4 (step, value) candidates for this bucket.
+        let mut candidates: [(f64, f64); 4] = [
+            (row.first_step, row.first_val),
+            (row.last_step, row.last_val),
+            (row.min_step, row.min_val),
+            (row.max_step, row.max_val),
+        ];
+        // Sort by step ascending.
+        candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // Emit each unique step once; when two candidates share a step take
+        // the one that appears first after sorting (deterministic).
+        let mut prev_step = f64::NEG_INFINITY;
+        for (step, value) in candidates {
+            if step != prev_step {
+                out.push(json!({
+                    "key": key,
+                    "step": step,
+                    "value": value,
+                    "created_at": epoch_ts
+                }));
+                prev_step = step;
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metric_store::M4BucketRow;
 
     fn run(id: u128, name: &str, created_offset: i64) -> RunRow {
         let created_at = epoch() + ChronoDuration::seconds(created_offset);
@@ -1353,5 +1470,140 @@ mod tests {
 
         assert_eq!(duration_seconds(&finished), Some(30.0));
         assert_eq!(duration_seconds(&running), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // M4 bucket-to-points conversion unit tests
+    // -----------------------------------------------------------------------
+
+    fn m4_row(
+        bucket: u32,
+        first: (f64, f64),
+        last: (f64, f64),
+        min: (f64, f64),
+        max: (f64, f64),
+    ) -> M4BucketRow {
+        M4BucketRow {
+            bucket,
+            first_step: first.0,
+            first_val: first.1,
+            last_step: last.0,
+            last_val: last.1,
+            min_step: min.0,
+            min_val: min.1,
+            max_step: max.0,
+            max_val: max.1,
+        }
+    }
+
+    fn steps(points: &[Value]) -> Vec<f64> {
+        points.iter().map(|p| p["step"].as_f64().unwrap()).collect()
+    }
+
+    fn values_at(points: &[Value], step: f64) -> Vec<f64> {
+        points
+            .iter()
+            .filter(|p| p["step"].as_f64().unwrap() == step)
+            .map(|p| p["value"].as_f64().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn m4_bucket_points_all_distinct_four_extremes() {
+        // All four extremes are at different steps: expect 4 sorted points.
+        let row = m4_row(0, (1.0, 0.5), (4.0, 0.8), (2.0, 0.1), (3.0, 0.9));
+        let pts = m4_bucket_rows_to_points("loss", vec![row]);
+        assert_eq!(pts.len(), 4);
+        assert_eq!(steps(&pts), vec![1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn m4_bucket_points_deduplicates_coincident_extremes() {
+        // first_step == min_step: should emit 3 points, not 4.
+        let row = m4_row(
+            0,
+            (1.0, 0.1), // first (also min-value step)
+            (4.0, 0.8),
+            (1.0, 0.1), // min — same step as first
+            (3.0, 0.9),
+        );
+        let pts = m4_bucket_rows_to_points("loss", vec![row]);
+        assert_eq!(pts.len(), 3);
+        assert_eq!(steps(&pts), vec![1.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn m4_bucket_points_single_point_when_all_coincide() {
+        // All four extremes are the same step+value (degenerate single-point bucket).
+        let row = m4_row(0, (5.0, 1.0), (5.0, 1.0), (5.0, 1.0), (5.0, 1.0));
+        let pts = m4_bucket_rows_to_points("loss", vec![row]);
+        assert_eq!(pts.len(), 1);
+        assert_eq!(pts[0]["step"].as_f64().unwrap(), 5.0);
+        assert_eq!(pts[0]["value"].as_f64().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn m4_bucket_points_two_extremes_deduped_to_two() {
+        // first==min at step 1, last==max at step 10: expect 2 points.
+        let row = m4_row(0, (1.0, 0.1), (10.0, 0.9), (1.0, 0.1), (10.0, 0.9));
+        let pts = m4_bucket_rows_to_points("loss", vec![row]);
+        assert_eq!(pts.len(), 2);
+        assert_eq!(steps(&pts), vec![1.0, 10.0]);
+    }
+
+    #[test]
+    fn m4_bucket_points_multiple_buckets_produce_sorted_output() {
+        // Two buckets; output should be globally sorted by step.
+        let rows = vec![
+            m4_row(0, (0.0, 0.2), (9.0, 0.5), (3.0, 0.1), (7.0, 0.8)),
+            m4_row(1, (10.0, 0.3), (19.0, 0.6), (12.0, 0.05), (17.0, 0.95)),
+        ];
+        let pts = m4_bucket_rows_to_points("loss", rows);
+        // Bucket 0: steps 0,3,7,9 | Bucket 1: steps 10,12,17,19 => 8 total
+        assert_eq!(pts.len(), 8);
+        let s = steps(&pts);
+        let mut sorted = s.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(s, sorted, "output must be sorted by step");
+    }
+
+    #[test]
+    fn m4_bucket_points_preserves_spike_value() {
+        // A spike in the middle of the series: max_val row should carry it.
+        let row = m4_row(
+            5,
+            (50.0, 0.02),  // first
+            (59.0, 0.03),  // last
+            (53.0, 0.001), // min value
+            (55.0, 99.0),  // max value — the spike
+        );
+        let pts = m4_bucket_rows_to_points("loss", vec![row]);
+        let spike_vals = values_at(&pts, 55.0);
+        assert_eq!(spike_vals, vec![99.0], "spike value must survive M4");
+    }
+
+    #[test]
+    fn m4_bucket_points_empty_input_returns_empty() {
+        let pts = m4_bucket_rows_to_points("loss", vec![]);
+        assert!(pts.is_empty());
+    }
+
+    #[test]
+    fn m4_bucket_points_all_equal_values_two_distinct_steps() {
+        // All values identical but steps differ: first/last remain, min==first, max==last.
+        let row = m4_row(
+            0,
+            (0.0, 0.5),  // first
+            (10.0, 0.5), // last
+            (0.0, 0.5),  // min == first
+            (10.0, 0.5), // max == last
+        );
+        let pts = m4_bucket_rows_to_points("loss", vec![row]);
+        assert_eq!(pts.len(), 2);
+        assert_eq!(steps(&pts), vec![0.0, 10.0]);
+        // Both values are 0.5.
+        for pt in &pts {
+            assert_eq!(pt["value"].as_f64().unwrap(), 0.5);
+        }
     }
 }
