@@ -7399,11 +7399,9 @@ button.compare-row-head.active {
 .brand-mark {
   width: 28px;
   height: 28px;
-  border: 1px solid var(--accent-line);
-  border-radius: 7px;
-  background: linear-gradient(180deg, rgba(31, 184, 119, 0.12), rgba(31, 184, 119, 0.02));
-  color: var(--accent);
-  --brand-mark-bg: var(--bg);
+  border: 0;
+  background: transparent;
+  color: var(--text);
 }
 .brand h1 { display: none; }
 
@@ -7824,13 +7822,11 @@ textarea:focus {
 .brandbar .brand-mark {
   width: 28px;
   height: 28px;
-  border: 1px solid var(--accent-line);
-  border-radius: 7px;
-  background: linear-gradient(180deg, rgba(31, 184, 119, 0.12), rgba(31, 184, 119, 0.02));
-  color: var(--accent);
-  --brand-mark-bg: var(--bg);
+  border: 0;
+  background: transparent;
+  color: var(--text);
 }
-:root:not([data-theme="dark"]) .brandbar .brand-mark { --brand-mark-bg: #ffffff; }
+/* (removed: --brand-mark-bg override — brand-mark no longer has a colored fill) */
 .brandbar-row {
   display: flex;
   align-items: center;
