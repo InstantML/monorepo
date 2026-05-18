@@ -72,7 +72,16 @@ impl ServicePlaneRole {
         matches!(self, Self::Combined | Self::Data)
     }
 
-    pub fn refreshes_control_before_auth(self) -> bool {
+    /// Whether this plane should run a background task that periodically refreshes
+    /// the in-memory control projection (tenant routes, org membership, api keys, …)
+    /// from the control-plane ClickHouse table.
+    ///
+    /// Only the data plane needs this: it is the consumer of control mutations
+    /// produced by the control plane. The control plane (and combined-mode
+    /// process, which serves as its own control plane) already updates its
+    /// in-memory projection synchronously when it persists a control record, so
+    /// it does not need to poll.
+    pub fn runs_background_control_refresh(self) -> bool {
         matches!(self, Self::Data)
     }
 

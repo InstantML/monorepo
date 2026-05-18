@@ -1927,7 +1927,11 @@ async fn context(
     headers: &HeaderMap,
     tenant_route: bool,
 ) -> AppResult<RequestContext> {
-    refresh_control_before_auth(state).await?;
+    // Tier 2: the data plane no longer refreshes control state on every
+    // request. A background task (spawned in `serve()` for the data plane)
+    // keeps the in-memory projection fresh out-of-band, so the request hot
+    // path makes zero control-plane queries. Worst-case staleness is bounded
+    // by `CONTROL_REFRESH_BACKGROUND_INTERVAL` (see store::mod).
     let ctx = match header_text(headers, "authorization") {
         Some(header) => {
             let token = header
@@ -2010,16 +2014,10 @@ async fn session_context(
     state: &AppState,
     headers: &HeaderMap,
 ) -> AppResult<crate::domain::AuthSessionPayload> {
-    refresh_control_before_auth(state).await?;
+    // See `context()` — control state is refreshed by a background task on
+    // the data plane, not on the request hot path.
     let token = session_cookie(headers).ok_or_else(|| AppError::unauthorized("missing session"))?;
     store::authenticate_session(&state.store, token).await
-}
-
-async fn refresh_control_before_auth(state: &AppState) -> AppResult<()> {
-    if state.config.service_plane.refreshes_control_before_auth() {
-        state.store.refresh_control_records().await?;
-    }
-    Ok(())
 }
 
 fn session_cookie(headers: &HeaderMap) -> Option<&str> {
