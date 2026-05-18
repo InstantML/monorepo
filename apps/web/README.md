@@ -186,7 +186,20 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/dashboard-config.tsx`
 - `app/dashboard-models.ts`
 - `app/dashboard-types.ts`
-- `app/globals.css` — includes landing-page visual system (appended block; all selectors prefixed `.landing-*` or unique to landing)
+- `app/globals.css` — thin `@import` chain; all rules live in `app/styles/`. See below.
+- `app/styles/tokens.css` — brand primitives + light/dark design tokens (`:root`)
+- `app/styles/base.css` — global reset, typography, button defaults
+- `app/styles/landing.css` — marketing page + auth card surfaces (`.landing-*`, `.auth-*`)
+- `app/styles/dashboard.css` — shell, topbar, brand-mark, tabs, nav rail
+- `app/styles/dashboard-runs.css` — runs workspace rail, rows, filter strip
+- `app/styles/panels.css` — workspace panels, canvas, sections, modals
+- `app/styles/charts.css` — metric charts, axes, series, range, tooltip
+- `app/styles/run-detail.css` — run detail, KPIs, inspector, evidence, timeline
+- `app/styles/compare.css` — compare view, leaderboard, evidence cells
+- `app/styles/dark-overrides.css` — dark-theme overrides (Phase 3 target: dissolve into each file)
+- `app/styles/overhaul.css` — visual overhaul layers 2026-05-15 (Phase 3 target: merge into canonical files)
+- `app/styles/mobile.css` — mobile redesign ≤720px
+- `app/styles/landing-system.css` — landing visual system + `@keyframes` animations
 - `app/icon.svg`
 - `components/landing/LogoMark.tsx` — InstantML mark SVG (server component)
 - `components/landing/NavLogo.tsx` — logo + wordmark with intro animation (server component)
@@ -248,7 +261,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - Keep shared data-shaping helpers in `src/` so Node tests can cover important UI logic without requiring a browser.
 - Keep global keyboard matching in `src/shortcuts.js` and keep browser smoke coverage around any command that changes routing, layout, or overlay state.
 - Keep reusable React surfaces in `app/dashboard-components.tsx`, stable navigation/integration config in `app/dashboard-config.tsx`, and view-model helpers in `app/dashboard-models.ts`.
-- Keep styling centralized in `app/globals.css`; components should emit semantic class names rather than introduce CSS modules or inline visual systems. Prefer adjusting shared tokens before creating one-off component styles.
+- Keep styling in `app/styles/`; `app/globals.css` is the thin entry-point `@import` chain only. Components should emit semantic class names rather than introduce CSS modules or inline visual systems. Add new rules to the most specific split file for the feature area. Prefer adjusting shared tokens in `tokens.css` before creating one-off component styles. See `docs/design/2026-05-18-globals-css-audit.md` for the split rationale and Phase 3 dedup plan.
 - Keep run-table sorting server-side when pagination is active; client sorting should not reorder only the current page.
 - Keep selected run details cached separately from the current page so comparisons survive page changes.
 - Prune stale saved-view run IDs against the API before rendering Compare; a saved local view must never claim selected runs that no longer exist.

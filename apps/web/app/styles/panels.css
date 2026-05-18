@@ -1,0 +1,824 @@
+/* ── panels.css — workspace panels, canvas, sections, modals ───────────────
+ * Selectors: .workspace-panel-*, .workspace-section-*, .workspace-canvas,
+ * .panel-drawer, .workspace-modal-*, .section-title-*.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+
+.workspace-sections {
+  display: grid;
+  gap: 0;
+}
+
+.workspace-section {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  scroll-margin-top: calc(var(--topbar-height) + var(--runs-filter-sticky-height) + 74px);
+  /* The canvas stacks many SVG-heavy chart sections vertically. Without
+   * this, every off-screen chart is still painted/composited on each
+   * scroll frame — the main reason scrolling crawls with many runs.
+   * content-visibility skips rendering work for sections outside the
+   * viewport; `contain-intrinsic-size: auto` remembers each section's
+   * real height after it has been seen so the scrollbar stays stable. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 620px;
+}
+
+.workspace-section.collapsed .section-title-button svg {
+  transform: rotate(-90deg);
+}
+
+.workspace-section-head {
+  min-height: 54px;
+  padding: 10px 14px;
+}
+
+.section-title-button {
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  font-size: 14px;
+}
+
+.section-title-button:hover {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.section-title-button span {
+  min-width: 24px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 2px 8px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workspace-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  grid-auto-rows: minmax(78px, auto);
+  align-items: stretch;
+  gap: 14px;
+  overflow-anchor: none;
+  padding: 0 14px 16px;
+}
+
+.workspace-panel-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-column: span var(--panel-grid-span, 6);
+  grid-row: span var(--panel-row-span, 4);
+  min-width: 0;
+  min-height: var(--panel-min-height, 312px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--chart-card-bg);
+  overflow-anchor: none;
+  scroll-margin-top: calc(var(--topbar-height) + var(--runs-filter-sticky-height) + 74px);
+}
+
+.workspace-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 56px;
+  padding: 12px 12px 6px;
+}
+
+.workspace-panel-head > div:first-child {
+  min-width: 0;
+}
+
+.workspace-panel-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.panel-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  margin-left: -4px;
+  border-radius: var(--tight-radius);
+  color: var(--faint);
+  cursor: grab;
+}
+
+.panel-drag-handle:hover {
+  background: var(--surface-soft);
+  color: var(--accent-strong);
+}
+
+.panel-drag-handle[draggable="false"] {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.workspace-panel-head small {
+  display: block;
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.panel-card-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  opacity: 0.68;
+  transition: opacity 120ms ease;
+}
+
+.workspace-panel-card:hover .panel-card-actions,
+.workspace-panel-card:focus-within .panel-card-actions {
+  opacity: 1;
+}
+
+.workspace-panel-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 6px;
+}
+
+.workspace-panel-meta span {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--tight-radius);
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 2px 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.workspace-panel-meta .panel-data-gap {
+  border-color: rgba(244, 162, 97, 0.38);
+  background: rgba(244, 162, 97, 0.1);
+  color: #9a5d17;
+}
+
+.workspace-panel-card .chart-area {
+  min-height: var(--panel-chart-min-height, 216px);
+  padding: 4px 12px 12px;
+}
+
+.workspace-panel-card .metric-chart {
+  aspect-ratio: 560 / 360;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .axis-label {
+  opacity: 0.86;
+  font-size: 9px;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .tick-label {
+  font-size: 9px;
+}
+
+.workspace-panel-card .chart-range-row {
+  display: none;
+}
+
+.workspace-panel-card .chart-range {
+  height: 34px;
+}
+
+.workspace-panel-card .chart-legend {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 6px;
+}
+
+.alt-panel-chart svg {
+  width: 100%;
+  aspect-ratio: 560 / 360;
+  min-height: 180px;
+}
+
+.alt-panel-chart .axis-line {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.alt-panel-chart .axis-label {
+  fill: var(--muted);
+  font: 700 10px/1 var(--font-mono);
+}
+
+.alt-panel-chart .tick-label {
+  fill: var(--muted);
+  font: 700 9px/1 var(--font-mono);
+}
+
+.alt-panel-chart .grid-line.vertical {
+  opacity: 0.32;
+}
+
+.summary-bar,
+.histogram-bar,
+.summary-dot {
+  fill: var(--accent);
+}
+
+.histogram-bar {
+  opacity: 0.74;
+}
+
+.summary-dot {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.workspace-panel-card .legend-chip {
+  min-height: 24px;
+  padding: 4px 7px;
+}
+
+.panel-resize-handle {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px 0 var(--control-radius) 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--faint);
+  cursor: nwse-resize;
+  padding: 0;
+}
+
+.panel-resize-handle::before,
+.panel-resize-handle::after {
+  position: absolute;
+  right: 9px;
+  bottom: 8px;
+  width: 14px;
+  height: 2px;
+  content: "";
+  background: currentColor;
+  transform: rotate(-45deg);
+  transform-origin: right center;
+}
+
+.panel-resize-handle::after {
+  right: 9px;
+  bottom: 15px;
+  width: 8px;
+}
+
+.panel-resize-handle:hover,
+.panel-resize-handle:focus-visible {
+  border-color: transparent;
+  background: rgba(31, 184, 119, 0.08);
+  color: var(--accent-strong);
+  outline: 0;
+  box-shadow: none;
+}
+
+.workspace-panel-grid > .empty {
+  grid-column: 1 / -1;
+}
+
+.workspace-unsectioned-drop-zone {
+  display: grid;
+  min-height: 46px;
+  margin: 0 14px 16px;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--control-radius);
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.62;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.workspace-unsectioned-drop-zone.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  opacity: 1;
+}
+
+.workspace-chart-loading {
+  display: grid;
+  min-height: 230px;
+  align-content: center;
+  gap: 12px;
+}
+
+.chart-loading-frame {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: end;
+  gap: 10px;
+  height: 150px;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: linear-gradient(180deg, transparent, var(--surface-soft));
+}
+
+.chart-loading-frame span {
+  display: block;
+  height: 58%;
+  border-radius: var(--tight-radius);
+  background: var(--line-soft);
+}
+
+.chart-loading-frame span:nth-child(2) {
+  height: 82%;
+}
+
+.chart-loading-frame span:nth-child(3) {
+  height: 42%;
+}
+
+.workspace-empty {
+  grid-column: 1 / -1;
+  min-height: 160px;
+}
+
+.workspace-search-note {
+  padding: 10px 14px 16px;
+}
+
+.workspace-add-section {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 18px 28px;
+}
+
+.panel-drawer {
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: 8;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  height: calc(100vh - var(--topbar-height));
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  padding: 14px;
+}
+
+.edit-drawer {
+  position: fixed;
+  top: calc(var(--topbar-height) + 14px);
+  right: 18px;
+  bottom: 18px;
+  z-index: 18;
+  width: min(410px, calc(100vw - 36px));
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 70px rgba(24, 34, 45, 0.2);
+}
+
+.drawer-head {
+  min-height: 40px;
+  border-bottom: 1px solid var(--line-soft);
+  margin: 0;
+  padding: 0 0 12px;
+}
+
+.workspace-modal-card > .drawer-head,
+.command-card > .drawer-head {
+  padding: 12px 14px;
+}
+
+.quick-add-card,
+.drawer-metric-row {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: var(--line-soft);
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.quick-add-card {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 0 10px;
+  min-height: 64px;
+  padding: 12px;
+}
+
+.quick-add-card span {
+  grid-row: 1 / span 2;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.quick-add-card small,
+.drawer-metric-row small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.chart-type-segment {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.chart-type-segment button {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chart-type-segment button.active {
+  border-color: rgba(18, 160, 105, 0.45);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.drawer-group {
+  display: grid;
+  gap: 8px;
+}
+
+.drawer-group h3 {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.drawer-metric-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  min-height: 52px;
+  padding: 10px;
+}
+
+.drawer-metric-row span {
+  display: grid;
+  gap: 2px;
+}
+
+.drawer-tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  padding-bottom: 8px;
+}
+
+.drawer-tabs strong {
+  color: var(--text);
+  box-shadow: 0 2px 0 var(--accent);
+}
+
+.control.full,
+.edit-drawer .custom-select-control {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.control.full input,
+.control.full select,
+.control.full .select-trigger,
+.edit-drawer .select-trigger {
+  width: 100%;
+}
+
+.drawer-toggle {
+  justify-content: space-between;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+
+.workspace-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 14, 20, 0.48);
+  padding: 26px;
+}
+
+.workspace-modal-card {
+  width: min(1120px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+
+.fullscreen-modal {
+  place-items: stretch;
+  padding: 18px;
+}
+
+.fullscreen-modal-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1180px, calc(100vw - 36px));
+  height: calc(100vh - 36px);
+  max-height: calc(100vh - 36px);
+  justify-self: center;
+  overflow: hidden;
+}
+
+.fullscreen-modal-card > .drawer-head {
+  min-height: 64px;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 18px;
+}
+
+.fullscreen-title-block {
+  min-width: 0;
+}
+
+.fullscreen-title-block h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fullscreen-title-block span {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-modal {
+  align-items: start;
+  padding-top: max(30px, calc(var(--topbar-height) + 24px));
+}
+
+.command-card {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - var(--topbar-height) - 48px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+
+.command-card .drawer-head {
+  margin: 0;
+}
+
+.command-card .drawer-head div {
+  display: grid;
+  gap: 3px;
+}
+
+.command-card .drawer-head small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.shortcut-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 14px;
+}
+
+.shortcut-group {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.shortcut-group h3 {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: var(--surface-soft);
+  padding: 8px 10px;
+}
+
+.shortcut-row.disabled {
+  opacity: 0.52;
+}
+
+.shortcut-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.shortcut-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+kbd {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.quick-search-card {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.quick-search-input {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px;
+}
+
+.quick-search-input input {
+  height: 42px;
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 17px;
+}
+
+.quick-search-input input:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.quick-search-results {
+  display: grid;
+  gap: 4px;
+  max-height: 520px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.quick-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-content: stretch;
+  width: 100%;
+  min-height: 52px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.quick-search-row:hover,
+.quick-search-row.active {
+  border-color: rgba(31, 184, 119, 0.24);
+  background: var(--surface-tint);
+  color: var(--text);
+}
+
+.quick-search-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.quick-search-row strong,
+.quick-search-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-search-row strong {
+  font-size: 13px;
+}
+
+.quick-search-row small,
+.quick-search-row em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.fullscreen-panel-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 16px 18px 18px;
+}
+
+.fullscreen-panel-card .workspace-panel-head {
+  display: none;
+}
+
+.fullscreen-panel-card .workspace-panel-meta {
+  justify-content: center;
+  padding: 0 0 12px;
+}
+
+.fullscreen-panel-card .chart-area {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 0;
+  align-content: start;
+  overflow: hidden;
+  padding: 0;
+}
+
+.fullscreen-panel-card .chart-legend {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(100%, 1120px);
+  justify-self: center;
+  margin-bottom: 0;
+}
+
+.fullscreen-panel-card .metric-chart {
+  justify-self: center;
+  width: min(100%, 1120px);
+  height: auto;
+  max-height: clamp(360px, calc(100vh - 238px), 72vh);
+  min-height: 0;
+  aspect-ratio: 920 / 430;
+}

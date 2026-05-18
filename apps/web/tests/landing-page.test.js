@@ -274,23 +274,35 @@ describe("TtlRing — circumference calculation", () => {
   });
 });
 
-// ── globals.css: landing styles are appended ─────────────────────────────────
-test("globals.css includes landing-root selector", () => {
+// ── globals.css: landing styles are present in the split stylesheet ──────────
+// globals.css is now a thin @import chain; selectors live in styles/*.css.
+// The tests below look in landing-system.css (the canonical split file for
+// landing styles) and also verify globals.css still references the import.
+test("globals.css @imports landing-system.css", () => {
   const cssPath = path.join(__dirname, "..", "app", "globals.css");
   const css = fs.readFileSync(cssPath, "utf8");
-  assert.ok(css.includes(".landing-root"), "globals.css must define .landing-root");
+  assert.ok(
+    css.includes("landing-system.css"),
+    "globals.css must @import landing-system.css"
+  );
 });
 
-test("globals.css includes bento-cell selector", () => {
-  const cssPath = path.join(__dirname, "..", "app", "globals.css");
+test("landing-system.css includes landing-root selector", () => {
+  const cssPath = path.join(__dirname, "..", "app", "styles", "landing-system.css");
   const css = fs.readFileSync(cssPath, "utf8");
-  assert.ok(css.includes(".bento-cell"), "globals.css must define .bento-cell");
+  assert.ok(css.includes(".landing-root"), "landing-system.css must define .landing-root");
 });
 
-test("globals.css includes hero-spotlight selector", () => {
-  const cssPath = path.join(__dirname, "..", "app", "globals.css");
+test("landing-system.css includes bento-cell selector", () => {
+  const cssPath = path.join(__dirname, "..", "app", "styles", "landing-system.css");
   const css = fs.readFileSync(cssPath, "utf8");
-  assert.ok(css.includes(".hero-spotlight"), "globals.css must define .hero-spotlight");
+  assert.ok(css.includes(".bento-cell"), "landing-system.css must define .bento-cell");
+});
+
+test("landing-system.css includes hero-spotlight selector", () => {
+  const cssPath = path.join(__dirname, "..", "app", "styles", "landing-system.css");
+  const css = fs.readFileSync(cssPath, "utf8");
+  assert.ok(css.includes(".hero-spotlight"), "landing-system.css must define .hero-spotlight");
 });
 
 // ── public/logo.svg existence ─────────────────────────────────────────────────

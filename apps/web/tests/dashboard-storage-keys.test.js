@@ -53,7 +53,10 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   const authFlow = readFileSync(`${root}app/auth-flow.tsx`, "utf8");
   const components = readFileSync(`${root}app/dashboard-components.tsx`, "utf8");
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
-  const css = readFileSync(`${root}app/globals.css`, "utf8");
+  // globals.css is now a thin @import chain; rules live in styles/*.css.
+  // The nav-label rule was moved to styles/overhaul.css during the 2026-05-18
+  // globals-css-audit refactor. See docs/design/2026-05-18-globals-css-audit.md.
+  const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
 
   assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route");
   assert.match(authFlow, /window\.location\.assign\(nextPath\)/, "dev sign-in must not bounce returning users through onboarding");
