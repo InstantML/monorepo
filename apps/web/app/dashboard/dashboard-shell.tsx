@@ -2251,7 +2251,27 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             />
           ) : null}
           {fullscreenPanelContext ? (
-            <div className="workspace-modal fullscreen-modal" role="dialog" aria-modal="true" aria-label={`${fullscreenPanelContext.panel.title} fullscreen`} ref={fullscreenModalRef} tabIndex={-1}>
+            <div
+              className="workspace-modal fullscreen-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${fullscreenPanelContext.panel.title} fullscreen`}
+              ref={fullscreenModalRef}
+              tabIndex={-1}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+              }}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setFullscreenPanelRef(null);
+                }
+              }}
+            >
               <div className="workspace-modal-card fullscreen-modal-card">
                 <div className="drawer-head">
                   <div className="fullscreen-title-block">
