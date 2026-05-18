@@ -681,8 +681,8 @@ export function DashboardTopbar({
           </span>
         </a>
         <div className="brandbar-row">
-          <span className="brand-wordmark">
-            <Image src="/instantml-lockup.svg" alt="InstantML" width={110} height={25} priority />
+          <span className="brand-wordmark" aria-label="InstantML">
+            instant<span className="brand-wordmark__accent">ml</span>
           </span>
           <nav className="breadcrumb" aria-label="Breadcrumb">
             <span className="crumb">{project || "demo"}</span>
