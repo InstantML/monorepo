@@ -6379,13 +6379,8 @@ button.compare-row-head.active {
   background: var(--surface);
 }
 
-:root[data-theme="dark"] .brand-mark {
-  border-color: rgba(31, 184, 119, 0.74);
-  background: var(--color-ink);
-  color: var(--accent-strong);
-  --brand-mark-bg: var(--color-ink);
-  box-shadow: 0 0 18px rgba(31, 184, 119, 0.14);
-}
+/* (removed: dark-mode .brand-mark box + green glow — the new dot-grid
+ * mark renders cleanly on the topbar background without a container.) */
 
 :root[data-theme="dark"] .workspace-panel-card {
   background: var(--chart-card-bg);
@@ -8897,6 +8892,24 @@ button.compare-row-head.active {
   transition: width 140ms ease, box-shadow 140ms ease;
 }
 :root[data-theme="dark"] .tabs { background: var(--color-ink); }
+
+/* Hover/focus expand the .tabs element itself to 212px so its opaque
+ * background covers the tab labels (which would otherwise extend past
+ * the 56px column and let page content show through gaps between
+ * buttons). Grid column stays 56px so the canvas doesn't reflow — the
+ * rail floats over the canvas instead. */
+.shell:not(.nav-pinned):has(.tabs:hover) .tabs,
+.shell:not(.nav-pinned):has(.tabs:focus-within) .tabs,
+.shell:not(.nav-pinned).nav-auto-open .tabs {
+  width: 212px;
+  box-shadow: 22px 0 46px -12px rgba(0, 0, 0, 0.55);
+}
+:root[data-theme="light"] .shell:not(.nav-pinned):has(.tabs:hover) .tabs,
+:root[data-theme="light"] .shell:not(.nav-pinned):has(.tabs:focus-within) .tabs,
+:root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs {
+  box-shadow: 22px 0 46px -12px rgba(15, 23, 42, 0.18);
+}
+
 .tab-scroll { overflow-x: hidden; overflow-y: auto; }
 .shell.nav-pinned .tabs {
   width: 212px;
