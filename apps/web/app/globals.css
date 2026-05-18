@@ -7482,8 +7482,21 @@ button.compare-row-head.active {
 
 /* ── Nav rail — icon-forward, accent active ────────────────────────────── */
 .tabs {
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  background: var(--bg);
   border-right: 1px solid var(--line);
+}
+.tabs.pinned,
+.tabs:hover,
+.tabs:focus-within {
+  /* Expanded state: stay fully opaque + cast a subtle shadow so labels
+   * never overlap visibly with the underlying content. */
+  background: var(--bg);
+  box-shadow: 2px 0 16px 0 rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="light"] .tabs.pinned,
+:root[data-theme="light"] .tabs:hover,
+:root[data-theme="light"] .tabs:focus-within {
+  box-shadow: 2px 0 16px 0 rgba(15, 23, 42, 0.08);
 }
 .tab-button {
   border-radius: var(--radius);
