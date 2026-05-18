@@ -10481,13 +10481,15 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.85);
 }
 .landing-nav__inner {
-  max-width: 1152px;
-  margin: 0 auto;
-  padding: 0 24px;
+  width: 100%;
+  padding: 0 32px;
   height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+@media (min-width: 1280px) {
+  .landing-nav__inner { padding: 0 48px; }
 }
 .landing-nav__links {
   display: flex;
