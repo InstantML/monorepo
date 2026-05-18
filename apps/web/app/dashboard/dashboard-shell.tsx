@@ -2821,6 +2821,12 @@ function runsPageMessage(total: number, offset: number, visibleCount: number) {
 
 const METRIC_SERIES_BATCH_LIMIT = 1000;
 
+// Number of M4 buckets passed to the server. Must match or exceed the widest
+// chart pixel width so the downsampled series is lossless for rendering.
+// chartWidth (560 px) is the reference; 1200 gives 2× oversampling headroom
+// for full-screen and compare panels without approaching the 4096 server cap.
+const METRIC_SERIES_M4_BUCKETS = 1200;
+
 async function fetchBatchedMetricSeries(
   api: ApiClient,
   metricKey: string,
@@ -2832,7 +2838,12 @@ async function fetchBatchedMetricSeries(
   if (!ids.length) return [];
   const payload = await api.post(
     `/api/metrics/series`,
-    { key: metricKey, run_ids: ids, limit: METRIC_SERIES_BATCH_LIMIT },
+    {
+      key: metricKey,
+      run_ids: ids,
+      limit: METRIC_SERIES_BATCH_LIMIT,
+      buckets: METRIC_SERIES_M4_BUCKETS,
+    },
     { signal },
   );
   const seriesArray = Array.isArray(payload?.series) ? payload.series : [];
