@@ -84,3 +84,4 @@ Current recurring review themes to check before future implementation:
 - New user-facing docs and UI should use InstantML, while legacy code identifiers remain until a namespace migration is designed.
 - Hosted SaaS backend work should preserve documented API compatibility and keep shared contract tests passing against Rust and the deprecated Node server where legacy behavior matters.
 - Performance-sensitive frontend work should keep hidden tab data fetches gated and panel/series requests bounded.
+- `2026-05-18-m4-chart-aggregation.md`: M4 downsampling for the batched chart-series endpoint. Fixes the naive prefix-limit rendering bug for long runs (200k points). Adds `buckets` param to `POST /api/metrics/series`; falls through to raw path for small series. No schema changes.
