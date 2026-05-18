@@ -32,6 +32,7 @@ Current implemented design sequence:
 - `2026-05-16-cloud-run-multi-instance-launch.md`: split Cloud Run launch wiring, deploy helper target model, managed HTTPS public router, Docker Compose split profile, static egress reuse, scaling defaults, unsafe multi-writer guardrails, and frontend env behavior.
 - `2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, plan-aware tenant-route warehouse profile intent, seat invites, invite activation, usage/admin settings, API-key management, and first pricing/admin boundaries.
 - `2026-05-17-plan-limit-enforcement.md`: blocked-at-limit guardrails for new project, run, current-month metric-ingest, artifact, import, and demo-reset writes plus Premium local/shared demo defaults.
+- `2026-05-18-wandb-hosted-comparison-benchmarks.md`: guarded W&B-hosted comparison benchmark tooling, W&B public API mapping, seeded-mode caveats, and sanitized result reporting against the existing InstantML hosted Cloud Run benchmark.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

@@ -1,0 +1,12 @@
+.wandb/
+wandb/
+*.tmp
+*.log
+wandb-seed-manifest*.json
+wandb-chart-run-manifest.json
+wandb-parallel-seed-result.json
+wandb-hosted-result.json
+instantml-cloud-run-result.json
+*-result.json
+wandb-*-raw.json
+instantml-*-raw.json

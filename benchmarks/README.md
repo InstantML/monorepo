@@ -45,3 +45,75 @@ runs across the configured benchmark projects before timing requests.
 Committed summaries for this benchmark should include the same sanitized fields
 as the hosted ClickHouse benchmark plus the API host only, never full URLs or API
 keys.
+
+## W&B Hosted Comparison Benchmark
+
+`wandb_hosted_compare.py` seeds and benchmarks W&B hosted cloud through the
+documented W&B Python SDK/Public API, then renders `benchmarks/RESULTS.md`.
+It is intentionally guarded because W&B seeding creates external hosted data and
+can incur W&B costs. It never seeds InstantML hosted ClickHouse; the InstantML
+subcommand only runs the existing read-only Cloud Run benchmark.
+
+Install the W&B dependency into the repo virtualenv:
+
+```bash
+.venv/bin/python -m pip install -r benchmarks/requirements-wandb.txt
+```
+
+Run a small W&B smoke seed:
+
+```bash
+INSTANTML_WANDB_BENCH_ALLOW_UPLOAD=1 \
+.venv/bin/python benchmarks/wandb_hosted_compare.py seed-wandb \
+  --runs 100 --steps 20 --history-mode newest --history-newest-runs 5
+```
+
+Parallelize seeding with disjoint process-level shards:
+
+```bash
+INSTANTML_WANDB_BENCH_ALLOW_UPLOAD=1 \
+.venv/bin/python benchmarks/wandb_hosted_compare.py seed-wandb-parallel \
+  --runs 1000 --steps 1000 --history-mode none --workers 8
+```
+
+`seed-wandb-parallel` splits the run-index range into independent child
+processes and writes one manifest per shard. This is safer than threading one
+W&B SDK process because each shard owns disjoint run IDs and its own SDK
+process. Keep worker counts conservative and watch for W&B `429`/rate-limit
+failures in `wandb-parallel-seed-result.json`.
+
+The default `--seed-mode hybrid` uses W&B's public `Api.create_run` path for
+summary/list rows and normal `wandb.init` only for runs that need full metric
+history. This is faster than `wandb.init` for every run, but W&B-created
+summary-only runs remain in W&B's `running` state; benchmark status filters use
+the mirrored `config.instantml_source_status` field and the report calls that
+out. Use `--seed-mode init` when actual W&B finished/failed states matter more
+than seeding speed.
+
+Run W&B read benchmarks:
+
+```bash
+.venv/bin/python benchmarks/wandb_hosted_compare.py benchmark-wandb \
+  --runs 100 --steps 20 --samples 3 --warmups 1
+```
+
+Run the InstantML read-only hosted benchmark when the hosted-scale dataset
+already exists:
+
+```bash
+.venv/bin/python benchmarks/wandb_hosted_compare.py benchmark-instantml
+```
+
+Render the comparison report:
+
+```bash
+.venv/bin/python benchmarks/wandb_hosted_compare.py render-results
+```
+
+For the full W&B exact-history dataset, explicitly set `--runs 100000
+--steps 1000 --history-mode exact --allow --allow-exact`. That mode logs
+100 million W&B history rows and 600 million scalar values through public SDK
+calls, so use it only when you intentionally want that external workload. A
+summary/list-fidelity run can seed one summary row per run with
+`--history-mode none`; bounded chart fidelity can seed selected full-history
+runs with `--history-mode newest` or `--history-mode dashboard`.
