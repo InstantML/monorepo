@@ -1,0 +1,133 @@
+/* ── tokens.css — InstantML brand primitives and design tokens ──────────────
+ * Do not modify brand values without updating the brand doc.
+ * Source: brand spec 2026-05 (Bolt green #1FB877, Ink #0E1116).
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * InstantML brand primitives — do not modify without updating the brand doc.
+ * Source: brand spec 2026-05 (Bolt green #1FB877, Ink #0E1116).
+ * ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --color-ink: #0E1116;
+  --color-bolt: #1FB877;
+  --color-deep: #0A4D33;
+  --color-soft: #F5F4F1;
+  --color-paper: #FFFFFF;
+  /* Wordmark letter-spacing per brand spec (Space Grotesk 600) */
+  --tracking-wordmark: -0.035em;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * InstantML design tokens — reference https://instantml.ai/
+ * Dark is the product default; light is a maintained toggle.
+ * ────────────────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-soft: #f8fafc;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --surface-2: #f1f5f9;
+  --surface-3: #e8eef5;
+  --surface-hover: #eef2f7;
+  --surface-selected: #ecfdf5;
+  --surface-tint: #ecfdf5;
+  --line: #e2e8f0;
+  --line-soft: #eef2f7;
+  --line-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-2: #334155;
+  --muted: #475569;
+  --faint: #54606f;          /* light: AA on #fff/#f8fafc (>=4.5:1) for 11px text */
+  --dim: #94a3b8;
+  --accent: var(--color-bolt);
+  --accent-strong: var(--color-deep);
+  --accent-soft: #ecfdf5;
+  --accent-line: rgba(31, 184, 119, 0.32);
+  --blue: #5d89dd;
+  --amber: #b7791f;
+  --coral: #dc5b55;
+  --green: #15803d;
+  --warm: #b7791f;
+  --warm-soft: rgba(183, 121, 31, 0.12);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+  --info: #5d89dd;
+  --series-1: #dc5b55;
+  --series-2: #5d89dd;
+  --series-3: var(--color-bolt);
+  --series-4: #b7791f;
+  --series-5: #9333ea;
+  --series-6: #0d9488;
+  --chart-card-bg: #ffffff;
+  --chart-grid: #e5e7eb;
+  --chart-axis: #cbd5e1;
+  --shadow: 0 1px 2px rgba(24, 34, 45, 0.06);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+  --control-radius: 4px;
+  --tight-radius: 3px;
+  --topbar-height: 48px;
+  --workbar-height: 44px;
+  --tracking-eyebrow: 0.1em;
+  --tracking-display: -0.02em;
+  --z-chrome: 50;
+  --z-workbar: 40;
+  --z-sticky-th: 5;
+  --z-pop: 100;
+  --font-sans: var(--font-sans-next, "Geist"), "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-mono-next, "Geist Mono"), "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --font-serif: var(--font-serif-next, "Instrument Serif"), Georgia, "Times New Roman", serif;
+  --bg-grid: var(--bg);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: var(--color-ink);
+  --bg-soft: #0c1118;
+  --surface: #161b22;
+  --surface-soft: #1a2030;
+  --surface-2: #1a2030;
+  --surface-3: #171a24;
+  --surface-hover: #1a1d28;
+  --surface-selected: #11231d;
+  --surface-tint: #0b2f24;
+  --line: #1c1f2a;
+  --line-soft: #151923;
+  --line-strong: #242937;
+  --text: #f8fafc;
+  --text-2: #cbd5e1;
+  --muted: #94a3b8;
+  --faint: #8b97a8;
+  --dim: #5b6678;
+  --accent: var(--color-bolt);
+  --accent-strong: #27e896;
+  --accent-soft: rgba(31, 184, 119, 0.12);
+  --accent-line: rgba(31, 184, 119, 0.32);
+  --blue: #7da1e8;
+  --amber: #e0b07a;
+  --coral: #f87171;
+  --green: #4ade80;
+  --warm: #e0b07a;
+  --warm-soft: rgba(224, 176, 122, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
+  --info: #7da1e8;
+  --series-1: #f87171;
+  --series-2: #7da1e8;
+  --series-3: var(--color-bolt);
+  --series-4: #e0b07a;
+  --series-5: #c084fc;
+  --series-6: #5eead4;
+  --chart-card-bg: #11141c;
+  --chart-grid: rgba(255, 255, 255, 0.045);
+  --chart-axis: rgba(255, 255, 255, 0.2);
+  --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  --bg-grid:
+    radial-gradient(900px 600px at 50% -8%, rgba(31, 184, 119, 0.06), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    var(--bg);
+}

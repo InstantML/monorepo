@@ -1,0 +1,265 @@
+/* ── base.css — global reset, typography, form element defaults ─────────────
+ * Shared across all pages.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg-grid);
+  background-size: auto, 48px 48px, 48px 48px, auto;
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+code, pre, .mono, .eyebrow {
+  font-family: var(--font-mono), monospace;
+}
+
+.brand-wordmark,
+.landing-wordmark {
+  letter-spacing: var(--tracking-wordmark);
+  font-weight: 600;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 18px;
+  color: var(--text);
+  line-height: 1;
+}
+.brand-wordmark__accent {
+  color: var(--color-bolt, #1FB877);
+  font-weight: 700;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+.serif-em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.08em;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+select,
+input,
+textarea {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 6px 10px;
+}
+
+select,
+input,
+textarea {
+  outline: none;
+}
+
+select:focus,
+input:focus,
+textarea:focus {
+  border-color: rgba(31, 184, 119, 0.48);
+  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.12);
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: auto;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 680;
+  white-space: nowrap;
+}
+
+button:hover {
+  border-color: #b9c5d0;
+  background: #f7f9fb;
+}
+
+button.primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+button.primary-button:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+button:focus-visible,
+.select-trigger:focus-visible {
+  outline: none;
+  border-color: rgba(31, 184, 119, 0.54);
+  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.14);
+}
+
+button.secondary {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text);
+}
+
+button.secondary:hover {
+  border-color: #b9c5d0;
+  background: #f7f9fb;
+}
+
+button.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+button.ghost:hover {
+  border-color: transparent;
+  background: #f1f4f7;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+.app-loading-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(31, 184, 119, 0.14), transparent 32rem),
+    var(--bg);
+  color: var(--text);
+  padding: 32px;
+}
+
+.app-loading-card {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  width: min(360px, 100%);
+  text-align: center;
+}
+
+.app-loading-mark {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border: 1px solid rgba(31, 184, 119, 0.28);
+  border-radius: 16px;
+  background: rgba(13, 15, 21, 0.82);
+  color: var(--accent);
+  --brand-mark-bg: var(--color-ink);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.28);
+}
+
+.app-loading-mark .instantml-mark-svg {
+  width: 52px;
+  height: 52px;
+}
+
+.app-loading-card h1 {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 780;
+  line-height: 1.15;
+}
+
+.app-loading-card p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 640;
+}
+
+.app-loading-bars {
+  display: grid;
+  grid-template-columns: repeat(3, 42px);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.app-loading-bars span {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(31, 184, 119, 0.18);
+  overflow: hidden;
+  position: relative;
+}
+
+.app-loading-bars span::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  content: "";
+  transform: translateX(-100%);
+  animation: loading-bar 1.1s ease-in-out infinite;
+}
+
+.app-loading-bars span:nth-child(2)::after {
+  animation-delay: 130ms;
+}
+
+.app-loading-bars span:nth-child(3)::after {
+  animation-delay: 260ms;
+}
+
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
