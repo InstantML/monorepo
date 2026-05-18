@@ -32,6 +32,7 @@
     "test:hosted-clickhouse": "node tools/hosted-clickhouse-smoke.mjs",
     "test:scale": "node tools/scale-smoke.mjs",
     "benchmark:large-runs": "node tools/rust-large-run-benchmark.mjs",
+    "benchmark:m4": "node tools/rust-m4-benchmark.mjs",
     "benchmark:hosted-demo": "node tools/hosted-demo-seed-benchmark.mjs",
     "benchmark:cloud-run": "node tools/hosted-cloud-run-benchmark.mjs",
     "seed:hosted-scale": "node tools/hosted-tenant-scale-seed.mjs",
