@@ -10122,6 +10122,73 @@ textarea:focus {
   .wordmark-draw { animation: none; }
 }
 
+/* ─── "Learning the diagonal" logo intro ─────────────────────────────────
+ *
+ * On first page load the dot grid cascades in row-by-row (every dot
+ * scales up + fades in). The four Bolt diagonal dots layer a separate
+ * pulse on top — they overshoot scale and briefly glow green, then
+ * settle. After the diagonal pops, the wordmark fades in from the left.
+ *
+ * Plays once per session. The boot script in layout.tsx adds the
+ * .no-logo-anim class to <html> on repeat visits and when
+ * prefers-reduced-motion is on, which short-circuits the keyframes.
+ */
+@keyframes logo-dot-emerge {
+  0%   { opacity: 0; transform: scale(0.35); }
+  60%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes logo-diagonal-pulse {
+  0%   { opacity: 0; transform: scale(0.35); filter: drop-shadow(0 0 0 transparent); }
+  45%  { opacity: 1; transform: scale(1.35); filter: drop-shadow(0 0 9px rgba(31, 184, 119, 0.85)); }
+  100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
+}
+@keyframes logo-wordmark-text-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.logo-anim .logo-dot {
+  opacity: 0;
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: logo-dot-emerge 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.logo-anim .logo-dot-r0 { animation-delay: 0ms; }
+.logo-anim .logo-dot-r1 { animation-delay: 80ms; }
+.logo-anim .logo-dot-r2 { animation-delay: 160ms; }
+.logo-anim .logo-dot-r3 { animation-delay: 240ms; }
+
+.logo-anim .logo-dot-diagonal {
+  animation: logo-diagonal-pulse 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.logo-anim .logo-dot-diagonal.logo-dot-d0 { animation-delay: 420ms; }
+.logo-anim .logo-dot-diagonal.logo-dot-d1 { animation-delay: 540ms; }
+.logo-anim .logo-dot-diagonal.logo-dot-d2 { animation-delay: 660ms; }
+.logo-anim .logo-dot-diagonal.logo-dot-d3 { animation-delay: 780ms; }
+
+.logo-anim .logo-wordmark-text {
+  opacity: 0;
+  transform-origin: left center;
+  transform-box: fill-box;
+  animation: logo-wordmark-text-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) 950ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-anim .logo-dot,
+  .logo-anim .logo-wordmark-text {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+.no-logo-anim .logo-anim .logo-dot,
+.no-logo-anim .logo-anim .logo-wordmark-text {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
 /* ─── Hero rise animations ─── */
 @keyframes hero-rise {
   from { opacity: 0; transform: translateY(20px); }
