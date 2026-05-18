@@ -2453,7 +2453,7 @@ export function MetricChart({
       </div>
       <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
-        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={denseChart ? undefined : onMove} onMouseLeave={onLeave}>
+        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
             <g key={`y-${tick}`}>
               <line className="grid-line" x1={padding} x2={width - padding} y1={yPos(tick)} y2={yPos(tick)} />
@@ -2470,7 +2470,7 @@ export function MetricChart({
           <line className="axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
           <text className="axis-label" x={width / 2} y={height - 5} textAnchor="middle">{xMode === "time" ? "Logged time" : "Training step"}</text>
           <text className="axis-label" x={18} y={height / 2} textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>{metricTitle(metricKey)}</text>
-          {!denseChart && hover ? <line className="hover-guide" x1={hover.point.x} x2={hover.point.x} y1={padding} y2={height - padding} /> : null}
+          {hover ? <line className="hover-guide" x1={hover.point.x} x2={hover.point.x} y1={padding} y2={height - padding} /> : null}
           {!denseChart ? normalizedSeries.map((item, index) => (
             <g key={item.id}>
               <polyline className={`series series-${index % 5}`} points={item.path} style={{ stroke: chartColor(index) }} />
@@ -2487,7 +2487,7 @@ export function MetricChart({
               )) : null}
             </g>
           )) : null}
-          {!denseChart && hover ? <circle className="hover-ring" cx={hover.point.x} cy={hover.point.y} r={8} /> : null}
+          {hover ? <circle className="hover-ring" cx={hover.point.x} cy={hover.point.y} r={8} /> : null}
         </svg>
       </div>
       {hover ? (

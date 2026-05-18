@@ -295,6 +295,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const projectPreferenceLoadedRef = useRef(false);
   const userTouchedDashboardFiltersRef = useRef(false);
   const defaultSelectionInitializedRef = useRef(false);
+  const runDirectoryRef = useRef<Map<string, RunSummary>>(new Map());
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
@@ -385,8 +386,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [adminBusy, setAdminBusy] = useState(false);
 
   const summaryMatchesProject = !project || summary.runs.every((run) => run.project === project);
-  const actualMetricOptions = useMemo(() => (summaryMatchesProject ? metricKeysFromSummary(summary) : []), [summary, summaryMatchesProject]);
-  const actualMetricSignature = useMemo(() => actualMetricOptions.join("\u0000"), [actualMetricOptions]);
+  // Key the metric option list on its content, not on `summary` identity.
+  // Otherwise every pagination produces a new array reference even when the
+  // metric keys are unchanged, which re-runs the workspace-reset effect and
+  // clears workspaceSeries, making the chart reload on every page change.
+  const actualMetricSignature = useMemo(
+    () => (summaryMatchesProject ? metricKeysFromSummary(summary) : []).join("\u0000"),
+    [summary, summaryMatchesProject],
+  );
+  const actualMetricOptions = useMemo(
+    () => (actualMetricSignature ? actualMetricSignature.split("\u0000") : []),
+    [actualMetricSignature],
+  );
   const allMetricOptions = useMemo(() => (
     actualMetricOptions.length ? actualMetricOptions : ["eval/return_mean", "train/reward", "train/loss"]
   ), [actualMetricOptions]);
@@ -398,11 +409,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const columnMetricOptionsForControls = useMemo(() => boundedOptions(columnMetricOptions, "", 80), [columnMetricOptions]);
 
   const sortedRuns = summary.runs;
-  const selectedRuns = useMemo(() => (
-    selectedRunIds
-      .map((id) => selectedRunDetails[id] ?? sortedRuns.find((run) => run.id === id))
-      .filter(Boolean) as RunSummary[]
-  ), [selectedRunDetails, selectedRunIds, sortedRuns]);
+  const selectedRuns = useMemo(() => {
+    // Remember every run we've ever seen so a selected run stays resolvable
+    // after it scrolls off the current page. Without this, paginating drops
+    // off-page selected runs from selectedRuns, which churns the workspace
+    // series fetch and makes the chart reload even though the selection is
+    // unchanged.
+    const directory = runDirectoryRef.current;
+    for (const run of sortedRuns) directory.set(run.id, run);
+    for (const run of Object.values(selectedRunDetails)) directory.set(run.id, run);
+    return selectedRunIds
+      .map((id) => selectedRunDetails[id] ?? directory.get(id) ?? sortedRuns.find((run) => run.id === id))
+      .filter(Boolean) as RunSummary[];
+  }, [selectedRunDetails, selectedRunIds, sortedRuns]);
   const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
   const handleRunWorkspaceTabChange = useCallback((nextTab: RunWorkspaceTabId) => {
     setRunWorkspaceTab(nextTab);
@@ -2232,7 +2251,27 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             />
           ) : null}
           {fullscreenPanelContext ? (
-            <div className="workspace-modal fullscreen-modal" role="dialog" aria-modal="true" aria-label={`${fullscreenPanelContext.panel.title} fullscreen`} ref={fullscreenModalRef} tabIndex={-1}>
+            <div
+              className="workspace-modal fullscreen-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${fullscreenPanelContext.panel.title} fullscreen`}
+              ref={fullscreenModalRef}
+              tabIndex={-1}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+              }}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setFullscreenPanelRef(null);
+                }
+              }}
+            >
               <div className="workspace-modal-card fullscreen-modal-card">
                 <div className="drawer-head">
                   <div className="fullscreen-title-block">
