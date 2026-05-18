@@ -7753,9 +7753,9 @@ textarea:focus {
 .eyebrow--warm { color: var(--warm); }
 
 /* color-mix fallback: paint a solid chrome bg first for engines without it. */
-.topbar { background: var(--bg); background: color-mix(in srgb, var(--bg) 93%, transparent); }
-.tabs { background: var(--bg); background: color-mix(in srgb, var(--bg) 70%, transparent); }
-:root[data-theme="dark"] .tabs { background: rgba(7, 8, 12, 0.7); }
+.topbar { background: var(--bg); }
+/* .tabs background is owned by the rule above (~line 7484) — keep opaque
+ * so labels never bleed through the underlying page content. */
 
 /* --topbar-height is owned by DashboardTopbar (48px brand-only / 92px with
    workbar) via an inline style on <html>, and .topbar height tracks it in the
