@@ -66,6 +66,7 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         .count_points_for_org_period(org_id, period.starts_at, period.ends_at)
         .await?;
     let metric_series = metric_store.count_series_for_org(org_id).await?;
+    let warehouse_storage_bytes_exact = store.warehouse_storage_bytes_for_org(org_id).await?;
     let data = store.data.lock().await;
     let org = data
         .organizations
@@ -109,7 +110,11 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
     let plan = plan_tier(&org.plan_tier);
     let estimated_metadata_bytes =
         estimated_metadata_bytes(projects, runs, metric_series, artifacts, api_keys, seats);
-    let estimated_storage_bytes_for_warnings = artifact_bytes_exact + estimated_metadata_bytes;
+    let storage_bytes_for_warnings = storage_bytes_for_warnings(
+        artifact_bytes_exact,
+        estimated_metadata_bytes,
+        warehouse_storage_bytes_exact,
+    );
     Ok(UsageCounts {
         org,
         plan,
@@ -124,7 +129,9 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         artifact_bytes_exact,
         artifact_bytes_unknown_count: 0,
         estimated_metadata_bytes,
-        estimated_storage_bytes_for_warnings,
+        warehouse_storage_bytes_exact,
+        storage_bytes_for_warnings,
+        estimated_storage_bytes_for_warnings: storage_bytes_for_warnings,
         period,
     })
 }
@@ -165,6 +172,8 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "artifact_bytes_unknown": 0,
             "artifact_bytes_unknown_count": counts.artifact_bytes_unknown_count,
             "estimated_metadata_bytes": counts.estimated_metadata_bytes,
+            "warehouse_storage_bytes_exact": counts.warehouse_storage_bytes_exact,
+            "storage_bytes_for_warnings": counts.storage_bytes_for_warnings,
             "estimated_storage_bytes_for_warnings": counts.estimated_storage_bytes_for_warnings,
             "billable_storage_bytes": Value::Null,
             "billing_precision": "not_billable"
@@ -217,6 +226,14 @@ fn estimated_metadata_bytes(
         + seats * SEAT_METADATA_BYTES
 }
 
+fn storage_bytes_for_warnings(
+    artifact_bytes_exact: i64,
+    estimated_metadata_bytes: i64,
+    warehouse_storage_bytes_exact: Option<i64>,
+) -> i64 {
+    artifact_bytes_exact + warehouse_storage_bytes_exact.unwrap_or(estimated_metadata_bytes)
+}
+
 fn usage_warnings(counts: &UsageCounts) -> Vec<Value> {
     [
         usage_limit_warning(
@@ -249,7 +266,7 @@ fn usage_warnings(counts: &UsageCounts) -> Vec<Value> {
         ),
         usage_limit_warning(
             "storage",
-            counts.estimated_storage_bytes_for_warnings,
+            counts.storage_bytes_for_warnings,
             counts.plan.included_storage_bytes,
             "blocked_at_limit",
             true,
@@ -358,7 +375,7 @@ fn first_blocking_violation(counts: &UsageCounts, delta: UsageDelta) -> Option<P
         ),
         blocking_violation(
             "storage",
-            counts.estimated_storage_bytes_for_warnings,
+            counts.storage_bytes_for_warnings,
             delta.storage_bytes,
             counts.plan.included_storage_bytes,
         ),
@@ -407,6 +424,8 @@ struct UsageCounts {
     artifact_bytes_exact: i64,
     artifact_bytes_unknown_count: i64,
     estimated_metadata_bytes: i64,
+    warehouse_storage_bytes_exact: Option<i64>,
+    storage_bytes_for_warnings: i64,
     estimated_storage_bytes_for_warnings: i64,
     period: UsagePeriod,
 }
@@ -517,7 +536,8 @@ mod tests {
     #[test]
     fn blocking_violation_uses_current_and_projected_usage() {
         let mut counts = test_counts("free");
-        counts.estimated_storage_bytes_for_warnings = PLAN_FREE.included_storage_bytes - 1;
+        counts.storage_bytes_for_warnings = PLAN_FREE.included_storage_bytes - 1;
+        counts.estimated_storage_bytes_for_warnings = counts.storage_bytes_for_warnings;
 
         let projected = first_blocking_violation(
             &counts,
@@ -555,6 +575,12 @@ mod tests {
         );
     }
 
+    #[test]
+    fn storage_warning_bytes_use_scoped_warehouse_bytes_or_metadata_estimate() {
+        assert_eq!(storage_bytes_for_warnings(50, 10, Some(4_600)), 4_650);
+        assert_eq!(storage_bytes_for_warnings(50, 10, None), 60);
+    }
+
     fn test_counts(tier: &str) -> UsageCounts {
         let org = OrganizationRow {
             id: Uuid::new_v4(),
@@ -581,6 +607,8 @@ mod tests {
             artifact_bytes_exact: 0,
             artifact_bytes_unknown_count: 0,
             estimated_metadata_bytes: 0,
+            warehouse_storage_bytes_exact: None,
+            storage_bytes_for_warnings: 0,
             estimated_storage_bytes_for_warnings: 0,
             period: current_usage_period(Utc::now()),
         }

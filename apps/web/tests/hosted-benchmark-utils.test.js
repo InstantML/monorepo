@@ -13,8 +13,9 @@ import {
 test("budget helpers use explicit, grouped, and fallback budgets", () => {
   assert.equal(budgetForCase({ budget_ms: 123 }), 123);
   assert.equal(budgetForCase({ budget_group: "summary" }), 750);
+  assert.equal(budgetForCase({ group: "selection_projection" }), 2500);
   assert.equal(budgetForCase({ kind: "chart" }), 750);
-  assert.equal(budgetForCase({ kind: "batched_series" }), 750);
+  assert.equal(budgetForCase({ kind: "batched_series" }), 2500);
   assert.equal(budgetForCase({ group: "unknown" }), 1000);
   assert.equal(percentile([], 0.95), 0);
 });
@@ -101,6 +102,10 @@ test("validateBenchmarkPayload rejects fake-fast or malformed summary responses"
   assert.throws(
     () => validateBenchmarkPayload({ name: "missing_summary", kind: "summary", require_metric_summary_key: "eval/return_mean" }, { total: 1, runs: [{}] }),
     /metric summary eval\/return_mean/,
+  );
+  assert.throws(
+    () => validateBenchmarkPayload({ name: "selection_missing_projection", kind: "summary", selection_projection: true }, { total: 1, runs: [{}] }),
+    /selection projection/,
   );
 });
 
@@ -207,7 +212,11 @@ test("sanitizeHostedBenchmarkResult keeps benchmark metadata but strips sensitiv
       long_run_steps: 20000,
       expected_steps_per_run: 1000,
       chart_limit: 1000,
-      selected_run_count: 8,
+      selected_run_count: 2000,
+      default_selected_run_count: 100,
+      search_selected_run_count: 1000,
+      max_selected_run_count: 2000,
+      selection_search_query: "seed-13",
       metric_key: "eval/return_mean",
       system_metric_key: "system/gpu_util",
       metric_keys: ["eval/return_mean", "system/gpu_util"],
@@ -242,6 +251,10 @@ test("sanitizeHostedBenchmarkResult keeps benchmark metadata but strips sensitiv
   assert.equal(sanitized.route.endpoint_host, "clickhouse.example.com");
   assert.equal(sanitized.environment.api_host, "service.run.app");
   assert.deepEqual(sanitized.dataset.projects, ["hosted-scale-control", "hosted-scale-data"]);
+  assert.equal(sanitized.dataset.default_selected_run_count, 100);
+  assert.equal(sanitized.dataset.search_selected_run_count, 1000);
+  assert.equal(sanitized.dataset.max_selected_run_count, 2000);
+  assert.equal(sanitized.dataset.selection_search_query, "seed-13");
   assert.equal(sanitized.passed, true);
   assert.equal(json.includes("super-secret-password"), false);
   assert.equal(json.includes("secret-cookie"), false);

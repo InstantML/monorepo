@@ -28,6 +28,25 @@ pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<V
     summarize_run(run, &series, &counts)
 }
 
+pub(super) fn selection_run_value(run: RunRow) -> AppResult<Value> {
+    let mut value = serde_json::to_value(run)
+        .map_err(|_| AppError::internal("run selection serialization failed"))?;
+    if let Value::Object(map) = &mut value {
+        map.insert("latest_metrics".to_string(), Value::Object(Map::new()));
+        map.insert("metric_aggregates".to_string(), Value::Object(Map::new()));
+        map.insert("metric_keys".to_string(), json!([]));
+        map.insert(
+            "artifact_counts".to_string(),
+            json!({
+                "checkpoint": 0,
+                "rollout": 0,
+                "file": 0
+            }),
+        );
+    }
+    Ok(value)
+}
+
 pub(super) fn summarize_run(
     run: RunRow,
     series: &[MetricSeriesRow],

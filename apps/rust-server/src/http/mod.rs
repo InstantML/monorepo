@@ -30,8 +30,8 @@ use crate::{
         CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest,
         CreateProjectRequest, CreateRunRequest, CreateUserRequest, DevGoogleAuthRequest,
         DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest, LogMetricsRequest,
-        RequestContext, ReserveSeatRequest, SessionContext, UpdateRunRequest,
-        UploadArtifactRequest,
+        RequestContext, ReserveSeatRequest, SaveWorkspaceViewRequest, SessionContext,
+        UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
     store,
@@ -104,6 +104,18 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route("/api/auth/device-code/start", post(device_code_start))
         .route("/api/auth/device-code/poll", post(device_code_poll))
         .route("/api/auth/device-code/confirm", post(device_code_confirm))
+        .route(
+            "/api/dashboard/preferences",
+            get(get_dashboard_preferences).put(update_dashboard_preferences),
+        )
+        .route(
+            "/api/workspace-views",
+            get(list_workspace_views).post(create_workspace_view),
+        )
+        .route(
+            "/api/workspace-views/:view_id",
+            get(get_workspace_view).put(update_workspace_view),
+        )
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
         .route("/api/orgs/name-availability", get(org_name_availability))
@@ -175,7 +187,13 @@ fn cors_layer(config: &AppConfig) -> CorsLayer {
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             origin_allowed_for_cors(origin, &allowed)
         }))
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             header::ACCEPT,
             header::AUTHORIZATION,

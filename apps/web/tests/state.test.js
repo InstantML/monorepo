@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
+import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, chartPointCount, chunkRunIds, histogramBins, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
   MAX_SELECTED_RUNS,
+  DEFAULT_SELECTED_RUNS,
   bestMetric,
   capSelectionToMatching,
+  defaultRunSelection,
   deselectVisible,
   durationLabel,
   filterMetricKeys,
@@ -26,7 +29,7 @@ import {
   toggleSelection,
   visibleSelectionState,
 } from "../src/state.js";
-import { ApiClient, ApiError, isAbortError, queryString } from "../src/api.js";
+import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -40,6 +43,52 @@ test("selection is capped and toggled", () => {
   assert.equal(selected.includes("run-0"), false);
   assert.equal(selected.at(-1), `run-${MAX_SELECTED_RUNS}`);
   assert.deepEqual(toggleSelection(selected, "run-4"), selected.filter((id) => id !== "run-4"));
+});
+
+test("dashboard panel helpers chunk large selections and merge patches in run order", () => {
+  const runs = Array.from({ length: 125 }, (_, index) => ({ id: `run-${index}`, name: `Run ${index}` }));
+  assert.deepEqual(chunkRunIds(runs).map((chunk) => chunk.length), [100, 25]);
+  assert.deepEqual(chunkRunIds(Array.from({ length: 2000 }, (_, index) => ({ id: `run-${index}` }))).map((chunk) => chunk.length), [2000]);
+  const chunks = chunkRunIds(runs, 50);
+  assert.deepEqual(chunks.map((chunk) => chunk.length), [50, 50, 25]);
+  assert.equal(adaptiveMetricSeriesLimit(20), 1000);
+  assert.equal(adaptiveMetricSeriesLimit(50), 500);
+  assert.equal(adaptiveMetricSeriesLimit(150), 250);
+  assert.equal(adaptiveMetricSeriesLimit(300), 160);
+  assert.equal(adaptiveMetricSeriesLimit(500), 120);
+  assert.equal(adaptiveMetricSeriesLimit(1000), 80);
+  assert.equal(adaptiveMetricSeriesLimit(2000), 60);
+  assert.equal(adaptiveMetricSeriesPatchSize(249), 100);
+  assert.equal(adaptiveMetricSeriesPatchSize(250), 250);
+  assert.equal(adaptiveMetricSeriesPatchSize(500), 500);
+  assert.equal(adaptiveMetricSeriesPatchSize(2000), 2000);
+  const merged = mergeMetricSeriesPatches(runs.slice(0, 3), [{ id: "run-0", name: "Run 0", points: [] }], [{ id: "run-2", name: "Run 2", points: [{ step: 1, value: 2 }] }]);
+  assert.deepEqual(merged.map((series) => series.id), ["run-0", "run-1", "run-2"]);
+  assert.deepEqual(merged[2].points, [{ step: 1, value: 2 }]);
+});
+
+test("dense chart helper switches for many series or many points", () => {
+  const sparse = Array.from({ length: 3 }, (_, index) => ({ id: `run-${index}`, normalizedPoints: [{ x: index, y: index }] }));
+  const manySeries = Array.from({ length: 121 }, (_, index) => ({ id: `run-${index}`, normalizedPoints: [{ x: index, y: index }] }));
+  const manyPoints = [{ id: "run-heavy", normalizedPoints: Array.from({ length: 8001 }, (_, index) => ({ x: index, y: index })) }];
+  assert.equal(chartPointCount(sparse), 3);
+  assert.equal(shouldUseDenseChart(sparse), false);
+  assert.equal(shouldUseDenseChart(manySeries), true);
+  assert.equal(shouldUseDenseChart(manyPoints), true);
+});
+
+test("latest-value panel helpers derive chart data from run summaries", () => {
+  const runs = [
+    { id: "a", name: "A", metric_aggregates: { reward: { latest: 1 } } },
+    { id: "b", name: "B", metric_aggregates: { reward: { latest: 3 } } },
+    { id: "c", name: "C", metric_aggregates: { reward: { latest: "bad" } } },
+  ];
+  assert.deepEqual(latestMetricValues(runs, "reward").map((item) => [item.id, item.value]), [["a", 1], ["b", 3]]);
+  assert.deepEqual(histogramBins([1, 2, 3, 4], 4).reduce((sum, bin) => sum + bin.count, 0), 4);
+  assert.deepEqual(histogramBins([2, 2, 2], 8), [{ min: 2, max: 2, count: 3 }]);
+  assert.deepEqual(indexedAxisTicks(12, 5), [0, 3, 6, 8, 11]);
+  assert.deepEqual(indexedAxisTicks(1, 5), [0]);
+  assert.deepEqual(indexedAxisTicks(0, 5), []);
 });
 
 test("visibleSelectionState reports none/some/all", () => {
@@ -110,6 +159,17 @@ test("capSelectionToMatching truncates at MAX_SELECTED_RUNS", () => {
   assert.equal(capped[0], "id-0");
   assert.equal(capped.at(-1), `id-${MAX_SELECTED_RUNS - 1}`);
   assert.deepEqual(capSelectionToMatching(null), []);
+});
+
+test("defaultRunSelection only auto-selects once", () => {
+  const runs = Array.from({ length: DEFAULT_SELECTED_RUNS + 8 }, (_, index) => ({ id: `run-${index}` }));
+  const selected = defaultRunSelection([], runs, false);
+  assert.equal(selected.initialized, true);
+  assert.equal(selected.ids.length, DEFAULT_SELECTED_RUNS);
+  assert.equal(selected.ids[0], "run-0");
+  assert.equal(selected.ids.at(-1), `run-${DEFAULT_SELECTED_RUNS - 1}`);
+  assert.deepEqual(defaultRunSelection([], runs, true), { ids: [], initialized: true });
+  assert.deepEqual(defaultRunSelection(["chosen"], runs, false), { ids: ["chosen"], initialized: false });
 });
 
 test("shortcut helpers detect platform commands and editable targets", () => {
@@ -296,6 +356,9 @@ test("api client handles query strings and malformed responses", async () => {
   assert.equal(queryString({ a: "" }), "");
   assert.equal(isAbortError({ name: "AbortError" }), true);
   assert.equal(isAbortError(new Error("plain")), false);
+  assert.equal(isTransientApiError(new ApiError("temporary", { status: 500 })), true);
+  assert.equal(isTransientApiError(new ApiError("rate limit", { status: 429 })), true);
+  assert.equal(isTransientApiError(new ApiError("bad", { status: 400 })), false);
   const apiError = new ApiError("Safe message.", { code: "forbidden", requestId: "req_test", status: 403 });
   assert.equal(apiError.status, 403);
   assert.equal(apiError.code, "forbidden");
@@ -315,6 +378,10 @@ test("api client handles query strings and malformed responses", async () => {
   assert.equal(calls[1].url, "/base/runs/run-1");
   assert.equal(calls[1].options.method, "PATCH");
   assert.equal(calls[1].options.headers["Content-Type"], "application/json");
+  assert.deepEqual(await new ApiClient("/base").put("/api/dashboard/preferences", { selected_project: "demo" }), { ok: true });
+  assert.equal(calls[2].url, "/base/api/dashboard/preferences");
+  assert.equal(calls[2].options.method, "PUT");
+  assert.equal(calls[2].options.headers["Content-Type"], "application/json");
   globalThis.fetch = async () => ({ ok: true, text: async () => "[]" });
   await assert.rejects(() => new ApiClient().get("/bad"), /malformed/);
   globalThis.fetch = async () => ({ ok: true, text: async () => "not json" });
@@ -350,6 +417,27 @@ test("api client handles query strings and malformed responses", async () => {
   globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
   await assert.rejects(() => new ApiClient().get("/nope"), /Server is unavailable/);
   globalThis.fetch = originalFetch;
+});
+
+test("retryTransientRequest retries only recoverable API failures", async () => {
+  let attempts = 0;
+  const result = await retryTransientRequest(async () => {
+    attempts += 1;
+    if (attempts < 3) throw new ApiError("Server is unavailable.", { status: 503 });
+    return { ok: true };
+  }, { delays: [1, 1], sleep: () => Promise.resolve() });
+  assert.deepEqual(result, { ok: true });
+  assert.equal(attempts, 3);
+
+  attempts = 0;
+  await assert.rejects(
+    () => retryTransientRequest(async () => {
+      attempts += 1;
+      throw new ApiError("Request was invalid.", { status: 400 });
+    }, { delays: [1, 1], sleep: () => Promise.resolve() }),
+    /Request was invalid/,
+  );
+  assert.equal(attempts, 1);
 });
 
 test("route helpers canonicalize dashboard paths and safe auth redirects", () => {

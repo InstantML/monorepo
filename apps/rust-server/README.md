@@ -1,12 +1,12 @@
 # Rust Server
 
-This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, and tenant routes, then stores tenant-owned runs and metrics in the org's routed ClickHouse database/service. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
+This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, tenant routes, dashboard preferences, and saved workspace views, then stores tenant-owned runs and metrics in the org's routed ClickHouse database/service. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Purpose
 
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
-- Store users, orgs, sessions, API keys, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
-- In hosted ClickHouse mode, store users, orgs, sessions, API keys, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
+- Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
+- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
 - Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
@@ -82,7 +82,7 @@ Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable
 Logical control/data-plane division is available before deployment:
 
 - `INSTANTML_SERVICE_PLANE=combined` is the default and exposes the current full route set from one Rust process.
-- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, user/org, seat, API-key, service-account, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
+- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
 - `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, metrics, logs, attributes, objects, artifacts, export, usage, imports, and demo reset. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
 
 The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
@@ -151,7 +151,14 @@ Implemented health and platform endpoints:
 - `GET /metrics`
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+
+Run-summary pages default to 100 rows and are capped at 1,000 rows. Bulk UI
+selection should use `GET /api/runs/summary?projection=selection`, which skips
+ClickHouse metric aggregate hydration and returns only run display metadata plus
+frontend-compatible empty summary fields. Batched metric-series reads accept up
+to 2,000 run IDs, but the server clamps `effective_limit` so a single response
+cannot exceed 120,000 metric points.
 
 Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a browser session and mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
@@ -166,6 +173,12 @@ live service's `GET /openapi.json` returns a compact role-aware route index and
 includes `x-instantml-service-plane` for operator verification.
 
 In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
+
+Dashboard preference and workspace-view routes are browser-session control
+state. Hosted SDK/API keys cannot read or mutate them; owner/admin/member
+browser sessions may save views, viewers may read preferences/views, and shared
+demo sessions remain read-only. Local compatibility mode keeps the same route
+shapes without requiring a hosted browser session.
 
 Console logs are stored in tenant ClickHouse through `console_log_lines`.
 `POST /api/runs/:run_id/logs` requires `sdk:ingest`, accepts client-supplied
@@ -232,8 +245,11 @@ Use this after `seed:hosted-scale` has created the large tenant dataset. It
 measures the deployed Cloud Run data service or HTTPS router with bearer auth,
 so the measured path is client -> Cloud Run -> ClickHouse Cloud. It covers org
 and project run summaries, searches, status filters, metric sort, overview,
-single-run chart series, and batched selected-run series calls against the
-100,000+ run hosted-scale projects. Set
+single-run chart series, selection-projection pages, and batched selected-run
+series calls against the 100,000+ run hosted-scale projects. The default
+workload now mirrors the dashboard's high-load behavior: the 100-run fresh
+selection, a 1,000-run `seed-13` search selection, and the 2,000-run max
+selection with adaptive metric-series point limits. Set
 `INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json`
 to save sanitized JSON output.
 
@@ -284,6 +300,7 @@ Coverage exception (multi-writer):
 - `src/store/access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
 - `src/store/summaries.rs`: run summaries, artifact counts, metric-series conversion, and export metric reads.
 - `src/store/tenants.rs`: hosted tenant route records, database/cloud provisioners, lazy tenant store loading, and tenant MetricStore selection.
+- `src/store/workspace_views.rs`: control-plane dashboard project preferences and saved workspace-view records.
 - `src/store/validation.rs`: shared store validation, JSON value shaping, slugging, and unit tests for pure store logic.
 - `src/metric_store.rs`: ClickHouse schema migration, operational record append/load helpers, metric point writes, and metric-series reads.
 - `src/domain.rs`: DTOs and validation helpers.
@@ -307,6 +324,7 @@ Coverage exception (multi-writer):
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`
 - `docs/design/2026-05-16-shared-cell-tenant-routing.md`
+- `docs/design/2026-05-17-dashboard-reliability-control-views.md`
 - `docs/architecture/current-api.md`
 - `docs/product/pricing-and-margins.md`
 

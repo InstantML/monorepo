@@ -118,6 +118,8 @@ cursor while `event_id` is random. Full replay is the current safe path.
 | `service_account` | `org` | `ServiceAccountRow.id` | `ServiceAccountRow` |
 | `api_key` | `org` | `ApiKeyRecord.row.id` | `ApiKeyRecord` |
 | `tenant_route` | `org` | `TenantRouteRecord.org_id` | `TenantRouteRecord` |
+| `dashboard_preference` | `org` | `dashboard-preference:<org_id>:<user_id>` | `DashboardPreferenceRow` |
+| `workspace_view` | `org` | `WorkspaceViewRow.id` | `WorkspaceViewRow` |
 
 ### `UserRow`
 
@@ -189,7 +191,7 @@ cursor while `event_id` is random. Full replay is the current safe path.
 {
   "id": "uuid",
   "org_id": "uuid",
-  "user_id": "uuid",
+  "owner_user_id": "uuid",
   "role": "owner",
   "status": "active",
   "created_at": "2026-05-16T00:00:00Z"
@@ -359,6 +361,59 @@ By default, `applied_*` is capped by operator configuration so signup cannot
 create arbitrary paid warehouse sizes. Set
 `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true` only after payment and
 spend gates are in place.
+
+### `DashboardPreferenceRow`
+
+```json
+{
+  "user_id": "uuid",
+  "org_id": "uuid",
+  "selected_project": "hosted-scale-data",
+  "updated_at": "2026-05-17T00:00:00Z"
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `user_id` | UUID string | Browser user that owns the preference. |
+| `org_id` | UUID string | Organization scope for the preference. |
+| `selected_project` | string or null | Last selected dashboard project; `null` clears the preference. |
+| `updated_at` | datetime | Last write time. |
+
+### `WorkspaceViewRow`
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "user_id": "uuid",
+  "name": "Daily comparison",
+  "project": "hosted-scale-data",
+  "payload": {
+    "schema_version": 1,
+    "tab": "runs",
+    "workspace_view": {}
+  },
+  "created_at": "2026-05-17T00:00:00Z",
+  "updated_at": "2026-05-17T00:00:00Z"
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | UUID string | Stable saved-view id. |
+| `org_id` | UUID string | Organization scope. |
+| `owner_user_id` | UUID string or null | Browser user that owns the saved view; `null` is reserved for local compatibility mode. |
+| `name` | string | User-visible saved-view name. |
+| `project` | string or null | Project association used by dashboard selectors. |
+| `payload` | JSON object | Saved dashboard state, limited to 64 KiB after serialization. |
+| `created_at` | datetime | Initial save time. |
+| `updated_at` | datetime | Last write time. |
+
+Workspace-view payloads are complete JSON objects. The first persisted frontend
+slice stores the active tab, selected runs/metrics, Compare settings, and the
+Runs workspace layout; future schema versions should keep backward-compatible
+read support for older payloads.
 
 ## Data Plane
 
@@ -647,7 +702,9 @@ writes horizontally.
         "artifact_bytes_unknown": 0,
         "artifact_bytes_unknown_count": 0,
         "estimated_metadata_bytes": 8192,
-        "estimated_storage_bytes_for_warnings": 20537,
+        "warehouse_storage_bytes_exact": 32768,
+        "storage_bytes_for_warnings": 45113,
+        "estimated_storage_bytes_for_warnings": 45113,
         "billable_storage_bytes": null
       },
       "warnings": [
@@ -680,6 +737,13 @@ crosses a blocked `projects`, `runs`, current-month `metric_points`, or
 retained `storage` limit. Seats remain tracked as `paid_extra_seats` until
 billing is implemented. Storage, projects, runs, seats, artifacts, metric
 series, and API keys are retained-resource counts and do not reset monthly.
+`warehouse_storage_bytes_exact` comes from ClickHouse table parts for dedicated
+tenant databases and is `null` for shared-cell orgs where exact per-org bytes
+are not available. `storage_bytes_for_warnings` is the guardrail value used for
+blocked storage checks; it prefers exact warehouse plus artifact bytes when
+available, otherwise falls back to the metadata estimate. The older
+`estimated_storage_bytes_for_warnings` field remains a compatibility alias for
+that guardrail value, not an invoice source.
 
 ## Analytical Data Tables
 

@@ -237,8 +237,13 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         window.location.assign("/dashboard/runs");
         return;
       }
-      note("Signed in. Opening onboarding...");
-      window.location.assign("/onboarding");
+      if (payload.mode === "signin") {
+        note("Signed in. Opening your dashboard...");
+        window.location.assign(nextPath);
+      } else {
+        note("Workspace created. Opening onboarding...");
+        window.location.assign("/onboarding");
+      }
     } catch (error) {
       fail(error instanceof Error ? error.message : "Unable to sign in.");
     } finally {
@@ -837,4 +842,3 @@ function isSharedDemoSession(session: SessionPayload | null) {
     || session?.organization?.name === SHARED_DEMO_ORG
     || session?.organization?.slug === "instantml-demo";
 }
-

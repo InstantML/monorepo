@@ -576,17 +576,44 @@ impl MetricStore {
         Ok(rows.into_iter().map(|row| row.key).collect())
     }
 
-    /// Count the total number of metric points for an org. Used by usage
-    /// rollups in place of the prior ClickHouse `count(*)` query.
+    /// Count retained metric points for an org from the aggregate series table.
+    /// This keeps overview/usage resource counts off the raw metric hot table.
     pub async fn count_points_for_org(&self, org_id: Uuid) -> AppResult<i64> {
         let count: u64 = self
             .client
-            .query("SELECT count() FROM metric_points WHERE org_id = ?")
+            .query(
+                "SELECT toUInt64(sum(count)) \
+                 FROM ( \
+                   SELECT countMerge(count) AS count \
+                   FROM metric_series \
+                   WHERE org_id = ? \
+                   GROUP BY run_id, key \
+                 )",
+            )
             .bind(org_id)
             .fetch_one::<u64>()
             .await
             .map_err(clickhouse_read_error)?;
         Ok(count as i64)
+    }
+
+    /// Count active on-disk bytes for the configured ClickHouse database.
+    ///
+    /// Callers must only expose this as org-exact when the database is scoped
+    /// to one org; shared-cell databases can contain several orgs.
+    pub async fn count_database_storage_bytes(&self) -> AppResult<i64> {
+        let bytes: u64 = self
+            .client
+            .query(
+                "SELECT toUInt64(coalesce(sum(bytes_on_disk), 0)) \
+                 FROM system.parts \
+                 WHERE active AND database = ?",
+            )
+            .bind(self.database())
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(bytes as i64)
     }
 
     /// Count metric points created within a half-open UTC usage period.
@@ -618,13 +645,17 @@ impl MetricStore {
         let count: u64 = self
             .client
             .query(
-                "SELECT count() \
-                 FROM metric_points \
-                 WHERE org_id = ? AND run_id IN ( \
-                   SELECT toUUID(entity_id) \
-                   FROM operational_records \
-                   WHERE org_id = ? AND kind = 'run' \
-                     AND JSONExtractString(payload, 'project') = ? \
+                "SELECT toUInt64(sum(count)) \
+                 FROM ( \
+                   SELECT countMerge(count) AS count \
+                   FROM metric_series \
+                   WHERE org_id = ? AND run_id IN ( \
+                     SELECT toUUID(entity_id) \
+                     FROM operational_records \
+                     WHERE org_id = ? AND kind = 'run' \
+                       AND JSONExtractString(payload, 'project') = ? \
+                   ) \
+                   GROUP BY run_id, key \
                  )",
             )
             .bind(org_id)
@@ -706,7 +737,15 @@ fn is_clickhouse_unavailable_message(message: &str) -> bool {
         "temporarily unavailable",
         "connection refused",
         "connection reset",
+        "connection reset by peer",
         "connection closed",
+        "connection aborted",
+        "broken pipe",
+        "socket hang up",
+        "unexpectedly closed",
+        "unexpected eof",
+        "eof while reading response",
+        "error trying to connect",
         "timed out",
         "timeout",
         "operation timed out",
@@ -868,6 +907,9 @@ mod tests {
             "clickhouse migration failed: operation timed out",
             "clickhouse insert failed: connection refused",
             "clickhouse query failed: temporarily unavailable",
+            "clickhouse query failed: error trying to connect",
+            "clickhouse query failed: broken pipe",
+            "clickhouse query failed: unexpectedly closed",
         ] {
             assert!(
                 is_clickhouse_unavailable_message(message),

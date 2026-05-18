@@ -13,8 +13,9 @@ pub const MAX_METRICS_PER_BATCH: usize = 1_000;
 pub const DEFAULT_METRIC_LIMIT: i64 = 1_000;
 pub const MAX_METRIC_LIMIT: i64 = 5_000;
 pub const DEFAULT_RUN_LIMIT: i64 = 100;
-pub const MAX_RUN_LIMIT: i64 = 500;
-pub const MAX_METRIC_SERIES_RUN_IDS: usize = 500;
+pub const MAX_RUN_LIMIT: i64 = 1_000;
+pub const MAX_METRIC_SERIES_RUN_IDS: usize = 2_000;
+pub const MAX_METRIC_SERIES_TOTAL_POINTS: i64 = 120_000;
 pub const DEFAULT_CONSOLE_LOG_LIMIT: i64 = 250;
 pub const MAX_CONSOLE_LOG_LIMIT: i64 = 1_000;
 pub const MAX_CONSOLE_LOG_LINES_PER_BATCH: usize = 50;
@@ -333,6 +334,50 @@ pub struct CreateRunRequest {
     pub config: Option<Value>,
     pub tags: Option<Vec<String>>,
     pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateDashboardPreferencesRequest {
+    pub selected_project: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DashboardPreferenceRow {
+    pub schema_version: i32,
+    pub org_id: Uuid,
+    pub user_id: Option<Uuid>,
+    pub selected_project: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaveWorkspaceViewRequest {
+    pub name: Option<String>,
+    pub project: Option<String>,
+    pub payload: Option<Value>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkspaceViewRow {
+    pub schema_version: i32,
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub owner_user_id: Option<Uuid>,
+    pub name: String,
+    pub project: Option<String>,
+    pub payload: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkspaceViewSummary {
+    pub id: Uuid,
+    pub name: String,
+    pub project: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize)]

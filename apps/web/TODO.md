@@ -60,6 +60,34 @@ Major differences from W&B app and SDK/API parity:
 - No UI for SDK lifecycle concepts such as resume/fork/offline mode, system metrics, console logs, code snapshots, or integration setup status.
 - No LEET-like terminal exploration UI; this may remain out of web-app scope unless the product adds an in-app terminal/command palette bridge.
 
+## Audit Follow-Ups: Visible Buttons And Feature Affordances
+
+Date: 2026-05-17.
+
+These items came from a UI sweep for controls that looked clickable or product-complete before the corresponding workflow was fully wired. The rule is: implement the action when the current API/UI can honestly support it, otherwise keep the visible surface read-only and track the real product work here.
+
+- [x] Make the topbar sliders button actually control the filter workbar.
+  - Finding: the sliders icon was useful on mobile but still appeared on desktop without a visible state change.
+  - Build: desktop now collapses/expands the workbar; mobile keeps the existing slide-down filter behavior.
+
+- [x] Make Compare artifact counts actionable when artifact data exists.
+  - Finding: the row-mode Compare table showed artifact counts as plain numbers even though the selected-run Artifacts tab can inspect a run's artifact/object data.
+  - Build: non-zero artifact counts open the Artifacts tab for that run; zero counts remain inert text so they do not look like broken buttons.
+
+- [x] Polish the Compare metrics table typography.
+  - Finding: row-mode metric/evidence headers looked like raw debug keys, with heavy uppercase and inconsistent font weight.
+  - Build: metric headers now use human-readable labels, namespace/objective sublabels, calmer active states, and sans/table-numeric text treatment.
+
+- [ ] Add first-class artifact version, alias, lineage, external-reference, and TTL actions.
+  - Current app: selected-run artifacts, rich objects, safe media previews, artifact ID copy, and local download routes exist.
+  - Missing backend/product surface: artifact versions, aliases, lineage DAGs, TTL policy, registry promotion, external-reference health, and signed object-storage URLs.
+  - UI rule: do not add promote/alias/lineage/TTL buttons until those Rust artifact contracts exist.
+
+- [ ] Add honest creation/edit actions for derived tabs.
+  - Current app: Alerts, Datasets, Models, Reports, and Integrations are derived read surfaces or admin snippets.
+  - Missing backend/product surface: persistent alert rules, dataset registry records, model registry entries, report editor documents, and integration credentials.
+  - UI rule: refresh/copy/navigation actions are allowed now; create/edit/delete controls should wait for persisted route contracts.
+
 ## Priority Definitions
 
 - `P0`: Needed for credible daily workspace parity and keyboard accessibility.

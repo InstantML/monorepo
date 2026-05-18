@@ -1,4 +1,5 @@
-export const MAX_SELECTED_RUNS = 500;
+export const MAX_SELECTED_RUNS = 2000;
+export const DEFAULT_SELECTED_RUNS = 100;
 
 export function toggleSelection(selected, runId) {
   if (selected.includes(runId)) return selected.filter((id) => id !== runId);
@@ -48,6 +49,15 @@ export function rangeSelect(selected, orderedIds, anchorId, targetId) {
 export function capSelectionToMatching(matchingIds) {
   if (!Array.isArray(matchingIds)) return [];
   return matchingIds.slice(0, MAX_SELECTED_RUNS);
+}
+
+export function defaultRunSelection(currentIds, runs, defaultInitialized) {
+  const current = Array.isArray(currentIds) ? currentIds : [];
+  if (current.length || defaultInitialized) {
+    return { ids: current, initialized: defaultInitialized };
+  }
+  const ids = (Array.isArray(runs) ? runs : []).slice(0, DEFAULT_SELECTED_RUNS).map((run) => run?.id).filter(Boolean);
+  return { ids, initialized: ids.length > 0 };
 }
 
 export function metricKeysFromSummary(summary) {
