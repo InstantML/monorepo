@@ -372,19 +372,14 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const statusRole = isError ? "alert" : "status";
   const statusClass = isError ? "iml-status is-err" : busy ? "iml-status is-busy" : "iml-status";
 
+  // Stable "ready" gate covers both the /api/auth/config fetch and
+  // Clerk's React init. Until both land, the action buttons render a
+  // single disabled skeleton so the dev-auth form doesn't flash before
+  // the Clerk path is available (or vice versa).
+  const authReady = config.loaded && (!config.managed_clerk_enabled || clerkLoaded);
+
   return (
     <div className="iml-auth">
-      <header className="iml-bar">
-        <Brand />
-        <div className="iml-bar-actions">
-          {!isOnboarding ? (
-            <a className="iml-btn iml-btn--ghost" href={signupMode ? "/signin" : "/signup"}>
-              {signupMode ? "Sign in" : "Create workspace"}
-            </a>
-          ) : null}
-        </div>
-      </header>
-
       <main className="iml-stage">
         <section
           className={isOnboarding || managedClerkReady ? "iml-card" : "iml-card iml-card--single"}
@@ -459,7 +454,16 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                   />
                 ) : null}
 
-                {managedClerkReady ? (
+                {!authReady ? (
+                  <div className="iml-actions" aria-live="polite" aria-busy="true">
+                    <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled type="button">
+                      <span className="iml-spin on-fill" aria-hidden="true" />
+                      Loading sign-in…
+                    </button>
+                  </div>
+                ) : null}
+
+                {authReady && managedClerkReady ? (
                   <div className="iml-actions">
                     <Show when="signed-out">
                       {signupMode ? (
@@ -498,7 +502,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                   </div>
                 ) : null}
 
-                {config.dev_auth_enabled ? (
+                {authReady && config.dev_auth_enabled ? (
                   <form className="iml-actions" onSubmit={submitAuth} aria-label="Local development sign in">
                     {managedClerkReady ? <p className="iml-hint" style={{ textAlign: "center" }}>— or use the local development flow —</p> : null}
                     <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={submitSharedDemo} type="button">
@@ -524,7 +528,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                   </form>
                 ) : null}
 
-                {!managedClerkReady && !config.dev_auth_enabled && config.loaded ? (
+                {authReady && !managedClerkReady && !config.dev_auth_enabled ? (
                   <div className="iml-status is-err" role="alert">
                     <AlertCircle size={14} /> No sign-in provider is configured for this environment.
                   </div>
