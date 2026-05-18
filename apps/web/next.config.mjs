@@ -56,8 +56,8 @@ function resolveApiBase(name, rawBase) {
   return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
 }
 
-const clerkConnect = "https://api.clerk.com https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com";
-const clerkAssets = "https://img.clerk.com https://images.clerk.dev https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com";
+const clerkConnect = "https://api.clerk.com https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com https://clerk.instantml.ai";
+const clerkAssets = "https://img.clerk.com https://images.clerk.dev https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com https://clerk.instantml.ai";
 const securityHeaders = [
   { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com; img-src 'self' data: blob: ${clerkAssets}; connect-src 'self' http://127.0.0.1:* http://localhost:* ${clerkConnect}; frame-src ${clerkConnect} https://challenges.cloudflare.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' ${clerkConnect} https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:` },
   { key: "X-Content-Type-Options", value: "nosniff" },
