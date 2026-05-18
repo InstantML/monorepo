@@ -17,7 +17,7 @@ export function NavLogo({
     return (
       <span
         className="landing-nav-logo wordmark-draw"
-        style={{ color: "var(--color-ink, #0E1116)", display: "inline-flex", alignItems: "center" }}
+        style={{ display: "inline-flex", alignItems: "center" }}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -62,10 +62,7 @@ export function NavLogo({
     );
   }
   return (
-    <span
-      className="landing-nav-logo"
-      style={{ color: "var(--color-ink, #0E1116)", display: "inline-flex" }}
-    >
+    <span className="landing-nav-logo" style={{ display: "inline-flex" }}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 96 96"

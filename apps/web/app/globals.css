@@ -10579,20 +10579,23 @@ textarea:focus {
 .landing-cta-row {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  align-self: flex-start;
   gap: 12px;
+  width: fit-content;
 }
 @media (min-width: 576px) {
   .landing-cta-row { flex-direction: row; }
 }
 
-/* In dark mode, the brand mark + wordmark switch to Paper so they remain
- * legible against the Ink background. */
-:root[data-theme="dark"] .landing-nav-logo,
-:root[data-theme="dark"] .landing-cta-card__logo .landing-nav-logo {
-  color: var(--color-paper, #FFFFFF);
+/* Logo color is theme-aware so the Ink dots and the "instant" wordmark
+ * stay legible in both modes. The "ml" wordmark and diagonal stay Bolt. */
+.landing-nav-logo,
+[aria-label="InstantML"] {
+  color: var(--color-ink, #0E1116);
 }
+:root[data-theme="dark"] .landing-nav-logo,
 :root[data-theme="dark"] [aria-label="InstantML"] {
   color: var(--color-paper, #FFFFFF);
 }

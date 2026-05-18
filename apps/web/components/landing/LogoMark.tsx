@@ -17,7 +17,7 @@ export function LogoMark({
 }: LogoMarkProps) {
   const wrapperStyle = color
     ? { color, display: "inline-flex" as const }
-    : { color: "var(--color-ink, #0E1116)", display: "inline-flex" as const };
+    : { display: "inline-flex" as const };
   return (
     <span
       className={`${draw ? "logo-draw " : ""}${className}`.trim() || undefined}
