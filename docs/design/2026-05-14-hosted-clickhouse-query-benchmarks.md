@@ -113,7 +113,11 @@ Add `tools/hosted-cloud-run-benchmark.mjs` for the deployed API path:
 - Measure org and project summary pages, 100-row pages, cursor page 2 when
   available, name/tag/config/notes searches, status filters, combined
   search/filter, selected-metric sort, org/project overview, single-run chart
-  series, and selected-run batched `POST /api/metrics/series`.
+  series, selection-projection pages, and selected-run batched
+  `POST /api/metrics/series`.
+- The default selected-run workload should track the production dashboard:
+  100 selected runs on fresh load, a 1,000-run `seed-13` search selection, and
+  the 2,000-run maximum selection with adaptive metric-series limits.
 - Reuse the same p50/p95/min/max protocol, hosted budgets, response validation,
   and sanitization rules as the hosted demo benchmark. Add host-only API
   metadata to results, but never API keys, raw URLs, org IDs, or response bodies.

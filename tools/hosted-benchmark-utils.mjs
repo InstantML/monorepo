@@ -1,9 +1,10 @@
 export const HOSTED_BENCHMARK_BUDGETS_MS = Object.freeze({
   summary: 750,
+  selection_projection: 2500,
   search_filter_sort: 1000,
   overview: 1000,
   chart: 750,
-  batched_series: 750,
+  batched_series: 2500,
 });
 
 export function budgetForCase(caseDefinition) {
@@ -93,6 +94,10 @@ export function sanitizeHostedBenchmarkResult(raw) {
       expected_steps_per_run: raw.dataset?.expected_steps_per_run,
       chart_limit: raw.dataset?.chart_limit,
       selected_run_count: raw.dataset?.selected_run_count,
+      default_selected_run_count: raw.dataset?.default_selected_run_count,
+      search_selected_run_count: raw.dataset?.search_selected_run_count,
+      max_selected_run_count: raw.dataset?.max_selected_run_count,
+      selection_search_query: raw.dataset?.selection_search_query,
       metric_key: raw.dataset?.metric_key,
       system_metric_key: raw.dataset?.system_metric_key,
       metric_keys: raw.dataset?.metric_keys,
@@ -140,6 +145,9 @@ function validateSummary(caseDefinition, payload) {
   }
   if (caseDefinition.require_metric_summary_key && !payload.runs.some((run) => runHasMetricSummary(run, caseDefinition.require_metric_summary_key))) {
     throw new Error(`${caseDefinition.name} did not include metric summary ${caseDefinition.require_metric_summary_key}`);
+  }
+  if (caseDefinition.selection_projection && payload.projection !== "selection") {
+    throw new Error(`${caseDefinition.name} did not return the selection projection`);
   }
   return {
     kind: "summary",
@@ -205,13 +213,23 @@ function validateBatchedSeries(caseDefinition, payload) {
   if (caseDefinition.expect_non_empty !== false && rows === 0) {
     throw new Error(`${caseDefinition.name} returned empty batched series`);
   }
-  return {
+  if (caseDefinition.total_point_cap !== undefined) {
+    const cap = Number(caseDefinition.total_point_cap);
+    const effectiveLimit = Number(payload.effective_limit ?? limit);
+    if (!Number.isFinite(effectiveLimit) || effectiveLimit * payload.series.length > cap) {
+      throw new Error(`${caseDefinition.name} did not enforce total point cap ${cap}`);
+    }
+  }
+  return compactObject({
     kind: "batched_series",
     series: payload.series.length,
     non_empty_series,
     rows,
     max_rows_per_series: payload.series.reduce((max, series) => Math.max(max, series.metrics.length), 0),
-  };
+    requested_limit: payload.requested_limit,
+    effective_limit: payload.effective_limit,
+    total_point_cap: payload.total_point_cap,
+  });
 }
 
 function sanitizeMeasurement(measurement) {

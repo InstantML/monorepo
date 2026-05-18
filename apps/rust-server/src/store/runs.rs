@@ -414,6 +414,10 @@ pub async fn runs_summary(
         .get("metric_key")
         .map(String::as_str)
         .unwrap_or("eval/return_mean");
+    let selection_projection = query
+        .get("projection")
+        .map(|value| value == "selection")
+        .unwrap_or(false);
     let indexed_page = if sort_by == "created" {
         let data = store.data.lock().await;
         created_index_page(&data, ctx, query, offset, limit)
@@ -442,15 +446,25 @@ pub async fn runs_summary(
         };
         (total, page_runs)
     };
-    let run_ids = page_runs.iter().map(|run| run.id).collect::<Vec<_>>();
-    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-    let metric_keys = metric_store
-        .query_keys_for_runs(ctx.org_id, &run_ids, 250_i64)
-        .await?;
     let next_offset = offset + page_runs.len();
     let has_next = next_offset < total;
+    if selection_projection {
+        return Ok(json!({
+            "runs": page_runs
+                .into_iter()
+                .map(selection_run_value)
+                .collect::<AppResult<Vec<_>>>()?,
+            "metric_keys": [],
+            "total": total,
+            "projection": "selection",
+            "next_cursor": if has_next { json!(format!("offset:{next_offset}")) } else { Value::Null },
+            "page_info": { "pagination": "cursor", "has_next_page": has_next }
+        }));
+    }
+    let run_values = summarize_runs(store, page_runs).await?;
+    let metric_keys = metric_keys_from_run_values(&run_values, 250);
     Ok(json!({
-        "runs": summarize_runs(store, page_runs).await?,
+        "runs": run_values,
         "metric_keys": metric_keys,
         "total": total,
         "next_cursor": if has_next { json!(format!("offset:{next_offset}")) } else { Value::Null },
@@ -862,6 +876,24 @@ fn has_status_filter(query: &HashMap<String, String>) -> bool {
         .unwrap_or(false)
 }
 
+fn metric_keys_from_run_values(run_values: &[Value], limit: usize) -> Vec<String> {
+    let mut keys = BTreeSet::new();
+    for value in run_values {
+        let Some(items) = value.get("metric_keys").and_then(Value::as_array) else {
+            continue;
+        };
+        for item in items {
+            if let Some(key) = item.as_str() {
+                keys.insert(key.to_string());
+                if keys.len() >= limit {
+                    return keys.into_iter().collect();
+                }
+            }
+        }
+    }
+    keys.into_iter().collect()
+}
+
 fn validate_run_sort(sort_by: &str) -> AppResult<String> {
     let sort_by = validate_name(Some(sort_by), "sort_by")?;
     if matches!(
@@ -1175,12 +1207,21 @@ pub async fn metrics_series_batched(
         DEFAULT_METRIC_LIMIT,
         MAX_METRIC_LIMIT,
     )?;
+    let run_count = run_ids.len();
+    let effective_limit = effective_metric_series_limit(limit, run_count);
     let start_step = query_step(query, "start_step")?;
     let end_step = query_step(query, "end_step")?;
     let rows = store
         .metric_store_for_org(ctx.org_id)
         .await?
-        .query_points_for_runs(ctx.org_id, &run_ids, &key, start_step, end_step, limit)
+        .query_points_for_runs(
+            ctx.org_id,
+            &run_ids,
+            &key,
+            start_step,
+            end_step,
+            effective_limit,
+        )
         .await?;
     let mut grouped: BTreeMap<Uuid, Vec<Value>> = BTreeMap::new();
     for row in rows {
@@ -1195,8 +1236,20 @@ pub async fn metrics_series_batched(
         "series": run_ids.into_iter().map(|run_id| json!({
             "run_id": run_id,
             "metrics": grouped.remove(&run_id).unwrap_or_default()
-        })).collect::<Vec<_>>()
+        })).collect::<Vec<_>>(),
+        "requested_limit": limit,
+        "effective_limit": effective_limit,
+        "run_count": run_count,
+        "total_point_cap": MAX_METRIC_SERIES_TOTAL_POINTS
     }))
+}
+
+fn effective_metric_series_limit(requested_limit: i64, run_count: usize) -> i64 {
+    if run_count == 0 {
+        return requested_limit;
+    }
+    let max_per_run = (MAX_METRIC_SERIES_TOTAL_POINTS / run_count as i64).max(1);
+    requested_limit.min(max_per_run)
 }
 
 #[cfg(test)]
@@ -1234,6 +1287,14 @@ mod tests {
             assert_eq!(validate_run_sort(value).unwrap(), value);
         }
         assert!(validate_run_sort("other").is_err());
+    }
+
+    #[test]
+    fn effective_metric_series_limit_respects_total_point_budget() {
+        assert_eq!(effective_metric_series_limit(5_000, 1), 5_000);
+        assert_eq!(effective_metric_series_limit(5_000, 1_000), 120);
+        assert_eq!(effective_metric_series_limit(5_000, 2_000), 60);
+        assert_eq!(effective_metric_series_limit(50, 2_000), 50);
     }
 
     #[test]

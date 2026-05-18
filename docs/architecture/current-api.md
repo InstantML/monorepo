@@ -62,9 +62,10 @@ redirect behavior must preserve bearer auth, session/cookie rules,
 
 For local split-service verification, the Rust binary also supports
 `INSTANTML_SERVICE_PLANE=control` and `INSTANTML_SERVICE_PLANE=data`. The
-control role exposes platform, auth/session, user/org, seat, API-key, and
-service-account routes. The data role exposes platform and tenant product
-routes. `combined` remains the default and the current deployed shape.
+control role exposes platform, auth/session, user/org, seat, API-key,
+service-account, dashboard preference, and saved workspace-view routes. The
+data role exposes platform and tenant product routes. `combined` remains the
+default and the current deployed shape.
 
 ## Auth Model
 
@@ -133,8 +134,10 @@ Validation limits that affect callers:
 | Text fields such as names, paths, tags | 512 bytes |
 | Metrics per batch | 1,000 |
 | Metric query limit | Default 1,000, max 5,000 |
-| Run page limit | Default 100, max 500 |
-| Batched metric series run IDs | 500 |
+| Run page limit | Default 100, max 1,000 |
+| Batched metric series run IDs | 2,000 |
+| Batched metric series response | Max 120,000 returned points; `effective_limit` is clamped per run |
+| Workspace-view payload | 64 KiB |
 | Console log lines per batch | 50 |
 | Console log message | 16 KiB |
 | Console log query limit | Default 250, max 1,000 |
@@ -263,6 +266,131 @@ Output:
 ```json
 { "authenticated": false }
 ```
+
+## Dashboard Control State
+
+These routes persist UI preference and saved workspace-view state in the
+control plane. Hosted mode requires a browser session for the current org;
+SDK/API keys are intentionally not accepted because these records are
+human-dashboard state. Local compatibility mode may use the fixed local org
+without a session.
+
+### `GET /api/dashboard/preferences`
+
+Auth: browser session with org membership, or local compatibility access.
+
+Output:
+
+```json
+{
+  "preferences": {
+    "selected_project": "hosted-scale-data",
+    "updated_at": "2026-05-17T00:00:00Z"
+  }
+}
+```
+
+`preferences` is `null` when no preference has been saved.
+
+### `PUT /api/dashboard/preferences`
+
+Auth: owner/admin/member/viewer browser session for the current org, except
+shared demo sessions are read-only.
+
+Body:
+
+```json
+{
+  "selected_project": "hosted-scale-data"
+}
+```
+
+Set `selected_project` to `null` to clear the saved selection. Output is the
+same shape as `GET /api/dashboard/preferences`.
+
+### `GET /api/workspace-views`
+
+Auth: browser session with org membership, or local compatibility access.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | ---: | --- |
+| `limit` | `50` | Max `100`. |
+| `cursor` | none | Opaque cursor returned by the previous response. |
+
+Output:
+
+```json
+{
+  "workspace_views": [
+    {
+      "id": "uuid",
+      "name": "Daily comparison",
+      "project": "hosted-scale-data",
+      "created_at": "2026-05-17T00:00:00Z",
+      "updated_at": "2026-05-17T00:00:00Z"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+List rows are summaries only and do not include the saved view payload.
+
+### `POST /api/workspace-views`
+
+Auth: owner/admin/member browser session for the current org, except shared
+demo sessions are read-only.
+
+Body:
+
+```json
+{
+  "name": "Daily comparison",
+  "project": "hosted-scale-data",
+  "payload": {
+    "schema_version": 1,
+    "tab": "runs",
+    "workspace_view": {}
+  }
+}
+```
+
+`payload` must be a JSON object and must be at most 64 KiB after serialization.
+Output:
+
+```json
+{
+  "workspace_view": {
+    "schema_version": 1,
+    "id": "uuid",
+    "org_id": "uuid",
+    "owner_user_id": "uuid",
+    "name": "Daily comparison",
+    "project": "hosted-scale-data",
+    "payload": {},
+    "created_at": "2026-05-17T00:00:00Z",
+    "updated_at": "2026-05-17T00:00:00Z",
+    "deleted_at": null
+  }
+}
+```
+
+### `GET /api/workspace-views/:view_id`
+
+Auth: browser session with org membership, or local compatibility access.
+
+Output: `{ "workspace_view": WorkspaceViewRow }`.
+
+### `PUT /api/workspace-views/:view_id`
+
+Auth: owner/admin/member browser session for the current org, except shared
+demo sessions are read-only.
+
+Body accepts any subset of `name`, `project`, and `payload`. When `payload` is
+present it must satisfy the same object and size limits as create. Output:
+`{ "workspace_view": WorkspaceViewRow }`.
 
 ## Bootstrap And Organization Administration
 
@@ -945,7 +1073,9 @@ Output:
         "artifact_bytes_unknown": 0,
         "artifact_bytes_unknown_count": 0,
         "estimated_metadata_bytes": 2048,
-        "estimated_storage_bytes_for_warnings": 2048,
+        "warehouse_storage_bytes_exact": 4096,
+        "storage_bytes_for_warnings": 4096,
+        "estimated_storage_bytes_for_warnings": 4096,
         "billable_storage_bytes": null
       },
       "warnings": []
@@ -965,6 +1095,13 @@ current retained-resource counts and do not reset monthly. Warning rows include
 `target`, `status`, `value`, `limit`, `ratio`, `policy`, `blocking`, `code`,
 and `message`; blocked plan targets use `policy: "blocked_at_limit"` and
 `blocking: true`.
+`usage.warehouse_storage_bytes_exact` is the ClickHouse `system.parts` byte
+count for the routed tenant database when that database belongs only to the
+org; it is `null` for shared-cell orgs where per-org table bytes are not exact.
+`usage.storage_bytes_for_warnings` is the retained storage guardrail value and
+prefers exact warehouse bytes plus exact artifact bytes when available.
+`usage.estimated_storage_bytes_for_warnings` is retained as a compatibility
+alias for clients that have not yet moved to the exact/guardrail split.
 
 New project, run, metric-ingest, artifact, import, and demo-reset writes that
 exceed blocked limits fail with:

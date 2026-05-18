@@ -4,6 +4,7 @@ import type { CSSProperties, Dispatch, DragEvent, KeyboardEvent, MouseEvent, Poi
 import type { LucideIcon } from "lucide-react";
 
 import { averageGroupedSeries, axisTicks, chartDomain, formatAxisValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
+import { histogramBins, indexedAxisTicks, latestMetricValues, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { tabToPath } from "../src/routes.js";
 import { MAX_SELECTED_RUNS, bestMetric, durationLabel, formatNumber, groupKeyForRun, metricGoal, metricGoalLabel, metricGoalValue, statusTone, visibleSelectionState } from "../src/state.js";
 
@@ -19,15 +20,16 @@ import {
   formatBytes,
   formatRunTime,
   lastMetricStep,
+  metricNamespace,
   metricTitle,
   runNoteText,
   runConfigSummary,
   safeArtifactUri,
   shortMetricName,
   shortValue,
+  workspacePanelTypeLabel,
 } from "./dashboard-models";
 import { navGroups, tabs } from "./dashboard-config";
-import { savedViewLabel } from "./dashboard/state/storage-keys";
 import { InstantMlMark } from "./instantml-mark";
 import Image from "next/image";
 import type {
@@ -56,6 +58,7 @@ import type {
   WorkspacePanel,
   WorkspacePanelLayout,
   WorkspacePanelSettings,
+  WorkspacePanelType,
   WorkspaceSection,
   WorkspaceView,
 } from "./dashboard-types";
@@ -519,7 +522,27 @@ export function QuickSearchModal({
   }
 
   return (
-    <div className="workspace-modal command-modal" role="dialog" aria-modal="true" aria-label="Quick search" ref={dialogRef} tabIndex={-1}>
+    <div
+      className="workspace-modal command-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Quick search"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+      ref={dialogRef}
+      tabIndex={-1}
+    >
       <div className="command-card quick-search-card">
         <div className="quick-search-input">
           <Search size={18} />
@@ -623,7 +646,7 @@ export function DashboardTopbar({
   projects: string[];
   query: string;
   savedViewKey: string;
-  savedViews: string[];
+  savedViews: SelectOption[];
   sortBy: string;
   status: string;
   metricUsagePercent: number;
@@ -635,24 +658,28 @@ export function DashboardTopbar({
   viewName: string;
 }) {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
+  const [compactFilters, setCompactFilters] = useState(false);
   const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
   const showWorkbar = activeTab !== "detail";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
+  const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
 
   useEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia("(max-width: 720px)");
     function applyHeight() {
+      setCompactFilters(media.matches);
       if (media.matches) {
         // On mobile the workbar collapses behind the filters toggle. Keep the
         // sticky offset at the brandbar height; when filters open they push
         // content down naturally without needing a calc-able offset.
         root.style.setProperty("--topbar-height", "56px");
       } else {
-        root.style.setProperty("--topbar-height", showWorkbar ? "92px" : "48px");
+        root.style.setProperty("--topbar-height", showWorkbar && !desktopFiltersCollapsed ? "92px" : "48px");
       }
     }
     applyHeight();
@@ -661,10 +688,10 @@ export function DashboardTopbar({
       media.removeEventListener("change", applyHeight);
       root.style.removeProperty("--topbar-height");
     };
-  }, [showWorkbar]);
+  }, [desktopFiltersCollapsed, showWorkbar]);
 
   return (
-    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""}`}>
+    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`}>
       <div className="brandbar">
         <button
           type="button"
@@ -710,10 +737,13 @@ export function DashboardTopbar({
             </button>
             {showWorkbar ? (
               <button
-                aria-label={mobileFiltersOpen ? "Hide filters" : "Show filters"}
-                aria-expanded={mobileFiltersOpen}
+                aria-label={filtersVisible ? "Hide filters" : "Show filters"}
+                aria-expanded={filtersVisible}
                 className="icon-button framed mobile-filters-toggle"
-                onClick={() => setMobileFiltersOpen((open) => !open)}
+                onClick={() => {
+                  if (compactFilters) setMobileFiltersOpen((open) => !open);
+                  else setDesktopFiltersCollapsed((collapsed) => !collapsed);
+                }}
                 title="Filters"
                 type="button"
               >
@@ -802,7 +832,7 @@ export function DashboardTopbar({
             label="View"
             menuAlign="right"
             onChange={onApplySavedView}
-            options={[{ value: "", label: "Unsaved" }, ...savedViews.map((key) => ({ value: key, label: savedViewLabel(key) }))]}
+            options={[{ value: "", label: "Unsaved" }, ...savedViews]}
             value={savedViewKey}
           />
           <button className="icon-button framed" type="button" aria-label="Refresh" onClick={onRefresh}><RefreshCw size={14} /></button>
@@ -1108,7 +1138,7 @@ export function RunsWorkspace({
 }: {
   addPanelSectionId: string;
   availableMetricKeys: string[];
-  onAddPanel: (sectionId: string, metricKey: string) => void;
+  onAddPanel: (sectionId: string, metricKey: string, type: WorkspacePanelType) => void;
   onAddSection: () => void;
   onClearFilters: () => void;
   onColumnsOpen: Dispatch<SetStateAction<boolean>>;
@@ -1160,6 +1190,7 @@ export function RunsWorkspace({
     ".drawer-metric-row:not([disabled]), .quick-add-card:not([disabled]), button[aria-label='Close add panels']",
   );
   const [draggedPanel, setDraggedPanel] = useState<DraggedWorkspacePanel | null>(null);
+  const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
   const draggedPanelRef = useRef<DraggedWorkspacePanel | null>(null);
   const activeAddSectionId = addPanelSectionId || view.sections[0]?.id || "";
   function handlePanelDragStart(event: DragEvent<HTMLElement>, sectionId: string, panelId: string) {
@@ -1238,7 +1269,7 @@ export function RunsWorkspace({
       : `Deselect all ${visibleRunIds.length} visible runs`
     : `Select all ${visibleRunIds.length} visible runs`;
   const matchingOverflow = summaryTotal > visibleRunIds.length;
-  const showSelectAllMatching = railSelectionState !== "none" && matchingOverflow;
+  const showSelectAllMatching = matchingOverflow;
   const selectAllMatchingTarget = Math.min(summaryTotal, MAX_SELECTED_RUNS);
   return (
     <div className={`runs-workspace ${showAddPanelDrawer ? "drawer-open" : ""} ${runRailCollapsed ? "run-rail-collapsed" : ""}`}>
@@ -1426,11 +1457,24 @@ export function RunsWorkspace({
             <h2>Add panels</h2>
             <button className="icon-button" type="button" aria-label="Close add panels" onClick={() => onSetAddPanelSection("")}><X size={16} /></button>
           </div>
-          <button className="quick-add-card" type="button" disabled={!availableMetricKeys.length} onClick={() => availableMetricKeys[0] && onAddPanel(activeAddSectionId, availableMetricKeys[0])}>
+          <button className="quick-add-card" type="button" disabled={!availableMetricKeys.length} onClick={() => availableMetricKeys[0] && onAddPanel(activeAddSectionId, availableMetricKeys[0], addPanelType)}>
             <span><Plus size={17} /></span>
             <strong>Quick add</strong>
-            <small>Add the next available metric as a line panel.</small>
+            <small>Add the next available metric as a {workspacePanelTypeLabel(addPanelType).toLowerCase()} panel.</small>
           </button>
+          <div className="chart-type-segment" role="group" aria-label="Chart type">
+            {(["line", "bar", "histogram", "dot"] as WorkspacePanelType[]).map((type) => (
+              <button
+                aria-pressed={addPanelType === type}
+                className={addPanelType === type ? "active" : ""}
+                key={type}
+                onClick={() => setAddPanelType(type)}
+                type="button"
+              >
+                {workspacePanelTypeLabel(type)}
+              </button>
+            ))}
+          </div>
           <CustomSelect
             className="full"
             id="add-panel-section"
@@ -1442,7 +1486,7 @@ export function RunsWorkspace({
           <div className="drawer-group">
             <h3>Charts</h3>
             {availableMetricKeys.slice(0, 18).map((metric) => (
-              <button className="drawer-metric-row" key={metric} type="button" onClick={() => onAddPanel(activeAddSectionId, metric)}>
+              <button className="drawer-metric-row" key={metric} type="button" onClick={() => onAddPanel(activeAddSectionId, metric, addPanelType)}>
                 <Activity size={16} />
                 <span>
                   <strong>{metricTitle(metric)}</strong>
@@ -1450,7 +1494,7 @@ export function RunsWorkspace({
                 </span>
               </button>
             ))}
-            {!availableMetricKeys.length ? <div className="empty compact-empty">Every available metric already has a panel. Switch to manual mode or remove a panel to add a different chart.</div> : null}
+            {!availableMetricKeys.length ? <div className="empty compact-empty">No metrics are available for the current filters yet.</div> : null}
           </div>
         </aside>
       ) : null}
@@ -1600,17 +1644,20 @@ export function WorkspacePanelCard({
   const selectedOverflow = selectedVisibleRuns.length > panelRuns.length;
   const panelRunIds = new Set(panelRuns.map((run) => run.id));
   const runLookup = new Map(panelRuns.map((run) => [run.id, run]));
-  const hasFetchedMetric = Object.prototype.hasOwnProperty.call(workspaceSeries, panel.metricKey);
+  const linePanel = panel.type === "line";
+  const hasFetchedMetric = !linePanel || Object.prototype.hasOwnProperty.call(workspaceSeries, panel.metricKey);
   const rawSeries = (workspaceSeries[panel.metricKey] ?? []).filter((item) => panelRunIds.has(item.id) && (item.points?.length ?? 0) > 0);
-  const loadingSeries = panelRuns.length > 0 && !hasFetchedMetric;
-  const missingSeriesCount = Math.max(0, panelRuns.length - rawSeries.length);
+  const latestValues = latestMetricValues(panelRuns, panel.metricKey);
+  const loadingSeries = linePanel && panelRuns.length > 0 && !hasFetchedMetric;
+  const plottedSeriesCount = linePanel ? rawSeries.length : latestValues.length;
+  const missingSeriesCount = Math.max(0, panelRuns.length - plottedSeriesCount);
   const plottedRunLabel = selectedVisibleRuns.length
     ? loadingSeries
       ? `loading ${panelRuns.length} selected`
-      : `${rawSeries.length} plotted / ${panelRuns.length} selected`
+      : `${plottedSeriesCount} plotted / ${panelRuns.length} selected`
     : loadingSeries
       ? `loading ${panelRuns.length} visible`
-      : `${rawSeries.length}/${panelRuns.length} visible`;
+      : `${plottedSeriesCount}/${panelRuns.length} visible`;
   const groupedSeries = rawSeries.map((item) => {
     const run = runLookup.get(item.id);
     return { ...item, group: run ? groupKeyForRun(run, settings.groupBy) : item.group ?? "all" };
@@ -1623,7 +1670,7 @@ export function WorkspacePanelCard({
   useEffect(() => {
     setPanelHover(null);
     setPanelZoomRange(null);
-  }, [panel.metricKey, settings.xMode, settings.groupBy, settings.groupAverage, settings.smoothing, settings.maxRuns, selectedRunIds.join(",")]);
+  }, [panel.metricKey, panel.type, settings.xMode, settings.groupBy, settings.groupAverage, settings.smoothing, settings.maxRuns, selectedRunIds.join(",")]);
   function handlePanelChartMove(event: MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const point = svgPointFromClient(rect, event.clientX, event.clientY, panelChartWidth, panelChartHeight);
@@ -1713,7 +1760,7 @@ export function WorkspacePanelCard({
             ) : null}
             <span className="panel-title-text">{panel.title}</span>
           </h3>
-          <small>{panel.metricKey} · {plottedRunLabel}</small>
+          <small>{workspacePanelTypeLabel(panel.type)} · {panel.metricKey} · {plottedRunLabel}</small>
         </div>
         <div className="panel-card-actions">
           {onEdit ? <button className="icon-button" type="button" aria-label={`Edit ${panel.title}`} onClick={onEdit}><Pencil size={15} /></button> : null}
@@ -1739,24 +1786,35 @@ export function WorkspacePanelCard({
           <div className="empty">Loading metric series...</div>
         </div>
       ) : (
-        <MetricChart
-          domain={domain}
-          emptyMessage={panelRuns.length ? "No logged series for this metric in the current run set." : undefined}
-          fullDomain={fullDomain}
-          height={panelChartHeight}
-          hover={panelHover}
-          metricKey={panel.metricKey}
-          normalizedSeries={normalized}
-          onMove={handlePanelChartMove}
-          onPointHover={setPanelHover}
-          onLeave={() => setPanelHover(null)}
-          onZoomRangeChange={setPanelZoomRange}
-          padding={panelChartPadding}
-          rangeSeries={rangeSeries}
-          width={panelChartWidth}
-          xMode={settings.xMode}
-          zoomRange={panelZoomRange}
-        />
+        linePanel ? (
+          <MetricChart
+            domain={domain}
+            emptyMessage={panelRuns.length ? "No logged series for this metric in the current run set." : undefined}
+            fullDomain={fullDomain}
+            height={panelChartHeight}
+            hover={panelHover}
+            metricKey={panel.metricKey}
+            normalizedSeries={normalized}
+            onMove={handlePanelChartMove}
+            onPointHover={setPanelHover}
+            onLeave={() => setPanelHover(null)}
+            onZoomRangeChange={setPanelZoomRange}
+            padding={panelChartPadding}
+            rangeSeries={rangeSeries}
+            width={panelChartWidth}
+            xMode={settings.xMode}
+            zoomRange={panelZoomRange}
+          />
+        ) : (
+          <LatestMetricPanelChart
+            height={panelChartHeight}
+            metricKey={panel.metricKey}
+            padding={panelChartPadding}
+            type={panel.type as Exclude<WorkspacePanelType, "line">}
+            values={latestValues}
+            width={panelChartWidth}
+          />
+        )
       )}
       {onResize ? (
         <button
@@ -1771,6 +1829,119 @@ export function WorkspacePanelCard({
   );
 }
 
+function LatestMetricPanelChart({
+  height,
+  metricKey,
+  padding,
+  type,
+  values,
+  width,
+}: {
+  height: number;
+  metricKey: string;
+  padding: number;
+  type: Exclude<WorkspacePanelType, "line">;
+  values: Array<{ id: string; index: number; name: string; value: number }>;
+  width: number;
+}) {
+  if (!values.length) {
+    return <div className="chart-area"><div className="empty">No latest values for this metric in the current run set.</div></div>;
+  }
+  const innerWidth = Math.max(1, width - padding * 2);
+  const innerHeight = Math.max(1, height - padding * 2);
+  const metricValues = values.map((item) => item.value);
+  const minValue = Math.min(...metricValues);
+  const maxValue = Math.max(...metricValues);
+  const paddedMin = minValue === maxValue ? minValue - 1 : minValue;
+  const paddedMax = minValue === maxValue ? maxValue + 1 : maxValue;
+  const valueMin = type === "bar" ? Math.min(0, paddedMin) : paddedMin;
+  const valueMax = type === "bar" ? Math.max(0, paddedMax) : paddedMax;
+  const yFor = (value: number) => padding + innerHeight - ((value - valueMin) / (valueMax - valueMin || 1)) * innerHeight;
+  const xFor = (index: number) => padding + (values.length === 1 ? innerWidth / 2 : (index / (values.length - 1)) * innerWidth);
+  const bins = type === "histogram" ? histogramBins(metricValues, 12) : [];
+  const maxBinCount = bins.length ? Math.max(...bins.map((bin: { count: number }) => bin.count), 1) : 1;
+  const yTicks = type === "histogram" ? axisTicks(0, maxBinCount, 4) : axisTicks(valueMin, valueMax, 4);
+  const xTicks = type === "histogram" ? axisTicks(minValue, maxValue, 4) : indexedAxisTicks(values.length, 5);
+  const histogramSpan = Math.max(1, maxValue - minValue);
+  const histogramXFor = (value: number) => padding + ((value - minValue) / histogramSpan) * innerWidth;
+  const countYFor = (count: number) => height - padding - (count / Math.max(1, maxBinCount)) * innerHeight;
+  const barWidth = type === "bar" ? Math.max(2, innerWidth / values.length - 3) : 0;
+  return (
+    <div className="chart-area alt-panel-chart" aria-label={`${workspacePanelTypeLabel(type)} chart for ${metricKey}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img">
+        {yTicks.map((tick: number) => {
+          const y = type === "histogram" ? countYFor(tick) : yFor(tick);
+          return (
+            <g key={`y-${tick}`}>
+              <line className="grid-line" x1={padding} x2={width - padding} y1={y} y2={y} />
+              <text className="tick-label" x={padding - 10} y={y + 4} textAnchor="end">{type === "histogram" ? formatNumber(tick, 0) : formatNumber(tick, 2)}</text>
+            </g>
+          );
+        })}
+        {xTicks.map((tick: number) => {
+          const x = type === "histogram" ? histogramXFor(tick) : xFor(tick);
+          const label = type === "histogram" ? formatAxisValue(tick) : `#${tick + 1}`;
+          return (
+            <g key={`x-${tick}`}>
+              <line className="grid-line vertical" x1={x} x2={x} y1={padding} y2={height - padding} />
+              <text className="tick-label" x={x} y={height - padding + 20} textAnchor="middle">{label}</text>
+            </g>
+          );
+        })}
+        <line className="axis" x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} />
+        <line className="axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
+        <text className="axis-label" x={width / 2} y={height - 5} textAnchor="middle">{type === "histogram" ? metricTitle(metricKey) : "Selected run order"}</text>
+        <text className="axis-label" x={18} y={height / 2} textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>{type === "histogram" ? "Count" : metricTitle(metricKey)}</text>
+        {type === "histogram" ? bins.map((bin: { min: number; max: number; count: number }, index: number) => {
+          const widthPerBin = bins.length === 1 ? innerWidth : histogramXFor(bin.max) - histogramXFor(bin.min);
+          const barHeight = (bin.count / Math.max(1, maxBinCount)) * innerHeight;
+          return (
+            <rect
+              className="histogram-bar"
+              height={barHeight}
+              key={`${bin.min}-${bin.max}`}
+              rx="3"
+              width={Math.max(2, widthPerBin - 4)}
+              x={(bins.length === 1 ? padding : histogramXFor(bin.min)) + 2}
+              y={height - padding - barHeight}
+            >
+              <title>{`${formatAxisValue(bin.min)}-${formatAxisValue(bin.max)}: ${bin.count}`}</title>
+            </rect>
+          );
+        }) : null}
+        {type === "bar" ? values.map((item, index) => {
+          const y = yFor(Math.max(item.value, paddedMin));
+          const zeroY = yFor(0);
+          const top = Math.min(y, zeroY);
+          const barHeight = Math.max(2, Math.abs(zeroY - y));
+          return (
+            <rect
+              className="summary-bar"
+              height={barHeight}
+              key={item.id}
+              rx="3"
+              width={barWidth}
+              x={xFor(index) - barWidth / 2}
+              y={top}
+            >
+              <title>{`${item.name}: ${formatAxisValue(item.value)}`}</title>
+            </rect>
+          );
+        }) : null}
+        {type === "dot" ? values.map((item, index) => (
+          <circle className="summary-dot" cx={xFor(index)} cy={yFor(item.value)} key={item.id} r="4">
+            <title>{`${item.name}: ${formatAxisValue(item.value)}`}</title>
+          </circle>
+        )) : null}
+      </svg>
+      <div className="chart-legend compact-legend">
+        <span>{values.length} latest values</span>
+        {type === "histogram" ? <span>{bins.length} bins</span> : <span>{metricKey}</span>}
+      </div>
+    </div>
+  );
+}
+
 export function PanelEditDrawer({
   metricOptions,
   onClose,
@@ -1781,7 +1952,7 @@ export function PanelEditDrawer({
 }: {
   metricOptions: string[];
   onClose: () => void;
-  onUpdate: (patch: { title?: string; metricKey?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
+  onUpdate: (patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
   panel: WorkspacePanel;
   section: WorkspaceSection;
   view: WorkspaceView;
@@ -1791,9 +1962,22 @@ export function PanelEditDrawer({
   return (
     <aside className="panel-drawer edit-drawer" role="dialog" aria-modal="true" aria-label="Edit panel" ref={drawerRef} tabIndex={-1}>
       <div className="drawer-head">
-        <h2>Line plot</h2>
+        <h2>{workspacePanelTypeLabel(panel.type)} panel</h2>
         <button className="icon-button" type="button" aria-label="Close edit panel" onClick={onClose}><X size={16} /></button>
       </div>
+      <CustomSelect
+        className="full"
+        id="edit-panel-type"
+        label="Chart type"
+        onChange={(type) => onUpdate({ type: workspacePanelTypesFromValue(type) })}
+        options={[
+          { value: "line", label: "Line" },
+          { value: "bar", label: "Bar" },
+          { value: "histogram", label: "Histogram" },
+          { value: "dot", label: "Dot plot" },
+        ]}
+        value={panel.type}
+      />
       <label className="control full">
         Title
         <input value={panel.title} onChange={(event) => onUpdate({ title: event.target.value })} />
@@ -1854,6 +2038,10 @@ function resolveWorkspaceSettings(view: WorkspaceView, section: WorkspaceSection
   };
 }
 
+function workspacePanelTypesFromValue(value: string): WorkspacePanelType {
+  return value === "bar" || value === "histogram" || value === "dot" ? value : "line";
+}
+
 function normalizedPanelLayout(layout?: WorkspacePanelLayout): WorkspacePanelLayout {
   return {
     w: typeof layout?.w === "number" && Number.isFinite(layout.w) ? Math.max(3, Math.min(12, Math.round(layout.w))) : 6,
@@ -1864,7 +2052,7 @@ function normalizedPanelLayout(layout?: WorkspacePanelLayout): WorkspacePanelLay
 function panelMatchesSearch(section: WorkspaceSection, panel: WorkspacePanel, search: string) {
   const needle = search.trim().toLowerCase();
   if (!needle) return true;
-  return `${section.name} ${panel.title} ${panel.metricKey}`.toLowerCase().includes(needle);
+  return `${section.name} ${panel.title} ${panel.metricKey} ${workspacePanelTypeLabel(panel.type)}`.toLowerCase().includes(needle);
 }
 
 function readDraggedPanel(event: DragEvent<HTMLElement>): DraggedWorkspacePanel | null {
@@ -2196,6 +2384,44 @@ export function MetricChart({
   xMode: string;
   zoomRange?: ChartZoomRange;
 }) {
+  const denseChart = shouldUseDenseChart(normalizedSeries);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!denseChart) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const pixelRatio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.round(width * pixelRatio);
+    canvas.height = Math.round(height * pixelRatio);
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, width, height);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.globalAlpha = normalizedSeries.length >= 1000 ? 0.16 : normalizedSeries.length >= 500 ? 0.2 : 0.28;
+    context.lineWidth = normalizedSeries.length >= 1000 ? 0.75 : 0.95;
+    normalizedSeries.forEach((item, index) => {
+      const points = item.normalizedPoints ?? [];
+      if (!points.length) return;
+      context.strokeStyle = chartColor(index);
+      context.fillStyle = chartColor(index);
+      if (points.length === 1) {
+        context.beginPath();
+        context.arc(points[0].x, points[0].y, 1.4, 0, Math.PI * 2);
+        context.fill();
+        return;
+      }
+      context.beginPath();
+      points.forEach((point: any, pointIndex: number) => {
+        if (pointIndex === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+      });
+      context.stroke();
+    });
+    context.globalAlpha = 1;
+  }, [denseChart, height, normalizedSeries, width]);
+
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     return <div className="chart-area"><div className="empty">{emptyMessage}</div></div>;
   }
@@ -2225,42 +2451,45 @@ export function MetricChart({
         ))}
         {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow">+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
       </div>
-      <svg className="metric-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
-        {yTicks.map((tick) => (
-          <g key={`y-${tick}`}>
-            <line className="grid-line" x1={padding} x2={width - padding} y1={yPos(tick)} y2={yPos(tick)} />
-            <text className="tick-label" x={padding - 10} y={yPos(tick) + 4} textAnchor="end">{formatNumber(tick, 2)}</text>
-          </g>
-        ))}
-        {xTicks.map((tick) => (
-          <g key={`x-${tick}`}>
-            <line className="grid-line" x1={xPos(tick)} x2={xPos(tick)} y1={padding} y2={height - padding} />
-            <text className="tick-label" x={xPos(tick)} y={height - 25} textAnchor="middle">{formatAxisValue(tick, xMode)}</text>
-          </g>
-        ))}
-        <line className="axis" x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} />
-        <line className="axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
-        <text className="axis-label" x={width / 2} y={height - 5} textAnchor="middle">{xMode === "time" ? "Logged time" : "Training step"}</text>
-        <text className="axis-label" x={18} y={height / 2} textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>{metricTitle(metricKey)}</text>
-        {hover ? <line className="hover-guide" x1={hover.point.x} x2={hover.point.x} y1={padding} y2={height - padding} /> : null}
-        {normalizedSeries.map((item, index) => (
-          <g key={item.id}>
-            <polyline className={`series series-${index % 5}`} points={item.path} style={{ stroke: chartColor(index) }} />
-            {showPointNodes ? (item.normalizedPoints ?? []).map((point: any) => (
-              <circle
-                key={`${item.id}-${point.step}-${point.created_at}`}
-                className={`series-point point-${index % 5}`}
-                cx={point.x}
-                cy={point.y}
-                style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
-                onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, group: item.group, point, distance: 0 })}
-                r={2.4}
-              />
-            )) : null}
-          </g>
-        ))}
-        {hover ? <circle className="hover-ring" cx={hover.point.x} cy={hover.point.y} r={8} /> : null}
-      </svg>
+      <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }}>
+        {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
+        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={denseChart ? undefined : onMove} onMouseLeave={onLeave}>
+          {yTicks.map((tick) => (
+            <g key={`y-${tick}`}>
+              <line className="grid-line" x1={padding} x2={width - padding} y1={yPos(tick)} y2={yPos(tick)} />
+              <text className="tick-label" x={padding - 10} y={yPos(tick) + 4} textAnchor="end">{formatNumber(tick, 2)}</text>
+            </g>
+          ))}
+          {xTicks.map((tick) => (
+            <g key={`x-${tick}`}>
+              <line className="grid-line" x1={xPos(tick)} x2={xPos(tick)} y1={padding} y2={height - padding} />
+              <text className="tick-label" x={xPos(tick)} y={height - 25} textAnchor="middle">{formatAxisValue(tick, xMode)}</text>
+            </g>
+          ))}
+          <line className="axis" x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} />
+          <line className="axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
+          <text className="axis-label" x={width / 2} y={height - 5} textAnchor="middle">{xMode === "time" ? "Logged time" : "Training step"}</text>
+          <text className="axis-label" x={18} y={height / 2} textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>{metricTitle(metricKey)}</text>
+          {!denseChart && hover ? <line className="hover-guide" x1={hover.point.x} x2={hover.point.x} y1={padding} y2={height - padding} /> : null}
+          {!denseChart ? normalizedSeries.map((item, index) => (
+            <g key={item.id}>
+              <polyline className={`series series-${index % 5}`} points={item.path} style={{ stroke: chartColor(index) }} />
+              {showPointNodes ? (item.normalizedPoints ?? []).map((point: any) => (
+                <circle
+                  key={`${item.id}-${point.step}-${point.created_at}`}
+                  className={`series-point point-${index % 5}`}
+                  cx={point.x}
+                  cy={point.y}
+                  style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
+                  onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, group: item.group, point, distance: 0 })}
+                  r={2.4}
+                />
+              )) : null}
+            </g>
+          )) : null}
+          {!denseChart && hover ? <circle className="hover-ring" cx={hover.point.x} cy={hover.point.y} r={8} /> : null}
+        </svg>
+      </div>
       {hover ? (
         <div
           className={`chart-tooltip ${hoverEdge}`}
@@ -2872,6 +3101,7 @@ export function SideBySide({
   diffOnly = false,
   layout = "auto",
   metricKey,
+  onOpenRunArtifacts,
   onRunSort,
   onRunSortMetricKey,
   payload,
@@ -2887,6 +3117,7 @@ export function SideBySide({
   diffOnly?: boolean;
   layout?: CompareLayout;
   metricKey: string;
+  onOpenRunArtifacts?: (runId: string) => void;
   onRunSort?: (sort: CompareRunSort) => void;
   onRunSortMetricKey?: (metric: string) => void;
   payload: any;
@@ -2950,6 +3181,7 @@ export function SideBySide({
               allRows={allRows}
               configSortKey={configSortKey}
               metricKey={metricKey}
+              onOpenRunArtifacts={onOpenRunArtifacts}
               onRunSort={onRunSort}
               onRunSortMetricKey={onRunSortMetricKey}
               referenceRunId={referenceRunId}
@@ -3014,6 +3246,7 @@ function CompareRunRows({
   allRows,
   configSortKey,
   metricKey,
+  onOpenRunArtifacts,
   onRunSort,
   onRunSortMetricKey,
   referenceRunId,
@@ -3026,6 +3259,7 @@ function CompareRunRows({
   allRows: CompareRowView[];
   configSortKey: string;
   metricKey: string;
+  onOpenRunArtifacts?: (runId: string) => void;
   onRunSort?: (sort: CompareRunSort) => void;
   onRunSortMetricKey?: (metric: string) => void;
   referenceRunId: string;
@@ -3056,16 +3290,17 @@ function CompareRunRows({
             title={tableMetricKey}
             type="button"
           >
-            <span>{shortMetricName(tableMetricKey)}</span>
-            <small>{metricGoalLabel(tableMetricKey)}</small>
+            <span>{metricTitle(tableMetricKey)}</span>
+            <small>{metricNamespace(tableMetricKey)} · {metricGoalLabel(tableMetricKey)}</small>
           </button>
         ))}
         <button aria-label="Sort compared runs by annotations" className={`compare-row-head compare-sort-head ${runSort === "notes" || runSort === "tags" ? "active" : ""}`} onClick={() => requestRunSort(runSort === "notes" ? "tags" : "notes")} type="button">Annotations</button>
         <button aria-label="Sort compared runs by artifact count" className={`compare-row-head compare-sort-head ${runSort === "artifacts" ? "active" : ""}`} onClick={() => requestRunSort("artifacts")} type="button">Artifacts</button>
         <button aria-label={`Sort compared runs by ${configSortKey || "config"}`} className={`compare-row-head compare-sort-head ${runSort === "config" ? "active" : ""}`} onClick={() => requestRunSort("config")} type="button">{configSortKey || "Config"}</button>
-        {evidenceRows.map((row) => <div className="compare-row-head" key={row.key} title={row.path}>{row.label}</div>)}
+        {evidenceRows.map((row) => <CompareEvidenceHead key={row.key} row={row} />)}
         {runs.map((run) => {
           const note = runNoteText(run);
+          const artifactCount = artifactTotalForRun(run);
           return (
             <div className="compare-run-line" key={run.id} role="row">
               <div className={`compare-run-identity sticky-run-cell ${run.id === referenceRunId ? "reference" : ""}`}>
@@ -3094,7 +3329,21 @@ function CompareRunRows({
                 <TagList tags={run.tags} />
                 <small title={note}>{note || "No note"}</small>
               </div>
-              <div className="compare-run-cell compare-artifact-count">{formatNumber(artifactTotalForRun(run), 0)}</div>
+              <div className="compare-run-cell compare-artifact-count">
+                {artifactCount && onOpenRunArtifacts ? (
+                  <button
+                    aria-label={`Open artifacts for ${run.name}`}
+                    className="compare-artifact-count-button"
+                    onClick={() => onOpenRunArtifacts(run.id)}
+                    title={`Open ${formatNumber(artifactCount, 0)} artifacts for ${run.name}`}
+                    type="button"
+                  >
+                    {formatNumber(artifactCount, 0)}
+                  </button>
+                ) : (
+                  <span>{formatNumber(artifactCount, 0)}</span>
+                )}
+              </div>
               <div className="compare-run-cell">{configSortKey ? compactValue(run.config?.[configSortKey]) : "-"}</div>
               {evidenceRows.map((row) => {
                 const value = compactValue(row.values?.[run.id]);
@@ -3113,6 +3362,24 @@ function CompareRunRows({
       ) : null}
     </div>
   );
+}
+
+function CompareEvidenceHead({ row }: { row: CompareRowView }) {
+  const { primary, secondary } = splitCompareHeaderLabel(row.label);
+  return (
+    <div className="compare-row-head compare-evidence-head" title={row.path}>
+      <span>{primary}</span>
+      {secondary ? <small>{secondary}</small> : null}
+    </div>
+  );
+}
+
+function splitCompareHeaderLabel(label: string) {
+  const [primary, ...rest] = label.split(" · ");
+  return {
+    primary: primary || label,
+    secondary: rest.join(" · "),
+  };
 }
 
 function uniqueMetricKeys(keys: string[]) {
@@ -3154,8 +3421,8 @@ function CompareSummary({ metricKey, referenceRunId, rows, runs }: { metricKey: 
     <section className="compare-summary" aria-label="Comparison summary">
       <div>
         <small>Objective</small>
-        <strong>{metricKey}</strong>
-        <span>{goal === "minimize" ? "Lower is better" : "Higher is better"}</span>
+        <strong>{metricTitle(metricKey)}</strong>
+        <span>{metricNamespace(metricKey)} · {goal === "minimize" ? "Lower is better" : "Higher is better"}</span>
       </div>
       <div>
         <small>Best run</small>

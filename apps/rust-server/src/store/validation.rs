@@ -361,7 +361,8 @@ pub(super) fn datetime_from_micros(micros: i64) -> DateTime<Utc> {
 
 pub(super) fn run_search_text(run: &RunRow) -> String {
     format!(
-        "{} {} {} {}",
+        "{} {} {} {} {}",
+        run.project,
         run.name,
         run.tags.join(" "),
         run.config,
@@ -633,6 +634,22 @@ mod tests {
         assert!(validate_table_rows(&[json!(["not", "object"])]).is_err());
         assert!(validate_histogram_value(&json!({"bins": [0, 1], "counts": [3]})).is_ok());
         assert!(validate_histogram_value(&json!({"counts": [3]})).is_err());
+    }
+
+    #[test]
+    fn run_search_text_includes_project_names() {
+        let mut row = run(
+            Uuid::from_u128(10),
+            Uuid::from_u128(11),
+            Uuid::from_u128(12),
+            "model-a",
+        );
+        row.project = "hosted-scale-data".to_string();
+
+        let search = run_search_text(&row);
+
+        assert!(search.contains("hosted-scale-data"));
+        assert!(search.contains("model-a"));
     }
 
     #[test]

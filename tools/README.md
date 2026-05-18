@@ -136,12 +136,18 @@ npm run benchmark:cloud-run
 The benchmark reads `INSTANTML_DATA_API_BASE` or `INSTANTML_API_BASE` from
 `.env` by default. It rejects non-HTTPS API bases unless
 `INSTANTML_CLOUD_RUN_BENCH_ALLOW_HTTP=1` is set for a local proxy. Measured
-routes include org and project run summaries, 100-row pages, cursor page 2,
+routes include org and project run summaries, the 100-row default dashboard
+page, cursor page 2, lightweight selection-projection pages for the 100-run
+default selection, 1,000-result search selection, and 2,000-run max selection,
 name/tag/config/notes searches, status filters, combined search/filter,
 selected-metric sorting, org/project overview, single-run chart series, and
-batched selected-run `POST /api/metrics/series` calls. Results are sanitized to
-host-only API metadata and never include API keys, raw URLs, cookies, org IDs,
-or response bodies.
+batched selected-run `POST /api/metrics/series` calls for every configured
+dashboard metric. By default the chart workload mirrors the current UI:
+100 selected runs on fresh load, 1,000 selected `seed-13` search results, and
+2,000 selected all-project results with adaptive per-run point limits. The
+benchmark verifies the server-side 120,000-point batched-series cap. Results
+are sanitized to host-only API metadata and never include API keys, raw URLs,
+cookies, org IDs, or response bodies.
 
 Useful environment variables:
 
@@ -150,7 +156,10 @@ Useful environment variables:
 - `INSTANTML_CLOUD_RUN_BENCH_PROJECTS`: comma-separated project names. Defaults to `INSTANTML_HOSTED_SCALE_PROJECTS` or `hosted-scale-control,hosted-scale-data`.
 - `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`: minimum runs expected across benchmark projects. Default: `100000`.
 - `INSTANTML_CLOUD_RUN_BENCH_EXPECTED_STEPS`: expected metric steps per run for chart/window choices. Default: `1000`.
-- `INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS`: selected runs for batched chart calls. Default: `8`.
+- `INSTANTML_CLOUD_RUN_BENCH_DEFAULT_SELECTED_RUNS`: default fresh-dashboard selected runs. Default: `100`.
+- `INSTANTML_CLOUD_RUN_BENCH_SEARCH_SELECTED_RUNS`: selected runs for the search-result chart workload. Default: `1000`.
+- `INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS`: selected runs for the max-selection chart workload. Default: `2000`.
+- `INSTANTML_CLOUD_RUN_BENCH_SELECTION_QUERY`: query used for the search-result selection workload. Default: `seed-13`.
 - `INSTANTML_CLOUD_RUN_BENCH_CHART_LIMIT`: per-series chart row limit. Default: `1000`.
 - `INSTANTML_CLOUD_RUN_BENCH_SAMPLES`: measured requests per endpoint. Default: `8`.
 - `INSTANTML_CLOUD_RUN_BENCH_WARMUPS`: warmup requests per endpoint before timing. Default: `2`.

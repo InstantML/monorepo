@@ -66,6 +66,8 @@ impl Store {
                     | "session"
                     | "service_account"
                     | "api_key"
+                    | "dashboard_preference"
+                    | "workspace_view"
                     | TENANT_ROUTE_KIND
             )
     }
@@ -141,7 +143,7 @@ impl Store {
 
     /// Returns true when the org's routing tier is "shared" and a shared-cell
     /// MetricStore is configured. In local/non-hosted mode always returns false.
-    async fn org_uses_shared_cell(&self, org_id: Uuid) -> bool {
+    pub(super) async fn org_uses_shared_cell(&self, org_id: Uuid) -> bool {
         if self.shared_cell_metric_store.is_none() {
             return false;
         }
@@ -150,6 +152,20 @@ impl Store {
             .get(&org_id)
             .map(|org| org.tenant_routing_tier == "shared")
             .unwrap_or(false)
+    }
+
+    pub(super) async fn warehouse_storage_bytes_for_org(
+        &self,
+        org_id: Uuid,
+    ) -> AppResult<Option<i64>> {
+        if self.hosted_clickhouse_enabled() && self.org_uses_shared_cell(org_id).await {
+            return Ok(None);
+        }
+        self.metric_store_for_org(org_id)
+            .await?
+            .count_database_storage_bytes()
+            .await
+            .map(Some)
     }
 
     pub(super) async fn ensure_tenant_route(

@@ -214,6 +214,7 @@ export type RunTimelineRow = {
 };
 
 export type WorkspaceMode = "automatic" | "manual";
+export type WorkspacePanelType = "line" | "bar" | "histogram" | "dot";
 
 export type WorkspacePanelSettings = {
   xMode: "step" | "time";
@@ -230,7 +231,7 @@ export type WorkspacePanelLayout = {
 
 export type WorkspacePanel = {
   id: string;
-  type: "line";
+  type: WorkspacePanelType;
   title: string;
   metricKey: string;
   layout?: WorkspacePanelLayout;
@@ -246,7 +247,7 @@ export type WorkspaceSection = {
 };
 
 export type WorkspaceView = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   id: string;
   name: string;
   mode: WorkspaceMode;

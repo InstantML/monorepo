@@ -16,6 +16,7 @@ mod summaries;
 mod tenants;
 mod usage;
 mod validation;
+mod workspace_views;
 
 use access::*;
 pub use auth::*;
@@ -30,6 +31,7 @@ use summaries::*;
 pub use tenants::TenantRouteRecord;
 pub use usage::*;
 use validation::*;
+pub use workspace_views::*;
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
@@ -51,14 +53,16 @@ use crate::{
         ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest,
         CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
         CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-        CreatedAuthSession, DevGoogleAuthRequest, LogMetricsRequest, MembershipRow,
-        MetricSeriesRow, OnboardingApiKey, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow, SeatRow, SeatUserRow,
-        ServiceAccountRow, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
-        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
+        CreatedAuthSession, DashboardPreferenceRow, DevGoogleAuthRequest, LogMetricsRequest,
+        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrganizationRow, ProjectRow,
+        ProvisioningStatusPayload, PublicApiKeyRow, RequestContext, ReserveSeatRequest, RunRow,
+        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+        UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+        UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary, DEFAULT_CONSOLE_LOG_LIMIT,
+        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
         MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
-        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE,
-        PLAN_PREMIUM, PLAN_PRO,
+        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RUN_LIMIT,
+        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -342,6 +346,8 @@ struct StoreData {
     idempotency: HashMap<(Uuid, String), IdempotencyRecord>,
     usage_daily: Vec<Value>,
     tenant_routes: BTreeMap<Uuid, TenantRouteRecord>,
+    dashboard_preferences: BTreeMap<(Uuid, Option<Uuid>), DashboardPreferenceRow>,
+    workspace_views: BTreeMap<Uuid, WorkspaceViewRow>,
     next_attribute_id_by_org: HashMap<Uuid, i64>,
     next_import_id_by_org: HashMap<Uuid, i64>,
 }
@@ -431,6 +437,8 @@ impl StoreData {
             }
             "usage_daily" => self.usage_daily.push(parse_payload(payload)?),
             "tenant_route" => self.insert_tenant_route(parse_payload(payload)?),
+            "dashboard_preference" => self.insert_dashboard_preference(parse_payload(payload)?),
+            "workspace_view" => self.insert_workspace_view(parse_payload(payload)?),
             _ => {}
         }
         Ok(())
@@ -568,6 +576,15 @@ impl StoreData {
 
     fn insert_tenant_route(&mut self, route: TenantRouteRecord) {
         self.tenant_routes.insert(route.org_id, route);
+    }
+
+    fn insert_dashboard_preference(&mut self, row: DashboardPreferenceRow) {
+        self.dashboard_preferences
+            .insert((row.org_id, row.user_id), row);
+    }
+
+    fn insert_workspace_view(&mut self, row: WorkspaceViewRow) {
+        self.workspace_views.insert(row.id, row);
     }
 
     fn remove_run(&mut self, run_id: Uuid) {

@@ -29,6 +29,10 @@ Required:
 Useful overrides:
   INSTANTML_CLOUD_RUN_BENCH_PROJECTS=hosted-scale-control,hosted-scale-data
   INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS=100000
+  INSTANTML_CLOUD_RUN_BENCH_DEFAULT_SELECTED_RUNS=100
+  INSTANTML_CLOUD_RUN_BENCH_SEARCH_SELECTED_RUNS=1000
+  INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS=2000
+  INSTANTML_CLOUD_RUN_BENCH_SELECTION_QUERY=seed-13
   INSTANTML_CLOUD_RUN_BENCH_SAMPLES=8
   INSTANTML_CLOUD_RUN_BENCH_WARMUPS=2
   INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json
@@ -61,7 +65,10 @@ const metricKey = process.env.INSTANTML_CLOUD_RUN_BENCH_METRIC_KEY || "eval/retu
 const systemMetricKey = process.env.INSTANTML_CLOUD_RUN_BENCH_SYSTEM_METRIC_KEY || metricKeys.find((key) => key.startsWith("system/")) || "system/gpu_util";
 const minRuns = positiveInt("INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS", positiveInt("INSTANTML_HOSTED_SCALE_RUNS", 100_000));
 const expectedSteps = positiveInt("INSTANTML_CLOUD_RUN_BENCH_EXPECTED_STEPS", positiveInt("INSTANTML_HOSTED_SCALE_STEPS", 1_000));
-const selectedRunCount = positiveInt("INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS", 8);
+const defaultSelectedRunCount = positiveInt("INSTANTML_CLOUD_RUN_BENCH_DEFAULT_SELECTED_RUNS", 100);
+const searchSelectedRunCount = positiveInt("INSTANTML_CLOUD_RUN_BENCH_SEARCH_SELECTED_RUNS", 1_000);
+const selectedRunCount = positiveInt("INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS", 2_000);
+const selectionSearchQuery = process.env.INSTANTML_CLOUD_RUN_BENCH_SELECTION_QUERY || "seed-13";
 const chartLimit = positiveInt("INSTANTML_CLOUD_RUN_BENCH_CHART_LIMIT", Math.min(5_000, expectedSteps));
 const samples = positiveInt("INSTANTML_CLOUD_RUN_BENCH_SAMPLES", 8);
 const warmups = positiveInt("INSTANTML_CLOUD_RUN_BENCH_WARMUPS", 2);
@@ -121,6 +128,10 @@ const result = sanitizeHostedBenchmarkResult({
     expected_steps_per_run: expectedSteps,
     chart_limit: chartLimit,
     selected_run_count: preflight.selectedRunIds.length,
+    default_selected_run_count: preflight.defaultSelectedRunIds.length,
+    search_selected_run_count: preflight.searchSelectedRunIds.length,
+    max_selected_run_count: preflight.selectedRunIds.length,
+    selection_search_query: selectionSearchQuery,
     metric_key: metricKey,
     system_metric_key: systemMetricKey,
     metric_keys: preflight.metricKeys,
@@ -132,7 +143,7 @@ const result = sanitizeHostedBenchmarkResult({
   },
   budgets_ms: {
     ...HOSTED_BENCHMARK_BUDGETS_MS,
-    batched_series: HOSTED_BENCHMARK_BUDGETS_MS.chart,
+    direct_max_batched_series: 8000,
   },
   measurements,
 });
@@ -156,7 +167,6 @@ async function assertReady() {
 
 async function datasetPreflight() {
   const projectSummaries = [];
-  const selectedRunIds = [];
   const statusCounts = {};
   const metricKeySet = new Set(metricKeys);
   let observedRuns = 0;
@@ -165,21 +175,18 @@ async function datasetPreflight() {
   for (const project of projects) {
     const summary = await requestJson({
       method: "GET",
-      path: `/api/runs/summary?${new URLSearchParams({ project, limit: String(Math.max(selectedRunCount, 25)), sort_by: "created", metric_key: metricKey })}`,
+      path: `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "created", metric_key: metricKey })}`,
       name: `preflight_${slug(project)}`,
     });
     validateBenchmarkPayload({
       name: `preflight_${project}`,
       kind: "summary",
-      limit: Math.max(selectedRunCount, 25),
+      limit: 25,
       require_metric_key: metricKey,
       require_metric_summary_key: metricKey,
     }, summary);
     observedRuns += Number(summary.total || 0);
     for (const key of summary.metric_keys || []) metricKeySet.add(key);
-    for (const run of summary.runs || []) {
-      if (selectedRunIds.length < selectedRunCount) selectedRunIds.push(run.id);
-    }
     projectSummaries.push({ project, summary });
 
     for (const status of ["failed", "running", "finished"]) {
@@ -209,11 +216,37 @@ async function datasetPreflight() {
   if (observedRuns < minRuns) {
     throw new Error(`Cloud benchmark dataset has ${observedRuns} runs across ${projects.join(", ")}, expected at least ${minRuns}. Run npm run seed:hosted-scale first.`);
   }
+  const defaultSelectedRunIds = await fetchSelectionRunIds({
+    name: "preflight_org_default_selection",
+    params: {},
+    targetCount: defaultSelectedRunCount,
+  });
+  const selectedRunIds = await fetchSelectionRunIds({
+    name: "preflight_org_max_selection",
+    params: {},
+    targetCount: selectedRunCount,
+  });
+  const searchSelectedRunIds = await fetchSelectionRunIds({
+    name: "preflight_search_selection",
+    params: { q: selectionSearchQuery },
+    targetCount: searchSelectedRunCount,
+  });
+  if (defaultSelectedRunIds.length < Math.min(defaultSelectedRunCount, observedRuns)) {
+    throw new Error(`Default selection preflight found ${defaultSelectedRunIds.length} runs, expected ${defaultSelectedRunCount}.`);
+  }
   if (!selectedRunIds.length) throw new Error("No selected run ids found for chart benchmarks.");
+  if (selectedRunIds.length < selectedRunCount) {
+    throw new Error(`Max selection preflight found ${selectedRunIds.length} runs, expected ${selectedRunCount}.`);
+  }
+  if (searchSelectedRunIds.length < searchSelectedRunCount) {
+    throw new Error(`Search selection preflight for ${selectionSearchQuery} found ${searchSelectedRunIds.length} runs, expected ${searchSelectedRunCount}.`);
+  }
 
   return {
     projectSummaries,
+    defaultSelectedRunIds,
     selectedRunIds,
+    searchSelectedRunIds,
     observedRuns,
     observedMetricPoints,
     metricKeys: [...metricKeySet].sort(),
@@ -221,12 +254,51 @@ async function datasetPreflight() {
   };
 }
 
+async function fetchSelectionRunIds({ name, params, targetCount }) {
+  const selectedRunIds = [];
+  let selectionOffset = 0;
+  while (selectedRunIds.length < targetCount) {
+    const pageLimit = Math.min(1000, targetCount - selectedRunIds.length);
+    const query = new URLSearchParams({
+      limit: String(pageLimit),
+      offset: String(selectionOffset),
+      projection: "selection",
+      sort_by: "created",
+      metric_key: metricKey,
+      ...params,
+    });
+    const selectionPage = await requestJson({
+      method: "GET",
+      path: `/api/runs/summary?${query}`,
+      name: `${name}_${selectionOffset}`,
+    });
+    validateBenchmarkPayload({
+      name: `${name}_${selectionOffset}`,
+      kind: "summary",
+      limit: pageLimit,
+      selection_projection: true,
+    }, selectionPage);
+    const pageRuns = Array.isArray(selectionPage.runs) ? selectionPage.runs : [];
+    for (const run of pageRuns) {
+      if (run?.id && selectedRunIds.length < targetCount) selectedRunIds.push(run.id);
+    }
+    selectionOffset += pageRuns.length;
+    if (!pageRuns.length || !selectionPage.page_info?.has_next_page) break;
+  }
+  return selectedRunIds;
+}
+
 function benchmarkCases(preflight) {
   const cases = [
     summaryCase("org_newest_25", {}, { group: "summary", require_metric_key: metricKey }),
+    summaryCase("org_newest_100_default_page", { limit: "100" }, { group: "summary", require_metric_key: metricKey }),
     summaryCase("org_search_hosted_scale", { q: "hosted-scale" }, { query_fixture: "tag" }),
     summaryCase("org_search_seed_13", { q: "seed-13" }, { query_fixture: "tag" }),
     summaryCase("org_sort_metric_best", { sort_by: "metric-best" }, { require_metric_summary_key: metricKey }),
+    selectionCase("org_default_selection_100", {}, { limit: String(defaultSelectedRunCount) }),
+    selectionCase("org_max_selection_page_1", {}, { limit: "1000", offset: "0" }),
+    selectionCase("org_max_selection_page_2", {}, { limit: "1000", offset: "1000" }),
+    selectionCase(`org_search_${slug(selectionSearchQuery)}_selection`, { q: selectionSearchQuery }, { limit: String(searchSelectedRunCount) }),
     {
       name: "org_overview",
       kind: "overview",
@@ -270,42 +342,70 @@ function benchmarkCases(preflight) {
   cases.push(
     chartCase("chart_eval_return", firstRunId, metricKey),
     chartCase("chart_system_metric", firstRunId, systemMetricKey),
-    {
-      name: "batched_series_eval_return_selected_runs",
-      kind: "batched_series",
-      group: "batched_series",
-      method: "POST",
-      route_template: "/api/metrics/series",
-      path: "/api/metrics/series",
-      body: { key: metricKey, run_ids: preflight.selectedRunIds, limit: chartLimit },
-      limit: chartLimit,
-      expected_series: preflight.selectedRunIds.length,
-      expect_non_empty: true,
-    },
-    {
-      name: "batched_series_system_window",
-      kind: "batched_series",
-      group: "batched_series",
-      method: "POST",
-      route_template: "/api/metrics/series",
-      path: "/api/metrics/series",
-      body: {
-        key: systemMetricKey,
-        run_ids: preflight.selectedRunIds,
-        limit: Math.min(250, chartLimit),
-        start_step: Math.max(1, Math.floor(expectedSteps * 0.4)),
-        end_step: Math.max(2, Math.floor(expectedSteps * 0.7)),
-      },
-      limit: Math.min(250, chartLimit),
-      expected_series: preflight.selectedRunIds.length,
-      expect_non_empty: true,
-    },
   );
+  const dashboardSelections = [
+    { label: `default_${preflight.defaultSelectedRunIds.length}`, runIds: preflight.defaultSelectedRunIds, directMax: false },
+    { label: `search_${slug(selectionSearchQuery)}_${preflight.searchSelectedRunIds.length}`, runIds: preflight.searchSelectedRunIds, directMax: false },
+    { label: `max_${preflight.selectedRunIds.length}`, runIds: preflight.selectedRunIds, directMax: true },
+  ];
+  for (const selection of dashboardSelections) {
+    for (const key of [...new Set(metricKeys)]) {
+      const chunks = chunkRunIds(selection.runIds, adaptiveMetricSeriesPatchSize(selection.runIds.length));
+      const limit = Math.min(chartLimit, adaptiveMetricSeriesLimit(selection.runIds.length));
+      for (let index = 0; index < chunks.length; index += 1) {
+        const chunk = chunks[index];
+        const chunkSuffix = chunks.length > 1 ? `_chunk_${index + 1}` : "";
+        cases.push({
+          name: `batched_series_${selection.label}_${slug(key)}${chunkSuffix}`,
+          kind: "batched_series",
+          group: "batched_series",
+          method: "POST",
+          route_template: "/api/metrics/series",
+          path: "/api/metrics/series",
+          body: { key, run_ids: chunk, limit },
+          limit,
+          budget_ms: selection.directMax ? 8000 : undefined,
+          expected_series: chunk.length,
+          expect_non_empty: true,
+          total_point_cap: 120000,
+        });
+      }
+    }
+  }
+  cases.push({
+    name: `batched_series_max_${preflight.selectedRunIds.length}_system_window`,
+    kind: "batched_series",
+    group: "batched_series",
+    method: "POST",
+    route_template: "/api/metrics/series",
+    path: "/api/metrics/series",
+    body: {
+      key: systemMetricKey,
+      run_ids: preflight.selectedRunIds,
+      limit: Math.min(250, chartLimit, adaptiveMetricSeriesLimit(preflight.selectedRunIds.length)),
+      start_step: Math.max(1, Math.floor(expectedSteps * 0.4)),
+      end_step: Math.max(2, Math.floor(expectedSteps * 0.7)),
+    },
+    limit: Math.min(250, chartLimit, adaptiveMetricSeriesLimit(preflight.selectedRunIds.length)),
+    budget_ms: preflight.selectedRunIds.length >= 1000 ? 8000 : undefined,
+    expected_series: preflight.selectedRunIds.length,
+    expect_non_empty: true,
+    total_point_cap: 120000,
+  });
 
   return cases.map((caseDefinition) => ({
     ...caseDefinition,
     budget_ms: budgetForCase(caseDefinition),
   }));
+}
+
+function selectionCase(name, params, options = {}) {
+  const limit = Number(options.limit || params.limit || 1000);
+  return summaryCase(
+    name,
+    { ...params, limit: String(limit), offset: options.offset || params.offset || "0", projection: "selection" },
+    { group: "selection_projection", selection_projection: true, expect_non_empty: true },
+  );
 }
 
 function summaryCase(name, params, options = {}) {
@@ -334,6 +434,31 @@ function chartCase(name, runId, key) {
     limit: chartLimit,
     expect_non_empty: true,
   };
+}
+
+function chunkRunIds(runIds, chunkSize) {
+  const chunks = [];
+  for (let index = 0; index < runIds.length; index += chunkSize) {
+    chunks.push(runIds.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function adaptiveMetricSeriesPatchSize(runCount) {
+  if (runCount >= 1500) return 2000;
+  if (runCount >= 500) return 500;
+  if (runCount >= 250) return 250;
+  return 100;
+}
+
+function adaptiveMetricSeriesLimit(runCount) {
+  if (runCount >= 1500) return 60;
+  if (runCount >= 800) return 80;
+  if (runCount >= 400) return 120;
+  if (runCount >= 250) return 160;
+  if (runCount >= 100) return 250;
+  if (runCount >= 50) return 500;
+  return 1000;
 }
 
 async function preflightCases(cases) {

@@ -16,6 +16,7 @@ import type {
   TableColumns,
   WorkspacePanel,
   WorkspacePanelSettings,
+  WorkspacePanelType,
   WorkspaceSection,
   WorkspaceView,
 } from "./dashboard-types";
@@ -34,7 +35,7 @@ export const chartHeight = 360;
 export const chartPadding = 56;
 export const COMPARE_RUN_LIMIT = 50;
 export const COMPARE_ARTIFACT_LIMIT = 12;
-export const WORKSPACE_SCHEMA_VERSION = 1;
+export const WORKSPACE_SCHEMA_VERSION = 2;
 export { WORKSPACE_VIEW_PREFIX };
 const AUTOMATIC_WORKSPACE_PANEL_LIMIT = 6;
 const PREFERRED_AUTOMATIC_METRICS = [
@@ -190,11 +191,21 @@ export function buildManualWorkspace(project: string): WorkspaceView {
   };
 }
 
-export function workspacePanelForMetric(metricKey: string): WorkspacePanel {
+const workspacePanelTypes = new Set<WorkspacePanelType>(["line", "bar", "histogram", "dot"]);
+
+export function workspacePanelTypeLabel(type: WorkspacePanelType) {
+  if (type === "bar") return "Bar";
+  if (type === "histogram") return "Histogram";
+  if (type === "dot") return "Dot plot";
+  return "Line";
+}
+
+export function workspacePanelForMetric(metricKey: string, type: WorkspacePanelType = "line"): WorkspacePanel {
+  const safeType = workspacePanelTypes.has(type) ? type : "line";
   return {
-    id: `panel-${stableId(metricKey)}`,
-    type: "line",
-    title: metricTitle(metricKey),
+    id: `panel-${stableId(`${safeType}-${metricKey}`)}`,
+    type: safeType,
+    title: safeType === "line" ? metricTitle(metricKey) : `${metricTitle(metricKey)} ${workspacePanelTypeLabel(safeType)}`,
     metricKey,
     layout: defaultWorkspacePanelLayout,
   };
@@ -203,7 +214,7 @@ export function workspacePanelForMetric(metricKey: string): WorkspacePanel {
 export function sanitizeWorkspaceView(raw: unknown, metricKeys: string[], project: string): WorkspaceView {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return buildAutomaticWorkspace(metricKeys, project);
   const candidate = raw as Partial<WorkspaceView>;
-  if (candidate.schemaVersion !== WORKSPACE_SCHEMA_VERSION) return buildAutomaticWorkspace(metricKeys, project);
+  if (candidate.schemaVersion !== 1 && candidate.schemaVersion !== WORKSPACE_SCHEMA_VERSION) return buildAutomaticWorkspace(metricKeys, project);
   const sections = Array.isArray(candidate.sections)
     ? candidate.sections.slice(0, 50).map((section, sectionIndex) => sanitizeWorkspaceSection(section, sectionIndex)).filter(Boolean) as WorkspaceSection[]
     : [];
@@ -239,6 +250,7 @@ export function workspaceMetricKeys(view: WorkspaceView, search = "") {
   const keys: string[] = [];
   for (const section of view.sections) {
     for (const panel of section.panels) {
+      if (panel.type !== "line") continue;
       if (needle && !`${section.name} ${panel.title} ${panel.metricKey}`.toLowerCase().includes(needle)) continue;
       keys.push(panel.metricKey);
     }
@@ -273,10 +285,13 @@ function sanitizeWorkspaceSection(section: unknown, index: number) {
 }
 
 function sanitizeWorkspacePanel(panel: unknown, index: number) {
-  if (!isPlainObject(panel) || panel.type !== "line" || typeof panel.metricKey !== "string" || !panel.metricKey.trim()) return null;
+  if (!isPlainObject(panel) || typeof panel.metricKey !== "string" || !panel.metricKey.trim()) return null;
+  const type = typeof panel.type === "string" && workspacePanelTypes.has(panel.type as WorkspacePanelType)
+    ? panel.type as WorkspacePanelType
+    : "line";
   return {
     id: typeof panel.id === "string" && panel.id ? panel.id.slice(0, 80) : `panel-${index}`,
-    type: "line" as const,
+    type,
     title: typeof panel.title === "string" && panel.title.trim() ? panel.title.slice(0, 80) : metricTitle(panel.metricKey),
     metricKey: panel.metricKey.slice(0, 256),
     layout: sanitizePanelLayout(panel.layout),
@@ -471,19 +486,27 @@ export function comparePathLabel(path: string) {
     const metricParts = parts.slice(metricIndex + 1);
     const reducer = metricParts[metricParts.length - 1] ?? "";
     if (metricParts.length > 1 && ["latest", "last", "max", "min", "mean", "avg"].includes(reducer)) {
-      return `${metricParts.slice(0, -1).join("/")} · ${humanComparePathSegment(reducer)}`;
+      return `${humanMetricPath(metricParts.slice(0, -1).join("/"))} · ${titleCaseLabel(humanComparePathSegment(reducer))}`;
     }
     if (parts[metricIndex] === "metric_aggregates" && metricParts.length > 1) {
-      return `${metricParts.slice(0, -1).join("/")} · ${humanComparePathSegment(reducer)}`;
+      return `${humanMetricPath(metricParts.slice(0, -1).join("/"))} · ${titleCaseLabel(humanComparePathSegment(reducer))}`;
     }
-    return metricParts.join("/") || path;
+    return humanMetricPath(metricParts.join("/")) || path;
   }
-  if (parts[0] === "attribute" && ["eval", "test", "val", "train"].includes(parts[1])) return parts.slice(1).join("/");
-  return humanComparePathSegment(parts[parts.length - 1] ?? path);
+  if (parts[0] === "attribute" && ["eval", "test", "val", "train"].includes(parts[1])) return humanMetricPath(parts.slice(1).join("/"));
+  return titleCaseLabel(humanComparePathSegment(parts[parts.length - 1] ?? path));
 }
 
 function humanComparePathSegment(value: string) {
   return value.replace(/^config-/, "config ").replace(/[_-]/g, " ");
+}
+
+function humanMetricPath(value: string) {
+  return value.split("/").filter(Boolean).map((part) => titleCaseLabel(humanComparePathSegment(part))).join(" / ");
+}
+
+function titleCaseLabel(value: string) {
+  return value.replace(/\b[a-z]/g, (match) => match.toUpperCase());
 }
 
 export function shortValue(value: string) {
@@ -619,9 +642,10 @@ export function buildModelRows(run: RunSummary | null, artifacts: Artifact[]): M
     }));
 }
 
-export function buildReportRows(savedViews: string[]): ReportRow[] {
-  return savedViews.map((key) => {
-    const name = key.replace("instantml:next:view:", "");
+export function buildReportRows(savedViews: Array<string | { label: string; value: string }>): ReportRow[] {
+  return savedViews.map((view) => {
+    const key = typeof view === "string" ? view : view.value;
+    const name = typeof view === "string" ? key.replace("instantml:next:view:", "") : view.label;
     const [scope, metric] = name.split(":");
     return {
       id: key,

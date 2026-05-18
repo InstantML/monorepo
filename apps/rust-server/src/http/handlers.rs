@@ -218,6 +218,84 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
     );
     openapi_insert(
         &mut paths,
+        "/api/dashboard/preferences",
+        &[
+            (
+                "get",
+                openapi_operation(
+                    "Read browser dashboard preferences",
+                    Some(("x-instantml-auth", "browser session")),
+                    &[],
+                    &[("200", "dashboard preferences")],
+                    false,
+                ),
+            ),
+            (
+                "put",
+                openapi_operation(
+                    "Update browser dashboard preferences",
+                    Some(("x-instantml-auth", "member browser session")),
+                    &[],
+                    &[("200", "dashboard preferences")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/workspace-views",
+        &[
+            (
+                "get",
+                openapi_operation(
+                    "List saved workspace view summaries",
+                    Some(("x-instantml-auth", "browser session")),
+                    &["limit", "cursor"],
+                    &[("200", "workspace view summaries")],
+                    false,
+                ),
+            ),
+            (
+                "post",
+                openapi_operation(
+                    "Create a saved workspace view",
+                    Some(("x-instantml-auth", "member browser session")),
+                    &[],
+                    &[("200", "workspace view")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/workspace-views/{view_id}",
+        &[
+            (
+                "get",
+                openapi_operation(
+                    "Read a saved workspace view",
+                    Some(("x-instantml-auth", "browser session")),
+                    &[],
+                    &[("200", "workspace view")],
+                    false,
+                ),
+            ),
+            (
+                "put",
+                openapi_operation(
+                    "Update a saved workspace view",
+                    Some(("x-instantml-auth", "member browser session")),
+                    &[],
+                    &[("200", "workspace view")],
+                    false,
+                ),
+            ),
+        ],
+    );
+    openapi_insert(
+        &mut paths,
         "/api/users",
         &[
             (
@@ -862,6 +940,9 @@ fn openapi_path_available_for_plane(
         || path == "/api/users"
         || path == "/api/orgs"
         || path == "/api/orgs/name-availability"
+        || path == "/api/dashboard/preferences"
+        || path == "/api/workspace-views"
+        || path.starts_with("/api/workspace-views/")
         || path.starts_with("/api/orgs/{org_id}/")
     {
         return service_plane.includes_control();
@@ -1078,6 +1159,86 @@ pub(super) async fn device_code_confirm(
 }
 
 // --- End device-code handlers ---
+
+pub(super) async fn get_dashboard_preferences(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, false).await?;
+    Ok(Json(
+        store::get_dashboard_preferences(&state.store, &ctx).await?,
+    ))
+}
+
+pub(super) async fn update_dashboard_preferences(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, false).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    let input = read_json::<UpdateDashboardPreferencesRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    Ok(Json(
+        store::update_dashboard_preferences(&state.store, &ctx, input).await?,
+    ))
+}
+
+pub(super) async fn list_workspace_views(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, false).await?;
+    Ok(Json(
+        store::list_workspace_views(&state.store, &ctx, &query).await?,
+    ))
+}
+
+pub(super) async fn create_workspace_view(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, false).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    let input =
+        read_json::<SaveWorkspaceViewRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        store::create_workspace_view(&state.store, &ctx, input).await?,
+    ))
+}
+
+pub(super) async fn get_workspace_view(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(view_id): Path<String>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, false).await?;
+    let view_id = parse_uuid(&view_id, "workspace view not found")?;
+    Ok(Json(
+        store::get_workspace_view(&state.store, &ctx, view_id).await?,
+    ))
+}
+
+pub(super) async fn update_workspace_view(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(view_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, false).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    let view_id = parse_uuid(&view_id, "workspace view not found")?;
+    let input =
+        read_json::<SaveWorkspaceViewRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        store::update_workspace_view(&state.store, &ctx, view_id, input).await?,
+    ))
+}
 
 pub(super) async fn create_user(
     State(state): State<Arc<AppState>>,

@@ -25,6 +25,15 @@ export class ApiClient {
     });
   }
 
+  async put(path, body = {}, options = {}) {
+    return this.request(path, {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...(options.headers ?? {}) },
+      body: JSON.stringify(body),
+    });
+  }
+
   async request(path, options = {}) {
     const response = await fetch(this.baseUrl + path, options);
     const payload = await readPayload(response);
@@ -65,6 +74,41 @@ export class ApiError extends Error {
 
 export function isAbortError(error) {
   return error?.name === "AbortError";
+}
+
+export function isTransientApiError(error) {
+  if (error instanceof ApiError) return error.status === 408 || error.status === 429 || error.status >= 500;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /fetch failed|network|timeout|timed out|etimedout|econnreset|server is unavailable/i.test(message);
+}
+
+export async function retryTransientRequest(request, options = {}) {
+  const delays = Array.isArray(options.delays) ? options.delays : [250, 700, 1500];
+  const sleep = typeof options.sleep === "function" ? options.sleep : sleepWithAbort;
+  let lastError = null;
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      return await request();
+    } catch (error) {
+      if (isAbortError(error) || options.signal?.aborted || !isTransientApiError(error) || attempt === delays.length) {
+        throw error;
+      }
+      lastError = error;
+      await sleep(delays[attempt], options.signal);
+    }
+  }
+  throw lastError;
+}
+
+export function sleepWithAbort(ms, signal) {
+  if (signal?.aborted || ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = globalThis.setTimeout(resolve, ms);
+    signal?.addEventListener?.("abort", () => {
+      globalThis.clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
 }
 
 function clientSafeError(status, payload) {
