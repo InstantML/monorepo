@@ -469,6 +469,7 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
     INSTANTML_MANAGED_CLERK_ENABLED: value("CLERK_SECRET_KEY") ? "true" : "false",
     INSTANTML_ALLOWED_FRONTEND_ORIGINS: origins,
+    INSTANTML_FRONTEND_BASE_URL: value("INSTANTML_FRONTEND_BASE_URL"),
     INSTANTML_SIGNUP_ALLOWED_EMAILS: allowedEmails,
     INSTANTML_SIGNUP_ALLOWED_DOMAINS: value("INSTANTML_SIGNUP_ALLOWED_DOMAINS"),
     INSTANTML_ARTIFACT_UPLOADS_ENABLED: "false",
@@ -758,7 +759,6 @@ function ensureBackendService(name, negName) {
       "compute", "backend-services", "create", name,
       "--load-balancing-scheme", "EXTERNAL_MANAGED",
       "--protocol", "HTTP",
-      "--timeout", backendServiceTimeout(),
       "--global",
     ]);
   }
@@ -769,7 +769,6 @@ function ensureBackendService(name, negName) {
   run([
     "compute", "backend-services", "update", name,
     "--global",
-    "--timeout", backendServiceTimeout(),
     "--enable-logging",
   ]);
   const negLink = regionalNegSelfLink(negName);
@@ -817,9 +816,8 @@ function ensureUrlMap(names) {
   const file = path.join(os.tmpdir(), `instantml-url-map-${process.pid}-${Date.now()}.yaml`);
   try {
     fs.writeFileSync(file, publicRouterUrlMapYaml(names));
-    run(["compute", "url-maps", "validate", "--source", file, "--global", "--load-balancing-scheme", "EXTERNAL_MANAGED"]);
     if (!quiet(["compute", "url-maps", "describe", names.urlMap, "--global"])) {
-      run(["compute", "url-maps", "create", names.urlMap, "--default-service", names.dataBackend]);
+      run(["compute", "url-maps", "create", names.urlMap, "--default-service", names.dataBackend, "--global"]);
     }
     run(["compute", "url-maps", "import", names.urlMap, "--source", file, "--global"]);
   } finally {
@@ -830,8 +828,7 @@ function ensureUrlMap(names) {
 function publicRouterUrlMapYaml(names) {
   const controlBackend = globalBackendSelfLink(names.controlBackend);
   const dataBackend = globalBackendSelfLink(names.dataBackend);
-  return `kind: compute#urlMap
-name: ${names.urlMap}
+  return `name: ${names.urlMap}
 defaultService: ${dataBackend}
 hostRules:
 - hosts:
