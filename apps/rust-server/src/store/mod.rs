@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
+    time::{Duration as StdDuration, Instant},
 };
 
 mod access;
@@ -125,7 +126,14 @@ pub struct Store {
     inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
+    /// Coalesces calls to `refresh_control_records`. Reading the entire
+    /// control table on every authenticated request hammered ClickHouse Cloud
+    /// under burst load, causing transient `client error (Connect)` failures.
+    /// We skip the refresh if the last one ran within `CONTROL_REFRESH_MIN_INTERVAL`.
+    last_control_refresh: Arc<Mutex<Option<Instant>>>,
 }
+
+const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
 
 impl Store {
     pub async fn connect(
@@ -146,6 +154,7 @@ impl Store {
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
         };
         store.rebuild().await?;
         if !store.hosted_clickhouse_enabled() {
@@ -184,6 +193,18 @@ impl Store {
         let Some(control_store) = &self.control_store else {
             return Ok(());
         };
+        // Coalesce bursty calls — every authenticated request on the data plane
+        // calls this. Without the throttle a sustained write burst issues a
+        // full-table SELECT per request and trips ClickHouse Cloud rate limits.
+        {
+            let mut last = self.last_control_refresh.lock().await;
+            if let Some(prev) = *last {
+                if prev.elapsed() < CONTROL_REFRESH_MIN_INTERVAL {
+                    return Ok(());
+                }
+            }
+            *last = Some(Instant::now());
+        }
         let records = control_store.load_records().await?;
         if records.is_empty() {
             return Ok(());
