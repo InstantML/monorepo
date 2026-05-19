@@ -39,42 +39,40 @@ import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, metricFilterIsRegex, metricGoalLabel, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
-import {
-  AlertList,
-  ApiTable,
-  ArtifactBrowser,
-  ArtifactPanel,
-  ChartControls,
-  CustomSelect,
-  DashboardNav,
-  DashboardTopbar,
-  DatasetTable,
-  HoverDetail,
-  IntegrationCard,
-  MetricCatalog,
-  MetricCard,
-  MetricChart,
-  MetricLeaderboard,
-  RichObjectPanel,
-  ModelContext,
-  ModelLineage,
-  PanelEditDrawer,
-  QuickSearchModal,
-  ReportList,
-  RunDetail,
-  RunMetadataEditor,
-  RunsCommandbar,
-  RunsChartStrip,
-  RunsTable,
-  RunsWorkspace,
-  SeriesSummary,
-  SettingRow,
-  SideBySide,
-  Stats,
-  ShortcutHelpModal,
-  useFocusTrap,
-  WorkspacePanelCard,
-} from "../dashboard-components";
+import { AlertList } from "./alerts";
+import { ApiTable } from "./api";
+import { ArtifactBrowser } from "./artifacts";
+import { ArtifactPanel } from "./detail/artifact-panel";
+import { ChartControls } from "./metrics/chart-controls";
+import { CustomSelect } from "./ui/select";
+import { DashboardNav } from "./chrome/nav-rail";
+import { DashboardTopbar } from "./chrome/topbar";
+import { DatasetTable } from "./datasets";
+import { HoverDetail } from "./metrics/hover-detail";
+import { IntegrationCard } from "./integrations";
+import { MetricCatalog } from "./metrics/metric-catalog";
+import { MetricCard } from "./ui/metric-card";
+import { MetricChart } from "./metrics/metric-chart";
+import { MetricLeaderboard } from "./metrics/metric-leaderboard";
+import { RichObjectPanel } from "./detail/rich-object-panel";
+import { ModelContext } from "./models/model-context";
+import { ModelLineage } from "./models/model-lineage";
+import { PanelEditDrawer } from "./runs/panel-edit-drawer";
+import { QuickSearchModal } from "./chrome/quick-search";
+import { ReportList } from "./reports";
+import { RunDetail } from "./detail/run-detail";
+import { RunMetadataEditor } from "./runs/run-metadata-editor";
+import { RunsCommandbar } from "./runs/runs-commandbar";
+import { RunsChartStrip } from "./runs/runs-chart-strip";
+import { RunsTable } from "./runs/runs-table";
+import { RunsWorkspace } from "./runs/runs-workspace";
+import { SeriesSummary } from "./metrics/series-summary";
+import { SettingRow } from "./settings";
+import { SideBySide } from "./compare";
+import { Stats } from "./runs/runs-stats";
+import { ShortcutHelpModal } from "./chrome/shortcut-help";
+import { useFocusTrap } from "./ui/use-focus-trap";
+import { WorkspacePanelCard } from "./runs/workspace-panel-card";
 import { buildIntegrationRows, tabs } from "../dashboard-config";
 import {
   artifactTotalsForRuns,
