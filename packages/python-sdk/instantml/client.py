@@ -5,13 +5,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import math
 import mimetypes
 import os
-import platform
-import socket
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import threading
@@ -21,23 +17,49 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
-class InstantMLError(Exception):
-    """Raised when the SDK cannot complete a logging request."""
+from .errors import InstantMLError
+from .serialization import (
+    _flatten,
+    _flatten_numeric_value,
+    _histogram_object_payload,
+    _json_serializable,
+    _merge_metadata,
+    _normalize_table_rows,
+    _table_object_payload,
+    _tensor_to_python,
+    _validate_optional_json_object,
+)
+from .credentials import _check_credentials_or_raise, _resolve_api_key as _resolve_api_key_from_env
+from .http import _error_message, _offline_path, _spool_event
+from .source import _environment_metadata, _git_metadata, _source_metadata
+from .validation import (
+    CONSOLE_LOG_STREAMS,
+    MAX_CONSOLE_LOG_LINES_PER_BATCH,
+    MAX_CONSOLE_LOG_MESSAGE_BYTES,
+    MAX_TEXT_BYTES,
+    PROCESS_UPLOAD_MODES,
+    _coerce_numeric_values,
+    _is_scalar_number,
+    _normalize_console_lines,
+    _validate_console_stream,
+    _validate_metrics,
+    _validate_note_text,
+    _validate_numeric_list,
+    _validate_plain_string,
+    _validate_step,
+    _validate_text,
+    _validate_text_series,
+    _validate_upload_mode,
+)
 
 
 DEFAULT_PROCESS_SPOOL_DIR = ".instantml/spool"
-PROCESS_UPLOAD_MODES = {"sync", "spool"}
 SNAPSHOT_KEYS = {"metrics", "metadata"}
-CONSOLE_LOG_STREAMS = {"stdout", "stderr"}
-MAX_CONSOLE_LOG_MESSAGE_BYTES = 16 * 1024
-MAX_CONSOLE_LOG_LINES_PER_BATCH = 50
-MAX_TEXT_BYTES = 512
 _PENDING_RUN_ID = "__instantml_pending__"
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
 
@@ -340,25 +362,7 @@ class Client:
         return run
 
     def _resolve_api_key(self) -> str | None:
-        """Resolve the API key using the priority chain:
-        1. Explicit api_key kwarg on Client.
-        2. INSTANTML_API_KEY environment variable.
-        3. ~/.instantml/credentials file.
-        Returns the resolved key or None (for unauthenticated local mode).
-        """
-        if self.api_key:
-            return self.api_key
-        env_key = os.environ.get("INSTANTML_API_KEY")
-        if env_key:
-            return env_key
-        try:
-            from .cli import resolve_api_key_from_credentials
-            file_key = resolve_api_key_from_credentials()
-            if file_key:
-                return file_key
-        except Exception:
-            pass
-        return None
+        return _resolve_api_key_from_env(self.api_key)
 
     def _request(
         self,
@@ -1161,24 +1165,6 @@ class Run:
             return {"spooled": True, "artifact": {"id": "spooled", **body}}
 
 
-def _check_credentials_or_raise(api_key: str | None) -> None:
-    """Raise InstantMLError when no credentials are available via any resolution path."""
-    if api_key:
-        return
-    if os.environ.get("INSTANTML_API_KEY"):
-        return
-    try:
-        from .cli import resolve_api_key_from_credentials
-        if resolve_api_key_from_credentials():
-            return
-    except Exception:
-        pass
-    raise InstantMLError(
-        "InstantML credentials not configured. "
-        "Run `instantml login` to authenticate, or set INSTANTML_API_KEY in your environment."
-    )
-
-
 def init(
     project: str,
     name: str | None = None,
@@ -1558,15 +1544,6 @@ class LightningLogger:
             self._run.finish(status)
 
 
-def _validate_note_text(notes: str) -> str:
-    if not isinstance(notes, str):
-        raise TypeError("notes must be a string")
-    encoded = notes.strip().encode("utf-8")
-    if len(encoded) > MAX_TEXT_BYTES:
-        raise ValueError(f"notes must be at most {MAX_TEXT_BYTES} bytes")
-    return notes.strip()
-
-
 def _classify_log_payload(
     data: dict[str, Any],
 ) -> tuple[dict[str, float], dict[str, str], dict[str, Table | Histogram | Image | Video | Audio], dict[str, File]]:
@@ -1614,227 +1591,6 @@ def _classify_log_sequence(
             files[f"{key}/{index}"] = value
         return
     raise TypeError(f"log sequence for {key!r} must contain one homogeneous supported type")
-
-
-def _validate_step(step: int | float | None) -> int | float | None:
-    if step is None:
-        return None
-    if not isinstance(step, (int, float)) or isinstance(step, bool):
-        raise TypeError("step must be a number")
-    if not math.isfinite(float(step)):
-        raise ValueError("step must be finite")
-    if float(step) < 0:
-        raise ValueError("step must be nonnegative")
-    return step
-
-
-def _validate_metrics(data: dict[str, Any]) -> dict[str, float]:
-    if not isinstance(data, dict):
-        raise TypeError("metrics must be a dictionary")
-    metrics: dict[str, float] = {}
-    for key, value in data.items():
-        metric_key = _validate_text(key, "metric key")
-        if not _is_scalar_number(value):
-            raise TypeError("metrics values must be finite numbers")
-        metrics[metric_key] = float(value)
-    return metrics
-
-
-def _validate_text_series(data: dict[str, Any]) -> dict[str, str]:
-    if not isinstance(data, dict):
-        raise TypeError("text values must be a dictionary")
-    return {_validate_text(key, "text key"): _validate_plain_string(value, "text value") for key, value in data.items()}
-
-
-def _validate_plain_string(value: Any, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be a string")
-    return value
-
-
-def _is_scalar_number(value: Any) -> bool:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return False
-    return math.isfinite(float(value))
-def _validate_console_stream(stream: str) -> str:
-    if not isinstance(stream, str):
-        raise TypeError("stream must be a string")
-    value = stream.strip()
-    if value not in CONSOLE_LOG_STREAMS:
-        raise ValueError("stream must be stdout or stderr")
-    return value
-
-
-def _normalize_console_lines(lines: str | list[str] | tuple[str, ...]) -> list[str]:
-    if isinstance(lines, str):
-        messages = [lines]
-    elif isinstance(lines, (list, tuple)):
-        messages = list(lines)
-    else:
-        raise TypeError("console lines must be a string or a list of strings")
-    if not messages:
-        raise ValueError("console lines must include at least one line")
-    if len(messages) > MAX_CONSOLE_LOG_LINES_PER_BATCH:
-        raise ValueError(f"console lines must include at most {MAX_CONSOLE_LOG_LINES_PER_BATCH} lines")
-    for message in messages:
-        if not isinstance(message, str):
-            raise TypeError("console lines must contain strings")
-        if len(message.encode("utf-8")) > MAX_CONSOLE_LOG_MESSAGE_BYTES:
-            raise ValueError("console line is too large")
-    return messages
-
-
-def _validate_text(value: str, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be a string")
-    text = value.strip()
-    if not text:
-        raise ValueError(f"{field} must be a non-empty string")
-    if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
-        raise ValueError(f"{field} must be at most {MAX_TEXT_BYTES} bytes")
-    return text
-
-
-def _validate_optional_json_object(value: dict[str, Any] | None, field: str) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise TypeError(f"{field} must be a dictionary")
-    _json_serializable(value, field)
-    return dict(value)
-
-
-def _merge_metadata(*values: dict[str, Any] | None) -> dict[str, Any]:
-    merged: dict[str, Any] = {}
-    for value in values:
-        merged.update(_validate_optional_json_object(value, "metadata"))
-    return merged
-
-
-def _json_serializable(value: Any, field: str) -> None:
-    try:
-        json.dumps(value)
-    except (TypeError, ValueError) as exc:
-        raise TypeError(f"{field} must be JSON serializable") from exc
-
-
-def _table_object_payload(
-    key: str,
-    table: Table,
-    step: int | float | None,
-    shared_metadata: dict[str, Any],
-) -> dict[str, Any]:
-    if not isinstance(table.columns, list) or not table.columns:
-        raise ValueError("table columns must be a non-empty list")
-    columns = [_validate_text(column, "table column") for column in table.columns]
-    rows = _normalize_table_rows(columns, table.rows)
-    metadata = _merge_metadata(shared_metadata, table.metadata)
-    return {
-        "key": key,
-        "kind": "table",
-        "step": step,
-        "metadata": metadata,
-        "summary": {"columns": columns, "row_count": len(rows)},
-        "rows": rows,
-    }
-
-
-def _normalize_table_rows(columns: list[str], rows: list[dict[str, Any] | list[Any] | tuple[Any, ...]]) -> list[dict[str, Any]]:
-    if not isinstance(rows, list):
-        raise TypeError("table rows must be a list")
-    normalized: list[dict[str, Any]] = []
-    for row in rows:
-        if isinstance(row, dict):
-            normalized_row = dict(row)
-        elif isinstance(row, (list, tuple)):
-            if len(row) != len(columns):
-                raise ValueError("table row length must match columns")
-            normalized_row = dict(zip(columns, row))
-        else:
-            raise TypeError("table rows must be dictionaries or sequences")
-        _json_serializable(normalized_row, "table row")
-        normalized.append(normalized_row)
-    return normalized
-
-
-def _histogram_object_payload(
-    key: str,
-    histogram: Histogram,
-    step: int | float | None,
-    shared_metadata: dict[str, Any],
-) -> dict[str, Any]:
-    bins = _validate_numeric_list(histogram.bins, "histogram bins", nonnegative=False)
-    counts = _validate_numeric_list(histogram.counts, "histogram counts", nonnegative=True)
-    if not bins or not counts:
-        raise ValueError("histogram bins and counts must not be empty")
-    if len(bins) not in {len(counts), len(counts) + 1}:
-        raise ValueError("histogram bins length must match counts length or counts length plus one")
-    value = {"bins": bins, "counts": counts}
-    metadata = _merge_metadata(shared_metadata, histogram.metadata)
-    if metadata:
-        value["metadata"] = metadata
-    return {
-        "key": key,
-        "kind": "histogram",
-        "step": step,
-        "metadata": metadata,
-        "summary": {"bins": len(bins), "counts": len(counts)},
-        "value": value,
-    }
-
-
-def _validate_numeric_list(values: list[int | float], field: str, nonnegative: bool) -> list[float]:
-    if not isinstance(values, list):
-        raise TypeError(f"{field} must be a list")
-    normalized = []
-    for value in values:
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise TypeError(f"{field} must contain numbers")
-        number = float(value)
-        if not number == number or number in {float("inf"), float("-inf")}:
-            raise ValueError(f"{field} must contain finite numbers")
-        if nonnegative and number < 0:
-            raise ValueError(f"{field} must contain nonnegative numbers")
-        normalized.append(number)
-    return normalized
-
-
-def _coerce_numeric_values(values: Any, field: str) -> list[float]:
-    flattened = _flatten_numeric_value(_tensor_to_python(values))
-    if not flattened:
-        raise ValueError(f"{field} must not be empty")
-    return _validate_numeric_list(flattened, field, nonnegative=False)
-
-
-def _tensor_to_python(value: Any) -> Any:
-    for method_name in ("detach", "cpu", "numpy", "tolist"):
-        method = getattr(value, method_name, None)
-        if callable(method):
-            try:
-                value = method()
-            except TypeError:
-                continue
-    return value
-
-
-def _flatten_numeric_value(value: Any) -> list[int | float]:
-    if _is_scalar_number(value):
-        return [value]
-    if isinstance(value, dict):
-        flattened: list[int | float] = []
-        for item in value.values():
-            flattened.extend(_flatten_numeric_value(item))
-        return flattened
-    if isinstance(value, (str, bytes)):
-        return []
-    try:
-        iterator = iter(value)
-    except TypeError:
-        return []
-    flattened = []
-    for item in iterator:
-        flattened.extend(_flatten_numeric_value(_tensor_to_python(item)))
-    return flattened
 
 
 def _histogram_from_count(values: list[float], bins: int) -> tuple[list[float], list[float]]:
@@ -1983,58 +1739,6 @@ def _collect_system_metrics(psutil_module: Any | None = None, pynvml_module: Any
     return metrics
 
 
-def _environment_metadata() -> dict[str, Any]:
-    return {
-        "python": platform.python_version(),
-        "platform": platform.platform(),
-        "hostname": socket.gethostname(),
-        "pid": os.getpid(),
-    }
-
-
-def _source_metadata() -> dict[str, Any]:
-    return {
-        "argv": sys.argv,
-        "cwd": os.getcwd(),
-        "git": _git_metadata(),
-    }
-
-
-def _git_metadata() -> dict[str, Any]:
-    def git(*args: str) -> str | None:
-        try:
-            return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL, text=True, timeout=0.5).strip()
-        except (subprocess.SubprocessError, OSError):
-            return None
-
-    root = git("rev-parse", "--show-toplevel")
-    if root is None:
-        return {"available": False}
-    return {
-        "available": True,
-        "root": root,
-        "commit": git("rev-parse", "HEAD"),
-        "branch": git("branch", "--show-current"),
-        "dirty": bool(git("status", "--porcelain")),
-    }
-
-
-def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-    flattened: dict[str, Any] = {}
-    for key, value in data.items():
-        path = f"{prefix}/{key}" if prefix else str(key)
-        if isinstance(value, dict):
-            flattened.update(_flatten(value, path))
-        else:
-            flattened[path] = value
-    return flattened
-
-
-def _validate_upload_mode(upload_mode: str) -> None:
-    if upload_mode not in PROCESS_UPLOAD_MODES:
-        raise ValueError(f"upload_mode must be one of: {', '.join(sorted(PROCESS_UPLOAD_MODES))}")
-
-
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
@@ -2090,23 +1794,3 @@ def _fsync_dir(path: Path) -> None:
         os.close(descriptor)
 
 
-def _offline_path(offline_dir: str, run_id: str) -> Path:
-    return Path(offline_dir).expanduser().resolve() / f"{run_id}.jsonl"
-
-
-def _spool_event(offline_dir: str, run_id: str, event: dict[str, Any]) -> None:
-    path = _offline_path(offline_dir, run_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(event) + "\n")
-
-
-def _error_message(exc: urllib.error.HTTPError) -> str:
-    try:
-        payload = exc.read().decode("utf-8")
-        decoded = json.loads(payload)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return str(exc)
-    if isinstance(decoded, dict) and isinstance(decoded.get("error"), str):
-        return decoded["error"]
-    return str(exc)
