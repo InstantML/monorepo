@@ -38,6 +38,7 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::{
@@ -135,6 +136,14 @@ pub struct Store {
 
 const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
 
+/// Cadence for the data-plane background refresh task.
+///
+/// 2s matches the throttle in `refresh_control_records` and bounds the worst-case
+/// staleness for security-sensitive control changes (api-key revocation, seat
+/// removal). If this becomes a load problem, the right fix is push-based
+/// invalidation (Tier 3), not a longer interval.
+const CONTROL_REFRESH_BACKGROUND_INTERVAL: StdDuration = StdDuration::from_secs(2);
+
 impl Store {
     pub async fn connect(
         metric_store: MetricStore,
@@ -189,13 +198,49 @@ impl Store {
         Ok(())
     }
 
+    /// Spawn a background task that periodically refreshes the in-memory control
+    /// projection from the control-plane table. Returns the join handle so the
+    /// caller (typically `main::serve`) can manage shutdown.
+    ///
+    /// This is the data plane's mechanism for picking up control mutations
+    /// (new org, new api key, revoked api key, etc.) made by the control plane.
+    /// Before Tier 2, every authenticated request on the data plane invoked
+    /// `refresh_control_records` synchronously — moving it off the hot path
+    /// removes a per-request ClickHouse round trip and the burst-load failure
+    /// mode that PR #32 had to mask with a throttle.
+    ///
+    /// No-op when no control store is configured (single-binary local mode).
+    pub fn spawn_control_refresh_task(&self) -> Option<JoinHandle<()>> {
+        self.control_store.as_ref()?;
+        let store = self.clone();
+        let handle = tokio::spawn(async move {
+            // Stagger the first tick so we don't double up with the startup
+            // `rebuild()` that already populated the projection.
+            tokio::time::sleep(CONTROL_REFRESH_BACKGROUND_INTERVAL).await;
+            loop {
+                if let Err(error) = store.refresh_control_records().await {
+                    tracing::warn!(
+                        error = %error.message(),
+                        "background control-record refresh failed; will retry"
+                    );
+                }
+                tokio::time::sleep(CONTROL_REFRESH_BACKGROUND_INTERVAL).await;
+            }
+        });
+        Some(handle)
+    }
+
     pub async fn refresh_control_records(&self) -> AppResult<()> {
         let Some(control_store) = &self.control_store else {
             return Ok(());
         };
-        // Coalesce bursty calls — every authenticated request on the data plane
-        // calls this. Without the throttle a sustained write burst issues a
-        // full-table SELECT per request and trips ClickHouse Cloud rate limits.
+        // Coalesce bursty calls — explicit on-demand refreshes from mutation
+        // handlers (e.g. just after revoking an api key) may overlap with the
+        // background task. Without the throttle a sustained write burst could
+        // issue a full-table SELECT per request and trip ClickHouse Cloud rate
+        // limits. PR #32 introduced this guard; Tier 2 moved the polling off
+        // the request hot path, but the guard is still cheap insurance for
+        // explicit callers.
         {
             let mut last = self.last_control_refresh.lock().await;
             if let Some(prev) = *last {

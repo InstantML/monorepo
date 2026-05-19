@@ -57,16 +57,28 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         config.hosted_clickhouse.clone(),
     )
     .await?;
+    // Data plane: poll the control table out-of-band so the request hot path
+    // makes zero control-plane queries. See PR #32 for the burst-load failure
+    // mode that motivated this change.
+    let background_refresh = if config.service_plane.runs_background_control_refresh() {
+        store.spawn_control_refresh_task()
+    } else {
+        None
+    };
     let bind_addr = config.bind_addr;
     let app = instantml_rust_server::http::router(AppState::new(store, config));
     let listener = TcpListener::bind(bind_addr).await?;
     tracing::info!(%bind_addr, "Training Observability Rust server listening");
-    axum::serve(listener, app)
+    let result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|error| {
             instantml_rust_server::AppError::internal(format!("server failed: {error}"))
-        })
+        });
+    if let Some(handle) = background_refresh {
+        handle.abort();
+    }
+    result
 }
 
 async fn migrate_all(config: AppConfig) -> instantml_rust_server::AppResult<()> {
