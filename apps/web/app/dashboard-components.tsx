@@ -586,6 +586,160 @@ export function QuickSearchModal({
   );
 }
 
+export type OrgMembershipSummary = {
+  org_id: string;
+  name: string;
+  slug: string;
+  plan_tier: string;
+  role: string;
+  status: string;
+  member_count: number;
+  is_current: boolean;
+};
+
+/**
+ * Workspace org selector in the brandbar.
+ *
+ * Users on the hosted product can belong to multiple orgs (verified in
+ * production: at least one user had two and no UI way to swap). When a
+ * member has a single org we render the name as static text — the
+ * dropdown is only useful when there's something to switch *to*.
+ *
+ * Search input renders once the list passes `SEARCH_THRESHOLD`. For most
+ * users this stays hidden.
+ */
+const ORG_SWITCHER_SEARCH_THRESHOLD = 7;
+export function OrgSwitcher({
+  busy,
+  current,
+  error,
+  memberships,
+  onSelect,
+}: {
+  busy: boolean;
+  current: { id: string; name: string } | null;
+  error: string;
+  memberships: OrgMembershipSummary[];
+  onSelect: (orgId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function closeFromOutside(event: globalThis.PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function closeFromEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", closeFromEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", closeFromEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open && memberships.length >= ORG_SWITCHER_SEARCH_THRESHOLD) {
+      // Defer focus until after the menu renders so the input is in the DOM.
+      const id = window.setTimeout(() => inputRef.current?.focus(), 0);
+      return () => window.clearTimeout(id);
+    }
+    return undefined;
+  }, [open, memberships.length]);
+
+  useEffect(() => {
+    if (!open) setFilter("");
+  }, [open]);
+
+  // No memberships loaded yet: render the org name from the session as a
+  // static label so the header doesn't flash empty during initial load.
+  if (memberships.length === 0) {
+    if (!current?.name) return null;
+    return <span className="org-switcher-label" aria-label="Workspace">{current.name}</span>;
+  }
+
+  // Single membership: nothing to switch to, render as static text.
+  if (memberships.length === 1) {
+    const only = memberships[0];
+    return <span className="org-switcher-label" aria-label="Workspace">{only.name}</span>;
+  }
+
+  const filterToken = filter.trim().toLowerCase();
+  const visible = filterToken
+    ? memberships.filter((m) => m.name.toLowerCase().includes(filterToken) || m.slug.toLowerCase().includes(filterToken))
+    : memberships;
+  const currentName = current?.name ?? memberships.find((m) => m.is_current)?.name ?? "Workspace";
+
+  return (
+    <div className="org-switcher" ref={rootRef}>
+      <button
+        aria-controls="org-switcher-menu"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`Workspace: ${currentName}. Switch organization.`}
+        className="org-switcher-trigger"
+        disabled={busy}
+        onClick={() => setOpen((prev) => !prev)}
+        type="button"
+      >
+        <span className="org-switcher-name">{currentName}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="org-switcher-menu" id="org-switcher-menu" role="listbox" aria-label="Switch organization">
+          {memberships.length >= ORG_SWITCHER_SEARCH_THRESHOLD ? (
+            <div className="org-switcher-search">
+              <Search size={13} aria-hidden="true" />
+              <input
+                aria-label="Filter organizations"
+                onChange={(event) => setFilter(event.target.value)}
+                placeholder="Filter organizations"
+                ref={inputRef}
+                type="search"
+                value={filter}
+              />
+            </div>
+          ) : null}
+          {visible.length ? (
+            visible.map((membership) => (
+              <button
+                aria-selected={membership.is_current}
+                className={`org-switcher-option ${membership.is_current ? "selected" : ""}`}
+                disabled={busy || membership.is_current}
+                key={membership.org_id}
+                onClick={() => {
+                  setOpen(false);
+                  if (!membership.is_current) onSelect(membership.org_id);
+                }}
+                role="option"
+                type="button"
+              >
+                <span className="org-switcher-check" aria-hidden="true">
+                  {membership.is_current ? <Check size={13} /> : null}
+                </span>
+                <span className="org-switcher-option-body">
+                  <span className="org-switcher-option-name">{membership.name}</span>
+                  <span className="org-switcher-option-meta">
+                    {membership.role} · {membership.member_count} {membership.member_count === 1 ? "member" : "members"}
+                  </span>
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="org-switcher-empty">No matches.</div>
+          )}
+          {error ? <div className="org-switcher-error" role="alert">{error}</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function DashboardTopbar({
   activeIcon: ActiveIcon,
   activeTab,
@@ -606,6 +760,10 @@ export function DashboardTopbar({
   onStatus,
   onThemeToggle,
   onViewName,
+  orgMemberships,
+  orgSwitchBusy,
+  orgSwitchError,
+  onSwitchOrg,
   planLabel,
   project,
   projects,
@@ -621,6 +779,8 @@ export function DashboardTopbar({
   usageAvailable,
   usageResetLabel,
   viewName,
+  workspaceName,
+  workspaceId,
 }: {
   activeIcon: LucideIcon;
   activeTab: TabId;
@@ -641,6 +801,10 @@ export function DashboardTopbar({
   onStatus: (status: string) => void;
   onThemeToggle: () => void;
   onViewName: (value: string) => void;
+  orgMemberships: OrgMembershipSummary[];
+  orgSwitchBusy: boolean;
+  orgSwitchError: string;
+  onSwitchOrg: (orgId: string) => void;
   planLabel: string;
   project: string;
   projects: string[];
@@ -656,6 +820,8 @@ export function DashboardTopbar({
   usageAvailable: boolean;
   usageResetLabel: string;
   viewName: string;
+  workspaceName: string;
+  workspaceId: string;
 }) {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
@@ -711,6 +877,13 @@ export function DashboardTopbar({
           <span className="brand-wordmark" aria-label="InstantML">
             instant<span className="brand-wordmark__accent">ml</span>
           </span>
+          <OrgSwitcher
+            busy={orgSwitchBusy}
+            current={workspaceId ? { id: workspaceId, name: workspaceName } : null}
+            error={orgSwitchError}
+            memberships={orgMemberships}
+            onSelect={onSwitchOrg}
+          />
           <nav className="breadcrumb" aria-label="Breadcrumb">
             <span className="crumb">{project || "demo"}</span>
             <span className="sep" aria-hidden="true">/</span>

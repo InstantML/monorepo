@@ -277,6 +277,27 @@ pub struct SeatRow {
     pub user: SeatUserRow,
 }
 
+/// Summary of a single org membership for the org-switcher UI. We surface only
+/// the fields the dashboard needs (name + role) plus a member count so the
+/// dropdown can show "Acme · admin · 5 members" without forcing the client to
+/// stitch responses together.
+#[derive(Clone, Debug, Serialize)]
+pub struct OrganizationMembershipSummary {
+    pub org_id: Uuid,
+    pub name: String,
+    pub slug: String,
+    pub plan_tier: String,
+    pub role: String,
+    pub status: String,
+    pub member_count: usize,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SwitchOrganizationRequest {
+    pub org_id: Option<Uuid>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateApiKeyRequest {
     pub name: Option<String>,
