@@ -89,7 +89,7 @@ user_email = "alice@example.com"
 1. Explicit `api_key=` kwarg.
 2. `INSTANTML_API_KEY` environment variable.
 3. `~/.instantml/credentials` file (written by `instantml login`).
-4. No credentials → the server will return 401 if auth is required.
+4. No credentials → `init()` raises `InstantMLError` immediately with a message directing you to `instantml login` or `INSTANTML_API_KEY`.
 
 ```python
 # Option 1: explicit kwarg

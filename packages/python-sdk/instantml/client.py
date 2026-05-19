@@ -1162,12 +1162,7 @@ class Run:
 
 
 def _check_credentials_or_raise(api_key: str | None) -> None:
-    """Raise InstantMLError with a helpful message when no credentials are available.
-
-    Only raises when `api_key` kwarg is not set; env var and file are checked inside
-    Client._resolve_api_key(), so this is a fast-fail for the most common missing-creds
-    scenario before the HTTP call is made.
-    """
+    """Raise InstantMLError when no credentials are available via any resolution path."""
     if api_key:
         return
     if os.environ.get("INSTANTML_API_KEY"):
@@ -1178,15 +1173,10 @@ def _check_credentials_or_raise(api_key: str | None) -> None:
             return
     except Exception:
         pass
-    interactive = sys.stdin is not None and hasattr(sys.stdin, "isatty") and sys.stdin.isatty()
-    msg = (
-        "No API key found. Run `instantml login` to set up credentials, "
-        "or set the INSTANTML_API_KEY environment variable."
+    raise InstantMLError(
+        "InstantML credentials not configured. "
+        "Run `instantml login` to authenticate, or set INSTANTML_API_KEY in your environment."
     )
-    if interactive:
-        warnings.warn(msg, stacklevel=3)
-    # We do not raise here — allow unauthenticated local dev mode to proceed.
-    # The server will return 401 if auth is actually required.
 
 
 def init(
@@ -1211,6 +1201,12 @@ def init(
     capture_console: bool = False,
     async_init: bool = True,
 ) -> Run:
+    """Start a new run and return a :class:`Run` handle.
+
+    Raises :class:`InstantMLError` immediately if no credentials are available
+    via ``api_key`` kwarg, ``INSTANTML_API_KEY`` env var, or ``~/.instantml/credentials``.
+    """
+    _check_credentials_or_raise(api_key)
     return Client(base_url=base_url, timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
         project=project,
         name=name,
