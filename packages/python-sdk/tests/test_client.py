@@ -20,6 +20,7 @@ from instantml.client import (
     Run,
     _ConsoleStream,
     _LocalStore,
+    _check_credentials_or_raise,
     _classify_log_payload,
     _coerce_numeric_values,
     _collect_system_metrics,
@@ -1969,3 +1970,95 @@ def test_framework_adapter_warning_and_lazy_logger_paths(monkeypatch):
     assert logger.version == "lazy-run"
     assert [entry[1] for entry in fake_run.logged] == [1, 2, 3]
     assert fake_run.finished == ["finished"]
+
+
+# ---------------------------------------------------------------------------
+# _check_credentials_or_raise — unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_check_credentials_raises_when_no_creds(monkeypatch, tmp_path):
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", tmp_path / "no_such_file")
+    with pytest.raises(InstantMLError, match="instantml login"):
+        _check_credentials_or_raise(None)
+
+
+def test_check_credentials_ok_with_kwarg(monkeypatch, tmp_path):
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", tmp_path / "no_such_file")
+    _check_credentials_or_raise("explicit-key")  # must not raise
+
+
+def test_check_credentials_ok_with_env_var(monkeypatch, tmp_path):
+    monkeypatch.setenv("INSTANTML_API_KEY", "env-key")
+    monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", tmp_path / "no_such_file")
+    _check_credentials_or_raise(None)  # must not raise
+
+
+def test_check_credentials_ok_with_credentials_file(monkeypatch, tmp_path):
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    creds = tmp_path / "credentials"
+    creds.write_text('api_key = "file-key"\n')
+    monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", creds)
+    _check_credentials_or_raise(None)  # must not raise
+
+
+def test_check_credentials_error_message_mentions_env_var(monkeypatch, tmp_path):
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", tmp_path / "no_such_file")
+    with pytest.raises(InstantMLError, match="INSTANTML_API_KEY"):
+        _check_credentials_or_raise(None)
+
+
+# ---------------------------------------------------------------------------
+# init() fail-fast credential checks
+# ---------------------------------------------------------------------------
+
+
+def test_init_raises_when_no_credentials(monkeypatch, tmp_path):
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", tmp_path / "no_such_file")
+    with pytest.raises(InstantMLError, match="instantml login"):
+        ro.init(project="test")
+
+
+def test_init_succeeds_with_explicit_api_key(monkeypatch):
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path))
+        return {"run": {"id": "run-1"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    run = ro.init(project="test", api_key="my-key", base_url="http://example.test")
+    assert run.run_id == "run-1"
+
+
+def test_init_succeeds_with_env_var(monkeypatch):
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path))
+        return {"run": {"id": "run-2"}}
+
+    monkeypatch.setenv("INSTANTML_API_KEY", "env-key")
+    monkeypatch.setattr(Client, "_request", fake_request)
+    run = ro.init(project="test", base_url="http://example.test")
+    assert run.run_id == "run-2"
+
+
+def test_init_succeeds_with_credentials_file(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path))
+        return {"run": {"id": "run-3"}}
+
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    creds = tmp_path / "credentials"
+    creds.write_text('api_key = "file-key"\n')
+    monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", creds)
+    monkeypatch.setattr(Client, "_request", fake_request)
+    run = ro.init(project="test", base_url="http://example.test")
+    assert run.run_id == "run-3"
