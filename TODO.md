@@ -141,7 +141,7 @@ Goal: keep the UI as the product moat while the backend changes underneath it.
 - [x] Rework Compare so users can switch between column-oriented and row-oriented layouts; default to the layout that scans best for many compared runs.
 - [x] Add row and column sorting to Compare for run name, status, tags, notes, config keys, metric latest/best values, artifact presence, and changed/unchanged rows.
 - [x] Add inline MP3/MP4 artifact playback in Run Detail and Compare when artifacts are safe to stream, with download-only fallback for unsupported or external-reference files.
-- [ ] Add an organization selector and clear empty/no-access/error states for hosted mode; the first single-org onboarding/dashboard redirect is implemented.
+- [x] Add an organization selector and clear empty/no-access/error states for hosted mode; the first single-org onboarding/dashboard redirect is implemented.
 - [x] Add first-slice API-key creation and copy-once UX during onboarding.
 - [ ] Add usage summary UI for seats, projects, runs, metric points, artifact bytes, active API keys, and warning thresholds.
 - [ ] Add import dry-run/import summary UI for Neptune, W&B, and MLflow paths.

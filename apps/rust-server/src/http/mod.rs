@@ -31,7 +31,8 @@ use crate::{
         CreateProjectRequest, CreateRunRequest, CreateUserRequest, DevGoogleAuthRequest,
         DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest, LogMetricsRequest,
         RequestContext, ReserveSeatRequest, SaveWorkspaceViewRequest, SessionContext,
-        UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest,
+        SwitchOrganizationRequest, UpdateDashboardPreferencesRequest, UpdateRunRequest,
+        UploadArtifactRequest,
     },
     errors::{AppError, AppResult},
     store,
@@ -101,6 +102,10 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))
         .route("/api/auth/logout", post(auth_logout))
+        .route(
+            "/api/auth/switch-organization",
+            post(auth_switch_organization),
+        )
         .route("/api/auth/device-code/start", post(device_code_start))
         .route("/api/auth/device-code/poll", post(device_code_poll))
         .route("/api/auth/device-code/confirm", post(device_code_confirm))
@@ -118,6 +123,7 @@ fn control_routes() -> Router<Arc<AppState>> {
         )
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
+        .route("/api/orgs/memberships", get(list_org_memberships))
         .route("/api/orgs/name-availability", get(org_name_availability))
         .route(
             "/api/orgs/:org_id/api-keys",

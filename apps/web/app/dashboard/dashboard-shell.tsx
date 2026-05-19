@@ -144,6 +144,17 @@ type DashboardSessionPayload = {
   organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number };
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
+  memberships?: Array<{ org_id: string; role: string; status: string }>;
+};
+type OrgMembershipSummary = {
+  org_id: string;
+  name: string;
+  slug: string;
+  plan_tier: string;
+  role: string;
+  status: string;
+  member_count: number;
+  is_current: boolean;
 };
 type SeatRow = {
   membership: { id: string; role: string; status: string; created_at: string };
@@ -300,6 +311,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
   const [sessionPayload, setSessionPayload] = useState<DashboardSessionPayload | null>(null);
+  const [orgMemberships, setOrgMemberships] = useState<OrgMembershipSummary[]>([]);
+  const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
+  const [orgSwitchError, setOrgSwitchError] = useState("");
   const [project, setProject] = useState("");
   const [status, setStatus] = useState("");
   const [queryInput, setQueryInput] = useState("");
@@ -857,6 +871,62 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage(detail);
     }
   }, [api, clerk]);
+
+  const loadOrgMemberships = useCallback(
+    async (options: { signal?: AbortSignal } = {}) => {
+      try {
+        const payload = await api.get("/api/orgs/memberships", options);
+        if (Array.isArray(payload?.memberships)) {
+          setOrgMemberships(payload.memberships as OrgMembershipSummary[]);
+        }
+      } catch (error) {
+        if (isAbortError(error)) return;
+        // Don't surface — switcher hides when memberships is empty, which is
+        // the safe behavior on a transient list failure. The user can refresh.
+      }
+    },
+    [api],
+  );
+
+  // Switch the session's bound org. The backend updates the session row in
+  // place; we refresh the local session payload from the returned body and
+  // reload memberships so the dropdown reflects the new `is_current` flags.
+  // Then we force a hard reload so every panel re-queries against the new
+  // org_id — cheaper than threading a "reload everything" signal through.
+  const switchOrganization = useCallback(
+    async (targetOrgId: string) => {
+      if (!targetOrgId) return;
+      if (sessionPayload?.organization?.id === targetOrgId) return;
+      setOrgSwitchBusy(true);
+      setOrgSwitchError("");
+      try {
+        await api.post("/api/auth/switch-organization", { org_id: targetOrgId });
+        // Hard reload so all per-org caches (runs, metrics, usage, api keys,
+        // saved views) re-fetch under the new session.org_id. Reloading is the
+        // boring choice — it also wipes any client-side selection that was
+        // scoped to the previous org's run ids.
+        window.location.assign(window.location.pathname);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unable to switch organization.";
+        setOrgSwitchError(detail);
+        if (error instanceof ApiError && error.status === 403) {
+          // Membership was revoked mid-session — refresh the list so the
+          // dropdown drops the now-unreachable org instead of showing it.
+          loadOrgMemberships();
+        }
+      } finally {
+        setOrgSwitchBusy(false);
+      }
+    },
+    [api, loadOrgMemberships, sessionPayload?.organization?.id],
+  );
+
+  useEffect(() => {
+    if (!dashboardAuthorized) return;
+    const controller = new AbortController();
+    loadOrgMemberships({ signal: controller.signal });
+    return () => controller.abort();
+  }, [dashboardAuthorized, loadOrgMemberships]);
 
   useEffect(() => {
     if (!dashboardAuthorized) return;
@@ -2123,6 +2193,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onStatus={changeStatus}
         onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onViewName={setViewName}
+        orgMemberships={orgMemberships}
+        orgSwitchBusy={orgSwitchBusy}
+        orgSwitchError={orgSwitchError}
+        onSwitchOrg={switchOrganization}
         metricUsagePercent={metricPercent}
         planLabel={activePlan}
         project={project}
@@ -2138,6 +2212,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
         viewName={viewName}
+        workspaceName={sessionPayload?.organization?.name ?? ""}
+        workspaceId={activeOrgId}
       />
 
       {isMobile && mobileNavOpen ? (
@@ -2170,6 +2246,33 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             emphasis="in flight"
             lede={`${project || "All projects"} · ${metricKey}`}
           />
+          {initialLoadDone && !dashboardLoading && summary.total === 0 && projects.length === 0 && !project && !query && !status ? (
+            <div className="org-empty-callout" role="status">
+              <div className="org-empty-callout__copy">
+                <strong>This workspace is empty.</strong>
+                <span>
+                  {sessionPayload?.organization?.name ? `${sessionPayload.organization.name} has no runs yet.` : "No runs yet."}
+                  {orgMemberships.length > 1 ? " You may be in the wrong workspace — switch above, or " : " "}
+                  start by sending your first run with the InstantML SDK.
+                </span>
+              </div>
+              {orgMemberships.filter((m) => !m.is_current).length ? (
+                <div className="org-empty-callout__actions">
+                  {orgMemberships.filter((m) => !m.is_current).slice(0, 3).map((membership) => (
+                    <button
+                      className="ghost-kbd"
+                      disabled={orgSwitchBusy}
+                      key={membership.org_id}
+                      onClick={() => switchOrganization(membership.org_id)}
+                      type="button"
+                    >
+                      Switch to {membership.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="runs-workspace-filter">
             <Stats overview={overview} metricKey={metricKey} />
             <RunsCommandbar

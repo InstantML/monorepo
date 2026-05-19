@@ -167,6 +167,24 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
     );
     openapi_insert(
         &mut paths,
+        "/api/auth/switch-organization",
+        &[(
+            "post",
+            openapi_operation(
+                "Switch the current browser session to a different organization the user belongs to",
+                Some(("x-instantml-auth", "browser session")),
+                &[],
+                &[
+                    ("200", "refreshed session payload bound to the target org"),
+                    ("403", "no active membership in target organization"),
+                    ("404", "organization not found"),
+                ],
+                false,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
         "/api/auth/device-code/start",
         &[(
             "post",
@@ -357,6 +375,20 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
                 &["name"],
                 &[("200", "availability payload")],
                 true,
+            ),
+        )],
+    );
+    openapi_insert(
+        &mut paths,
+        "/api/orgs/memberships",
+        &[(
+            "get",
+            openapi_operation(
+                "List the organizations the calling user belongs to, with role + member count for the org-switcher dropdown",
+                Some(("x-instantml-auth", "browser session")),
+                &[],
+                &[("200", "membership summaries")],
+                false,
             ),
         )],
     );
@@ -939,6 +971,7 @@ fn openapi_path_available_for_plane(
     if path.starts_with("/api/auth/")
         || path == "/api/users"
         || path == "/api/orgs"
+        || path == "/api/orgs/memberships"
         || path == "/api/orgs/name-availability"
         || path == "/api/dashboard/preferences"
         || path == "/api/workspace-views"
@@ -1094,6 +1127,45 @@ pub(super) async fn auth_logout(
         .headers_mut()
         .append(header::SET_COOKIE, header_value(&clear_session_cookie())?);
     Ok(response)
+}
+
+/// Re-point the caller's session at a different org they belong to.
+///
+/// Used by the dashboard org-switcher. The session token is unchanged — only
+/// the bound `org_id` on the session row is updated, so subsequent requests
+/// from the same cookie scope to the newly selected org.
+pub(super) async fn auth_switch_organization(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Response> {
+    validate_mutation_origin(&state, &headers)?;
+    let token = session_cookie(&headers)
+        .ok_or_else(|| AppError::unauthorized("missing session"))?
+        .to_string();
+    let input =
+        read_json::<SwitchOrganizationRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let target_org_id = input
+        .org_id
+        .ok_or_else(|| AppError::validation("org_id is required"))?;
+    let payload = store::switch_session_organization(&state.store, &token, target_org_id).await?;
+    Ok(Json(payload).into_response())
+}
+
+/// List the orgs the calling session-authenticated user belongs to.
+///
+/// Returns membership-decorated org summaries (role, member count, slug)
+/// for the org-switcher dropdown. Distinct from `/api/orgs` which is a
+/// bootstrap-only admin route.
+pub(super) async fn list_org_memberships(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let session = session_context(&state, &headers).await?;
+    let memberships =
+        store::list_user_org_memberships(&state.store, session.user.id, session.organization.id)
+            .await?;
+    Ok(Json(json!({ "memberships": memberships })))
 }
 
 // --- Device-code (RFC 8628) handlers ---
@@ -2373,6 +2445,26 @@ mod tests {
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
             frontend_base_url: Some("http://localhost:3000".to_string()),
+        }
+    }
+
+    #[test]
+    fn org_switcher_endpoints_live_on_control_plane() {
+        use crate::config::ServicePlaneRole;
+
+        for path in ["/api/auth/switch-organization", "/api/orgs/memberships"] {
+            assert!(
+                openapi_path_available_for_plane(path, ServicePlaneRole::Control),
+                "{path} should be available on control plane"
+            );
+            assert!(
+                openapi_path_available_for_plane(path, ServicePlaneRole::Combined),
+                "{path} should be available on combined plane"
+            );
+            assert!(
+                !openapi_path_available_for_plane(path, ServicePlaneRole::Data),
+                "{path} should not be available on data plane"
+            );
         }
     }
 
