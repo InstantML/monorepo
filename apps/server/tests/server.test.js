@@ -519,7 +519,7 @@ test("Python SDK can log to the Node server without API changes", async () => {
 const script = `
 import sys
 import instantml as ro
-run = ro.init(project="sdk-node", name="sdk-run", base_url="${baseUrl}")
+run = ro.init(project="sdk-node", name="sdk-run", base_url="${baseUrl}", api_key="test")
 run.log({"eval/return_mean": 12.5}, step=1)
 run.finish()
 print("sdk stdout covered")
