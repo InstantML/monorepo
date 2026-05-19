@@ -112,12 +112,15 @@ import { useIsMobile } from "./state/use-mobile";
 import { PageHead } from "./ui/page-head";
 import type { components } from "../../src/types/api.generated";
 
-// Bridge types from the utoipa-generated OpenAPI spec. As more handlers are
-// annotated, more hand-rolled types here should migrate to this pattern.
-// See docs/design/2026-05-19-utoipa-migration.md for the rollout plan.
+// Bridge types from the utoipa-generated OpenAPI spec. All API request /
+// response shapes that have a matching Rust ToSchema struct flow through
+// this `components["schemas"]` alias — that way a Rust struct rename or
+// field reshape surfaces here at build time via the codegen pipeline.
+// See docs/design/2026-05-19-utoipa-migration.md.
 type GeneratedSeatRow = components["schemas"]["SeatRow"];
 type GeneratedApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 type GeneratedWorkspaceViewSummary = components["schemas"]["WorkspaceViewSummary"];
+type GeneratedOrgMembershipSummary = components["schemas"]["OrganizationMembershipSummary"];
 
 type ThemeMode = "light" | "dark";
 type ChartZoomRange = { min: number; max: number } | null;
@@ -155,16 +158,10 @@ type DashboardSessionPayload = {
   membership?: { role: string; status: string };
   memberships?: Array<{ org_id: string; role: string; status: string }>;
 };
-type OrgMembershipSummary = {
-  org_id: string;
-  name: string;
-  slug: string;
-  plan_tier: string;
-  role: string;
-  status: string;
-  member_count: number;
-  is_current: boolean;
-};
+// Sourced from the generated OpenAPI spec; `list_org_memberships` returns
+// an `OrgMembershipsEnvelope { memberships: OrganizationMembershipSummary[] }`.
+// Rust struct `domain::OrganizationMembershipSummary`.
+type OrgMembershipSummary = GeneratedOrgMembershipSummary;
 // Sourced from the generated OpenAPI spec; `list_seats` returns a
 // `SeatsEnvelope { seats: SeatRow[] }`. Rust struct `domain::SeatRow`.
 type SeatRow = GeneratedSeatRow;

@@ -1,6 +1,6 @@
 # utoipa-driven OpenAPI + TypeScript codegen pipeline
 
-Status: in flight (partial rollout). Owner: api / web infra.
+Status: complete (rolled out in two PRs on 2026-05-19). Owner: api / web infra.
 Started: 2026-05-19.
 
 ## Why
@@ -75,7 +75,50 @@ source of truth: the Rust code itself.
 - `npm run codegen:api` — succeeds; emits 12 paths and 64 schemas.
 - `cd apps/web && next build` — clean.
 
-## What's queued (un-annotated handlers)
+## Completion (follow-up PR)
+
+The follow-up PR completed the migration:
+
+- Annotated every remaining handler (44 total operations across 41 unique
+  paths; `/metrics`, `/openapi.json`, and `/healthz` are intentionally not
+  annotated — Prometheus text, self-referential, and alias for `/health`
+  respectively).
+- Added envelope types in `openapi.rs` for the new responses
+  (`AuthSessionWithOnboardingKey`, `OrgMembershipsEnvelope`, device-code
+  responses, `ApiKeyCreatedEnvelope`, `ApiKeyEnvelope`,
+  `ServiceAccountEnvelope`, `OrganizationNameAvailability`,
+  `AttributesEnvelope`, `ObjectEnvelope`, `ArtifactEnvelope`,
+  `ArtifactsEnvelope`) and a `JsonObjectResponse` for handlers that build
+  dynamic `serde_json::Value` blobs in the store layer (overview, usage,
+  exports, imports, side-by-side, logs page, object rows).
+- Deleted the entire hand-rolled `openapi_json` function and its helpers
+  (`openapi_insert`, `openapi_operation`) — `GET /openapi.json` now returns
+  `ApiDoc::openapi()` directly with service-plane filtering.
+- Migrated `OrgMembershipSummary` in `dashboard-shell.tsx` to the generated
+  `components["schemas"]["OrganizationMembershipSummary"]`. The remaining
+  hand-rolled types in that file (`DashboardSessionPayload`, `UsagePayload`,
+  `UsageOrg`, `UsagePeriod`) are intentionally loose: the underlying Rust
+  handlers return free-form JSON (`JsonObjectResponse`) so there is no
+  matching strict generated type. UI shapes like `ShortcutCommand` /
+  `QuickSearchItem` / `SavedViewOption` / `ChartZoomRange` / `ThemeMode`
+  stay hand-written per the original plan.
+- Added a CI drift guard: `Verify OpenAPI / TS Codegen Has No Drift` step
+  in `.github/workflows/ci.yml` runs `npm run verify:api-types` on every
+  PR, failing the build if generated artifacts are out of sync with the
+  Rust source of truth.
+
+### Coverage
+
+```
+$ cargo run -- emit-openapi | jq '.paths | keys | length'
+44
+```
+
+Every router-registered route is covered except the three explicit skips
+above. The `utoipa_apidoc_emits_annotated_paths_and_schemas` test now
+asserts presence of all 44 paths.
+
+## (Original) What was queued (un-annotated handlers)
 
 The current `/openapi.json` is still legacy-driven for these. Migrate one
 batch at a time. The pattern (see `list_seats` or `log_metrics` for examples):
