@@ -37,6 +37,7 @@ SNAPSHOT_KEYS = {"metrics", "metadata"}
 CONSOLE_LOG_STREAMS = {"stdout", "stderr"}
 MAX_CONSOLE_LOG_MESSAGE_BYTES = 16 * 1024
 MAX_CONSOLE_LOG_LINES_PER_BATCH = 50
+MAX_TEXT_BYTES = 512
 _PENDING_RUN_ID = "__instantml_pending__"
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
 
@@ -343,7 +344,6 @@ class Client:
         1. Explicit api_key kwarg on Client.
         2. INSTANTML_API_KEY environment variable.
         3. ~/.instantml/credentials file.
-        4. If interactive TTY, print an actionable error. Always raise InstantMLError.
         Returns the resolved key or None (for unauthenticated local mode).
         """
         if self.api_key:
@@ -1169,16 +1169,15 @@ def _check_credentials_or_raise(api_key: str | None) -> None:
     scenario before the HTTP call is made.
     """
     if api_key:
-        return  # explicit kwarg provided — skip resolution check
+        return
     if os.environ.get("INSTANTML_API_KEY"):
-        return  # env var covers it
+        return
     try:
         from .cli import resolve_api_key_from_credentials
         if resolve_api_key_from_credentials():
-            return  # file creds cover it
+            return
     except Exception:
         pass
-    # No credentials found. Provide an actionable error.
     interactive = sys.stdin is not None and hasattr(sys.stdin, "isatty") and sys.stdin.isatty()
     msg = (
         "No API key found. Run `instantml login` to set up credentials, "
@@ -1567,8 +1566,8 @@ def _validate_note_text(notes: str) -> str:
     if not isinstance(notes, str):
         raise TypeError("notes must be a string")
     encoded = notes.strip().encode("utf-8")
-    if len(encoded) > 512:
-        raise ValueError("notes must be at most 512 bytes")
+    if len(encoded) > MAX_TEXT_BYTES:
+        raise ValueError(f"notes must be at most {MAX_TEXT_BYTES} bytes")
     return notes.strip()
 
 
@@ -1695,8 +1694,8 @@ def _validate_text(value: str, field: str) -> str:
     text = value.strip()
     if not text:
         raise ValueError(f"{field} must be a non-empty string")
-    if len(text.encode("utf-8")) > 512:
-        raise ValueError(f"{field} must be at most 512 bytes")
+    if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
+        raise ValueError(f"{field} must be at most {MAX_TEXT_BYTES} bytes")
     return text
 
 

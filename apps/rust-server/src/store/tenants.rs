@@ -322,7 +322,6 @@ impl Store {
             }
         }
 
-        // Build a route record that describes the shared cell.
         let hosted = self
             .hosted_clickhouse
             .as_ref()
@@ -350,8 +349,6 @@ impl Store {
             endpoint: parsed.endpoint,
             database,
             username: parsed.username,
-            // Store the password in the route so it survives restarts.
-            // This is the same pattern used by the database provisioner.
             password_secret_ref: None,
             password_ciphertext: Some(parsed.password),
             service_id: None,

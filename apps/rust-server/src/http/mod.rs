@@ -43,6 +43,7 @@ mod handlers;
 use handlers::*;
 
 const SESSION_COOKIE: &str = "instantml_session";
+const SESSION_COOKIE_MAX_AGE_SECS: u64 = 60 * 60 * 24 * 30;
 
 #[derive(Clone)]
 pub struct AppState {

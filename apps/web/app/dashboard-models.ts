@@ -36,10 +36,11 @@ export const chartPadding = 56;
 export const COMPARE_RUN_LIMIT = 50;
 export const COMPARE_ARTIFACT_LIMIT = 12;
 export const WORKSPACE_SCHEMA_VERSION = 2;
+export const DEFAULT_METRIC_KEY = "eval/return_mean";
 export { WORKSPACE_VIEW_PREFIX };
 const AUTOMATIC_WORKSPACE_PANEL_LIMIT = 6;
 const PREFERRED_AUTOMATIC_METRICS = [
-  "eval/return_mean",
+  DEFAULT_METRIC_KEY,
   "train/loss",
   "rollout/ep_rew_mean",
   "eval/mean_reward",
