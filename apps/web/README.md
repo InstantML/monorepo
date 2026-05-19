@@ -270,6 +270,32 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - Keep workspace layouts schema-versioned and sanitized before applying. The Rust/ClickHouse workspace-views API owns authenticated persistence; local storage is only a compatibility and offline-development fallback.
 - The first hosted auth/onboarding slice exists, but full organization switching, hosted provider credentials, invitation email delivery, and richer auth/no-access states are still follow-ups.
 
+## API type codegen
+
+The Rust handlers in `apps/rust-server/src/http/handlers.rs` carry
+`#[utoipa::path(...)]` macros. `apps/web/src/types/api.generated.ts` is
+emitted from that spec — do not edit it by hand.
+
+```bash
+# regenerate the spec + TS bindings after any Rust handler change
+npm run codegen:api
+
+# CI guard — fails if the committed generated files are out of date
+npm run verify:api-types
+```
+
+Frontend code consuming a generated type should import it as:
+
+```ts
+import type { components } from "../../src/types/api.generated";
+
+type RunRow = components["schemas"]["RunRow"];
+type SeatRow = components["schemas"]["SeatRow"];
+```
+
+See `docs/design/2026-05-19-utoipa-migration.md` for the rollout plan and
+which hand-rolled types in this app are next on the list to migrate.
+
 Known simplification follow-ups from review:
 
 - Continue shrinking `app/page.tsx` when a workflow becomes complex enough to justify a dedicated container component.

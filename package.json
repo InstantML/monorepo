@@ -54,12 +54,15 @@
     "start": "npm run dev:api",
     "start:node": "node apps/server/src/server.js",
     "rust:fmt:check": "cargo fmt --manifest-path apps/rust-server/Cargo.toml --all -- --check",
-    "rust:verify": "npm run rust:fmt:check && npm run rust:lint && npm run rust:test && npm run test:rust:contract && npm run test:hosted-clickhouse"
+    "rust:verify": "npm run rust:fmt:check && npm run rust:lint && npm run rust:test && npm run test:rust:contract && npm run test:hosted-clickhouse",
+    "codegen:api": "node tools/codegen-api.mjs",
+    "verify:api-types": "node tools/codegen-api.mjs --check"
   },
   "devDependencies": {
     "@types/node": "22.19.17",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "openapi-typescript": "7.5.2",
     "playwright": "1.59.1",
     "typescript": "5.7.3"
   },

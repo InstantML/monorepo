@@ -32,14 +32,28 @@ async fn run() -> instantml_rust_server::AppResult<()> {
         "migrate" => migrate_all(config).await,
         "worker" => worker(config).await,
         "seed-demo" => seed_demo(config).await,
+        "emit-openapi" => emit_openapi(),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
         }
         other => Err(instantml_rust_server::AppError::config(format!(
-            "unknown command {other}; expected serve, worker, migrate, seed-demo, or all"
+            "unknown command {other}; expected serve, worker, migrate, seed-demo, emit-openapi, or all"
         ))),
     }
+}
+
+/// Print the utoipa-generated OpenAPI spec to stdout. Used by the TypeScript
+/// codegen pipeline (`npm run codegen:api`) — no running server required.
+fn emit_openapi() -> instantml_rust_server::AppResult<()> {
+    use instantml_rust_server::http::openapi::ApiDoc;
+    use utoipa::OpenApi as _;
+    let spec = ApiDoc::openapi();
+    let json = serde_json::to_string_pretty(&spec).map_err(|err| {
+        instantml_rust_server::AppError::internal(format!("serialize openapi: {err}"))
+    })?;
+    println!("{json}");
+    Ok(())
 }
 
 async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
@@ -189,7 +203,9 @@ async fn shutdown_signal() {
 
 fn print_help() {
     println!(
-        "Usage: instantml-rust-server [serve|all|migrate|worker|seed-demo]\n\n\
+        "Usage: instantml-rust-server [serve|all|migrate|worker|seed-demo|emit-openapi]\n\n\
+         emit-openapi: prints the utoipa-generated OpenAPI spec to stdout (used by\n  \
+                   `npm run codegen:api`).\n\n\
          Environment: CLICKHOUSE_URL, INSTANTML_BIND_ADDR, INSTANTML_AUTH_MODE, \
          INSTANTML_BOOTSTRAP_TOKEN, INSTANTML_ARTIFACT_ROOT, INSTANTML_MAX_BODY_BYTES, INSTANTML_MAX_UPLOAD_BODY_BYTES, \
          INSTANTML_HOSTED_CLICKHOUSE_ENABLED, INSTANTML_SERVICE_PLANE, CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT"

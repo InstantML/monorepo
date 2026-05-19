@@ -38,7 +38,8 @@ use crate::{
     store,
 };
 
-mod handlers;
+pub(crate) mod handlers;
+pub mod openapi;
 
 use handlers::*;
 

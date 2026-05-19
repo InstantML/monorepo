@@ -327,6 +327,63 @@ Coverage exception (multi-writer):
 - `docs/design/2026-05-17-dashboard-reliability-control-views.md`
 - `docs/architecture/current-api.md`
 - `docs/product/pricing-and-margins.md`
+- `docs/design/2026-05-19-utoipa-migration.md`
+
+## Adding a new endpoint (utoipa + codegen pipeline)
+
+The OpenAPI spec is generated from the Rust handlers themselves via
+[`utoipa`](https://docs.rs/utoipa). To add an endpoint:
+
+1. Add (or reuse) the request/response Rust structs in `src/domain.rs`. Add
+   `#[derive(..., utoipa::ToSchema)]`. For fields typed `serde_json::Value`,
+   annotate `#[schema(value_type = Object)]` (or `Option<Object>`).
+
+2. Add the handler in `src/http/handlers.rs` and annotate it:
+
+   ```rust
+   #[utoipa::path(
+       post,
+       path = "/runs",
+       tag = "runs",
+       request_body = crate::domain::CreateRunRequest,
+       security(("bearerApiKey" = []), ("browserSession" = [])),
+       responses(
+           (status = 200, description = "Created run", body = super::openapi::RunEnvelope),
+           (status = 400, description = "Validation error", body = super::openapi::ErrorResponse),
+       ),
+   )]
+   pub(super) async fn create_run(...) -> AppResult<Json<Value>> { ... }
+   ```
+
+3. Register the handler in `crate::http::openapi::ApiDoc#[openapi(paths(...))]`
+   and add any new envelope/schema structs to `components(schemas(...))`.
+
+4. Add the new path string to the
+   `utoipa_apidoc_emits_annotated_paths_and_schemas` test so the schema
+   contract is exercised in CI.
+
+5. Regenerate TypeScript bindings:
+
+   ```bash
+   npm run codegen:api
+   ```
+
+   This runs `cargo run -- emit-openapi`, writes
+   `apps/rust-server/openapi.generated.json`, and emits
+   `apps/web/src/types/api.generated.ts`. Commit both.
+
+6. (Optional but encouraged) Migrate the corresponding frontend type to the
+   generated definition:
+
+   ```ts
+   import type { components } from "../../src/types/api.generated";
+   type RunRow = components["schemas"]["RunRow"];
+   ```
+
+CI should run `npm run verify:api-types`, which re-runs the codegen and
+fails if the generated files differ from the committed copies. See
+`docs/design/2026-05-19-utoipa-migration.md` for the rollout plan and the
+list of handlers still on the legacy hand-rolled spec path.
 
 ## Notes For Future Agents
 
