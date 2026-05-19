@@ -814,9 +814,11 @@ export interface components {
         AuthSessionUnauthenticated: {
             authenticated: boolean;
         };
-        /** @description Wrapper for `auth_dev_google` / `auth_clerk` responses, which serialize
+        /**
+         * @description Wrapper for `auth_dev_google` / `auth_clerk` responses, which serialize
          *     `AuthSessionPayload` plus an optional `onboarding_api_key` produced for
-         *     brand-new accounts. */
+         *     brand-new accounts.
+         */
         AuthSessionWithOnboardingKey: components["schemas"]["AuthSessionPayload"] & {
             onboarding_api_key?: null | components["schemas"]["OnboardingApiKey"];
         };
@@ -990,10 +992,12 @@ export interface components {
             /** Format: int64 */
             inserted: number;
         };
-        /** @description Free-form key/value response payload used by handlers that build dynamic
+        /**
+         * @description Free-form key/value response payload used by handlers that build dynamic
          *     JSON objects in the store layer (overview, usage, exports, etc.). Modeled
          *     as an opaque object so the OpenAPI spec is honest about the shape without
-         *     duplicating the dynamic structure here. */
+         *     duplicating the dynamic structure here.
+         */
         JsonObjectResponse: {
             data: Record<string, never>;
         };
@@ -1073,10 +1077,12 @@ export interface components {
         OrganizationEnvelope: {
             organization: components["schemas"]["OrganizationRow"];
         };
-        /** @description Summary of a single org membership for the org-switcher UI. We surface only
+        /**
+         * @description Summary of a single org membership for the org-switcher UI. We surface only
          *     the fields the dashboard needs (name + role) plus a member count so the
          *     dropdown can show "Acme · admin · 5 members" without forcing the client to
-         *     stitch responses together. */
+         *     stitch responses together.
+         */
         OrganizationMembershipSummary: {
             is_current: boolean;
             member_count: number;
@@ -1105,11 +1111,13 @@ export interface components {
             /** Format: int32 */
             seat_limit: number;
             slug: string;
-            /** @description Routing tier for this org's ClickHouse data plane.
+            /**
+             * @description Routing tier for this org's ClickHouse data plane.
              *     `"shared"` — routes to the shared cell (free/personal orgs).
              *     `"dedicated"` — routes to a per-org provisioned service.
              *     Older records that pre-date this field deserialize to `"dedicated"`
-             *     (the safe fallback) via the serde default. */
+             *     (the safe fallback) via the serde default.
+             */
             tenant_routing_tier?: string;
         };
         OrganizationsEnvelope: {
