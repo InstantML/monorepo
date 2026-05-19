@@ -1,34 +1,7 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import {
-  Activity,
-  AlertTriangle,
-  Archive,
-  BarChart3,
-  Box,
-  ChevronLeft,
-  ChevronRight,
-  Code2,
-  Copy,
-  Database,
-  ExternalLink,
-  FileBarChart,
-  FileText,
-  Gauge,
-  GitCompare,
-  KeyRound,
-  Layers3,
-  Package,
-  Plug,
-  Plus,
-  RefreshCw,
-  Settings,
-  ShieldCheck,
-  Star,
-  UserPlus,
-  X,
-} from "lucide-react";
+import { Activity } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
@@ -37,42 +10,26 @@ import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPa
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
-import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, metricFilterIsRegex, metricGoalLabel, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
-import { AlertList } from "./alerts";
-import { ApiTable } from "./api";
-import { ArtifactBrowser } from "./artifacts";
-import { ArtifactPanel } from "./detail/artifact-panel";
-import { ChartControls } from "./metrics/chart-controls";
+import { AlertsTabPane } from "./alerts/tab-pane";
+import { ApiTabPane } from "./api/tab-pane";
+import { ArtifactsTabPane } from "./artifacts/tab-pane";
+import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
 import { DashboardTopbar } from "./chrome/topbar";
-import { DatasetTable } from "./datasets";
-import { HoverDetail } from "./metrics/hover-detail";
-import { IntegrationCard } from "./integrations";
-import { MetricCatalog } from "./metrics/metric-catalog";
-import { MetricCard } from "./ui/metric-card";
-import { MetricChart } from "./metrics/metric-chart";
-import { MetricLeaderboard } from "./metrics/metric-leaderboard";
-import { RichObjectPanel } from "./detail/rich-object-panel";
-import { ModelContext } from "./models/model-context";
-import { ModelLineage } from "./models/model-lineage";
-import { PanelEditDrawer } from "./runs/panel-edit-drawer";
+import { DatasetsTabPane } from "./datasets/tab-pane";
+import { DetailTabPane } from "./detail/tab-pane";
+import { IntegrationsTabPane } from "./integrations/tab-pane";
+import { MetricsTabPane } from "./metrics/tab-pane";
+import { ModelsTabPane } from "./models/tab-pane";
+import { ReportsTabPane } from "./reports/tab-pane";
+import { RunsTabPane } from "./runs/tab-pane";
+import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
-import { ReportList } from "./reports";
-import { RunDetail } from "./detail/run-detail";
-import { RunMetadataEditor } from "./runs/run-metadata-editor";
-import { RunsCommandbar } from "./runs/runs-commandbar";
-import { RunsChartStrip } from "./runs/runs-chart-strip";
-import { RunsTable } from "./runs/runs-table";
-import { RunsWorkspace } from "./runs/runs-workspace";
-import { SeriesSummary } from "./metrics/series-summary";
-import { SettingRow } from "./settings";
-import { SideBySide } from "./compare";
-import { Stats } from "./runs/runs-stats";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { useFocusTrap } from "./ui/use-focus-trap";
-import { WorkspacePanelCard } from "./runs/workspace-panel-card";
 import { buildIntegrationRows, tabs } from "../dashboard-config";
 import {
   artifactTotalsForRuns,
@@ -96,7 +53,6 @@ import {
   metricTitle,
   sanitizePanelLayout,
   sanitizeWorkspaceView,
-  shortMetricName,
   stableId,
   workspaceMetricKeys,
   workspacePanelForMetric,
@@ -104,10 +60,9 @@ import {
 } from "../dashboard-models";
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
-import { RunWorkspace, type RunWorkspaceTabId } from "./components/run-workspace";
+import type { RunWorkspaceTabId } from "./components/run-workspace";
 import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
-import { PageHead } from "./ui/page-head";
 import type { components } from "../../src/types/api.generated";
 
 // Bridge types from the utoipa-generated OpenAPI spec. All API request /
@@ -2239,313 +2194,137 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
           {activeTab === "runs" ? (
-            <>
-          <PageHead
-            eyebrow="Workspace"
-            title="Runs"
-            emphasis="in flight"
-            lede={`${project || "All projects"} · ${metricKey}`}
-          />
-          {initialLoadDone && !dashboardLoading && summary.total === 0 && projects.length === 0 && !project && !query && !status ? (
-            <div className="org-empty-callout" role="status">
-              <div className="org-empty-callout__copy">
-                <strong>This workspace is empty.</strong>
-                <span>
-                  {sessionPayload?.organization?.name ? `${sessionPayload.organization.name} has no runs yet.` : "No runs yet."}
-                  {orgMemberships.length > 1 ? " You may be in the wrong workspace — switch above, or " : " "}
-                  start by sending your first run with the InstantML SDK.
-                </span>
-              </div>
-              {orgMemberships.filter((m) => !m.is_current).length ? (
-                <div className="org-empty-callout__actions">
-                  {orgMemberships.filter((m) => !m.is_current).slice(0, 3).map((membership) => (
-                    <button
-                      className="ghost-kbd"
-                      disabled={orgSwitchBusy}
-                      key={membership.org_id}
-                      onClick={() => switchOrganization(membership.org_id)}
-                      type="button"
-                    >
-                      Switch to {membership.name}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="runs-workspace-filter">
-            <Stats overview={overview} metricKey={metricKey} />
-            <RunsCommandbar
+            <RunsTabPane
+              addPanelSectionId={addPanelSectionId}
+              allMetricOptions={allMetricOptions}
+              availableWorkspaceMetrics={availableWorkspaceMetrics}
+              columnMetricFilter={columnMetricFilter}
+              columnMetricFilterValid={columnMetricFilterValid}
+              columnMetricOptionsForControls={columnMetricOptionsForControls}
               columnsOpen={columnsOpen}
+              dashboardLoading={dashboardLoading}
+              editingPanelContext={editingPanelContext}
+              fullscreenModalRef={fullscreenModalRef}
+              fullscreenPanelContext={fullscreenPanelContext}
+              fullscreenPanelIndex={fullscreenPanelIndex}
+              fullscreenPanelOrder={fullscreenPanelOrder}
+              hasNextPage={hasNextPage}
+              hasPreviousPage={hasPreviousPage}
+              initialLoadDone={initialLoadDone}
               metricKey={metricKey}
-              metricOptions={metricOptionsForControls}
+              metricOptionsForControls={metricOptionsForControls}
+              onAddPanel={addWorkspacePanel}
+              onAddSection={addWorkspaceSection}
+              onChangeMetricKey={changeMetricKey}
+              onClearFilters={clearFilters}
+              onCloseEditingPanel={() => setEditingPanelRef(null)}
               onColumnsOpen={setColumnsOpen}
-              onMetricKey={changeMetricKey}
-              onPinnedMetricFilter={setColumnMetricFilter}
+              onColumnMetricFilter={setColumnMetricFilter}
+              onDuplicatePanel={duplicateWorkspacePanel}
+              onEditPanel={(sectionId, panelId) => setEditingPanelRef({ sectionId, panelId })}
+              onFullscreenPanel={(sectionId, panelId) => setFullscreenPanelRef({ sectionId, panelId })}
+              onFullscreenPanelClose={() => setFullscreenPanelRef(null)}
+              onFullscreenPanelMove={moveFullscreenPanel}
+              onInspectRun={setPrimaryRunId}
+              onMode={setWorkspaceMode}
+              onMovePanel={moveWorkspacePanel}
+              onNextPage={goToNextRunPage}
+              onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
+              onPageSize={changeRunPageSize}
+              onPanelSearch={setPanelSearch}
               onPinnedMetric={togglePinnedMetric}
+              onPreviousPage={goToPreviousRunPage}
               onRefresh={loadDashboard}
+              onRemovePanel={removeWorkspacePanel}
+              onResetWorkspace={resetWorkspaceLayout}
+              onResizePanel={resizeWorkspacePanel}
+              onRunRailCollapsed={(collapsed) => {
+                setRunsRailCollapsed(collapsed);
+                setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");
+              }}
+              onSelectAllMatching={selectAllMatchingRuns}
+              onSelectAllVisible={selectAllVisibleRuns}
+              onSetAddPanelSection={setAddPanelSectionId}
+              onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
-              pinnedMetricFilter={columnMetricFilter}
-              pinnedMetricFilterValid={columnMetricFilterValid}
-              pinnedMetricOptions={columnMetricOptionsForControls}
+              onToggleRun={toggleRun}
+              onToggleSection={toggleWorkspaceSection}
+              onUpdateEditingPanel={updateEditingPanel}
+              orgMemberships={orgMemberships}
+              orgName={sessionPayload?.organization?.name ?? ""}
+              orgSwitchBusy={orgSwitchBusy}
+              overview={overview}
+              pageEnd={pageEnd}
+              pageSize={pageSize}
+              pageStart={pageStart}
+              paginationBusy={paginationBusy}
+              panelSearch={panelSearch}
               pinnedMetrics={pinnedMetrics}
+              project={project}
+              projects={projects}
+              query={query}
+              queryInput={queryInput}
+              runsRailCollapsed={runsRailCollapsed}
+              selectAllMatchingBusy={selectAllMatchingBusy}
+              selectedRunIds={selectedRunIds}
+              sortedRuns={sortedRuns}
+              status={status}
+              summaryTotal={summary.total}
               tableColumns={tableColumns}
+              workspacePanelRuns={workspacePanelRuns}
+              workspaceSeries={workspaceSeries}
+              workspaceView={workspaceView}
             />
-          </div>
-          <RunsWorkspace
-            addPanelSectionId={addPanelSectionId}
-            availableMetricKeys={availableWorkspaceMetrics}
-            onAddPanel={addWorkspacePanel}
-            onAddSection={addWorkspaceSection}
-            onClearFilters={clearFilters}
-            onColumnsOpen={setColumnsOpen}
-            onDuplicatePanel={duplicateWorkspacePanel}
-            onEditPanel={(sectionId, panelId) => setEditingPanelRef({ sectionId, panelId })}
-            onFullscreenPanel={(sectionId, panelId) => setFullscreenPanelRef({ sectionId, panelId })}
-            onInspectRun={setPrimaryRunId}
-            onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
-            onMode={setWorkspaceMode}
-            onMovePanel={moveWorkspacePanel}
-            onPanelSearch={setPanelSearch}
-            onRefresh={loadDashboard}
-            onRemovePanel={removeWorkspacePanel}
-            onResetWorkspace={resetWorkspaceLayout}
-            onResizePanel={resizeWorkspacePanel}
-            onRunRailCollapsed={(collapsed) => {
-              setRunsRailCollapsed(collapsed);
-              setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");
-            }}
-            onSelectAllMatching={selectAllMatchingRuns}
-            onSelectAllVisible={selectAllVisibleRuns}
-            onSetAddPanelSection={setAddPanelSectionId}
-            onTableColumns={setTableColumns}
-            onToggleRun={toggleRun}
-            onToggleSection={toggleWorkspaceSection}
-            selectAllMatchingBusy={selectAllMatchingBusy}
-            hasNextPage={hasNextPage}
-            hasPreviousPage={hasPreviousPage}
-            onNextPage={goToNextRunPage}
-            onPageSize={changeRunPageSize}
-            onPreviousPage={goToPreviousRunPage}
-            paginationBusy={paginationBusy}
-            pageEnd={pageEnd}
-            pageSize={pageSize}
-            pageStart={pageStart}
-            panelSearch={panelSearch}
-            runSearch={queryInput}
-            runRailCollapsed={runsRailCollapsed}
-            selectedRunIds={selectedRunIds}
-            showAddPanelDrawer={Boolean(addPanelSectionId)}
-            summaryTotal={summary.total}
-            tableColumns={tableColumns}
-            view={workspaceView}
-            workspacePanelRuns={workspacePanelRuns}
-            workspaceRuns={sortedRuns}
-            workspaceSeries={workspaceSeries}
-          />
-          {editingPanelContext ? (
-            <PanelEditDrawer
-              metricOptions={allMetricOptions}
-              onClose={() => setEditingPanelRef(null)}
-              onUpdate={updateEditingPanel}
-              panel={editingPanelContext.panel}
-              section={editingPanelContext.section}
-              view={workspaceView}
-            />
-          ) : null}
-          {fullscreenPanelContext ? (
-            <div
-              className="workspace-modal fullscreen-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-label={`${fullscreenPanelContext.panel.title} fullscreen`}
-              ref={fullscreenModalRef}
-              tabIndex={-1}
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }
-              }}
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setFullscreenPanelRef(null);
-                }
-              }}
-            >
-              <div className="workspace-modal-card fullscreen-modal-card">
-                <div className="drawer-head">
-                  <div className="fullscreen-title-block">
-                    <h2>{fullscreenPanelContext.panel.title}</h2>
-                    <span>{fullscreenPanelContext.panel.metricKey ?? "Metric"} · {fullscreenPanelContext.section.name} · {fullscreenPanelIndex + 1} of {fullscreenPanelOrder.length}</span>
-                  </div>
-                  <div className="fullscreen-nav-actions">
-                    <button
-                      aria-label="Previous fullscreen panel"
-                      className="icon-button"
-                      disabled={fullscreenPanelIndex <= 0}
-                      onClick={() => moveFullscreenPanel(-1)}
-                      title="Previous panel"
-                      type="button"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <button
-                      aria-label="Next fullscreen panel"
-                      className="icon-button"
-                      disabled={fullscreenPanelIndex < 0 || fullscreenPanelIndex >= fullscreenPanelOrder.length - 1}
-                      onClick={() => moveFullscreenPanel(1)}
-                      title="Next panel"
-                      type="button"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                    <button className="icon-button" type="button" aria-label="Close fullscreen panel" onClick={() => setFullscreenPanelRef(null)}><X size={16} /></button>
-                  </div>
-                </div>
-                <WorkspacePanelCard
-                  className="fullscreen-panel-card"
-                  panel={fullscreenPanelContext.panel}
-                  section={fullscreenPanelContext.section}
-                  selectedRunIds={selectedRunIds}
-                  view={workspaceView}
-                  workspacePanelRuns={workspacePanelRuns}
-                  workspaceSeries={workspaceSeries}
-                />
-              </div>
-            </div>
-          ) : null}
-            </>
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "metrics" ? "active" : ""}`} aria-label="Metrics">
           {activeTab === "metrics" ? (
-            <>
-          <div className="analysis-page metrics-analysis">
-            <header className="analysis-header">
-              <div className="analysis-title-block">
-                <span className="analysis-eyebrow eyebrow--accent">Metrics</span>
-                <h2>{metricTitle(metricKey)} <span className="serif-em">over time</span></h2>
-                <p>
-                  {activeMetricCatalogRow
-                    ? `${activeMetricCatalogRow.selectedCount}/${activeMetricCatalogRow.runCount} selected runs · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points · ${metricGoalLabel(metricKey)} objective`
-                    : `${selectedRuns.length || sortedRuns.length} runs in scope · ${metricGoalLabel(metricKey)} objective`}
-                </p>
-              </div>
-              <div className="analysis-stat-strip">
-                <div className="analysis-stat"><span>Available</span><strong>{formatNumber(metricCatalogRows.length, 0)}</strong></div>
-                <div className="analysis-stat"><span>Pinned</span><strong>{formatNumber(pinnedMetrics.length, 0)}</strong></div>
-                <div className="analysis-stat"><span>Series</span><strong>{formatNumber(chartSummaries.length, 0)}</strong></div>
-              </div>
-            </header>
-            <div className="metrics-grid metrics-workbench">
-              <section className="panel analysis-card metric-catalog-panel">
-                <div className="panel-head"><h2>Metric Catalog <span>({visibleMetricCatalogRows.length}/{metricCatalogRows.length})</span></h2></div>
-                <div className="panel-body">
-                  <MetricCatalog activeMetric={metricKey} rows={visibleMetricCatalogRows} pinnedMetrics={pinnedMetrics} onMetricKey={changeMetricKey} onPinnedMetric={togglePinnedMetric} />
-                </div>
-              </section>
-              <section className="chart-card analysis-card metrics-chart-surface">
-                <div className="analysis-toolbar chart-analysis-toolbar">
-                  <ChartControls
-                    metricFilter={metricFilter}
-                    metricFilterValid={metricFilterValid}
-                    metricKey={metricKey}
-                    metricOptions={metricOptionsForControls}
-                    groupBy={groupBy}
-                    xMode={xMode}
-                    smoothing={smoothing}
-                    groupAverage={groupAverage}
-                    pinnedMetrics={pinnedMetrics}
-                    onMetricFilter={setMetricFilter}
-                    onMetricKey={changeMetricKey}
-                    onGroupBy={setGroupBy}
-                    onXMode={setXMode}
-                    onSmoothing={setSmoothing}
-                    onGroupAverage={setGroupAverage}
-                    onPinnedMetric={togglePinnedMetric}
-                  />
-                </div>
-                <MetricChart
-                  domain={domain}
-                  fullDomain={fullDomain}
-                  hover={hover}
-                  metricKey={metricKey}
-                  normalizedSeries={normalizedSeries}
-                  onMove={handleChartMove}
-                  onPointHover={(point) => {
-                    setHoverMetricKey(metricKey);
-                    setHover(point);
-                  }}
-                  onLeave={() => setHover(null)}
-                  onZoomRangeChange={setChartZoomRange}
-                  rangeSeries={rangeSeries}
-                  xMode={xMode}
-                  zoomRange={chartZoomRange}
-                />
-                {pinnedChartPanels.length ? (
-                  <div className="pinned-chart-grid">
-                    {pinnedChartPanels.map((panel) => (
-                      <article className="metric-panel" key={panel.metric}>
-                        <div className="metric-panel-head">
-                          <h3>{metricTitle(panel.metric)}</h3>
-                          <button className="icon-button" type="button" aria-label={`Unpin ${panel.metric}`} onClick={() => togglePinnedMetric(panel.metric)}><X size={14} /></button>
-                        </div>
-                        <MetricChart
-                          domain={panel.domain}
-                          fullDomain={panel.fullDomain}
-                          hover={hover}
-                          metricKey={panel.metric}
-                          normalizedSeries={panel.normalizedSeries}
-                          onMove={(event) => handleChartMoveFor(event, panel.normalizedSeries, panel.metric)}
-                          onPointHover={(point) => {
-                            setHoverMetricKey(panel.metric);
-                            setHover(point);
-                          }}
-                          onLeave={() => setHover(null)}
-                          onZoomRangeChange={(range) => {
-                            setPinnedChartZoomRanges((current) => ({ ...current, [panel.metric]: range }));
-                          }}
-                          rangeSeries={panel.rangeSeries}
-                          xMode={xMode}
-                          zoomRange={panel.zoomRange}
-                        />
-                      </article>
-                    ))}
-                  </div>
-                ) : null}
-              </section>
-              <section className="panel analysis-card metric-insights-panel">
-                <div className="panel-head"><h2>Signal Context</h2></div>
-                <div className="panel-body">
-                  <HoverDetail hover={inspectedPoint} metricKey={hover ? hoverMetricKey : metricKey} />
-                  <MetricLeaderboard metricKey={metricKey} runs={selectedRuns.length ? selectedRuns : sortedRuns} />
-                  <SeriesSummary summaries={chartSummaries} />
-                </div>
-              </section>
-            </div>
-          </div>
-            </>
+            <MetricsTabPane
+              activeMetricCatalogRow={activeMetricCatalogRow}
+              chartSummaries={chartSummaries}
+              chartZoomRange={chartZoomRange}
+              domain={domain}
+              fullDomain={fullDomain}
+              groupAverage={groupAverage}
+              groupBy={groupBy}
+              hover={hover}
+              hoverMetricKey={hoverMetricKey}
+              metricCatalogRows={metricCatalogRows}
+              metricFilter={metricFilter}
+              metricFilterValid={metricFilterValid}
+              metricKey={metricKey}
+              metricOptionsForControls={metricOptionsForControls}
+              normalizedSeries={normalizedSeries}
+              onGroupAverage={setGroupAverage}
+              onGroupBy={setGroupBy}
+              onMetricFilter={setMetricFilter}
+              onMetricKey={changeMetricKey}
+              onChartLeave={() => setHover(null)}
+              onChartMove={handleChartMove}
+              onChartMoveFor={handleChartMoveFor}
+              onPinnedMetric={togglePinnedMetric}
+              onPointHoverChange={(point, key) => { setHoverMetricKey(key); setHover(point); }}
+              onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
+              onSmoothing={setSmoothing}
+              onXMode={setXMode}
+              onZoomRangeChange={setChartZoomRange}
+              pinnedChartPanels={pinnedChartPanels}
+              pinnedMetrics={pinnedMetrics}
+              rangeSeries={rangeSeries}
+              selectedRuns={selectedRuns}
+              smoothing={smoothing}
+              sortedRuns={sortedRuns}
+              visibleMetricCatalogRows={visibleMetricCatalogRows}
+              xMode={xMode}
+            />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "detail" ? "active" : ""}`} aria-label="Run Detail">
           {activeTab === "detail" ? (
-            <>
-          <div className="analysis-page detail-analysis">
-            <RunWorkspace
-              activeMetricKey={metricKey}
+            <DetailTabPane
               api={api}
-              artifacts={visibleArtifacts}
-              chartDomain={primaryDomain}
-              chartFullDomain={primaryFullDomain}
-              chartHover={hover}
-              chartNormalizedSeries={primaryNormalizedSeries}
-              chartRangeSeries={primaryRangeSeries}
-              chartZoomRange={primaryChartZoomRange}
               dataControls={
                 <>
                   <CustomSelect
@@ -2564,510 +2343,180 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                   />
                 </>
               }
-              elementId="run-detail"
               hover={inspectedPoint}
               loggedObjects={loggedObjects}
-              metricRows={runMetricRows}
               objectRowsById={objectRowsById}
               onChartLeave={() => setHover(null)}
               onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
-              onChartPointHover={(point) => {
-                setHoverMetricKey(metricKey);
-                setHover(point);
-              }}
+              onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onRunMetadataSave={updateRunTagsAndNotes}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
+              primaryDomain={primaryDomain}
+              primaryFullDomain={primaryFullDomain}
+              primaryNormalizedSeries={primaryNormalizedSeries}
+              primaryRangeSeries={primaryRangeSeries}
+              primaryChartZoomRange={primaryChartZoomRange}
               run={primaryRun}
-              selectedCount={selectedRuns.length}
+              runMetricRows={runMetricRows}
+              runTimelineRows={runTimelineRows}
+              runWorkspaceTab={runWorkspaceTab}
               selectedRuns={selectedRuns}
-              tab={runWorkspaceTab}
-              timelineRows={runTimelineRows}
+              visibleArtifacts={visibleArtifacts}
               xMode={xMode}
             />
-          </div>
-            </>
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "compare" ? "active" : ""}`} aria-label="Compare">
           {activeTab === "compare" ? (
-            <>
-          <div className="analysis-page compare-analysis">
-            <section className="panel analysis-card compare-shell">
-              <header className="analysis-header compare-analysis-header">
-                <div className="analysis-title-block">
-                  <span className="analysis-eyebrow eyebrow--accent">Compare</span>
-                  <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs <span className="serif-em">side by side</span></h2>
-                  <p>{metricKey} · {metricGoalLabel(metricKey)} objective · row-first evidence scan</p>
-                </div>
-                <div className="analysis-stat-strip">
-                  <div className="analysis-stat"><span>Reference</span><strong title={referenceRun?.name}>{referenceRun?.name ?? "-"}</strong></div>
-                  <div className="analysis-stat"><span>Cap</span><strong>{COMPARE_RUN_LIMIT}</strong></div>
-                  <div className="analysis-stat"><span>Mode</span><strong>{compareLayout === "columns" ? "Columns" : "Rows"}</strong></div>
-                </div>
-                {compareOverflowCount ? <span className="compare-limit-note">First {COMPARE_RUN_LIMIT} selected runs are compared; {compareOverflowCount} remain selected outside Compare.</span> : null}
-              </header>
-              <div className="analysis-toolbar compare-toolbar">
-                <label className="control compare-search-control">
-                  Search
-                  <input id="compare-search" placeholder="runs, evidence, tags, notes, artifacts" value={compareSearch} onChange={(event) => setCompareSearch(event.target.value)} />
-                </label>
-                <CustomSelect
-                  id="reference-run"
-                  label="Reference"
-                  onChange={setReferenceRunId}
-                  options={compareRuns.length ? compareRuns.map((run) => ({ value: run.id, label: run.name })) : [{ value: "", label: "No selected runs", disabled: true }]}
-                  value={referenceRun?.id ?? ""}
-                />
-                <CustomSelect
-                  id="compare-metric"
-                  label="Metric"
-	                  onChange={(value) => {
-	                    changeMetricKey(value);
-	                    setCompareSortMetricKey(value);
-	                  }}
-                  options={metricOptionsForControls.length ? metricOptionsForControls.map((metric) => ({ value: metric, label: metric })) : [{ value: "", label: "No metrics", disabled: true }]}
-                  value={metricOptionsForControls.length ? metricKey : ""}
-                />
-                <CustomSelect
-                  disabled={!compareAddMetricOptions.length || compareTableMetricKeys.length >= MAX_COMPARE_TABLE_METRICS}
-                  id="compare-add-metric"
-                  label="Add metric"
-                  onChange={addCompareTableMetric}
-                  options={compareAddMetricOptions.length && compareTableMetricKeys.length < MAX_COMPARE_TABLE_METRICS
-                    ? [{ value: "", label: "Add metric", disabled: true }, ...compareAddMetricOptions.map((metric) => ({ value: metric, label: metric }))]
-                    : [{ value: "", label: "All metrics added", disabled: true }]}
-                  value=""
-                />
-                <CustomSelect
-                  id="compare-layout"
-                  label="Layout"
-                  onChange={(value) => setCompareLayout(value === "columns" ? "columns" : "rows")}
-                  options={[
-                    { value: "rows", label: "Runs as rows" },
-                    { value: "columns", label: "Runs as columns" },
-                  ]}
-                  value={compareLayout === "columns" ? "columns" : "rows"}
-                />
-                <CustomSelect
-                  id="compare-row-sort"
-                  label="Evidence"
-                  onChange={(value) => setCompareRowSort(compareRowSorts.has(value as CompareRowSort) ? value as CompareRowSort : "signal")}
-                  options={[
-                    { value: "signal", label: "Signal" },
-                    { value: "changed", label: "Changed first" },
-                    { value: "missing", label: "Missing first" },
-                    { value: "category", label: "Category" },
-                    { value: "name", label: "Name" },
-                    { value: "spread", label: "Numeric spread" },
-                  ]}
-                  value={compareRowSort}
-                />
-                <CustomSelect
-                  id="compare-run-sort"
-                  label="Runs"
-                  onChange={(value) => setCompareRunSort(compareRunSorts.has(value as CompareRunSort) ? value as CompareRunSort : "metric-best")}
-                  options={[
-                    { value: "metric-best", label: "Metric best" },
-                    { value: "metric-latest", label: "Metric latest" },
-                    { value: "selected", label: "Selected order" },
-                    { value: "name", label: "Name" },
-                    { value: "newest", label: "Newest" },
-                    { value: "status", label: "Status" },
-                    { value: "duration", label: "Duration" },
-                    { value: "artifacts", label: "Artifacts" },
-                    { value: "tags", label: "Tags" },
-                    { value: "notes", label: "Notes" },
-                    { value: "config", label: "Config key" },
-                  ]}
-                  value={compareRunSort}
-                />
-                <CustomSelect
-                  disabled={!compareConfigKeys.length}
-                  id="compare-config-key"
-                  label="Config"
-                  onChange={setCompareConfigSortKey}
-                  options={compareConfigKeys.length ? compareConfigKeys.map((key) => ({ value: key, label: key })) : [{ value: "", label: "No config keys", disabled: true }]}
-                  value={compareConfigKeys.length ? compareConfigSortKey : ""}
-                />
-                <label className="control checkbox-control">
-                  Diff only
-                  <input id="diff-only" type="checkbox" checked={diffOnly} onChange={(event) => setDiffOnly(event.target.checked)} />
-                </label>
-              </div>
-              <div className="compare-metric-strip" aria-label="Compare table metric columns">
-                <span>Metric columns</span>
-                {compareTableMetricKeys.map((metric) => (
-                  <div className={`compare-metric-pill ${compareSortMetricKey === metric ? "active" : ""}`} key={metric}>
-                    <button
-                      aria-label={`Sort compared runs by ${metric}`}
-                      className="compare-metric-label"
-                      onClick={() => {
-                        setCompareSortMetricKey(metric);
-                        setCompareRunSort("metric-best");
-                      }}
-                      title={metric}
-                      type="button"
-                    >
-                      {metricTitle(metric)}
-                    </button>
-                    {metric !== metricKey ? (
-                      <button aria-label={`Remove ${metric} column`} className="compare-metric-remove" onClick={() => removeCompareTableMetric(metric)} title="Remove metric column" type="button">
-                        <X size={12} />
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-                <div className="compare-metric-strip-actions">
-                  <button
-                    className="compare-metric-action"
-                    disabled={!compareAddMetricOptions.length || compareTableMetricKeys.length >= MAX_COMPARE_TABLE_METRICS}
-                    onClick={addAllCompareTableMetrics}
-                    title={`Add up to ${MAX_COMPARE_TABLE_METRICS} metric columns`}
-                    type="button"
-                  >
-                    <Plus size={12} /> Add all
-                  </button>
-                  <button
-                    className="compare-metric-action"
-                    disabled={compareTableMetricKeys.length <= 1}
-                    onClick={resetCompareTableMetrics}
-                    title="Reset to the primary metric column"
-                    type="button"
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-              <SideBySide
-                artifactsByRun={compareArtifactsByRun}
-                configSortKey={compareConfigSortKey}
-                diffOnly={diffOnly}
-                layout={compareLayout}
-                metricKey={metricKey}
-                onOpenRunArtifacts={(runId) => {
-                  setPrimaryRunId(runId);
-                  selectTab("artifacts");
-                }}
-                onRunSort={setCompareRunSort}
-                onRunSortMetricKey={setCompareSortMetricKey}
-                payload={sideBySide}
-                referenceRunId={referenceRun?.id ?? ""}
-                rowSort={compareRowSort}
-                runSort={compareRunSort}
-                runSortMetricKey={compareSortMetricKey}
-                search={compareSearch}
-                tableMetrics={compareTableMetricKeys}
-              />
-              {compareRuns.length ? (
-                <details className="compare-annotation-details">
-                  <summary>
-                    <span>Annotate compared run</span>
-                    <strong title={compareEditRun?.name}>{compareEditRun?.name ?? "-"}</strong>
-                  </summary>
-                  <div className="compare-metadata-editor">
-                    <CustomSelect
-                      id="compare-edit-run"
-                      label="Annotate"
-                      onChange={setCompareEditRunId}
-                      options={compareRuns.map((run) => ({ value: run.id, label: run.name }))}
-                      value={compareEditRun?.id ?? ""}
-                    />
-                    <RunMetadataEditor compact onSave={updateRunTagsAndNotes} run={compareEditRun} title="Tags and notes" />
-                  </div>
-                </details>
-              ) : null}
-            </section>
-          </div>
-            </>
+            <CompareTabPane
+              addAllCompareTableMetrics={addAllCompareTableMetrics}
+              addCompareTableMetric={addCompareTableMetric}
+              compareAddMetricOptions={compareAddMetricOptions}
+              compareArtifactsByRun={compareArtifactsByRun}
+              compareConfigKeys={compareConfigKeys}
+              compareConfigSortKey={compareConfigSortKey}
+              compareEditRun={compareEditRun}
+              compareLayout={compareLayout}
+              compareOverflowCount={compareOverflowCount}
+              compareRowSort={compareRowSort}
+              compareRunIds={compareRunIds}
+              compareRunSort={compareRunSort}
+              compareRuns={compareRuns}
+              compareSearch={compareSearch}
+              compareSortMetricKey={compareSortMetricKey}
+              compareTableMetricKeys={compareTableMetricKeys}
+              diffOnly={diffOnly}
+              MAX_COMPARE_TABLE_METRICS={MAX_COMPARE_TABLE_METRICS}
+              metricKey={metricKey}
+              metricOptionsForControls={metricOptionsForControls}
+              onChangeCompareSearch={setCompareSearch}
+              onChangeMetricKeyAndSortKey={(value) => { changeMetricKey(value); setCompareSortMetricKey(value); }}
+              onCompareConfigSortKey={setCompareConfigSortKey}
+              onCompareEditRunId={setCompareEditRunId}
+              onCompareLayout={(value) => setCompareLayout(value === "columns" ? "columns" : "rows")}
+              onCompareRowSort={(value) => setCompareRowSort(compareRowSorts.has(value as CompareRowSort) ? value as CompareRowSort : "signal")}
+              onCompareRunSort={(value) => setCompareRunSort(compareRunSorts.has(value as CompareRunSort) ? value as CompareRunSort : "metric-best")}
+              onDiffOnly={setDiffOnly}
+              onOpenRunArtifacts={(runId) => { setPrimaryRunId(runId); selectTab("artifacts"); }}
+              onReferenceRunId={setReferenceRunId}
+              onResetCompareTableMetrics={resetCompareTableMetrics}
+              onRunSortMetricKey={setCompareSortMetricKey}
+              onRunSort={setCompareRunSort}
+              onUpdateRunTagsAndNotes={updateRunTagsAndNotes}
+              referenceRun={referenceRun}
+              removeCompareTableMetric={removeCompareTableMetric}
+              selectedRunIds={selectedRunIds}
+              sideBySide={sideBySide}
+            />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "alerts" ? "active" : ""}`} aria-label="Alerts">
           {activeTab === "alerts" ? (
-            <>
-          <PageHead eyebrow="Workspace" title="Alerts" emphasis="worth watching" lede={`${alertRows.length} active · run health`} />
-          <div className="tab-grid two-col">
-            <section className="panel">
-              <div className="panel-head">
-                <h2><AlertTriangle size={15} /> Alerts <span>({alertRows.length})</span></h2>
-                <button className="icon-button framed" type="button" aria-label="Refresh alerts" onClick={() => loadDashboard()}><RefreshCw size={16} /></button>
-              </div>
-              <div className="panel-body">
-                <AlertList rows={alertRows} />
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><ShieldCheck size={15} /> Run Health</h2></div>
-              <div className="panel-body insight-stack">
-                <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
-                <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
-                <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
-                <MetricCard label={`${metricGoalLabel(metricKey)} ${shortMetricName(metricKey)}`} value={formatNumber(overview.best_eval_return, 2)} tone="good" />
-              </div>
-            </section>
-          </div>
-            </>
+            <AlertsTabPane alertRows={alertRows} metricKey={metricKey} overview={overview} onRefresh={loadDashboard} />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {activeTab === "datasets" ? (
-            <>
-          <PageHead eyebrow="Workspace" title="Datasets" emphasis="in scope" lede={`config-derived · ${datasetRows.length} keys`} />
-          <div className="tab-grid two-col">
-            <section className="panel">
-              <div className="panel-head"><h2><Database size={15} /> Config-derived Datasets <span>({datasetRows.length})</span></h2></div>
-              <div className="panel-body">
-                <DatasetTable rows={datasetRows} metricKey={metricKey} />
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><Gauge size={15} /> Coverage</h2></div>
-              <div className="panel-body insight-stack">
-                <MetricCard label="Projects" value={formatNumber(projects.length, 0)} tone="neutral" />
-                <MetricCard label="Runs in view" value={formatNumber(sortedRuns.length, 0)} tone="neutral" />
-                <MetricCard label="Dataset keys" value={formatNumber(datasetRows.length, 0)} tone={datasetRows.length ? "good" : "neutral"} />
-              </div>
-            </section>
-          </div>
-            </>
+            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} projectCount={projects.length} runsInView={sortedRuns.length} />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "artifacts" ? "active" : ""}`} aria-label="Artifacts">
           {activeTab === "artifacts" ? (
-            <>
-          <PageHead eyebrow="Workspace" title="Artifacts" emphasis="and lineage" lede={`${visibleArtifacts.length} for ${primaryRun?.name ?? "inspected run"}`} />
-          <div className="tab-grid two-col">
-            <section className="panel">
-              <div className="panel-head"><h2><Package size={15} /> Selected-run Artifacts <span>({visibleArtifacts.length})</span></h2></div>
-              <div className="panel-body">
-                <RichObjectPanel objects={loggedObjects} rowsByObjectId={objectRowsById} title="Logged Objects" />
-                <ArtifactBrowser artifacts={visibleArtifacts} />
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><Archive size={15} /> Artifact Totals</h2></div>
-              <div className="panel-body insight-stack">
-                <MetricCard label="Files" value={formatNumber(artifactTotals.file, 0)} tone="neutral" />
-                <MetricCard label="Checkpoints" value={formatNumber(artifactTotals.checkpoint, 0)} tone="good" />
-                <MetricCard label="Rollouts" value={formatNumber(artifactTotals.rollout, 0)} tone="live" />
-                <MetricCard label="Inspected run" value={primaryRun?.name ?? "-"} tone="neutral" />
-              </div>
-            </section>
-          </div>
-            </>
+            <ArtifactsTabPane
+              artifactTotals={artifactTotals}
+              loggedObjects={loggedObjects}
+              objectRowsById={objectRowsById}
+              primaryRun={primaryRun}
+              visibleArtifacts={visibleArtifacts}
+            />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "models" ? "active" : ""}`} aria-label="Models">
           {activeTab === "models" ? (
-            <>
-          <PageHead eyebrow="Workspace" title="Checkpoints" emphasis="and lineage" lede={`${modelRows.length} tracked · ${primaryRun?.name ?? "no run"}`} />
-          <div className="tab-grid two-col">
-            <section className="panel">
-              <div className="panel-head"><h2><Box size={15} /> Checkpoint Lineage <span>({modelRows.length})</span></h2></div>
-              <div className="panel-body">
-                <ModelLineage rows={modelRows} />
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><Layers3 size={15} /> Model Context</h2></div>
-              <div className="panel-body"><ModelContext run={primaryRun} /></div>
-            </section>
-          </div>
-            </>
+            <ModelsTabPane modelRows={modelRows} primaryRun={primaryRun} />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
           {activeTab === "reports" ? (
-            <>
-          <PageHead eyebrow="Workspace" title="Saved views" emphasis="on tap" lede={`${reportRows.length} local · ${shortMetricName(metricKey)}`} />
-          <div className="tab-grid two-col">
-            <section className="panel">
-              <div className="panel-head"><h2><FileBarChart size={15} /> Local Saved Views <span>({reportRows.length})</span></h2></div>
-              <div className="panel-body">
-                <ReportList rows={reportRows} />
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><Activity size={15} /> Snapshot</h2></div>
-              <div className="panel-body insight-stack">
-                <MetricCard label="Runs" value={formatNumber(summary.total, 0)} tone="neutral" />
-                <MetricCard label="Selected" value={formatNumber(selectedRunIds.length, 0)} tone="live" />
-                <MetricCard label="Metric" value={shortMetricName(metricKey)} tone="neutral" />
-                <MetricCard label={`${metricGoalLabel(metricKey)} return`} value={formatNumber(overview.best_eval_return, 2)} tone="good" />
-              </div>
-            </section>
-          </div>
-            </>
+            <ReportsTabPane
+              metricKey={metricKey}
+              overview={overview}
+              reportRows={reportRows}
+              selectedRunCount={selectedRunIds.length}
+              totalRuns={summary.total}
+            />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
           {activeTab === "settings" ? (
-            <>
-          <PageHead eyebrow="Admin" title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
-          <div className="tab-grid settings-grid">
-            <section className="panel">
-              <div className="panel-head"><h2><Gauge size={15} /> Plan Usage</h2><button className="ghost" disabled={adminBusy} onClick={() => loadOrgSettings()} type="button"><RefreshCw size={14} /> Refresh</button></div>
-              <div className="panel-body insight-stack">
-                <MetricCard label="Plan" value={activePlan} tone="good" />
-                <MetricCard label="Seats" value={`${formatNumber(Number(activeUsage.seats ?? seats.length), 0)} / ${formatNumber(Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0), 0)}`} tone="neutral" />
-                <MetricCard label="Warehouse data" value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
-                <div className="usage-meter" aria-label="Warehouse data usage">
-                  <span style={{ width: `${storagePercent}%` }} />
-                </div>
-                <MetricCard label="Metric points this month" value={`${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}`} tone={metricPercent > 90 ? "bad" : metricPercent > 70 ? "live" : "neutral"} />
-                <div className="usage-meter" aria-label="Metric point usage">
-                  <span style={{ width: `${metricPercent}%` }} />
-                </div>
-                <SettingRow label="Metric reset" value={usageResetLabel ? `${usageResetLabel} UTC` : "-"} />
-                {(activeUsageOrg?.warnings ?? []).length ? (
-                  <div className="admin-alert-list">
-                    {(activeUsageOrg?.warnings ?? []).map((warning, index) => (
-                      <div className="api-row" key={`${warning.code ?? "warning"}-${index}`}>
-                        <AlertTriangle size={14} />
-                        <strong>{warning.message ?? warning.code ?? "Usage warning"}</strong>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><UserPlus size={15} /> Seats</h2></div>
-              <div className="panel-body admin-stack">
-                <div className="admin-form-row">
-                  <input aria-label="Invite email" onChange={(event) => setInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" value={inviteEmail} />
-                  <CustomSelect
-                    id="seat-role"
-                    label="Role"
-                    onChange={setInviteRole}
-                    options={[
-                      { value: "member", label: "Member" },
-                      { value: "admin", label: "Admin" },
-                      { value: "viewer", label: "Viewer" },
-                    ]}
-                    value={inviteRole}
-                  />
-                  <button className="primary-button" disabled={adminBusy || !inviteEmail.trim()} onClick={inviteSeat} type="button"><UserPlus size={14} /> Invite</button>
-                </div>
-                <div className="admin-list">
-                  {seats.map((seat) => (
-                    <div className="api-row" key={seat.membership.id}>
-                      <span>{seat.membership.status}</span>
-                      <strong>{seat.user.primary_email}</strong>
-                      <code>{seat.membership.role}</code>
-                    </div>
-                  ))}
-                  {!seats.length ? <p className="empty">No seats loaded.</p> : null}
-                </div>
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><Settings size={15} /> Workspace</h2></div>
-              <div className="panel-body settings-list">
-                <SettingRow label="Organization" value={sessionPayload?.organization?.name ?? "Workspace"} />
-                <SettingRow label="Plan tier" value={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"} />
-                <SettingRow label="Project filter" value={project || "All projects"} />
-                <SettingRow label="Status filter" value={status || "All statuses"} />
-                <SettingRow label="Selected runs" value={formatNumber(selectedRunIds.length, 0)} />
-                <SettingRow label="API route mode" value="Same-origin proxy" />
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><Gauge size={15} /> Defaults</h2></div>
-              <div className="panel-body settings-list">
-                <CustomSelect
-                  className="full"
-                  disabled={!metricOptionsForControls.length}
-                  id="settings-metric-select"
-                  label="Default metric"
-                  onChange={setMetricKey}
-                  options={metricOptionsForControls.length ? metricOptionsForControls.map((metric) => ({ value: metric, label: metric })) : [{ value: "", label: "No metrics", disabled: true }]}
-                  value={metricOptionsForControls.length ? metricKey : ""}
-                />
-                <CustomSelect
-                  className="full"
-                  id="settings-x-mode"
-                  label="X axis"
-                  onChange={setXMode}
-                  options={[
-                    { value: "step", label: "Step" },
-                    { value: "time", label: "Logged time" },
-                  ]}
-                  value={xMode}
-                />
-                <SettingRow label="Summary row limit" value="100" />
-                <SettingRow label="Metric point limit" value="1,000 per selected run" />
-              </div>
-            </section>
-          </div>
-            </>
+            <SettingsTabPane
+              activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
+              activePlan={activePlan}
+              activeUsageWarnings={activeUsageOrg?.warnings ?? []}
+              adminBusy={adminBusy}
+              formatBytes={formatBytes}
+              inviteEmail={inviteEmail}
+              inviteRole={inviteRole}
+              metricKey={metricKey}
+              metricOptionsForControls={metricOptionsForControls}
+              metricPercent={metricPercent}
+              metricUsed={metricUsed}
+              metricLimit={metricLimit}
+              onInviteEmail={setInviteEmail}
+              onInviteRole={setInviteRole}
+              onInviteSeat={inviteSeat}
+              onLoadOrgSettings={loadOrgSettings}
+              onMetricKey={setMetricKey}
+              onXMode={setXMode}
+              orgName={sessionPayload?.organization?.name ?? ""}
+              orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
+              project={project}
+              seats={seats}
+              selectedRunCount={selectedRunIds.length}
+              status={status}
+              storagePercent={storagePercent}
+              storageUsed={storageUsed}
+              storageLimit={storageLimit}
+              usageResetLabel={usageResetLabel}
+              xMode={xMode}
+            />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "integrations" ? "active" : ""}`} aria-label="Integrations">
           {activeTab === "integrations" ? (
-            <>
-          <PageHead eyebrow="Admin" title="Integrations" emphasis="and imports" lede="SDK · API · migration paths" />
-          <section className="panel">
-            <div className="panel-head"><h2><Plug size={15} /> Integrations</h2></div>
-            <div className="panel-body integration-grid">
-              {integrationRows.map((item) => <IntegrationCard item={item} key={item.name} />)}
-            </div>
-          </section>
-            </>
+            <IntegrationsTabPane integrationRows={integrationRows} />
           ) : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "api" ? "active" : ""}`} aria-label="API">
           {activeTab === "api" ? (
-            <>
-          <PageHead eyebrow="Admin" title="API" emphasis="keys" lede={`${apiKeys.filter((key) => !key.revoked_at).length} active · documented REST routes`} />
-          <div className="tab-grid two-col">
-            <section className="panel">
-              <div className="panel-head"><h2><KeyRound size={15} /> API Keys</h2><button className="ghost" disabled={adminBusy} onClick={() => loadApiKeys()} type="button"><RefreshCw size={14} /> Refresh</button></div>
-              <div className="panel-body admin-stack">
-                <div className="admin-form-row">
-                  <input aria-label="API key name" onChange={(event) => setApiKeyName(event.target.value)} value={apiKeyName} />
-                  <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={createDashboardApiKey} type="button"><Plus size={14} /> Create</button>
-                </div>
-                {newApiKey ? (
-                  <div className="api-key-reveal" role="status" aria-live="polite">
-                    <strong>Copy-once API key</strong>
-                    <code>{newApiKey}</code>
-                    <button className="secondary" onClick={copyNewApiKey} type="button"><Copy size={14} /> Copy</button>
-                  </div>
-                ) : null}
-                <div className="admin-list">
-                  {apiKeys.map((key) => (
-                    <div className={`api-row ${key.revoked_at ? "muted" : ""}`} key={key.id}>
-                      <span>{key.revoked_at ? "Revoked" : "Active"}</span>
-                      <strong>{key.name}</strong>
-                      <code>{key.key_prefix}</code>
-                      <button className="ghost" disabled={adminBusy || Boolean(key.revoked_at)} onClick={() => revokeDashboardApiKey(key.id)} type="button" aria-label={`Revoke ${key.name}`}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  {!apiKeys.length ? <p className="empty">No API keys loaded.</p> : null}
-                </div>
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-head"><h2><Code2 size={15} /> API Surface</h2></div>
-              <div className="panel-body">
-                <ApiTable rows={apiRows} />
-                <pre>{JSON.stringify({ org_id: activeOrgId || null, project: project || null, status: status || null, metric_key: metricKey, inspected_run_id: primaryRun?.id ?? null, selected_run_ids: selectedRunIds }, null, 2)}</pre>
-              </div>
-            </section>
-          </div>
-            </>
+            <ApiTabPane
+              activeOrgId={activeOrgId}
+              adminBusy={adminBusy}
+              apiKeyName={apiKeyName}
+              apiKeys={apiKeys}
+              apiRows={apiRows}
+              metricKey={metricKey}
+              newApiKey={newApiKey}
+              onApiKeyNameChange={setApiKeyName}
+              onCopyNewApiKey={copyNewApiKey}
+              onCreateApiKey={createDashboardApiKey}
+              onLoadApiKeys={loadApiKeys}
+              onRevokeApiKey={revokeDashboardApiKey}
+              primaryRunId={primaryRun?.id ?? null}
+              project={project}
+              selectedRunIds={selectedRunIds}
+              status={status}
+            />
           ) : null}
         </section>
       </section>
