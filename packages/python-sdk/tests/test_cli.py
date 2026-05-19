@@ -843,55 +843,7 @@ def test_check_credentials_or_raise_file_key(tmp_path, monkeypatch):
     _check_credentials_or_raise(None)  # should not raise
 
 
-def test_check_credentials_or_raise_no_creds_non_interactive(tmp_path, monkeypatch):
-    """With no creds and non-interactive stdin, function returns silently (lines 1179-1190)."""
-    from instantml.client import _check_credentials_or_raise
-    from unittest.mock import MagicMock
-    monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", tmp_path / "credentials")
-    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
-    # Make stdin non-interactive (isatty returns False).
-    fake_stdin = MagicMock()
-    fake_stdin.isatty.return_value = False
-    monkeypatch.setattr("sys.stdin", fake_stdin)
-    _check_credentials_or_raise(None)  # should not raise or warn
-
-
-def test_check_credentials_or_raise_no_creds_interactive(tmp_path, monkeypatch):
-    """With no creds and interactive stdin, issues a warning (lines 1182-1188)."""
-    import warnings
-    from instantml.client import _check_credentials_or_raise
-    from unittest.mock import MagicMock
-    monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", tmp_path / "credentials")
-    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
-    # Make stdin look interactive.
-    fake_stdin = MagicMock()
-    fake_stdin.isatty.return_value = True
-    monkeypatch.setattr("sys.stdin", fake_stdin)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        _check_credentials_or_raise(None)
-    assert len(w) == 1
-    assert "instantml login" in str(w[0].message)
-
-
-def test_check_credentials_or_raise_import_error(tmp_path, monkeypatch):
-    """If cli import fails, falls through to no-creds path (lines 1179-1180)."""
-    import sys
-    import warnings
-    from instantml.client import _check_credentials_or_raise
-    from unittest.mock import MagicMock
-    monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", tmp_path / "credentials")
-    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
-    # Break the cli import inside _check_credentials_or_raise.
-    saved = sys.modules.get("instantml.cli")
-    sys.modules["instantml.cli"] = None  # type: ignore[assignment]
-    fake_stdin = MagicMock()
-    fake_stdin.isatty.return_value = False
-    monkeypatch.setattr("sys.stdin", fake_stdin)
-    try:
-        _check_credentials_or_raise(None)  # should not raise
-    finally:
-        if saved is not None:
-            sys.modules["instantml.cli"] = saved
-        else:
-            del sys.modules["instantml.cli"]
+# Obsolete tests removed: previously tested silent-return / warn paths of
+# _check_credentials_or_raise. PR #39 changed the helper to unconditionally
+# raise InstantMLError when no credentials resolve. New behavior is covered
+# by test_check_credentials_* in test_client.py.
