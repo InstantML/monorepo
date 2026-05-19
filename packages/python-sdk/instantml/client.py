@@ -26,9 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
-class InstantMLError(Exception):
-    """Raised when the SDK cannot complete a logging request."""
+from .errors import InstantMLError
 
 
 DEFAULT_PROCESS_SPOOL_DIR = ".instantml/spool"
