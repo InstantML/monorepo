@@ -90,6 +90,7 @@ import {
   buildManualWorkspace,
   COMPARE_ARTIFACT_LIMIT,
   COMPARE_RUN_LIMIT,
+  DEFAULT_METRIC_KEY,
   chartHeight,
   chartPadding,
   chartWidth,
@@ -305,7 +306,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("created");
-  const [metricKey, setMetricKey] = useState("eval/return_mean");
+  const [metricKey, setMetricKey] = useState(DEFAULT_METRIC_KEY);
   const [metricFilter, setMetricFilter] = useState("");
   const [columnMetricFilter, setColumnMetricFilter] = useState("");
   const [groupBy, setGroupBy] = useState("");
@@ -317,7 +318,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [compareLayout, setCompareLayout] = useState<CompareLayout>("rows");
   const [compareRowSort, setCompareRowSort] = useState<CompareRowSort>("signal");
   const [compareRunSort, setCompareRunSort] = useState<CompareRunSort>("metric-best");
-  const [compareSortMetricKey, setCompareSortMetricKey] = useState("eval/return_mean");
+  const [compareSortMetricKey, setCompareSortMetricKey] = useState(DEFAULT_METRIC_KEY);
   const [compareTableMetrics, setCompareTableMetrics] = useState<string[]>([]);
   const [compareSearch, setCompareSearch] = useState("");
   const [compareConfigSortKey, setCompareConfigSortKey] = useState("");
@@ -399,7 +400,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     [actualMetricSignature],
   );
   const allMetricOptions = useMemo(() => (
-    actualMetricOptions.length ? actualMetricOptions : ["eval/return_mean", "train/reward", "train/loss"]
+    actualMetricOptions.length ? actualMetricOptions : [DEFAULT_METRIC_KEY, "train/reward", "train/loss"]
   ), [actualMetricOptions]);
   const metricOptions = useMemo(() => filterMetricKeys(allMetricOptions, metricFilter), [allMetricOptions, metricFilter]);
   const metricFilterValid = useMemo(() => metricFilterIsRegex(metricFilter), [metricFilter]);
@@ -1567,7 +1568,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setQueryInput(typeof view.query === "string" ? view.query : "");
     setQuery(typeof view.query === "string" ? view.query : "");
     setSortBy(view.sortBy ?? "created");
-    setMetricKey(view.metricKey ?? "eval/return_mean");
+    setMetricKey(view.metricKey ?? DEFAULT_METRIC_KEY);
     setMetricFilter(view.metricFilter ?? "");
     setGroupBy(view.groupBy ?? "");
     setXMode(view.xMode ?? "step");
@@ -1577,7 +1578,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setCompareLayout(compareLayouts.has(view.compareLayout) ? (view.compareLayout === "auto" ? "rows" : view.compareLayout) : "rows");
     setCompareRowSort(compareRowSorts.has(view.compareRowSort) ? view.compareRowSort : "signal");
     setCompareRunSort(compareRunSorts.has(view.compareRunSort) ? view.compareRunSort : "metric-best");
-    setCompareSortMetricKey(typeof view.compareSortMetricKey === "string" ? view.compareSortMetricKey : view.metricKey ?? "eval/return_mean");
+    setCompareSortMetricKey(typeof view.compareSortMetricKey === "string" ? view.compareSortMetricKey : view.metricKey ?? DEFAULT_METRIC_KEY);
     setCompareTableMetrics(Array.isArray(view.compareTableMetrics) ? view.compareTableMetrics.filter((item: unknown): item is string => typeof item === "string").slice(0, Math.max(0, MAX_COMPARE_TABLE_METRICS - 1)) : []);
     setCompareSearch(typeof view.compareSearch === "string" ? view.compareSearch : "");
     setCompareConfigSortKey(typeof view.compareConfigSortKey === "string" ? view.compareConfigSortKey : "");
