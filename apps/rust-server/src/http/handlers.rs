@@ -1,9 +1,28 @@
 use super::*;
 
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "platform",
+    security(),
+    responses(
+        (status = 200, description = "Service is healthy", body = super::openapi::HealthResponse),
+    ),
+)]
 pub(super) async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/readyz",
+    tag = "platform",
+    security(),
+    responses(
+        (status = 200, description = "Operational and metric stores ready", body = super::openapi::HealthResponse),
+        (status = 503, description = "Not ready", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json<Value>> {
     if state.config.service_plane.includes_data() && !store::ready(&state.store).await {
         return Err(AppError::service_unavailable(
@@ -27,6 +46,8 @@ pub(super) async fn metrics() -> Response {
 }
 
 pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Value> {
+    use utoipa::OpenApi as _;
+    let utoipa_spec = super::openapi::ApiDoc::openapi();
     let mut paths = serde_json::Map::new();
     openapi_insert(
         &mut paths,
@@ -921,41 +942,30 @@ pub(super) async fn openapi_json(State(state): State<Arc<AppState>>) -> Json<Val
     let service_plane = state.config.service_plane;
     paths.retain(|path, _| openapi_path_available_for_plane(path, service_plane));
 
-    Json(json!({
-        "openapi": "3.1.0",
-        "info": {
-            "title": "InstantML Rust API",
-            "version": env!("CARGO_PKG_VERSION"),
-            "description": "Current Rust/ClickHouse API route index. See docs/architecture/current-api.md for inputs, query parameters, response envelopes, auth scopes, and examples."
-        },
-        "x-instantml-service-plane": service_plane.as_str(),
-        "security": [
-            { "bearerApiKey": [] },
-            { "browserSession": [] }
-        ],
-        "paths": paths,
-        "components": {
-            "securitySchemes": {
-                "bearerApiKey": {
-                    "type": "http",
-                    "scheme": "bearer",
-                    "description": "InstantML SDK API key sent as Authorization: Bearer instantml_..."
-                },
-                "browserSession": {
-                    "type": "apiKey",
-                    "in": "cookie",
-                    "name": "instantml_session",
-                    "description": "HttpOnly browser session cookie issued by /api/auth/dev/google or /api/auth/clerk"
-                },
-                "bootstrapToken": {
-                    "type": "apiKey",
-                    "in": "header",
-                    "name": "X-InstantML-Bootstrap-Token",
-                    "description": "Operator-only bootstrap token for initial users, orgs, and admin key paths"
-                }
+    // Merge the utoipa-generated spec with the hand-rolled legacy paths.
+    // Utoipa paths take precedence on collision (the new pattern wins as handlers
+    // are migrated). Schemas come from utoipa; the legacy block had none.
+    let mut spec =
+        serde_json::to_value(&utoipa_spec).expect("utoipa OpenApi is always JSON-serializable");
+    let spec_obj = spec
+        .as_object_mut()
+        .expect("utoipa OpenApi serializes to an object");
+    let merged_paths = match spec_obj.remove("paths") {
+        Some(Value::Object(mut utoipa_paths)) => {
+            for (path, item) in paths {
+                utoipa_paths.entry(path).or_insert(item);
             }
+            utoipa_paths.retain(|path, _| openapi_path_available_for_plane(path, service_plane));
+            utoipa_paths
         }
-    }))
+        _ => paths,
+    };
+    spec_obj.insert("paths".to_string(), Value::Object(merged_paths));
+    spec_obj.insert(
+        "x-instantml-service-plane".to_string(),
+        json!(service_plane.as_str()),
+    );
+    Json(spec)
 }
 
 fn openapi_path_available_for_plane(
@@ -1025,6 +1035,15 @@ fn openapi_operation(
     Value::Object(operation)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/auth/config",
+    tag = "auth",
+    security(),
+    responses(
+        (status = 200, description = "Frontend auth provider availability", body = super::openapi::AuthConfigResponse),
+    ),
+)]
 pub(super) async fn auth_config(State(state): State<Arc<AppState>>) -> Json<Value> {
     let exposes_auth_routes = state.config.service_plane.includes_control();
     Json(json!({
@@ -1095,6 +1114,16 @@ pub(super) async fn auth_clerk(
     json_with_session_cookie(&state, &headers, response_body, &created.token)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/auth/session",
+    tag = "auth",
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Authenticated session payload", body = crate::domain::AuthSessionPayload),
+        (status = 200, description = "Unauthenticated session", body = super::openapi::AuthSessionUnauthenticated),
+    ),
+)]
 pub(super) async fn auth_session(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1114,6 +1143,15 @@ pub(super) async fn auth_session(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout",
+    tag = "auth",
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Session revoked and cookie cleared", body = super::openapi::AuthSessionUnauthenticated),
+    ),
+)]
 pub(super) async fn auth_logout(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1347,6 +1385,16 @@ pub(super) async fn create_org(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/orgs",
+    tag = "orgs",
+    security(("browserSession" = []), ("bootstrapToken" = [])),
+    responses(
+        (status = 200, description = "List of organizations visible to the caller", body = super::openapi::OrganizationsEnvelope),
+        (status = 401, description = "Authentication required", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn list_orgs(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1385,6 +1433,20 @@ pub(super) async fn create_api_key(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/orgs/{org_id}/api-keys",
+    tag = "orgs",
+    params(
+        ("org_id" = String, Path, description = "Organization UUID"),
+    ),
+    security(("browserSession" = []), ("bootstrapToken" = [])),
+    responses(
+        (status = 200, description = "API keys for the organization", body = super::openapi::ApiKeysEnvelope),
+        (status = 401, description = "Authentication required", body = super::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient role", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn list_api_keys(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1445,6 +1507,20 @@ pub(super) async fn reserve_seat(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/orgs/{org_id}/seats",
+    tag = "orgs",
+    params(
+        ("org_id" = String, Path, description = "Organization UUID"),
+    ),
+    security(("browserSession" = []), ("bootstrapToken" = [])),
+    responses(
+        (status = 200, description = "Seats for the organization", body = super::openapi::SeatsEnvelope),
+        (status = 401, description = "Authentication required", body = super::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient role", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn list_seats(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1457,6 +1533,18 @@ pub(super) async fn list_seats(
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/projects",
+    tag = "runs",
+    request_body = crate::domain::CreateProjectRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Created or fetched project", body = super::openapi::ProjectEnvelope),
+        (status = 400, description = "Validation error", body = super::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn create_project(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1471,6 +1559,16 @@ pub(super) async fn create_project(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/projects",
+    tag = "runs",
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Projects for the caller's organization", body = super::openapi::ProjectsEnvelope),
+        (status = 401, description = "Authentication required", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn list_projects(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1481,6 +1579,18 @@ pub(super) async fn list_projects(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/runs",
+    tag = "runs",
+    request_body = crate::domain::CreateRunRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Created run", body = super::openapi::RunEnvelope),
+        (status = 400, description = "Validation error", body = super::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn create_run(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1495,6 +1605,22 @@ pub(super) async fn create_run(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/runs",
+    tag = "runs",
+    params(
+        ("project" = Option<String>, Query, description = "Filter by project name"),
+        ("status" = Option<String>, Query, description = "Filter by run status"),
+        ("limit" = Option<i64>, Query, description = "Page size (1..=1000)"),
+        ("offset" = Option<i64>, Query, description = "Offset for pagination"),
+    ),
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Page of runs", body = super::openapi::RunsEnvelope),
+        (status = 401, description = "Authentication required", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn list_runs(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1504,6 +1630,19 @@ pub(super) async fn list_runs(
     Ok(Json(store::list_runs(&state.store, &ctx, &query).await?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/runs/{run_id}",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Run detail", body = super::openapi::RunEnvelope),
+        (status = 404, description = "Run not found", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn get_run(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1516,6 +1655,21 @@ pub(super) async fn get_run(
     ))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/runs/{run_id}",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    request_body = crate::domain::UpdateRunRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Updated run", body = super::openapi::RunEnvelope),
+        (status = 400, description = "Validation error", body = super::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn update_run(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1532,6 +1686,21 @@ pub(super) async fn update_run(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/runs/{run_id}/metrics",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    request_body = crate::domain::LogMetricsRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Inserted point count", body = super::openapi::InsertedEnvelope),
+        (status = 400, description = "Validation error", body = super::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = super::openapi::ErrorResponse),
+    ),
+)]
 pub(super) async fn log_metrics(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -2386,6 +2555,58 @@ mod tests {
             "/runs",
             ServicePlaneRole::Control
         ));
+    }
+
+    #[test]
+    fn utoipa_apidoc_emits_annotated_paths_and_schemas() {
+        use utoipa::OpenApi as _;
+        let spec = crate::http::openapi::ApiDoc::openapi();
+        let value = serde_json::to_value(&spec).expect("serialize spec");
+        let paths = value
+            .get("paths")
+            .and_then(Value::as_object)
+            .expect("paths");
+        // Every utoipa-annotated handler must appear here. Update this list when
+        // you annotate a new handler (or when you remove one — both directions).
+        for expected in [
+            "/health",
+            "/readyz",
+            "/api/auth/config",
+            "/api/auth/session",
+            "/api/auth/logout",
+            "/api/orgs",
+            "/api/orgs/{org_id}/seats",
+            "/api/orgs/{org_id}/api-keys",
+            "/projects",
+            "/runs",
+            "/runs/{run_id}",
+            "/runs/{run_id}/metrics",
+        ] {
+            assert!(
+                paths.contains_key(expected),
+                "utoipa spec missing path {expected}"
+            );
+        }
+        let schemas = value
+            .pointer("/components/schemas")
+            .and_then(Value::as_object)
+            .expect("components.schemas");
+        for expected in [
+            "RunRow",
+            "ProjectRow",
+            "SeatRow",
+            "PublicApiKeyRow",
+            "WorkspaceViewSummary",
+            "AuthSessionPayload",
+            "ProjectEnvelope",
+            "RunsEnvelope",
+            "InsertedEnvelope",
+        ] {
+            assert!(
+                schemas.contains_key(expected),
+                "utoipa spec missing schema {expected}"
+            );
+        }
     }
 
     #[test]

@@ -16,6 +16,7 @@ Start with:
 - `docs/design/2026-05-14-clickhouse-only-storage.md` for the primary Rust/ClickHouse storage direction.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md` for the internal Cloud Run deployment slice.
 - `docs/architecture/multi-instance-cloud-run.md` for the current split Cloud Run control/data topology.
+- `docs/design/2026-05-19-utoipa-migration.md` for the OpenAPI-driven TS codegen pipeline. Run `npm run codegen:api` after any Rust handler change.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
 ## Repository Structure

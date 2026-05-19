@@ -110,6 +110,14 @@ import { RunWorkspace, type RunWorkspaceTabId } from "./components/run-workspace
 import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
 import { PageHead } from "./ui/page-head";
+import type { components } from "../../src/types/api.generated";
+
+// Bridge types from the utoipa-generated OpenAPI spec. As more handlers are
+// annotated, more hand-rolled types here should migrate to this pattern.
+// See docs/design/2026-05-19-utoipa-migration.md for the rollout plan.
+type GeneratedSeatRow = components["schemas"]["SeatRow"];
+type GeneratedApiKeyRow = components["schemas"]["PublicApiKeyRow"];
+type GeneratedWorkspaceViewSummary = components["schemas"]["WorkspaceViewSummary"];
 
 type ThemeMode = "light" | "dark";
 type ChartZoomRange = { min: number; max: number } | null;
@@ -133,13 +141,13 @@ type SavedViewOption = {
   source: "control" | "local";
   value: string;
 };
-type WorkspaceViewSummaryPayload = {
-  id: string;
-  name: string;
-  project?: string | null;
-  created_at?: string;
-  updated_at?: string;
-};
+// Sourced from the generated OpenAPI spec; the Rust handler that emits this
+// payload is `list_workspace_views` returning a `WorkspaceViewSummariesEnvelope`.
+// Note: the Rust type marks `created_at`/`updated_at` as required; existing
+// callsites here treat them as optional, so we keep the shape compatible by
+// widening the generated definition.
+type WorkspaceViewSummaryPayload = Partial<Pick<GeneratedWorkspaceViewSummary, "created_at" | "updated_at">> &
+  Pick<GeneratedWorkspaceViewSummary, "id" | "name" | "project">;
 type DashboardSessionPayload = {
   authenticated?: boolean;
   organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number };
@@ -157,19 +165,15 @@ type OrgMembershipSummary = {
   member_count: number;
   is_current: boolean;
 };
-type SeatRow = {
-  membership: { id: string; role: string; status: string; created_at: string };
-  user: { id: string; primary_email: string; display_name?: string | null };
-};
-type ApiKeyRow = {
-  id: string;
-  name: string;
-  key_prefix: string;
-  scopes: string[];
-  created_at: string;
-  expires_at?: string | null;
-  revoked_at?: string | null;
-};
+// Sourced from the generated OpenAPI spec; `list_seats` returns a
+// `SeatsEnvelope { seats: SeatRow[] }`. Rust struct `domain::SeatRow`.
+type SeatRow = GeneratedSeatRow;
+// Sourced from the generated OpenAPI spec; `list_api_keys` returns an
+// `ApiKeysEnvelope { api_keys: PublicApiKeyRow[] }`. Rust struct
+// `domain::PublicApiKeyRow`. Existing UI code only touches a subset of
+// the row's fields, but typing the full row lets us catch field renames at
+// build time when the Rust struct changes.
+type ApiKeyRow = GeneratedApiKeyRow;
 type UsageOrg = {
   org_id: string;
   plan_tier: string;

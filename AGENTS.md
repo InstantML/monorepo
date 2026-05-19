@@ -167,6 +167,24 @@ Current backend ownership:
 - Keep `apps/api` as the days 1-4 Python bootstrap/reference implementation and SDK compatibility test target. Do not expand it into a competing production backend without a design doc.
 - Keep endpoint overlap between `apps/api`, `apps/server`, and `apps/rust-server` compatible where the SDK depends on more than one implementation.
 
+### Adding a new Rust endpoint
+
+Annotate the handler with `#[utoipa::path(...)]` and register it in
+`crate::http::openapi::ApiDoc`. Then run `npm run codegen:api` to regenerate
+`apps/rust-server/openapi.generated.json` and
+`apps/web/src/types/api.generated.ts`. Commit both. Frontend types should
+import from the generated module rather than hand-roll:
+
+```ts
+import type { components } from "../../src/types/api.generated";
+type RunRow = components["schemas"]["RunRow"];
+```
+
+See `apps/rust-server/README.md` for the full how-to and
+`docs/design/2026-05-19-utoipa-migration.md` for the rollout plan. `npm run
+verify:api-types` fails CI when generated files drift from the committed
+copy.
+
 ## Simplicity Guidelines
 
 Prefer:

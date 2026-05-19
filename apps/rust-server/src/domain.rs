@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
@@ -127,7 +128,7 @@ pub struct SessionContext {
     pub demo_read_only: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateUserRequest {
     pub email: Option<String>,
     pub primary_email: Option<String>,
@@ -138,7 +139,7 @@ pub struct CreateUserRequest {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserRow {
     pub id: Uuid,
     pub primary_email: String,
@@ -148,7 +149,7 @@ pub struct UserRow {
     pub last_seen_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateOrganizationRequest {
     pub slug: Option<String>,
     pub name: Option<String>,
@@ -156,7 +157,7 @@ pub struct CreateOrganizationRequest {
     pub owner_user_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct OrganizationRow {
     pub id: Uuid,
     pub slug: String,
@@ -179,7 +180,7 @@ fn default_routing_tier() -> String {
     "dedicated".to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct MembershipRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -189,11 +190,12 @@ pub struct MembershipRow {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserSessionRow {
     pub id: Uuid,
     pub user_id: Uuid,
     pub org_id: Uuid,
+    #[schema(value_type = Object)]
     pub metadata: Value,
     pub created_at: DateTime<Utc>,
     pub last_seen_at: Option<DateTime<Utc>>,
@@ -201,7 +203,7 @@ pub struct UserSessionRow {
     pub revoked_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct AuthSessionPayload {
     pub authenticated: bool,
     pub session: UserSessionRow,
@@ -213,14 +215,14 @@ pub struct AuthSessionPayload {
     pub provisioning: Option<ProvisioningStatusPayload>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct ProvisioningStatusPayload {
     pub status: String,
     pub mode: String,
     pub service_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct OnboardingApiKey {
     pub plaintext: String,
     pub prefix: String,
@@ -234,7 +236,7 @@ pub struct CreatedAuthSession {
     pub onboarding_api_key: Option<OnboardingApiKey>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DevGoogleAuthRequest {
     pub email: Option<String>,
     pub display_name: Option<String>,
@@ -246,7 +248,7 @@ pub struct DevGoogleAuthRequest {
     pub accept_invite_org_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ClerkAuthRequest {
     pub token: Option<String>,
     pub mode: Option<String>,
@@ -257,13 +259,13 @@ pub struct ClerkAuthRequest {
     pub accept_invite_org_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ReserveSeatRequest {
     pub email: Option<String>,
     pub role: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct SeatUserRow {
     pub id: Uuid,
     pub primary_email: String,
@@ -271,7 +273,7 @@ pub struct SeatUserRow {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct SeatRow {
     pub membership: MembershipRow,
     pub user: SeatUserRow,
@@ -281,7 +283,7 @@ pub struct SeatRow {
 /// the fields the dashboard needs (name + role) plus a member count so the
 /// dropdown can show "Acme · admin · 5 members" without forcing the client to
 /// stitch responses together.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct OrganizationMembershipSummary {
     pub org_id: Uuid,
     pub name: String,
@@ -293,12 +295,12 @@ pub struct OrganizationMembershipSummary {
     pub is_current: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SwitchOrganizationRequest {
     pub org_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateApiKeyRequest {
     pub name: Option<String>,
     pub scopes: Option<Vec<String>>,
@@ -308,7 +310,7 @@ pub struct CreateApiKeyRequest {
     pub expires_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct ServiceAccountRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -318,7 +320,7 @@ pub struct ServiceAccountRow {
     pub disabled_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct PublicApiKeyRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -333,13 +335,13 @@ pub struct PublicApiKeyRow {
     pub revoked_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateProjectRequest {
     pub name: Option<String>,
     pub description: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct ProjectRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -348,21 +350,23 @@ pub struct ProjectRow {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateRunRequest {
     pub project: Option<String>,
     pub name: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub config: Option<Value>,
     pub tags: Option<Vec<String>>,
+    #[schema(value_type = Option<Object>)]
     pub metadata: Option<Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateDashboardPreferencesRequest {
     pub selected_project: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct DashboardPreferenceRow {
     pub schema_version: i32,
     pub org_id: Uuid,
@@ -371,14 +375,15 @@ pub struct DashboardPreferenceRow {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SaveWorkspaceViewRequest {
     pub name: Option<String>,
     pub project: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub payload: Option<Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkspaceViewRow {
     pub schema_version: i32,
     pub id: Uuid,
@@ -386,13 +391,14 @@ pub struct WorkspaceViewRow {
     pub owner_user_id: Option<Uuid>,
     pub name: String,
     pub project: Option<String>,
+    #[schema(value_type = Object)]
     pub payload: Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct WorkspaceViewSummary {
     pub id: Uuid,
     pub name: String,
@@ -401,14 +407,14 @@ pub struct WorkspaceViewSummary {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateRunRequest {
     pub status: Option<String>,
     pub tags: Option<Vec<String>>,
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct RunRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -416,37 +422,42 @@ pub struct RunRow {
     pub project: String,
     pub name: String,
     pub status: String,
+    #[schema(value_type = Object)]
     pub config: Value,
     pub tags: Vec<String>,
+    #[schema(value_type = Object)]
     pub metadata: Value,
     pub created_at: DateTime<Utc>,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct LogMetricsRequest {
+    #[schema(value_type = Object)]
     pub metrics: Value,
+    #[schema(value_type = Object)]
     pub step: Value,
     pub timestamp: Option<String>,
     pub preview: Option<bool>,
+    #[schema(value_type = Option<Object>)]
     pub preview_completion: Option<Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ConsoleLogInput {
     pub line_number: Option<u64>,
     pub message: Option<String>,
     pub timestamp: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateConsoleLogsRequest {
     pub stream: Option<String>,
     pub lines: Option<Vec<ConsoleLogInput>>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct ConsoleLogLine {
     pub run_id: Uuid,
     pub stream: String,
@@ -456,7 +467,7 @@ pub struct ConsoleLogLine {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct MetricPointRow {
     pub key: String,
     pub step: f64,
@@ -464,7 +475,7 @@ pub struct MetricPointRow {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct MetricSeriesRow {
     pub run_id: Uuid,
     pub key: String,
@@ -481,66 +492,77 @@ pub struct MetricSeriesRow {
 
 // --- Device-code (RFC 8628) domain types ---
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DeviceCodeStartRequest {
     pub client_info: Option<DeviceCodeClientInfo>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DeviceCodeClientInfo {
     pub name: Option<String>,
     pub version: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DeviceCodePollRequest {
     pub device_code: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DeviceCodeConfirmRequest {
     pub user_code: Option<String>,
 }
 
 // --- Attribute types ---
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AttributeInput {
     pub path: String,
     #[serde(rename = "type")]
     pub kind: String,
+    #[schema(value_type = Option<Object>)]
     pub step: Option<Value>,
     pub timestamp: Option<String>,
+    #[schema(value_type = Object)]
     pub value: Value,
+    #[schema(value_type = Option<Object>)]
     pub summary: Option<Value>,
     pub artifact_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateAttributesRequest {
     pub attributes: Option<Vec<AttributeInput>>,
     pub path: Option<String>,
     #[serde(rename = "type")]
     pub kind: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub step: Option<Value>,
     pub timestamp: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub value: Option<Value>,
+    #[schema(value_type = Option<Object>)]
     pub summary: Option<Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateObjectRequest {
     pub key: Option<String>,
     pub kind: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub step: Option<Value>,
     pub artifact_id: Option<Uuid>,
+    #[schema(value_type = Option<Object>)]
     pub metadata: Option<Value>,
+    #[schema(value_type = Option<Object>)]
     pub summary: Option<Value>,
+    #[schema(value_type = Option<Object>)]
     pub value: Option<Value>,
+    #[schema(value_type = Option<Object>)]
     pub rows: Option<Vec<Value>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct AttributeRow {
     pub id: i64,
     pub org_id: Uuid,
@@ -550,39 +572,46 @@ pub struct AttributeRow {
     pub kind: String,
     pub step: Option<f64>,
     pub logged_at: Option<DateTime<Utc>>,
+    #[schema(value_type = Object)]
     pub value: Value,
+    #[schema(value_type = Object)]
     pub summary: Value,
     pub artifact_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateArtifactRequest {
     #[serde(rename = "type")]
     pub kind: Option<String>,
     pub name: Option<String>,
     pub uri: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub step: Option<Value>,
+    #[schema(value_type = Option<Object>)]
     pub size_bytes: Option<Value>,
     pub sha256: Option<String>,
     pub mime_type: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub metadata: Option<Value>,
     pub path: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UploadArtifactRequest {
     #[serde(rename = "type")]
     pub kind: Option<String>,
     pub name: Option<String>,
     pub content_base64: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub step: Option<Value>,
     pub mime_type: Option<String>,
+    #[schema(value_type = Option<Object>)]
     pub metadata: Option<Value>,
     pub path: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct ArtifactRow {
     pub id: Uuid,
     pub org_id: Uuid,
@@ -598,6 +627,7 @@ pub struct ArtifactRow {
     pub storage_backend: String,
     pub storage_key: Option<String>,
     pub storage_path: Option<String>,
+    #[schema(value_type = Object)]
     pub metadata: Value,
     pub created_at: DateTime<Utc>,
 }
