@@ -1,3 +1,12 @@
-// Compatibility re-export. Canonical implementation lives in
-// dashboard-components.tsx during the initial decomposition pass.
-export { MetricCard } from "../../dashboard-components";
+"use client";
+
+import type { Tone } from "../../dashboard-types";
+
+export function MetricCard({ label, value, tone }: { label: string; value: string; tone: Tone }) {
+  return (
+    <article className={`metric-card ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
