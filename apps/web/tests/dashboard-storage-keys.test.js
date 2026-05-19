@@ -51,7 +51,6 @@ test("workspace model accepts the revised panel schema and non-line types", () =
 
 test("dashboard shell protects control-plane state from stale UI interactions", () => {
   const authFlow = readFileSync(`${root}app/auth-flow.tsx`, "utf8");
-  const components = readFileSync(`${root}app/dashboard-components.tsx`, "utf8");
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
   // globals.css is now a thin @import chain; rules live in styles/*.css.
   // The nav-label rule was moved to styles/overhaul.css during the 2026-05-18
@@ -71,11 +70,14 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
 
-  assert.match(components, /className="workspace-modal command-modal"/, "quick search should keep a full-screen backdrop");
-  assert.match(components, /onMouseDown=\{\(event\) => \{[\s\S]*?event\.stopPropagation\(\);[\s\S]*?\}\}/, "backdrop mouse-down should stop click-through before closing");
-  assert.match(components, /onClick=\{\(event\) => \{[\s\S]*?event\.stopPropagation\(\);[\s\S]*?onClose\(\);[\s\S]*?\}\}/, "backdrop click should close after swallowing the page click");
-  assert.equal(/onMouseDown=\{\(event\)[\s\S]{0,240}onClose\(\)/.test(components), false, "mouse-down must not close before the paired click is swallowed");
-  assert.match(components, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
+  const quickSearch = readFileSync(`${root}app/dashboard/chrome/quick-search.tsx`, "utf8");
+  assert.match(quickSearch, /className="workspace-modal command-modal"/, "quick search should keep a full-screen backdrop");
+  assert.match(quickSearch, /onMouseDown=\{\(event\) => \{[\s\S]*?event\.stopPropagation\(\);[\s\S]*?\}\}/, "backdrop mouse-down should stop click-through before closing");
+  assert.match(quickSearch, /onClick=\{\(event\) => \{[\s\S]*?event\.stopPropagation\(\);[\s\S]*?onClose\(\);[\s\S]*?\}\}/, "backdrop click should close after swallowing the page click");
+  assert.equal(/onMouseDown=\{\(event\)[\s\S]{0,240}onClose\(\)/.test(quickSearch), false, "mouse-down must not close before the paired click is swallowed");
+
+  const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
+  assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
 });

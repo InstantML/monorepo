@@ -21,13 +21,11 @@ import { isAbortError, queryString } from "../../../src/api.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../../../src/evidence.js";
 import { ansiTokens, terminalWindow } from "../../../src/terminal.js";
 import { formatNumber, statusTone } from "../../../src/state.js";
-import {
-  ArtifactBrowser,
-  MetricCard,
-  MetricChart,
-  RichObjectPanel,
-  RunDetail,
-} from "../../dashboard-components";
+import { ArtifactBrowser } from "../artifacts/artifact-browser";
+import { MetricCard } from "../ui/metric-card";
+import { MetricChart } from "../metrics/metric-chart";
+import { RichObjectPanel } from "../detail/rich-object-panel";
+import { RunDetail } from "../detail/run-detail";
 import { shortMetricName } from "../../dashboard-models";
 import type {
   Artifact,
