@@ -183,7 +183,8 @@ impl Store {
 
     async fn rebuild(&self) -> AppResult<()> {
         let (data, latest_record_micros) = if let Some(control_store) = &self.control_store {
-            let records = control_store.load_records().await?;
+            // First load: no cursor, so this still pulls every control record.
+            let records = control_store.load_records(None).await?;
             let mut data = StoreData::default();
             let stats = data.apply_control_records(records)?;
             (data, stats.latest_record_micros)
@@ -250,7 +251,21 @@ impl Store {
             }
             *last = Some(Instant::now());
         }
-        let records = control_store.load_records().await?;
+        // Snapshot the current record clock and only ask for records strictly
+        // newer than it. The clock is microsecond-precision and matches the
+        // ClickHouse `DateTime64(6, 'UTC')` column.
+        //
+        // Concurrent refreshes are bounded by `CONTROL_REFRESH_MIN_INTERVAL`,
+        // so at most one fetch can be in flight per the throttle window.
+        // Either way, the post-fetch `max` against the live clock keeps it
+        // monotonic — replaying records we already applied is idempotent.
+        let since_micros = *self.record_clock_micros.lock().await;
+        let since = if since_micros > 0 {
+            Some(datetime_from_micros(since_micros))
+        } else {
+            None
+        };
+        let records = control_store.load_records(since).await?;
         if records.is_empty() {
             return Ok(());
         }
@@ -1088,6 +1103,120 @@ mod tests {
             .unwrap();
 
         assert_eq!(left.runs[&run_id].status, right.runs[&run_id].status);
+    }
+
+    #[test]
+    fn record_clock_micros_roundtrip_preserves_microsecond_precision() {
+        // The record clock is `i64` microseconds since epoch. ClickHouse's
+        // `DateTime64(6, 'UTC')` column is also microsecond-precision. The
+        // incremental `load_records` path converts the clock into a
+        // `DateTime<Utc>` via `datetime_from_micros` before binding it into
+        // the `WHERE created_at > ?` predicate; if that conversion loses
+        // resolution we'd silently re-fetch records we've already applied
+        // (slow but safe) or, worse, skip records (silent data loss).
+        //
+        // Lock in the round-trip: a clock value computed from a real
+        // `DateTime<Utc>` should produce a `DateTime<Utc>` equal to the
+        // original when converted back.
+        let original = DateTime::<Utc>::from_timestamp(1_700_000_000, 123_456_000).unwrap();
+        let micros = original.timestamp_micros();
+        let restored = datetime_from_micros(micros);
+        assert_eq!(restored, original);
+        assert_eq!(restored.timestamp_micros(), micros);
+    }
+
+    #[test]
+    fn incremental_refresh_advances_clock_to_latest_record_micros() {
+        // Simulates the per-refresh contract that `refresh_control_records`
+        // depends on: after applying a batch of records, the clock advances
+        // to the max `created_at` observed. A subsequent refresh would then
+        // bind `since = datetime_from_micros(clock)` and only ask ClickHouse
+        // for records strictly greater than that timestamp.
+        let org_id = Uuid::from_u128(1);
+        let mut data = StoreData::default();
+
+        // First batch: full load (clock starts at 0, so `since = None` and
+        // the query runs the legacy full scan).
+        let stats_first = data
+            .apply_control_records(vec![
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    Uuid::from_u128(1),
+                    &OrganizationRow {
+                        id: org_id,
+                        slug: "org".to_string(),
+                        name: "First".to_string(),
+                        plan_tier: "free".to_string(),
+                        account_type: "business".to_string(),
+                        seat_limit: 1,
+                        created_by_user_id: None,
+                        created_at: epoch(),
+                        tenant_routing_tier: "dedicated".to_string(),
+                    },
+                    100,
+                ),
+                control_replay_row(
+                    "organization",
+                    org_id,
+                    org_id.to_string(),
+                    Uuid::from_u128(2),
+                    &OrganizationRow {
+                        id: org_id,
+                        slug: "org".to_string(),
+                        name: "Second".to_string(),
+                        plan_tier: "free".to_string(),
+                        account_type: "business".to_string(),
+                        seat_limit: 1,
+                        created_by_user_id: None,
+                        created_at: epoch(),
+                        tenant_routing_tier: "dedicated".to_string(),
+                    },
+                    200,
+                ),
+            ])
+            .unwrap();
+        let mut clock: i64 = 0;
+        clock = clock.max(stats_first.latest_record_micros);
+        assert_eq!(clock, 200);
+        assert_eq!(data.organizations[&org_id].name, "Second");
+
+        // Second batch: emulates what the next refresh would see — ClickHouse
+        // returns only records with `created_at > since`, i.e. strictly newer
+        // than the previous clock. Empty results (no churn) must not regress
+        // the clock; new records must advance it.
+        let stats_empty = data.apply_control_records(vec![]).unwrap();
+        assert_eq!(stats_empty.latest_record_micros, 0);
+        clock = clock.max(stats_empty.latest_record_micros);
+        assert_eq!(
+            clock, 200,
+            "empty incremental refresh must not regress clock"
+        );
+
+        let stats_third = data
+            .apply_control_records(vec![control_replay_row(
+                "organization",
+                org_id,
+                org_id.to_string(),
+                Uuid::from_u128(3),
+                &OrganizationRow {
+                    id: org_id,
+                    slug: "org".to_string(),
+                    name: "Third".to_string(),
+                    plan_tier: "free".to_string(),
+                    account_type: "business".to_string(),
+                    seat_limit: 1,
+                    created_by_user_id: None,
+                    created_at: epoch(),
+                    tenant_routing_tier: "dedicated".to_string(),
+                },
+                300,
+            )])
+            .unwrap();
+        clock = clock.max(stats_third.latest_record_micros);
+        assert_eq!(clock, 300);
+        assert_eq!(data.organizations[&org_id].name, "Third");
     }
 
     #[test]

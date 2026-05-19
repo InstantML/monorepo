@@ -76,13 +76,51 @@ impl ControlStore {
         Ok(())
     }
 
-    pub async fn load_records(&self) -> AppResult<Vec<ControlRecordRow>> {
+    /// Load control records, optionally restricted to those strictly newer than
+    /// `since`.
+    ///
+    /// Passing `None` (or a `since` of the unix epoch) performs the legacy
+    /// full-table scan. Once the in-process replay state is warm, callers
+    /// supply the previously-observed maximum `created_at` so each refresh
+    /// only fetches the churn that landed since then. Without this filter,
+    /// every authenticated request that called `refresh_control_records`
+    /// triggered an unbounded `SELECT` over the whole control table — under
+    /// burst load that overwhelmed ClickHouse Cloud and produced transient
+    /// `client error (Connect)` failures (PR #32).
+    pub async fn load_records(
+        &self,
+        since: Option<DateTime<Utc>>,
+    ) -> AppResult<Vec<ControlRecordRow>> {
+        match since {
+            // Treat the unix epoch as "no cursor yet" so first-time loads
+            // still see every record, matching the legacy full-scan behavior.
+            None => self.load_records_full().await,
+            Some(cursor) if cursor.timestamp_micros() <= 0 => self.load_records_full().await,
+            Some(cursor) => self.load_records_after(cursor).await,
+        }
+    }
+
+    async fn load_records_full(&self) -> AppResult<Vec<ControlRecordRow>> {
         self.client()
             .query(
                 "SELECT event_id, scope, kind, org_id, entity_id, payload, created_at \
                  FROM instantml_user_data \
                  ORDER BY created_at ASC, event_id ASC",
             )
+            .fetch_all::<ControlRecordRow>()
+            .await
+            .map_err(|err| AppError::internal(format!("clickhouse control query failed: {err}")))
+    }
+
+    async fn load_records_after(&self, since: DateTime<Utc>) -> AppResult<Vec<ControlRecordRow>> {
+        self.client()
+            .query(
+                "SELECT event_id, scope, kind, org_id, entity_id, payload, created_at \
+                 FROM instantml_user_data \
+                 WHERE created_at > parseDateTime64BestEffort(?, 6, 'UTC') \
+                 ORDER BY created_at ASC, event_id ASC",
+            )
+            .bind(since.to_rfc3339())
             .fetch_all::<ControlRecordRow>()
             .await
             .map_err(|err| AppError::internal(format!("clickhouse control query failed: {err}")))
