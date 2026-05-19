@@ -2011,6 +2011,21 @@ def test_check_credentials_error_message_mentions_env_var(monkeypatch, tmp_path)
         _check_credentials_or_raise(None)
 
 
+def test_check_credentials_handles_cli_import_failure(monkeypatch):
+    import sys
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    saved = sys.modules.get("instantml.cli")
+    sys.modules["instantml.cli"] = None  # type: ignore[assignment]
+    try:
+        with pytest.raises(InstantMLError, match="INSTANTML_API_KEY"):
+            _check_credentials_or_raise(None)
+    finally:
+        if saved is not None:
+            sys.modules["instantml.cli"] = saved
+        else:
+            del sys.modules["instantml.cli"]
+
+
 # ---------------------------------------------------------------------------
 # init() fail-fast credential checks
 # ---------------------------------------------------------------------------
