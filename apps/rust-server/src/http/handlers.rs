@@ -2014,8 +2014,6 @@ async fn session_context(
     state: &AppState,
     headers: &HeaderMap,
 ) -> AppResult<crate::domain::AuthSessionPayload> {
-    // See `context()` — control state is refreshed by a background task on
-    // the data plane, not on the request hot path.
     let token = session_cookie(headers).ok_or_else(|| AppError::unauthorized("missing session"))?;
     store::authenticate_session(&state.store, token).await
 }
@@ -2052,8 +2050,7 @@ fn json_with_session_cookie<T: serde::Serialize>(
 fn session_cookie_header(token: &str, secure: bool) -> String {
     let secure = if secure { "; Secure" } else { "" };
     format!(
-        "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-        60 * 60 * 24 * 30
+        "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_COOKIE_MAX_AGE_SECS}"
     ) + secure
 }
 

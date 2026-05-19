@@ -358,7 +358,6 @@ async fn create_verified_provider_session(
             }
         }
     }
-    // Resolve org name: use explicit org_name if provided, else auto-derive from Clerk profile.
     let (org_name, org_slug, auto_derived) = if let Some(name) = input.org_name {
         let slug = slugify(&name);
         if data.orgs_by_slug.contains_key(&slug) {
@@ -366,7 +365,6 @@ async fn create_verified_provider_session(
         }
         (name, slug, false)
     } else {
-        // Auto-derive workspace name from Clerk display name or email handle.
         let base_slug = derive_workspace_slug(
             input.auto_derive_display_name.as_deref(),
             &input.auto_derive_email,
@@ -380,7 +378,6 @@ async fn create_verified_provider_session(
     } else {
         account_type.clone()
     };
-    // Route personal/free orgs to the shared cell; business orgs get dedicated.
     let tenant_routing_tier = if is_personal_account_type(&effective_account_type) {
         "shared".to_string()
     } else {
@@ -431,7 +428,6 @@ async fn create_verified_provider_session(
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
     drop(data);
-    // Atomically mint an onboarding SDK key for the new org.
     let onboarding_api_key = mint_onboarding_api_key(store, org.id, user.id).await.ok();
     Ok(CreatedAuthSession {
         token,

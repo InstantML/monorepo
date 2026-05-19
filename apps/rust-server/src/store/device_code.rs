@@ -33,7 +33,6 @@ pub struct DeviceCodeRecord {
 pub fn generate_user_code() -> String {
     let alphabet = USER_CODE_ALPHABET;
     let alen = alphabet.len() as u8;
-    // Sample 8 bytes of randomness via two UUIDs (we only need 8 bytes).
     let random_bytes: Vec<u8> = Uuid::new_v4().as_bytes()[..8].to_vec();
     let chars: Vec<u8> = random_bytes
         .iter()
@@ -84,8 +83,6 @@ pub async fn device_code_start(
     data.device_codes.insert(device_code_hash, record);
     data.device_codes_by_user_code
         .insert(user_code.clone(), hash_secret(&raw_device_code));
-
-    // Eagerly evict expired codes to keep the map bounded.
     data.evict_expired_device_codes(now);
 
     let base = frontend_base_url.trim_end_matches('/');
@@ -112,13 +109,11 @@ pub async fn device_code_poll(store: &Store, raw_device_code: &str) -> AppResult
         .get_mut(&hash)
         .ok_or_else(|| AppError::not_found("device code not found or expired"))?;
 
-    // Expiry check.
     if now >= record.expires_at {
         record.status = "expired".to_string();
         return Ok(json!({ "status": "expired" }));
     }
 
-    // Rate-limit: enforce polling interval.
     if let Some(last) = record.last_polled_at {
         let elapsed = (now - last).num_seconds();
         if elapsed < DEVICE_CODE_POLL_INTERVAL_SECS {
@@ -136,13 +131,11 @@ pub async fn device_code_poll(store: &Store, raw_device_code: &str) -> AppResult
         "denied" => Ok(json!({ "status": "denied" })),
         "expired" => Ok(json!({ "status": "expired" })),
         "authorized" => {
-            // Return plaintext exactly once, then consume the record.
             let plaintext = record.api_key_plaintext.take();
             let prefix = record.api_key_prefix.clone();
             let key_id = record.api_key_id;
             let org_id = record.org_id;
             let user_id = record.user_id;
-            // Mark consumed so re-polls see "expired".
             record.status = "expired".to_string();
 
             let api_key_info = match (plaintext, prefix, key_id) {
@@ -187,7 +180,6 @@ pub async fn device_code_confirm(
     org_id: Uuid,
     raw_user_code: &str,
 ) -> AppResult<Value> {
-    // Normalize the user code: uppercase, with hyphen for lookup.
     let normalized = raw_user_code.to_uppercase();
     let now = Utc::now();
 
@@ -218,10 +210,8 @@ pub async fn device_code_confirm(
         (org, record.user_code.clone())
     };
 
-    // Ensure the tenant route is live before minting the key.
     store.ensure_tenant_route(&org).await?;
 
-    // Mint the API key.
     let plaintext = generate_api_key();
     let key_hash = hash_secret(&plaintext);
     let service_account = ServiceAccountRow {
@@ -262,7 +252,6 @@ pub async fn device_code_confirm(
         .persist_locked("api_key", org_id, &key.id.to_string(), &api_key_record)
         .await?;
 
-    // Update in-memory state and device code record atomically.
     let mut data = store.data.lock().await;
     data.service_accounts
         .insert(service_account.id, service_account);
