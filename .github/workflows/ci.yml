@@ -68,6 +68,14 @@ jobs:
       - name: Rust Tests
         run: npm run rust:test
 
+      - name: Verify OpenAPI / TS Codegen Has No Drift
+        # Re-runs `cargo run -- emit-openapi` and `openapi-typescript`, then
+        # `git diff --exit-code` on the regenerated artifacts. Fails the
+        # build if a PR changed a Rust handler or domain type without
+        # committing the regenerated files. Run `npm run codegen:api` and
+        # commit the diff to fix.
+        run: npm run verify:api-types
+
       - name: Node Tests
         run: npm run test:node
 
