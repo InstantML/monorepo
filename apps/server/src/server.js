@@ -301,7 +301,12 @@ function authenticate(req, store, options) {
   }
   const match = String(header).match(/^Bearer\s+(.+)$/i);
   if (!match) throw new UnauthorizedError("authorization must use bearer token");
-  return store.authenticateApiKey(match[1]);
+  try {
+    return store.authenticateApiKey(match[1]);
+  } catch (err) {
+    if (!options.requireApiKey) return null;
+    throw err;
+  }
 }
 
 function requireBootstrap(req, options) {
