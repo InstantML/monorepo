@@ -53,6 +53,19 @@ const PLAN_OPTIONS: Array<{
   { id: "premium", label: "Premium", price: "$699", storage: "5 TB", seats: "10 seats", icon: Crown },
 ];
 
+// Stash the freshly issued onboarding key in sessionStorage so the dashboard's
+// empty-workspace SDK snippet can offer a "Copy with your key" action without
+// re-requesting a copy-once secret. Cleared on tab close; never persisted.
+const ONBOARDING_KEY_STORAGE = "instantml_onboarding_key";
+function stashOnboardingKey(plaintext: string) {
+  if (typeof window === "undefined" || !plaintext) return;
+  try {
+    window.sessionStorage.setItem(ONBOARDING_KEY_STORAGE, plaintext);
+  } catch {
+    // sessionStorage can throw in private-mode / quota-exceeded; ignore.
+  }
+}
+
 function Brand() {
   return (
     <div className="iml-brand">
@@ -283,6 +296,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       const onboardingKey = payload.onboarding_api_key?.plaintext;
       if (onboardingKey) {
         setApiKey(onboardingKey);
+        stashOnboardingKey(onboardingKey);
         note("Workspace created. Save your API key before opening the dashboard.");
         window.history.replaceState(null, "", "/onboarding");
       } else {
@@ -340,6 +354,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         return;
       }
       setApiKey(secret);
+      stashOnboardingKey(secret);
       note("API key created. Save it before opening the dashboard.");
     } catch (error) {
       fail(error instanceof Error ? error.message : "Unable to create API key.");
