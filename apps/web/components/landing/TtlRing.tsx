@@ -62,7 +62,7 @@ export function TtlRing() {
         <defs>
           <linearGradient id="ttlGradWeb" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#86EFAC" />
-            <stop offset="100%" stopColor="#34D399" />
+            <stop offset="100%" stopColor="#1FB877" />
           </linearGradient>
         </defs>
         <circle

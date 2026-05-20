@@ -120,7 +120,7 @@ function ArchitectureDiagram() {
       >
         <rect x="20" y="30" width="320" height="200" rx="10" stroke="#2A2E3D" strokeWidth="1" strokeDasharray="4 4" fill="none" />
         <rect x="32" y="20" width="170" height="20" rx="4" fill="#08080A" />
-        <text x="40" y="34" fontFamily="Geist Mono, monospace" fontSize="10" fill="#34D399" letterSpacing="0.15em">YOUR TRAINING JOB</text>
+        <text x="40" y="34" fontFamily="Geist Mono, monospace" fontSize="10" fill="#1FB877" letterSpacing="0.15em">YOUR TRAINING JOB</text>
         <rect x="60" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
         <text x="120" y="125" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="13" fontWeight="500" fill="#F8FAFC">Trainer</text>
         <text x="120" y="146" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="10" fill="#64748B">PyTorch · JAX · TRL</text>
@@ -129,16 +129,16 @@ function ArchitectureDiagram() {
         <text x="270" y="121" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="13" fontWeight="500" fill="#F8FAFC">SDK</text>
         <text x="270" y="140" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">buffered · async</text>
         <text x="270" y="154" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">offline spool</text>
-        <line x1="340" y1="130" x2="410" y2="130" className="data-flow-line" stroke="#34D399" strokeWidth="1.5" />
-        <polygon points="408,125 420,130 408,135" fill="#34D399" />
-        <rect x="420" y="76" width="180" height="108" rx="10" fill="#0D0F15" stroke="#34D399" strokeWidth="1.4" className="pulse-node" />
+        <line x1="340" y1="130" x2="410" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
+        <polygon points="408,125 420,130 408,135" fill="#1FB877" />
+        <rect x="420" y="76" width="180" height="108" rx="10" fill="#0D0F15" stroke="#1FB877" strokeWidth="1.4" className="pulse-node" />
         <text x="510" y="106" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="14" fontWeight="600" fill="#F8FAFC">InstantML API</text>
         <line x1="440" y1="118" x2="580" y2="118" stroke="#1F1F26" strokeWidth="1" />
         <text x="510" y="138" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="10" fill="#94A3B8">Rust · ClickHouse</text>
         <text x="510" y="156" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">typed attributes · summaries</text>
         <text x="510" y="172" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">indexed run search</text>
-        <line x1="600" y1="130" x2="670" y2="130" className="data-flow-line" stroke="#34D399" strokeWidth="1.5" />
-        <polygon points="668,125 680,130 668,135" fill="#34D399" />
+        <line x1="600" y1="130" x2="670" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
+        <polygon points="668,125 680,130 668,135" fill="#1FB877" />
         <rect x="680" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
         <text x="740" y="121" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="13" fontWeight="500" fill="#F8FAFC">Dashboard</text>
         <text x="740" y="140" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">runs · compare</text>
@@ -149,7 +149,7 @@ function ArchitectureDiagram() {
         <text x="860" y="146" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">S3 / R2</text>
         <text x="120" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">GPU NODES</text>
         <text x="270" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">PYTHON SDK</text>
-        <text x="510" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#34D399" letterSpacing="0.1em">HOT PATH</text>
+        <text x="510" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#1FB877" letterSpacing="0.1em">HOT PATH</text>
         <text x="740" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">NEXT/REACT</text>
         <text x="860" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">OBJECT STORE</text>
       </svg>
@@ -345,7 +345,7 @@ function MatrixCell({ label, status, tone }: { label: string; status: string; to
     tone === "ok" ? "var(--accent)" : tone === "progress" ? "var(--warm)" : "var(--dim)";
   const dotShadow =
     tone === "ok"
-      ? "0 0 8px rgba(52,211,153,0.6)"
+      ? "0 0 8px rgba(31,184,119,0.6)"
       : tone === "progress"
         ? "0 0 8px rgba(224,176,122,0.6)"
         : "none";
