@@ -1,6 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
+import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
 import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
 import { RunsCommandbar } from "./runs-commandbar";
@@ -190,31 +191,32 @@ export function RunsTabPane({
         lede={`${project || "All projects"} · ${metricKey}`}
       />
       {showEmptyCallout ? (
-        <div className="org-empty-callout" role="status">
-          <div className="org-empty-callout__copy">
-            <strong>This workspace is empty.</strong>
-            <span>
-              {orgName ? `${orgName} has no runs yet.` : "No runs yet."}
-              {orgMemberships.length > 1 ? " You may be in the wrong workspace — switch above, or " : " "}
-              start by sending your first run with the InstantML SDK.
-            </span>
-          </div>
+        <>
           {nonCurrentMemberships.length ? (
-            <div className="org-empty-callout__actions">
-              {nonCurrentMemberships.slice(0, 3).map((membership) => (
-                <button
-                  className="ghost-kbd"
-                  disabled={orgSwitchBusy}
-                  key={membership.org_id}
-                  onClick={() => onSwitchOrganization(membership.org_id)}
-                  type="button"
-                >
-                  Switch to {membership.name}
-                </button>
-              ))}
+            <div className="org-empty-callout" role="status">
+              <div className="org-empty-callout__copy">
+                <strong>Wrong workspace?</strong>
+                <span>
+                  {orgName ? `${orgName} has no runs yet.` : "No runs yet."} You belong to other workspaces — switch below, or follow the SDK quick-start.
+                </span>
+              </div>
+              <div className="org-empty-callout__actions">
+                {nonCurrentMemberships.slice(0, 3).map((membership) => (
+                  <button
+                    className="ghost-kbd"
+                    disabled={orgSwitchBusy}
+                    key={membership.org_id}
+                    onClick={() => onSwitchOrganization(membership.org_id)}
+                    type="button"
+                  >
+                    Switch to {membership.name}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
-        </div>
+          <EmptyWorkspaceSnippet orgName={orgName} />
+        </>
       ) : null}
       <div className="runs-workspace-filter">
         <Stats overview={overview} metricKey={metricKey} />
