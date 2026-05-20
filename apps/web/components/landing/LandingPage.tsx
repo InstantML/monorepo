@@ -386,7 +386,7 @@ export function LandingPage() {
             <a href="#how" className="landing-nav__link">How it works</a>
             <a href="#capabilities" className="landing-nav__link">Capabilities</a>
             <a href="#developers" className="landing-nav__link landing-nav__link--md">Developers</a>
-            <a href="#pricing" className="landing-nav__link landing-nav__link--md">Pricing</a>
+            <a href="/pricing" className="landing-nav__link">Pricing</a>
             <ThemeToggle />
             <a href="/signup" className="landing-cta-primary landing-cta-primary--sm">
               Get early access
@@ -417,7 +417,7 @@ export function LandingPage() {
 
             <p className="hero-rise-3 landing-lede">
               InstantML is a W&amp;B-style platform built for speed. Sub-second
-              metric charts at 90k runs, instant run comparison, real
+              metric charts at 100k runs, instant run comparison, real
               artifacts and checkpoints, and predictable pricing — without
               tracked-hour billing.
             </p>
@@ -452,7 +452,7 @@ export function LandingPage() {
           <StatCard
             k="Project summary p95"
             v="78 ms"
-            hint="Measured at 90,000 runs. Charts open before the cursor stops moving."
+            hint="Measured at 100,000 runs. Charts open before the cursor stops moving."
           />
           <StatCard
             k="Indexed search p95"
@@ -522,7 +522,7 @@ export function LandingPage() {
         <div className="landing-bento-3">
           <PathTile num="01" title="Wait on a slow run list" line="Every project entry costs you focus. Spinners are the dominant UI." variant="old" />
           <PathTile num="02" title="Pay per tracked hour" line="Pricing scales with how hard your team is working. The wrong incentive." variant="old" />
-          <PathTile num="03" title="InstantML" line="Sub-second charts at 90k runs, flat predictable pricing, and a data model you can self-host." variant="instantml" />
+          <PathTile num="03" title="InstantML" line="Sub-second charts at 100k runs, flat predictable pricing, and a data model you can self-host." variant="instantml" />
         </div>
       </Section>
 
@@ -579,7 +579,7 @@ export function LandingPage() {
           <div className="bento-cell landing-bento-big landing-bento-dial">
             <div className="landing-bento-inner-pad">
               <BentoEyebrow icon={<IconBolt />} label="Benchmarked at scale" />
-              <h3 className="landing-bento-h3">90,000 runs. No spinner.</h3>
+              <h3 className="landing-bento-h3">100,000 runs. No spinner.</h3>
               <p className="landing-bento-body">
                 Project summary p95 78 ms · search p95 118 ms · metric-best
                 sort p95 66 ms · chart series p95 22 ms. Measured locally,
@@ -748,7 +748,7 @@ export function LandingPage() {
               </div>
               <p className="landing-footer__brand-desc">
                 Training observability that&apos;s actually fast.
-                Sub-second charts at 90k runs, flat pricing, and a data
+                Sub-second charts at 100k runs, flat pricing, and a data
                 model your team can own.
               </p>
             </div>
@@ -758,6 +758,7 @@ export function LandingPage() {
                 ["How it works", "#how"],
                 ["Capabilities", "#capabilities"],
                 ["Developers", "#developers"],
+                ["Pricing", "/pricing"],
                 ["What ships today", "#pricing"],
               ]}
             />
