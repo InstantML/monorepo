@@ -63,8 +63,8 @@ export function buildIntegrationRows(): IntegrationRow[] {
     { name: "Python SDK", status: "available", tone: "good", icon: Cpu, detail: "init, log, artifacts, buffering, flush, and offline replay." },
     { name: "Node API", status: "available", tone: "good", icon: Server, detail: "Primary local API for runs, metrics, artifacts, side-by-side, and demo data." },
     { name: "Local storage", status: "available", tone: "good", icon: HardDrive, detail: "File-backed development store plus local artifact metadata." },
-    { name: "Neptune import", status: "available", tone: "live", icon: Archive, detail: "Neptune Exporter-shaped JSON import path in the Node server." },
-    { name: "W&B import", status: "planned", tone: "neutral", icon: Boxes, detail: "Planned migration path after the typed ingestion workflow hardens." },
-    { name: "MLflow import", status: "planned", tone: "neutral", icon: Database, detail: "Planned importer using the same typed attribute path." },
+    { name: "Neptune import", status: "available", tone: "live", icon: Archive, detail: "JSON · CLI. Neptune Exporter-shaped JSON via tools/import-neptune-json.mjs." },
+    { name: "W&B import", status: "available", tone: "live", icon: Boxes, detail: "JSON · CLI. W&B export JSON via tools/import-wandb-json.mjs." },
+    { name: "MLflow import", status: "available", tone: "live", icon: Database, detail: "JSON · CLI. MLflow run JSON via tools/import-mlflow-json.mjs." },
   ];
 }
