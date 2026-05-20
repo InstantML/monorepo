@@ -134,7 +134,7 @@ function ArchitectureDiagram() {
         <rect x="420" y="76" width="180" height="108" rx="10" fill="#0D0F15" stroke="#34D399" strokeWidth="1.4" className="pulse-node" />
         <text x="510" y="106" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="14" fontWeight="600" fill="#F8FAFC">InstantML API</text>
         <line x1="440" y1="118" x2="580" y2="118" stroke="#1F1F26" strokeWidth="1" />
-        <text x="510" y="138" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="10" fill="#94A3B8">Rust · Postgres</text>
+        <text x="510" y="138" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="10" fill="#94A3B8">Rust · ClickHouse</text>
         <text x="510" y="156" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">typed attributes · summaries</text>
         <text x="510" y="172" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">indexed run search</text>
         <line x1="600" y1="130" x2="670" y2="130" className="data-flow-line" stroke="#34D399" strokeWidth="1.5" />
@@ -476,10 +476,11 @@ export function LandingPage() {
             <span className="font-serif-italic landing-h2-muted">Three SDK calls.</span>
           </h2>
           <p className="landing-section-body">
-            The Python SDK is a thin, non-blocking layer over a Rust/Postgres
-            backend. Metrics buffer in-process and flush asynchronously, so
-            your training loop never waits on the network. If the server is
-            slow or offline, events spool to disk and replay on reconnect.
+            The Python SDK is a thin, non-blocking layer over a Rust +
+            ClickHouse backend. Metrics buffer in-process and flush
+            asynchronously, so your training loop never waits on the
+            network. If the server is slow or offline, events spool to
+            disk and replay on reconnect.
           </p>
         </div>
 
@@ -657,7 +658,7 @@ export function LandingPage() {
           <div className="landing-pill-row landing-dev-pills">
             <span className="pill">Python 3.11+</span>
             <span className="pill">Rust API</span>
-            <span className="pill">Postgres</span>
+            <span className="pill">ClickHouse</span>
             <span className="pill">Open SDK</span>
           </div>
         </div>
