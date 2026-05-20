@@ -31,15 +31,13 @@
 .pricing-tier-card {
   position: relative;
   display: flex; flex-direction: column;
-  padding: 28px 24px 24px; gap: 20px;
+  padding: 56px 24px 24px; gap: 20px;
 }
-@media (min-width: 900px) { .pricing-tier-card { padding: 32px 28px 28px; } }
+@media (min-width: 900px) { .pricing-tier-card { padding: 60px 28px 28px; } }
 .pricing-tier-card--highlight {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 1px var(--accent-line), 0 12px 40px -16px rgba(31, 184, 119, 0.35);
-  padding-top: 56px;
 }
-@media (min-width: 900px) { .pricing-tier-card--highlight { padding-top: 60px; } }
 
 .pricing-tier-card__ribbon {
   position: absolute; top: 0; left: 0; right: 0;
