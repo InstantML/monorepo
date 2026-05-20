@@ -5,7 +5,7 @@
  *
  * Three blocks, in order:
  *   1. Tier matrix     — Free / Pro / Premium, with "best fit" labels
- *   2. W&B comparison  — Jay-class 5-person team, side-by-side dollars
+ *   2. W&B comparison  — 5-person team, side-by-side dollars
  *   3. Surprise costs  — what W&B charges for that InstantML doesn't
  *
  * Reuses landing-system.css design tokens and class primitives
@@ -128,7 +128,7 @@ const TIERS: Tier[] = [
     price: "$199",
     cadence: "/month",
     blurb: "For 3–7-person teams that share runs and review together.",
-    bestFor: "Jay-class team · 5 people",
+    bestFor: "Small teams · 3–7 people",
     writers: "3 writer seats included",
     extraWriter: "$50 / extra writer",
     viewers: "Unlimited free viewers",
@@ -149,7 +149,7 @@ const TIERS: Tier[] = [
     price: "$699",
     cadence: "/month",
     blurb: "For growth-stage ML orgs with multiple projects in flight.",
-    bestFor: "Arjun-class scale · 90k+ runs",
+    bestFor: "Growth-stage · 100k+ runs",
     writers: "10 writer seats included",
     extraWriter: "$70 / extra writer",
     viewers: "Unlimited free viewers",
@@ -256,7 +256,7 @@ const SCENARIO = {
     note: "ESTIMATED — verify with W&B current quote",
   },
   wandbShared: {
-    label: "W&B · what Jay's team actually pays today",
+    label: "W&B · with seat-sharing workaround",
     lines: [
       { k: "2 writer seats (shared across the team)", v: "$100" },
       { k: "Tracked-hour overage (est. 200h × $1)", v: "$200" },
@@ -665,7 +665,7 @@ export function PricingPage() {
               </div>
               <p className="landing-footer__brand-desc">
                 Training observability that&apos;s actually fast. Sub-second
-                charts at 90k runs, flat pricing, and a data model your team
+                charts at 100k runs, flat pricing, and a data model your team
                 can own.
               </p>
             </div>

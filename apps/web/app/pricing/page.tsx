@@ -5,13 +5,12 @@ import { PricingPage } from "../../components/pricing/PricingPage";
  * Public pricing surface.
  *
  * Scope: marketing-style public page exposing the Free / Pro / Premium tiers,
- * a head-to-head W&B cost comparison (Jay-class team), and a "surprise costs"
- * section that names the W&B-specific pain (per-seat creep, surprise artifact
- * billing per wandb#10459, no unlimited free viewers).
+ * a head-to-head W&B cost comparison for a 5-person team, and a "surprise
+ * costs" section that names the W&B-specific pain (per-seat creep, surprise
+ * artifact billing per wandb#10459, no unlimited free viewers).
  *
  * Driven by the 2026-05-19 UI audit finding (P2 strategic gap: no pricing
- * surface in the product or marketing) and the Jay-demo Act 2 "math" beat
- * (see wiki/plans/demos.md).
+ * surface in the product or marketing).
  *
  * Placeholder W&B numbers — confirm with a sales rep / public quote
  * before going live. Marked TODO in PricingPage.tsx.
