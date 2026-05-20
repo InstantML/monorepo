@@ -386,7 +386,7 @@ export function LandingPage() {
             <a href="#how" className="landing-nav__link">How it works</a>
             <a href="#capabilities" className="landing-nav__link">Capabilities</a>
             <a href="#developers" className="landing-nav__link landing-nav__link--md">Developers</a>
-            <a href="#pricing" className="landing-nav__link landing-nav__link--md">Pricing</a>
+            <a href="/pricing" className="landing-nav__link">Pricing</a>
             <ThemeToggle />
             <a href="/signup" className="landing-cta-primary landing-cta-primary--sm">
               Get early access
@@ -758,6 +758,7 @@ export function LandingPage() {
                 ["How it works", "#how"],
                 ["Capabilities", "#capabilities"],
                 ["Developers", "#developers"],
+                ["Pricing", "/pricing"],
                 ["What ships today", "#pricing"],
               ]}
             />
