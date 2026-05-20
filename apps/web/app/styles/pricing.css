@@ -37,14 +37,17 @@
 .pricing-tier-card--highlight {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 1px var(--accent-line), 0 12px 40px -16px rgba(31, 184, 119, 0.35);
+  padding-top: 56px;
 }
+@media (min-width: 900px) { .pricing-tier-card--highlight { padding-top: 60px; } }
 
 .pricing-tier-card__ribbon {
-  position: absolute; top: -10px; left: 24px;
+  position: absolute; top: 0; left: 0; right: 0;
   background: var(--accent); color: #00150B;
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-  padding: 5px 10px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 8px 16px; text-align: center;
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
 }
 
 .pricing-tier-card__head { display: flex; flex-direction: column; gap: 8px; }
