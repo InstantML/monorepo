@@ -1,0 +1,56 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use axum::{extract::State, http::HeaderMap, Json};
+use serde_json::Value;
+
+use crate::{errors::AppResult, store};
+
+use super::super::AppState;
+use super::helpers::context;
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct MetricsSeriesRequest {
+    pub key: String,
+    pub run_ids: Vec<String>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub start_step: Option<f64>,
+    #[serde(default)]
+    pub end_step: Option<f64>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/metrics/series",
+    tag = "runs",
+    request_body = MetricsSeriesRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Per-run metric series keyed by run_id", body = crate::http::openapi::JsonObjectResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn metrics_series(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<MetricsSeriesRequest>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    let mut query = HashMap::new();
+    query.insert("key".to_string(), body.key);
+    query.insert("run_ids".to_string(), body.run_ids.join(","));
+    if let Some(limit) = body.limit {
+        query.insert("limit".to_string(), limit.to_string());
+    }
+    if let Some(start) = body.start_step {
+        query.insert("start_step".to_string(), start.to_string());
+    }
+    if let Some(end) = body.end_step {
+        query.insert("end_step".to_string(), end.to_string());
+    }
+    Ok(Json(
+        store::metrics_series_batched(&state.store, &ctx, &query).await?,
+    ))
+}

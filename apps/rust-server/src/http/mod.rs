@@ -1,16 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
-    body::{Body, Bytes},
-    extract::{DefaultBodyLimit, Path, Query, State},
-    http::{header, HeaderMap, HeaderName, HeaderValue, Method},
-    response::{IntoResponse, Response},
+    extract::DefaultBodyLimit,
+    http::{HeaderName, Method},
     routing::{get, post},
-    Json, Router,
+    Router,
 };
-use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
-use tokio_util::io::ReaderStream;
 use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
@@ -20,28 +15,29 @@ use tower_http::{
     trace::TraceLayer,
 };
 use url::Url;
-use uuid::Uuid;
 
-use crate::{
-    artifact_store::LocalArtifactStore,
-    config::AppConfig,
-    domain::{
-        ClerkAuthRequest, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
-        CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest,
-        CreateProjectRequest, CreateRunRequest, CreateUserRequest, DevGoogleAuthRequest,
-        DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest, LogMetricsRequest,
-        RequestContext, ReserveSeatRequest, SaveWorkspaceViewRequest, SessionContext,
-        SwitchOrganizationRequest, UpdateDashboardPreferencesRequest, UpdateRunRequest,
-        UploadArtifactRequest,
-    },
-    errors::{AppError, AppResult},
-    store,
-};
+use axum::http::header;
+use axum::http::HeaderValue;
+
+use crate::{config::AppConfig, store};
 
 pub(crate) mod handlers;
 pub mod openapi;
 
-use handlers::*;
+use handlers::{
+    auth_clerk, auth_config, auth_dev_google, auth_logout, auth_session, auth_switch_organization,
+    create_api_key, create_artifact, create_attributes, create_object, create_org, create_project,
+    create_run, create_user, create_workspace_view, device_code_confirm, device_code_poll,
+    device_code_start, disable_service_account, download_artifact, export_data,
+    get_dashboard_preferences, get_metrics, get_run, get_workspace_view, health, import_mlflow,
+    import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
+    list_console_logs, list_imports, list_object_rows, list_objects, list_org_memberships,
+    list_orgs, list_projects, list_runs, list_seats, list_users, list_workspace_views,
+    log_console_logs, log_metrics, metrics_handler, metrics_series, not_found, openapi_json,
+    org_name_availability, overview, readyz, reserve_seat, revoke_api_key, runs_summary,
+    side_by_side, update_dashboard_preferences, update_run, update_workspace_view, upload_artifact,
+    usage_export, usage_summary,
+};
 
 const SESSION_COOKIE: &str = "instantml_session";
 const SESSION_COOKIE_MAX_AGE_SECS: u64 = 60 * 60 * 24 * 30;
@@ -93,7 +89,7 @@ fn platform_routes() -> Router<Arc<AppState>> {
         .route("/health", get(health))
         .route("/healthz", get(health))
         .route("/readyz", get(readyz))
-        .route("/metrics", get(metrics))
+        .route("/metrics", get(metrics_handler))
         .route("/openapi.json", get(openapi_json))
         .route("/api/auth/config", get(auth_config))
 }
