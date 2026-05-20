@@ -863,7 +863,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at center, rgba(52,211,153,0.10) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(31,184,119,0.10) 0%, transparent 60%);
 }
 .landing-ttl-ring__svg { position: relative; }
 .landing-ttl-ring__label {
@@ -1167,7 +1167,7 @@
 }
 .landing-arch-legend-dot--accent {
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(52,211,153,0.7);
+  box-shadow: 0 0 8px rgba(31,184,119,0.7);
 }
 .landing-arch-legend-dot--border {
   border: 1px solid var(--line-strong);
