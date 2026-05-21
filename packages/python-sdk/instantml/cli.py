@@ -15,7 +15,7 @@ from typing import Any
 
 
 _CREDENTIALS_PATH = Path.home() / ".instantml" / "credentials"
-_DEFAULT_API_HOST = "http://127.0.0.1:8001"
+_DEFAULT_API_HOST = os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
 _POLL_TIMEOUT_SECS = 120  # how long to poll before giving up (safety cap)
 
 

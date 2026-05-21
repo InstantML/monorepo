@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -74,6 +74,12 @@ def _is_local_file_uri(uri: str) -> bool:
 
 def _strip_file_uri(uri: str) -> str:
     return uri[len("file://"):] if uri.startswith("file://") else uri
+
+
+def _default_base_url() -> str:
+    return os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
+
+
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
 
 
@@ -298,7 +304,7 @@ class _FileStats:
 
 @dataclass(frozen=True)
 class Client:
-    base_url: str = "http://127.0.0.1:8000"
+    base_url: str = field(default_factory=_default_base_url)
     timeout: float = 2.0
     offline_dir: str | None = None
     api_key: str | None = None
@@ -457,7 +463,7 @@ class Client:
 class Api:
     """Tiny raw read-only API helper for post-hoc queries."""
 
-    base_url: str = "http://127.0.0.1:8000"
+    base_url: str = field(default_factory=_default_base_url)
     timeout: float = 2.0
     api_key: str | None = None
 
@@ -1297,7 +1303,7 @@ def init(
     tags: list[str] | None = None,
     notes: str | None = None,
     metadata: dict[str, Any] | None = None,
-    base_url: str = "http://127.0.0.1:8000",
+    base_url: str | None = None,
     timeout: float = 2.0,
     buffer_size: int = 0,
     offline_dir: str | None = None,
@@ -1323,7 +1329,7 @@ def init(
     ``log_artifact`` call to Weights & Biases for shadow→graduate pilots.
     """
     _check_credentials_or_raise(api_key)
-    return Client(base_url=base_url, timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
+    return Client(base_url=base_url or _default_base_url(), timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
         project=project,
         name=name,
         config=config,
