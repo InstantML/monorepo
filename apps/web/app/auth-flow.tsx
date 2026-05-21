@@ -560,6 +560,14 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                         {busy ? "Opening your workspace…" : signupMode ? "Create InstantML workspace" : "Continue to dashboard"}
                         {!busy ? <ArrowRight className="iml-arrow" size={15} /> : null}
                       </button>
+                      <button
+                        className="iml-btn iml-btn--ghost iml-btn--block"
+                        disabled={busy}
+                        onClick={restartClerkSignIn}
+                        type="button"
+                      >
+                        <LogOut size={15} /> Sign out
+                      </button>
                       {showSessionRecovery ? (
                         <div className="iml-recovery" role="note" aria-label="Refresh sign-in instructions">
                           <strong>Refresh your sign-in</strong>
