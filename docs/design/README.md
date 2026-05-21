@@ -35,6 +35,7 @@ Current implemented design sequence:
 - `2026-05-18-wandb-hosted-comparison-benchmarks.md`: guarded W&B-hosted comparison benchmark tooling, W&B public API mapping, seeded-mode caveats, and sanitized result reporting against the existing InstantML hosted Cloud Run benchmark.
 - `2026-05-21-cloudflare-r2-artifact-storage.md`: Cloudflare R2-backed hosted artifact bytes, per-org private buckets, opaque public artifact responses, R2 usage accounting, and media upload/download smoke coverage.
 - `2026-05-21-sdk-logging-overhead-benchmarks.md`: SDK logging overhead benchmark protocol for no-op deltas, InstantML process spool/uploader CPU, W&B offline comparison, and safe hot-path optimization review.
+- `2026-05-18-m4-chart-aggregation.md`: spike-preserving M4 chart downsampling for high-density series via an optional `buckets` body field on `POST /api/metrics/series`, with raw-path fallback when zoomed and a per-run threshold gate.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
