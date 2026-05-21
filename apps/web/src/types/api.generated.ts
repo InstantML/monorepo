@@ -1042,6 +1042,19 @@ export interface components {
             variance?: number | null;
         };
         MetricsSeriesRequest: {
+            /**
+             * Format: int32
+             * @description Optional M4 downsampling bucket count.
+             *
+             *     When present and the series has more than `4 * buckets` points, the
+             *     response uses M4 aggregation (Jugel et al., 2014) instead of a naive
+             *     prefix limit. The rendered line through the resulting points is
+             *     pixel-identical to the chart through all raw points. Value must be
+             *     between 1 and 4096 inclusive. Ignored when `start_step` or `end_step`
+             *     is set (zoomed views use the raw path). When absent the existing
+             *     prefix-limited behaviour is unchanged.
+             */
+            buckets?: number | null;
             /** Format: double */
             end_step?: number | null;
             key: string;

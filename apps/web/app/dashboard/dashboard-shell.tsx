@@ -153,6 +153,12 @@ const WORKSPACE_HISTORY_LIMIT = 50;
 const WAREHOUSE_RETRY_MS = 5_000;
 const DASHBOARD_REQUEST_RETRY_DELAYS_MS = [250, 700, 1_500];
 const METRIC_SERIES_RETRY_DELAYS_MS = [350, 900, 1_800];
+// M4 bucket count passed with every /api/metrics/series request.
+// Must match or exceed the widest chart pixel width so the downsampled series
+// is lossless for rendering. Reference chart width is 560 px; 1200 gives 2×
+// oversampling headroom for full-screen and compare panels and stays well
+// below the server's 4096 cap.
+const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
@@ -2635,7 +2641,12 @@ async function fetchMetricSeriesPatch(
   const payload = await retryMetricSeriesRequest(
     () => api.post(
       `/api/metrics/series`,
-      { key: metricKey, run_ids: runIds, limit: adaptiveMetricSeriesLimit(runs.length) },
+      {
+        key: metricKey,
+        run_ids: runIds,
+        limit: adaptiveMetricSeriesLimit(runs.length),
+        buckets: METRIC_SERIES_M4_BUCKETS,
+      },
       { signal },
     ),
     signal,

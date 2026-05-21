@@ -19,6 +19,17 @@ pub struct MetricsSeriesRequest {
     pub start_step: Option<f64>,
     #[serde(default)]
     pub end_step: Option<f64>,
+    /// Optional M4 downsampling bucket count.
+    ///
+    /// When present and the series has more than `4 * buckets` points, the
+    /// response uses M4 aggregation (Jugel et al., 2014) instead of a naive
+    /// prefix limit. The rendered line through the resulting points is
+    /// pixel-identical to the chart through all raw points. Value must be
+    /// between 1 and 4096 inclusive. Ignored when `start_step` or `end_step`
+    /// is set (zoomed views use the raw path). When absent the existing
+    /// prefix-limited behaviour is unchanged.
+    #[serde(default)]
+    pub buckets: Option<u32>,
 }
 
 #[utoipa::path(
@@ -49,6 +60,9 @@ pub async fn metrics_series(
     }
     if let Some(end) = body.end_step {
         query.insert("end_step".to_string(), end.to_string());
+    }
+    if let Some(b) = body.buckets {
+        query.insert("buckets".to_string(), b.to_string());
     }
     Ok(Json(
         store::metrics_series_batched(&state.store, &ctx, &query).await?,
