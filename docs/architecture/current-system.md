@@ -54,6 +54,15 @@ monorepo/
 - `examples`: Dogfood training loops for RL, bandits, and supervised regression.
 - `tools`: Operational helpers for import experiments, Rust service smokes, local Rust API startup, ClickHouse orchestration, and scale benchmarks.
 
+The Rust service emits structured observability logs through `tracing`. Local
+development defaults to pretty logs, while hosted Cloud Run deploys use JSON
+logs. Origin logs include request completion events, sanitized server-error
+fields, slow-request warnings, and the current first-slice workflow outcomes
+for metric/log ingestion, artifacts, imports, readiness, startup, and worker
+cleanup. Logs deliberately avoid request bodies, query strings, user emails,
+tokens, session IDs, object-storage keys, project/run names, metric values,
+console messages, and artifact filenames.
+
 ## Runtime Topology
 
 Local development:
@@ -113,6 +122,22 @@ Data service  -> routed tenant ClickHouse service/database
 ```
 
 The default deploy command is now `npm run deploy:cloud-run`, which launches the split control/data topology. `npm run deploy:cloud-run:multi` is the explicit split alias, and `npm run deploy:cloud-run:single` is the legacy combined-service path. Both control and data default to manual scaling with one active instance until their multi-process freshness and uniqueness gates are complete. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` to create the managed HTTPS public router; HTTP-only public IP routing is rejected.
+
+Hosted observability has two log sources:
+
+```text
+Cloud Run stdout/stderr JSON logs
+  -> request_id, observed cf_ray, method, path, status, latency, service_plane, safe workflow fields
+
+Cloudflare Log Explorer / Logpush, when the API domain is proxied by Cloudflare
+  -> RayID, host, method, path-only request field, edge/origin status, timestamps, optional custom ResponseHeaders.x-request-id
+```
+
+Use `x-request-id` as the primary application correlation key. Use observed
+`cf-ray` only as an additional Cloudflare edge correlation field, paired with a
+time window, host, path, and status because Ray IDs are not a unique request
+database key. Avoid Cloudflare Logpush fields that store full request URI unless
+retention/access controls explicitly account for query strings.
 
 ## Storage
 
@@ -203,6 +228,7 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-up sele
 - `docs/design/2026-05-16-cloud-run-multi-instance-launch.md`: Cloud Run split deploy helper, Docker Compose split profile, scaling defaults, and launch wiring.
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, warehouse profile metadata, seat invites, invited-member activation, usage/admin settings, and API-key management.
 - `docs/design/2026-05-21-cloudflare-r2-artifact-storage.md`: Cloudflare R2 per-org buckets, artifact reference metadata, and same-route upload/download preservation.
+- `docs/design/2026-05-21-rust-server-observability.md`: narrowed Rust server logging slice, safe field contract, Cloudflare edge-log capture plan, and request/error correlation.
 - `docs/product/pricing-and-margins.md`: current packaging, cost assumptions, margin targets, and launch guardrails.
 - `docs/architecture/multi-instance-cloud-run.md`: current split Cloud Run overview with diagrams and launch checklist.
 - `docs/architecture/current-schemas.md`: current control/data-plane schema reference.

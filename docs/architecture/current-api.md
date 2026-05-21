@@ -147,6 +147,17 @@ Validation limits that affect callers:
 | Side-by-side comparison | Max 50 runs and 5,000 rows |
 | Export | Max 500 runs, 100,000 metric points, 25,000 attributes, 10,000 artifacts |
 
+Operational correlation:
+
+- Every response carries `x-request-id`; clients and support should keep it with
+  bug reports.
+- Hosted Rust origin logs include `request_id` and observed `cf_ray` when
+  Cloudflare sends one. Cloudflare Ray IDs are correlation hints, not unique
+  application request IDs, so pair them with timestamp, host, path, and status.
+- Server logs intentionally omit request bodies, query strings, tokens, cookies,
+  project/run names, metric values, console messages, artifact filenames, and
+  object-storage keys.
+
 ## Platform And Health
 
 | Method | Path | Auth | Inputs | Output |

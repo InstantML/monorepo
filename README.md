@@ -114,6 +114,7 @@ Training-observability roadmap first slice is implemented:
 - Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
 - Docker Compose for a one-command local Rust/ClickHouse API and artifact-storage stack.
 - Internal Cloud Run deployment for the Rust API with Secret Manager secrets, single-instance scaling, static egress to ClickHouse Cloud services/API keys, and local frontend-only development against the hosted API.
+- Structured Rust server observability: JSON Cloud Run logs include request completion events, sanitized 5xx error fields, slow-request warnings, and first-slice workflow outcomes for metric/log ingestion, artifacts, imports, readiness, and worker cleanup. Hosted edge correlation uses `x-request-id` and observed Cloudflare `cf-ray` when the API is proxied through Cloudflare.
 
 Known follow-ups before broadening the roadmap:
 
@@ -197,6 +198,14 @@ npm run deploy:cloud-run
 ```
 
 `npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Control and data services default to manual one-instance scaling until durable multi-process gates land; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads use Cloudflare R2 when `INSTANTML_ARTIFACT_BACKEND=r2` and Cloudflare credentials are configured.
+
+Hosted Rust logs should run with `INSTANTML_LOG_FORMAT=json`,
+`RUST_LOG=instantml_rust_server=info,tower_http=info`, and
+`INSTANTML_SLOW_REQUEST_MS=1000` unless an incident needs a temporary override.
+Origin logs are Cloud Run stdout/stderr; Cloudflare Log Explorer or Logpush
+captures edge request logs separately and should be joined with origin logs by
+`x-request-id` plus time/host/path/status, with observed `cf-ray` as an
+additional correlation key.
 
 The explicit aliases are:
 

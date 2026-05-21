@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use std::time::Duration;
 use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
@@ -22,6 +23,7 @@ use axum::http::HeaderValue;
 use crate::{config::AppConfig, store};
 
 pub(crate) mod handlers;
+pub(crate) mod observability;
 pub mod openapi;
 
 use handlers::{
@@ -58,6 +60,7 @@ pub fn router(state: AppState) -> Router {
     let max_body = state.config.max_body_bytes;
     let max_upload = state.config.max_upload_body_bytes;
     let request_timeout = state.config.request_timeout;
+    let slow_request_threshold = state.config.slow_request_threshold;
     let service_plane = state.config.service_plane;
     let shared = Arc::new(state);
     let cors = cors_layer(&shared.config);
@@ -76,7 +79,31 @@ pub fn router(state: AppState) -> Router {
             ServiceBuilder::new()
                 .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
                 .layer(PropagateRequestIdLayer::x_request_id())
-                .layer(TraceLayer::new_for_http())
+                .layer(
+                    TraceLayer::new_for_http()
+                        .make_span_with(move |request: &axum::http::Request<_>| {
+                            observability::request_span(request, service_plane)
+                        })
+                        .on_response(
+                            move |response: &axum::http::Response<_>,
+                                  latency: Duration,
+                                  span: &tracing::Span| {
+                                observability::on_response(
+                                    response,
+                                    latency,
+                                    span,
+                                    slow_request_threshold,
+                                );
+                            },
+                        )
+                        .on_failure(
+                            move |failure_class: tower_http::classify::ServerErrorsFailureClass,
+                                  latency: Duration,
+                                  span: &tracing::Span| {
+                                observability::on_failure(&failure_class, latency, span);
+                            },
+                        ),
+                )
                 .layer(cors)
                 .layer(CompressionLayer::new())
                 .layer(TimeoutLayer::new(request_timeout)),

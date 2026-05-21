@@ -18,7 +18,7 @@ use crate::{
     store,
 };
 
-use super::super::AppState;
+use super::super::{observability, AppState};
 use super::helpers::{
     context, header_text, parse_uuid, read_json, read_json_with_raw, require_scope,
     validate_session_mutation_origin,
@@ -204,9 +204,23 @@ pub async fn log_metrics(
     let run_id = parse_uuid(&run_id, "run not found")?;
     let (input, raw) =
         read_json_with_raw::<LogMetricsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let metric_count = input
+        .metrics
+        .as_object()
+        .map(|metrics| metrics.len())
+        .unwrap_or(0);
     let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
-    let inserted =
-        store::log_metrics(&state.store, &ctx, run_id, raw, input, idempotency_key).await?;
+    let idempotency_key_present = idempotency_key.is_some();
+    let result = store::log_metrics(&state.store, &ctx, run_id, raw, input, idempotency_key).await;
+    observability::metric_ingest(
+        ctx.org_id,
+        run_id,
+        metric_count,
+        result.as_ref().ok().copied(),
+        idempotency_key_present,
+        result.as_ref().err(),
+    );
+    let inserted = result?;
     Ok(Json(json!({ "inserted": inserted })))
 }
 
@@ -272,9 +286,26 @@ pub async fn log_console_logs(
         bytes,
         state.config.max_body_bytes,
     )?;
+    let stream = match input.stream.as_deref() {
+        Some("stdout") | None => "stdout",
+        Some("stderr") => "stderr",
+        Some(_) => "invalid",
+    };
+    let line_count = input.lines.as_ref().map(|lines| lines.len()).unwrap_or(0);
     let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
-    let inserted =
-        store::log_console_logs(&state.store, &ctx, run_id, raw, input, idempotency_key).await?;
+    let idempotency_key_present = idempotency_key.is_some();
+    let result =
+        store::log_console_logs(&state.store, &ctx, run_id, raw, input, idempotency_key).await;
+    observability::console_log_ingest(
+        ctx.org_id,
+        run_id,
+        stream,
+        line_count,
+        result.as_ref().ok().copied(),
+        idempotency_key_present,
+        result.as_ref().err(),
+    );
+    let inserted = result?;
     Ok(Json(json!({ "inserted": inserted })))
 }
 
