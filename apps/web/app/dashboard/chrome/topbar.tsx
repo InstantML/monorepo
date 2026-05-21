@@ -4,8 +4,8 @@ import { Check, ChevronDown, CircleHelp, LogOut, Menu, Moon, PanelLeftClose, Pan
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
-import Image from "next/image";
 
+import { InstantMlMark } from "../../instantml-mark";
 import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import { CustomSelect } from "../ui/select";
@@ -281,7 +281,7 @@ export function DashboardTopbar({
         </button>
         <a className="brand-cell" href="/dashboard/runs" aria-label="InstantML">
           <span className="brand-mark" aria-hidden="true">
-            <Image src="/instantml-mark.svg" alt="" width={24} height={24} priority />
+            <InstantMlMark size={24} />
           </span>
         </a>
         <div className="brandbar-row">

@@ -11,13 +11,14 @@
 // This file is the legacy import path used by auth-flow.tsx and other
 // pre-brand-refresh callers. The newer landing-side component lives at
 // components/landing/LogoMark.tsx and renders the same shape.
-export function InstantMlMark({ className = "" }: { className?: string }) {
+export function InstantMlMark({ className = "", size }: { className?: string; size?: number }) {
   return (
     <svg
       aria-hidden="true"
       className={`instantml-mark-svg logo-anim ${className}`.trim()}
       focusable="false"
       viewBox="0 0 96 96"
+      {...(size ? { width: size, height: size } : {})}
     >
       <circle cx="12" cy="12" r="8" fill="#1FB877" className="logo-dot logo-dot-r0 logo-dot-diagonal logo-dot-d0" />
       <circle cx="36" cy="12" r="5" fill="currentColor" className="logo-dot logo-dot-r0" />
