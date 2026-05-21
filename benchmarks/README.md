@@ -117,3 +117,56 @@ calls, so use it only when you intentionally want that external workload. A
 summary/list-fidelity run can seed one summary row per run with
 `--history-mode none`; bounded chart fidelity can seed selected full-history
 runs with `--history-mode newest` or `--history-mode dashboard`.
+
+## SDK Logging Overhead Benchmark
+
+`sdk_logging_overhead.py` measures foreground scalar logging overhead, not hosted
+read/query latency. It runs each case in a fresh Python process, compares
+against a no-op training-loop baseline, and reports hot-loop CPU/wall time
+separately from setup, finish, and InstantML uploader-drain work.
+
+Install the benchmark dependencies into the repo virtualenv:
+
+```bash
+.venv/bin/python -m pip install -r benchmarks/requirements-wandb.txt
+```
+
+Run the default local comparison:
+
+```bash
+.venv/bin/python benchmarks/sdk_logging_overhead.py run \
+  --steps 2000 \
+  --metrics-per-log 6 \
+  --samples 5 \
+  --warmup-logs 100 \
+  --output-json /tmp/instantml-sdk-overhead.json \
+  --output-markdown benchmarks/2026-05-21-sdk-logging-overhead-results.md
+```
+
+For a quick stdout-only run with the default system Python, use:
+
+```bash
+npm run benchmark:sdk-overhead
+```
+
+The default matrix is:
+
+- `noop`: metric computation with no SDK logging.
+- `instantml-sync-null`: `Run.log_metrics()` through a fake local transport, so
+  validation/serialization cost is visible without network noise. This is an
+  internal/null-transport microbenchmark, not a public hosted persistence path.
+- `instantml-log-null`: ergonomic `Run.log()` through the same fake transport,
+  including scalar classification.
+- `instantml-spool-durable`: process-spool mode writing one durable local event
+  file per log call.
+- `wandb-offline`: W&B offline mode with quiet, no-console, no-git, and no-code
+  settings.
+
+Interpret results by behavior class. `instantml-spool-durable` measures
+foreground durable per-log file and directory fsync overhead. `wandb-offline`
+measures W&B's offline local path, including service-process work when psutil
+can observe it. They are useful directional local-overhead signals, but their
+durability semantics are not identical. `instantml-sync-null` is a hot-path
+SDK/serialization probe, not a remote persistence benchmark. Commit Markdown
+summaries when they are useful; keep raw JSON in `/tmp` unless it has been
+reviewed for size and sanitization.
