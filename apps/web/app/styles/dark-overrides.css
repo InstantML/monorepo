@@ -75,6 +75,7 @@
 :root[data-theme="dark"] .legend-chip,
 :root[data-theme="dark"] .chip,
 :root[data-theme="dark"] .artifact-mini,
+:root[data-theme="dark"] .checkpoint-row,
 :root[data-theme="dark"] .side-values span,
 :root[data-theme="dark"] .compare-head,
 :root[data-theme="dark"] .compare-attribute,

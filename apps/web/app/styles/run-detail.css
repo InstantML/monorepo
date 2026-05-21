@@ -476,6 +476,53 @@ pre {
   font-size: 12px;
 }
 
+.checkpoint-list {
+  display: grid;
+  gap: 8px;
+}
+
+.checkpoint-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: #ffffff;
+  padding: 8px 10px;
+}
+
+.checkpoint-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.checkpoint-main strong,
+.checkpoint-main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint-main strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.checkpoint-main small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.checkpoint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .empty {
   display: grid;
   min-height: 140px;

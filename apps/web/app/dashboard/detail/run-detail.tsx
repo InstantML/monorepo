@@ -1,9 +1,10 @@
 "use client";
 
-import { Activity, Database, FileText, Folder, GitBranch, Server, Star, Tag } from "lucide-react";
+import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, Server, Star, Tag } from "lucide-react";
 
+import { buildCheckpointResumeCode } from "../../../src/checkpoints.js";
 import { durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
-import { compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
+import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
 import { ArtifactMediaPreview } from "./artifact-panel";
@@ -73,6 +74,56 @@ function RunMetricTable({ rows }: { rows: RunMetricRow[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function artifactDownloadUrl(artifact: Artifact) {
+  return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
+}
+
+function copyText(value: string) {
+  if (!value) return;
+  void navigator.clipboard?.writeText(value);
+}
+
+function CheckpointList({ artifacts, run }: { artifacts: Artifact[]; run: RunSummary }) {
+  const checkpoints = artifacts
+    .filter((artifact) => artifact.type === "checkpoint")
+    .sort((left, right) => (right.step ?? -1) - (left.step ?? -1));
+  if (!checkpoints.length) return null;
+  return (
+    <section className="detail-section checkpoint-section">
+      <h3><Box size={15} /> Checkpoints ({checkpoints.length})</h3>
+      <div className="checkpoint-list">
+        {checkpoints.map((artifact) => {
+          const canDownload = artifactHasStoredBytes(artifact);
+          return (
+            <article className="checkpoint-row" key={artifact.id}>
+              <div className="checkpoint-main">
+                <strong title={artifact.name}>{artifact.name}</strong>
+                <small>{artifact.step === null ? "no step" : `step ${artifact.step}`} · {formatBytes(artifact.size_bytes)}</small>
+              </div>
+              <div className="checkpoint-actions">
+                {canDownload ? (
+                  <a className="copy-button artifact-download" href={artifactDownloadUrl(artifact)}><Download size={13} /> Download</a>
+                ) : (
+                  <button className="copy-button artifact-download unavailable" disabled title="Download unavailable for metadata-only checkpoints" type="button">
+                    <Download size={13} /> Unavailable
+                  </button>
+                )}
+                <button
+                  className="copy-button"
+                  onClick={() => copyText(buildCheckpointResumeCode(artifact, run))}
+                  type="button"
+                >
+                  <Copy size={13} /> Resume Code
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -193,6 +244,7 @@ export function RunDetail({
           </section>
           {!workspaceSummary ? (
             <>
+              <CheckpointList artifacts={artifacts} run={run} />
               <section className="detail-section">
                 <h3><Folder size={15} /> Recent Artifacts ({artifacts.length})</h3>
                 {artifactRows.length ? artifactRows.map((artifact) => (
