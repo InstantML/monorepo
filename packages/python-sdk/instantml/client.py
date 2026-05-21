@@ -363,17 +363,18 @@ class Client:
                 real_run_id = response["run"]["id"]
                 if local_store:
                     run._local_store = _LocalStore(local_store_dir, real_run_id)
-                run.run_id = real_run_id  # property setter sets _init_done
+                run._set_run_id(real_run_id)
                 if system_metrics:
                     try:
                         run.start_system_metrics(interval=system_metrics_interval)
-                    except Exception:  # noqa: BLE001 — surface via warning, don't crash worker
-                        pass
+                    except Exception as exc:  # noqa: BLE001 — keep init alive but surface optional setup failure
+                        warnings.warn(f"system metrics sampler could not start: {exc}", RuntimeWarning, stacklevel=2)
                 if capture_console:
                     try:
                         run.capture_console()
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        warnings.warn(f"console capture could not start: {exc}", RuntimeWarning, stacklevel=2)
+                run._init_done.set()
             except BaseException as exc:  # noqa: BLE001 — propagate to foreground via property
                 run._init_error = exc
                 run._init_done.set()
@@ -520,6 +521,9 @@ class Run:
         self.upload_mode = upload_mode
         self.spool_dir = spool_dir
         self.media_dir = media_dir
+        self._process_spool_run_dir = _process_spool_run_dir(spool_dir, run_id) if upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID else None
+        if self._process_spool_run_dir is not None:
+            self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
         self._queue: list[dict[str, Any]] = []
         self._last_steps: dict[str, float] = {}
         self._console_line_numbers: dict[str, int] = {}
@@ -545,9 +549,16 @@ class Run:
 
     @run_id.setter
     def run_id(self, value: str) -> None:
-        self._run_id = value
+        self._set_run_id(value)
         if value and value != _PENDING_RUN_ID:
             self._init_done.set()
+
+    def _set_run_id(self, value: str) -> None:
+        self._run_id = value
+        if value and value != _PENDING_RUN_ID:
+            if self.upload_mode == "spool":
+                self._process_spool_run_dir = _process_spool_run_dir(self.spool_dir, value)
+                self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
 
     def wait_for_init(self, timeout: float | None = None) -> str:
         """Block until init resolves and return the real run_id.
@@ -1222,7 +1233,7 @@ class Run:
                     timestamp=event_timestamp,
                     sequence=self._process_sequence,
                 )
-                _write_process_event(self.spool_dir, self.run_id, event)
+                _write_process_event(self._process_spool_run_dir, event, _serialize_process_event(event))
                 return
             event = {"method": method, "path": path, "body": body}
             if self.buffer_size > 0:
@@ -1842,19 +1853,26 @@ def _process_event(
         "data": data,
         "requests": [request],
     }
-    json.dumps(event)
     return event
 
 
-def _write_process_event(spool_dir: str | None, run_id: str, event: dict[str, Any]) -> Path:
+def _process_spool_run_dir(spool_dir: str | None, run_id: str) -> Path:
     root = Path(spool_dir or DEFAULT_PROCESS_SPOOL_DIR).expanduser().resolve()
-    run_dir = root / _safe_path_segment(run_id)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    return root / _safe_path_segment(run_id)
+
+
+def _serialize_process_event(event: dict[str, Any]) -> str:
+    return json.dumps(event, separators=(",", ":"))
+
+
+def _write_process_event(run_dir: Path | None, event: dict[str, Any], serialized: str) -> Path:
+    if run_dir is None:
+        raise InstantMLError("process spool directory is not ready")
     filename = f"{event['sequence']:020d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-{event['event_id']}.json"
     final_path = run_dir / filename
     tmp_path = run_dir / f".{filename}.tmp"
     with tmp_path.open("w", encoding="utf-8") as handle:
-        handle.write(json.dumps(event, sort_keys=True, separators=(",", ":")))
+        handle.write(serialized)
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())

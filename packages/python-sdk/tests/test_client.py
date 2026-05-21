@@ -695,6 +695,25 @@ def test_process_spool_mode_writes_events_without_network(tmp_path):
     assert not list((tmp_path / "run_1").glob("*.tmp"))
 
 
+def test_run_id_setter_marks_pending_spool_run_ready(tmp_path):
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id=client_module._PENDING_RUN_ID, upload_mode="spool", spool_dir=str(tmp_path))
+    run.run_id = "run/ready"
+
+    assert run.wait_for_init(timeout=0.01) == "run/ready"
+    assert (tmp_path / "run_ready").is_dir()
+
+
+def test_process_spool_writer_requires_ready_directory():
+    with pytest.raises(InstantMLError, match="process spool directory is not ready"):
+        client_module._write_process_event(None, {"sequence": 1, "event_id": "event"}, "{}")
+
+
 def test_console_logging_posts_streams_and_line_numbers():
     calls = []
 
