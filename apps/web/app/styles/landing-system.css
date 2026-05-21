@@ -1030,7 +1030,7 @@
   margin-bottom: 40px;
 }
 @media (min-width: 768px) { .landing-lede { font-size: 19px; } }
-.landing-cta-row {
+.hero-rise-4.landing-cta-row {
   display: flex;
   flex-direction: column;
   align-items: flex-start !important;
@@ -1040,7 +1040,7 @@
   width: fit-content;
 }
 @media (min-width: 576px) {
-  .landing-cta-row { flex-direction: row; }
+  .hero-rise-4.landing-cta-row { flex-direction: row; }
 }
 
 /* Logo color is theme-aware so the Ink dots and the "instant" wordmark
