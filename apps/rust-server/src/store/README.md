@@ -6,6 +6,7 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
 
 - `mod.rs`: shared `Store`/`StoreData` types, deterministic control/tenant operational replay, data-plane control-record refresh, tenant replay validation, local org bootstrap, durable append helper, readiness checks, and public re-exports.
 - `auth.rs`: users, organizations, memberships, sessions, service accounts, API keys, and admin checks.
+- `billing.rs`: Stripe billing projections, Checkout intent fulfillment, Customer Portal responses, webhook event idempotency, and payment-state write gates.
 - `console_logs.rs`: bounded stdout/stderr validation, idempotent log writes, cursor encoding, and log read response shaping.
 - `runs.rs`: project/run creation, run filtering, summaries, scalar metric writes, and metric point/series reads.
 - `objects.rs`: typed attributes, rich objects, table rows, artifact metadata, and local upload metadata writes.

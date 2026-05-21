@@ -6,6 +6,7 @@ use std::{
 
 mod access;
 mod auth;
+mod billing;
 mod console_logs;
 mod demo;
 mod device_code;
@@ -21,6 +22,7 @@ mod workspace_views;
 
 use access::*;
 pub use auth::*;
+pub use billing::*;
 pub use console_logs::*;
 pub use demo::*;
 pub use device_code::*;
@@ -52,6 +54,10 @@ use crate::{
         validate_offset, validate_optional_name, validate_optional_step, validate_plan_tier,
         validate_slug, validate_status, validate_step, validate_tags, validate_timestamp,
         ArtifactRow, AttributeInput, AttributeRow, AuthContext, AuthSessionPayload,
+        BillingAccountProjection, BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo,
+        BillingCheckoutIntent, BillingCheckoutRequest, BillingCheckoutSyncRequest,
+        BillingEventRecord, BillingPlanChangeRequest, BillingPortalRequest,
+        BillingSeatChangeRequest, BillingSubscriptionRecord, BillingUsageReportRecord,
         ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest,
         CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
         CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
@@ -61,7 +67,9 @@ use crate::{
         ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
         ServiceAccountRow, UpdateDashboardPreferencesRequest, UpdateRunRequest,
         UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
-        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, MAX_CONSOLE_LOG_LIMIT,
+        BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
+        BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT,
+        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
         MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
         MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RUN_LIMIT,
         MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
@@ -427,6 +435,12 @@ struct StoreData {
     idempotency: HashMap<(Uuid, String), IdempotencyRecord>,
     usage_daily: Vec<Value>,
     tenant_routes: BTreeMap<Uuid, TenantRouteRecord>,
+    billing_accounts: BTreeMap<Uuid, BillingAccountProjection>,
+    billing_checkout_intents: BTreeMap<Uuid, BillingCheckoutIntent>,
+    billing_change_intents: BTreeMap<Uuid, BillingChangeIntent>,
+    billing_subscriptions: BTreeMap<String, BillingSubscriptionRecord>,
+    billing_events: BTreeMap<String, BillingEventRecord>,
+    billing_usage_reports: BTreeMap<Uuid, BillingUsageReportRecord>,
     dashboard_preferences: BTreeMap<(Uuid, Option<Uuid>), DashboardPreferenceRow>,
     workspace_views: BTreeMap<Uuid, WorkspaceViewRow>,
     next_attribute_id_by_org: HashMap<Uuid, i64>,
@@ -518,6 +532,14 @@ impl StoreData {
             }
             "usage_daily" => self.usage_daily.push(parse_payload(payload)?),
             "tenant_route" => self.insert_tenant_route(parse_payload(payload)?),
+            "billing_account" => self.insert_billing_account(parse_payload(payload)?),
+            "billing_checkout_intent" => {
+                self.insert_billing_checkout_intent(parse_payload(payload)?)
+            }
+            "billing_change_intent" => self.insert_billing_change_intent(parse_payload(payload)?),
+            "billing_subscription" => self.insert_billing_subscription(parse_payload(payload)?),
+            "billing_event" => self.insert_billing_event(parse_payload(payload)?),
+            "billing_usage_report" => self.insert_billing_usage_report(parse_payload(payload)?),
             "dashboard_preference" => self.insert_dashboard_preference(parse_payload(payload)?),
             "workspace_view" => self.insert_workspace_view(parse_payload(payload)?),
             _ => {}
@@ -657,6 +679,32 @@ impl StoreData {
 
     fn insert_tenant_route(&mut self, route: TenantRouteRecord) {
         self.tenant_routes.insert(route.org_id, route);
+    }
+
+    fn insert_billing_account(&mut self, account: BillingAccountProjection) {
+        self.billing_accounts.insert(account.org_id, account);
+    }
+
+    fn insert_billing_checkout_intent(&mut self, intent: BillingCheckoutIntent) {
+        self.billing_checkout_intents.insert(intent.id, intent);
+    }
+
+    fn insert_billing_change_intent(&mut self, intent: BillingChangeIntent) {
+        self.billing_change_intents.insert(intent.id, intent);
+    }
+
+    fn insert_billing_subscription(&mut self, subscription: BillingSubscriptionRecord) {
+        self.billing_subscriptions
+            .insert(subscription.stripe_subscription_id.clone(), subscription);
+    }
+
+    fn insert_billing_event(&mut self, event: BillingEventRecord) {
+        self.billing_events
+            .insert(event.stripe_event_id.clone(), event);
+    }
+
+    fn insert_billing_usage_report(&mut self, report: BillingUsageReportRecord) {
+        self.billing_usage_reports.insert(report.id, report);
     }
 
     fn insert_dashboard_preference(&mut self, row: DashboardPreferenceRow) {

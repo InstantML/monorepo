@@ -213,6 +213,8 @@ pub struct AuthSessionPayload {
     pub memberships: Vec<MembershipRow>,
     pub account_type: String,
     pub provisioning: Option<ProvisioningStatusPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_checkout: Option<BillingCheckoutInfo>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -234,6 +236,151 @@ pub struct CreatedAuthSession {
     pub token: String,
     pub payload: AuthSessionPayload,
     pub onboarding_api_key: Option<OnboardingApiKey>,
+}
+
+pub const BILLING_FREE_ACTIVE: &str = "free_active";
+pub const BILLING_CHECKOUT_PENDING: &str = "checkout_pending";
+pub const BILLING_PAID_ACTIVE: &str = "paid_active";
+pub const BILLING_PAST_DUE_GRACE: &str = "past_due_grace";
+pub const BILLING_READ_ONLY_PAYMENT_REQUIRED: &str = "read_only_payment_required";
+pub const BILLING_CANCELED: &str = "canceled";
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct BillingAccountProjection {
+    pub schema_version: i32,
+    pub org_id: Uuid,
+    pub access_state: String,
+    pub plan_tier: String,
+    pub effective_plan_tier: String,
+    pub requested_plan_tier: Option<String>,
+    pub paid_extra_seats: i32,
+    pub stripe_customer_id: Option<String>,
+    pub stripe_subscription_id: Option<String>,
+    pub subscription_status: Option<String>,
+    pub current_period_start: Option<DateTime<Utc>>,
+    pub current_period_end: Option<DateTime<Utc>>,
+    pub cancel_at_period_end: bool,
+    pub grace_until: Option<DateTime<Utc>>,
+    pub pending_intent_id: Option<Uuid>,
+    pub message: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct BillingCheckoutInfo {
+    pub intent_id: Uuid,
+    pub status: String,
+    pub session_id: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct BillingCheckoutIntent {
+    pub schema_version: i32,
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub user_id: Uuid,
+    pub action: String,
+    pub target_plan_tier: String,
+    pub pending_seat_emails: Vec<String>,
+    pub stripe_checkout_session_id: Option<String>,
+    pub stripe_customer_id: Option<String>,
+    pub stripe_subscription_id: Option<String>,
+    pub status: String,
+    pub url: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct BillingChangeIntent {
+    pub schema_version: i32,
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub user_id: Uuid,
+    pub action: String,
+    pub target_plan_tier: Option<String>,
+    pub target_extra_seats: Option<i32>,
+    pub pending_seat_email: Option<String>,
+    pub pending_seat_role: Option<String>,
+    pub stripe_invoice_id: Option<String>,
+    pub stripe_subscription_id: Option<String>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct BillingSubscriptionRecord {
+    pub schema_version: i32,
+    pub org_id: Uuid,
+    pub stripe_subscription_id: String,
+    pub stripe_customer_id: Option<String>,
+    pub status: String,
+    pub plan_tier: String,
+    pub paid_extra_seats: i32,
+    pub current_period_start: Option<DateTime<Utc>>,
+    pub current_period_end: Option<DateTime<Utc>>,
+    pub cancel_at_period_end: bool,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct BillingEventRecord {
+    pub schema_version: i32,
+    pub stripe_event_id: String,
+    pub event_type: String,
+    pub org_id: Option<Uuid>,
+    pub stripe_object_id: Option<String>,
+    pub processed_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct BillingUsageReportRecord {
+    pub schema_version: i32,
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub usage_period_start: DateTime<Utc>,
+    pub usage_period_end: DateTime<Utc>,
+    pub billable_storage_bytes: i64,
+    pub reported_gib: i64,
+    pub stripe_event_id: Option<String>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BillingCheckoutRequest {
+    pub plan_tier: Option<String>,
+    pub seat_emails: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BillingCheckoutSyncRequest {
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BillingPortalRequest {
+    pub return_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BillingPlanChangeRequest {
+    pub plan_tier: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BillingSeatChangeRequest {
+    pub email: Option<String>,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BillingCancelRequest {
+    pub at_period_end: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

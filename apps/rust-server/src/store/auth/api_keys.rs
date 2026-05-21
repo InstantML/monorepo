@@ -116,6 +116,7 @@ async fn create_api_key_inner(
         .cloned()
         .ok_or_else(|| AppError::not_found("organization not found"))?;
     drop(data);
+    ensure_billing_write_allowed(store, org_id, "create API keys").await?;
     store.ensure_tenant_route(&org).await?;
     let mut data = store.data.lock().await;
     let project_id =

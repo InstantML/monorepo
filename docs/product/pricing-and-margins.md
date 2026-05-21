@@ -18,10 +18,13 @@ This document explains the Free, Pro, and Premium pricing model, the current cos
 
 Current overage policy:
 
-- Extra seats are tracked as `paid_extra_seats` but are not billed yet.
-- Projects, runs, metric points, and estimated storage are `blocked_at_limit` for new writes until paid overages or custom terms are implemented.
+- Extra seats are billed by updating a Stripe extra-seat subscription item
+  before reserving seats above the plan's included count. Public pricing should
+  still treat the `$79-$99/seat/month` amount as a beta target until invoice
+  smoke coverage is complete.
+- Projects, runs, and metric points are `blocked_at_limit` for new writes until paid overages or custom terms are implemented.
 - API-key count and artifact counts are visibility-only.
-- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The planned paid storage overage target is `$0.03/GB-month` after the included pool, pending provider reconciliation and billing implementation.
+- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The Stripe meter-backed price is attached to paid subscriptions and the meter-event path reports whole GiB-month storage overage at the `$0.03/GB-month` sandbox target, but public invoices still require provider/object-store reconciliation hardening.
 
 Usage-period semantics:
 
@@ -104,13 +107,28 @@ Premium exists for teams that want a larger included pool and stronger isolation
 
 Not implemented yet:
 
-- Payment collection.
-- Plan changes and proration.
+- Public production Stripe launch hardening beyond the current Checkout/Portal
+  integration.
+- Live Stripe webhook, plan-change proration, extra-seat invoice, and storage
+  meter-event smoke coverage.
 - Email delivery for invites.
-- Paid extra-seat billing.
-- Storage overage billing.
 - Billable GB-day accounting from object storage/provider truth.
 - Enterprise contract terms.
+
+Implemented billing slice:
+
+- Stripe Checkout collects payment before paid signup unlocks writes or SDK-key
+  creation.
+- Stripe Customer Portal opens from Settings for payment-method and invoice
+  management.
+- Stripe webhook signatures are verified and processed idempotently into User
+  Data billing records.
+- Existing subscriptions are updated for plan changes and extra-seat quantities;
+  new paid subscriptions still start with Checkout.
+- Storage overage reports create idempotent `billing_usage_report` records and
+  Stripe meter events for whole GiB over the included plan pool.
+- Billing gates return HTTP 402 `payment_required` for pending/failed paid
+  workspaces while reads, exports, usage, and billing status remain available.
 
 Until those exist, usage outputs are product/admin guardrails, not invoices.
 Writes that would exceed project, run, metric-point, or estimated-storage

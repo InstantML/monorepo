@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 pub async fn create_dev_google_session(
     store: &Store,
     input: DevGoogleAuthRequest,
+    billing_config: Option<&crate::config::BillingConfig>,
 ) -> AppResult<CreatedAuthSession> {
     let input = normalize_dev_google_auth(input)?;
     create_verified_provider_session(
@@ -31,6 +32,7 @@ pub async fn create_dev_google_session(
             auto_derive_display_name: input.display_name,
             auto_derive_email: input.email,
         },
+        billing_config,
     )
     .await
 }
@@ -39,6 +41,7 @@ pub async fn create_clerk_session(
     store: &Store,
     principal: ManagedAuthPrincipal,
     input: ClerkAuthRequest,
+    billing_config: Option<&crate::config::BillingConfig>,
 ) -> AppResult<CreatedAuthSession> {
     if !principal.email_verified {
         return Err(AppError::unauthorized("Clerk email is not verified"));
@@ -72,6 +75,7 @@ pub async fn create_clerk_session(
             auto_derive_display_name: principal.display_name,
             auto_derive_email: principal.email,
         },
+        billing_config,
     )
     .await
 }
@@ -79,6 +83,7 @@ pub async fn create_clerk_session(
 pub(super) async fn create_verified_provider_session(
     store: &Store,
     input: VerifiedProviderSessionInput,
+    billing_config: Option<&crate::config::BillingConfig>,
 ) -> AppResult<CreatedAuthSession> {
     let provider = validate_name(Some(&input.provider), "provider")?;
     let provider_subject = validate_name(Some(&input.provider_subject), "provider_subject")?;
@@ -87,6 +92,8 @@ pub(super) async fn create_verified_provider_session(
     let account_type = validate_account_type(Some(&input.account_type))?;
     let canonical_plan_tier = validate_plan_tier(input.plan_tier.as_deref())?;
     let plan = plan_tier(&canonical_plan_tier);
+    let paid_signup_requires_checkout =
+        billing_config.is_some_and(|config| config.enabled) && canonical_plan_tier != "free";
     let seat_emails = normalized_invite_emails(input.seat_emails, &email)?;
     if 1 + seat_emails.len() > plan.included_seats as usize {
         return Err(AppError::conflict("organization seat limit reached"));
@@ -221,13 +228,19 @@ pub(super) async fn create_verified_provider_session(
     } else {
         "dedicated".to_string()
     };
+    let stored_plan_tier = if paid_signup_requires_checkout {
+        "free".to_string()
+    } else {
+        canonical_plan_tier.clone()
+    };
+    let stored_plan = plan_tier(&stored_plan_tier);
     let org = OrganizationRow {
         id: Uuid::new_v4(),
         slug: org_slug,
         name: org_name,
-        plan_tier: canonical_plan_tier,
+        plan_tier: stored_plan_tier,
         account_type: effective_account_type,
-        seat_limit: plan.included_seats,
+        seat_limit: stored_plan.included_seats,
         created_by_user_id: Some(user.id),
         created_at: Utc::now(),
         tenant_routing_tier,
@@ -242,6 +255,32 @@ pub(super) async fn create_verified_provider_session(
         .await?;
     data.insert_membership(owner.clone());
     drop(data);
+    if paid_signup_requires_checkout {
+        let mut data = store.data.lock().await;
+        let (session, token) = new_session(user.id, org.id);
+        store
+            .persist_locked("session", org.id, &session.row.id.to_string(), &session)
+            .await?;
+        data.insert_session(session.clone());
+        let mut payload = session_payload_from_data(&data, session.row.clone())?;
+        drop(data);
+        let checkout = create_checkout_for_org(
+            store,
+            billing_config.expect("checked above"),
+            org.id,
+            user.id,
+            &canonical_plan_tier,
+            "paid_signup",
+            seat_emails,
+        )
+        .await?;
+        payload.billing_checkout = Some(checkout);
+        return Ok(CreatedAuthSession {
+            token,
+            payload,
+            onboarding_api_key: None,
+        });
+    }
     store.ensure_tenant_route(&org).await?;
     let mut data = store.data.lock().await;
     for email in seat_emails {
@@ -279,7 +318,9 @@ pub(super) async fn create_session_for_org(
     user: UserRow,
     org: OrganizationRow,
 ) -> AppResult<CreatedAuthSession> {
-    store.ensure_tenant_route(&org).await?;
+    if !billing_blocks_tenant_route(store, org.id).await {
+        store.ensure_tenant_route(&org).await?;
+    }
     let mut data = store.data.lock().await;
     if !data.memberships.values().any(|membership| {
         membership.org_id == org.id
@@ -307,6 +348,16 @@ pub(super) async fn create_session_for_org(
         token,
         payload,
         onboarding_api_key: None,
+    })
+}
+
+async fn billing_blocks_tenant_route(store: &Store, org_id: Uuid) -> bool {
+    let data = store.data.lock().await;
+    data.billing_accounts.get(&org_id).is_some_and(|account| {
+        matches!(
+            account.access_state.as_str(),
+            BILLING_CHECKOUT_PENDING | BILLING_READ_ONLY_PAYMENT_REQUIRED | BILLING_CANCELED
+        )
     })
 }
 

@@ -457,6 +457,325 @@
         ]
       }
     },
+    "/api/billing/add-seat": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_add_seat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingSeatChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Seat reservation or billing result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/cancel": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_cancel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cancellation request result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/change-plan": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_change_plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingPlanChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Plan change result or Checkout URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/checkout": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_checkout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingCheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Stripe Checkout Session URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/checkout/sync": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_checkout_sync",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingCheckoutSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated billing projection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/portal": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_portal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingPortalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Stripe Customer Portal URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/status": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_status",
+        "responses": {
+          "200": {
+            "description": "Billing account projection and plan catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/storage-overage/report": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_report_storage_overage",
+        "responses": {
+          "200": {
+            "description": "Storage overage meter-event report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/billing/webhook": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_webhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processing result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid Stripe signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/dashboard/preferences": {
       "get": {
         "tags": [
@@ -3909,6 +4228,16 @@
           "authenticated": {
             "type": "boolean"
           },
+          "billing_checkout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BillingCheckoutInfo"
+              }
+            ]
+          },
           "membership": {
             "$ref": "#/components/schemas/MembershipRow"
           },
@@ -3972,6 +4301,544 @@
           }
         ],
         "description": "Wrapper for `auth_dev_google` / `auth_clerk` responses, which serialize\n`AuthSessionPayload` plus an optional `onboarding_api_key` produced for\nbrand-new accounts."
+      },
+      "BillingAccountProjection": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "org_id",
+          "access_state",
+          "plan_tier",
+          "effective_plan_tier",
+          "paid_extra_seats",
+          "cancel_at_period_end",
+          "updated_at"
+        ],
+        "properties": {
+          "access_state": {
+            "type": "string"
+          },
+          "cancel_at_period_end": {
+            "type": "boolean"
+          },
+          "current_period_end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "current_period_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "effective_plan_tier": {
+            "type": "string"
+          },
+          "grace_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paid_extra_seats": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pending_intent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "plan_tier": {
+            "type": "string"
+          },
+          "requested_plan_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stripe_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_subscription_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subscription_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BillingCancelRequest": {
+        "type": "object",
+        "properties": {
+          "at_period_end": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "BillingChangeIntent": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "id",
+          "org_id",
+          "user_id",
+          "action",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pending_seat_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending_seat_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stripe_invoice_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_subscription_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_extra_seats": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "target_plan_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "BillingCheckoutInfo": {
+        "type": "object",
+        "required": [
+          "intent_id",
+          "status"
+        ],
+        "properties": {
+          "intent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BillingCheckoutIntent": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "id",
+          "org_id",
+          "user_id",
+          "action",
+          "target_plan_tier",
+          "pending_seat_emails",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pending_seat_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stripe_checkout_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_subscription_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_plan_tier": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "BillingCheckoutRequest": {
+        "type": "object",
+        "properties": {
+          "plan_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seat_emails": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "BillingCheckoutSyncRequest": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BillingEventRecord": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "stripe_event_id",
+          "event_type",
+          "processed_at"
+        ],
+        "properties": {
+          "event_type": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "processed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stripe_event_id": {
+            "type": "string"
+          },
+          "stripe_object_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BillingPlanChangeRequest": {
+        "type": "object",
+        "properties": {
+          "plan_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BillingPortalRequest": {
+        "type": "object",
+        "properties": {
+          "return_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BillingSeatChangeRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BillingSubscriptionRecord": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "org_id",
+          "stripe_subscription_id",
+          "status",
+          "plan_tier",
+          "paid_extra_seats",
+          "cancel_at_period_end",
+          "metadata",
+          "updated_at"
+        ],
+        "properties": {
+          "cancel_at_period_end": {
+            "type": "boolean"
+          },
+          "current_period_end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "current_period_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paid_extra_seats": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "plan_tier": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stripe_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_subscription_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BillingUsageReportRecord": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "id",
+          "org_id",
+          "usage_period_start",
+          "usage_period_end",
+          "billable_storage_bytes",
+          "reported_gib",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "billable_storage_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reported_gib": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stripe_event_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usage_period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "usage_period_start": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "ClerkAuthRequest": {
         "type": "object",
@@ -5957,6 +6824,10 @@
     {
       "name": "auth",
       "description": "Browser session and device-code authentication."
+    },
+    {
+      "name": "billing",
+      "description": "Stripe Checkout, subscriptions, portal, and billing webhooks."
     },
     {
       "name": "orgs",

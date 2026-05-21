@@ -170,6 +170,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/add-seat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_add_seat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/change-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_change_plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/checkout/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_checkout_sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_portal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["billing_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/storage-overage/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_report_storage_overage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_webhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/preferences": {
         parameters: {
             query?: never;
@@ -797,6 +941,7 @@ export interface components {
         AuthSessionPayload: {
             account_type: string;
             authenticated: boolean;
+            billing_checkout?: null | components["schemas"]["BillingCheckoutInfo"];
             membership: components["schemas"]["MembershipRow"];
             memberships: components["schemas"]["MembershipRow"][];
             organization: components["schemas"]["OrganizationRow"];
@@ -812,6 +957,156 @@ export interface components {
          *     brand-new accounts. */
         AuthSessionWithOnboardingKey: components["schemas"]["AuthSessionPayload"] & {
             onboarding_api_key?: null | components["schemas"]["OnboardingApiKey"];
+        };
+        BillingAccountProjection: {
+            access_state: string;
+            cancel_at_period_end: boolean;
+            /** Format: date-time */
+            current_period_end?: string | null;
+            /** Format: date-time */
+            current_period_start?: string | null;
+            effective_plan_tier: string;
+            /** Format: date-time */
+            grace_until?: string | null;
+            message?: string | null;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: int32 */
+            paid_extra_seats: number;
+            /** Format: uuid */
+            pending_intent_id?: string | null;
+            plan_tier: string;
+            requested_plan_tier?: string | null;
+            /** Format: int32 */
+            schema_version: number;
+            stripe_customer_id?: string | null;
+            stripe_subscription_id?: string | null;
+            subscription_status?: string | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        BillingCancelRequest: {
+            at_period_end?: boolean | null;
+        };
+        BillingChangeIntent: {
+            action: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            org_id: string;
+            pending_seat_email?: string | null;
+            pending_seat_role?: string | null;
+            /** Format: int32 */
+            schema_version: number;
+            status: string;
+            stripe_invoice_id?: string | null;
+            stripe_subscription_id?: string | null;
+            /** Format: int32 */
+            target_extra_seats?: number | null;
+            target_plan_tier?: string | null;
+            /** Format: uuid */
+            user_id: string;
+        };
+        BillingCheckoutInfo: {
+            /** Format: uuid */
+            intent_id: string;
+            session_id?: string | null;
+            status: string;
+            url?: string | null;
+        };
+        BillingCheckoutIntent: {
+            action: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            org_id: string;
+            pending_seat_emails: string[];
+            /** Format: int32 */
+            schema_version: number;
+            status: string;
+            stripe_checkout_session_id?: string | null;
+            stripe_customer_id?: string | null;
+            stripe_subscription_id?: string | null;
+            target_plan_tier: string;
+            url?: string | null;
+            /** Format: uuid */
+            user_id: string;
+        };
+        BillingCheckoutRequest: {
+            plan_tier?: string | null;
+            seat_emails?: string[] | null;
+        };
+        BillingCheckoutSyncRequest: {
+            session_id?: string | null;
+        };
+        BillingEventRecord: {
+            event_type: string;
+            /** Format: uuid */
+            org_id?: string | null;
+            /** Format: date-time */
+            processed_at: string;
+            /** Format: int32 */
+            schema_version: number;
+            stripe_event_id: string;
+            stripe_object_id?: string | null;
+        };
+        BillingPlanChangeRequest: {
+            plan_tier?: string | null;
+        };
+        BillingPortalRequest: {
+            return_url?: string | null;
+        };
+        BillingSeatChangeRequest: {
+            email?: string | null;
+            role?: string | null;
+        };
+        BillingSubscriptionRecord: {
+            cancel_at_period_end: boolean;
+            /** Format: date-time */
+            current_period_end?: string | null;
+            /** Format: date-time */
+            current_period_start?: string | null;
+            metadata: Record<string, never>;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: int32 */
+            paid_extra_seats: number;
+            plan_tier: string;
+            /** Format: int32 */
+            schema_version: number;
+            status: string;
+            stripe_customer_id?: string | null;
+            stripe_subscription_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        BillingUsageReportRecord: {
+            /** Format: int64 */
+            billable_storage_bytes: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: int64 */
+            reported_gib: number;
+            /** Format: int32 */
+            schema_version: number;
+            status: string;
+            stripe_event_id?: string | null;
+            /** Format: date-time */
+            usage_period_end: string;
+            /** Format: date-time */
+            usage_period_start: string;
         };
         ClerkAuthRequest: {
             /** Format: uuid */
@@ -1691,6 +1986,241 @@ export interface operations {
             };
             /** @description Organization not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    billing_add_seat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingSeatChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Seat reservation or billing result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+        };
+    };
+    billing_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Cancellation request result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+        };
+    };
+    billing_change_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingPlanChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Plan change result or Checkout URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+        };
+    };
+    billing_checkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Stripe Checkout Session URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Payment required */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    billing_checkout_sync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingCheckoutSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated billing projection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+        };
+    };
+    billing_portal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingPortalRequest"];
+            };
+        };
+        responses: {
+            /** @description Stripe Customer Portal URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+        };
+    };
+    billing_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Billing account projection and plan catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    billing_report_storage_overage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage overage meter-event report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+        };
+    };
+    billing_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            /** @description Webhook processing result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid Stripe signature */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

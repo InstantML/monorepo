@@ -49,7 +49,8 @@ pub async fn auth_dev_google(
     }
     validate_mutation_origin(&state, &headers)?;
     let input = read_json::<DevGoogleAuthRequest>(&headers, bytes, state.config.max_body_bytes)?;
-    let created = store::create_dev_google_session(&state.store, input).await?;
+    let created =
+        store::create_dev_google_session(&state.store, input, Some(&state.config.billing)).await?;
     json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
 
@@ -95,7 +96,9 @@ pub async fn auth_clerk(
     )
     .await?;
     validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
-    let created = store::create_clerk_session(&state.store, principal, input).await?;
+    let created =
+        store::create_clerk_session(&state.store, principal, input, Some(&state.config.billing))
+            .await?;
     let mut response_body = serde_json::to_value(&created.payload)
         .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
     if let Some(onboarding_key) = &created.onboarding_api_key {

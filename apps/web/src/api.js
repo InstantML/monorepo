@@ -115,6 +115,7 @@ function clientSafeError(status, payload) {
   const code = typeof payload?.code === "string" ? payload.code : "";
   if (code === "validation_error" || status === 400) return "Request was invalid. Check the current filters and try again.";
   if (code === "warehouse_unavailable") return "Starting data warehouse. Your runs will load once the warehouse is awake.";
+  if (code === "payment_required" || status === 402) return "Payment is required before this workspace can accept new writes.";
   if (code === "service_unavailable" || status === 503) return "InstantML API is starting. Try again shortly.";
   if (status === 401) return "Sign in required.";
   if (status === 403) return "You do not have access to this workspace.";

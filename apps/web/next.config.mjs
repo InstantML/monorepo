@@ -58,8 +58,9 @@ function resolveApiBase(name, rawBase) {
 
 const clerkConnect = "https://api.clerk.com https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com https://clerk.instantml.ai";
 const clerkAssets = "https://img.clerk.com https://images.clerk.dev https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com https://clerk.instantml.ai";
+const stripeConnect = "https://api.stripe.com https://checkout.stripe.com https://billing.stripe.com";
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com; img-src 'self' data: blob: ${clerkAssets}; connect-src 'self' http://127.0.0.1:* http://localhost:* ${clerkConnect}; frame-src ${clerkConnect} https://challenges.cloudflare.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' ${clerkConnect} https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:` },
+  { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com https://checkout.stripe.com https://billing.stripe.com; img-src 'self' data: blob: ${clerkAssets}; connect-src 'self' http://127.0.0.1:* http://localhost:* ${clerkConnect} ${stripeConnect}; frame-src ${clerkConnect} https://challenges.cloudflare.com https://checkout.stripe.com https://billing.stripe.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' ${clerkConnect} https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:` },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
@@ -74,6 +75,7 @@ const nextConfig = {
   async rewrites() {
     return [
       { source: "/api/auth/:path*", destination: `${apiBases.control}/api/auth/:path*` },
+      { source: "/api/billing/:path*", destination: `${apiBases.control}/api/billing/:path*` },
       { source: "/api/users", destination: `${apiBases.control}/api/users` },
       { source: "/api/users/:path*", destination: `${apiBases.control}/api/users/:path*` },
       { source: "/api/orgs", destination: `${apiBases.control}/api/orgs` },

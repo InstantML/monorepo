@@ -52,6 +52,7 @@ pub async fn log_metrics(
                 let run = fetch_run_in_data(&data, ctx, run_id)?;
                 ensure_run_access_in_data(ctx, &run)?;
             }
+            ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
             enforce_plan_capacity(
                 store,
                 ctx.org_id,
@@ -90,6 +91,7 @@ pub async fn log_metrics(
         let run = fetch_run_in_data(&data, ctx, run_id)?;
         ensure_run_access_in_data(ctx, &run)?;
     }
+    ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
     enforce_plan_capacity(
         store,
         ctx.org_id,

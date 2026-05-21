@@ -129,6 +129,7 @@ async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
             seat_emails: None,
             accept_invite_org_id: None,
         },
+        None,
     )
     .await?;
     let org_id = session.payload.organization.id;

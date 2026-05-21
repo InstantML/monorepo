@@ -424,6 +424,32 @@ api_keys:write
 export:read
 ```
 
+## Stripe Billing
+
+Billing routes are control-plane browser-session routes except the Stripe
+webhook. Paid signup returns `billing_checkout` in the auth response and the
+frontend redirects to the returned Checkout URL. Paid access is granted only
+after the backend syncs or receives a verified Stripe event for the Checkout
+Session/subscription.
+
+| Method | Path | Body | Output |
+| --- | --- | --- | --- |
+| `GET` | `/api/billing/status` | none | `{ "billing", "plans", "actions" }` |
+| `POST` | `/api/billing/checkout` | `{ "plan_tier": "pro" | "premium", "seat_emails"?: [...] }` | `{ "checkout": { "intent_id", "status", "session_id", "url" } }` |
+| `POST` | `/api/billing/checkout/sync` | `{ "session_id": "cs_test_..." }` | `{ "billing": BillingAccountProjection }` |
+| `POST` | `/api/billing/portal` | `{ "return_url"? }` | `{ "url": "https://billing.stripe.com/..." }` |
+| `POST` | `/api/billing/change-plan` | `{ "plan_tier": "free" | "pro" | "premium" }` | `{ "checkout": ... }` for first paid subscription or `{ "billing": ... }` for existing subscription updates and scheduled Free downgrade |
+| `POST` | `/api/billing/add-seat` | `{ "email", "role"?: "admin" | "member" | "viewer" }` | `{ "seat": SeatRow, "billing"?: BillingAccountProjection }`; when the org is at its included seat limit, Stripe extra-seat subscription quantity is updated before the seat is reserved |
+| `POST` | `/api/billing/cancel` | `{ "at_period_end"?: true }` | `{ "billing": BillingAccountProjection }` |
+| `POST` | `/api/billing/storage-overage/report` | none | `{ "usage_report": BillingUsageReportRecord, "usage": ... }`; reports the current org's whole GiB retained-storage overage as a Stripe meter event |
+| `POST` | `/api/billing/webhook` | raw Stripe event JSON with `Stripe-Signature` | `{ "processed": true }` |
+
+Billing write gates return HTTP `402` with `code: "payment_required"` when an
+org is in `checkout_pending`, `read_only_payment_required`, or `canceled`.
+Plan-capacity guardrails keep using HTTP `402` with
+`code: "plan_limit_exceeded"`. Reads, exports, usage, billing status, and portal
+creation remain available during payment failures.
+
 ## Projects
 
 ### `POST /projects`
