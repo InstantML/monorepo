@@ -193,8 +193,10 @@ Storage:
 
 - Existing live ClickHouse Cloud User Data endpoint is the control plane.
 - New signed-up organizations use ClickHouse Cloud tenant services.
-- Artifact bytes remain local-to-container and therefore ephemeral until object storage is designed.
-- Hosted artifact byte uploads are rejected by config until object storage is designed; metadata-only artifact records for external/imported URIs remain supported.
+- 2026-05-21 update: hosted artifact byte uploads now use Cloudflare R2
+  when configured. See
+  `docs/design/2026-05-21-cloudflare-r2-artifact-storage.md` for the
+  accepted object-storage slice.
 
 Docs:
 

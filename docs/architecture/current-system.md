@@ -46,7 +46,7 @@ monorepo/
 
 ## Components
 
-- `apps/rust-server`: Primary Rust API and worker service with ClickHouse operational storage, ClickHouse metric storage, plan-aware signup/admin routes, and local artifact storage.
+- `apps/rust-server`: Primary Rust API and worker service with ClickHouse operational storage, ClickHouse metric storage, plan-aware signup/admin routes, local artifact storage, and hosted Cloudflare R2 artifact storage.
 - `apps/server`: Deprecated Node.js API compatibility server. Use it for route-shape regression tests, JSON migration fixtures, and legacy fallback only.
 - `apps/web`: Next/React frontend application for the operational UI.
 - `packages/python-sdk`: Standard-library Python SDK used by examples and training loops.
@@ -82,7 +82,7 @@ Next/React frontend -> global Rust control plane
 Python SDK/uploader -> org/cell Rust data-plane service
 Control plane -> ClickHouse user/org/service-routing layer
 Data plane -> ClickHouse org operational layer + ClickHouse metric layer
-Rust API -> S3-compatible artifact storage
+Rust API -> Cloudflare R2 private per-org buckets
 ```
 
 For the hosted path, do not add a central hot-path application proxy for all SDK/browser/metric/artifact traffic. Use a global control-plane responsibility for auth, org lookup, account state, and tenant routes, then route to data-plane cells. The Rust binary can be started as `INSTANTML_SERVICE_PLANE=combined`, `control`, or `data`; the deploy helper can launch either the combined service or split control/data Cloud Run services. Start with dedicated single-active-instance customer cells when isolation is needed, and start shared multi-instance cells only after the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are closed. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
@@ -98,7 +98,7 @@ Cloud Run Rust API -> ClickHouse Cloud tenant services
 Cloud Run Rust API -> static Cloud NAT egress IP for ClickHouse service and API-key allowlisting
 ```
 
-This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, restricts ClickHouse Cloud services and API keys to the Cloud Run static egress IP plus explicit operator IPs, restricts hosted Clerk signup by allowlist, and disables hosted artifact byte uploads until object storage is designed.
+This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, restricts ClickHouse Cloud services and API keys to the Cloud Run static egress IP plus explicit operator IPs, restricts hosted Clerk signup by allowlist, and enables hosted artifact byte uploads only when Cloudflare R2 credentials are configured.
 
 Split Cloud Run launch wiring:
 
@@ -132,7 +132,7 @@ Durable hosted direction:
 
 - Control-plane ClickHouse layer for user and account data: users, identities, organizations, memberships, service routing, tenant-route warehouse profile metadata, plans, seats, API keys, and account status.
 - Data-plane ClickHouse layer per shared cell or customer service for API keys, projects, runs, attributes, artifacts, imports, idempotency, audit, usage, and metric tables.
-- S3-compatible artifact storage for production byte payloads.
+- Cloudflare R2 stores production artifact byte payloads in private deterministic per-org buckets. ClickHouse stores artifact catalog rows with `storage_backend`, `storage_key`, `storage_path`, exact `size_bytes`, `sha256`, and `mime_type`; downloads stream through the Rust API rather than exposing raw bucket URLs.
 - JSON state retained only for deprecated Node compatibility and migration tooling.
 
 The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
@@ -202,6 +202,7 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-up sele
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance architecture direction, central-proxy rejection, route/auth/storage gates, and deterministic replay first slice.
 - `docs/design/2026-05-16-cloud-run-multi-instance-launch.md`: Cloud Run split deploy helper, Docker Compose split profile, scaling defaults, and launch wiring.
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, warehouse profile metadata, seat invites, invited-member activation, usage/admin settings, and API-key management.
+- `docs/design/2026-05-21-cloudflare-r2-artifact-storage.md`: Cloudflare R2 per-org buckets, artifact reference metadata, and same-route upload/download preservation.
 - `docs/product/pricing-and-margins.md`: current packaging, cost assumptions, margin targets, and launch guardrails.
 - `docs/architecture/multi-instance-cloud-run.md`: current split Cloud Run overview with diagrams and launch checklist.
 - `docs/architecture/current-schemas.md`: current control/data-plane schema reference.

@@ -103,8 +103,9 @@ describe("PricingPage — surfaces Jay-demo positioning", () => {
     assert.match(src, /tracked.?hour/i);
   });
 
-  test("calls out BYOS artifact storage", () => {
-    assert.match(src, /BYOS/);
+  test("calls out hosted artifact storage", () => {
+    assert.match(src, /Hosted R2 storage|Hosted artifacts/i);
+    assert.match(src, /\$0\.03\/GB-month/i);
   });
 
   test("references wandb#10459 (orphaned-artifact billing)", () => {

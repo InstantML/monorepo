@@ -186,6 +186,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/demo/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reset_demo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/export": {
         parameters: {
             query?: never;
@@ -736,33 +752,10 @@ export interface components {
             api_keys: components["schemas"]["PublicApiKeyRow"][];
         };
         ArtifactEnvelope: {
-            artifact: components["schemas"]["ArtifactRow"];
-        };
-        ArtifactRow: {
-            /** Format: date-time */
-            created_at: string;
-            /** Format: uuid */
-            id: string;
-            metadata: Record<string, never>;
-            mime_type?: string | null;
-            name: string;
-            /** Format: uuid */
-            org_id: string;
-            /** Format: uuid */
-            run_id: string;
-            sha256?: string | null;
-            /** Format: int64 */
-            size_bytes?: number | null;
-            /** Format: double */
-            step?: number | null;
-            storage_backend: string;
-            storage_key?: string | null;
-            storage_path?: string | null;
-            type: string;
-            uri: string;
+            artifact: components["schemas"]["PublicArtifactRow"];
         };
         ArtifactsEnvelope: {
-            artifacts: components["schemas"]["ArtifactRow"][];
+            artifacts: components["schemas"]["PublicArtifactRow"][];
         };
         AttributeInput: {
             /** Format: uuid */
@@ -1157,6 +1150,27 @@ export interface components {
             /** Format: uuid */
             service_account_id: string;
         };
+        PublicArtifactRow: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            metadata: Record<string, never>;
+            mime_type?: string | null;
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            run_id: string;
+            sha256?: string | null;
+            /** Format: int64 */
+            size_bytes?: number | null;
+            /** Format: double */
+            step?: number | null;
+            storage_backend: string;
+            type: string;
+            uri: string;
+        };
         ReserveSeatRequest: {
             email?: string | null;
             role?: string | null;
@@ -1345,8 +1359,26 @@ export interface operations {
                     "application/octet-stream": unknown;
                 };
             };
+            /** @description Artifact byte range */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Read scope required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1721,6 +1753,53 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reset_demo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reset deterministic demo project */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Plan limit exceeded */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing ingest scope */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2597,6 +2676,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Read scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Run not found */
             404: {
                 headers: {
@@ -2705,7 +2793,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Artifact byte uploads disabled in hosted mode */
+            /** @description Artifact byte uploads disabled by server configuration */
             403: {
                 headers: {
                     [name: string]: unknown;

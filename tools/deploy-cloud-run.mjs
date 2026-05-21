@@ -35,6 +35,11 @@ Environment:
   INSTANTML_PUBLIC_API_BASE            Optional public LB/router URL written to local frontend env.
   INSTANTML_SIGNUP_ALLOWED_EMAILS      Comma-separated hosted signup allowlist.
   INSTANTML_ALLOWED_FRONTEND_ORIGINS   Comma-separated browser origins allowed for session mutations.
+  INSTANTML_ARTIFACT_BACKEND            local or r2. Defaults to r2 when Cloudflare R2 credentials are present.
+  CLOUDFLARE_ACCOUNT_ID                 Cloudflare account id for R2 buckets.
+  CLOUDFLARE_R2_API_KEY                 Cloudflare API token with Workers R2 Storage read/write permissions.
+  CLOUDFLARE_R2_ACCESS_KEY_ID           Optional R2 S3 access key id; API-token id is derived when omitted.
+  CLOUDFLARE_R2_SECRET_ACCESS_KEY       Optional R2 S3 secret; API-token SHA-256 is used when omitted.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
   INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none  Skip service access-list updates.
   INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none      Skip Cloud API-key access-list updates.
@@ -106,7 +111,13 @@ for (const target of deploymentPlan) {
     INSTANTML_SERVICE_PLANE: target.servicePlane,
   };
   if (target.cellId) envVars.INSTANTML_CELL_ID = target.cellId;
-  const url = deployService(target, serviceAccountEmail, staticEgressIp, envVars, secretEnv);
+  const url = deployService(
+    target,
+    serviceAccountEmail,
+    staticEgressIp,
+    runtimeEnvForTarget(envVars, target),
+    secretEnvForTarget(secretEnv, target),
+  );
   await verifyService(url, target);
   deployments.push({ ...target, url });
 }
@@ -427,6 +438,10 @@ function syncSecrets(serviceAccountEmail) {
     ["CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET", "instantml-clickhouse-cloud-key-secret", true],
     ["CLERK_SECRET_KEY", "instantml-clerk-secret-key", false],
     ["INSTANTML_BOOTSTRAP_TOKEN", "instantml-bootstrap-token", false],
+    ["CLOUDFLARE_R2_API_KEY", "instantml-cloudflare-r2-api-key", false],
+    ["CLOUDFLARE_API_TOKEN", "instantml-cloudflare-api-token", false],
+    ["CLOUDFLARE_R2_ACCESS_KEY_ID", "instantml-cloudflare-r2-access-key-id", false],
+    ["CLOUDFLARE_R2_SECRET_ACCESS_KEY", "instantml-cloudflare-r2-secret-access-key", false],
   ];
   const mappings = [];
   for (const [envName, secretName, required] of specs) {
@@ -453,6 +468,11 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
   const origins = value("INSTANTML_ALLOWED_FRONTEND_ORIGINS")
     || "http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai";
   const allowedEmails = value("INSTANTML_SIGNUP_ALLOWED_EMAILS") || activeAccount;
+  const cloudflareAccountId = cloudflareR2AccountId();
+  const r2Configured = Boolean(
+    cloudflareAccountId
+      && (value("CLOUDFLARE_R2_API_KEY") || value("CLOUDFLARE_API_TOKEN"))
+  );
   const output = {
     INSTANTML_BIND_ADDR: "0.0.0.0:8000",
     INSTANTML_AUTH_MODE: "api-key",
@@ -472,7 +492,11 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_FRONTEND_BASE_URL: value("INSTANTML_FRONTEND_BASE_URL"),
     INSTANTML_SIGNUP_ALLOWED_EMAILS: allowedEmails,
     INSTANTML_SIGNUP_ALLOWED_DOMAINS: value("INSTANTML_SIGNUP_ALLOWED_DOMAINS"),
-    INSTANTML_ARTIFACT_UPLOADS_ENABLED: "false",
+    INSTANTML_ARTIFACT_BACKEND: value("INSTANTML_ARTIFACT_BACKEND") || (r2Configured ? "r2" : "local"),
+    INSTANTML_ARTIFACT_UPLOADS_ENABLED: value("INSTANTML_ARTIFACT_UPLOADS_ENABLED") || (r2Configured ? "true" : "false"),
+    CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,
+    CLOUDFLARE_R2_BUCKET_PREFIX: value("CLOUDFLARE_R2_BUCKET_PREFIX") || "instantml-org",
+    CLOUDFLARE_R2_ENDPOINT: value("CLOUDFLARE_R2_ENDPOINT"),
     INSTANTML_MAX_UPLOAD_BODY_BYTES: value("INSTANTML_MAX_UPLOAD_BODY_BYTES") || "50000000",
     INSTANTML_REQUEST_TIMEOUT_SECONDS: value("INSTANTML_REQUEST_TIMEOUT_SECONDS") || "900",
     CLERK_API_BASE: value("CLERK_API_BASE") || "https://api.clerk.com",
@@ -485,6 +509,30 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     output.INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST = value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST");
   }
   return Object.fromEntries(Object.entries(output).filter(([, val]) => val !== ""));
+}
+
+function cloudflareR2AccountId() {
+  return value("CLOUDFLARE_R2_ACCOUNT_ID") || value("CLOUDFLARE_ACCOUNT_ID");
+}
+
+function runtimeEnvForTarget(envVars, target) {
+  if (target.servicePlane !== "control") return envVars;
+  const output = { ...envVars };
+  for (const key of [
+    "INSTANTML_ARTIFACT_BACKEND",
+    "INSTANTML_ARTIFACT_UPLOADS_ENABLED",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_R2_BUCKET_PREFIX",
+    "CLOUDFLARE_R2_ENDPOINT",
+  ]) {
+    delete output[key];
+  }
+  return output;
+}
+
+function secretEnvForTarget(secretEnv, target) {
+  if (target.servicePlane !== "control") return secretEnv;
+  return secretEnv.filter((mapping) => !mapping.startsWith("CLOUDFLARE_"));
 }
 
 function buildImage() {

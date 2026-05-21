@@ -21,7 +21,7 @@ Current overage policy:
 - Extra seats are tracked as `paid_extra_seats` but are not billed yet.
 - Projects, runs, metric points, and estimated storage are `blocked_at_limit` for new writes until paid overages or custom terms are implemented.
 - API-key count and artifact counts are visibility-only.
-- Artifact registry is out of scope for this pricing slice.
+- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The planned paid storage overage target is `$0.03/GB-month` after the included pool, pending provider reconciliation and billing implementation.
 
 Usage-period semantics:
 
@@ -54,7 +54,7 @@ Primary hosted costs:
 | ClickHouse Cloud/User Data and tenant services | Compute, storage, service sizing, uptime, provider region | Dominant COGS. Free must be pooled. Pro should not receive uncapped dedicated services by default. Premium can justify dedicated capacity after payment/review. |
 | Cloud Run API | vCPU-second, GiB-second, requests, min instances | Usually secondary; request-based billing and low min instances keep control/data API overhead small. |
 | Clerk | Plan, retained users, org features, billing add-on if used | Low at beta scale but can become per-MRU/org-admin overhead. |
-| Object storage later | GB-month plus operation classes | Artifact bytes are not billable truth yet. R2 is attractive because standard storage is low cost and egress is not charged. |
+| Cloudflare R2 artifact storage | GB-month plus operation classes | Retained local/R2 artifact bytes are counted for usage guardrails now. R2 Standard storage is the cost basis, but invoice truth still needs provider reconciliation. |
 
 External pricing facts to re-check before launch:
 
@@ -62,6 +62,11 @@ External pricing facts to re-check before launch:
 - Cloud Run request-based services in `us-central1` list active CPU and memory rates, request charges, and a monthly free tier.
 - Cloudflare R2 Standard lists `$0.015/GB-month`, Class A and B operation charges, and no egress bandwidth charges.
 - Clerk lists a free Hobby plan, paid Pro/Business plans, B2B org features, and billing add-on charges if Clerk Billing is used.
+
+Current product copy should frame hosted artifact storage as included capacity
+with blocked-at-limit guardrails. Paid storage overage is planned around a
+`$0.03/GB-month` target plus provider operations, but should not be presented as
+billable truth until reconciliation is implemented.
 
 Sources:
 

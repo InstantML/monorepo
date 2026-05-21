@@ -109,6 +109,12 @@ test("ThemeToggle uses the web app localStorage key (instantml:next:theme)", () 
   );
 });
 
+test("NavLogo avoids invalid SVG auto dimensions", () => {
+  const src = fs.readFileSync(path.join(componentsDir, "NavLogo.tsx"), "utf8");
+  assert.doesNotMatch(src, /width=["']auto["']/);
+  assert.match(src, /const width = Math\.round\(height \* \(520 \/ 120\)\)/);
+});
+
 // ── page.tsx: server component wiring ────────────────────────────────────────
 describe("app/page.tsx — auth-aware home route", () => {
   const pagePath = path.join(__dirname, "..", "app", "page.tsx");

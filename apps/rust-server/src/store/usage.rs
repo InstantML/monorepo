@@ -73,12 +73,12 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         .get(&org_id)
         .cloned()
         .ok_or_else(|| AppError::not_found("organization not found"))?;
-    let artifact_bytes_exact: i64 = data
+    let org_artifacts = data
         .artifacts
         .values()
         .filter(|artifact| artifact.org_id == org_id)
-        .filter_map(|artifact| artifact.size_bytes)
-        .sum();
+        .collect::<Vec<_>>();
+    let artifact_usage = artifact_usage_counts(org_artifacts.iter().copied());
     let seats = data
         .memberships
         .values()
@@ -97,11 +97,7 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         .values()
         .filter(|run| run.org_id == org_id)
         .count() as i64;
-    let artifacts = data
-        .artifacts
-        .values()
-        .filter(|artifact| artifact.org_id == org_id)
-        .count() as i64;
+    let artifacts = artifact_usage.artifacts;
     let api_keys = data
         .api_keys
         .values()
@@ -111,7 +107,7 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
     let estimated_metadata_bytes =
         estimated_metadata_bytes(projects, runs, metric_series, artifacts, api_keys, seats);
     let storage_bytes_for_warnings = storage_bytes_for_warnings(
-        artifact_bytes_exact,
+        artifact_usage.artifact_bytes_exact,
         estimated_metadata_bytes,
         warehouse_storage_bytes_exact,
     );
@@ -126,8 +122,9 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         metric_series,
         artifacts,
         api_keys,
-        artifact_bytes_exact,
-        artifact_bytes_unknown_count: 0,
+        artifact_bytes_exact: artifact_usage.artifact_bytes_exact,
+        external_artifact_bytes_declared: artifact_usage.external_artifact_bytes_declared,
+        artifact_bytes_unknown_count: artifact_usage.artifact_bytes_unknown_count,
         estimated_metadata_bytes,
         warehouse_storage_bytes_exact,
         storage_bytes_for_warnings,
@@ -169,6 +166,7 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "artifacts": counts.artifacts,
             "api_keys": counts.api_keys,
             "artifact_bytes_exact": counts.artifact_bytes_exact,
+            "external_artifact_bytes_declared": counts.external_artifact_bytes_declared,
             "artifact_bytes_unknown": 0,
             "artifact_bytes_unknown_count": counts.artifact_bytes_unknown_count,
             "estimated_metadata_bytes": counts.estimated_metadata_bytes,
@@ -232,6 +230,39 @@ fn storage_bytes_for_warnings(
     warehouse_storage_bytes_exact: Option<i64>,
 ) -> i64 {
     artifact_bytes_exact + warehouse_storage_bytes_exact.unwrap_or(estimated_metadata_bytes)
+}
+
+fn retained_artifact_backend(storage_backend: &str) -> bool {
+    matches!(storage_backend, "local" | "r2")
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ArtifactUsage {
+    artifacts: i64,
+    artifact_bytes_exact: i64,
+    external_artifact_bytes_declared: i64,
+    artifact_bytes_unknown_count: i64,
+}
+
+fn artifact_usage_counts<'a>(
+    artifacts: impl IntoIterator<Item = &'a ArtifactRow>,
+) -> ArtifactUsage {
+    let mut usage = ArtifactUsage::default();
+    for artifact in artifacts {
+        usage.artifacts += 1;
+        match artifact.size_bytes {
+            Some(size_bytes) if retained_artifact_backend(&artifact.storage_backend) => {
+                usage.artifact_bytes_exact += size_bytes;
+            }
+            Some(size_bytes) => {
+                usage.external_artifact_bytes_declared += size_bytes;
+            }
+            None => {
+                usage.artifact_bytes_unknown_count += 1;
+            }
+        }
+    }
+    usage
 }
 
 fn usage_warnings(counts: &UsageCounts) -> Vec<Value> {
@@ -422,6 +453,7 @@ struct UsageCounts {
     artifacts: i64,
     api_keys: i64,
     artifact_bytes_exact: i64,
+    external_artifact_bytes_declared: i64,
     artifact_bytes_unknown_count: i64,
     estimated_metadata_bytes: i64,
     warehouse_storage_bytes_exact: Option<i64>,
@@ -581,6 +613,65 @@ mod tests {
         assert_eq!(storage_bytes_for_warnings(50, 10, None), 60);
     }
 
+    #[test]
+    fn artifact_usage_counts_retained_bytes_separately_from_external_metadata() {
+        let artifacts = [
+            test_artifact("local", Some(10)),
+            test_artifact("r2", Some(20)),
+            test_artifact("external", Some(1_000)),
+            test_artifact("external", None),
+        ];
+
+        let usage = artifact_usage_counts(artifacts.iter());
+
+        assert_eq!(
+            usage,
+            ArtifactUsage {
+                artifacts: 4,
+                artifact_bytes_exact: 30,
+                external_artifact_bytes_declared: 1_000,
+                artifact_bytes_unknown_count: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn usage_org_value_reports_unknown_artifact_count() {
+        let mut counts = test_counts("free");
+        counts.artifacts = 3;
+        counts.artifact_bytes_exact = 42;
+        counts.external_artifact_bytes_declared = 128;
+        counts.artifact_bytes_unknown_count = 2;
+
+        let value = usage_org_value(&counts);
+
+        assert_eq!(value["usage"]["artifacts"], 3);
+        assert_eq!(value["usage"]["artifact_bytes_exact"], 42);
+        assert_eq!(value["usage"]["external_artifact_bytes_declared"], 128);
+        assert_eq!(value["usage"]["artifact_bytes_unknown_count"], 2);
+        assert_eq!(value["usage"]["artifact_bytes_unknown"], 0);
+    }
+
+    fn test_artifact(storage_backend: &str, size_bytes: Option<i64>) -> ArtifactRow {
+        ArtifactRow {
+            id: Uuid::new_v4(),
+            org_id: Uuid::new_v4(),
+            run_id: Uuid::new_v4(),
+            kind: "file".to_string(),
+            name: "artifact.bin".to_string(),
+            uri: "instantml://artifacts/internal".to_string(),
+            step: None,
+            size_bytes,
+            sha256: None,
+            mime_type: None,
+            storage_backend: storage_backend.to_string(),
+            storage_key: None,
+            storage_path: None,
+            metadata: json!({}),
+            created_at: Utc::now(),
+        }
+    }
+
     fn test_counts(tier: &str) -> UsageCounts {
         let org = OrganizationRow {
             id: Uuid::new_v4(),
@@ -605,6 +696,7 @@ mod tests {
             artifacts: 0,
             api_keys: 0,
             artifact_bytes_exact: 0,
+            external_artifact_bytes_declared: 0,
             artifact_bytes_unknown_count: 0,
             estimated_metadata_bytes: 0,
             warehouse_storage_bytes_exact: None,

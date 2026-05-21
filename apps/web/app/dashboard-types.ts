@@ -56,6 +56,9 @@ export type Artifact = {
   uri: string;
   step: number | null;
   size_bytes?: number | null;
+  sha256?: string | null;
+  mime_type?: string | null;
+  storage_backend?: string | null;
   metadata: Record<string, unknown>;
 };
 

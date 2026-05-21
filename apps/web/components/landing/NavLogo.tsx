@@ -16,6 +16,7 @@ export function NavLogo({
 }) {
   if (showWordmark) {
     const height = size * 1.25;
+    const width = Math.round(height * (520 / 120));
     return (
       <span
         className="landing-nav-logo logo-anim"
@@ -25,7 +26,7 @@ export function NavLogo({
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 520 120"
           height={height}
-          width="auto"
+          width={width}
           aria-label="InstantML"
           role="img"
           fontFamily="var(--font-sans), system-ui, sans-serif"

@@ -26,7 +26,7 @@ import { MetricCard } from "../ui/metric-card";
 import { MetricChart } from "../metrics/metric-chart";
 import { RichObjectPanel } from "../detail/rich-object-panel";
 import { RunDetail } from "../detail/run-detail";
-import { shortMetricName } from "../../dashboard-models";
+import { safeArtifactUri, shortMetricName } from "../../dashboard-models";
 import type {
   Artifact,
   HoverPoint,
@@ -396,7 +396,7 @@ function EvidencePreview({ item, rowsByObjectId }: { item: any; rowsByObjectId: 
           <div><span>Type</span><strong>{item.artifact.type}</strong></div>
           <div><span>Size</span><strong>{formatNumber(item.artifact.size_bytes, 0)} bytes</strong></div>
           <div><span>Step</span><strong>{item.artifact.step === null ? "none" : item.artifact.step}</strong></div>
-          <div><span>URI</span><strong>{item.artifact.uri}</strong></div>
+          <div><span>URI</span><strong>{safeArtifactUri(item.artifact.uri)}</strong></div>
         </div>
         <pre className="evidence-code-preview">
           {JSON.stringify({
@@ -404,7 +404,7 @@ function EvidencePreview({ item, rowsByObjectId }: { item: any; rowsByObjectId: 
             type: item.artifact.type,
             step: item.artifact.step,
             size_bytes: item.artifact.size_bytes,
-            uri: item.artifact.uri,
+            uri: safeArtifactUri(item.artifact.uri),
             metadata: item.artifact.metadata ?? {},
           }, null, 2)}
         </pre>

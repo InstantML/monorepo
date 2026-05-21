@@ -33,8 +33,24 @@
               "application/octet-stream": {}
             }
           },
+          "206": {
+            "description": "Artifact byte range",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read scope required",
             "content": {
               "application/json": {
                 "schema": {
@@ -521,6 +537,64 @@
           },
           {
             "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/demo/reset": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "reset_demo",
+        "responses": {
+          "200": {
+            "description": "Reset deterministic demo project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Plan limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing ingest scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
           }
         ]
       }
@@ -1907,6 +1981,16 @@
               }
             }
           },
+          "403": {
+            "description": "Read scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Run not found",
             "content": {
@@ -2064,7 +2148,7 @@
             }
           },
           "403": {
-            "description": "Artifact byte uploads disabled in hosted mode",
+            "description": "Artifact byte uploads disabled by server configuration",
             "content": {
               "application/json": {
                 "schema": {
@@ -3652,92 +3736,7 @@
         ],
         "properties": {
           "artifact": {
-            "$ref": "#/components/schemas/ArtifactRow"
-          }
-        }
-      },
-      "ArtifactRow": {
-        "type": "object",
-        "required": [
-          "id",
-          "org_id",
-          "run_id",
-          "type",
-          "name",
-          "uri",
-          "storage_backend",
-          "metadata",
-          "created_at"
-        ],
-        "properties": {
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "mime_type": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "org_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "run_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sha256": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "size_bytes": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64"
-          },
-          "step": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "storage_backend": {
-            "type": "string"
-          },
-          "storage_key": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "storage_path": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "type": {
-            "type": "string"
-          },
-          "uri": {
-            "type": "string"
+            "$ref": "#/components/schemas/PublicArtifactRow"
           }
         }
       },
@@ -3750,7 +3749,7 @@
           "artifacts": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ArtifactRow"
+              "$ref": "#/components/schemas/PublicArtifactRow"
             }
           }
         }
@@ -5267,6 +5266,79 @@
           "service_account_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "PublicArtifactRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "run_id",
+          "type",
+          "name",
+          "uri",
+          "storage_backend",
+          "metadata",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "storage_backend": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
           }
         }
       },

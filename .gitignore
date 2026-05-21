@@ -10,6 +10,7 @@ node_modules/
 .next/
 apps/web/.next/
 apps/web/next-env.d.ts
+*.tsbuildinfo
 coverage/
 dist/
 build/

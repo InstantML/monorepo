@@ -154,7 +154,7 @@ pub async fn export_data(
         .iter()
         .flat_map(|run_id| data.artifacts_by_run.get(run_id).into_iter().flatten())
         .filter_map(|id| data.artifacts.get(id))
-        .cloned()
+        .map(|artifact| artifact.public_row())
         .collect::<Vec<_>>();
     let artifacts_truncated = artifacts.len() > MAX_EXPORT_ARTIFACTS;
     artifacts.truncate(MAX_EXPORT_ARTIFACTS);

@@ -182,18 +182,11 @@ fn import_usage_delta(canonical: &CanonicalImport, project_exists: bool) -> Usag
         .iter()
         .map(|run| run.artifacts.len() as i64)
         .sum::<i64>();
-    let artifact_bytes = canonical
-        .runs
-        .iter()
-        .flat_map(|run| run.artifacts.iter())
-        .filter_map(|artifact| artifact.size_bytes)
-        .sum::<i64>();
     UsageDelta {
         projects: if project_exists { 0 } else { 1 },
         runs,
         metric_points,
-        storage_bytes: artifact_bytes
-            + artifacts * ARTIFACT_METADATA_BYTES
+        storage_bytes: artifacts * ARTIFACT_METADATA_BYTES
             + runs * RUN_METADATA_BYTES
             + if project_exists {
                 0

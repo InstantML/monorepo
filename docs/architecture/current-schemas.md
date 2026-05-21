@@ -550,7 +550,7 @@ rich object types such as `table`, `image`, `video`, `audio`, and
 projection, so shared multi-writer data cells need durable per-org ids or
 deterministic ids before automatic write scaling.
 
-### `ArtifactRow`
+### Internal `ArtifactRow` And Public Artifact Responses
 
 ```json
 {
@@ -559,21 +559,29 @@ deterministic ids before automatic write scaling.
   "run_id": "uuid",
   "type": "checkpoint",
   "name": "model.pt",
-  "uri": "file:///data/artifacts/...",
+  "uri": "instantml://artifacts/instantml-org-.../runs/.../model.pt",
   "step": 10,
   "size_bytes": 128,
   "sha256": "hex",
   "mime_type": "application/octet-stream",
-  "storage_backend": "local",
-  "storage_key": "org/run/artifact",
-  "storage_path": "/data/artifacts/...",
+  "storage_backend": "r2",
+  "storage_key": "instantml-org-.../runs/.../model.pt",
+  "storage_path": "r2://instantml-org-.../runs/.../model.pt",
   "metadata": {},
   "created_at": "2026-05-16T00:00:00Z"
 }
 ```
 
-Hosted artifact byte storage is currently disabled. This row stores artifact
-metadata and local/external references.
+This row stores artifact metadata and byte references. Local uploads use
+`storage_backend: "local"` with a relative local `storage_key`; hosted R2
+uploads use `storage_backend: "r2"`, `storage_key: "<bucket>/<object_key>"`,
+and `storage_path: "r2://<bucket>/<object_key>"`. External metadata-only rows
+use `storage_backend: "external"` and do not download through the byte route.
+Internal storage keys are not returned by artifact list/create/upload responses.
+The public response shape preserves `id`, `org_id`, `run_id`, `type`, `name`,
+`step`, `size_bytes`, `sha256`, `mime_type`, `storage_backend`, `metadata`, and
+`created_at`, but returns `uri: "instantml://artifacts/<artifact_id>"` for
+stored local/R2 bytes and omits `storage_key` and `storage_path`.
 
 ### `TableRowsRecord`
 
@@ -699,6 +707,7 @@ writes horizontally.
         "artifacts": 3,
         "api_keys": 1,
         "artifact_bytes_exact": 12345,
+        "external_artifact_bytes_declared": 4096,
         "artifact_bytes_unknown": 0,
         "artifact_bytes_unknown_count": 0,
         "estimated_metadata_bytes": 8192,
@@ -906,8 +915,13 @@ When changing schemas or payload fields:
 - Shared data-plane cells remain single-writer by default. Durable uniqueness,
   per-org sequences or deterministic ids, and atomic idempotency are required
   before multi-writer data cells are safe.
-- Hosted artifact byte storage is not implemented; artifact rows currently
-  store metadata and local/external references.
+- R2-backed artifact storage uses the current JSON/base64 upload route. Large
+  checkpoint direct-upload, multipart upload, provider reconciliation, and
+  retention/delete policies remain future designs.
+- Usage storage guardrails count retained InstantML-owned local/R2 artifact
+  bytes. External/imported artifact sizes remain visible as declared metadata
+  but do not consume retained-storage quota unless a future import copies those
+  bytes into InstantML-owned storage.
 - `password_ciphertext` in `TenantRouteRecord` is currently a temporary
   plaintext field gated by config. Production secret-manager-backed tenant
   passwords need a separate design.

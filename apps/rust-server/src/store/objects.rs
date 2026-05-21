@@ -304,7 +304,7 @@ pub async fn create_artifact(
     run_id: Uuid,
     input: CreateArtifactRequest,
 ) -> AppResult<ArtifactRow> {
-    let artifact = artifact_from_input(store, ctx, run_id, input, None).await?;
+    let artifact = artifact_from_input(store, ctx, run_id, input, None, true).await?;
     Ok(artifact)
 }
 
@@ -324,42 +324,54 @@ pub async fn upload_artifact(
     if content.trim().is_empty() {
         return Err(AppError::validation("content_base64 is required"));
     }
-    let artifact_store = LocalArtifactStore::new(&config.artifact_root);
-    let staged = artifact_store
-        .stage_base64(ctx.org_id, run_id, artifact_id, &name, content)
-        .await?;
-    if let Err(error) = artifact_store.finalize(&staged).await {
-        artifact_store.cleanup(&staged.tmp_path).await;
-        artifact_store.cleanup(&staged.final_path).await;
-        return Err(error);
+    let prepared = prepare_base64_artifact(content)?;
+    {
+        let data = store.data.lock().await;
+        let run = fetch_run_in_data(&data, ctx, run_id)?;
+        ensure_run_access_in_data(ctx, &run)?;
     }
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            storage_bytes: prepared.size_bytes + ARTIFACT_METADATA_BYTES,
+            ..UsageDelta::default()
+        },
+        "upload an artifact",
+    )
+    .await?;
+    let size_bytes = prepared.size_bytes;
+    let sha256 = prepared.sha256.clone();
+    let artifact_store = ArtifactByteStore::for_upload(config)?;
+    let stored = artifact_store
+        .store_prepared(
+            ctx.org_id,
+            run_id,
+            artifact_id,
+            &name,
+            input.mime_type.as_deref(),
+            prepared,
+        )
+        .await?;
     let request = CreateArtifactRequest {
         kind: input.kind,
         name: Some(name),
-        uri: Some(staged.uri.clone()),
+        uri: Some(stored.uri.clone()),
         step: input.step,
-        size_bytes: Some(json!(staged.size_bytes)),
-        sha256: Some(staged.sha256.clone()),
+        size_bytes: Some(json!(size_bytes)),
+        sha256: Some(sha256),
         mime_type: input.mime_type,
         metadata: input.metadata,
         path: input.path,
     };
-    let storage_key = staged.storage_key.clone();
-    let artifact = match artifact_from_input(
-        store,
-        ctx,
-        run_id,
-        request,
-        Some((artifact_id, storage_key)),
-    )
-    .await
-    {
-        Ok(artifact) => artifact,
-        Err(error) => {
-            artifact_store.cleanup(&staged.final_path).await;
-            return Err(error);
-        }
-    };
+    let artifact =
+        match artifact_from_input(store, ctx, run_id, request, Some(stored.clone()), false).await {
+            Ok(artifact) => artifact,
+            Err(error) => {
+                artifact_store.cleanup(&stored).await;
+                return Err(error);
+            }
+        };
     Ok(artifact)
 }
 
@@ -368,7 +380,8 @@ async fn artifact_from_input(
     ctx: &RequestContext,
     run_id: Uuid,
     input: CreateArtifactRequest,
-    stored: Option<(Uuid, String)>,
+    stored: Option<StoredArtifact>,
+    enforce_capacity: bool,
 ) -> AppResult<ArtifactRow> {
     let name = validate_name(input.name.as_deref(), "artifact name")?;
     let kind = validate_artifact_type(input.kind.as_deref().unwrap_or("file"))?;
@@ -392,22 +405,29 @@ async fn artifact_from_input(
         let run = fetch_run_in_data(&data, ctx, run_id)?;
         ensure_run_access_in_data(ctx, &run)?;
     }
-    enforce_plan_capacity(
-        store,
-        ctx.org_id,
-        UsageDelta {
-            storage_bytes: size_bytes.unwrap_or(0) + ARTIFACT_METADATA_BYTES,
-            ..UsageDelta::default()
-        },
-        "create an artifact",
-    )
-    .await?;
+    if enforce_capacity {
+        let stored_bytes = if stored.is_some() {
+            size_bytes.unwrap_or(0)
+        } else {
+            0
+        };
+        enforce_plan_capacity(
+            store,
+            ctx.org_id,
+            UsageDelta {
+                storage_bytes: stored_bytes + ARTIFACT_METADATA_BYTES,
+                ..UsageDelta::default()
+            },
+            "create an artifact",
+        )
+        .await?;
+    }
     let mut data = store.data.lock().await;
     let run = fetch_run_in_data(&data, ctx, run_id)?;
     ensure_run_access_in_data(ctx, &run)?;
-    let (id, storage_key) = stored.unwrap_or_else(|| (Uuid::new_v4(), String::new()));
+    let stored = stored.as_ref();
     let artifact = ArtifactRow {
-        id,
+        id: stored.map(|stored| stored.id).unwrap_or_else(Uuid::new_v4),
         org_id: ctx.org_id,
         run_id,
         kind,
@@ -419,13 +439,11 @@ async fn artifact_from_input(
         mime_type: input
             .mime_type
             .or_else(|| mime_guess::from_path(&name).first_raw().map(str::to_string)),
-        storage_backend: if storage_key.is_empty() {
-            "external".to_string()
-        } else {
-            "local".to_string()
-        },
-        storage_key: (!storage_key.is_empty()).then_some(storage_key),
-        storage_path: None,
+        storage_backend: stored
+            .map(|stored| stored.storage_backend.clone())
+            .unwrap_or_else(|| "external".to_string()),
+        storage_key: stored.map(|stored| stored.storage_key.clone()),
+        storage_path: stored.and_then(|stored| stored.storage_path.clone()),
         metadata,
         created_at: Utc::now(),
     };

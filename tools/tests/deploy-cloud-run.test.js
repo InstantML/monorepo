@@ -71,6 +71,17 @@ test("deploy helper keeps public routing HTTPS-only", () => {
   assert.doesNotMatch(source, /--ports", "80/);
 });
 
+test("deploy helper honors R2 aliases and keeps Cloudflare env off control services", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /function cloudflareR2AccountId/);
+  assert.match(source, /CLOUDFLARE_R2_ACCOUNT_ID/);
+  assert.match(source, /function runtimeEnvForTarget/);
+  assert.match(source, /function secretEnvForTarget/);
+  assert.match(source, /target\.servicePlane !== "control"/);
+  assert.match(source, /!mapping\.startsWith\("CLOUDFLARE_"\)/);
+});
+
 function runDeploy(args, env = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-deploy-test-"));
   const binDir = path.join(tempDir, "bin");

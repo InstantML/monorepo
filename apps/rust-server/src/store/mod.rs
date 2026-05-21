@@ -42,7 +42,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::{
-    artifact_store::LocalArtifactStore,
+    artifact_store::{prepare_base64_artifact, ArtifactByteStore, StoredArtifact},
     auth::{generate_api_key, generate_session_token, hash_idempotency, hash_secret},
     config::{AppConfig, HostedClickHouseConfig},
     control_store::{ControlRecordRow, ControlStore},

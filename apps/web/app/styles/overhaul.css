@@ -912,7 +912,9 @@ textarea:focus {
   padding: 0 16px;
   border-top: 1px solid var(--line);
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
 }
 .workbar .control {
   display: flex;

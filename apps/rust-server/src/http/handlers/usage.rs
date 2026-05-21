@@ -79,3 +79,24 @@ pub async fn usage_export(
     require_scope(&ctx, "usage:read", &state)?;
     Ok(Json(store::usage_export(&state.store, &ctx).await?))
 }
+
+#[utoipa::path(
+    post,
+    path = "/api/demo/reset",
+    tag = "runs",
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Reset deterministic demo project", body = crate::http::openapi::JsonObjectResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing ingest scope", body = crate::http::openapi::ErrorResponse),
+        (status = 402, description = "Plan limit exceeded", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn reset_demo(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    Ok(Json(store::reset_demo(&state.store, &ctx).await?))
+}

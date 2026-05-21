@@ -20,6 +20,7 @@ function artifactFromLoggedObject(object: LoggedObject): Artifact | null {
     uri: object.artifact.uri ?? "",
     step: object.step,
     size_bytes: object.artifact.size_bytes,
+    mime_type: object.artifact.mime_type,
     metadata: {
       kind: object.kind,
       mime_type: object.artifact.mime_type,

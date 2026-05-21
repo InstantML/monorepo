@@ -529,6 +529,10 @@ export function safeArtifactUri(value: unknown) {
   }
 }
 
+export function artifactHasStoredBytes(artifact: Pick<Artifact, "id" | "storage_backend">) {
+  return Boolean(artifact.id) && (artifact.storage_backend === "local" || artifact.storage_backend === "r2");
+}
+
 export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[] {
   const rows: AlertRow[] = [];
   for (const run of runs) {

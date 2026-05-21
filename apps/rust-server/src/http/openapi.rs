@@ -30,17 +30,17 @@ use utoipa::{
 use serde_json::Value;
 
 use crate::domain::{
-    ArtifactRow, AttributeInput, AttributeRow, AuthSessionPayload, ClerkAuthRequest,
-    ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest, CreateArtifactRequest,
-    CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
-    CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-    DashboardPreferenceRow, DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest,
-    DeviceCodePollRequest, DeviceCodeStartRequest, LogMetricsRequest, MembershipRow,
-    MetricPointRow, MetricSeriesRow, OnboardingApiKey, OrganizationMembershipSummary,
-    OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow, ReserveSeatRequest,
-    RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
-    SwitchOrganizationRequest, UpdateDashboardPreferencesRequest, UpdateRunRequest,
-    UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
+    AttributeInput, AttributeRow, AuthSessionPayload, ClerkAuthRequest, ConsoleLogInput,
+    ConsoleLogLine, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
+    CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest,
+    CreateRunRequest, CreateUserRequest, DashboardPreferenceRow, DevGoogleAuthRequest,
+    DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
+    LogMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
+    OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
+    PublicApiKeyRow, PublicArtifactRow, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest,
+    SeatRow, SeatUserRow, ServiceAccountRow, SwitchOrganizationRequest,
+    UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+    UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
 };
 
 // ============================================================================
@@ -239,12 +239,12 @@ pub struct ObjectEnvelope {
 
 #[derive(Serialize, ToSchema)]
 pub struct ArtifactEnvelope {
-    pub artifact: ArtifactRow,
+    pub artifact: PublicArtifactRow,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct ArtifactsEnvelope {
-    pub artifacts: Vec<ArtifactRow>,
+    pub artifacts: Vec<PublicArtifactRow>,
 }
 
 // ============================================================================
@@ -366,6 +366,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::usage::export_data,
         crate::http::handlers::usage::usage_summary,
         crate::http::handlers::usage::usage_export,
+        crate::http::handlers::usage::reset_demo,
         crate::http::handlers::imports::list_imports,
         crate::http::handlers::imports::import_neptune,
         crate::http::handlers::imports::import_wandb,
@@ -408,7 +409,7 @@ impl Modify for SecurityAddon {
         ArtifactsEnvelope,
         JsonObjectResponse,
         // domain
-        ArtifactRow,
+        PublicArtifactRow,
         AttributeInput,
         AttributeRow,
         AuthSessionPayload,

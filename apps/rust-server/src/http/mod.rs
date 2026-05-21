@@ -34,9 +34,9 @@ use handlers::{
     list_console_logs, list_imports, list_object_rows, list_objects, list_org_memberships,
     list_orgs, list_projects, list_runs, list_seats, list_users, list_workspace_views,
     log_console_logs, log_metrics, metrics_handler, metrics_series, not_found, openapi_json,
-    org_name_availability, overview, readyz, reserve_seat, revoke_api_key, runs_summary,
-    side_by_side, update_dashboard_preferences, update_run, update_workspace_view, upload_artifact,
-    usage_export, usage_summary,
+    org_name_availability, overview, readyz, reserve_seat, reset_demo, revoke_api_key,
+    runs_summary, side_by_side, update_dashboard_preferences, update_run, update_workspace_view,
+    upload_artifact, usage_export, usage_summary,
 };
 
 const SESSION_COOKIE: &str = "instantml_session";
@@ -179,6 +179,7 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/api/export", get(export_data))
         .route("/api/usage", get(usage_summary))
         .route("/api/usage/export", get(usage_export))
+        .route("/api/demo/reset", post(reset_demo))
         .route("/api/imports", get(list_imports))
         .route("/api/imports/neptune", post(import_neptune))
         .route("/api/imports/wandb", post(import_wandb))
