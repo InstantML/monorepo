@@ -30,6 +30,7 @@ import {
   visibleSelectionState,
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
+import { buildCheckpointResumeCode } from "../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -297,6 +298,77 @@ test("evidence helpers group and filter current artifact/object surfaces", () =>
   assert.equal(firstEvidenceItem([]), null);
   const filtered = buildEvidenceSections({ artifacts: [checkpoint, file], objects: [object], search: "samples" });
   assert.deepEqual(filtered.map((section) => section.items.length), [0, 1, 0]);
+});
+
+test("checkpoint resume helper copies a runnable project-scoped snippet", () => {
+  const artifact = {
+    id: "artifact-1",
+    type: "checkpoint",
+    name: "checkpoint step 12.json",
+    step: 12,
+    metadata: { checkpoint: { step: 12 } },
+  };
+  const run = {
+    id: "run-1",
+    project: "demo",
+    name: "seed-44",
+    config: { seed: 44, optimizer: { lr: 0.01 }, use_amp: false },
+  };
+  const code = buildCheckpointResumeCode(artifact, run, { baseUrl: "https://api.instantml.ai", apiKey: "instantml_test" });
+
+  assert.match(code, /api = im\.Api\(base_url="https:\/\/api\.instantml\.ai", api_key="instantml_test"\)/);
+  assert.match(code, /project="checkpoints"/);
+  assert.match(code, /"resume_from_checkpoint":/);
+  assert.match(code, /"checkpoint_id": "artifact-1"/);
+  assert.match(code, /"source_run_id": "run-1"/);
+  assert.match(code, /"checkpoint_step": 12/);
+  assert.match(code, /"use_amp": False/);
+  assert.match(code, /checkpoints\/checkpoint-step-12\.json/);
+});
+
+test("checkpoint resume helper handles fallback metadata and python literals", () => {
+  const code = buildCheckpointResumeCode(
+    {
+      id: "artifact/2",
+      type: "checkpoint",
+      name: "",
+      step: null,
+      metadata: { checkpoint: { step: 9 } },
+    },
+    {
+      id: "run-2",
+      project: "demo",
+      name: "fallback",
+      config: {
+        layers: [64, 32],
+        empty: [],
+        empty_obj: {},
+        nullable: null,
+        bad_number: Number.POSITIVE_INFINITY,
+        omit_me: undefined,
+        callback: () => "unused",
+      },
+    },
+  );
+
+  assert.match(code, /name="resume-from-fallback-step-9"/);
+  assert.match(code, /"artifact\/2"/);
+  assert.match(code, /"checkpoint_step": 9/);
+  assert.match(code, /"layers": \[\n {12}64,\n {12}32,\n {8}\]/);
+  assert.match(code, /"empty": \[\]/);
+  assert.match(code, /"empty_obj": \{\}/);
+  assert.match(code, /"nullable": None/);
+  assert.match(code, /"bad_number": None/);
+  assert.match(code, /"callback": "\(\) => \\"unused\\""/);
+  assert.doesNotMatch(code, /omit_me/);
+
+  const invalidMetadataCode = buildCheckpointResumeCode(
+    { id: "artifact-3", type: "checkpoint", name: undefined, step: null, metadata: { checkpoint: [] } },
+    { id: "run-3", project: "demo", name: "no-step", config: {} },
+  );
+  assert.match(invalidMetadataCode, /name="resume-from-no-step"/);
+  assert.match(invalidMetadataCode, /checkpoints\/artifact-3\.ckpt/);
+  assert.match(invalidMetadataCode, /"checkpoint_step": None/);
 });
 
 test("comparison helpers sort, aggregate, group, smooth, and average runs", () => {

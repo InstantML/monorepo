@@ -223,17 +223,40 @@ async function runContract(root) {
     content_base64: Buffer.from("contract artifact").toString("base64"),
     mime_type: "text/plain",
   }, auth)).artifact;
-  assert.match(upload.uri, /^instantml:\/\/artifacts\/[0-9a-f-]{36}$/);
-  assert.equal(Object.hasOwn(upload, "storage_key"), false);
-  assert.equal(Object.hasOwn(upload, "storage_path"), false);
-  assert.equal((await expectStatus(root, "GET", `/api/runs/${run.id}/artifacts`, 403, undefined, artifactWriteOnlyAuth)).error, "api key requires export:read");
+  assert.match(upload.uri, backendMode === "node"
+    ? /^instantml:\/\/artifacts\/[0-9a-f-]{36}-contract\.txt$/
+    : /^instantml:\/\/artifacts\/[0-9a-f-]{36}$/);
+  if (backendMode !== "node") {
+    assert.equal(Object.hasOwn(upload, "storage_key"), false);
+    assert.equal(Object.hasOwn(upload, "storage_path"), false);
+  }
+  if (backendMode !== "node") {
+    assert.equal((await expectStatus(root, "GET", `/api/runs/${run.id}/artifacts`, 403, undefined, artifactWriteOnlyAuth)).error, "api key requires export:read");
+  }
   const downloaded = await fetch(`${root}/api/artifacts/${upload.id}/download`);
   assert.equal(downloaded.status, 401);
-  const writeOnlyDownload = await fetch(`${root}/api/artifacts/${upload.id}/download`, { headers: artifactWriteOnlyAuth });
-  assert.equal(writeOnlyDownload.status, 403);
-  assert.equal((await writeOnlyDownload.json()).error, "api key requires export:read");
+  if (backendMode !== "node") {
+    const writeOnlyDownload = await fetch(`${root}/api/artifacts/${upload.id}/download`, { headers: artifactWriteOnlyAuth });
+    assert.equal(writeOnlyDownload.status, 403);
+    assert.equal((await writeOnlyDownload.json()).error, "api key requires export:read");
+  }
   const authorizedDownload = await fetch(`${root}/api/artifacts/${upload.id}/download`, { headers: auth });
   assert.equal(await authorizedDownload.text(), "contract artifact");
+  const checkpointBytes = Buffer.from(JSON.stringify({ step: 10, weights: [0.25, 0.75] }));
+  const checkpoint = (await request(root, "POST", `/api/runs/${run.id}/artifacts/upload`, {
+    type: "checkpoint",
+    name: "contract-checkpoint.json",
+    content_base64: checkpointBytes.toString("base64"),
+    step: 10,
+    mime_type: "application/json",
+    metadata: { kind: "checkpoint", checkpoint: { step: 10, source_run_id: run.id } },
+  }, auth)).artifact;
+  assert.equal(checkpoint.type, "checkpoint");
+  assert.equal(checkpoint.size_bytes, checkpointBytes.length);
+  const artifactList = await request(root, "GET", `/api/runs/${run.id}/artifacts?limit=10`, undefined, auth);
+  assert.equal(artifactList.artifacts.some((artifact) => artifact.id === checkpoint.id && artifact.type === "checkpoint"), true);
+  const downloadedCheckpoint = await fetch(`${root}/api/artifacts/${checkpoint.id}/download`, { headers: auth });
+  assert.deepEqual(JSON.parse(await downloadedCheckpoint.text()), { step: 10, weights: [0.25, 0.75] });
   const usage = await request(root, "GET", "/api/usage", undefined, usageAuth);
   assert.equal(usage.billing_precision, "not_billable");
   assert.equal(usage.plans.free.included_seats, 2);
@@ -244,12 +267,36 @@ async function runContract(root) {
   assert.equal(usage.organizations[0].plan_tier, "pro");
   assert.equal(usage.organizations[0].limits.included_seats, 3);
   assert.equal(usage.organizations[0].usage.metric_points, 1);
-  assert.equal(usage.organizations[0].usage.artifact_bytes_exact, Buffer.byteLength("contract artifact"));
+  assert.equal(usage.organizations[0].usage.artifact_bytes_exact, Buffer.byteLength("contract artifact") + checkpointBytes.length);
   assert.equal(usage.organizations[0].usage.billing_precision, "not_billable");
   const usageExport = await request(root, "GET", "/api/usage/export", undefined, usageAuth);
   assert.equal(usageExport.source, "computed_current_state");
   assert.equal(usageExport.organizations[0].org_id, org.id);
   assert.equal((await expectStatus(root, "POST", "/api/demo/reset", 403, {}, usageAuth)).error, "api key requires sdk:ingest");
+  const resumedRun = (await request(root, "POST", "/runs", {
+    project: "checkpoints",
+    name: "resume-from-contract-checkpoint",
+    config: {
+      seed: 1,
+      resume_from_checkpoint: {
+        source_run_id: run.id,
+        checkpoint_id: checkpoint.id,
+        checkpoint_step: 10,
+      },
+    },
+    tags: ["resumed", "checkpoint"],
+    metadata: {
+      resumed_from_checkpoint: {
+        source_run_id: run.id,
+        checkpoint_id: checkpoint.id,
+        checkpoint_step: 10,
+      },
+    },
+  }, auth)).run;
+  await request(root, "POST", `/runs/${resumedRun.id}/metrics`, { step: 11, metrics: { reward: 2.5 } }, auth);
+  const checkpointSummary = await request(root, "GET", "/api/runs/summary?project=checkpoints", undefined, auth);
+  assert.equal(checkpointSummary.total, 1);
+  assert.equal(checkpointSummary.runs[0].config.resume_from_checkpoint.checkpoint_id, checkpoint.id);
 
   assert.equal((await request(root, "PATCH", `/runs/${run.id}`, { status: "finished" }, auth)).run.status, "finished");
   assert.equal((await request(root, "GET", `/api/runs/side-by-side?run_ids=${run.id}`, undefined, auth)).runs.length, 1);

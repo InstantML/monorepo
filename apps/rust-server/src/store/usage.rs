@@ -615,8 +615,11 @@ mod tests {
 
     #[test]
     fn artifact_usage_counts_retained_bytes_separately_from_external_metadata() {
+        let mut local_checkpoint = test_artifact("local", Some(15));
+        local_checkpoint.kind = "checkpoint".to_string();
         let artifacts = [
             test_artifact("local", Some(10)),
+            local_checkpoint,
             test_artifact("r2", Some(20)),
             test_artifact("external", Some(1_000)),
             test_artifact("external", None),
@@ -627,8 +630,8 @@ mod tests {
         assert_eq!(
             usage,
             ArtifactUsage {
-                artifacts: 4,
-                artifact_bytes_exact: 30,
+                artifacts: 5,
+                artifact_bytes_exact: 45,
                 external_artifact_bytes_declared: 1_000,
                 artifact_bytes_unknown_count: 1,
             }

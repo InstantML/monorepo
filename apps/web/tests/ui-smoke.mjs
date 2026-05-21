@@ -111,6 +111,14 @@ try {
       mime_type: "image/png",
       metadata: { kind: "image", caption: "qa preview" },
     })).artifact;
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
+      type: "checkpoint",
+      name: "qa-checkpoint.json",
+      content_base64: Buffer.from(JSON.stringify({ step: 2, weights: [0.42, 0.58] })).toString("base64"),
+      step: 2,
+      mime_type: "application/json",
+      metadata: { kind: "checkpoint", checkpoint: { step: 2, source_run_id: seedRunId } },
+    });
     await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/objects`, {
       key: "media/qa-image",
       kind: "image",
@@ -412,6 +420,11 @@ try {
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
+  if (backendMode !== "node") {
+    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Resume Code"));
+    assert.match(await page.locator("#run-detail").innerText(), /qa-checkpoint\.json/);
+    await page.getByRole("button", { name: /Resume Code/ }).first().click();
+  }
   assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Files is opened");
   if (backendMode !== "node") {
     const logsBeforeRunTab = logUrls.length;

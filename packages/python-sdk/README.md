@@ -50,12 +50,18 @@ run.log_objects({
     "eval/scores": ro.Histogram([0, 0.5, 1.0], [3, 9]),
     "eval/frame": ro.Image.from_data([[[255, 0, 0]]]),
 }, step=1)
+checkpoint_policy = ro.CheckpointPolicy(every_steps=100)
+if checkpoint_policy.should_save(100):
+    run.log_checkpoint_file("checkpoints/policy.pt", step=100)
 run.log({"checkpoint": ro.File("checkpoints/policy.pt", artifact_type="checkpoint")}, step=1)
 run.log_checkpoint("checkpoint.pt", "demo://checkpoint.pt", step=1)
 run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
 run.log_table("eval-table.jsonl", "demo://eval-table.jsonl", step=1)
 run.flush()
 run.finish()
+
+api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
+checkpoint_path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
 ```
 
 ## CLI: Login, logout, whoami
@@ -130,7 +136,7 @@ page = api.runs(
 )
 ```
 
-`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`.
+`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI.
 
 Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
 
@@ -364,7 +370,10 @@ Local file upload against the Rust server:
 
 ```python
 run.upload_file("checkpoints/policy.pt", artifact_type="checkpoint", step=100)
+run.log_checkpoint_file("checkpoints/policy.pt", step=100, metadata={"framework": "torch"})
 ```
+
+Use `CheckpointPolicy(every_steps=N)` when a training loop wants an explicit interval. `Run.log_checkpoint_file()` is a checkpoint-specific wrapper around `upload_file()` that stores bytes as `type="checkpoint"` and records restore metadata such as the source run ID and step. Existing metadata-only `log_checkpoint()` remains available when bytes are stored outside InstantML.
 
 For local development without packaging:
 
@@ -378,7 +387,7 @@ PYTHONPATH=packages/python-sdk python3 -c "import instantml as ro; print(ro.Clie
 python3 -m pytest
 ```
 
-The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `InstantMLError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` additionally hashes and sends bytes to local artifact storage in sync mode and records a source path for the uploader in process spool mode.
+The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `InstantMLError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 

@@ -11,12 +11,15 @@ python train.py
 import instantml as im
 
 run = im.init(project="llm-7b-sft", config=cfg)
+checkpoint_policy = im.CheckpointPolicy(every_steps=500)
 
 for step, batch in enumerate(loader):
     loss = train_step(batch)
-    run.log({"loss": loss, "step": step})
+    run.log({"loss": loss}, step=step)
+    if checkpoint_policy.should_save(step):
+        save_model("./ckpt/model.pt")
+        run.log_checkpoint_file("./ckpt/model.pt", step=step)
 
-run.log_artifact("checkpoint", "./ckpt")
 run.finish()
 ```
 

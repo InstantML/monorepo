@@ -9,6 +9,7 @@ Examples now target the primary Rust/ClickHouse server through the same public S
 Expected examples:
 
 - `iris-classification/`: real-data NumPy softmax classifier on the UCI Iris dataset with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
+- `checkpoints/`: deterministic checkpoint dogfood example that uploads checkpoint bytes and resumes a new run in the `checkpoints` project.
 - `rl-cartpole/`: deterministic RL-style logging example.
 - `q-learning-gridworld/`: tabular Q-learning dogfood example with checkpoints and rollout metadata.
 - `contextual-bandit/`: online bandit dogfood example with policy comparison, regret, checkpoints, rollouts, and reports.

@@ -1209,7 +1209,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = (activeTab === "detail" && runWorkspaceTab === "files") || activeTab === "artifacts" || activeTab === "models";
+      const shouldLoad = activeTab === "detail" || activeTab === "artifacts" || activeTab === "models";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         return;

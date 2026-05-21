@@ -149,6 +149,31 @@ class Artifact(File):
 
 
 @dataclass(frozen=True)
+class CheckpointPolicy:
+    """Simple step-interval helper for checkpointing training loops."""
+
+    every_steps: int
+    include_step_zero: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.every_steps, int) or isinstance(self.every_steps, bool):
+            raise TypeError("every_steps must be an integer")
+        if self.every_steps <= 0:
+            raise ValueError("every_steps must be positive")
+
+    def should_save(self, step: int | float | None) -> bool:
+        normalized = _validate_step(step)
+        if normalized is None:
+            return False
+        numeric = float(normalized)
+        if numeric == 0:
+            return self.include_step_zero
+        if not numeric.is_integer():
+            return False
+        return int(numeric) % self.every_steps == 0
+
+
+@dataclass(frozen=True)
 class Text:
     data: str
     name: str | None = None
@@ -445,6 +470,36 @@ class Api:
             "GET",
             path,
         )
+
+    def download_artifact(self, artifact_id: str, output_path: str | os.PathLike[str]) -> str:
+        artifact_id = _validate_text(artifact_id, "artifact id")
+        if not isinstance(output_path, (str, os.PathLike)):
+            raise TypeError("output_path must be a path")
+        raw_output = os.fspath(output_path)
+        target = Path(raw_output).expanduser()
+        if target.exists() and target.is_dir():
+            target = target / artifact_id
+        elif raw_output.endswith((os.sep, "/")):
+            target.mkdir(parents=True, exist_ok=True)
+            target = target / artifact_id
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        url = f"{self.base_url.rstrip('/')}/api/artifacts/{urllib.parse.quote(artifact_id, safe='')}/download"
+        headers = {"Accept": "application/octet-stream"}
+        api_key = _resolve_api_key_from_env(self.api_key)
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        request = urllib.request.Request(url, method="GET", headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = response.read()
+        except urllib.error.HTTPError as exc:
+            message = _error_message(exc)
+            raise InstantMLError(f"GET /api/artifacts/{artifact_id}/download failed: {message}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise InstantMLError(f"GET /api/artifacts/{artifact_id}/download failed: {exc}") from exc
+        target.write_bytes(payload)
+        return str(target)
 
 
 class Run:
@@ -813,6 +868,32 @@ class Run:
             step=step,
             size_bytes=size_bytes,
             metadata=metadata,
+        )
+
+    def log_checkpoint_file(
+        self,
+        path: str,
+        step: int | float,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        step = _validate_step(step)
+        if step is None:
+            raise ValueError("checkpoint step is required")
+        payload_metadata = _validate_optional_json_object(metadata, "metadata")
+        checkpoint_metadata = {}
+        if isinstance(payload_metadata.get("checkpoint"), dict):
+            checkpoint_metadata.update(payload_metadata["checkpoint"])
+        checkpoint_metadata.setdefault("step", step)
+        checkpoint_metadata.setdefault("source_run_id", self.run_id)
+        payload_metadata["kind"] = payload_metadata.get("kind", "checkpoint")
+        payload_metadata["checkpoint"] = checkpoint_metadata
+        return self.upload_file(
+            path,
+            name=name,
+            artifact_type="checkpoint",
+            step=step,
+            metadata=payload_metadata,
         )
 
     def log_rollout(
@@ -1792,5 +1873,3 @@ def _fsync_dir(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-
-

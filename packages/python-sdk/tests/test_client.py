@@ -125,6 +125,96 @@ def test_api_runs_reuses_client_request_auth_timeout_and_returns_payload(monkeyp
     }
 
 
+def test_api_download_artifact_writes_bytes_with_auth(monkeypatch, tmp_path):
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b"checkpoint bytes"
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["authorization"] = request.get_header("Authorization")
+        captured["accept"] = request.get_header("Accept")
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    target = tmp_path / "downloads" / "checkpoint.json"
+
+    written = ro.Api(base_url="http://example.test/", timeout=7, api_key="secret").download_artifact("artifact/1", target)
+
+    assert written == str(target)
+    assert target.read_bytes() == b"checkpoint bytes"
+    assert captured == {
+        "url": "http://example.test/api/artifacts/artifact%2F1/download",
+        "method": "GET",
+        "authorization": "Bearer secret",
+        "accept": "application/octet-stream",
+        "timeout": 7,
+    }
+
+
+def test_api_download_artifact_accepts_directory_destinations(monkeypatch, tmp_path):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b"bytes"
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+    api = ro.Api(base_url="http://example.test")
+    existing_dir = tmp_path / "existing"
+    existing_dir.mkdir()
+    trailing_dir = tmp_path / "trailing"
+
+    existing_target = api.download_artifact("artifact-existing", existing_dir)
+    trailing_target = api.download_artifact("artifact-trailing", f"{trailing_dir}/")
+
+    assert existing_target == str(existing_dir / "artifact-existing")
+    assert trailing_target == str(trailing_dir / "artifact-trailing")
+    assert (existing_dir / "artifact-existing").read_bytes() == b"bytes"
+    assert (trailing_dir / "artifact-trailing").read_bytes() == b"bytes"
+
+
+def test_api_download_artifact_reports_bad_paths_and_network_errors(monkeypatch, tmp_path):
+    api = ro.Api(base_url="http://example.test")
+
+    with pytest.raises(TypeError, match="output_path"):
+        api.download_artifact("artifact-1", 123)
+
+    def raise_http(*_args, **_kwargs):
+        raise urllib.error.HTTPError(
+            "http://example.test/api/artifacts/artifact-1/download",
+            403,
+            "Forbidden",
+            {},
+            BytesIO(b'{"error":"download denied"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", raise_http)
+    with pytest.raises(InstantMLError, match="download denied"):
+        api.download_artifact("artifact-1", tmp_path / "denied.bin")
+
+    def raise_url(*_args, **_kwargs):
+        raise urllib.error.URLError("offline")
+
+    monkeypatch.setattr("urllib.request.urlopen", raise_url)
+    with pytest.raises(InstantMLError, match="offline"):
+        api.download_artifact("artifact-1", tmp_path / "offline.bin")
+
+
 def test_api_runs_raises_instantml_error_for_invalid_json(monkeypatch):
     class FakeResponse:
         def __enter__(self):
@@ -251,6 +341,63 @@ def test_run_artifact_helpers_call_expected_endpoint(monkeypatch):
             },
         ),
     ]
+
+
+def test_checkpoint_policy_matches_positive_integer_intervals():
+    policy = ro.CheckpointPolicy(every_steps=3)
+
+    assert [step for step in range(8) if policy.should_save(step)] == [3, 6]
+    assert policy.should_save(6.0) is True
+    assert policy.should_save(4.5) is False
+    assert policy.should_save(None) is False
+    assert ro.CheckpointPolicy(every_steps=3, include_step_zero=True).should_save(0) is True
+    with pytest.raises(TypeError, match="every_steps"):
+        ro.CheckpointPolicy(every_steps=3.0)
+    with pytest.raises(ValueError, match="positive"):
+        ro.CheckpointPolicy(every_steps=0)
+
+
+def test_log_checkpoint_file_enriches_metadata_and_uploads_bytes(tmp_path):
+    calls = []
+    source = tmp_path / "checkpoint.json"
+    source.write_text('{"step": 6}', encoding="utf-8")
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {"artifact": {"id": "artifact-1", **body}}
+
+    artifact = Run(client=FakeClient(), run_id="run-1").log_checkpoint_file(
+        str(source),
+        step=6,
+        metadata={"loss": 0.12, "checkpoint": {"framework": "json"}},
+    )
+
+    assert artifact["type"] == "checkpoint"
+    assert artifact["name"] == "checkpoint.json"
+    assert artifact["metadata"]["kind"] == "checkpoint"
+    assert artifact["metadata"]["loss"] == 0.12
+    assert artifact["metadata"]["checkpoint"] == {
+        "framework": "json",
+        "step": 6,
+        "source_run_id": "run-1",
+    }
+    assert calls[0][1] == "/api/runs/run-1/artifacts/upload"
+    assert calls[0][2]["type"] == "checkpoint"
+    assert calls[0][2]["content_base64"] == "eyJzdGVwIjogNn0="
+
+
+def test_log_checkpoint_file_requires_explicit_step():
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            raise AssertionError("network should not be used")
+
+    with pytest.raises(ValueError, match="checkpoint step"):
+        Run(client=FakeClient(), run_id="run-1").log_checkpoint_file("missing.pt", step=None)
 
 
 def test_rich_object_helpers_call_expected_endpoints(tmp_path):
