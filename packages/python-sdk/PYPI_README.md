@@ -55,4 +55,31 @@ The SDK also ships a process-isolated spool uploader:
 instantml-uploader --spool-dir .instantml/spool --base-url http://127.0.0.1:8000
 ```
 
+## Shadow Weights & Biases
+
+If you're migrating from W&B and want to compare numbers side-by-side, pass `shadow_wandb=True` to `init`. Every `log`, `finish`, and `log_artifact` call is mirrored to a parallel `wandb.Run`, using your existing `WANDB_API_KEY` / `WANDB_ENTITY` env vars. `wandb.init` runs on a background thread so InstantML's init stays sub-millisecond.
+
+```python
+run = im.init(project="llm-7b-sft", config=cfg, shadow_wandb=True)
+```
+
+Override the W&B project or entity independently:
+
+```python
+run = im.init(
+    project="llm-7b-sft",
+    shadow_wandb={"project": "llm-experiments", "entity": "my-team"},
+)
+```
+
+Attach to an already-initialized `wandb.Run`:
+
+```python
+import wandb
+wb_run = wandb.init(project="llm-7b-sft")
+run = im.init(project="llm-7b-sft", shadow_wandb=wb_run)
+```
+
+If `wandb` is not installed or `wandb.init` fails, shadow logging is disabled with a warning and InstantML logging continues unaffected.
+
 License note: this package is not currently published as open source. Public licensing or source-available terms should be confirmed before a broad public release.
