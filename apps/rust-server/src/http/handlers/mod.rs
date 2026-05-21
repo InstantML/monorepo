@@ -33,7 +33,7 @@ pub(super) use runs::{
     list_attributes, list_console_logs, list_object_rows, list_objects, list_projects, list_runs,
     log_console_logs, log_metrics, overview, runs_summary, side_by_side, update_run,
 };
-pub(super) use usage::{export_data, usage_export, usage_summary};
+pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
 #[cfg(test)]
 mod tests {
@@ -247,6 +247,8 @@ mod tests {
             clerk_session_max_token_age: std::time::Duration::from_secs(600),
             signup_allowed_emails: Vec::new(),
             signup_allowed_domains: Vec::new(),
+            artifact_backend: crate::config::ArtifactBackend::Local,
+            r2_artifacts: None,
             artifact_uploads_enabled: true,
             allowed_frontend_origins: Vec::new(),
             request_timeout: std::time::Duration::from_secs(30),

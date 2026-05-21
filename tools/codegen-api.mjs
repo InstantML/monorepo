@@ -70,7 +70,7 @@ async function main() {
   process.stderr.write("[codegen:api] generating TypeScript bindings...\n");
   const tsRes = spawnSync(
     "npx",
-    ["--yes", "openapi-typescript@7", specOut, "--output", tsOut],
+    ["--yes", "openapi-typescript@7.5.2", specOut, "--output", tsOut],
     { cwd: repoRoot, stdio: "inherit" },
   );
   if (tsRes.status !== 0) {

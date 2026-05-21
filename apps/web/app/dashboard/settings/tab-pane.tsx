@@ -86,8 +86,8 @@ export function SettingsTabPane({
           <div className="panel-body insight-stack">
             <MetricCard label="Plan" value={activePlan} tone="good" />
             <MetricCard label="Seats" value={`${formatNumber(seats.length, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} tone="neutral" />
-            <MetricCard label="Warehouse data" value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
-            <div className="usage-meter" aria-label="Warehouse data usage">
+            <MetricCard label="Storage" value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
+            <div className="usage-meter" aria-label="Storage usage">
               <span style={{ width: `${storagePercent}%` }} />
             </div>
             <MetricCard label="Metric points this month" value={`${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}`} tone={metricPercent > 90 ? "bad" : metricPercent > 70 ? "live" : "neutral"} />

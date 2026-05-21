@@ -94,7 +94,7 @@ Training-observability roadmap first slice is implemented:
 - Attribute-backed rich logged objects for selected-run tables, histograms, and media attachments, with paginated table preview rows.
 - Buffered SDK logging, explicit `flush()`, offline JSONL spool/replay, source metadata, and typed helper methods.
 - Process-isolated SDK spool mode with a separate uploader for long-running training loops.
-- Local artifact upload/download with size, SHA256, MIME type, and local storage paths.
+- Artifact upload/download with size, SHA256, MIME type, local filesystem storage for development, and Cloudflare R2-backed per-org buckets for hosted artifact bytes.
 - Local user/org/API-key model for hosted-SaaS auth scaffolding, with optional org-scoped SDK bearer-token enforcement.
 - Server idempotency keys for process-spooled metric replay.
 - Maintained metric summaries so run tables do not scan full metric history.
@@ -196,7 +196,7 @@ Deploy the default split control/data Cloud Run topology:
 npm run deploy:cloud-run
 ```
 
-`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Control and data services default to manual one-instance scaling until durable multi-process gates land; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads are disabled until object storage lands.
+`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Control and data services default to manual one-instance scaling until durable multi-process gates land; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads use Cloudflare R2 when `INSTANTML_ARTIFACT_BACKEND=r2` and Cloudflare credentials are configured.
 
 The explicit aliases are:
 

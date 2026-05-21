@@ -230,7 +230,7 @@ pub(super) fn table_summary(mut summary: Value, rows: &[Value]) -> AppResult<Val
 pub(super) fn media_summary(mut summary: Value, artifact: &ArtifactRow) -> Value {
     if let Some(object) = summary.as_object_mut() {
         object.insert("artifact_name".to_string(), json!(artifact.name));
-        object.insert("artifact_uri".to_string(), json!(artifact.uri));
+        object.insert("artifact_uri".to_string(), json!(artifact.public_uri()));
         object.insert("mime_type".to_string(), json!(artifact.mime_type));
         object.insert("size_bytes".to_string(), json!(artifact.size_bytes));
     }

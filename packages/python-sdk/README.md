@@ -8,7 +8,7 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Log scalar metrics with explicit `log_metrics()` or ergonomic auto-step `log()`.
 - Log configs, searchable run tags, and searchable run notes.
 - Log rich table/histogram/image/audio/video objects.
-- Log local file and artifact wrappers through the upload route.
+- Log local file and artifact wrappers through the upload route. The SDK contract is unchanged for hosted R2 storage: it still sends the upload payload to the Rust API, which stores bytes in the organization's configured artifact backend and returns the public artifact metadata row with an opaque `instantml://artifacts/<artifact_id>` URI for stored bytes.
 - Log checkpoints.
 - Log videos.
 - Log tables.

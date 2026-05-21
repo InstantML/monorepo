@@ -632,6 +632,53 @@ pub struct ArtifactRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct PublicArtifactRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub run_id: Uuid,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub name: String,
+    pub uri: String,
+    pub step: Option<f64>,
+    pub size_bytes: Option<i64>,
+    pub sha256: Option<String>,
+    pub mime_type: Option<String>,
+    pub storage_backend: String,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ArtifactRow {
+    pub fn public_row(&self) -> PublicArtifactRow {
+        PublicArtifactRow {
+            id: self.id,
+            org_id: self.org_id,
+            run_id: self.run_id,
+            kind: self.kind.clone(),
+            name: self.name.clone(),
+            uri: self.public_uri(),
+            step: self.step,
+            size_bytes: self.size_bytes,
+            sha256: self.sha256.clone(),
+            mime_type: self.mime_type.clone(),
+            storage_backend: self.storage_backend.clone(),
+            metadata: self.metadata.clone(),
+            created_at: self.created_at,
+        }
+    }
+
+    pub fn public_uri(&self) -> String {
+        if matches!(self.storage_backend.as_str(), "local" | "r2") {
+            format!("instantml://artifacts/{}", self.id)
+        } else {
+            self.uri.clone()
+        }
+    }
+}
+
 pub fn validate_name(value: Option<&str>, field: &str) -> AppResult<String> {
     let text = value
         .ok_or_else(|| AppError::validation(format!("{field} must be a non-empty string")))?
@@ -812,4 +859,57 @@ pub fn validate_offset(value: Option<&str>) -> AppResult<i64> {
         return Err(AppError::validation("offset must be a nonnegative integer"));
     }
     Ok(offset)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, to_value};
+
+    #[test]
+    fn public_artifact_row_redacts_stored_backend_locations() {
+        for storage_backend in ["local", "r2"] {
+            let row = artifact_row(storage_backend, "r2://bucket/runs/run/artifact.bin");
+            let public = row.public_row();
+            let public_value = to_value(&public).expect("serializable public artifact");
+
+            assert_eq!(public.uri, format!("instantml://artifacts/{}", row.id));
+            assert_eq!(public.storage_backend, storage_backend);
+            assert!(public_value.get("storage_key").is_none());
+            assert!(public_value.get("storage_path").is_none());
+            assert!(!public_value["uri"]
+                .as_str()
+                .expect("public uri")
+                .contains("bucket/runs"));
+        }
+    }
+
+    #[test]
+    fn public_artifact_row_preserves_external_references() {
+        let row = artifact_row("external", "s3://customer-bucket/model.pt");
+        let public = row.public_row();
+
+        assert_eq!(public.uri, "s3://customer-bucket/model.pt");
+        assert_eq!(public.storage_backend, "external");
+    }
+
+    fn artifact_row(storage_backend: &str, uri: &str) -> ArtifactRow {
+        ArtifactRow {
+            id: Uuid::new_v4(),
+            org_id: Uuid::new_v4(),
+            run_id: Uuid::new_v4(),
+            kind: "file".to_string(),
+            name: "artifact.bin".to_string(),
+            uri: uri.to_string(),
+            step: Some(1.0),
+            size_bytes: Some(128),
+            sha256: Some("abc123".to_string()),
+            mime_type: Some("application/octet-stream".to_string()),
+            storage_backend: storage_backend.to_string(),
+            storage_key: Some("bucket/runs/run/artifact.bin".to_string()),
+            storage_path: Some("r2://bucket/runs/run/artifact.bin".to_string()),
+            metadata: json!({"source": "test"}),
+            created_at: Utc::now(),
+        }
+    }
 }

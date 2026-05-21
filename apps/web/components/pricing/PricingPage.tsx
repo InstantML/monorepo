@@ -112,7 +112,7 @@ const TIERS: Tier[] = [
     writers: "1 writer seat",
     extraWriter: "upgrade for more",
     viewers: "Unlimited free viewers",
-    storage: "2 GB metadata · BYOS artifacts",
+    storage: "2 GB hosted storage included",
     features: [
       "Full SDK · init / log / finish",
       "Run compare · charts · artifacts",
@@ -132,7 +132,7 @@ const TIERS: Tier[] = [
     writers: "3 writer seats included",
     extraWriter: "$50 / extra writer",
     viewers: "Unlimited free viewers",
-    storage: "1 TB metadata · BYOS artifacts",
+    storage: "1 TB hosted storage included",
     features: [
       "Everything in Free",
       "Project share links (read-only)",
@@ -153,7 +153,7 @@ const TIERS: Tier[] = [
     writers: "10 writer seats included",
     extraWriter: "$70 / extra writer",
     viewers: "Unlimited free viewers",
-    storage: "5 TB metadata · BYOS artifacts",
+    storage: "5 TB hosted storage included",
     features: [
       "Everything in Pro",
       "Priority ingest queue",
@@ -272,11 +272,11 @@ const SCENARIO = {
       { k: "Base (3 writer seats included)", v: "$199" },
       { k: "+2 extra writers @ $50", v: "$100" },
       { k: "4 viewer seats", v: "$0" },
-      { k: "Artifact storage (BYOS — your S3, no markup)", v: "$0" },
+      { k: "Hosted artifacts (50 GB included)", v: "$0" },
     ],
     monthly: "$299 /mo",
     annual: "~$3,588 /yr",
-    note: "Flat. Every teammate gets their own writer login.",
+    note: "Flat. Every teammate gets their own writer login. Extra storage target: $0.03/GB-month.",
   },
 };
 
@@ -333,7 +333,7 @@ const SURPRISES: Surprise[] = [
     wandb:
       "Orphaned artifacts you thought were deleted keep accruing storage charges. Public report: a student's bill ran to ~$600 from artifacts they couldn't see.",
     instantml:
-      "BYOS — you provide an S3-compatible bucket. We hold pointers and metadata only. No artifact storage markup, no surprise bill.",
+      "Hosted R2 storage is included in every tier and shown in usage. Writes are blocked at the included pool until paid overages launch.",
     evidence: {
       label: "wandb#10459 — artifacts not pruned",
       href: "https://github.com/wandb/wandb/issues/10459",
@@ -493,8 +493,9 @@ export function PricingPage() {
             </span>
           </h1>
           <p className="landing-section-body">
-            No per-tracked-hour creep. No surprise artifact charges. Invite your
-            whole team — only writers count toward the bill.
+            No per-tracked-hour creep. Hosted artifact storage is included and
+            visible in usage. Invite your whole team — only writers count toward
+            the bill.
           </p>
           <div className="pricing-header-chips">
             <span className="landing-proof-chip">
@@ -507,7 +508,7 @@ export function PricingPage() {
               <span className="landing-proof-chip__check">
                 <IconCheck />
               </span>
-              BYOS artifacts · no storage markup
+              Included hosted artifact storage
             </span>
             <span className="landing-proof-chip">
               <span className="landing-proof-chip__check">
@@ -526,8 +527,11 @@ export function PricingPage() {
 
         <p className="pricing-fine-print">
           All tiers include the full SDK, run compare, artifacts, and W&amp;B /
-          MLflow / Neptune import. Artifact storage is BYOS on every tier —
-          point us at your S3-compatible bucket and we keep pointers only.
+          MLflow / Neptune import. Artifact bytes are stored in private
+          Cloudflare R2-backed org buckets. Additional retained storage beyond
+          the included pool is planned at $0.03/GB-month plus provider operation
+          costs; usage remains
+          guardrail telemetry until provider reconciliation is billable truth.
         </p>
       </PageSection>
 

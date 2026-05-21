@@ -32,6 +32,8 @@ pub struct AppConfig {
     pub clerk_session_max_token_age: Duration,
     pub signup_allowed_emails: Vec<String>,
     pub signup_allowed_domains: Vec<String>,
+    pub artifact_backend: ArtifactBackend,
+    pub r2_artifacts: Option<R2ArtifactConfig>,
     pub artifact_uploads_enabled: bool,
     pub allowed_frontend_origins: Vec<String>,
     pub request_timeout: Duration,
@@ -40,6 +42,22 @@ pub struct AppConfig {
     /// Base URL of the frontend, used to construct device-code verification URIs.
     /// Defaults to the first allowed_frontend_origins entry if set, else "http://localhost:3000".
     pub frontend_base_url: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArtifactBackend {
+    Local,
+    R2,
+}
+
+#[derive(Clone, Debug)]
+pub struct R2ArtifactConfig {
+    pub account_id: String,
+    pub api_token: String,
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+    pub bucket_prefix: String,
+    pub endpoint: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -182,6 +200,12 @@ impl AppConfig {
                 "CLERK_SECRET_KEY is required when managed Clerk auth is enabled",
             ));
         }
+        let (artifact_backend, r2_artifacts) = artifact_backend_config()?;
+        let artifact_uploads_enabled = env_bool_optional("INSTANTML_ARTIFACT_UPLOADS_ENABLED")?
+            .unwrap_or_else(|| match artifact_backend {
+                ArtifactBackend::Local => hosted_clickhouse.is_none(),
+                ArtifactBackend::R2 => true,
+            });
         Ok(Self {
             clickhouse_url,
             bind_addr,
@@ -218,8 +242,9 @@ impl AppConfig {
                 .map(|domain| domain.trim_start_matches('@').to_ascii_lowercase())
                 .filter(|domain| !domain.is_empty())
                 .collect(),
-            artifact_uploads_enabled: env_bool_optional("INSTANTML_ARTIFACT_UPLOADS_ENABLED")?
-                .unwrap_or_else(|| hosted_clickhouse.is_none()),
+            artifact_backend,
+            r2_artifacts,
+            artifact_uploads_enabled,
             allowed_frontend_origins: env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS"),
             frontend_base_url: env::var("INSTANTML_FRONTEND_BASE_URL")
                 .ok()
@@ -366,6 +391,55 @@ fn hosted_clickhouse_config(
     }))
 }
 
+fn artifact_backend_config() -> AppResult<(ArtifactBackend, Option<R2ArtifactConfig>)> {
+    let backend = match env_string("INSTANTML_ARTIFACT_BACKEND", "local")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "local" | "filesystem" | "fs" => ArtifactBackend::Local,
+        "r2" | "cloudflare-r2" | "cloudflare_r2" => ArtifactBackend::R2,
+        _ => {
+            return Err(AppError::config(
+                "INSTANTML_ARTIFACT_BACKEND must be local or r2",
+            ))
+        }
+    };
+    if !matches!(backend, ArtifactBackend::R2) {
+        return Ok((backend, None));
+    }
+    let account_id = required_env_any(&["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_R2_ACCOUNT_ID"])?;
+    let api_token = required_env_any(&[
+        "CLOUDFLARE_R2_API_KEY",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_R2_TOKEN",
+    ])?;
+    let endpoint = env::var("CLOUDFLARE_R2_ENDPOINT")
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("https://{account_id}.r2.cloudflarestorage.com"));
+    let access_key_id = env_first(&[
+        "CLOUDFLARE_R2_ACCESS_KEY_ID",
+        "CLOUDFLARE_R2_TOKEN_ID",
+        "CLOUDFLARE_API_TOKEN_ID",
+    ]);
+    let secret_access_key = env_first(&[
+        "CLOUDFLARE_R2_SECRET_ACCESS_KEY",
+        "CLOUDFLARE_R2_ACCESS_KEY_SECRET",
+    ]);
+    Ok((
+        backend,
+        Some(R2ArtifactConfig {
+            account_id,
+            api_token,
+            access_key_id,
+            secret_access_key,
+            bucket_prefix: env_string("CLOUDFLARE_R2_BUCKET_PREFIX", "instantml-org"),
+            endpoint,
+        }),
+    ))
+}
+
 fn clickhouse_url_from_env(
     endpoint_key: &str,
     username_key: &str,
@@ -410,6 +484,17 @@ fn split_env_string_list(raw: &str) -> Vec<String> {
 
 fn required_env(key: &str) -> AppResult<String> {
     env::var(key).map_err(|_| AppError::config(format!("{key} is required")))
+}
+
+fn required_env_any(keys: &[&str]) -> AppResult<String> {
+    env_first(keys).ok_or_else(|| AppError::config(format!("{} is required", keys.join(" or "))))
+}
+
+fn env_first(keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn env_usize(key: &str, fallback: usize) -> AppResult<usize> {

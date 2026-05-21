@@ -926,8 +926,17 @@ Body:
 }
 ```
 
-Hosted artifact byte uploads are disabled until object storage is configured.
-Local mode stores bytes under the configured artifact root.
+Uploads validate the decoded byte size and plan storage capacity before
+touching the configured byte backend. With `INSTANTML_ARTIFACT_BACKEND=local`,
+uploads store bytes under the configured artifact root. With
+`INSTANTML_ARTIFACT_BACKEND=r2`, uploads create or reuse the organization's
+private Cloudflare R2 bucket, write the object under
+`runs/<run_id>/artifacts/<artifact_id>/<filename>`, and commit a ClickHouse
+artifact row with `storage_backend: "r2"`, exact `size_bytes`, `sha256`, and
+`mime_type`. Public artifact responses use an opaque
+`instantml://artifacts/<artifact_id>` URI for stored local/R2 bytes and omit
+internal bucket keys and storage paths. Hosted uploads remain disabled only when
+no durable artifact backend is configured.
 
 Output:
 
@@ -937,7 +946,8 @@ Output:
 
 ### `GET /api/runs/:run_id/artifacts`
 
-Auth: tenant read access.
+Auth: tenant read access. API keys require `export:read`; browser sessions with
+viewer or higher role can list.
 
 Query: `limit`, max 1,000.
 
@@ -949,11 +959,15 @@ Output:
 
 ### `GET /api/artifacts/:artifact_id/download`
 
-Auth: tenant read access.
+Auth: tenant read access. API keys require `export:read`; browser sessions with
+viewer or higher role can download.
 
-Streams local stored artifact bytes with the artifact MIME type. External
-artifact metadata rows without stored bytes are not downloadable through this
-endpoint.
+Streams local or R2 stored artifact bytes with the artifact MIME type. R2 bytes
+are streamed through this same-origin API route, and R2 downloads forward valid
+`Range` requests so browser media previews can request byte ranges. Raw bucket
+names, signed URLs, and object keys are not exposed in public artifact metadata.
+External artifact metadata rows without stored bytes are not downloadable
+through this endpoint.
 
 ## Export, Usage, Imports, And Demo
 

@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    artifact_store::LocalArtifactStore,
+    artifact_store::{ArtifactByteStore, ArtifactBytes},
     domain::{CreateArtifactRequest, UploadArtifactRequest},
     errors::{AppError, AppResult},
     store,
@@ -51,9 +51,8 @@ pub async fn create_artifact(
     require_scope(&ctx, "artifacts:write", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<CreateArtifactRequest>(&headers, bytes, state.config.max_body_bytes)?;
-    Ok(Json(
-        json!({ "artifact": store::create_artifact(&state.store, &ctx, run_id, input).await? }),
-    ))
+    let artifact = store::create_artifact(&state.store, &ctx, run_id, input).await?;
+    Ok(Json(json!({ "artifact": artifact.public_row() })))
 }
 
 #[utoipa::path(
@@ -69,7 +68,7 @@ pub async fn create_artifact(
         (status = 200, description = "Created artifact with stored bytes", body = crate::http::openapi::ArtifactEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
-        (status = 403, description = "Artifact byte uploads disabled in hosted mode", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Artifact byte uploads disabled by server configuration", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -84,15 +83,14 @@ pub async fn upload_artifact(
     require_scope(&ctx, "artifacts:write", &state)?;
     if !state.config.artifact_uploads_enabled {
         return Err(AppError::forbidden(
-            "artifact byte uploads are disabled until hosted object storage is configured",
+            "artifact byte uploads are disabled by server configuration",
         ));
     }
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input =
         read_json::<UploadArtifactRequest>(&headers, bytes, state.config.max_upload_body_bytes)?;
-    Ok(Json(
-        json!({ "artifact": store::upload_artifact(&state.store, &state.config, &ctx, run_id, input).await? }),
-    ))
+    let artifact = store::upload_artifact(&state.store, &state.config, &ctx, run_id, input).await?;
+    Ok(Json(json!({ "artifact": artifact.public_row() })))
 }
 
 #[utoipa::path(
@@ -107,6 +105,7 @@ pub async fn upload_artifact(
     responses(
         (status = 200, description = "Artifact rows for the run", body = crate::http::openapi::ArtifactsEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Read scope required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -117,10 +116,14 @@ pub async fn list_artifacts(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
-    Ok(Json(
-        json!({ "artifacts": store::list_artifacts(&state.store, &ctx, run_id, &query).await? }),
-    ))
+    let artifacts = store::list_artifacts(&state.store, &ctx, run_id, &query)
+        .await?
+        .into_iter()
+        .map(|artifact| artifact.public_row())
+        .collect::<Vec<_>>();
+    Ok(Json(json!({ "artifacts": artifacts })))
 }
 
 #[utoipa::path(
@@ -133,7 +136,9 @@ pub async fn list_artifacts(
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
         (status = 200, description = "Artifact byte stream", content_type = "application/octet-stream"),
+        (status = 206, description = "Artifact byte range", content_type = "application/octet-stream"),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Read scope required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Artifact not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -143,22 +148,54 @@ pub async fn download_artifact(
     Path(artifact_id): Path<String>,
 ) -> AppResult<Response> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let artifact_id = parse_uuid(&artifact_id, "artifact not found")?;
     let artifact = store::get_artifact_for_context(&state.store, &ctx, artifact_id).await?;
-    let artifact_store = LocalArtifactStore::new(&state.config.artifact_root);
-    let file = artifact_store.open(&artifact).await?;
+    let artifact_store = ArtifactByteStore::for_artifact(&state.config, &artifact)?;
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|value| value.to_str().ok());
+    let bytes = artifact_store.open(&artifact, range).await?;
     let content_type = artifact
         .mime_type
         .unwrap_or_else(|| "application/octet-stream".to_string());
-    let mut response = Response::new(Body::from_stream(ReaderStream::new(file)));
-    response
-        .headers_mut()
-        .insert(header::CONTENT_TYPE, header_value(&content_type)?);
-    if let Some(size_bytes) = artifact.size_bytes {
-        response.headers_mut().insert(
-            header::CONTENT_LENGTH,
-            header_value(&size_bytes.to_string())?,
-        );
+    match bytes {
+        ArtifactBytes::File(file) => {
+            let mut response = Response::new(Body::from_stream(ReaderStream::new(file)));
+            response
+                .headers_mut()
+                .insert(header::CONTENT_TYPE, header_value(&content_type)?);
+            if let Some(size_bytes) = artifact.size_bytes {
+                response.headers_mut().insert(
+                    header::CONTENT_LENGTH,
+                    header_value(&size_bytes.to_string())?,
+                );
+            }
+            Ok(response)
+        }
+        ArtifactBytes::Http(upstream) => {
+            let status = upstream.status();
+            let upstream_headers = upstream.headers().clone();
+            let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
+            *response.status_mut() = status;
+            let headers = response.headers_mut();
+            let content_type = upstream_headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or(&content_type);
+            headers.insert(header::CONTENT_TYPE, header_value(content_type)?);
+            for name in [
+                header::CONTENT_LENGTH,
+                header::CONTENT_RANGE,
+                header::ACCEPT_RANGES,
+                header::ETAG,
+                header::LAST_MODIFIED,
+            ] {
+                if let Some(value) = upstream_headers.get(&name).cloned() {
+                    headers.insert(name, value);
+                }
+            }
+            Ok(response)
+        }
     }
-    Ok(response)
 }

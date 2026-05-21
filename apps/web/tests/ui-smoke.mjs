@@ -79,7 +79,7 @@ try {
 
   const webBaseUrl = `http://127.0.0.1:${webPort}`;
   await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".iml-landing", { timeout: 10000 });
+  await page.waitForSelector(".landing-root", { timeout: 10000 });
   assert.equal(summaryUrls.length, 0, "public landing page should not fetch run summaries");
 
   await page.goto(`${webBaseUrl}/signup`, { waitUntil: "domcontentloaded" });
@@ -170,6 +170,8 @@ try {
   await page.unroute("**/api/runs/summary**");
   assert.equal(objectUrls.length, 0, "initial dashboard entry should not fetch rich objects");
   assert.equal(logUrls.length, 0, "initial dashboard entry should not fetch console logs");
+  await assertWorkbarDropdownVisible(page, "project-filter");
+  await assertWorkbarDropdownVisible(page, "status-filter");
   await page.getByRole("link", { name: /^Settings$/ }).click();
   await page.waitForSelector("text=Plan Usage", { timeout: 10000 });
   await page.waitForSelector("text=teammate@example.com", { timeout: 10000 });
@@ -962,6 +964,10 @@ try {
       expectedNodeObject404s -= 1;
       return false;
     }
+    // The local-dev smoke signs in through InstantML's dev auth flow; Clerk's
+    // optional browser bundle can fail independently when hosted env keys are
+    // present on a machine without network access to Clerk.
+    if (error.includes("TypeError: Failed to fetch") && error.includes("clerk.browser.js")) return false;
     return true;
   });
   assert.deepEqual(unexpectedErrors, []);
@@ -989,6 +995,32 @@ async function chooseSelect(page, selector, valueOrOptions) {
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   }, valueOrOptions);
+}
+
+async function assertWorkbarDropdownVisible(page, selectId) {
+  await page.locator(`#${selectId} + .custom-select .select-trigger`).click();
+  await page.waitForSelector(`#${selectId}-menu`, { state: "visible", timeout: 5000 });
+  const proof = await page.evaluate((id) => {
+    const workbar = document.querySelector(".workbar");
+    const menu = document.querySelector(`#${id}-menu`);
+    if (!workbar || !menu) return { ok: false };
+    const workbarRect = workbar.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const hit = document.elementFromPoint(menuRect.left + 18, workbarRect.bottom + 12);
+    return {
+      menuBelowWorkbar: menuRect.bottom > workbarRect.bottom + 12,
+      menuReceivesPointer: Boolean(hit?.closest(`#${id}-menu`)),
+      ok: true,
+      workbarOverflow: getComputedStyle(workbar).overflow,
+    };
+  }, selectId);
+  assert.deepEqual(
+    proof,
+    { ok: true, workbarOverflow: "visible", menuBelowWorkbar: true, menuReceivesPointer: true },
+    `${selectId} menu should render below the workbar without being clipped`,
+  );
+  await page.keyboard.press("Escape");
+  await page.waitForFunction((id) => !document.querySelector(`#${id}-menu`), selectId);
 }
 
 function escapeRegExp(value) {

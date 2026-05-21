@@ -44,8 +44,12 @@ Important environment variables:
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips ClickHouse Cloud access-list updates.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips ClickHouse Cloud API-key access-list updates.
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation can wait for ClickHouse Cloud tenant provisioning.
+- `INSTANTML_ARTIFACT_BACKEND`: artifact byte backend. The helper defaults hosted deploys to `r2` when Cloudflare R2 credentials are present and to disabled local storage otherwise.
+- `CLOUDFLARE_R2_ACCOUNT_ID` / `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account used for per-org R2 buckets. The deploy helper normalizes either name to `CLOUDFLARE_ACCOUNT_ID` for the Rust service.
+- `CLOUDFLARE_R2_API_KEY` / `CLOUDFLARE_API_TOKEN`: Cloudflare token used for R2 bucket management and S3-compatible object access.
+- `CLOUDFLARE_R2_BUCKET_PREFIX`: optional bucket-name prefix. Default: `instantml-org`.
 
-Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, and provision public Cloud Run or load-balancer URLs. The default deployment is the split `control` plus `data` shape; both services remain manual single-instance by default until the hosted operational-index coordination work lands. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Artifact byte uploads remain disabled in hosted mode until object storage is designed.
+Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, provision public Cloud Run or load-balancer URLs, and create Cloudflare R2 buckets when artifact uploads are enabled. The default deployment is the split `control` plus `data` shape; both services remain manual single-instance by default until the hosted operational-index coordination work lands. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Hosted artifact byte uploads use Cloudflare R2 when configured; the helper mounts Cloudflare env/secrets only on non-control services, and any Cloudflare token Client IP filter must include every Cloud Run static egress IP that can run artifact uploads.
 
 ## Import Helpers
 

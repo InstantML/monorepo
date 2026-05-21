@@ -42,7 +42,7 @@ Target stack snapshot:
 - API/runtime: Rust with `axum`, `tokio`, `tower-http`, explicit service/store modules, structured tracing, and Prometheus-compatible metrics.
 - Operational plane: ClickHouse-backed low-volume records for users, identities, organizations, memberships, service accounts, API keys, projects, runs, attributes, artifacts, imports, idempotency, audit events, and immutable daily usage rollups.
 - Analytical plane: ClickHouse `metric_points` (MergeTree) and `metric_series` (AggregatingMergeTree, populated by a materialized view) for high-volume metric time series and fast summary/chart queries.
-- Artifact plane: local filesystem storage first behind an abstraction, then S3-compatible object storage once hosted semantics are proven.
+- Artifact plane: local filesystem storage for development and Cloudflare R2-backed private per-org buckets for hosted artifact bytes, with ClickHouse retaining artifact references, sizes, hashes, and MIME metadata.
 - Auth plane: managed Google login for humans plus database-owned memberships, service accounts, hashed API keys, scopes, project restrictions, and audit events.
 - Hosting preference: Google Cloud Run or equivalent container hosting for Rust services, managed ClickHouse-compatible storage for operational and analytical data, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity.
 - Migration rule: Node is deprecated and retained as the compatibility oracle, JSON migration source, and legacy fallback. New backend work defaults to Rust/ClickHouse; route-shape changes should still run Node compatibility checks before breaking old clients.
@@ -185,7 +185,7 @@ These are the current product defaults implemented in Rust and mirrored in the d
 Overage defaults:
 
 - Extra seats: tracked but not billed yet; price target is `$79-$99/seat/month` once billing is implemented.
-- Storage overage: new writes are blocked at the included limit until billable object/accounting reconciliation and paid overages exist.
+- Storage overage: new writes are blocked at the included limit until billable object/accounting reconciliation and paid overages exist. The public pricing target for paid retained-storage overage is `$0.03/GB-month` after the included pool, based on Cloudflare R2 Standard currently listing `$0.015/GB-month`.
 - Metric/event overage: new metric writes are blocked at the current UTC calendar-month fair-use threshold until paid overages or custom terms exist. Metric-point usage resets at 00:00 UTC on the first day of each month.
 - Project/run limits: new projects and runs are blocked at the stored plan limit.
 - Import/storage-heavy workloads: require Premium or custom quote.
@@ -210,7 +210,7 @@ Preferred first hosted stack:
 
 - Rust API: Google Cloud Run.
 - Operational and analytical storage: managed ClickHouse-compatible storage.
-- Artifact storage later: Cloudflare R2.
+- Artifact storage: Cloudflare R2 private per-org buckets.
 - Auth: Clerk or equivalent managed auth provider.
 
 Why:

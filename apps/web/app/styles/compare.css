@@ -339,6 +339,16 @@ button.compare-row-head.active {
   white-space: nowrap;
 }
 
+.browser-main {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.browser-artifact-media {
+  max-width: 360px;
+}
+
 .event-marker,
 .timeline-dot {
   width: 8px;

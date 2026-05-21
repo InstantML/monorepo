@@ -9,6 +9,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
 - Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
+- Store artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, R2 references, exact byte counts, hashes, and MIME types.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
 
@@ -97,7 +98,8 @@ Environment variables:
 - `INSTANTML_CELL_ID`: optional operator label for a data-plane cell. The deploy helper sets it for split data services.
 - `INSTANTML_AUTH_MODE`: `local` or `api-key`. Default: `local`.
 - `INSTANTML_BOOTSTRAP_TOKEN`: required for bootstrap routes when `INSTANTML_AUTH_MODE=api-key`.
-- `INSTANTML_ARTIFACT_ROOT`: local artifact byte root. Default: `.instantml/rust-artifacts`.
+- `INSTANTML_ARTIFACT_BACKEND`: artifact byte backend, `local` or `r2`. Default: `local`.
+- `INSTANTML_ARTIFACT_ROOT`: local artifact byte root when `INSTANTML_ARTIFACT_BACKEND=local`. Default: `.instantml/rust-artifacts`.
 - `INSTANTML_MAX_BODY_BYTES`: general JSON body cap. Default: `1000000`.
 - `INSTANTML_MAX_UPLOAD_BODY_BYTES`: upload JSON body cap. Default: `50000000`.
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: HTTP timeout. Default: `30`.
@@ -112,7 +114,12 @@ Environment variables:
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS`: comma-separated exact email allowlist for hosted Clerk signups. Sign-in for existing memberships is still allowed.
 - `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: comma-separated hosted Clerk signup domain allowlist. Domains may be written with or without a leading `@`.
-- `INSTANTML_ARTIFACT_UPLOADS_ENABLED`: enables artifact byte uploads. Defaults to `true` for local mode and `false` when hosted ClickHouse is enabled, because hosted object storage is not implemented yet.
+- `INSTANTML_ARTIFACT_UPLOADS_ENABLED`: enables artifact byte uploads. Defaults to `true` for local artifact storage in local mode, `false` for hosted ClickHouse without R2, and `true` when `INSTANTML_ARTIFACT_BACKEND=r2`.
+- `CLOUDFLARE_R2_ACCOUNT_ID` or `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account id used for R2 bucket management and the S3-compatible endpoint default.
+- `CLOUDFLARE_R2_API_KEY` or `CLOUDFLARE_API_TOKEN`: Cloudflare API token with Workers R2 Storage read/write permissions. Used to create per-org buckets and, when explicit S3 credentials are omitted, derive R2 S3 credentials from the token id and SHA-256 token value. If the token uses Client IP Address Filtering, include the Cloud Run static egress IPs that run artifact uploads.
+- `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`: optional explicit R2 S3 credentials for object PUT/GET/DELETE.
+- `CLOUDFLARE_R2_BUCKET_PREFIX`: prefix for per-org private buckets. Default: `instantml-org`; bucket names are `<prefix>-<org_id.simple>`.
+- `CLOUDFLARE_R2_ENDPOINT`: optional S3-compatible endpoint. Default: `https://<account_id>.r2.cloudflarestorage.com`.
 - `INSTANTML_HOSTED_CLICKHOUSE_ENABLED`: enables User Data control-plane storage and tenant routing. Default: disabled.
 - `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`, `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`: ClickHouse endpoint and credentials for the `instantml_user_data` control table. Values may live in local `.env`; process env wins when both are set.
 - `INSTANTML_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted experiments; falling back to the User Data endpoint is only a local/test convenience.
@@ -292,7 +299,7 @@ Coverage exception (multi-writer):
 - `src/store/auth.rs`: users, organizations, sessions, API keys, and admin authorization helpers.
 - `src/store/console_logs.rs`: stdout/stderr validation, idempotent writes, cursor encoding, and read response shaping.
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, scalar metric writes, and metric read endpoints.
-- `src/store/objects.rs`: typed attributes, rich objects, table rows, artifacts, and local artifact upload metadata.
+- `src/store/objects.rs`: typed attributes, rich objects, table rows, artifacts, and artifact metadata writes after local/R2 byte preflight.
 - `src/store/imports.rs`: Neptune, W&B, and MLflow import normalization and import records.
 - `src/store/export.rs`: side-by-side comparison and bounded JSON export.
 - `src/store/usage.rs`: usage summaries, UTC calendar-month metric periods, daily snapshots, and worker cleanup helpers.
@@ -304,7 +311,7 @@ Coverage exception (multi-writer):
 - `src/store/validation.rs`: shared store validation, JSON value shaping, slugging, and unit tests for pure store logic.
 - `src/metric_store.rs`: ClickHouse schema migration, operational record append/load helpers, metric point writes, and metric-series reads.
 - `src/domain.rs`: DTOs and validation helpers.
-- `src/artifact_store.rs`: local staged artifact byte storage and root-confined reads.
+- `src/artifact_store.rs`: local staged artifact byte storage, Cloudflare R2 bucket/object access, opaque public artifact references, and root-confined local reads.
 - `src/managed_auth.rs`: Clerk session-token verification and provider-neutral managed-auth principal shaping.
 - `clickhouse/0001_initial.sql`: operational record log, metric points, console log lines, metric series, and materialized view schema.
 
@@ -394,4 +401,4 @@ list of handlers still on the legacy hand-rolled spec path.
 - Keep compatibility org context explicit: API-key mode uses the key org, local mode uses the fixed local org.
 - Keep project-scoped API keys flowing through project-aware helpers before returning run-derived data.
 - Keep bounded JSON export caps explicit until streaming export has its own design.
-- Artifact byte writes should stage, finalize, commit metadata, and clean up temp/finalized bytes on finalize or storage errors. Crash-only orphan cleanup/retention remains operational hardening work.
+- Artifact byte writes should validate the decoded byte size and plan capacity before local/R2 writes, then stage/finalize or upload, commit metadata, and clean up temp/finalized bytes on finalize or storage errors. Crash-only orphan cleanup/retention remains operational hardening work.

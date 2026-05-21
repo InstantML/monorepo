@@ -2,16 +2,24 @@
 
 import { Activity, Box, Copy, Download, FileText } from "lucide-react";
 
-import { formatBytes, safeArtifactUri } from "../../dashboard-models";
+import { artifactHasStoredBytes, formatBytes, safeArtifactUri } from "../../dashboard-models";
 import type { Artifact } from "../../dashboard-types";
 
 function artifactCanUseDownloadRoute(artifact: Artifact) {
-  const uri = String(artifact.uri ?? "").toLowerCase();
-  return Boolean(artifact.id) && !uri.startsWith("demo://") && !/^https?:\/\//.test(uri);
+  return artifactHasStoredBytes(artifact);
 }
 
 function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
+}
+
+function artifactMediaKind(artifact: Artifact) {
+  const mime = String(artifact.mime_type ?? artifact.metadata?.mime_type ?? artifact.metadata?.mimeType ?? artifact.metadata?.content_type ?? artifact.metadata?.contentType ?? "").toLowerCase();
+  const name = `${artifact.name} ${artifact.uri}`.toLowerCase();
+  if (mime.includes("image") || /\.(png|jpe?g|webp|gif)(?:$|[?#])/.test(name)) return "image";
+  if (mime.includes("audio") || /\.(mp3|m4a|wav|aac)(?:$|[?#])/.test(name)) return "audio";
+  if (mime.includes("video") || /\.(mp4|mov|webm)(?:$|[?#])/.test(name)) return "video";
+  return "";
 }
 
 function copyText(value: string) {
@@ -25,6 +33,19 @@ function ArtifactIcon({ type }: { type: string }) {
   return <FileText size={15} />;
 }
 
+function ArtifactBrowserPreview({ artifact }: { artifact: Artifact }) {
+  const kind = artifactMediaKind(artifact);
+  if (!kind || !artifactCanUseDownloadRoute(artifact)) return null;
+  const src = artifactDownloadUrl(artifact);
+  if (kind === "image") {
+    return <img alt={artifact.name} className="artifact-media artifact-image browser-artifact-media" loading="lazy" src={src} />;
+  }
+  if (kind === "audio") {
+    return <audio className="artifact-media browser-artifact-media" controls preload="metadata" src={src} />;
+  }
+  return <video className="artifact-media browser-artifact-media" controls preload="metadata" src={src} />;
+}
+
 export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {
   if (!artifacts.length) return <div className="empty">No artifacts logged for the selected run.</div>;
   return (
@@ -32,16 +53,17 @@ export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {
       {artifacts.map((artifact) => (
         <article className="browser-row" key={artifact.id}>
           <div className="browser-icon"><ArtifactIcon type={artifact.type} /></div>
-          <div>
+          <div className="browser-main">
             <strong>{artifact.name}</strong>
             <small>{safeArtifactUri(artifact.uri)}</small>
+            <ArtifactBrowserPreview artifact={artifact} />
           </div>
           <span>{artifact.step === null ? "no step" : `step ${artifact.step}`}</span>
           <span>{formatBytes(artifact.size_bytes)}</span>
           {artifactCanUseDownloadRoute(artifact) ? (
             <a className="copy-button artifact-download" href={artifactDownloadUrl(artifact)}><Download size={13} /> Download</a>
           ) : (
-            <button className="copy-button artifact-download unavailable" disabled title="Download unavailable for metadata-only demo artifact" type="button">
+            <button className="copy-button artifact-download unavailable" disabled title="Download unavailable for metadata-only artifacts" type="button">
               <Download size={13} /> Unavailable
             </button>
           )}

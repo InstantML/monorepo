@@ -57,6 +57,7 @@ async function runContract(root) {
   const org = (await request(root, "POST", "/api/orgs", {
     slug: `contract-${Date.now()}`,
     name: "Contract Smoke",
+    plan_tier: "pro",
     owner_user_id: user.id,
   }, bootstrapHeaders)).organization;
   if (bootstrapToken) assert.equal((await expectStatus(root, "POST", `/api/orgs/${org.id}/api-keys`, 401, { name: "blocked" })).error, "invalid bootstrap token");
@@ -65,6 +66,8 @@ async function runContract(root) {
   const usageKey = await request(root, "POST", `/api/orgs/${org.id}/api-keys`, { name: "contract-usage", scopes: ["usage:read"] }, bootstrapHeaders);
   const usageAuth = { Authorization: `Bearer ${usageKey.api_key}` };
   assert.equal((await request(root, "GET", `/api/orgs/${org.id}/api-keys`, undefined, bootstrapHeaders)).api_keys.length, 2);
+  const artifactWriteOnlyKey = await request(root, "POST", `/api/orgs/${org.id}/api-keys`, { name: "contract-artifact-write-only", scopes: ["artifacts:write"] }, bootstrapHeaders);
+  const artifactWriteOnlyAuth = { Authorization: `Bearer ${artifactWriteOnlyKey.api_key}` };
   assert.equal((await expectStatus(root, "GET", "/api/usage", 403, undefined, auth)).error, "api key requires usage:read");
 
   const missingAuth = await fetch(`${root}/runs`, {
@@ -220,8 +223,15 @@ async function runContract(root) {
     content_base64: Buffer.from("contract artifact").toString("base64"),
     mime_type: "text/plain",
   }, auth)).artifact;
+  assert.match(upload.uri, /^instantml:\/\/artifacts\/[0-9a-f-]{36}$/);
+  assert.equal(Object.hasOwn(upload, "storage_key"), false);
+  assert.equal(Object.hasOwn(upload, "storage_path"), false);
+  assert.equal((await expectStatus(root, "GET", `/api/runs/${run.id}/artifacts`, 403, undefined, artifactWriteOnlyAuth)).error, "api key requires export:read");
   const downloaded = await fetch(`${root}/api/artifacts/${upload.id}/download`);
   assert.equal(downloaded.status, 401);
+  const writeOnlyDownload = await fetch(`${root}/api/artifacts/${upload.id}/download`, { headers: artifactWriteOnlyAuth });
+  assert.equal(writeOnlyDownload.status, 403);
+  assert.equal((await writeOnlyDownload.json()).error, "api key requires export:read");
   const authorizedDownload = await fetch(`${root}/api/artifacts/${upload.id}/download`, { headers: auth });
   assert.equal(await authorizedDownload.text(), "contract artifact");
   const usage = await request(root, "GET", "/api/usage", undefined, usageAuth);
@@ -231,8 +241,8 @@ async function runContract(root) {
   assert.equal(usage.plans.premium.included_storage_bytes, 5 * 1024 ** 4);
   assert.equal(usage.organizations.length, 1);
   assert.equal(usage.organizations[0].org_id, org.id);
-  assert.equal(usage.organizations[0].plan_tier, "free");
-  assert.equal(usage.organizations[0].limits.included_seats, 2);
+  assert.equal(usage.organizations[0].plan_tier, "pro");
+  assert.equal(usage.organizations[0].limits.included_seats, 3);
   assert.equal(usage.organizations[0].usage.metric_points, 1);
   assert.equal(usage.organizations[0].usage.artifact_bytes_exact, Buffer.byteLength("contract artifact"));
   assert.equal(usage.organizations[0].usage.billing_precision, "not_billable");

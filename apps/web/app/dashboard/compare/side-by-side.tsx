@@ -4,6 +4,7 @@ import { Download, Copy } from "lucide-react";
 
 import { formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import {
+  artifactHasStoredBytes,
   artifactTotalForRun,
   compactValue,
   compareCategory,
@@ -250,7 +251,7 @@ function buildCompareRows(rawRows: any[], runs: RunSummary[], artifactsByRun: Re
 }
 
 function artifactMediaKind(artifact: Artifact) {
-  const mime = String(artifact.metadata?.mime_type ?? artifact.metadata?.mimeType ?? artifact.metadata?.content_type ?? artifact.metadata?.contentType ?? "").toLowerCase();
+  const mime = String(artifact.mime_type ?? artifact.metadata?.mime_type ?? artifact.metadata?.mimeType ?? artifact.metadata?.content_type ?? artifact.metadata?.contentType ?? "").toLowerCase();
   const name = `${artifact.name} ${artifact.uri}`.toLowerCase();
   if (mime.includes("image") || /\.(png|jpe?g|webp|gif)(?:$|[?#])/.test(name)) return "image";
   if (mime.includes("audio") || /\.(mp3|m4a|wav|aac)(?:$|[?#])/.test(name)) return "audio";
@@ -259,8 +260,7 @@ function artifactMediaKind(artifact: Artifact) {
 }
 
 function artifactCanUseDownloadRoute(artifact: Artifact) {
-  const uri = String(artifact.uri ?? "").toLowerCase();
-  return Boolean(artifact.id) && !uri.startsWith("demo://") && !/^https?:\/\//.test(uri);
+  return artifactHasStoredBytes(artifact);
 }
 
 function artifactDownloadUrl(artifact: Artifact) {
