@@ -159,6 +159,11 @@
 .iml-status.is-err{border-color:rgba(248,113,113,.34);background:var(--danger-soft);
   color:#fca5a5}
 .iml-status svg{flex:0 0 auto}
+.iml-recovery{display:grid;gap:8px;padding:12px;border:1px solid rgba(248,113,113,.3);
+  border-radius:var(--r);background:rgba(248,113,113,.07);color:var(--text-2)}
+.iml-recovery strong{font:700 13px/1.2 var(--f-sans);color:#fecaca}
+.iml-recovery span{font:500 12px/1.5 var(--f-sans);color:var(--muted)}
+.iml-recovery-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}
 
 /* ── fields ─────────────────────────────────────────────────────────────── */
 .iml-field{display:grid;gap:7px}
@@ -286,6 +291,7 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
   .iml-main{padding:26px 22px}
   .iml-seg{grid-template-columns:1fr}
   .iml-plans{grid-template-columns:1fr}
+  .iml-recovery-actions{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){
   .iml-auth *,.iml-landing *{animation:none!important;transition:none!important}
