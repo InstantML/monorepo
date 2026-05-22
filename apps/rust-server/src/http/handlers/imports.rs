@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::{errors::AppResult, store};
 
-use super::super::AppState;
+use super::super::{observability, AppState};
 use super::helpers::{context, read_json_value, require_scope, validate_session_mutation_origin};
 
 #[utoipa::path(
@@ -122,7 +122,37 @@ async fn import_with_source(
         .get("dry_run")
         .map(|value| value == "true")
         .unwrap_or(false);
-    Ok(Json(
-        store::import_payload(&state.store, &ctx, source, dry_run, raw).await?,
-    ))
+    let result = store::import_payload(&state.store, &ctx, source, dry_run, raw).await;
+    let (project_id, run_count, metric_count, artifact_count) = result
+        .as_ref()
+        .ok()
+        .map(import_counts)
+        .unwrap_or((None, 0, 0, 0));
+    observability::import_outcome(observability::ImportOutcome {
+        org_id: ctx.org_id,
+        source,
+        dry_run,
+        project_id,
+        run_count,
+        metric_count,
+        artifact_count,
+        error: result.as_ref().err(),
+    });
+    Ok(Json(result?))
+}
+
+fn import_counts(value: &Value) -> (Option<uuid::Uuid>, usize, usize, usize) {
+    let summary = value.get("summary").unwrap_or(value);
+    let run_count = summary.get("runs").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let metric_count = summary.get("metrics").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let artifact_count = summary
+        .get("artifacts")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let project_id = value
+        .get("import")
+        .and_then(|import| import.get("project_id"))
+        .and_then(Value::as_str)
+        .and_then(|raw| uuid::Uuid::parse_str(raw).ok());
+    (project_id, run_count, metric_count, artifact_count)
 }

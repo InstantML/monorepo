@@ -104,6 +104,7 @@ Environment variables:
 - `INSTANTML_MAX_UPLOAD_BODY_BYTES`: upload JSON body cap. Default: `50000000`.
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: HTTP timeout. Default: `30`.
 - `INSTANTML_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
+- `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warning logs. Default: `1000`.
 - `INSTANTML_DEV_AUTH_ENABLED`: enables the local Google-style auth endpoint when `INSTANTML_AUTH_MODE=local`. Loopback local binds enable it by default.
 - `CLERK_SECRET_KEY`: Clerk Backend API secret used to verify hosted browser sessions and fetch user profiles.
 - `INSTANTML_MANAGED_CLERK_ENABLED`: enables hosted Clerk auth. Defaults to enabled when `CLERK_SECRET_KEY` is present and `INSTANTML_AUTH_MODE=api-key`.
@@ -153,6 +154,38 @@ Shared demo auth:
 
 - Local/dev Google-style auth canonicalizes `hello@instantml.ai` and the legacy typo alias `hello@instantml.com` to one Premium-tier `InstantML Demo` business org. Repeated demo sign-ins reuse that org and tenant route instead of creating another service.
 - API keys created for the `InstantML Demo` org are forced to read-only `export:read` scope and the copy-once plaintext secret is not returned. Effective scopes are also clamped at API-key authentication/list time, so older demo keys cannot use stale write scopes to mutate the tenant warehouse or User Data control records such as API keys and service accounts. Demo browser sessions are also read-only for mutation routes, including SDK-style writes, imports, artifacts, API-key administration, and seat changes. This keeps the public demo browsable without encouraging writes into the shared warehouse.
+
+## Observability
+
+Local development defaults to `INSTANTML_LOG_FORMAT=pretty`. Hosted Cloud Run
+deploys set `INSTANTML_LOG_FORMAT=json`; keep
+`RUST_LOG=instantml_rust_server=info,tower_http=info` unless an incident needs
+temporary debug-level detail.
+
+Every HTTP request emits a structured completion event with method, path only
+(no query string), status, latency, service plane, generated/propagated
+`x-request-id`, observed `cf-ray` when present, a coarse user-agent family, and
+whether Cloudflare's connecting-IP header was present. Slow requests at or
+above `INSTANTML_SLOW_REQUEST_MS` emit an additional warning.
+
+Server-error logs are sanitized: they include status, stable code, retryability,
+and a static safe summary instead of raw provider or storage error text. The
+first workflow slice logs batch-level outcomes for metric ingestion, console-log
+ingestion, artifact upload/download, imports, readiness failures, startup, and
+worker cleanup. These events may include stable product IDs such as `org_id`,
+`project_id`, `run_id`, `artifact_id`, and `import_id`; they must not include
+emails, bearer tokens, session IDs, API-key plaintext, object-storage keys,
+signed URLs, query strings, project/run names, metric values, metric keys,
+config/metadata JSON, console line messages, or artifact filenames.
+
+Cloudflare captures edge/request logs separately from Rust origin logs. When an
+API domain is proxied through Cloudflare, configure Log Explorer or Logpush for
+path-only HTTP request fields where the plan supports them, plus custom
+response-header capture for `x-request-id` before relying on that search path.
+Avoid normal Logpush jobs that store full `ClientRequestURI`, because it can
+include user query strings. Treat observed `cf-ray` as a correlation field, not
+a unique join key; pair it with time window, host, path, status, and
+`x-request-id` whenever possible.
 
 Root helper-only environment variables:
 
@@ -312,6 +345,7 @@ Coverage exception (multi-writer):
 - `src/config.rs`: environment config and local defaults.
 - `src/control_store.rs`: User Data ClickHouse control-plane table and replay helpers for hosted mode.
 - `src/http/mod.rs`: HTTP app state, route table, and middleware wiring.
+- `src/http/observability.rs`: structured request logging, header normalization, sanitized error/workflow outcome helpers, and observability unit tests.
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.
 - `src/store/mod.rs`: ClickHouse-backed operational index core, deterministic replay helpers, tenant replay validation, and module re-exports.
 - `src/store/auth.rs`: users, organizations, sessions, API keys, and admin authorization helpers.
@@ -353,6 +387,7 @@ Coverage exception (multi-writer):
 - `docs/architecture/current-api.md`
 - `docs/product/pricing-and-margins.md`
 - `docs/design/2026-05-19-utoipa-migration.md`
+- `docs/design/2026-05-21-rust-server-observability.md`
 
 ## Adding a new endpoint (utoipa + codegen pipeline)
 

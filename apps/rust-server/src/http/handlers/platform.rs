@@ -13,7 +13,7 @@ use crate::{
     store,
 };
 
-use super::super::AppState;
+use super::super::{observability, AppState};
 
 #[utoipa::path(
     get,
@@ -40,14 +40,14 @@ pub async fn health() -> Json<Value> {
 )]
 pub async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json<Value>> {
     if state.config.service_plane.includes_data() && !store::ready(&state.store).await {
-        return Err(AppError::service_unavailable(
-            "clickhouse operational store is not ready",
-        ));
+        let error = AppError::service_unavailable("clickhouse operational store is not ready");
+        observability::readiness_failure(state.config.service_plane, "operational", &error);
+        return Err(error);
     }
     if !state.config.service_plane.includes_data() && !store::control_ready(&state.store).await {
-        return Err(AppError::service_unavailable(
-            "clickhouse control store is not ready",
-        ));
+        let error = AppError::service_unavailable("clickhouse control store is not ready");
+        observability::readiness_failure(state.config.service_plane, "control", &error);
+        return Err(error);
     }
     Ok(Json(json!({ "status": "ok" })))
 }

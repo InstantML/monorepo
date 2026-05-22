@@ -68,8 +68,19 @@ Important environment variables:
 - `CLOUDFLARE_R2_ACCOUNT_ID` / `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account used for per-org R2 buckets. The deploy helper normalizes either name to `CLOUDFLARE_ACCOUNT_ID` for the Rust service.
 - `CLOUDFLARE_R2_API_KEY` / `CLOUDFLARE_API_TOKEN`: Cloudflare token used for R2 bucket management and S3-compatible object access.
 - `CLOUDFLARE_R2_BUCKET_PREFIX`: optional bucket-name prefix. Default: `instantml-org`.
+- `INSTANTML_LOG_FORMAT`: log format for the Rust service. Hosted deploys set `json`.
+- `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warnings. Default: `1000`.
 
 Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, provision public Cloud Run or load-balancer URLs, and create Cloudflare R2 buckets when artifact uploads are enabled. The default deployment is the split `control` plus `data` shape; both services remain manual single-instance by default until the hosted operational-index coordination work lands. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Hosted artifact byte uploads use Cloudflare R2 when configured; the helper mounts Cloudflare env/secrets only on non-control services, and any Cloudflare token Client IP filter must include every Cloud Run static egress IP that can run artifact uploads.
+
+Hosted Rust origin logs are Cloud Run stdout/stderr JSON logs. They include
+request completion events, sanitized server-error fields, slow-request warnings,
+and first-slice workflow outcomes for metric/log ingestion, artifacts, imports,
+readiness, startup, and worker cleanup. If the public API domain is proxied
+through Cloudflare, configure Cloudflare Log Explorer or Logpush separately for
+edge request logs. Prefer path-only fields and custom `ResponseHeaders.x-request-id`
+capture; avoid full URI fields in normal jobs because query strings can contain
+user data. Treat observed `cf-ray` as a correlation field, not a unique join key.
 
 ## Import Helpers
 

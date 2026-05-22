@@ -57,6 +57,18 @@ fn emit_openapi() -> instantml_rust_server::AppResult<()> {
 }
 
 async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
+    tracing::info!(
+        service_plane = %config.service_plane.as_str(),
+        bind_addr = %config.bind_addr,
+        auth_mode = ?config.auth_mode,
+        artifact_backend = ?config.artifact_backend,
+        hosted_clickhouse_enabled = config.hosted_clickhouse.is_some(),
+        slow_request_ms = (config
+            .slow_request_threshold
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64),
+        "rust server starting"
+    );
     let metrics = metric_store::connect(&config)?;
     if should_migrate_primary_metric_store(&config) {
         metric_store::migrate(&metrics).await?;
@@ -80,9 +92,14 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         None
     };
     let bind_addr = config.bind_addr;
+    let service_plane = config.service_plane;
     let app = instantml_rust_server::http::router(AppState::new(store, config));
     let listener = TcpListener::bind(bind_addr).await?;
-    tracing::info!(%bind_addr, "Training Observability Rust server listening");
+    tracing::info!(
+        %bind_addr,
+        service_plane = %service_plane.as_str(),
+        "Training Observability Rust server listening"
+    );
     let result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -163,9 +180,19 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     let deleted = store::delete_expired_idempotency(&store).await?;
     let deleted_sessions = store::delete_expired_or_revoked_sessions(&store).await?;
     let usage_snapshots = store::write_usage_daily_snapshots(&store).await?;
-    tracing::info!(deleted, "deleted expired idempotency rows");
-    tracing::info!(deleted_sessions, "deleted expired or revoked session rows");
-    tracing::info!(usage_snapshots, "wrote immutable usage daily snapshots");
+    tracing::info!(
+        workflow = "worker",
+        operation = "cleanup",
+        stage = "complete",
+        outcome = "success",
+        status = 200,
+        code = "ok",
+        retryable = false,
+        deleted_idempotency_rows = deleted,
+        deleted_session_rows = deleted_sessions,
+        usage_daily_snapshots = usage_snapshots,
+        "worker cleanup outcome"
+    );
     Ok(())
 }
 

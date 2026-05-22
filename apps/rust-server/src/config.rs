@@ -37,6 +37,7 @@ pub struct AppConfig {
     pub artifact_uploads_enabled: bool,
     pub allowed_frontend_origins: Vec<String>,
     pub request_timeout: Duration,
+    pub slow_request_threshold: Duration,
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
     pub billing: BillingConfig,
@@ -303,6 +304,10 @@ impl AppConfig {
             frontend_base_url,
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
+            slow_request_threshold: Duration::from_millis(env_u64(
+                "INSTANTML_SLOW_REQUEST_MS",
+                1000,
+            )?),
             log_format,
             hosted_clickhouse,
             billing,
@@ -657,6 +662,16 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn slow_request_ms_uses_positive_integer_parser() {
+        std::env::set_var("INSTANTML_SLOW_REQUEST_MS", "2500");
+        assert_eq!(env_u64("INSTANTML_SLOW_REQUEST_MS", 1000).unwrap(), 2500);
+
+        std::env::set_var("INSTANTML_SLOW_REQUEST_MS", "not-a-number");
+        assert!(env_u64("INSTANTML_SLOW_REQUEST_MS", 1000).is_err());
+        std::env::remove_var("INSTANTML_SLOW_REQUEST_MS");
     }
 
     #[test]

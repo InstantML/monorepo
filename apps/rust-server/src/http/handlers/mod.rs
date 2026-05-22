@@ -266,6 +266,7 @@ mod tests {
             artifact_uploads_enabled: true,
             allowed_frontend_origins: Vec::new(),
             request_timeout: std::time::Duration::from_secs(30),
+            slow_request_threshold: std::time::Duration::from_millis(1000),
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
             billing: crate::config::BillingConfig::disabled(Some("http://localhost:3000")),

@@ -20,3 +20,4 @@ Current references:
 - `auth-and-tenant-flow.md`: Clerk hosted auth, plan-aware signup, invited-member activation, InstantML browser sessions, SDK API keys, org authorization, and hosted ClickHouse tenant routing.
 - `multi-instance-cloud-run.md`: split Cloud Run control/data topology, HTTPS public router, request flows, deploy commands, scaling guardrails, ClickHouse allowlisting, and launch checklist.
 - `../design/2026-05-14-clickhouse-only-storage.md`: accepted ClickHouse-only local/test storage slice and hosted control-plane/data-plane direction.
+- `../design/2026-05-21-rust-server-observability.md`: accepted first Rust server logging slice and Cloudflare edge-log correlation plan.

@@ -102,11 +102,7 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         if self.status.is_server_error() {
-            tracing::error!(
-                status = self.status.as_u16(),
-                error = %self.message,
-                "request failed"
-            );
+            crate::http::observability::server_error(self.status.as_u16(), self.code);
         }
         let public_error = if self.code == Some("warehouse_unavailable") {
             "data warehouse unavailable"

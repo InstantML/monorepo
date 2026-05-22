@@ -19,7 +19,7 @@ use crate::{
     store,
 };
 
-use super::super::AppState;
+use super::super::{observability, AppState};
 use super::helpers::{
     context, header_value, parse_uuid, read_json, require_scope, validate_session_mutation_origin,
 };
@@ -89,7 +89,22 @@ pub async fn upload_artifact(
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input =
         read_json::<UploadArtifactRequest>(&headers, bytes, state.config.max_upload_body_bytes)?;
-    let artifact = store::upload_artifact(&state.store, &state.config, &ctx, run_id, input).await?;
+    let result = store::upload_artifact(&state.store, &state.config, &ctx, run_id, input).await;
+    match &result {
+        Ok(artifact) => observability::artifact_upload(
+            ctx.org_id,
+            run_id,
+            Some(artifact.id),
+            Some(&artifact.kind),
+            Some(&artifact.storage_backend),
+            artifact.size_bytes,
+            None,
+        ),
+        Err(error) => {
+            observability::artifact_upload(ctx.org_id, run_id, None, None, None, None, Some(error))
+        }
+    }
+    let artifact = result?;
     Ok(Json(json!({ "artifact": artifact.public_row() })))
 }
 
@@ -155,7 +170,18 @@ pub async fn download_artifact(
     let range = headers
         .get(header::RANGE)
         .and_then(|value| value.to_str().ok());
-    let bytes = artifact_store.open(&artifact, range).await?;
+    let result = artifact_store.open(&artifact, range).await;
+    observability::artifact_download(observability::ArtifactDownloadOutcome {
+        org_id: ctx.org_id,
+        run_id: artifact.run_id,
+        artifact_id: artifact.id,
+        artifact_type: &artifact.kind,
+        storage_backend: &artifact.storage_backend,
+        size_bytes: artifact.size_bytes,
+        range_requested: range.is_some(),
+        error: result.as_ref().err(),
+    });
+    let bytes = result?;
     let content_type = artifact
         .mime_type
         .unwrap_or_else(|| "application/octet-stream".to_string());
