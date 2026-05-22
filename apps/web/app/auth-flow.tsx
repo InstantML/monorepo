@@ -5,6 +5,7 @@ import { AlertCircle, ArrowRight, CheckCircle2, Copy, Crown, HardDrive, KeyRound
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../src/api.js";
+import { clerkIssuerConfigError } from "../src/clerk-config.js";
 import { sanitizeNextPath } from "../src/routes.js";
 import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
@@ -36,6 +37,8 @@ type OrgAvailability = {
 type AuthConfig = {
   dev_auth_enabled: boolean;
   managed_clerk_enabled: boolean;
+  clerk_jwt_issuer?: string | null;
+  clerk_config_error?: string;
   loaded: boolean;
 };
 type ClerkExchangeOptions = {
@@ -129,11 +132,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const clerkDisplayName = user?.fullName ?? "";
   const clerkEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? "";
   const autoSlug = useMemo(() => deriveClerkSlug(clerkDisplayName, clerkEmail), [clerkDisplayName, clerkEmail]);
-  const managedClerkSignup = config.managed_clerk_enabled && signupMode;
+  const clerkConfigError = config.clerk_config_error || "";
+  const managedClerkSignup = config.managed_clerk_enabled && !clerkConfigError && signupMode;
   const effectiveOrgName = managedClerkSignup ? (orgNameOverride.trim() || autoSlug) : orgName;
   const orgNameRequired = signupMode && !managedClerkSignup;
   const orgUnavailable = orgNameRequired && (!orgName.trim() || orgAvailability.available === false);
-  const managedClerkReady = config.managed_clerk_enabled && clerkLoaded;
+  const managedClerkReady = config.managed_clerk_enabled && !clerkConfigError && clerkLoaded;
   const demoSession = isSharedDemoSession(session);
 
   function note(text: string) {
@@ -171,9 +175,16 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         if (cancelled) return;
         const sessionPayload = await api.get("/api/auth/session", { signal: controller.signal }).catch(() => ({ authenticated: false }));
         if (cancelled) return;
+        const managedClerkEnabled = Boolean((configPayload as any).managed_clerk_enabled);
+        const clerkConfig = managedClerkEnabled
+          ? clerkIssuerConfigError(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "", (configPayload as any).clerk_jwt_issuer)
+          : { message: "", diagnostic: "" };
+        if (clerkConfig.diagnostic) console.warn(clerkConfig.diagnostic);
         setConfig({
           dev_auth_enabled: Boolean((configPayload as any).dev_auth_enabled),
-          managed_clerk_enabled: Boolean((configPayload as any).managed_clerk_enabled),
+          managed_clerk_enabled: managedClerkEnabled,
+          clerk_jwt_issuer: typeof (configPayload as any).clerk_jwt_issuer === "string" ? (configPayload as any).clerk_jwt_issuer : null,
+          clerk_config_error: clerkConfig.message,
           loaded: true,
         });
         const authed = Boolean((sessionPayload as SessionPayload).authenticated);
@@ -188,8 +199,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         if (authed) {
           setSession(sessionPayload as SessionPayload);
           note("Workspace ready. Create your SDK key to finish onboarding.");
+        } else if (clerkConfig.message) {
+          note("Sign-in configuration needs attention.");
         } else {
-          note((configPayload as any).managed_clerk_enabled
+          note(managedClerkEnabled
             ? "Sign in with Clerk to access your workspace."
             : "Use the local development flow to continue.");
         }
@@ -454,7 +467,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   // Clerk's React init. Until both land, the action buttons render a
   // single disabled skeleton so the dev-auth form doesn't flash before
   // the Clerk path is available (or vice versa).
-  const authReady = config.loaded && (!config.managed_clerk_enabled || clerkLoaded);
+  const authReady = config.loaded && (!config.managed_clerk_enabled || Boolean(clerkConfigError) || clerkLoaded);
 
   return (
     <div className="iml-auth">
@@ -636,7 +649,13 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                   </form>
                 ) : null}
 
-                {authReady && !managedClerkReady && !config.dev_auth_enabled ? (
+                {authReady && clerkConfigError && !config.dev_auth_enabled ? (
+                  <div className="iml-status is-err" role="alert">
+                    <AlertCircle size={14} /> {clerkConfigError}
+                  </div>
+                ) : null}
+
+                {authReady && !managedClerkReady && !config.dev_auth_enabled && !clerkConfigError ? (
                   <div className="iml-status is-err" role="alert">
                     <AlertCircle size={14} /> No sign-in provider is configured for this environment.
                   </div>

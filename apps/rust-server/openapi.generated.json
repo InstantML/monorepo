@@ -1291,6 +1291,122 @@
         ]
       }
     },
+    "/api/invitations/accept": {
+      "post": {
+        "tags": [
+          "invitations"
+        ],
+        "operationId": "accept_invitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Session payload for accepted organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionPayload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invite email mismatch or fresh Clerk exchange required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Invitation expired or revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/invitations/preview": {
+      "post": {
+        "tags": [
+          "invitations"
+        ],
+        "operationId": "preview_invitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Safe invitation preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreviewEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invitation preview rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/metrics/series": {
       "post": {
         "tags": [
@@ -1772,6 +1888,288 @@
           },
           {
             "bearerApiKey": []
+          },
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
+    "/api/orgs/{org_id}/invitations": {
+      "get": {
+        "tags": [
+          "orgs"
+        ],
+        "operationId": "list_invitations",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows to return; defaults to 100",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Rows to skip",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization invitations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationsEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bootstrapToken": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "orgs"
+        ],
+        "operationId": "create_invitation",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created organization invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
+    "/api/orgs/{org_id}/invitations/{invitation_id}/resend": {
+      "post": {
+        "tags": [
+          "orgs"
+        ],
+        "operationId": "resend_invitation",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "description": "Invitation UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resent organization invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
+    "/api/orgs/{org_id}/invitations/{invitation_id}/revoke": {
+      "post": {
+        "tags": [
+          "orgs"
+        ],
+        "operationId": "revoke_invitation",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "description": "Invitation UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked organization invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
           },
           {
             "bootstrapToken": []
@@ -4199,14 +4597,24 @@
         "type": "object",
         "required": [
           "dev_auth_enabled",
-          "managed_clerk_enabled"
+          "managed_clerk_enabled",
+          "service_plane"
         ],
         "properties": {
+          "clerk_jwt_issuer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "dev_auth_enabled": {
             "type": "boolean"
           },
           "managed_clerk_enabled": {
             "type": "boolean"
+          },
+          "service_plane": {
+            "type": "string"
           }
         }
       },
@@ -4850,6 +5258,12 @@
             ],
             "format": "uuid"
           },
+          "accept_invite_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "account_type": {
             "type": [
               "string",
@@ -5127,6 +5541,23 @@
           }
         }
       },
+      "CreateInvitationRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "CreateObjectRequest": {
         "type": "object",
         "properties": {
@@ -5369,6 +5800,12 @@
             ],
             "format": "uuid"
           },
+          "accept_invite_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "account_type": {
             "type": [
               "string",
@@ -5587,6 +6024,103 @@
           "inserted": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "InvitationEnvelope": {
+        "type": "object",
+        "required": [
+          "invitation"
+        ],
+        "properties": {
+          "delivery_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invitation": {
+            "$ref": "#/components/schemas/PublicInvitationRow"
+          },
+          "preview_link": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvitationPreviewEnvelope": {
+        "type": "object",
+        "required": [
+          "invitation"
+        ],
+        "properties": {
+          "invitation": {
+            "$ref": "#/components/schemas/InvitationPreviewPayload"
+          }
+        }
+      },
+      "InvitationPreviewPayload": {
+        "type": "object",
+        "required": [
+          "org_name",
+          "email_hint",
+          "role",
+          "status",
+          "expires_at"
+        ],
+        "properties": {
+          "email_hint": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "org_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "InvitationTokenRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvitationsEnvelope": {
+        "type": "object",
+        "required": [
+          "invitations",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "invitations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicInvitationRow"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -6218,6 +6752,70 @@
           }
         }
       },
+      "PublicInvitationRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "email",
+          "role",
+          "status",
+          "created_at",
+          "expires_at",
+          "delivery_status"
+        ],
+        "properties": {
+          "accepted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delivery_status": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_sent_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "ReserveSeatRequest": {
         "type": "object",
         "properties": {
@@ -6841,6 +7439,10 @@
     {
       "name": "orgs",
       "description": "Organizations, memberships, seats, and API keys."
+    },
+    {
+      "name": "invitations",
+      "description": "Token-backed organization invitations."
     },
     {
       "name": "runs",

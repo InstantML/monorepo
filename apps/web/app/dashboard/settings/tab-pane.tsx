@@ -1,4 +1,4 @@
-import { AlertTriangle, CreditCard, Gauge, RefreshCw, Settings, UserPlus } from "lucide-react";
+import { AlertTriangle, Copy, CreditCard, ExternalLink, Gauge, RefreshCw, Settings, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
 import { MetricCard } from "../ui/metric-card";
@@ -8,6 +8,7 @@ import { formatNumber } from "../../../src/state.js";
 import type { components } from "../../../src/types/api.generated";
 
 type SeatRow = components["schemas"]["SeatRow"];
+type InvitationRow = components["schemas"]["PublicInvitationRow"];
 
 type UsageWarning = { code?: string; message?: string };
 type BillingStatus = {
@@ -18,14 +19,35 @@ type BillingStatus = {
   message?: string | null;
 };
 
+function formatInviteDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown expiry";
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(date);
+}
+
+function inviteStatusLabel(invitation: InvitationRow) {
+  if (invitation.status === "pending") return invitation.delivery_status === "sent" ? "sent" : invitation.delivery_status || "pending";
+  if (invitation.delivery_status === "send_failed" && !["accepted", "expired", "revoked"].includes(invitation.status ?? "")) return "send failed";
+  return invitation.status;
+}
+
 type Props = {
   activeLimitIncludedSeats: number;
   activePlan: string;
   activeUsageWarnings: UsageWarning[];
   adminBusy: boolean;
+  canManageOrg: boolean;
   formatBytes: (n: number) => string;
   inviteEmail: string;
   inviteRole: string;
+  invitations: InvitationRow[];
+  invitationLinks: Record<string, string>;
   metricKey: string;
   metricOptionsForControls: string[];
   metricPercent: number;
@@ -34,6 +56,10 @@ type Props = {
   onInviteEmail: (email: string) => void;
   onInviteRole: (role: string) => void;
   onInviteSeat: () => void;
+  onCopyInvitationLink: (invitationId: string) => void;
+  onOpenInvitationLink: (invitationId: string) => void;
+  onResendInvitation: (invitationId: string) => void;
+  onRevokeInvitation: (invitationId: string) => void;
   onOpenBillingPortal: () => void;
   onChangeBillingPlan: (plan: "free" | "pro" | "premium") => void;
   onCancelBilling: () => void;
@@ -43,6 +69,7 @@ type Props = {
   orgName: string;
   orgPlanTier: string;
   project: string;
+  reservedSeatCount: number;
   seats: SeatRow[];
   selectedRunCount: number;
   status: string;
@@ -59,9 +86,12 @@ export function SettingsTabPane({
   activePlan,
   activeUsageWarnings,
   adminBusy,
+  canManageOrg,
   formatBytes,
   inviteEmail,
   inviteRole,
+  invitations,
+  invitationLinks,
   metricKey,
   metricOptionsForControls,
   metricPercent,
@@ -70,6 +100,10 @@ export function SettingsTabPane({
   onInviteEmail,
   onInviteRole,
   onInviteSeat,
+  onCopyInvitationLink,
+  onOpenInvitationLink,
+  onResendInvitation,
+  onRevokeInvitation,
   onOpenBillingPortal,
   onChangeBillingPlan,
   onCancelBilling,
@@ -79,6 +113,7 @@ export function SettingsTabPane({
   orgName,
   orgPlanTier,
   project,
+  reservedSeatCount,
   seats,
   selectedRunCount,
   status,
@@ -90,9 +125,10 @@ export function SettingsTabPane({
   billingStatus,
 }: Props) {
   const billingState = billingStatus?.access_state ?? "free_active";
+  const visibleInvitations = invitations.filter((invitation) => invitation.status !== "accepted");
   return (
     <>
-      <PageHead eyebrow="Admin" title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
       <div className="tab-grid settings-grid">
         <section className="panel">
           <div className="panel-head">
@@ -101,7 +137,7 @@ export function SettingsTabPane({
           </div>
           <div className="panel-body insight-stack">
             <MetricCard label="Plan" value={activePlan} tone="good" />
-            <MetricCard label="Seats" value={`${formatNumber(seats.length, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} tone="neutral" />
+            <MetricCard label="Seats" value={`${formatNumber(reservedSeatCount, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} tone="neutral" />
             <MetricCard label="Storage" value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
             <div className="usage-meter" aria-label="Storage usage">
               <span style={{ width: `${storagePercent}%` }} />
@@ -135,33 +171,43 @@ export function SettingsTabPane({
                 <strong>{billingStatus.message}</strong>
               </div>
             ) : null}
-            <div className="admin-form-row">
-              <button className="ghost" disabled={adminBusy} onClick={onOpenBillingPortal} type="button"><CreditCard size={14} /> Portal</button>
-              <button className="ghost" disabled={adminBusy || orgPlanTier === "pro"} onClick={() => onChangeBillingPlan("pro")} type="button">Pro</button>
-              <button className="ghost" disabled={adminBusy || orgPlanTier === "premium"} onClick={() => onChangeBillingPlan("premium")} type="button">Premium</button>
-              <button className="ghost" disabled={adminBusy || orgPlanTier === "free"} onClick={() => onChangeBillingPlan("free")} type="button">Free</button>
-              <button className="ghost" disabled={adminBusy || !billingStatus?.subscription_status} onClick={onCancelBilling} type="button">Cancel</button>
-            </div>
+            {canManageOrg ? (
+              <div className="admin-form-row">
+                <button className="ghost" disabled={adminBusy} onClick={onOpenBillingPortal} type="button"><CreditCard size={14} /> Portal</button>
+                <button className="ghost" disabled={adminBusy || orgPlanTier === "pro"} onClick={() => onChangeBillingPlan("pro")} type="button">Pro</button>
+                <button className="ghost" disabled={adminBusy || orgPlanTier === "premium"} onClick={() => onChangeBillingPlan("premium")} type="button">Premium</button>
+                <button className="ghost" disabled={adminBusy || orgPlanTier === "free"} onClick={() => onChangeBillingPlan("free")} type="button">Free</button>
+                <button className="ghost" disabled={adminBusy || !billingStatus?.subscription_status} onClick={onCancelBilling} type="button">Cancel</button>
+              </div>
+            ) : null}
           </div>
         </section>
         <section className="panel">
           <div className="panel-head"><h2><UserPlus size={15} /> Seats</h2></div>
           <div className="panel-body admin-stack">
-            <div className="admin-form-row">
-              <input aria-label="Invite email" onChange={(event) => onInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" value={inviteEmail} />
-              <CustomSelect
-                id="seat-role"
-                label="Role"
-                onChange={onInviteRole}
-                options={[
-                  { value: "member", label: "Member" },
-                  { value: "admin", label: "Admin" },
-                  { value: "viewer", label: "Viewer" },
-                ]}
-                value={inviteRole}
-              />
-              <button className="primary-button" disabled={adminBusy || !inviteEmail.trim()} onClick={onInviteSeat} type="button"><UserPlus size={14} /> Invite</button>
-            </div>
+            {canManageOrg ? (
+              <form
+                className="admin-form-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!adminBusy && inviteEmail.trim()) onInviteSeat();
+                }}
+              >
+                <input aria-label="Invite email" autoComplete="email" name="invite-email" onChange={(event) => onInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" value={inviteEmail} />
+                <CustomSelect
+                  id="seat-role"
+                  label="Role"
+                  onChange={onInviteRole}
+                  options={[
+                    { value: "member", label: "Member" },
+                    { value: "admin", label: "Admin" },
+                    { value: "viewer", label: "Viewer" },
+                  ]}
+                  value={inviteRole}
+                />
+                <button className="primary-button" disabled={adminBusy || !inviteEmail.trim()} type="submit"><UserPlus size={14} /> Invite</button>
+              </form>
+            ) : null}
             <div className="admin-list">
               {seats.map((seat) => (
                 <div className="api-row" key={seat.membership.id}>
@@ -170,7 +216,30 @@ export function SettingsTabPane({
                   <code>{seat.membership.role}</code>
                 </div>
               ))}
-              {!seats.length ? <p className="empty">No seats loaded.</p> : null}
+              {visibleInvitations.map((invitation) => (
+                <div className="api-row" key={invitation.id}>
+                  <span>{inviteStatusLabel(invitation)}</span>
+                  <strong>
+                    {invitation.email}
+                    <small>Expires {formatInviteDate(invitation.expires_at)}</small>
+                  </strong>
+                  <code>{invitation.role}</code>
+                  {canManageOrg && invitation.status === "pending" ? (
+                    <>
+                      {invitationLinks[invitation.id] ? (
+                        <>
+                          <button aria-label="Copy invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onCopyInvitationLink(invitation.id)} title="Copy invitation link" type="button"><Copy size={14} /></button>
+                          <button aria-label="Open invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onOpenInvitationLink(invitation.id)} title="Open invitation link" type="button"><ExternalLink size={14} /></button>
+                        </>
+                      ) : null}
+                      <button aria-label="Resend invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onResendInvitation(invitation.id)} title="Resend invitation" type="button"><RefreshCw size={14} /></button>
+                      <button aria-label="Revoke invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onRevokeInvitation(invitation.id)} title="Revoke invitation" type="button"><X size={14} /></button>
+                    </>
+                  ) : null}
+                </div>
+              ))}
+              {!seats.length && !visibleInvitations.length ? <p className="empty">No seats loaded.</p> : null}
+              {!canManageOrg ? <p className="empty">Seat management is available to workspace admins.</p> : null}
             </div>
           </div>
         </section>

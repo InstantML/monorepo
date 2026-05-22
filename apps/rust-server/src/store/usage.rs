@@ -109,14 +109,7 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         .filter(|artifact| artifact.org_id == org_id)
         .collect::<Vec<_>>();
     let artifact_usage = artifact_usage_counts(org_artifacts.iter().copied());
-    let seats = data
-        .memberships
-        .values()
-        .filter(|membership| {
-            membership.org_id == org_id
-                && matches!(membership.status.as_str(), "active" | "invited")
-        })
-        .count() as i64;
+    let seats = reserved_seat_count_in_data(&data, org_id, Utc::now()) as i64;
     let projects = data
         .projects
         .values()

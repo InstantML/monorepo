@@ -9,7 +9,7 @@
  *   3. Page references the three tier numbers from auth-flow.tsx
  *      (single source of truth: $0 / $199 / $699).
  *   4. Page surfaces the W&B comparison framing and the
- *      "unlimited free viewers" promise that backs Jay's demo.
+ *      role-aware viewer messaging that backs Jay's demo.
  *   5. CSS for the pricing route is wired into globals.css.
  *   6. Landing nav routes to /pricing.
  */
@@ -90,8 +90,8 @@ describe("PricingPage — tier numbers match auth-flow.tsx", () => {
 describe("PricingPage — surfaces Jay-demo positioning", () => {
   const src = read("components/pricing/PricingPage.tsx");
 
-  test("names 'unlimited free viewers' promise", () => {
-    assert.match(src, /Unlimited free viewer/i);
+  test("names read-only viewer role", () => {
+    assert.match(src, /Read-only viewer role/i);
   });
 
   test("includes W&B comparison framing", () => {

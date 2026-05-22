@@ -1,12 +1,12 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
-import { Check, ChevronDown, CircleHelp, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { InstantMlMark } from "../../instantml-mark";
+import { accountDisplayLabel, accountInitials, safeAccountAvatarUrl } from "../../../src/account.js";
 import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import { CustomSelect } from "../ui/select";
@@ -25,6 +25,36 @@ export type OrgMembershipSummary = {
 };
 
 const ORG_SWITCHER_SEARCH_THRESHOLD = 7;
+
+type AccountUser = {
+  primary_email?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
+
+function AccountAvatar({ user }: { user: AccountUser | null }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const displayName = user?.display_name ?? "";
+  const email = user?.primary_email ?? "";
+  const label = accountDisplayLabel(displayName, email);
+  const initials = accountInitials(displayName, email);
+  const avatarUrl = imageFailed ? "" : safeAccountAvatarUrl(user?.avatar_url);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [user?.avatar_url]);
+
+  return (
+    <div className={`avatar brandbar-action-desktop ${avatarUrl ? "avatar--image" : ""}`} aria-label={`Account: ${label}`} title={label}>
+      {avatarUrl ? (
+        <img alt="" className="avatar-image" onError={() => setImageFailed(true)} referrerPolicy="no-referrer" src={avatarUrl} />
+      ) : (
+        <span aria-hidden="true">{initials}</span>
+      )}
+    </div>
+  );
+}
+
 export function OrgSwitcher({
   busy,
   current,
@@ -155,6 +185,7 @@ export function OrgSwitcher({
 export function DashboardTopbar({
   activeIcon: ActiveIcon,
   activeTab,
+  accountUser,
   detailRunName,
   message,
   mobileNavOpen,
@@ -166,9 +197,11 @@ export function DashboardTopbar({
   onRefresh,
   onSaveView,
   onSelectTab,
+  onSignOut,
   onShortcutHelp,
   onSortBy,
   onStatus,
+  onThemeToggle,
   onViewName,
   orgMemberships,
   orgSwitchBusy,
@@ -184,6 +217,7 @@ export function DashboardTopbar({
   status,
   metricUsagePercent,
   storageUsagePercent,
+  theme,
   tone,
   usageAvailable,
   usageResetLabel,
@@ -193,6 +227,7 @@ export function DashboardTopbar({
 }: {
   activeIcon: LucideIcon;
   activeTab: TabId;
+  accountUser: AccountUser | null;
   detailRunName: string;
   message: string;
   mobileNavOpen: boolean;
@@ -204,9 +239,11 @@ export function DashboardTopbar({
   onRefresh: () => void;
   onSaveView: () => void;
   onSelectTab: (tabId: TabId) => void;
+  onSignOut: () => void;
   onShortcutHelp: () => void;
   onSortBy: (value: string) => void;
   onStatus: (status: string) => void;
+  onThemeToggle: () => void;
   onViewName: (value: string) => void;
   orgMemberships: OrgMembershipSummary[];
   orgSwitchBusy: boolean;
@@ -222,6 +259,7 @@ export function DashboardTopbar({
   status: string;
   metricUsagePercent: number;
   storageUsagePercent: number;
+  theme: "light" | "dark";
   tone: "error" | "loading" | "ok";
   usageAvailable: boolean;
   usageResetLabel: string;
@@ -232,6 +270,7 @@ export function DashboardTopbar({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
   const [compactFilters, setCompactFilters] = useState(false);
+  const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
@@ -337,9 +376,26 @@ export function DashboardTopbar({
             >
               <CircleHelp size={15} />
             </button>
-            <span className="brandbar-action-desktop brandbar-user-avatar" aria-label="Account">
-              <UserButton />
-            </span>
+            <button
+              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+              aria-pressed={dark}
+              className="icon-button framed brandbar-action-desktop"
+              onClick={onThemeToggle}
+              title={dark ? "Light mode" : "Dark mode"}
+              type="button"
+            >
+              {dark ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+            <button
+              aria-label="Sign out"
+              className="icon-button framed brandbar-action-desktop"
+              onClick={onSignOut}
+              title="Sign out"
+              type="button"
+            >
+              <LogOut size={15} />
+            </button>
+            <AccountAvatar user={accountUser} />
           </div>
         </div>
       </div>

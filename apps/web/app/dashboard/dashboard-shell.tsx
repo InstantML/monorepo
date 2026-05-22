@@ -72,6 +72,7 @@ import type { components } from "../../src/types/api.generated";
 // See docs/design/2026-05-19-utoipa-migration.md.
 type GeneratedSeatRow = components["schemas"]["SeatRow"];
 type GeneratedApiKeyRow = components["schemas"]["PublicApiKeyRow"];
+type GeneratedInvitationRow = components["schemas"]["PublicInvitationRow"];
 type GeneratedWorkspaceViewSummary = components["schemas"]["WorkspaceViewSummary"];
 type GeneratedOrgMembershipSummary = components["schemas"]["OrganizationMembershipSummary"];
 
@@ -107,7 +108,7 @@ type WorkspaceViewSummaryPayload = Partial<Pick<GeneratedWorkspaceViewSummary, "
 type DashboardSessionPayload = {
   authenticated?: boolean;
   organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number };
-  user?: { primary_email: string; display_name?: string | null };
+  user?: { primary_email: string; display_name?: string | null; avatar_url?: string | null };
   membership?: { role: string; status: string };
   memberships?: Array<{ org_id: string; role: string; status: string }>;
 };
@@ -118,6 +119,7 @@ type OrgMembershipSummary = GeneratedOrgMembershipSummary;
 // Sourced from the generated OpenAPI spec; `list_seats` returns a
 // `SeatsEnvelope { seats: SeatRow[] }`. Rust struct `domain::SeatRow`.
 type SeatRow = GeneratedSeatRow;
+type InvitationRow = GeneratedInvitationRow;
 // Sourced from the generated OpenAPI spec; `list_api_keys` returns an
 // `ApiKeysEnvelope { api_keys: PublicApiKeyRow[] }`. Rust struct
 // `domain::PublicApiKeyRow`. Existing UI code only touches a subset of
@@ -363,6 +365,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [usagePayload, setUsagePayload] = useState<UsagePayload | null>(null);
   const [billingPayload, setBillingPayload] = useState<BillingPayload | null>(null);
   const [seats, setSeats] = useState<SeatRow[]>([]);
+  const [invitations, setInvitations] = useState<InvitationRow[]>([]);
+  const [invitationLinks, setInvitationLinks] = useState<Record<string, string>>({});
   const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
@@ -505,6 +509,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const integrationRows = useMemo(() => buildIntegrationRows(), []);
   const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
+  const activeMembershipRole = sessionPayload?.membership?.role ?? "";
+  const canManageOrg = activeMembershipRole === "owner" || activeMembershipRole === "admin";
   const activeUsageOrg = useMemo(() => usagePayload?.organizations?.find((org) => org.org_id === activeOrgId) ?? usagePayload?.organizations?.[0] ?? null, [activeOrgId, usagePayload]);
   const activeUsage = activeUsageOrg?.usage ?? {};
   const activeLimits = activeUsageOrg?.limits ?? {};
@@ -1417,19 +1423,51 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   const loadOrgSettings = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     if (!activeOrgId) return;
-    try {
-      const [usage, seatPayload, billing] = await Promise.all([
-        api.get("/api/usage", options),
-        api.get(`/api/orgs/${activeOrgId}/seats`, options),
-        api.get("/api/billing/status", options).catch(() => null),
-      ]);
-      setUsagePayload(usage as UsagePayload);
-      setSeats(Array.isArray(seatPayload.seats) ? seatPayload.seats as SeatRow[] : []);
-      setBillingPayload(billing as BillingPayload | null);
-    } catch (error) {
-      if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load workspace settings.");
+    const [usageResult, seatResult, invitationResult, billingResult] = await Promise.allSettled([
+      api.get("/api/usage", options),
+      api.get(`/api/orgs/${activeOrgId}/seats`, options),
+      api.get(`/api/orgs/${activeOrgId}/invitations`, options),
+      api.get("/api/billing/status", options),
+    ]);
+    if (options.signal?.aborted) return;
+    const shouldSurfaceError = (error: unknown) => (
+      !isAbortError(error)
+        && !(error instanceof ApiError && error.status === 403 && !canManageOrg)
+    );
+    let loadError = "";
+    if (usageResult.status === "fulfilled") {
+      setUsagePayload(usageResult.value as UsagePayload);
+    } else if (shouldSurfaceError(usageResult.reason)) {
+      loadError = usageResult.reason instanceof Error ? usageResult.reason.message : "Unable to load usage.";
     }
-  }, [activeOrgId, api]);
+    if (seatResult.status === "fulfilled") {
+      const seatPayload = seatResult.value as { seats?: unknown };
+      setSeats(Array.isArray(seatPayload.seats) ? seatPayload.seats as SeatRow[] : []);
+    } else {
+      setSeats([]);
+      if (shouldSurfaceError(seatResult.reason) && !loadError) {
+        loadError = seatResult.reason instanceof Error ? seatResult.reason.message : "Unable to load seats.";
+      }
+    }
+    if (invitationResult.status === "fulfilled") {
+      const invitationPayload = invitationResult.value as { invitations?: unknown };
+      setInvitations(Array.isArray(invitationPayload.invitations) ? invitationPayload.invitations as InvitationRow[] : []);
+    } else {
+      setInvitations([]);
+      if (shouldSurfaceError(invitationResult.reason) && !loadError) {
+        loadError = invitationResult.reason instanceof Error ? invitationResult.reason.message : "Unable to load invitations.";
+      }
+    }
+    if (billingResult.status === "fulfilled") {
+      setBillingPayload(billingResult.value as BillingPayload | null);
+    } else {
+      setBillingPayload(null);
+      if (shouldSurfaceError(billingResult.reason) && !loadError) {
+        loadError = billingResult.reason instanceof Error ? billingResult.reason.message : "Unable to load billing.";
+      }
+    }
+    if (loadError) setMessage(loadError);
+  }, [activeOrgId, api, canManageOrg]);
 
   useEffect(() => {
     if (!dashboardAuthorized || !activeOrgId) return;
@@ -1465,20 +1503,79 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
     setAdminBusy(true);
-    setMessage("Reserving seat...");
+    setMessage("Sending invitation...");
     try {
-      await api.post(`/api/orgs/${activeOrgId}/seats`, {
+      const payload = await api.post(`/api/orgs/${activeOrgId}/invitations`, {
         email: inviteEmail.trim(),
         role: inviteRole,
       });
       setInviteEmail("");
-      await loadOrgSettings();
-      setMessage("Seat reserved.");
+      const deliveryError = typeof payload.delivery_error === "string" ? payload.delivery_error : "";
+      const previewLink = typeof payload.preview_link === "string" ? payload.preview_link : "";
+      const invitationId = typeof payload.invitation?.id === "string" ? payload.invitation.id : "";
+      if (previewLink && invitationId) {
+        setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
+      }
+      setMessage(deliveryError ? `Invitation created, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link ready." : "Invitation sent.");
+      void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to reserve seat.");
+      setMessage(error instanceof Error ? error.message : "Unable to send invitation.");
     } finally {
       setAdminBusy(false);
     }
+  }
+
+  async function resendInvitation(invitationId: string) {
+    if (!activeOrgId) return;
+    setAdminBusy(true);
+    setMessage("Resending invitation...");
+    try {
+      const payload = await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/resend`, {});
+      const deliveryError = typeof payload.delivery_error === "string" ? payload.delivery_error : "";
+      const previewLink = typeof payload.preview_link === "string" ? payload.preview_link : "";
+      if (previewLink) {
+        setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
+      }
+      setMessage(deliveryError ? `Invitation updated, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link updated." : "Invitation resent.");
+      void loadOrgSettings();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to resend invitation.");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function revokeInvitation(invitationId: string) {
+    if (!activeOrgId) return;
+    setAdminBusy(true);
+    setMessage("Revoking invitation...");
+    try {
+      await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/revoke`, {});
+      setInvitationLinks((current) => {
+        const next = { ...current };
+        delete next[invitationId];
+        return next;
+      });
+      setMessage("Invitation revoked.");
+      void loadOrgSettings();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to revoke invitation.");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function copyInvitationLink(invitationId: string) {
+    const link = invitationLinks[invitationId];
+    if (!link) return;
+    await navigator.clipboard.writeText(link);
+    setMessage("Invitation link copied.");
+  }
+
+  function openInvitationLink(invitationId: string) {
+    const link = invitationLinks[invitationId];
+    if (!link) return;
+    window.open(link, "_blank", "noopener,noreferrer");
   }
 
   async function openBillingPortal() {
@@ -2196,6 +2293,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       <DashboardTopbar
         activeIcon={ActiveIcon}
         activeTab={activeTab}
+        accountUser={sessionPayload?.user ?? null}
         detailRunName={primaryRun?.name ?? ""}
         message={message}
         mobileNavOpen={mobileNavOpen}
@@ -2207,9 +2305,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onRefresh={loadDashboard}
         onSaveView={saveView}
         onSelectTab={selectTab}
+        onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
         onSortBy={changeRunSort}
         onStatus={changeStatus}
+        onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onViewName={setViewName}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
@@ -2225,6 +2325,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         sortBy={sortBy}
         status={status}
         storageUsagePercent={storagePercent}
+        theme={theme}
         tone={currentMessageTone}
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
@@ -2524,9 +2625,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               activePlan={activePlan}
               activeUsageWarnings={activeUsageOrg?.warnings ?? []}
               adminBusy={adminBusy}
+              canManageOrg={canManageOrg}
               formatBytes={formatBytes}
               inviteEmail={inviteEmail}
               inviteRole={inviteRole}
+              invitations={invitations}
+              invitationLinks={invitationLinks}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
               metricPercent={metricPercent}
@@ -2535,6 +2639,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onInviteEmail={setInviteEmail}
               onInviteRole={setInviteRole}
               onInviteSeat={inviteSeat}
+              onCopyInvitationLink={copyInvitationLink}
+              onOpenInvitationLink={openInvitationLink}
+              onResendInvitation={resendInvitation}
+              onRevokeInvitation={revokeInvitation}
               onOpenBillingPortal={openBillingPortal}
               onChangeBillingPlan={changeBillingPlan}
               onCancelBilling={cancelBilling}
@@ -2544,6 +2652,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               orgName={sessionPayload?.organization?.name ?? ""}
               orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
               project={project}
+              reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? seats.length)}
               seats={seats}
               selectedRunCount={selectedRunIds.length}
               status={status}

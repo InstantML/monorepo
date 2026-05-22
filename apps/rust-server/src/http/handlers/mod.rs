@@ -4,6 +4,7 @@ pub mod billing;
 pub mod dashboard;
 mod helpers;
 pub mod imports;
+pub mod invitations;
 pub mod metrics;
 pub mod orgs;
 pub mod platform;
@@ -24,6 +25,10 @@ pub(super) use dashboard::{
     update_dashboard_preferences, update_workspace_view,
 };
 pub(super) use imports::{import_mlflow, import_neptune, import_wandb, list_imports};
+pub(super) use invitations::{
+    accept_invitation, create_invitation, list_invitations, preview_invitation, resend_invitation,
+    revoke_invitation,
+};
 pub(super) use metrics::metrics_series;
 pub(super) use orgs::{
     create_api_key, create_org, create_user, disable_service_account, list_api_keys,
@@ -42,9 +47,10 @@ pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
 #[cfg(test)]
 mod tests {
-    use super::helpers::{require_session_scope, validate_clerk_signup_allowed};
+    use super::helpers::{request_rate_key, require_session_scope, validate_clerk_signup_allowed};
     use super::platform::openapi_path_available_for_plane;
     use crate::domain::{ClerkAuthRequest, SessionContext};
+    use axum::http::{HeaderMap, HeaderValue};
     use serde_json::Value;
     use uuid::Uuid;
 
@@ -75,8 +81,27 @@ mod tests {
     #[test]
     fn non_demo_session_roles_keep_expected_write_permissions() {
         assert!(require_session_scope(&session("member", false), "sdk:ingest").is_ok());
+        assert!(require_session_scope(&session("viewer", false), "export:read").is_ok());
+        assert!(require_session_scope(&session("viewer", false), "sdk:ingest").is_err());
         assert!(require_session_scope(&session("member", false), "api_keys:write").is_err());
         assert!(require_session_scope(&session("owner", false), "api_keys:write").is_ok());
+    }
+
+    #[test]
+    fn invite_rate_key_keeps_peer_and_splits_forwarded_clients() {
+        let peer = "198.51.100.24:443".parse().expect("peer addr");
+        let mut headers = HeaderMap::new();
+
+        assert_eq!(request_rate_key(&headers, peer), "ip:198.51.100.24");
+
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("203.0.113.9, 10.0.0.2"),
+        );
+        assert_eq!(
+            request_rate_key(&headers, peer),
+            "ip:198.51.100.24;client:203.0.113.9"
+        );
     }
 
     #[test]
@@ -144,6 +169,8 @@ mod tests {
             "/api/auth/device-code/start",
             "/api/auth/device-code/poll",
             "/api/auth/device-code/confirm",
+            "/api/invitations/preview",
+            "/api/invitations/accept",
             // billing
             "/api/billing/status",
             "/api/billing/checkout",
@@ -163,6 +190,9 @@ mod tests {
             "/api/orgs/memberships",
             "/api/orgs/name-availability",
             "/api/orgs/{org_id}/seats",
+            "/api/orgs/{org_id}/invitations",
+            "/api/orgs/{org_id}/invitations/{invitation_id}/resend",
+            "/api/orgs/{org_id}/invitations/{invitation_id}/revoke",
             "/api/orgs/{org_id}/api-keys",
             "/api/orgs/{org_id}/api-keys/{api_key_id}/revoke",
             "/api/orgs/{org_id}/service-accounts/{service_account_id}/disable",
@@ -207,6 +237,8 @@ mod tests {
             "RunRow",
             "ProjectRow",
             "SeatRow",
+            "PublicInvitationRow",
+            "InvitationEnvelope",
             "PublicApiKeyRow",
             "WorkspaceViewSummary",
             "AuthSessionPayload",
@@ -234,6 +266,7 @@ mod tests {
             plan_tier: None,
             seat_emails: None,
             accept_invite_org_id: None,
+            accept_invite_token: None,
         };
         assert!(validate_clerk_signup_allowed(&config, "founder@example.com", &signup).is_ok());
         assert!(validate_clerk_signup_allowed(&config, "teammate@instantml.ai", &signup).is_ok());
@@ -247,8 +280,26 @@ mod tests {
             plan_tier: None,
             seat_emails: None,
             accept_invite_org_id: None,
+            accept_invite_token: None,
         };
         assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signin).is_ok());
+
+        let invite_accept_signup = ClerkAuthRequest {
+            token: None,
+            mode: Some("signup".to_string()),
+            account_type: None,
+            org_name: Some("Acme".to_string()),
+            plan_tier: None,
+            seat_emails: None,
+            accept_invite_org_id: None,
+            accept_invite_token: Some("instantml_invite_test".to_string()),
+        };
+        assert!(validate_clerk_signup_allowed(
+            &config,
+            "invited@example.org",
+            &invite_accept_signup
+        )
+        .is_ok());
     }
 
     fn test_config() -> crate::config::AppConfig {
@@ -278,6 +329,13 @@ mod tests {
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
             billing: crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            email: crate::config::EmailConfig {
+                provider: crate::config::EmailProvider::Log,
+                from: "InstantML <invites@instantml.ai>".to_string(),
+                reply_to: None,
+                frontend_base_url: "http://localhost:3000".to_string(),
+                resend_api_key: None,
+            },
             frontend_base_url: Some("http://localhost:3000".to_string()),
         }
     }
@@ -286,7 +344,13 @@ mod tests {
     fn org_switcher_endpoints_live_on_control_plane() {
         use crate::config::ServicePlaneRole;
 
-        for path in ["/api/auth/switch-organization", "/api/orgs/memberships"] {
+        for path in [
+            "/api/auth/switch-organization",
+            "/api/orgs/memberships",
+            "/api/invitations/preview",
+            "/api/invitations/accept",
+            "/api/orgs/{org_id}/invitations",
+        ] {
             assert!(
                 openapi_path_available_for_plane(path, ServicePlaneRole::Control),
                 "{path} should be available on control plane"

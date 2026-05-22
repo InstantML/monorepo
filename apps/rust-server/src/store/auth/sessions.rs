@@ -1,9 +1,11 @@
 use super::super::*;
 use super::api_keys::mint_onboarding_api_key;
 use super::helpers::*;
+use super::invitations::accept_invitation_for_user;
 use super::invitations::activate_invited_membership;
 use super::invitations::normalized_invite_emails;
 use super::invitations::pending_invites_for_user;
+use super::invitations::preflight_invitation_for_email;
 use super::orgs::is_shared_demo_org;
 use crate::managed_auth::ManagedAuthPrincipal;
 use axum::http::StatusCode;
@@ -28,6 +30,7 @@ pub async fn create_dev_google_session(
             plan_tier: input.plan_tier,
             seat_emails: input.seat_emails,
             accept_invite_org_id: input.accept_invite_org_id,
+            accept_invite_token: input.accept_invite_token,
             strict_email_linking: false,
             auto_derive_display_name: input.display_name,
             auto_derive_email: input.email,
@@ -70,6 +73,7 @@ pub async fn create_clerk_session(
             plan_tier: input.plan_tier,
             seat_emails: input.seat_emails.unwrap_or_default(),
             accept_invite_org_id: input.accept_invite_org_id,
+            accept_invite_token: input.accept_invite_token,
             strict_email_linking: true,
             // Provide Clerk profile fields for auto-derivation fallback.
             auto_derive_display_name: principal.display_name,
@@ -87,6 +91,7 @@ pub(super) async fn create_verified_provider_session(
 ) -> AppResult<CreatedAuthSession> {
     let provider = validate_name(Some(&input.provider), "provider")?;
     let provider_subject = validate_name(Some(&input.provider_subject), "provider_subject")?;
+    let allow_legacy_invite_activation = provider != "clerk";
     let email = validate_email(Some(&input.email))?;
     let mode = validate_auth_mode(input.mode.as_deref(), input.org_name.is_some())?;
     let account_type = validate_account_type(Some(&input.account_type))?;
@@ -95,12 +100,15 @@ pub(super) async fn create_verified_provider_session(
     let paid_signup_requires_checkout =
         billing_config.is_some_and(|config| config.enabled) && canonical_plan_tier != "free";
     let seat_emails = normalized_invite_emails(input.seat_emails, &email)?;
+    if let Some(invite_token) = input.accept_invite_token.as_deref() {
+        preflight_invitation_for_email(store, invite_token, &email).await?;
+    }
     if 1 + seat_emails.len() > plan.included_seats as usize {
         return Err(AppError::conflict("organization seat limit reached"));
     }
     let mut data = store.data.lock().await;
     let identity_key = (provider.clone(), provider_subject.clone());
-    let user = if let Some(user_id) = data.identities.get(&identity_key).copied() {
+    let mut user = if let Some(user_id) = data.identities.get(&identity_key).copied() {
         data.users
             .get(&user_id)
             .cloned()
@@ -152,6 +160,29 @@ pub(super) async fn create_verified_provider_session(
             .insert((identity.provider, identity.provider_subject), user.id);
         user
     };
+    if user.primary_email != email {
+        if data
+            .users_by_email
+            .get(&email)
+            .copied()
+            .is_some_and(|existing_user_id| existing_user_id != user.id)
+        {
+            return Err(AppError::conflict(
+                "verified email already belongs to an existing account",
+            ));
+        }
+        user.primary_email = email.clone();
+        user.last_seen_at = Some(Utc::now());
+        store
+            .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
+            .await?;
+        data.insert_user(user.clone());
+    }
+    if let Some(invite_token) = input.accept_invite_token.as_deref() {
+        let user_id = user.id;
+        drop(data);
+        return accept_invitation_for_user(store, invite_token, user_id).await;
+    }
     let existing_org = existing_org_for_auth(
         &data,
         user.id,
@@ -174,34 +205,43 @@ pub(super) async fn create_verified_provider_session(
         drop(data);
         return create_session_for_org(store, user, org).await;
     }
-    if let Some(invite_org_id) = input.accept_invite_org_id {
-        if let Some(org) =
-            activate_invited_membership(store, &mut data, user.id, invite_org_id).await?
-        {
-            drop(data);
-            return create_session_for_org(store, user, org).await;
-        }
-        return Err(AppError::not_found("invitation not found"));
-    }
-    if mode != "signup" {
-        let invites = pending_invites_for_user(&data, user.id);
-        match invites.len() {
-            0 => return Err(AppError::validation("organization is required for signup")),
-            1 => {
-                let org = activate_invited_membership(store, &mut data, user.id, invites[0].org_id)
-                    .await?
-                    .ok_or_else(|| AppError::not_found("invitation not found"))?;
+    if allow_legacy_invite_activation {
+        if let Some(invite_org_id) = input.accept_invite_org_id {
+            if let Some(org) =
+                activate_invited_membership(store, &mut data, user.id, invite_org_id).await?
+            {
                 drop(data);
                 return create_session_for_org(store, user, org).await;
             }
-            _ => {
-                return Err(AppError::with_code(
-                    StatusCode::CONFLICT,
-                    "multiple_pending_invites",
-                    "multiple pending invitations",
-                ))
+            return Err(AppError::not_found("invitation not found"));
+        }
+        if mode != "signup" {
+            let invites = pending_invites_for_user(&data, user.id);
+            match invites.len() {
+                0 => return Err(AppError::validation("organization is required for signup")),
+                1 => {
+                    let org =
+                        activate_invited_membership(store, &mut data, user.id, invites[0].org_id)
+                            .await?
+                            .ok_or_else(|| AppError::not_found("invitation not found"))?;
+                    drop(data);
+                    return create_session_for_org(store, user, org).await;
+                }
+                _ => {
+                    return Err(AppError::with_code(
+                        StatusCode::CONFLICT,
+                        "multiple_pending_invites",
+                        "multiple pending invitations",
+                    ))
+                }
             }
         }
+    } else if input.accept_invite_org_id.is_some() {
+        return Err(AppError::validation(
+            "invitation token is required to accept hosted invitations",
+        ));
+    } else if mode != "signup" {
+        return Err(AppError::validation("organization is required for signup"));
     }
     let (org_name, org_slug, auto_derived) = if let Some(name) = input.org_name {
         let slug = slugify(&name);
@@ -435,6 +475,7 @@ mod tests {
             plan_tier: Some("premium".to_string()),
             seat_emails: Some(vec!["teammate@example.com".to_string()]),
             accept_invite_org_id: Some(Uuid::new_v4()),
+            accept_invite_token: Some("instantml_invite_deadbeef".to_string()),
         })
         .unwrap();
 
@@ -444,6 +485,7 @@ mod tests {
         assert_eq!(normalized.org_name.as_deref(), Some(SHARED_DEMO_NAME));
         assert_eq!(normalized.plan_tier.as_deref(), Some("premium"));
         assert_eq!(normalized.accept_invite_org_id, None);
+        assert_eq!(normalized.accept_invite_token, None);
         assert!(normalized.seat_emails.is_empty());
     }
 
@@ -458,6 +500,7 @@ mod tests {
             plan_tier: Some("pro".to_string()),
             seat_emails: Some(vec!["teammate@example.com".to_string()]),
             accept_invite_org_id: None,
+            accept_invite_token: Some("instantml_invite_test".to_string()),
         })
         .unwrap();
 
@@ -468,6 +511,10 @@ mod tests {
         assert_eq!(normalized.org_name.as_deref(), Some("Personal Lab"));
         assert_eq!(normalized.plan_tier.as_deref(), Some("pro"));
         assert_eq!(normalized.seat_emails, vec!["teammate@example.com"]);
+        assert_eq!(
+            normalized.accept_invite_token.as_deref(),
+            Some("instantml_invite_test")
+        );
     }
 
     #[test]

@@ -156,6 +156,13 @@ button.ghost:hover {
   background: #f1f4f7;
 }
 
+button.icon-only {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;

@@ -30,7 +30,7 @@ sequenceDiagram
     Browser->>Clerk: "Sign in or sign up"
     Clerk-->>Browser: "Clerk session"
     Browser->>Clerk: "getToken()"
-    Browser->>Rust: "POST /api/auth/clerk { token, mode, org_name?, plan_tier?, accept_invite_org_id? }"
+    Browser->>Rust: "POST /api/auth/clerk { token, mode, org_name?, plan_tier?, accept_invite_token? }"
     Rust->>Clerk: "Fetch JWKS and verify JWT"
     Rust->>Clerk: "Fetch user profile"
     Rust->>UserData: "Upsert user, identity, org, membership, session"
@@ -52,7 +52,7 @@ flowchart TD
     F --> G["Rust verifies Clerk session token and email"]
     G --> H{"Existing active membership?"}
     H -- "Yes" --> I["Create new session for existing org"]
-    H -- "No" --> J["Create org with tenant_routing_tier, owner membership, invited memberships"]
+    H -- "No" --> J["Create org with tenant_routing_tier, owner membership, optional invite records"]
     J --> K{"account_type == business?"}
     K -- "Yes" --> L["Provision dedicated ClickHouse Cloud service"]
     K -- "No" --> M["Point at shared cell — no Cloud provisioning"]
@@ -97,11 +97,15 @@ Existing tenant routes and warehouses are preserved. The signup path creates a
 route only when an org has no route; it does not delete or recreate an existing
 warehouse to match a changed plan.
 
-Invited teammates are inserted as `MembershipRow` records with `status:
-"invited"` and a placeholder user keyed by email. A verified sign-in for that
-email activates the existing membership and gives the teammate access to the
-same org and projects. If the user has multiple pending invites, the client
-must send `accept_invite_org_id`.
+New organization invitations are `org_invitation` control records with a
+seven-day token, delivery status, expiry, and invited email. The pending
+invitation reserves a seat, but no `MembershipRow` is created until accept.
+Hosted Clerk accept requires `accept_invite_token`; tokenless
+`accept_invite_org_id` and single-pending-invite activation remain only as
+legacy local/dev compatibility for old reserved-seat rows. On accept, Rust
+uses the current provider-verified primary email, re-checks billing and seat
+capacity, creates an active membership, and issues a fresh browser session for
+the invited org so dashboard run reads are scoped through that org.
 
 ## API Authorization
 
@@ -165,7 +169,7 @@ Revoked or expired sessions are rejected on the next request. Session payload cr
 - Do not log Clerk session tokens, InstantML session tokens, API key plaintext, ClickHouse passwords, or tenant endpoints.
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is public and used by the Next app.
 - `CLERK_SECRET_KEY` stays server-side and is used by Rust to verify session tokens and fetch Clerk user profiles.
-- `CLERK_JWT_ISSUER`, when set, pins accepted Clerk session tokens to one exact issuer.
+- `CLERK_JWT_ISSUER` pins accepted Clerk session tokens to one exact issuer. Cloud Run deploys derive it from `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` when unset, validate `CLERK_SECRET_KEY` against Clerk Backend API domain metadata, and reject a configured issuer that points at a different Clerk instance. `/api/auth/config` returns this issuer so the frontend can block a broken staging/prod Clerk key mix before token exchange.
 - The browser does not receive ClickHouse tenant credentials.
 - The SDK does not receive Clerk tokens or browser cookies.
 - Cloud-service provisioning is opt-in and can incur cost; use local/database-mode tests for CI.

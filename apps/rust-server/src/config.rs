@@ -41,9 +41,36 @@ pub struct AppConfig {
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
     pub billing: BillingConfig,
+    pub email: EmailConfig,
     /// Base URL of the frontend, used to construct device-code verification URIs.
     /// Defaults to the first allowed_frontend_origins entry if set, else "http://localhost:3000".
     pub frontend_base_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EmailProvider {
+    Disabled,
+    Log,
+    Resend,
+}
+
+impl EmailProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Log => "log",
+            Self::Resend => "resend",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EmailConfig {
+    pub provider: EmailProvider,
+    pub from: String,
+    pub reply_to: Option<String>,
+    pub frontend_base_url: String,
+    pub resend_api_key: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -256,10 +283,16 @@ impl AppConfig {
                 ArtifactBackend::Local => hosted_clickhouse.is_none(),
                 ArtifactBackend::R2 => true,
             });
+        let allowed_frontend_origins = env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS");
         let frontend_base_url = env::var("INSTANTML_FRONTEND_BASE_URL")
             .ok()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty());
+        let email = email_config(
+            matches!(auth_mode, AuthMode::Local),
+            frontend_base_url.as_deref(),
+            &allowed_frontend_origins,
+        )?;
         let billing = billing_config(frontend_base_url.as_deref())?;
         Ok(Self {
             clickhouse_url,
@@ -300,7 +333,7 @@ impl AppConfig {
             artifact_backend,
             r2_artifacts,
             artifact_uploads_enabled,
-            allowed_frontend_origins: env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS"),
+            allowed_frontend_origins,
             frontend_base_url,
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
@@ -311,6 +344,7 @@ impl AppConfig {
             log_format,
             hosted_clickhouse,
             billing,
+            email,
         })
     }
 }
@@ -502,6 +536,80 @@ fn billing_config(frontend_base_url: Option<&str>) -> AppResult<BillingConfig> {
         ));
     }
     Ok(config)
+}
+
+fn email_config(
+    local_mode: bool,
+    frontend_base_url: Option<&str>,
+    allowed_frontend_origins: &[String],
+) -> AppResult<EmailConfig> {
+    let resend_api_key = env_first(&["RESEND_API_KEY", "INSTANTML_RESEND_API_KEY"]);
+    let provider = env::var("INSTANTML_EMAIL_PROVIDER")
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            if resend_api_key.is_some() {
+                "resend".to_string()
+            } else if local_mode {
+                "log".to_string()
+            } else {
+                "disabled".to_string()
+            }
+        });
+    let provider = match provider.as_str() {
+        "disabled" | "off" | "none" => EmailProvider::Disabled,
+        "log" | "console" => EmailProvider::Log,
+        "resend" => EmailProvider::Resend,
+        _ => {
+            return Err(AppError::config(
+                "INSTANTML_EMAIL_PROVIDER must be disabled, log, or resend",
+            ))
+        }
+    };
+    if matches!(provider, EmailProvider::Resend) && resend_api_key.is_none() {
+        return Err(AppError::config(
+            "RESEND_API_KEY is required when INSTANTML_EMAIL_PROVIDER=resend",
+        ));
+    }
+    let email_from = env_first(&["INSTANTML_EMAIL_FROM"]);
+    if matches!(provider, EmailProvider::Resend) && email_from.is_none() {
+        return Err(AppError::config(
+            "INSTANTML_EMAIL_FROM is required when organization invite email uses Resend",
+        ));
+    }
+    let fallback_origin = if matches!(provider, EmailProvider::Resend) {
+        allowed_frontend_origins
+            .iter()
+            .find(|origin| !is_loopback_origin(origin))
+            .map(String::as_str)
+    } else {
+        allowed_frontend_origins.first().map(String::as_str)
+    };
+    let frontend = frontend_base_url
+        .or(fallback_origin)
+        .unwrap_or("http://localhost:3000")
+        .trim_end_matches('/')
+        .to_string();
+    if matches!(provider, EmailProvider::Resend) && is_loopback_origin(&frontend) {
+        return Err(AppError::config(
+            "INSTANTML_FRONTEND_BASE_URL must be a non-localhost URL when organization invite email uses Resend",
+        ));
+    }
+    Ok(EmailConfig {
+        provider,
+        from: email_from.unwrap_or_else(|| "InstantML <invites@instantml.ai>".to_string()),
+        reply_to: env_first(&["INSTANTML_EMAIL_REPLY_TO", "INSTANTML_SUPPORT_EMAIL"]),
+        frontend_base_url: frontend,
+        resend_api_key,
+    })
+}
+
+fn is_loopback_origin(raw: &str) -> bool {
+    raw.parse::<url::Url>()
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1"))
 }
 
 fn artifact_backend_config() -> AppResult<(ArtifactBackend, Option<R2ArtifactConfig>)> {

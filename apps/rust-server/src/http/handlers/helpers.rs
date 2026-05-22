@@ -1,3 +1,5 @@
+use std::net::{IpAddr, SocketAddr};
+
 use axum::{
     body::Bytes,
     http::{HeaderMap, HeaderValue},
@@ -244,6 +246,25 @@ pub fn require_session_scope(session: &SessionContext, scope: &str) -> AppResult
     }
 }
 
+pub fn request_rate_key(headers: &HeaderMap, peer: SocketAddr) -> String {
+    let peer_key = format!("ip:{}", peer.ip());
+    forwarded_rate_ip(headers)
+        .map(|client_ip| format!("{peer_key};client:{client_ip}"))
+        .unwrap_or(peer_key)
+}
+
+fn forwarded_rate_ip(headers: &HeaderMap) -> Option<IpAddr> {
+    for name in ["cf-connecting-ip", "x-real-ip", "x-forwarded-for"] {
+        if let Some(raw) = header_text(headers, name) {
+            let candidate = raw.split(',').next()?.trim();
+            if let Ok(ip) = candidate.parse::<IpAddr>() {
+                return Some(ip);
+            }
+        }
+    }
+    None
+}
+
 pub async fn session_context(
     state: &AppState,
     headers: &HeaderMap,
@@ -466,6 +487,13 @@ pub fn validate_clerk_signup_allowed(
 }
 
 pub fn is_clerk_signup_request(input: &ClerkAuthRequest) -> bool {
+    if input
+        .accept_invite_token
+        .as_deref()
+        .is_some_and(|token| !token.trim().is_empty())
+    {
+        return false;
+    }
     input.mode.as_deref() == Some("signup")
         || input
             .org_name

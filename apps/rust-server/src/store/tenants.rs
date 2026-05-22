@@ -63,6 +63,8 @@ impl Store {
                     | "identity"
                     | "organization"
                     | "membership"
+                    | "org_invitation"
+                    | "email_delivery"
                     | "session"
                     | "service_account"
                     | "api_key"
@@ -150,14 +152,14 @@ impl Store {
     /// Returns true when the org's routing tier is "shared" and a shared-cell
     /// MetricStore is configured. In local/non-hosted mode always returns false.
     pub(super) async fn org_uses_shared_cell(&self, org_id: Uuid) -> bool {
-        if self.shared_cell_metric_store.is_none() {
-            return false;
-        }
         let data = self.data.lock().await;
-        data.organizations
-            .get(&org_id)
-            .map(|org| org.tenant_routing_tier == "shared")
-            .unwrap_or(false)
+        data.organizations.get(&org_id).is_some_and(|org| {
+            org_should_use_shared_cell(
+                org,
+                data.tenant_routes.get(&org_id),
+                self.shared_cell_metric_store.is_some(),
+            )
+        })
     }
 
     pub(super) async fn warehouse_storage_bytes_for_org(
@@ -182,11 +184,6 @@ impl Store {
             return Ok(local_route(org));
         }
 
-        // Personal/free orgs route to the shared cell — no Cloud provisioning.
-        if org.tenant_routing_tier == "shared" {
-            return self.ensure_shared_cell_route(org).await;
-        }
-
         let existing_route = {
             let data = self.data.lock().await;
             data.tenant_routes.get(&org.id).cloned()
@@ -206,6 +203,15 @@ impl Store {
                         .unwrap_or("tenant route is not ready"),
                 ));
             }
+        }
+
+        // Personal/free orgs route to the shared cell when one is configured.
+        // Otherwise, fall through to the dedicated path so staging and preview
+        // deploys do not strand new orgs on a missing shared cell. A ready
+        // route checked above is sticky, so enabling a shared cell later does
+        // not hide data already written to a dedicated fallback warehouse.
+        if should_route_to_shared_cell(org, self.shared_cell_metric_store.is_some()) {
+            return self.ensure_shared_cell_route(org).await;
         }
 
         let now = Utc::now();
@@ -317,13 +323,15 @@ impl Store {
         &self,
         org: &OrganizationRow,
     ) -> AppResult<TenantRouteRecord> {
-        // If we already have a ready shared-cell route for this org, return it.
+        // If we already have a ready route for this org, return it. A shared
+        // org may have a dedicated fallback route from a staging/preview period
+        // before a shared cell was configured.
         let existing = {
             let data = self.data.lock().await;
             data.tenant_routes.get(&org.id).cloned()
         };
         if let Some(route) = existing {
-            if route.status == TENANT_ROUTE_READY && route.provisioner == SHARED_CELL_PROVISIONER {
+            if route.status == TENANT_ROUTE_READY {
                 return Ok(route);
             }
         }
@@ -605,6 +613,23 @@ fn tenant_database_name(org_id: Uuid) -> String {
 
 fn tenant_unavailable(message: impl Into<String>) -> AppError {
     AppError::warehouse_unavailable(message)
+}
+
+fn should_route_to_shared_cell(org: &OrganizationRow, shared_cell_configured: bool) -> bool {
+    org.tenant_routing_tier == "shared" && shared_cell_configured
+}
+
+fn org_should_use_shared_cell(
+    org: &OrganizationRow,
+    existing_route: Option<&TenantRouteRecord>,
+    shared_cell_configured: bool,
+) -> bool {
+    if let Some(route) = existing_route {
+        if route.status == TENANT_ROUTE_READY {
+            return route.provisioner == SHARED_CELL_PROVISIONER;
+        }
+    }
+    should_route_to_shared_cell(org, shared_cell_configured)
 }
 
 fn local_route(org: &OrganizationRow) -> TenantRouteRecord {
@@ -1271,6 +1296,27 @@ mod tests {
         };
         assert_eq!(org.tenant_routing_tier, "shared");
         assert!(is_personal_account_type(&org.account_type));
+        assert!(should_route_to_shared_cell(&org, true));
+        assert!(!should_route_to_shared_cell(&org, false));
+    }
+
+    #[test]
+    fn shared_tier_org_keeps_ready_dedicated_fallback_route() {
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "free-user-lab".to_string(),
+            name: "Free User Lab".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+        };
+        let route = local_route(&org);
+
+        assert!(!org_should_use_shared_cell(&org, Some(&route), true));
+        assert!(org_should_use_shared_cell(&org, None, true));
     }
 
     #[test]
@@ -1288,5 +1334,6 @@ mod tests {
         };
         assert_eq!(org.tenant_routing_tier, "dedicated");
         assert!(!is_personal_account_type(&org.account_type));
+        assert!(!should_route_to_shared_cell(&org, true));
     }
 }

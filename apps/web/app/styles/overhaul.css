@@ -138,6 +138,15 @@
   border: 1px solid var(--line);
   color: var(--text-2);
   font: 600 12px/1 var(--font-sans);
+  overflow: hidden;
+  text-transform: uppercase;
+}
+.api-row strong small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font: 500 11px/1.2 var(--font-mono);
+  text-transform: none;
 }
 
 /* ── Nav rail — icon-forward, accent active ────────────────────────────── */
@@ -904,6 +913,7 @@ textarea:focus {
   font: 600 12px/1 var(--font-sans);
   display: grid;
   place-items: center;
+  overflow: hidden;
 }
 .topbar .icon-button.framed {
   width: 30px;
@@ -1925,6 +1935,7 @@ button.compare-row-head.active {
   border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--text-2);
+  overflow: hidden;
 }
 
 /* ── Pluto-style run row: select toggle + open action ──────────────────── */

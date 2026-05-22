@@ -8,7 +8,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 
 - Project dashboard.
 - Public landing page (merged from the standalone `github.com/InstantML/landing` repo). The `/` route is an auth-aware Next.js server component: signed-in Clerk users are redirected to `/signin` (which in turn forwards to `/dashboard/runs` if an InstantML session is active), and visitors with no Clerk session are served the full polished landing page. The landing visual system — italic-serif headlines, emerald palette, grid+glow background, bento cards, animated hero spotlight — is preserved in `components/landing/`. See `docs/design/2026-05-17-landing-merge-into-web.md`.
-- Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, Stripe Checkout redirect for paid signup, onboarding, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and Free/Pro/Premium selection remains visible. Paid signups return a `billing_checkout.url` and redirect to Stripe before writes/API-key creation are unlocked; free signups can still receive a ready-to-use `onboarding_api_key` rendered immediately without a separate button click. If a returning browser still has a Clerk session but InstantML cannot mint a scoped session from it, `app/auth-flow.tsx` retries with a non-cached Clerk token and then shows an explicit "refresh your sign-in" recovery path with a sign-out/restart action.
+- Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, Stripe Checkout redirect for paid signup, onboarding, organization invitation acceptance at `/invite#t=...`, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and Free/Pro/Premium selection remains visible. Paid signups return a `billing_checkout.url` and redirect to Stripe before writes/API-key creation are unlocked; free signups can still receive a ready-to-use `onboarding_api_key` rendered immediately without a separate button click. If a returning browser still has a Clerk session but InstantML cannot mint a scoped session from it, `app/auth-flow.tsx` retries with a non-cached Clerk token and then shows an explicit "refresh your sign-in" recovery path with a sign-out/restart action.
 - RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
 - Runs workspace with run selector, sections, line/bar/histogram/dot panels, control-plane saved views, and local workspace layout fallback.
 - Run detail view.
@@ -22,6 +22,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 Current navigation and comparison controls:
 
 - Route-backed navigation for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
+- The topbar account badge uses the signed-in user's managed-auth avatar when available, then falls back to initials derived from the display name or email handle.
 - Unauthenticated visitors land on `/`, can sign in or sign up through Clerk in hosted mode, or through the explicitly labeled local dev Google-style flow in local mode. Signup chooses Free, Pro, or Premium, can reserve included teammate seats by email, creates a copy-once SDK API key, and then enters `/dashboard/runs`. The shared demo action signs in as `hello@instantml.ai`, reuses the Premium-tier `InstantML Demo` org/service, skips SDK-key reveal, and is enforced read-only server-side so demo visitors browse sample data instead of pushing data. In hosted ClickHouse mode, auth writes users/orgs/sessions/API keys and tenant-route plan metadata to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
 - Light/dark mode toggle with a persisted local preference. Dark mode uses neutral dark surfaces with explicit accent states; primary button styling is opt-in via `.primary-button` instead of a broad global button selector.
@@ -57,7 +58,7 @@ Current navigation and comparison controls:
 - Browse active-run rich logged objects in Run Detail and Artifacts. The first slice renders table previews, histogram bars, and media cards from `GET /api/runs/:id/objects` plus bounded `GET /api/objects/:id/rows` table reads. Hidden tabs do not fetch object manifests, and Compare keeps using existing artifact context to avoid extra selected-run fan-out.
 - Address tabs through real routes such as `/dashboard/runs`, `/dashboard/alerts`, and `/dashboard/api`; legacy hashes such as `#runs` normalize to the matching dashboard route.
 - Derived workspace tabs use current summaries, selected-run artifacts, local saved views, and documented API routes. They do not yet imply persistent alert, dataset, report, model registry, or integration credential storage.
-- Settings now includes plan and usage visibility, Stripe billing controls, and seat invite/list controls. Metric-point usage is shown for the current UTC calendar month with its reset date; storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts that do not reset monthly. Storage combines exact InstantML-owned local/R2 artifact bytes with exact ClickHouse table bytes for dedicated tenant databases and falls back to metadata estimates only when exact per-org warehouse bytes are unavailable, such as shared-cell orgs. External/imported artifact sizes stay metadata-only and do not consume retained-storage quota. The topbar mirrors the highest usage percentage in a compact badge near account controls. The API tab now lists keys, creates copy-once keys, revokes keys, and still shows request snippets for SDK/API users.
+- Settings now includes plan and usage visibility, Stripe billing controls, token-backed invite/list controls, pending invitation resend/revoke actions, and seat accounting that includes active members plus unexpired pending invitations. Metric-point usage is shown for the current UTC calendar month with its reset date; storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts that do not reset monthly. Storage combines exact InstantML-owned local/R2 artifact bytes with exact ClickHouse table bytes for dedicated tenant databases and falls back to metadata estimates only when exact per-org warehouse bytes are unavailable, such as shared-cell orgs. External/imported artifact sizes stay metadata-only and do not consume retained-storage quota. The topbar mirrors the highest usage percentage in a compact badge near account controls. The API tab now lists keys, creates copy-once keys, revokes keys, and still shows request snippets for SDK/API users.
 
 ## Design Requirement
 
@@ -134,6 +135,29 @@ to `prod`, for pushed production builds. This variable intentionally overrides
 repo-local deploy helper API-base values so staging builds do not accidentally
 inherit a prod `.env` target.
 
+Staging and production frontend builds must use a
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as the
+backend `CLERK_SECRET_KEY`. The backend publishes its expected
+`clerk_jwt_issuer` from `/api/auth/config`; the sign-in and invite pages compare
+that issuer with the frontend key and show a configuration error when the build
+points at the wrong Clerk instance.
+
+The staging web container is built from `apps/web/Dockerfile`. Build it with
+`INSTANTML_WEB_API_ENV=staging` and the staging
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, then deploy it as the
+`instantml-staging-web` Cloud Run service. Use the resulting stable Cloud Run
+origin for `INSTANTML_FRONTEND_BASE_URL` and include that origin in
+`INSTANTML_ALLOWED_FRONTEND_ORIGINS` for both staging control and data services
+before enabling Resend-backed invitations.
+For Cloud Run web smoke tests, prefer direct split backend targets over a
+web-service -> public-load-balancer loop: set
+`INSTANTML_WEB_EXPLICIT_API_BASES=1`,
+`INSTANTML_CONTROL_API_BASE=<staging-control-url>`, and
+`INSTANTML_DATA_API_BASE=<staging-data-url>` at image build time, with both
+origins in `INSTANTML_API_ALLOWED_ORIGINS`. This keeps browser calls
+same-origin while the Next proxy talks directly to the intended staging
+services.
+
 After `npm run deploy:cloud-run` succeeds, the deploy helper writes hosted API
 settings into `apps/web/.env.local`. Single-service deploys write
 `INSTANTML_API_BASE`; split control/data deploys write
@@ -146,6 +170,21 @@ If you point at a different hosted API manually, set `INSTANTML_API_BASE` for a
 combined service or set both split bases for control/data before running
 `web:dev`, `web:build`, or `web:start`. Non-loopback API origins must also be
 listed in `INSTANTML_API_ALLOWED_ORIGINS`.
+
+Invite links use `/invite#t=<token>` so the token is not sent to the server as a
+URL path or query string. The invite page reads the fragment once, removes it
+from browser history, keeps only a short timestamped session-storage fallback
+for Clerk redirect handoffs, previews the invitation through
+`/api/invitations/preview`, and then exchanges a fresh verified Clerk session
+or local dev identity with `accept_invite_token` before opening
+`/dashboard/runs`. In managed Clerk mode, the page does not accept invitations
+through an existing InstantML session cookie; it re-checks Clerk, preserves the
+short invite handoff token, and clears the InstantML session when the browser
+is signed in as the wrong account. Settings hides invitation and billing
+mutation controls from non-admin sessions, shows pending invitation delivery
+status plus resend/revoke controls for admins, and exposes ephemeral copy/open
+links for log-provider invites immediately after create/resend for deterministic
+local and staging checks.
 
 When the hosted API returns `code: "warehouse_unavailable"` with HTTP `503`, the
 dashboard treats the API as reachable and shows a "Starting data warehouse"
@@ -191,6 +230,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/loading-screen.tsx`
 - `app/page.tsx` — auth-aware server component; unauthenticated renders `LandingPage`, Clerk-authenticated redirects to `/signin`
 - `app/auth-flow.tsx`
+- `app/invite/page.tsx`
 - `app/signin/page.tsx`
 - `app/signup/page.tsx`
 - `app/onboarding/page.tsx`
@@ -284,7 +324,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - Keep Runs workspace panel queries bounded by selected runs up to `MAX_SELECTED_RUNS` or filtered page/top N plus metric point limits; do not fetch full metric histories for the panel grid.
 - Keep hidden tab data fetches gated by active tab. Runs should not load Metrics, Run Detail, Compare, or artifact-only data during initial dashboard entry unless that tab is active.
 - Keep workspace layouts schema-versioned and sanitized before applying. The Rust/ClickHouse workspace-views API owns authenticated persistence; local storage is only a compatibility and offline-development fallback.
-- The first hosted auth/onboarding slice exists, but full organization switching, hosted provider credentials, invitation email delivery, and richer auth/no-access states are still follow-ups.
+- The first hosted auth/onboarding and token-backed organization invitation slices exist. Follow-ups are richer provider webhook delivery state, broader organization switching polish, and expanded auth/no-access recovery copy.
 
 ## API type codegen
 

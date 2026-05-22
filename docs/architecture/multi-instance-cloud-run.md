@@ -239,6 +239,9 @@ verify the public URL and write it into local frontend env.
 | `INSTANTML_STAGING_USER_DATA_ENDPOINT` | Full staging User Data endpoint override |
 | `INSTANTML_PUBLIC_API_BASE` | Public LB/router URL for frontend env |
 | `INSTANTML_CLOUD_RUN_STATIC_EGRESS` | Set `0` to skip NAT/static egress setup |
+| `CLERK_SECRET_KEY` | Server-side Clerk key synced into Secret Manager when managed Clerk is enabled |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` or `CLERK_PUBLISHABLE_KEY` | Public Clerk key from the same application as `CLERK_SECRET_KEY`; required for managed Clerk deploys so the helper can derive `CLERK_JWT_ISSUER` |
+| `CLERK_JWT_ISSUER` | Optional explicit Clerk issuer; when set it must match the issuer decoded from the publishable key |
 
 ## Local Docker Shape
 

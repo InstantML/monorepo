@@ -65,6 +65,7 @@ pub async fn list_projects(
     headers: HeaderMap,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     Ok(Json(
         json!({ "projects": store::list_projects(&state.store, &ctx).await? }),
     ))
@@ -118,6 +119,7 @@ pub async fn list_runs(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     Ok(Json(store::list_runs(&state.store, &ctx, &query).await?))
 }
 
@@ -140,6 +142,7 @@ pub async fn get_run(
     Path(run_id): Path<String>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         json!({ "run": store::get_run(&state.store, &ctx, run_id).await? }),
@@ -249,6 +252,7 @@ pub async fn get_metrics(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         store::get_metrics(&state.store, &ctx, run_id, &query).await?,
@@ -334,6 +338,7 @@ pub async fn list_console_logs(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         store::list_console_logs(&state.store, &ctx, run_id, &query).await?,
@@ -362,6 +367,7 @@ pub async fn overview(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     Ok(Json(store::overview(&state.store, &ctx, &query).await?))
 }
 
@@ -391,6 +397,7 @@ pub async fn runs_summary(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     Ok(Json(store::runs_summary(&state.store, &ctx, &query).await?))
 }
 
@@ -416,6 +423,7 @@ pub async fn side_by_side(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     Ok(Json(store::side_by_side(&state.store, &ctx, &query).await?))
 }
 
@@ -480,6 +488,7 @@ pub async fn list_attributes(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         json!({ "attributes": store::list_attributes(&state.store, &ctx, run_id, &query).await? }),
@@ -547,6 +556,7 @@ pub async fn list_objects(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         store::list_objects(&state.store, &ctx, run_id, &query).await?,
@@ -576,6 +586,7 @@ pub async fn list_object_rows(
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let object_id = object_id
         .parse::<i64>()
         .map_err(|_| crate::errors::AppError::not_found("object not found"))?;

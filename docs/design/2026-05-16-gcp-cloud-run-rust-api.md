@@ -93,6 +93,7 @@ Cloud Run public ingress is acceptable only with these app-level controls enable
 - `INSTANTML_AUTH_MODE=api-key`
 - `INSTANTML_DEV_AUTH_ENABLED=false`
 - `INSTANTML_MANAGED_CLERK_ENABLED=true` only when `CLERK_SECRET_KEY` is present
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` or `CLERK_PUBLISHABLE_KEY` from the same Clerk application as `CLERK_SECRET_KEY`; the deploy helper derives `CLERK_JWT_ISSUER` from it and rejects mismatches
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS` or `INSTANTML_SIGNUP_ALLOWED_DOMAINS` set for hosted signup
 - `INSTANTML_ARTIFACT_UPLOADS_ENABLED=false` until object storage lands
 
@@ -242,6 +243,7 @@ Deferred complexity:
 - Missing `gcloud` auth or project: deploy helper stops before changing cloud resources.
 - Missing ClickHouse secrets: helper stops before deploy.
 - Missing Clerk secret: Cloud Run can deploy without managed Clerk, but hosted signup/sign-in are disabled and local frontend auth is not considered fully working.
+- Missing or mismatched Clerk publishable key: managed Clerk deploys stop before cloud mutation. The public key is required to derive the exact JWT issuer and prevent staging/prod frontend builds from exchanging tokens against the wrong backend Clerk secret.
 - Static egress setup failure: helper stops unless static egress is explicitly disabled and the operator accepts manual ClickHouse allowlisting.
 - ClickHouse Cloud allowlist does not include Cloud Run egress IP: `/readyz` or tenant routes fail to connect; operator must update allowlist and redeploy or retry.
 - ClickHouse Cloud API-key allowlist does not include Cloud Run egress IP: new tenant-service creation fails from Cloud Run even though service query traffic may work; operator must update the key allowlist and redeploy or retry.
