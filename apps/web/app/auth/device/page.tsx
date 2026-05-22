@@ -1,10 +1,12 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { AlertCircle, ArrowRight, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../../../src/api.js";
+import { InstantMlMark } from "../../instantml-mark";
 
 type PageState =
   | { kind: "checking" }
@@ -14,8 +16,51 @@ type PageState =
   | { kind: "success" }
   | { kind: "error"; message: string };
 
+function Brand() {
+  return (
+    <div className="iml-brand">
+      <span className="iml-mark" aria-hidden="true"><InstantMlMark /></span>
+      InstantML
+    </div>
+  );
+}
+
+function CardShell({
+  eyebrow,
+  headline,
+  sub,
+  children,
+  status,
+  isError,
+}: {
+  eyebrow: string;
+  headline: React.ReactNode;
+  sub: React.ReactNode;
+  children?: React.ReactNode;
+  status?: React.ReactNode;
+  isError?: boolean;
+}) {
+  return (
+    <div className="iml-auth">
+      <main className="iml-stage">
+        <section className="iml-card iml-card--single" aria-labelledby="iml-device-title">
+          <div className="iml-main">
+            <Brand />
+            <div className="iml-head">
+              <p className={`iml-eyebrow${isError ? " is-danger" : ""}`}>{eyebrow}</p>
+              <h1 className="iml-headline" id="iml-device-title">{headline}</h1>
+              <p className="iml-sub">{sub}</p>
+            </div>
+            {children}
+            {status}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
 function DeviceConfirmForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const { isLoaded, isSignedIn } = useAuth();
   const api = useMemo(() => new ApiClient(), []);
@@ -54,84 +99,110 @@ function DeviceConfirmForm() {
 
   if (state.kind === "checking") {
     return (
-      <div className="device-page">
-        <p>Checking your session…</p>
-      </div>
+      <CardShell
+        eyebrow="Connect a device"
+        headline={<>Checking your <span className="iml-em">session</span></>}
+        sub="One moment — verifying you're signed in before we authorize the CLI."
+        status={<p className="iml-status is-busy" role="status"><span className="iml-spin" aria-hidden="true" /> Checking…</p>}
+      />
     );
   }
 
   if (state.kind === "unauthenticated") {
+    const nextParam = encodeURIComponent("/auth/device" + (params?.get("code") ? "?code=" + params.get("code") : ""));
     return (
-      <div className="device-page">
-        <h1>Sign in required</h1>
-        <p>
-          You must be signed in to confirm a device. Please{" "}
-          <a href={`/signin?next=${encodeURIComponent("/auth/device" + (params?.get("code") ? "?code=" + params.get("code") : ""))}`}>
-            sign in
-          </a>{" "}
-          and return to this page.
-        </p>
-      </div>
+      <CardShell
+        eyebrow="Sign in required"
+        headline={<>Sign in to <span className="iml-em">continue</span></>}
+        sub="You must be signed into InstantML to authorize the CLI for this account."
+      >
+        <div className="iml-actions">
+          <a className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href={`/signin?next=${nextParam}`}>
+            <ShieldCheck size={16} /> Sign in <ArrowRight className="iml-arrow" size={15} />
+          </a>
+        </div>
+      </CardShell>
     );
   }
 
   if (state.kind === "success") {
     return (
-      <div className="device-page">
-        <h1>Device confirmed</h1>
-        <p>
-          Your CLI is now connected. You can close this tab and return to your terminal.
-        </p>
-      </div>
+      <CardShell
+        eyebrow="Device confirmed"
+        headline={<>You're <span className="iml-em">connected.</span></>}
+        sub="The CLI is now authorized for this account. You can close this tab and return to your terminal."
+        status={<p className="iml-status is-ok" role="status"><CheckCircle2 size={14} aria-hidden="true" /> Authorized — head back to your terminal.</p>}
+      />
     );
   }
 
   const busy = state.kind === "confirming";
+  const isError = state.kind === "error";
 
   return (
-    <div className="device-page">
-      <h1>Connect a device</h1>
-      <p>
-        Enter the code displayed in your terminal to authorize the{" "}
-        <code>instantml</code> CLI.
-      </p>
-
-      {state.kind === "error" && (
-        <p className="device-error" role="alert">
-          {state.message}
-        </p>
-      )}
-
-      <form onSubmit={handleSubmit} className="device-form">
-        <label htmlFor="user-code">Confirmation code</label>
-        <input
-          id="user-code"
-          type="text"
-          value={userCode}
-          onChange={(e) => {
-            // Auto-uppercase and insert hyphen after 4 chars for UX.
-            let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-            if (val.length > 4) val = val.slice(0, 4) + "-" + val.slice(4, 8);
-            setUserCode(val);
-          }}
-          placeholder="ABCD-EFGH"
-          maxLength={9}
-          autoComplete="off"
-          spellCheck={false}
-          disabled={busy}
-          className="device-code-input"
-        />
-        <button type="submit" disabled={busy || !userCode.trim()}>
+    <CardShell
+      eyebrow="Connect a device"
+      headline={<>Authorize the <span className="iml-em">instantml CLI</span></>}
+      sub={<>Enter the code shown in your terminal after running <code>instantml login</code>. We&rsquo;ll link this CLI to your account.</>}
+      isError={isError}
+      status={
+        isError ? (
+          <p className="iml-status is-err" role="alert"><AlertCircle size={14} aria-hidden="true" /> {state.message}</p>
+        ) : null
+      }
+    >
+      <form className="iml-actions" onSubmit={handleSubmit} aria-label="Device authorization">
+        <div className="iml-field">
+          <label htmlFor="user-code">Confirmation code</label>
+          <input
+            className="iml-input"
+            id="user-code"
+            type="text"
+            value={userCode}
+            onChange={(e) => {
+              let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+              if (val.length > 4) val = val.slice(0, 4) + "-" + val.slice(4, 8);
+              setUserCode(val);
+            }}
+            placeholder="ABCD-EFGH"
+            maxLength={9}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={busy}
+            aria-describedby="user-code-help"
+          />
+          <span className="iml-hint" id="user-code-help">Format: <code>XXXX-XXXX</code>. Case-insensitive.</span>
+        </div>
+        <button
+          className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block"
+          disabled={busy || !userCode.trim()}
+          type="submit"
+        >
+          {busy ? <span className="iml-spin on-fill" aria-hidden="true" /> : <KeyRound size={16} />}
           {busy ? "Confirming…" : "Confirm device"}
+          {!busy ? <ArrowRight className="iml-arrow" size={15} /> : null}
         </button>
       </form>
-    </div>
+    </CardShell>
   );
 }
 
 export default function DeviceAuthPage() {
   return (
-    <Suspense fallback={<div className="device-page"><p>Loading…</p></div>}>
+    <Suspense
+      fallback={
+        <div className="iml-auth">
+          <main className="iml-stage">
+            <section className="iml-card iml-card--single">
+              <div className="iml-main">
+                <Brand />
+                <p className="iml-status is-busy"><span className="iml-spin" aria-hidden="true" /> Loading…</p>
+              </div>
+            </section>
+          </main>
+        </div>
+      }
+    >
       <DeviceConfirmForm />
     </Suspense>
   );

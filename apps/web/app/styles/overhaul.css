@@ -784,6 +784,19 @@ textarea:focus {
 .empty-workspace-snippet__link:hover {
   text-decoration: underline;
 }
+.empty-workspace-snippet__inline-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.empty-workspace-snippet__inline-link:hover {
+  text-decoration: underline;
+}
 .empty-workspace-snippet__import {
   display: inline-flex;
   align-items: center;
@@ -911,6 +924,20 @@ textarea:focus {
   color: var(--muted);
 }
 .topbar .icon-button.framed:hover { background: var(--surface-hover); color: var(--text); border-color: var(--line-strong); }
+
+/* Clerk UserButton: line up with the 30px square icon-buttons. */
+.brandbar-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+}
+.brandbar-user-avatar .cl-userButtonAvatarBox,
+.brandbar-user-avatar .cl-userButtonTrigger {
+  width: 30px;
+  height: 30px;
+}
 
 /* Workbar — 44px control row */
 .workbar {
