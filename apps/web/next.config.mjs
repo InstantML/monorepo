@@ -3,6 +3,11 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const hostedApiBases = Object.freeze({
+  prod: "https://api.instantml.ai",
+  staging: "https://staging.api.instantml.ai",
+});
+const hostedApiOrigins = Object.values(hostedApiBases).map((base) => new URL(base).origin);
 loadRootEnv();
 /** @type {import('next').NextConfig} */
 const apiBases = resolveApiBases();
@@ -28,15 +33,29 @@ function resolveApiBases() {
   if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_INSTANTML_API_BASE && !process.env.INSTANTML_API_BASE) {
     throw new Error("Use server-only INSTANTML_API_BASE for production rewrites.");
   }
-  const rawDefault = process.env.INSTANTML_API_BASE ?? process.env.NEXT_PUBLIC_INSTANTML_API_BASE ?? "http://127.0.0.1:8000";
-  const rawControl = process.env.INSTANTML_CONTROL_API_BASE;
-  const rawData = process.env.INSTANTML_DATA_API_BASE;
+  const webApiEnv = resolveWebApiEnv();
+  // Frontend deployments intentionally default to prod. Set
+  // INSTANTML_WEB_API_ENV=staging only on staging/preview frontend builds.
+  const hostedDefault = hostedApiBases[webApiEnv || "prod"];
+  const rawDefault = webApiEnv
+    ? hostedDefault
+    : process.env.INSTANTML_API_BASE ?? process.env.NEXT_PUBLIC_INSTANTML_API_BASE ?? hostedDefault;
+  const rawControl = webApiEnv ? hostedDefault : process.env.INSTANTML_CONTROL_API_BASE;
+  const rawData = webApiEnv ? hostedDefault : process.env.INSTANTML_DATA_API_BASE;
   const splitDefault = rawControl && rawData ? rawControl : rawDefault;
   return {
     default: resolveApiBase("INSTANTML_API_BASE", splitDefault),
     control: resolveApiBase("INSTANTML_CONTROL_API_BASE", rawControl ?? rawDefault),
     data: resolveApiBase("INSTANTML_DATA_API_BASE", rawData ?? rawDefault),
   };
+}
+
+function resolveWebApiEnv() {
+  const raw = (process.env.INSTANTML_WEB_API_ENV ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  if (["prod", "production"].includes(raw)) return "prod";
+  if (["stage", "staging"].includes(raw)) return "staging";
+  throw new Error("INSTANTML_WEB_API_ENV must be prod or staging.");
 }
 
 function resolveApiBase(name, rawBase) {
@@ -47,10 +66,11 @@ function resolveApiBase(name, rawBase) {
     .map((item) => item.trim())
     .filter(Boolean);
   const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
-  if (allowedOrigins.length && !allowedOrigins.includes(url.origin)) {
+  const firstPartyHostedApi = hostedApiOrigins.includes(url.origin);
+  if (allowedOrigins.length && !allowedOrigins.includes(url.origin) && !firstPartyHostedApi) {
     throw new Error(`${name} origin ${url.origin} is not in INSTANTML_API_ALLOWED_ORIGINS.`);
   }
-  if (process.env.NODE_ENV === "production" && !allowedOrigins.length && !loopback) {
+  if (process.env.NODE_ENV === "production" && !allowedOrigins.length && !loopback && !firstPartyHostedApi) {
     throw new Error("Set INSTANTML_API_ALLOWED_ORIGINS for production API rewrites.");
   }
   return `${url.origin}${url.pathname.replace(/\/$/, "")}`;

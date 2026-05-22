@@ -93,6 +93,38 @@ test("deploy helper defaults services to one warm manual instance and probes rea
   assert.match(source, /--startup-probe/);
 });
 
+test("deploy helper keeps public router control paths and backend timeout complete", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  for (const path of [
+    "/api/auth/*",
+    "/api/billing/*",
+    "/api/dashboard/preferences",
+    "/api/users/*",
+    "/api/orgs/*",
+    "/api/workspace-views/*",
+  ]) {
+    assert.match(source, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
+  }
+  assert.match(source, /function backendServiceTimeout/);
+  assert.match(source, /--timeout", backendServiceTimeout\(\)/);
+  assert.match(source, /Timeout sec is not supported for a backend service with Serverless network endpoint groups/);
+  assert.match(source, /function resetPreAttachTimeoutForServerlessBackend/);
+});
+
+test("deploy helper has isolated staging defaults", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+  const pkg = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8"));
+
+  assert.match(source, /normalizeDeploymentEnv/);
+  assert.match(source, /instantml-staging/);
+  assert.match(source, /staging\.api\.instantml\.ai/);
+  assert.match(source, /INSTANTML_STAGING_USER_DATA_DATABASE/);
+  assert.match(source, /function scopedSecret/);
+  assert.match(source, /instantml_user_data_staging/);
+  assert.match(pkg.scripts["deploy:cloud-run:staging"], /--environment=staging --public-router/);
+});
+
 function runDeploy(args, env = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-deploy-test-"));
   const binDir = path.join(tempDir, "bin");

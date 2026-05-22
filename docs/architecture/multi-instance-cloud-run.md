@@ -185,6 +185,25 @@ INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=api.instantml.ai \
 npm run deploy:cloud-run
 ```
 
+Deploy/update the isolated staging services and router:
+
+```bash
+npm run deploy:cloud-run:staging
+```
+
+Hosted deploys are intentionally long-running. Plan for 10-30 minutes on a
+normal run while Cloud Build uploads/builds the Rust image, Cloud Run creates
+ready revisions, managed certificates settle, and the helper runs live smoke
+checks. Quiet `gcloud` output during a build or rollout does not mean the
+command has timed out.
+
+Staging defaults to `instantml-staging-control`,
+`instantml-staging-data-us-central1-a`, router resources prefixed
+`instantml-staging-public-api`, and domain `staging.api.instantml.ai`. Staging
+uses separate Secret Manager names and rewrites the User Data ClickHouse
+database path to `instantml_user_data_staging` unless
+`INSTANTML_STAGING_USER_DATA_ENDPOINT` is provided.
+
 The helper reserves a global IP, creates serverless NEGs, reconciles control and
 data backend services, imports a path-based URL map, creates a Google-managed
 SSL certificate, and exposes only port `443`. The first run can finish with
@@ -196,6 +215,7 @@ verify the public URL and write it into local frontend env.
 
 | Variable | Purpose |
 | --- | --- |
+| `INSTANTML_DEPLOY_ENV` | `prod` or `staging`; staging changes default service/router/secret names |
 | `INSTANTML_CLOUD_RUN_TOPOLOGY` | `single` or `split`; default `split` |
 | `INSTANTML_CLOUD_RUN_SCALING` | `auto` or `manual` for combined service; default `manual` |
 | `INSTANTML_CLOUD_RUN_INSTANCES` | Manual combined instances; default `1` |
@@ -208,11 +228,15 @@ verify the public URL and write it into local frontend env.
 | `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES` | Manual control instances; default `1` |
 | `INSTANTML_CLOUD_RUN_DATA_INSTANCES` | Manual data instances; default `1` |
 | `INSTANTML_CLOUD_RUN_STARTUP_PROBE` | Raw Cloud Run startup probe override; defaults to HTTP `/readyz` |
+| `INSTANTML_CLOUD_RUN_BACKEND_TIMEOUT_SECONDS` | HTTPS router backend timeout; defaults to Cloud Run/Rust request timeout, then `900` |
 | `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE` | Set `1` only for controlled tests above one control instance |
 | `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER` | Set `1` only for controlled tests above one data writer |
 | `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER` | Set `1` to create/update the HTTPS public router |
 | `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` | Required DNS host for router HTTPS certificate |
 | `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE` | Optional managed SSL certificate resource name |
+| `INSTANTML_CLOUD_RUN_SECRET_PREFIX` | Secret Manager prefix for non-prod deploys |
+| `INSTANTML_STAGING_USER_DATA_DATABASE` | Staging User Data ClickHouse database path; default `instantml_user_data_staging` |
+| `INSTANTML_STAGING_USER_DATA_ENDPOINT` | Full staging User Data endpoint override |
 | `INSTANTML_PUBLIC_API_BASE` | Public LB/router URL for frontend env |
 | `INSTANTML_CLOUD_RUN_STATIC_EGRESS` | Set `0` to skip NAT/static egress setup |
 

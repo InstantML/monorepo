@@ -126,6 +126,14 @@ Run against the hosted Cloud Run Rust API:
 npm run web:dev
 ```
 
+When no explicit API base is set, the frontend rewrites default to the
+production router `https://api.instantml.ai`. Staging and preview frontend
+builds should set `INSTANTML_WEB_API_ENV=staging` to route all same-origin API
+rewrites through `https://staging.api.instantml.ai`; leave it unset, or set it
+to `prod`, for pushed production builds. This variable intentionally overrides
+repo-local deploy helper API-base values so staging builds do not accidentally
+inherit a prod `.env` target.
+
 After `npm run deploy:cloud-run` succeeds, the deploy helper writes hosted API
 settings into `apps/web/.env.local`. Single-service deploys write
 `INSTANTML_API_BASE`; split control/data deploys write
