@@ -50,7 +50,7 @@ mod tests {
     use super::helpers::{request_rate_key, require_session_scope, validate_clerk_signup_allowed};
     use super::platform::openapi_path_available_for_plane;
     use crate::domain::{ClerkAuthRequest, SessionContext};
-    use axum::http::HeaderMap;
+    use axum::http::{HeaderMap, HeaderValue};
     use serde_json::Value;
     use uuid::Uuid;
 
@@ -88,21 +88,20 @@ mod tests {
     }
 
     #[test]
-    fn invite_rate_key_prefers_forwarded_client_ip_and_sanitizes() {
+    fn invite_rate_key_keeps_peer_and_splits_forwarded_clients() {
+        let peer = "198.51.100.24:443".parse().expect("peer addr");
         let mut headers = HeaderMap::new();
-        headers.insert("x-real-ip", "10.0.0.2".parse().expect("header"));
+
+        assert_eq!(request_rate_key(&headers, peer), "ip:198.51.100.24");
+
         headers.insert(
             "x-forwarded-for",
-            "203.0.113.7, 10.0.0.2".parse().expect("header"),
+            HeaderValue::from_static("203.0.113.9, 10.0.0.2"),
         );
-        headers.insert("cf-connecting-ip", "2001:db8::1".parse().expect("header"));
-        assert_eq!(request_rate_key(&headers), "ip:2001:db8::1");
-
-        headers.remove("cf-connecting-ip");
-        assert_eq!(request_rate_key(&headers), "ip:10.0.0.2");
-
-        headers.remove("x-real-ip");
-        assert_eq!(request_rate_key(&headers), "ip:203.0.113.7");
+        assert_eq!(
+            request_rate_key(&headers, peer),
+            "ip:198.51.100.24;client:203.0.113.9"
+        );
     }
 
     #[test]

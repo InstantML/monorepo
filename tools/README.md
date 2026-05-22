@@ -60,6 +60,7 @@ Important environment variables:
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: optional Google-managed SSL certificate resource name.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated browser origins allowed for cookie-authenticated mutations. Default includes local Next and `https://instantml.ai`.
 - `INSTANTML_FRONTEND_BASE_URL`: hosted web app origin used in device-code and organization invite links. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
+- `INSTANTML_EMAIL_FROM`: verified sender used for organization invite email. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
 - `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup and requires manual ClickHouse Cloud allowlisting.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips ClickHouse Cloud access-list updates.

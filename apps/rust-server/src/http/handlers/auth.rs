@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{header, HeaderMap},
     response::{IntoResponse, Response},
     Json,
@@ -39,6 +39,7 @@ use super::helpers::{
 )]
 pub async fn auth_dev_google(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Response> {
@@ -54,7 +55,7 @@ pub async fn auth_dev_google(
             &state.store,
             invite_token,
             store::InvitationTokenAttemptScope::Accept,
-            Some(&request_rate_key(&headers)),
+            Some(&request_rate_key(&headers, peer)),
         )
         .await?;
     }
@@ -77,6 +78,7 @@ pub async fn auth_dev_google(
 )]
 pub async fn auth_clerk(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Response> {
@@ -109,7 +111,7 @@ pub async fn auth_clerk(
             &state.store,
             invite_token,
             store::InvitationTokenAttemptScope::Accept,
-            Some(&request_rate_key(&headers)),
+            Some(&request_rate_key(&headers, peer)),
         )
         .await?;
     }

@@ -90,7 +90,8 @@ export default function InvitePage() {
         setPreview(invite);
         setSession(sessionPayload as SessionPayload);
         setDevEmail("");
-        if (invite.status !== "pending") {
+        const canRetryAcceptedInvite = invite.status === "accepted" && managedClerkEnabled;
+        if (invite.status !== "pending" && !canRetryAcceptedInvite) {
           clearStoredInviteToken();
           fail(`Invitation is ${invite.status}.`);
           return;
@@ -100,7 +101,9 @@ export default function InvitePage() {
           return;
         }
         note(nextConfig.managed_clerk_enabled
-          ? "Verify your email with Clerk to join the workspace."
+          ? canRetryAcceptedInvite
+            ? "Sign in with the invited account to open this workspace."
+            : "Verify your email with Clerk to join the workspace."
           : (sessionPayload as SessionPayload).authenticated
             ? "Accepting invitation..."
             : "Verify your email to join the workspace.");
@@ -117,7 +120,7 @@ export default function InvitePage() {
   }, [api, token]);
 
   useEffect(() => {
-    if (!token || !preview || preview.status !== "pending" || busy || acceptStartedRef.current || !config.loaded) return;
+    if (!token || !preview || !["pending", "accepted"].includes(preview.status) || busy || acceptStartedRef.current || !config.loaded) return;
     if (session?.authenticated && !config.managed_clerk_enabled && !config.clerk_config_error) {
       acceptStartedRef.current = true;
       void acceptCurrentSession();
@@ -125,7 +128,7 @@ export default function InvitePage() {
   }, [config.loaded, config.managed_clerk_enabled, config.clerk_config_error, session?.authenticated, preview, token, busy]);
 
   useEffect(() => {
-    if (!token || !preview || preview.status !== "pending" || !config.loaded) return;
+    if (!token || !preview || !["pending", "accepted"].includes(preview.status) || !config.loaded) return;
     if (config.clerk_config_error || !config.managed_clerk_enabled || !clerkLoaded || !isSignedIn || attemptedClerkExchangeRef.current || acceptStartedRef.current) return;
     attemptedClerkExchangeRef.current = true;
     void exchangeClerkSession();
@@ -223,6 +226,7 @@ export default function InvitePage() {
   const expires = preview?.expires_at ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(preview.expires_at)) : "";
   const signedInEmail = user?.primaryEmailAddress?.emailAddress ?? session?.user?.primary_email ?? "";
   const managedClerkAvailable = Boolean(config.managed_clerk_enabled && !config.clerk_config_error);
+  const canUseInviteActions = preview?.status === "pending" || (preview?.status === "accepted" && managedClerkAvailable);
 
   return (
     <div className="iml-auth">
@@ -248,7 +252,7 @@ export default function InvitePage() {
               {message}
             </div>
 
-            {preview?.status === "pending" ? (
+            {canUseInviteActions ? (
               <div className="iml-actions">
                 {managedClerkAvailable && clerkLoaded ? (
                   <>
@@ -401,6 +405,9 @@ function inviteErrorMessage(error: unknown, fallback: string) {
   }
   if (error instanceof ApiError && error.code === "clerk_exchange_required") {
     return "Refresh your Clerk sign-in before accepting this invitation.";
+  }
+  if (error instanceof ApiError && error.code === "clerk_email_unverified") {
+    return "Verify your email address in Clerk, then return to this invite.";
   }
   return error instanceof Error ? error.message : fallback;
 }

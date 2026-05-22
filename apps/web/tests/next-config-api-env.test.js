@@ -28,6 +28,21 @@ test("Next API rewrites default pushed frontend target to prod when env selects 
   assertRewriteDestinations(rewrites, "https://api.instantml.ai");
 });
 
+test("Next API rewrites allow explicit staging split bases for hosted frontend smoke", () => {
+  const controlBase = "https://instantml-staging-control.example.run.app";
+  const dataBase = "https://instantml-staging-data.example.run.app";
+  const rewrites = loadRewrites({
+    INSTANTML_WEB_API_ENV: "staging",
+    INSTANTML_WEB_EXPLICIT_API_BASES: "1",
+    INSTANTML_API_BASE: controlBase,
+    INSTANTML_CONTROL_API_BASE: controlBase,
+    INSTANTML_DATA_API_BASE: dataBase,
+    INSTANTML_API_ALLOWED_ORIGINS: `${controlBase},${dataBase}`,
+  });
+  assertRewriteDestinations(rewrites.filter((rewrite) => rewrite.source.startsWith("/api/auth")), controlBase);
+  assertRewriteDestinations(rewrites.filter((rewrite) => rewrite.source === "/api/:path*" || rewrite.source === "/projects"), dataBase);
+});
+
 test("Next API rewrites reject unknown hosted API environments", () => {
   const result = importConfig({
     INSTANTML_WEB_API_ENV: "qa",

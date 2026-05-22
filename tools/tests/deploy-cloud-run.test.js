@@ -72,6 +72,20 @@ test("deploy helper requires hosted frontend base for Resend invites", () => {
   ]);
 });
 
+test("deploy helper requires a verified sender for Resend invites", () => {
+  const result = runDeploy(["--topology=split"], {
+    RESEND_API_KEY: "re_test_key",
+    INSTANTML_FRONTEND_BASE_URL: "https://staging.instantml.ai",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Set INSTANTML_EMAIL_FROM/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
 test("deploy helper requires a matching Clerk publishable key for managed Clerk", () => {
   const result = runDeploy(["--topology=split"], {
     CLERK_SECRET_KEY: "sk_test_example",

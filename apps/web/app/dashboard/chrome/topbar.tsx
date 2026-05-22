@@ -6,6 +6,7 @@ import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { InstantMlMark } from "../../instantml-mark";
+import { accountDisplayLabel, accountInitials, safeAccountAvatarUrl } from "../../../src/account.js";
 import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import { CustomSelect } from "../ui/select";
@@ -24,6 +25,36 @@ export type OrgMembershipSummary = {
 };
 
 const ORG_SWITCHER_SEARCH_THRESHOLD = 7;
+
+type AccountUser = {
+  primary_email?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
+
+function AccountAvatar({ user }: { user: AccountUser | null }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const displayName = user?.display_name ?? "";
+  const email = user?.primary_email ?? "";
+  const label = accountDisplayLabel(displayName, email);
+  const initials = accountInitials(displayName, email);
+  const avatarUrl = imageFailed ? "" : safeAccountAvatarUrl(user?.avatar_url);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [user?.avatar_url]);
+
+  return (
+    <div className={`avatar brandbar-action-desktop ${avatarUrl ? "avatar--image" : ""}`} aria-label={`Account: ${label}`} title={label}>
+      {avatarUrl ? (
+        <img alt="" className="avatar-image" onError={() => setImageFailed(true)} referrerPolicy="no-referrer" src={avatarUrl} />
+      ) : (
+        <span aria-hidden="true">{initials}</span>
+      )}
+    </div>
+  );
+}
+
 export function OrgSwitcher({
   busy,
   current,
@@ -154,6 +185,7 @@ export function OrgSwitcher({
 export function DashboardTopbar({
   activeIcon: ActiveIcon,
   activeTab,
+  accountUser,
   detailRunName,
   message,
   mobileNavOpen,
@@ -195,6 +227,7 @@ export function DashboardTopbar({
 }: {
   activeIcon: LucideIcon;
   activeTab: TabId;
+  accountUser: AccountUser | null;
   detailRunName: string;
   message: string;
   mobileNavOpen: boolean;
@@ -362,7 +395,7 @@ export function DashboardTopbar({
             >
               <LogOut size={15} />
             </button>
-            <div className="avatar brandbar-action-desktop" aria-label="Account">AK</div>
+            <AccountAvatar user={accountUser} />
           </div>
         </div>
       </div>

@@ -1,6 +1,9 @@
 node_modules
 .git
 .env
+*.env.local
+apps/*/.env
+apps/*/.env.local
 .claude
 .instantml
 .rlobs

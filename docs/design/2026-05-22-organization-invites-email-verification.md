@@ -234,7 +234,8 @@ Providers:
 Hosted email should be disabled unless all required config is present:
 
 - `INSTANTML_EMAIL_PROVIDER=log|resend`
-- `INSTANTML_EMAIL_FROM="InstantML <invites@instantml.ai>"`
+- `INSTANTML_EMAIL_FROM`, required for Resend and set to a verified sender,
+  such as `InstantML <invites@mail.instantml.ai>`
 - `INSTANTML_EMAIL_REPLY_TO`, optional
 - `INSTANTML_FRONTEND_BASE_URL`, required for hosted invite URLs
 - `RESEND_API_KEY`, required for `resend`
@@ -991,11 +992,12 @@ longer trusts a stale InstantML session cookie.
 Second post-implementation review hardening: terminal invitations are no longer
 indexed by token hash, accepted tokens cannot become permanent rejoin links,
 invite auth exchange preflights token/email before creating or linking a user,
-public invite throttling now includes a coarse client key and does not let
-per-token rejects consume the global backstop, read data routes require
-`export:read` for API keys, Settings hides admin invite/billing actions from
-non-admin sessions, and pricing copy no longer claims free unlimited viewers
-until the billing model implements that.
+public invite throttling now includes a coarse client key that retains the
+backend peer IP and splits forwarded clients when a proxy supplies a valid
+client IP, per-token rejects do not consume the global backstop, read data
+routes require `export:read` for API keys, Settings hides admin invite/billing
+actions from non-admin sessions, and pricing copy no longer claims free
+unlimited viewers until the billing model implements that.
 
 Post-implementation verification also ran a local HTTP smoke against the Rust
 API with the log email provider: owner signup created an org and run, an
@@ -1004,10 +1006,11 @@ fragment-link token, usage seats moved from 1 to 2 while pending and stayed 2
 after accept, the invited viewer accepted into the same org, and the viewer
 session read the run plus its `accuracy=0.99` metric series. Staging was
 redeployed to
-`https://staging.api.instantml.ai` with the invite routes live. Real Gmail
-inbox verification remains blocked until the desktop Computer Use bridge can
-attach to a browser window and a Resend sender secret/origin are configured for
-hosted email delivery.
+`https://staging.api.instantml.ai` with the invite routes live. The Resend
+sender domain `mail.instantml.ai` was verified with Cloudflare DNS, a
+send-only staging API key was stored in GCP Secret Manager, and the hosted
+control plane sent a real invitation email from `invites@mail.instantml.ai` to
+the provided Gmail test account.
 
 Additional Playwright browser verification exercised the rendered web UI
 against a local Rust API and two separate browser contexts. The owner context
@@ -1017,3 +1020,11 @@ the local dev-auth form, landed on `/dashboard/runs`, saw the same run, and
 both contexts fetched the `accuracy=0.99` metric series through browser
 credentials. Seat usage again moved from 1 to 2 while pending and stayed 2
 after accept.
+
+Chrome Computer Use verification on staging then exercised the real hosted
+Clerk and Gmail path. The invite email was received in Gmail, opened in Chrome,
+accepted by the `lunreclipsespam@gmail.com` Google account, and produced an
+active membership in the invited org. The org switcher showed two members
+after accept, and both the owner account and invited account could load the
+same seeded InstantML org run, summary metrics, and bounded accuracy/loss
+charts through browser credentials.

@@ -34,14 +34,16 @@ function resolveApiBases() {
     throw new Error("Use server-only INSTANTML_API_BASE for production rewrites.");
   }
   const webApiEnv = resolveWebApiEnv();
+  const explicitHostedBases = isTruthy(process.env.INSTANTML_WEB_EXPLICIT_API_BASES);
   // Frontend deployments intentionally default to prod. Set
   // INSTANTML_WEB_API_ENV=staging only on staging/preview frontend builds.
   const hostedDefault = hostedApiBases[webApiEnv || "prod"];
-  const rawDefault = webApiEnv
+  const useHostedDefault = webApiEnv && !explicitHostedBases;
+  const rawDefault = useHostedDefault
     ? hostedDefault
     : process.env.INSTANTML_API_BASE ?? process.env.NEXT_PUBLIC_INSTANTML_API_BASE ?? hostedDefault;
-  const rawControl = webApiEnv ? hostedDefault : process.env.INSTANTML_CONTROL_API_BASE;
-  const rawData = webApiEnv ? hostedDefault : process.env.INSTANTML_DATA_API_BASE;
+  const rawControl = useHostedDefault ? hostedDefault : process.env.INSTANTML_CONTROL_API_BASE;
+  const rawData = useHostedDefault ? hostedDefault : process.env.INSTANTML_DATA_API_BASE;
   const splitDefault = rawControl && rawData ? rawControl : rawDefault;
   return {
     default: resolveApiBase("INSTANTML_API_BASE", splitDefault),
@@ -56,6 +58,10 @@ function resolveWebApiEnv() {
   if (["prod", "production"].includes(raw)) return "prod";
   if (["stage", "staging"].includes(raw)) return "staging";
   throw new Error("INSTANTML_WEB_API_ENV must be prod or staging.");
+}
+
+function isTruthy(value) {
+  return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
 }
 
 function resolveApiBase(name, rawBase) {

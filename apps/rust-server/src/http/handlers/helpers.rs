@@ -1,3 +1,5 @@
+use std::net::{IpAddr, SocketAddr};
+
 use axum::{
     body::Bytes,
     http::{HeaderMap, HeaderValue},
@@ -244,24 +246,23 @@ pub fn require_session_scope(session: &SessionContext, scope: &str) -> AppResult
     }
 }
 
-pub fn request_rate_key(headers: &HeaderMap) -> String {
-    let raw = header_text(headers, "cf-connecting-ip")
-        .or_else(|| header_text(headers, "x-real-ip"))
-        .or_else(|| {
-            header_text(headers, "x-forwarded-for").and_then(|value| value.split(',').next())
-        })
-        .unwrap_or("unknown")
-        .trim();
-    let sanitized = raw
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '-'))
-        .take(80)
-        .collect::<String>();
-    if sanitized.is_empty() {
-        "ip:unknown".to_string()
-    } else {
-        format!("ip:{sanitized}")
+pub fn request_rate_key(headers: &HeaderMap, peer: SocketAddr) -> String {
+    let peer_key = format!("ip:{}", peer.ip());
+    forwarded_rate_ip(headers)
+        .map(|client_ip| format!("{peer_key};client:{client_ip}"))
+        .unwrap_or(peer_key)
+}
+
+fn forwarded_rate_ip(headers: &HeaderMap) -> Option<IpAddr> {
+    for name in ["cf-connecting-ip", "x-real-ip", "x-forwarded-for"] {
+        if let Some(raw) = header_text(headers, name) {
+            let candidate = raw.split(',').next()?.trim();
+            if let Ok(ip) = candidate.parse::<IpAddr>() {
+                return Some(ip);
+            }
+        }
     }
+    None
 }
 
 pub async fn session_context(

@@ -1,4 +1,4 @@
-use std::{process::ExitCode, time::Duration};
+use std::{net::SocketAddr, process::ExitCode, time::Duration};
 
 use instantml_rust_server::{
     config::{AppConfig, ClickHouseProvisioner, ServicePlaneRole},
@@ -100,12 +100,13 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         service_plane = %service_plane.as_str(),
         "Training Observability Rust server listening"
     );
-    let result = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|error| {
-            instantml_rust_server::AppError::internal(format!("server failed: {error}"))
-        });
+    let result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .map_err(|error| instantml_rust_server::AppError::internal(format!("server failed: {error}")));
     if let Some(handle) = background_refresh {
         handle.abort();
     }

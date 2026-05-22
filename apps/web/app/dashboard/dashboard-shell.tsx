@@ -108,7 +108,7 @@ type WorkspaceViewSummaryPayload = Partial<Pick<GeneratedWorkspaceViewSummary, "
 type DashboardSessionPayload = {
   authenticated?: boolean;
   organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number };
-  user?: { primary_email: string; display_name?: string | null };
+  user?: { primary_email: string; display_name?: string | null; avatar_url?: string | null };
   membership?: { role: string; status: string };
   memberships?: Array<{ org_id: string; role: string; status: string }>;
 };
@@ -2293,6 +2293,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       <DashboardTopbar
         activeIcon={ActiveIcon}
         activeTab={activeTab}
+        accountUser={sessionPayload?.user ?? null}
         detailRunName={primaryRun?.name ?? ""}
         message={message}
         mobileNavOpen={mobileNavOpen}

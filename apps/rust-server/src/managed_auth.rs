@@ -1,5 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use axum::http::StatusCode;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
@@ -243,7 +244,9 @@ fn primary_verified_email(user: &ClerkUser) -> AppResult<String> {
         .map(|status| status == "verified")
         .unwrap_or(false);
     if !verified {
-        return Err(AppError::unauthorized(
+        return Err(AppError::with_code(
+            StatusCode::UNAUTHORIZED,
+            "clerk_email_unverified",
             "Clerk primary email address is not verified",
         ));
     }

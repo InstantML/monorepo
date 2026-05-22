@@ -137,7 +137,11 @@ pub async fn create_org_invitation(
                     && membership.user_id == user_id
                     && membership.status == "active"
             }) {
-                return Err(AppError::conflict("user is already an active member"));
+                return Err(AppError::with_code(
+                    StatusCode::CONFLICT,
+                    "invite_already_member",
+                    "user is already an active member",
+                ));
             }
         }
         if data.org_invitations.values().any(|invitation| {
@@ -146,13 +150,21 @@ pub async fn create_org_invitation(
                 && invitation.status == "pending"
                 && invitation.expires_at > now
         }) {
-            return Err(AppError::conflict("invitation is already pending"));
+            return Err(AppError::with_code(
+                StatusCode::CONFLICT,
+                "invite_already_pending",
+                "invitation is already pending",
+            ));
         }
         let seat_limit = org.seat_limit.max(0) as usize;
         if !email_has_reserved_membership(&data, org_id, &email)
             && reserved_seat_count_in_data(&data, org_id, now) >= seat_limit
         {
-            return Err(AppError::conflict("organization seat limit reached"));
+            return Err(AppError::with_code(
+                StatusCode::CONFLICT,
+                "invite_seat_limit_reached",
+                "organization seat limit reached",
+            ));
         }
         let invitation = OrgInvitationRow {
             id: Uuid::new_v4(),
@@ -370,10 +382,10 @@ pub async fn preflight_invitation_for_email(
     let data = store.data.lock().await;
     let now = Utc::now();
     let invitation = invitation_by_token_hash(&data, &token_hash)?;
-    if invitation.status != "pending" {
+    if !matches!(invitation.status.as_str(), "pending" | "accepted") {
         return Err(AppError::conflict("invitation is not pending"));
     }
-    if invitation.expires_at <= now {
+    if invitation.status == "pending" && invitation.expires_at <= now {
         return Err(AppError::with_code(
             StatusCode::GONE,
             "invite_expired",
@@ -398,11 +410,29 @@ pub async fn accept_invitation_for_user(
 ) -> AppResult<CreatedAuthSession> {
     let token = validate_invitation_token(Some(token))?;
     let token_hash = hash_secret(&token);
-    let org_id = {
-        let data = store.data.lock().await;
-        invitation_by_token_hash(&data, &token_hash)?.org_id
+    let (org_id, needs_billing_write) = {
+        let mut data = store.data.lock().await;
+        let now = Utc::now();
+        let invitation = invitation_by_token_hash(&data, &token_hash)?;
+        if invitation.status == "pending" && invitation.expires_at <= now {
+            let token_hash = invitation.token_hash.clone();
+            let previous_token_hashes = invitation.previous_token_hashes.clone();
+            data.org_invitations_by_token_hash.remove(&token_hash);
+            for previous_token_hash in previous_token_hashes {
+                data.org_invitations_by_token_hash
+                    .remove(&previous_token_hash);
+            }
+            return Err(AppError::with_code(
+                StatusCode::GONE,
+                "invite_expired",
+                "invitation expired",
+            ));
+        }
+        (invitation.org_id, invitation.status == "pending")
     };
-    ensure_billing_write_allowed(store, org_id, "accept an invitation").await?;
+    if needs_billing_write {
+        ensure_billing_write_allowed(store, org_id, "accept an invitation").await?;
+    }
     let (user, org) = {
         let mut data = store.data.lock().await;
         let now = Utc::now();
@@ -478,7 +508,11 @@ pub async fn accept_invitation_for_user(
             && reserved_seat_count_in_data(&data, invitation.org_id, now)
                 > org.seat_limit.max(0) as usize
         {
-            return Err(AppError::conflict("organization seat limit reached"));
+            return Err(AppError::with_code(
+                StatusCode::CONFLICT,
+                "invite_seat_limit_reached",
+                "organization seat limit reached",
+            ));
         }
         match existing_membership {
             Some(mut membership) if membership.status == "invited" => {
@@ -818,20 +852,54 @@ fn invitation_by_token_hash<'a>(
     data: &'a StoreData,
     token_hash: &[u8],
 ) -> AppResult<&'a OrgInvitationRow> {
-    let invitation_id = data
-        .org_invitations_by_token_hash
-        .get(token_hash)
-        .copied()
-        .ok_or_else(|| {
-            AppError::with_code(
+    if let Some(invitation_id) = data.org_invitations_by_token_hash.get(token_hash).copied() {
+        return data
+            .org_invitations
+            .get(&invitation_id)
+            .ok_or_else(|| AppError::internal("invitation token index is inconsistent"));
+    }
+    if let Some(invitation) = data
+        .org_invitations
+        .values()
+        .find(|invitation| invitation_token_hash_matches(invitation, token_hash))
+    {
+        return match invitation.status.as_str() {
+            "accepted" => Ok(invitation),
+            "expired" => Err(AppError::with_code(
+                StatusCode::GONE,
+                "invite_expired",
+                "invitation expired",
+            )),
+            "pending" if invitation.expires_at <= Utc::now() => Err(AppError::with_code(
+                StatusCode::GONE,
+                "invite_expired",
+                "invitation expired",
+            )),
+            "revoked" => Err(AppError::with_code(
+                StatusCode::GONE,
+                "invite_revoked",
+                "invitation was revoked",
+            )),
+            _ => Err(AppError::with_code(
                 StatusCode::NOT_FOUND,
                 "invite_not_found",
                 "invitation not found",
-            )
-        })?;
-    data.org_invitations
-        .get(&invitation_id)
-        .ok_or_else(|| AppError::internal("invitation token index is inconsistent"))
+            )),
+        };
+    }
+    Err(AppError::with_code(
+        StatusCode::NOT_FOUND,
+        "invite_not_found",
+        "invitation not found",
+    ))
+}
+
+fn invitation_token_hash_matches(invitation: &OrgInvitationRow, token_hash: &[u8]) -> bool {
+    invitation.token_hash == token_hash
+        || invitation
+            .previous_token_hashes
+            .iter()
+            .any(|previous| previous == token_hash)
 }
 
 fn public_invitation_row(invitation: &OrgInvitationRow, now: DateTime<Utc>) -> PublicInvitationRow {
@@ -1273,7 +1341,7 @@ mod tests {
     }
 
     #[test]
-    fn invitation_token_index_omits_terminal_invitations() {
+    fn invitation_token_index_omits_accepted_rows_but_allows_retry_lookup() {
         let org_id = Uuid::new_v4();
         let mut data = StoreData::default();
         let mut invitation = invitation_row(
@@ -1292,7 +1360,63 @@ mod tests {
         invitation.accepted_by_user_id = Some(Uuid::new_v4());
         data.insert_org_invitation(invitation);
 
-        assert!(invitation_by_token_hash(&data, &token_hash).is_err());
+        assert!(!data.org_invitations_by_token_hash.contains_key(&token_hash));
+        assert_eq!(
+            invitation_by_token_hash(&data, &token_hash).unwrap().status,
+            "accepted"
+        );
+    }
+
+    #[test]
+    fn invitation_token_index_omits_expired_pending_rows() {
+        let org_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        let mut invitation = invitation_row(
+            org_id,
+            "teammate@example.com",
+            "pending",
+            Utc::now() - ChronoDuration::seconds(1),
+        );
+        let token_hash = vec![10, 11, 12];
+        invitation.token_hash = token_hash.clone();
+        data.insert_org_invitation(invitation);
+
+        assert!(!data.org_invitations_by_token_hash.contains_key(&token_hash));
+        let error = invitation_by_token_hash(&data, &token_hash).unwrap_err();
+        assert_eq!(error.code(), Some("invite_expired"));
+    }
+
+    #[tokio::test]
+    async fn accept_expired_indexed_invitation_returns_expired_before_billing_gate() {
+        let token = "instantml_invite_test_token_abcdefghijklmnopqrstuvwxyz";
+        let token_hash = hash_secret(token);
+        let org_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        let mut invitation = invitation_row(
+            org_id,
+            "teammate@example.com",
+            "pending",
+            Utc::now() + ChronoDuration::days(1),
+        );
+        invitation.token_hash = token_hash.clone();
+        data.insert_org_invitation(invitation.clone());
+
+        invitation.expires_at = Utc::now() - ChronoDuration::seconds(1);
+        data.org_invitations.insert(invitation.id, invitation);
+        assert!(data.org_invitations_by_token_hash.contains_key(&token_hash));
+
+        let store = store_with_data(data);
+        let error = accept_invitation_for_user(&store, token, Uuid::new_v4())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code(), Some("invite_expired"));
+        assert!(!store
+            .data
+            .lock()
+            .await
+            .org_invitations_by_token_hash
+            .contains_key(&token_hash));
     }
 
     #[test]
@@ -1496,6 +1620,28 @@ mod tests {
             delivery_status: "sent".to_string(),
             email_provider: Some("log".to_string()),
             provider_message_id: None,
+        }
+    }
+
+    fn store_with_data(data: StoreData) -> Store {
+        let metric_store = crate::metric_store::connect_url(
+            "http://default:password@127.0.0.1:8123/default",
+            "TEST_CLICKHOUSE_URL",
+        )
+        .unwrap();
+        Store {
+            metric_store,
+            control_store: None,
+            hosted_clickhouse: None,
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
         }
     }
 

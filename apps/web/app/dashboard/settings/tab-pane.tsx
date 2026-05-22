@@ -19,6 +19,24 @@ type BillingStatus = {
   message?: string | null;
 };
 
+function formatInviteDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown expiry";
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(date);
+}
+
+function inviteStatusLabel(invitation: InvitationRow) {
+  if (invitation.status === "pending") return invitation.delivery_status === "sent" ? "sent" : invitation.delivery_status || "pending";
+  if (invitation.delivery_status === "send_failed" && !["accepted", "expired", "revoked"].includes(invitation.status ?? "")) return "send failed";
+  return invitation.status;
+}
+
 type Props = {
   activeLimitIncludedSeats: number;
   activePlan: string;
@@ -168,8 +186,14 @@ export function SettingsTabPane({
           <div className="panel-head"><h2><UserPlus size={15} /> Seats</h2></div>
           <div className="panel-body admin-stack">
             {canManageOrg ? (
-              <div className="admin-form-row">
-                <input aria-label="Invite email" onChange={(event) => onInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" value={inviteEmail} />
+              <form
+                className="admin-form-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!adminBusy && inviteEmail.trim()) onInviteSeat();
+                }}
+              >
+                <input aria-label="Invite email" autoComplete="email" name="invite-email" onChange={(event) => onInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" value={inviteEmail} />
                 <CustomSelect
                   id="seat-role"
                   label="Role"
@@ -181,8 +205,8 @@ export function SettingsTabPane({
                   ]}
                   value={inviteRole}
                 />
-                <button className="primary-button" disabled={adminBusy || !inviteEmail.trim()} onClick={onInviteSeat} type="button"><UserPlus size={14} /> Invite</button>
-              </div>
+                <button className="primary-button" disabled={adminBusy || !inviteEmail.trim()} type="submit"><UserPlus size={14} /> Invite</button>
+              </form>
             ) : null}
             <div className="admin-list">
               {seats.map((seat) => (
@@ -194,8 +218,11 @@ export function SettingsTabPane({
               ))}
               {visibleInvitations.map((invitation) => (
                 <div className="api-row" key={invitation.id}>
-                  <span>{invitation.delivery_status === "send_failed" ? "send failed" : invitation.status}</span>
-                  <strong>{invitation.email}</strong>
+                  <span>{inviteStatusLabel(invitation)}</span>
+                  <strong>
+                    {invitation.email}
+                    <small>Expires {formatInviteDate(invitation.expires_at)}</small>
+                  </strong>
                   <code>{invitation.role}</code>
                   {canManageOrg && invitation.status === "pending" ? (
                     <>

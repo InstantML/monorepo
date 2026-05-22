@@ -58,7 +58,7 @@ Environment:
   STRIPE_STORAGE_METER_ID                Optional Stripe Billing Meter id for storage overage.
   INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME Optional Stripe meter event name for retained-storage overage.
   RESEND_API_KEY                         Optional Resend API key for organization invitation emails.
-  INSTANTML_EMAIL_FROM                   Invitation sender address. Defaults in the Rust service.
+  INSTANTML_EMAIL_FROM                   Verified invitation sender address. Required with Resend.
   INSTANTML_EMAIL_REPLY_TO               Optional invitation reply-to address.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
   INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none  Skip service access-list updates.
@@ -240,8 +240,14 @@ function emailProviderForDeployment() {
 }
 
 function validateInviteEmailConfig() {
-  if (emailProviderForDeployment() === "resend" && !value("INSTANTML_FRONTEND_BASE_URL")) {
+  if (emailProviderForDeployment() !== "resend") {
+    return;
+  }
+  if (!value("INSTANTML_FRONTEND_BASE_URL")) {
     fail("Set INSTANTML_FRONTEND_BASE_URL to the hosted web app origin before deploying Resend-backed invitation email.");
+  }
+  if (!value("INSTANTML_EMAIL_FROM")) {
+    fail("Set INSTANTML_EMAIL_FROM to a verified sender address before deploying Resend-backed invitation email.");
   }
 }
 
@@ -816,10 +822,13 @@ function runtimeEnvForTarget(envVars, target) {
     }
   }
   if (target.servicePlane === "data") {
+    output.INSTANTML_MANAGED_CLERK_ENABLED = "false";
     for (const key of [
       "INSTANTML_EMAIL_PROVIDER",
       "INSTANTML_EMAIL_FROM",
       "INSTANTML_EMAIL_REPLY_TO",
+      "CLERK_API_BASE",
+      "CLERK_JWT_ISSUER",
     ]) {
       delete output[key];
     }
@@ -834,6 +843,7 @@ function secretEnvForTarget(secretEnv, target) {
   }
   if (target.servicePlane === "data") {
     output = output.filter((mapping) => !mapping.startsWith("RESEND_API_KEY="));
+    output = output.filter((mapping) => !mapping.startsWith("CLERK_SECRET_KEY="));
   }
   return output;
 }

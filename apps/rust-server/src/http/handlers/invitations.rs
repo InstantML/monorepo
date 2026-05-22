@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use axum::{
     body::Bytes,
-    extract::{Path, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::HeaderMap,
     response::Response,
     Json,
@@ -160,6 +160,7 @@ pub async fn revoke_invitation(
 )]
 pub async fn preview_invitation(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
@@ -172,7 +173,7 @@ pub async fn preview_invitation(
         &state.store,
         &token,
         store::InvitationTokenAttemptScope::Preview,
-        Some(&request_rate_key(&headers)),
+        Some(&request_rate_key(&headers, peer)),
     )
     .await?;
     Ok(Json(json!({
@@ -195,6 +196,7 @@ pub async fn preview_invitation(
 )]
 pub async fn accept_invitation(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Response> {
@@ -215,7 +217,7 @@ pub async fn accept_invitation(
         &state.store,
         &token,
         store::InvitationTokenAttemptScope::Accept,
-        Some(&request_rate_key(&headers)),
+        Some(&request_rate_key(&headers, peer)),
     )
     .await?;
     let created = store::accept_invitation_for_user(&state.store, &token, session.user.id).await?;

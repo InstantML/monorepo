@@ -116,9 +116,13 @@ function clientSafeError(status, payload) {
   if (code === "validation_error" || status === 400) return "Request was invalid. Check the current filters and try again.";
   if (code === "warehouse_unavailable") return "Starting data warehouse. Your runs will load once the warehouse is awake.";
   if (code === "payment_required" || status === 402) return "Payment is required before this workspace can accept new writes.";
+  if (code === "clerk_email_unverified") return "Verify your email address in Clerk before continuing.";
+  if (code === "invite_already_member") return "That email is already an active workspace member.";
+  if (code === "invite_already_pending") return "That email already has a pending invitation.";
   if (code === "invite_email_mismatch") return "This invitation belongs to a different email address.";
   if (code === "invite_expired") return "This invitation has expired.";
   if (code === "invite_revoked") return "This invitation was revoked.";
+  if (code === "invite_seat_limit_reached") return "The workspace is already using all included seats.";
   if (code === "service_unavailable" || status === 503) return "InstantML API is starting. Try again shortly.";
   if (status === 401) return "Sign in required.";
   if (status === 403) return "You do not have access to this workspace.";

@@ -651,7 +651,7 @@ impl StoreData {
                 self.org_invitations_by_token_hash.remove(token_hash);
             }
         }
-        if invitation.status == "pending" {
+        if invitation.status == "pending" && invitation.expires_at > Utc::now() {
             self.org_invitations_by_token_hash
                 .insert(invitation.token_hash.clone(), invitation.id);
             for token_hash in &invitation.previous_token_hashes {

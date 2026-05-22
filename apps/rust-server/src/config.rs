@@ -572,6 +572,12 @@ fn email_config(
             "RESEND_API_KEY is required when INSTANTML_EMAIL_PROVIDER=resend",
         ));
     }
+    let email_from = env_first(&["INSTANTML_EMAIL_FROM"]);
+    if matches!(provider, EmailProvider::Resend) && email_from.is_none() {
+        return Err(AppError::config(
+            "INSTANTML_EMAIL_FROM is required when organization invite email uses Resend",
+        ));
+    }
     let fallback_origin = if matches!(provider, EmailProvider::Resend) {
         allowed_frontend_origins
             .iter()
@@ -592,7 +598,7 @@ fn email_config(
     }
     Ok(EmailConfig {
         provider,
-        from: env_string("INSTANTML_EMAIL_FROM", "InstantML <invites@instantml.ai>"),
+        from: email_from.unwrap_or_else(|| "InstantML <invites@instantml.ai>".to_string()),
         reply_to: env_first(&["INSTANTML_EMAIL_REPLY_TO", "INSTANTML_SUPPORT_EMAIL"]),
         frontend_base_url: frontend,
         resend_api_key,

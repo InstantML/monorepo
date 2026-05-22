@@ -22,6 +22,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 Current navigation and comparison controls:
 
 - Route-backed navigation for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
+- The topbar account badge uses the signed-in user's managed-auth avatar when available, then falls back to initials derived from the display name or email handle.
 - Unauthenticated visitors land on `/`, can sign in or sign up through Clerk in hosted mode, or through the explicitly labeled local dev Google-style flow in local mode. Signup chooses Free, Pro, or Premium, can reserve included teammate seats by email, creates a copy-once SDK API key, and then enters `/dashboard/runs`. The shared demo action signs in as `hello@instantml.ai`, reuses the Premium-tier `InstantML Demo` org/service, skips SDK-key reveal, and is enforced read-only server-side so demo visitors browse sample data instead of pushing data. In hosted ClickHouse mode, auth writes users/orgs/sessions/API keys and tenant-route plan metadata to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
 - Light/dark mode toggle with a persisted local preference. Dark mode uses neutral dark surfaces with explicit accent states; primary button styling is opt-in via `.primary-button` instead of a broad global button selector.
@@ -140,6 +141,22 @@ backend `CLERK_SECRET_KEY`. The backend publishes its expected
 `clerk_jwt_issuer` from `/api/auth/config`; the sign-in and invite pages compare
 that issuer with the frontend key and show a configuration error when the build
 points at the wrong Clerk instance.
+
+The staging web container is built from `apps/web/Dockerfile`. Build it with
+`INSTANTML_WEB_API_ENV=staging` and the staging
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, then deploy it as the
+`instantml-staging-web` Cloud Run service. Use the resulting stable Cloud Run
+origin for `INSTANTML_FRONTEND_BASE_URL` and include that origin in
+`INSTANTML_ALLOWED_FRONTEND_ORIGINS` for both staging control and data services
+before enabling Resend-backed invitations.
+For Cloud Run web smoke tests, prefer direct split backend targets over a
+web-service -> public-load-balancer loop: set
+`INSTANTML_WEB_EXPLICIT_API_BASES=1`,
+`INSTANTML_CONTROL_API_BASE=<staging-control-url>`, and
+`INSTANTML_DATA_API_BASE=<staging-data-url>` at image build time, with both
+origins in `INSTANTML_API_ALLOWED_ORIGINS`. This keeps browser calls
+same-origin while the Next proxy talks directly to the intended staging
+services.
 
 After `npm run deploy:cloud-run` succeeds, the deploy helper writes hosted API
 settings into `apps/web/.env.local`. Single-service deploys write
