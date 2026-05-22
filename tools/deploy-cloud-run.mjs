@@ -60,6 +60,12 @@ Environment:
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
   INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none  Skip service access-list updates.
   INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none      Skip Cloud API-key access-list updates.
+
+Timing:
+  This deploy can legitimately take 10-30 minutes. Cloud Build image uploads,
+  Cloud Run revision rollout, managed SSL certificate provisioning, and live
+  smoke checks can each sit quiet for several minutes; do not assume the command
+  has timed out while a gcloud step is still running.
 `);
   process.exit(0);
 }
@@ -124,6 +130,7 @@ const baseEnvVars = buildRuntimeEnv(staticEgressIp, activeAccount);
 if (staticEgressIp && (updateClickHouseServiceAllowlist || updateClickHouseKeyAllowlist)) {
   await updateClickHouseAccessLists(staticEgressIp);
 }
+printDeployDurationNotice();
 buildImage();
 const deployments = [];
 for (const target of deploymentPlan) {
@@ -220,6 +227,14 @@ function normalizeDeploymentEnv(raw) {
 function value(key) {
   const raw = env[key];
   return typeof raw === "string" && raw.trim() ? raw.trim() : "";
+}
+
+function printDeployDurationNotice() {
+  console.warn([
+    "Cloud Run deploy note: this can legitimately take 10-30 minutes.",
+    "Cloud Build, Cloud Run rollout, managed cert provisioning, and live smoke checks may be quiet for several minutes.",
+    "If gcloud is still running, let it finish instead of assuming the deploy timed out.",
+  ].join(" "));
 }
 
 function normalizeTopology(raw) {
@@ -608,6 +623,9 @@ function secretEnvForTarget(secretEnv, target) {
 }
 
 function buildImage() {
+  // Cloud Build can be quiet for several minutes while uploading the Docker
+  // context and building the Rust image. Sparse output is expected on hosted
+  // deploys, so the command timeout is intentionally long.
   run(["builds", "submit", "--tag", image, "."], { timeout: 30 * 60 * 1000 });
 }
 

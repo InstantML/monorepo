@@ -191,6 +191,12 @@ Deploy/update the isolated staging services and router:
 npm run deploy:cloud-run:staging
 ```
 
+Hosted deploys are intentionally long-running. Plan for 10-30 minutes on a
+normal run while Cloud Build uploads/builds the Rust image, Cloud Run creates
+ready revisions, managed certificates settle, and the helper runs live smoke
+checks. Quiet `gcloud` output during a build or rollout does not mean the
+command has timed out.
+
 Staging defaults to `instantml-staging-control`,
 `instantml-staging-data-us-central1-a`, router resources prefixed
 `instantml-staging-public-api`, and domain `staging.api.instantml.ai`. Staging

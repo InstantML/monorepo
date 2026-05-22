@@ -70,6 +70,12 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, configures an HTTP startup probe against `/readyz`, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`.
 
+Expect hosted deploys to take a while. A normal `npm run deploy:cloud-run` or
+`npm run deploy:cloud-run:staging` run can take 10-30 minutes because Cloud
+Build uploads/builds the Rust image, Cloud Run rolls out revisions, managed
+certificates may provision, and live smoke checks run after deployment. Sparse
+or quiet `gcloud` output during those phases is not a timeout by itself.
+
 The first split hosted launch shape is:
 
 - `instantml-control` with `INSTANTML_SERVICE_PLANE=control`, manual scaling, and 1 active instance by default.

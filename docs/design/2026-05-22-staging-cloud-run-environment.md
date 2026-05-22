@@ -85,6 +85,12 @@ It expands to:
 node tools/deploy-cloud-run.mjs --topology=split --environment=staging --public-router
 ```
 
+The deploy helper is expected to run for several minutes and sometimes much
+longer. Treat 10-30 minutes as normal when it needs to upload/build the Rust
+container, roll Cloud Run revisions, wait on managed certificate state, and run
+live verification. Agents should not interrupt a quiet `gcloud` step unless the
+process exits or clearly exceeds the script's own timeout.
+
 Staging defaults:
 
 - service prefix: `instantml-staging`
