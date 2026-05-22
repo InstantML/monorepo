@@ -1,5 +1,6 @@
 "use client";
 
+import { UserButton } from "@clerk/nextjs";
 import { Check, ChevronDown, CircleHelp, LogOut, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
@@ -347,6 +348,9 @@ export function DashboardTopbar({
             >
               <LogOut size={15} />
             </button>
+            <span className="brandbar-action-desktop brandbar-user-avatar" aria-label="Account">
+              <UserButton />
+            </span>
           </div>
         </div>
       </div>
