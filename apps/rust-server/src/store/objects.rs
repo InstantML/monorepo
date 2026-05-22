@@ -6,6 +6,7 @@ pub async fn create_attributes(
     run_id: Uuid,
     input: CreateAttributesRequest,
 ) -> AppResult<Vec<Value>> {
+    ensure_billing_write_allowed(store, ctx.org_id, "create attributes").await?;
     let items = normalize_attribute_inputs(input)?;
     let mut created = Vec::new();
     let mut data = store.data.lock().await;
@@ -90,6 +91,7 @@ pub async fn create_object(
     run_id: Uuid,
     input: CreateObjectRequest,
 ) -> AppResult<Value> {
+    ensure_billing_write_allowed(store, ctx.org_id, "create objects").await?;
     let key = validate_name(input.key.as_deref(), "object key")?;
     let requested_kind = validate_name(input.kind.as_deref(), "object kind")?;
     let kind = normalize_object_kind(&requested_kind)?;
@@ -304,6 +306,7 @@ pub async fn create_artifact(
     run_id: Uuid,
     input: CreateArtifactRequest,
 ) -> AppResult<ArtifactRow> {
+    ensure_billing_write_allowed(store, ctx.org_id, "create an artifact").await?;
     let artifact = artifact_from_input(store, ctx, run_id, input, None, true).await?;
     Ok(artifact)
 }
@@ -315,6 +318,7 @@ pub async fn upload_artifact(
     run_id: Uuid,
     input: UploadArtifactRequest,
 ) -> AppResult<ArtifactRow> {
+    ensure_billing_write_allowed(store, ctx.org_id, "upload an artifact").await?;
     let name = validate_name(input.name.as_deref(), "artifact name")?;
     let artifact_id = Uuid::new_v4();
     let content = input

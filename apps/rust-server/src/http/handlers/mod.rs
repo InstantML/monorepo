@@ -1,5 +1,6 @@
 pub mod artifacts;
 pub mod auth;
+pub mod billing;
 pub mod dashboard;
 mod helpers;
 pub mod imports;
@@ -13,6 +14,10 @@ pub(super) use artifacts::{create_artifact, download_artifact, list_artifacts, u
 pub(super) use auth::{
     auth_clerk, auth_dev_google, auth_logout, auth_session, auth_switch_organization,
     device_code_confirm, device_code_poll, device_code_start,
+};
+pub(super) use billing::{
+    billing_add_seat, billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync,
+    billing_portal, billing_report_storage_overage, billing_status, billing_webhook,
 };
 pub(super) use dashboard::{
     create_workspace_view, get_dashboard_preferences, get_workspace_view, list_workspace_views,
@@ -131,6 +136,15 @@ mod tests {
             "/api/auth/device-code/start",
             "/api/auth/device-code/poll",
             "/api/auth/device-code/confirm",
+            // billing
+            "/api/billing/status",
+            "/api/billing/checkout",
+            "/api/billing/checkout/sync",
+            "/api/billing/portal",
+            "/api/billing/change-plan",
+            "/api/billing/add-seat",
+            "/api/billing/cancel",
+            "/api/billing/webhook",
             // dashboard
             "/api/dashboard/preferences",
             "/api/workspace-views",
@@ -254,6 +268,7 @@ mod tests {
             request_timeout: std::time::Duration::from_secs(30),
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
+            billing: crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
             frontend_base_url: Some("http://localhost:3000".to_string()),
         }
     }

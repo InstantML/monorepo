@@ -17,6 +17,7 @@ type SessionPayload = {
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
   onboarding_api_key?: { plaintext: string; prefix: string; id: string } | null;
+  billing_checkout?: { intent_id?: string; status?: string; session_id?: string | null; url?: string | null } | null;
 };
 type DevGoogleAuthPayload = {
   email: string;
@@ -234,7 +235,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   // a later valid submit is never silently suppressed.
   useEffect(() => {
     if (!managedClerkReady || !isSignedIn || isOnboarding || clerkExchangeAttemptedRef.current) return;
-    if (signupMode && (!orgName.trim() || orgAvailability.available !== true)) {
+    if (signupMode && managedClerkSignup && orgNameOverride.trim() && orgAvailability.available !== true) {
+      note("Signed in with Clerk. Choose an available organization name to create your workspace.");
+      return;
+    }
+    if (signupMode && !managedClerkSignup && (!orgName.trim() || orgAvailability.available !== true)) {
       // Only auto-create the workspace once the org name is *confirmed*
       // available — `available` is briefly undefined while the debounced
       // check is in flight, so guarding on `!== true` (not `=== false`)
@@ -244,7 +249,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     }
     clerkExchangeAttemptedRef.current = true;
     void createManagedClerkSession();
-  }, [isOnboarding, isSignedIn, managedClerkReady, signupMode, orgName, orgAvailability.available]);
+  }, [isOnboarding, isSignedIn, managedClerkReady, managedClerkSignup, signupMode, orgName, orgNameOverride, orgAvailability.available]);
 
   // Move focus to the page heading on first paint and on each major view
   // change (busy, key revealed, error) so keyboard/SR users land in context.
@@ -260,6 +265,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     try {
       const sessionPayload = await api.post("/api/auth/dev/google", payload);
       setSession(sessionPayload as SessionPayload);
+      const checkoutUrl = (sessionPayload as SessionPayload).billing_checkout?.url;
+      if (checkoutUrl) {
+        note("Workspace created. Opening Stripe Checkout...");
+        window.location.assign(checkoutUrl);
+        return;
+      }
       if (isSharedDemoSession(sessionPayload as SessionPayload)) {
         note("Signed in to the read-only demo. Opening the dashboard...");
         window.location.assign("/dashboard/runs");
@@ -318,6 +329,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         payload = await exchangeManagedClerkSession(true);
       }
       setSession(payload);
+      if (payload.billing_checkout?.url) {
+        note("Workspace created. Opening Stripe Checkout...");
+        window.location.assign(payload.billing_checkout.url);
+        return;
+      }
       // If the server auto-issued an onboarding key, reveal it immediately
       // in-place (no reload — keeps the copy-once plaintext in memory).
       const onboardingKey = payload.onboarding_api_key?.plaintext;
@@ -498,7 +514,9 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                     availability={orgAvailability}
                     effectiveName={effectiveOrgName}
                     override={orgNameOverride}
+                    planTier={planTier}
                     onOverride={setOrgNameOverride}
+                    onPlanTier={setPlanTier}
                   />
                 ) : signupMode && config.dev_auth_enabled ? (
                   <SignupFields
@@ -789,39 +807,66 @@ function OnboardingBody({
 }
 
 function WorkspacePreview({
-  autoSlug, availability, effectiveName, override, onOverride,
+  autoSlug, availability, effectiveName, override, planTier, onOverride, onPlanTier,
 }: {
   autoSlug: string;
   availability: OrgAvailability;
   effectiveName: string;
   override: string;
+  planTier: PlanTier;
   onOverride: (value: string) => void;
+  onPlanTier: (value: PlanTier) => void;
 }) {
   return (
-    <div className="iml-field">
-      <span className="iml-legend">Your workspace</span>
-      <div className="iml-wsprev">
-        <span className="iml-wsprev-host">instantml.ai/</span>
-        <strong className="iml-wsprev-slug">{effectiveName || autoSlug || "workspace"}</strong>
+    <>
+      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
+      <div className="iml-field">
+        <span className="iml-legend">Your workspace</span>
+        <div className="iml-wsprev">
+          <span className="iml-wsprev-host">instantml.ai/</span>
+          <strong className="iml-wsprev-slug">{effectiveName || autoSlug || "workspace"}</strong>
+        </div>
+        <details className="iml-wsprev-adv">
+          <summary>Use a different name</summary>
+          <input
+            className="iml-input"
+            id="iml-ws-override"
+            value={override}
+            onChange={(e) => onOverride(e.target.value)}
+            placeholder={autoSlug}
+            aria-label="Override workspace name"
+            aria-describedby={availability.message ? "iml-ws-avail" : undefined}
+          />
+          {availability.message ? (
+            <span id="iml-ws-avail" className={`iml-hint ${availability.available ? "is-ok" : availability.available === false ? "is-err" : ""}`}>
+              {availability.available ? "✓ " : ""}{availability.message}
+            </span>
+          ) : null}
+        </details>
       </div>
-      <details className="iml-wsprev-adv">
-        <summary>Use a different name</summary>
-        <input
-          className="iml-input"
-          id="iml-ws-override"
-          value={override}
-          onChange={(e) => onOverride(e.target.value)}
-          placeholder={autoSlug}
-          aria-label="Override workspace name"
-          aria-describedby={availability.message ? "iml-ws-avail" : undefined}
-        />
-        {availability.message ? (
-          <span id="iml-ws-avail" className={`iml-hint ${availability.available ? "is-ok" : availability.available === false ? "is-err" : ""}`}>
-            {availability.available ? "✓ " : ""}{availability.message}
-          </span>
-        ) : null}
-      </details>
-    </div>
+    </>
+  );
+}
+
+function PlanPicker({ planTier, onPlanTier }: { planTier: PlanTier; onPlanTier: (value: PlanTier) => void }) {
+  return (
+    <fieldset className="iml-field iml-fieldset">
+      <legend className="iml-legend">Plan</legend>
+      <div className="iml-plans">
+        {PLAN_OPTIONS.map((plan) => {
+          const Icon = plan.icon;
+          return (
+            <label className="iml-plan" key={plan.id}>
+              <input checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
+              <span className="iml-plan-h"><Icon size={15} aria-hidden="true" /> {plan.label}</span>
+              <strong className="iml-plan-p">{plan.price}<small>/mo</small></strong>
+              <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {plan.seats}</span>
+              <span className="iml-plan-m"><HardDrive size={12} aria-hidden="true" /> {plan.storage}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -844,23 +889,7 @@ function SignupFields({
   const overLimit = seatCount > Math.max(0, seatLimit - 1);
   return (
     <>
-      <fieldset className="iml-field iml-fieldset">
-        <legend className="iml-legend">Plan</legend>
-        <div className="iml-plans">
-          {PLAN_OPTIONS.map((plan) => {
-            const Icon = plan.icon;
-            return (
-              <label className="iml-plan" key={plan.id}>
-                <input checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
-                <span className="iml-plan-h"><Icon size={15} aria-hidden="true" /> {plan.label}</span>
-                <strong className="iml-plan-p">{plan.price}<small>/mo</small></strong>
-                <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {plan.seats}</span>
-                <span className="iml-plan-m"><HardDrive size={12} aria-hidden="true" /> {plan.storage}</span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
+      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
       <fieldset className="iml-field iml-fieldset">
         <legend className="iml-legend">Account type</legend>
         <div className="iml-seg">

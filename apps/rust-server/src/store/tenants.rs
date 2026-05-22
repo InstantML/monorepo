@@ -68,6 +68,12 @@ impl Store {
                     | "api_key"
                     | "dashboard_preference"
                     | "workspace_view"
+                    | "billing_account"
+                    | "billing_checkout_intent"
+                    | "billing_change_intent"
+                    | "billing_subscription"
+                    | "billing_event"
+                    | "billing_usage_report"
                     | TENANT_ROUTE_KIND
             )
     }

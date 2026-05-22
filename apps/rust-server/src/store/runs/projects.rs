@@ -28,6 +28,7 @@ pub async fn create_project(
                 .ok_or_else(|| AppError::not_found("project not found"));
         }
     }
+    ensure_billing_write_allowed(store, ctx.org_id, "create a project").await?;
     enforce_plan_capacity(
         store,
         ctx.org_id,

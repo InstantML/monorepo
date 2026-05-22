@@ -26,6 +26,8 @@ pub mod openapi;
 
 use handlers::{
     auth_clerk, auth_config, auth_dev_google, auth_logout, auth_session, auth_switch_organization,
+    billing_add_seat, billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync,
+    billing_portal, billing_report_storage_overage, billing_status, billing_webhook,
     create_api_key, create_artifact, create_attributes, create_object, create_org, create_project,
     create_run, create_user, create_workspace_view, device_code_confirm, device_code_poll,
     device_code_start, disable_service_account, download_artifact, export_data,
@@ -107,6 +109,18 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route("/api/auth/device-code/start", post(device_code_start))
         .route("/api/auth/device-code/poll", post(device_code_poll))
         .route("/api/auth/device-code/confirm", post(device_code_confirm))
+        .route("/api/billing/status", get(billing_status))
+        .route("/api/billing/checkout", post(billing_checkout))
+        .route("/api/billing/checkout/sync", post(billing_checkout_sync))
+        .route("/api/billing/portal", post(billing_portal))
+        .route("/api/billing/change-plan", post(billing_change_plan))
+        .route("/api/billing/add-seat", post(billing_add_seat))
+        .route("/api/billing/cancel", post(billing_cancel))
+        .route(
+            "/api/billing/storage-overage/report",
+            post(billing_report_storage_overage),
+        )
+        .route("/api/billing/webhook", post(billing_webhook))
         .route(
             "/api/dashboard/preferences",
             get(get_dashboard_preferences).put(update_dashboard_preferences),

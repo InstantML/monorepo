@@ -59,10 +59,12 @@ try {
       },
     });
   } else if (mode === "sdk") {
+    const apiKey = await mintSdkSmokeApiKey(baseUrl);
     run("python3", ["tools/rust-sdk-smoke.py"], {
       env: {
         ...process.env,
         INSTANTML_RUST_SMOKE_BASE_URL: baseUrl,
+        INSTANTML_API_KEY: apiKey,
       },
     });
   } else {
@@ -93,6 +95,66 @@ function run(command, args, options = {}) {
   if (!options.allowFailure && result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
   }
+}
+
+async function mintSdkSmokeApiKey(baseUrl) {
+  const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const signup = await httpJson(
+    "POST",
+    `${baseUrl}/api/auth/dev/google`,
+    {
+      email: `rust-sdk-smoke+${unique}@example.com`,
+      display_name: "Rust SDK Smoke",
+      mode: "signup",
+      account_type: "customer",
+      org_name: `Rust SDK Smoke ${unique}`,
+      plan_tier: "free",
+    },
+    baseUrl,
+  );
+  const cookie = signup.setCookie.match(/instantml_session=[^;]+/)?.[0];
+  const orgId = signup.body.organization?.id;
+  if (!cookie || !orgId) {
+    throw new Error("Rust SDK smoke could not create a local browser session");
+  }
+  const created = await httpJson(
+    "POST",
+    `${baseUrl}/api/orgs/${orgId}/api-keys`,
+    {
+      name: "Rust SDK smoke key",
+      scopes: ["sdk:ingest", "artifacts:write", "export:read"],
+    },
+    baseUrl,
+    cookie,
+  );
+  const apiKey = created.body.api_key;
+  if (typeof apiKey !== "string" || !apiKey.startsWith("instantml_")) {
+    throw new Error("Rust SDK smoke did not receive a disposable API key");
+  }
+  return apiKey;
+}
+
+async function httpJson(method, url, body, baseUrl, cookie = "") {
+  const headers = {
+    accept: "application/json",
+    "content-type": "application/json",
+    origin: baseUrl,
+  };
+  if (cookie) headers.cookie = cookie;
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  const parsed = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(`${method} ${url} failed with ${response.status}: ${text}`);
+  }
+  return {
+    body: parsed,
+    setCookie: response.headers.get("set-cookie") || "",
+  };
 }
 
 function freePort() {

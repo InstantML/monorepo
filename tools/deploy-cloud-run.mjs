@@ -40,6 +40,14 @@ Environment:
   CLOUDFLARE_R2_API_KEY                 Cloudflare API token with Workers R2 Storage read/write permissions.
   CLOUDFLARE_R2_ACCESS_KEY_ID           Optional R2 S3 access key id; API-token id is derived when omitted.
   CLOUDFLARE_R2_SECRET_ACCESS_KEY       Optional R2 S3 secret; API-token SHA-256 is used when omitted.
+  STRIPE_SECRET_KEY                      Optional Stripe Billing secret key for Checkout and Portal.
+  STRIPE_WEBHOOK_SECRET                  Optional Stripe webhook signing secret.
+  STRIPE_PRO_PRICE_ID                    Optional Stripe monthly Pro price id.
+  STRIPE_PREMIUM_PRICE_ID                Optional Stripe monthly Premium price id.
+  STRIPE_EXTRA_SEAT_PRICE_ID             Optional Stripe monthly extra-seat price id.
+  STRIPE_STORAGE_OVERAGE_PRICE_ID        Optional Stripe metered storage overage price id.
+  STRIPE_STORAGE_METER_ID                Optional Stripe Billing Meter id for storage overage.
+  INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME Optional Stripe meter event name for retained-storage overage.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
   INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none  Skip service access-list updates.
   INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none      Skip Cloud API-key access-list updates.
@@ -442,6 +450,8 @@ function syncSecrets(serviceAccountEmail) {
     ["CLOUDFLARE_API_TOKEN", "instantml-cloudflare-api-token", false],
     ["CLOUDFLARE_R2_ACCESS_KEY_ID", "instantml-cloudflare-r2-access-key-id", false],
     ["CLOUDFLARE_R2_SECRET_ACCESS_KEY", "instantml-cloudflare-r2-secret-access-key", false],
+    ["STRIPE_SECRET_KEY", "instantml-stripe-secret-key", false],
+    ["STRIPE_WEBHOOK_SECRET", "instantml-stripe-webhook-secret", false],
   ];
   const mappings = [];
   for (const [envName, secretName, required] of specs) {
@@ -499,6 +509,18 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     CLOUDFLARE_R2_ENDPOINT: value("CLOUDFLARE_R2_ENDPOINT"),
     INSTANTML_MAX_UPLOAD_BODY_BYTES: value("INSTANTML_MAX_UPLOAD_BODY_BYTES") || "50000000",
     INSTANTML_REQUEST_TIMEOUT_SECONDS: value("INSTANTML_REQUEST_TIMEOUT_SECONDS") || "900",
+    INSTANTML_BILLING_ENABLED: value("INSTANTML_BILLING_ENABLED") || (value("STRIPE_SECRET_KEY") ? "true" : ""),
+    STRIPE_API_VERSION: value("STRIPE_API_VERSION") || "2026-04-22.dahlia",
+    STRIPE_PRO_PRICE_ID: value("STRIPE_PRO_PRICE_ID"),
+    STRIPE_PREMIUM_PRICE_ID: value("STRIPE_PREMIUM_PRICE_ID"),
+    STRIPE_EXTRA_SEAT_PRICE_ID: value("STRIPE_EXTRA_SEAT_PRICE_ID"),
+    STRIPE_STORAGE_OVERAGE_PRICE_ID: value("STRIPE_STORAGE_OVERAGE_PRICE_ID"),
+    STRIPE_STORAGE_METER_ID: value("STRIPE_STORAGE_METER_ID"),
+    INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME: value("INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME"),
+    INSTANTML_BILLING_SUCCESS_URL: value("INSTANTML_BILLING_SUCCESS_URL"),
+    INSTANTML_BILLING_CANCEL_URL: value("INSTANTML_BILLING_CANCEL_URL"),
+    INSTANTML_BILLING_PORTAL_RETURN_URL: value("INSTANTML_BILLING_PORTAL_RETURN_URL"),
+    INSTANTML_BILLING_GRACE_DAYS: value("INSTANTML_BILLING_GRACE_DAYS"),
     CLERK_API_BASE: value("CLERK_API_BASE") || "https://api.clerk.com",
     CLERK_JWT_ISSUER: value("CLERK_JWT_ISSUER"),
     CLICKHOUSE_CLOUD_ENDPOINT: value("CLICKHOUSE_CLOUD_ENDPOINT") || "https://api.clickhouse.cloud",

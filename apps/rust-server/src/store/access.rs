@@ -156,6 +156,7 @@ pub(super) fn session_payload_from_data(
         membership,
         memberships,
         provisioning,
+        billing_checkout: None,
     })
 }
 

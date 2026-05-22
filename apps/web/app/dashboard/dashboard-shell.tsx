@@ -144,6 +144,15 @@ type UsagePayload = {
   usage_period?: UsagePeriod;
   organizations?: UsageOrg[];
 };
+type BillingPayload = {
+  billing?: {
+    access_state?: string;
+    effective_plan_tier?: string;
+    subscription_status?: string | null;
+    cancel_at_period_end?: boolean;
+    message?: string | null;
+  };
+};
 const SEARCH_DEBOUNCE_MS = 250;
 const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
@@ -352,6 +361,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [primaryChartZoomRange, setPrimaryChartZoomRange] = useState<ChartZoomRange>(null);
   const [pinnedChartZoomRanges, setPinnedChartZoomRanges] = useState<Record<string, ChartZoomRange>>({});
   const [usagePayload, setUsagePayload] = useState<UsagePayload | null>(null);
+  const [billingPayload, setBillingPayload] = useState<BillingPayload | null>(null);
   const [seats, setSeats] = useState<SeatRow[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -1408,12 +1418,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const loadOrgSettings = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     if (!activeOrgId) return;
     try {
-      const [usage, seatPayload] = await Promise.all([
+      const [usage, seatPayload, billing] = await Promise.all([
         api.get("/api/usage", options),
         api.get(`/api/orgs/${activeOrgId}/seats`, options),
+        api.get("/api/billing/status", options).catch(() => null),
       ]);
       setUsagePayload(usage as UsagePayload);
       setSeats(Array.isArray(seatPayload.seats) ? seatPayload.seats as SeatRow[] : []);
+      setBillingPayload(billing as BillingPayload | null);
     } catch (error) {
       if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load workspace settings.");
     }
@@ -1464,6 +1476,53 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage("Seat reserved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to reserve seat.");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function openBillingPortal() {
+    setAdminBusy(true);
+    setMessage("Opening billing portal...");
+    try {
+      const payload = await api.post("/api/billing/portal", {});
+      const url = typeof payload.url === "string" ? payload.url : "";
+      if (!url) throw new Error("Billing portal URL was not returned.");
+      window.location.assign(url);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to open billing portal.");
+      setAdminBusy(false);
+    }
+  }
+
+  async function changeBillingPlan(plan: "free" | "pro" | "premium") {
+    setAdminBusy(true);
+    setMessage(`Changing billing plan to ${planDisplayName(plan)}...`);
+    try {
+      const payload = await api.post("/api/billing/change-plan", { plan_tier: plan });
+      const checkoutUrl = typeof payload?.checkout?.url === "string" ? payload.checkout.url : "";
+      if (checkoutUrl) {
+        window.location.assign(checkoutUrl);
+        return;
+      }
+      await loadOrgSettings();
+      setMessage("Billing plan updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to change billing plan.");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function cancelBilling() {
+    setAdminBusy(true);
+    setMessage("Scheduling cancellation...");
+    try {
+      await api.post("/api/billing/cancel", { at_period_end: true });
+      await loadOrgSettings();
+      setMessage("Cancellation recorded.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to cancel billing.");
     } finally {
       setAdminBusy(false);
     }
@@ -2479,6 +2538,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onInviteEmail={setInviteEmail}
               onInviteRole={setInviteRole}
               onInviteSeat={inviteSeat}
+              onOpenBillingPortal={openBillingPortal}
+              onChangeBillingPlan={changeBillingPlan}
+              onCancelBilling={cancelBilling}
               onLoadOrgSettings={loadOrgSettings}
               onMetricKey={setMetricKey}
               onXMode={setXMode}
@@ -2493,6 +2555,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               storageLimit={storageLimit}
               usageResetLabel={usageResetLabel}
               xMode={xMode}
+              billingStatus={billingPayload?.billing ?? null}
             />
           ) : null}
         </section>

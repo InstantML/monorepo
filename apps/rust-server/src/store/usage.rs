@@ -16,9 +16,39 @@ pub struct UsageDelta {
     pub storage_bytes: i64,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct StorageOverageUsage {
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub storage_bytes_for_warnings: i64,
+    pub billable_storage_bytes: i64,
+    pub reported_gib: i64,
+}
+
 pub async fn usage_summary(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
     usage_summary_for_org(store, ctx.org_id).await
+}
+
+pub async fn storage_overage_usage_for_org(
+    store: &Store,
+    org_id: Uuid,
+) -> AppResult<StorageOverageUsage> {
+    let counts = usage_counts_for_org(store, org_id).await?;
+    let billable_storage_bytes =
+        (counts.storage_bytes_for_warnings - counts.plan.included_storage_bytes).max(0);
+    let reported_gib = if billable_storage_bytes == 0 {
+        0
+    } else {
+        (billable_storage_bytes + GIB_BYTES - 1) / GIB_BYTES
+    };
+    Ok(StorageOverageUsage {
+        period_start: counts.period.starts_at,
+        period_end: counts.period.ends_at,
+        storage_bytes_for_warnings: counts.storage_bytes_for_warnings,
+        billable_storage_bytes,
+        reported_gib,
+    })
 }
 
 pub async fn enforce_plan_capacity(
