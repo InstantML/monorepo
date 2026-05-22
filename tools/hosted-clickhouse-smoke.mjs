@@ -290,6 +290,7 @@ async function startServer(servicePlane) {
       INSTANTML_SERVICE_PLANE: servicePlane,
       INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
       INSTANTML_AUTH_MODE: "local",
+      INSTANTML_BILLING_ENABLED: "false",
       INSTANTML_ARTIFACT_ROOT: path.join(tempDir, `${servicePlane}-artifacts`),
     },
     stdio: ["ignore", output, output],

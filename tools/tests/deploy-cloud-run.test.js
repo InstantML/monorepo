@@ -82,6 +82,17 @@ test("deploy helper honors R2 aliases and keeps Cloudflare env off control servi
   assert.match(source, /!mapping\.startsWith\("CLOUDFLARE_"\)/);
 });
 
+test("deploy helper defaults services to one warm manual instance and probes readiness", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN", "manual", "1"\)/);
+  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN_CONTROL", "manual", "1"\)/);
+  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN_DATA", "manual", "1"/);
+  assert.match(source, /function appendStartupProbeArgs/);
+  assert.match(source, /httpGet\.path=\/readyz/);
+  assert.match(source, /--startup-probe/);
+});
+
 function runDeploy(args, env = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-deploy-test-"));
   const binDir = path.join(tempDir, "bin");
