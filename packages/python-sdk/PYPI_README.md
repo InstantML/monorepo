@@ -86,4 +86,6 @@ run = im.init(project="llm-7b-sft", shadow_wandb=wb_run)
 
 If `wandb` is not installed or `wandb.init` fails, shadow logging is disabled with a warning and InstantML logging continues unaffected.
 
-License note: this package is not currently published as open source. Public licensing or source-available terms should be confirmed before a broad public release.
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE). The InstantML hosted backend (dashboard, API, storage) is a separate commercial offering; the SDK in this package is open source.
