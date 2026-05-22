@@ -39,6 +39,12 @@ configured:
 https://api.instantml.ai
 ```
 
+Hosted staging router:
+
+```text
+https://staging.api.instantml.ai
+```
+
 The local Next app should normally call the Rust API through same-origin Next
 rewrites. After a direct split `npm run deploy:cloud-run`,
 `apps/web/.env.local` receives:

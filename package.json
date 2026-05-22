@@ -41,6 +41,7 @@
     "deploy:cloud-run": "node tools/deploy-cloud-run.mjs --topology=split",
     "deploy:cloud-run:single": "node tools/deploy-cloud-run.mjs --topology=single",
     "deploy:cloud-run:multi": "node tools/deploy-cloud-run.mjs --topology=split",
+    "deploy:cloud-run:staging": "node tools/deploy-cloud-run.mjs --topology=split --environment=staging --public-router",
     "test:all": "npm run check:setup && npm run rust:lint && npm run rust:test && npm run test:node && npm run test:deploy-cloud-run && npm run test:python && npm run test:contract && npm run test:rust:sdk && npm run test:scale && npm run test:ui",
     "test:ui": "node tools/rust-service-smoke.mjs ui",
     "test:ui:direct": "node apps/web/tests/ui-smoke.mjs",

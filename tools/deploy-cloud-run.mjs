@@ -12,11 +12,13 @@ if (cli.help) {
   npm run deploy:cloud-run
   npm run deploy:cloud-run:single
   npm run deploy:cloud-run:multi
-  node tools/deploy-cloud-run.mjs --topology=single|split [--public-router] [--data-instances=N]
+  npm run deploy:cloud-run:staging
+  node tools/deploy-cloud-run.mjs --topology=single|split [--environment=prod|staging] [--public-router] [--data-instances=N]
 
 Environment:
   GCP_PROJECT                         Google Cloud project id.
   GCP_REGION                          Deployment region. Default: us-central1.
+  INSTANTML_DEPLOY_ENV                 prod or staging. Default: prod.
   INSTANTML_CLOUD_RUN_TOPOLOGY         single or split. Default: split.
   INSTANTML_CLOUD_RUN_SERVICE          Combined service name. Default: instantml-rust-api.
   INSTANTML_CLOUD_RUN_SCALING          auto or manual for combined service. Default: manual.
@@ -33,9 +35,12 @@ Environment:
   INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1  Permit control scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_DATA_SESSION_AFFINITY  Enable Cloud Run session affinity for data as an optimization, not correctness.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER    Create/update a global HTTPS Application Load Balancer for split deploys.
-  INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN  Required HTTPS DNS name for the public router, for example api.instantml.ai.
+  INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN  HTTPS DNS name for the public router. Defaults to staging.api.instantml.ai in staging.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_NAME  Public router resource name prefix. Default: instantml-public-api.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE  Managed SSL certificate name. Default: <router-name>-cert.
+  INSTANTML_CLOUD_RUN_SECRET_PREFIX     Secret Manager prefix for non-prod deploys. Default: <service-prefix>-.
+  INSTANTML_STAGING_USER_DATA_DATABASE  User Data database path for staging. Default: instantml_user_data_staging.
+  INSTANTML_STAGING_USER_DATA_ENDPOINT  Full staging User Data endpoint override.
   INSTANTML_PUBLIC_API_BASE            Optional public LB/router URL written to local frontend env.
   INSTANTML_SIGNUP_ALLOWED_EMAILS      Comma-separated hosted signup allowlist.
   INSTANTML_ALLOWED_FRONTEND_ORIGINS   Comma-separated browser origins allowed for session mutations.
@@ -71,9 +76,11 @@ const project = value("GCP_PROJECT") || configuredProject.stdout.trim();
 if (!project || project === "(unset)") fail("Set GCP_PROJECT or run `gcloud config set project <project-id>`.");
 
 const region = value("GCP_REGION") || value("CLOUDSDK_RUN_REGION") || value("GOOGLE_CLOUD_REGION") || "us-central1";
+const deploymentEnv = normalizeDeploymentEnv(cli.environment || value("INSTANTML_DEPLOY_ENV") || "prod");
 const topology = normalizeTopology(cli.topology || value("INSTANTML_CLOUD_RUN_TOPOLOGY") || "split");
 const service = value("INSTANTML_CLOUD_RUN_SERVICE") || "instantml-rust-api";
-const servicePrefix = value("INSTANTML_CLOUD_RUN_SERVICE_PREFIX") || "instantml";
+const defaultServicePrefix = deploymentEnv === "staging" ? "instantml-staging" : "instantml";
+const servicePrefix = value("INSTANTML_CLOUD_RUN_SERVICE_PREFIX") || defaultServicePrefix;
 const controlService = value("INSTANTML_CLOUD_RUN_CONTROL_SERVICE") || `${servicePrefix}-control`;
 const dataCellId = value("INSTANTML_CLOUD_RUN_DATA_CELL") || `${region}-a`;
 const dataService = value("INSTANTML_CLOUD_RUN_DATA_SERVICE") || `${servicePrefix}-data-${slug(dataCellId)}`;
@@ -96,6 +103,8 @@ const writeLocalEnv = boolValue("INSTANTML_WRITE_LOCAL_FRONTEND_ENV", true);
 const publicRouterEnabled = topology === "split"
   && (cli.publicRouter ?? boolValue("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER", false));
 const publicRouterName = slug(value("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_NAME") || `${servicePrefix}-public-api`);
+const secretNamePrefix = value("INSTANTML_CLOUD_RUN_SECRET_PREFIX")
+  || (deploymentEnv === "prod" ? "" : `${servicePrefix}-`);
 const allowUnsafeDataMultiWriter = boolValue("INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER", false);
 const allowUnsafeControlMultiInstance = boolValue("INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE", false);
 const deploymentPlan = deploymentTargets();
@@ -169,6 +178,7 @@ console.log(JSON.stringify({
   status: "ok",
   project,
   region,
+  environment: deploymentEnv,
   topology,
   image,
   service_account: serviceAccountEmail,
@@ -188,15 +198,23 @@ console.log(JSON.stringify({
 }, null, 2));
 
 function parseArgs(args) {
-  const output = { help: false, topology: "", publicRouter: undefined, dataInstances: "" };
+  const output = { help: false, topology: "", environment: "", publicRouter: undefined, dataInstances: "" };
   for (const arg of args) {
     if (arg === "--help" || arg === "-h") output.help = true;
     if (arg.startsWith("--topology=")) output.topology = arg.slice("--topology=".length);
+    if (arg.startsWith("--environment=")) output.environment = arg.slice("--environment=".length);
     if (arg === "--public-router") output.publicRouter = true;
     if (arg === "--no-public-router") output.publicRouter = false;
     if (arg.startsWith("--data-instances=")) output.dataInstances = arg.slice("--data-instances=".length);
   }
   return output;
+}
+
+function normalizeDeploymentEnv(raw) {
+  const value = raw.trim().toLowerCase();
+  if (["prod", "production"].includes(value)) return "prod";
+  if (["stage", "staging"].includes(value)) return "staging";
+  fail("INSTANTML_DEPLOY_ENV must be prod or staging.");
 }
 
 function value(key) {
@@ -459,23 +477,51 @@ function syncSecrets(serviceAccountEmail) {
   ];
   const mappings = [];
   for (const [envName, secretName, required] of specs) {
-    const secretValue = value(envName);
+    const secretValue = secretRuntimeValue(envName);
     if (!secretValue) {
       if (required) fail(`${envName} is required in .env or process env.`);
       continue;
     }
-    if (!quiet(["secrets", "describe", secretName])) {
-      run(["secrets", "create", secretName, "--replication-policy", "automatic"]);
+    const scopedSecretName = scopedSecret(secretName);
+    if (!quiet(["secrets", "describe", scopedSecretName])) {
+      run(["secrets", "create", scopedSecretName, "--replication-policy", "automatic"]);
     }
-    run(["secrets", "versions", "add", secretName, "--data-file", "-"], { input: secretValue });
+    run(["secrets", "versions", "add", scopedSecretName, "--data-file", "-"], { input: secretValue });
     run([
-      "secrets", "add-iam-policy-binding", secretName,
+      "secrets", "add-iam-policy-binding", scopedSecretName,
       "--member", `serviceAccount:${serviceAccountEmail}`,
       "--role", "roles/secretmanager.secretAccessor",
     ], { quietOutput: true });
-    mappings.push(`${envName}=${secretName}:latest`);
+    mappings.push(`${envName}=${scopedSecretName}:latest`);
   }
   return mappings;
+}
+
+function scopedSecret(secretName) {
+  if (!secretNamePrefix) return secretName;
+  return `${secretNamePrefix}${secretName.replace(/^instantml-/, "")}`;
+}
+
+function secretRuntimeValue(envName) {
+  const raw = value(envName);
+  if (deploymentEnv === "staging" && envName === "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT") {
+    return userDataEndpointForDeployment(raw);
+  }
+  return raw;
+}
+
+function userDataEndpointForDeployment(raw) {
+  const explicit = value("INSTANTML_STAGING_USER_DATA_ENDPOINT");
+  if (explicit) return explicit;
+  if (!raw) return raw;
+  const database = value("INSTANTML_STAGING_USER_DATA_DATABASE") || "instantml_user_data_staging";
+  try {
+    const parsed = new URL(raw);
+    parsed.pathname = `/${database}`;
+    return parsed.toString();
+  } catch {
+    fail("CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT must be a URL so staging can use a separate User Data database.");
+  }
 }
 
 function buildRuntimeEnv(staticEgressIp, activeAccount) {
@@ -787,7 +833,8 @@ function publicRouterResourceNames() {
 }
 
 function publicRouterDomain() {
-  const raw = value("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN") || value("INSTANTML_PUBLIC_API_DOMAIN");
+  const defaultDomain = deploymentEnv === "staging" ? "staging.api.instantml.ai" : "";
+  const raw = value("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN") || value("INSTANTML_PUBLIC_API_DOMAIN") || defaultDomain;
   if (!raw) {
     fail("Public router deployment requires INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN so the API uses HTTPS with a managed certificate. Do not expose auth/API-key traffic over http://<ip>.");
   }
@@ -859,6 +906,7 @@ function ensureBackendService(name, negName) {
     "compute", "backend-services", "update", name,
     "--global",
     "--enable-logging",
+    "--timeout", backendServiceTimeout(),
   ]);
   const negLink = regionalNegSelfLink(negName);
   for (const backend of service.backends || []) {
@@ -930,15 +978,32 @@ pathMatchers:
   - paths:
     - /api/auth
     - /api/auth/*
+    - /api/billing
+    - /api/billing/*
+    - /api/dashboard/preferences
     - /api/users
     - /api/users/*
     - /api/orgs
     - /api/orgs/*
+    - /api/workspace-views
+    - /api/workspace-views/*
     service: ${controlBackend}
 tests:
 - description: Auth routes use control plane
   host: instantml.local
   path: /api/auth/config
+  service: ${controlBackend}
+- description: Billing routes use control plane
+  host: instantml.local
+  path: /api/billing/status
+  service: ${controlBackend}
+- description: Dashboard preference routes use control plane
+  host: instantml.local
+  path: /api/dashboard/preferences
+  service: ${controlBackend}
+- description: Workspace view routes use control plane
+  host: instantml.local
+  path: /api/workspace-views
   service: ${controlBackend}
 - description: Data routes use data plane
   host: instantml.local

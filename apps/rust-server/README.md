@@ -50,6 +50,7 @@ npm run rust:serve
 npm run deploy:cloud-run
 npm run deploy:cloud-run:single
 npm run deploy:cloud-run:multi
+npm run deploy:cloud-run:staging
 ```
 
 Binary subcommands:
@@ -65,7 +66,7 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 ## Hosted Cloud Run Deployment
 
-`npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. It is now the default split control/data deployment path. `npm run deploy:cloud-run:multi` is the explicit equivalent. `npm run deploy:cloud-run:single` keeps the legacy combined-service path available when an operator needs one service.
+`npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. It is now the default production split control/data deployment path. `npm run deploy:cloud-run:multi` is the explicit equivalent. `npm run deploy:cloud-run:single` keeps the legacy combined-service path available when an operator needs one service. `npm run deploy:cloud-run:staging` deploys isolated staging Cloud Run services and a staging HTTPS router for `staging.api.instantml.ai`.
 
 The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, configures an HTTP startup probe against `/readyz`, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`.
 
@@ -79,6 +80,8 @@ Control and data-plane cells stay single-writer by default until the durable mul
 On startup, the server retries the initial operational/User Data projection rebuild with 1s, 2s, and 4s backoff before exiting non-zero. `/readyz` fails until the projection has loaded, so Cloud Run does not route traffic to an instance that has an empty auth/org/API-key view. Later background refresh failures keep serving the last-known-good projection, log a warning, and expose degraded state through `/readyz` and `/metrics`. Valid data-plane requests stay on the warmed in-memory hot path; an API-key or session auth miss forces one control-record refresh and retries auth so newly created keys/sessions are usable immediately after control-plane writes.
 
 Split deploys write local frontend env with direct control/data Cloud Run service URLs by default. When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper creates a managed HTTPS external Application Load Balancer and writes that one public API base. The helper refuses HTTP-only public routing because hosted auth, session cookies, and API keys must not cross a cleartext `http://<ip>` endpoint. The single-service deploy writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
+
+Production public API routing is `api.instantml.ai -> instantml-control/instantml-data-us-central1-a`. Staging routing is `staging.api.instantml.ai -> instantml-staging-control/instantml-staging-data-us-central1-a`. Staging uses scoped Secret Manager names and defaults the User Data ClickHouse database path to `instantml_user_data_staging`, so local staging tests do not write production User Data records. Staging still creates real ClickHouse Cloud tenant services when the cloud-service provisioner is exercised.
 
 Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
 
@@ -194,13 +197,17 @@ Root helper-only environment variables:
 - `INSTANTML_DEV_CHDATA`, `INSTANTML_DEV_CH_LOG_DIR`: generated ClickHouse state and logs for `npm run dev:api`.
 - `INSTANTML_DEV_CH_TCP_PORT`, `INSTANTML_DEV_CH_INTERSERVER_PORT`, `INSTANTML_DEV_CH_MYSQL_PORT`: optional non-HTTP ports for avoiding local collisions.
 - `INSTANTML_CLOUD_RUN_TOPOLOGY`: `single` or `split` for `tools/deploy-cloud-run.mjs`. `deploy:cloud-run` and `deploy:cloud-run:multi` pass `split`.
+- `INSTANTML_DEPLOY_ENV`: `prod` or `staging`. Defaults to `prod`; staging changes default service/router names, secret names, and User Data database path.
 - `INSTANTML_CLOUD_RUN_SCALING`, `INSTANTML_CLOUD_RUN_INSTANCES`: combined-service scaling mode and manual instance count. The legacy single deploy defaults to manual `1`.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
 - `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Both default to `manual`.
 - `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual split instance counts. Values above `1` are blocked unless the matching unsafe control/data test flag is set.
 - `INSTANTML_CLOUD_RUN_STARTUP_PROBE`: optional raw Cloud Run startup probe override. Defaults to `httpGet.path=/readyz,httpGet.port=8000,initialDelaySeconds=0,timeoutSeconds=10,periodSeconds=10,failureThreshold=30`.
+- `INSTANTML_CLOUD_RUN_BACKEND_TIMEOUT_SECONDS`: public-router backend timeout. Defaults to Cloud Run/Rust timeout and then `900`.
 - `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE`: permits control scaling above one instance for controlled tests only.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: managed HTTPS public router controls.
+- `INSTANTML_CLOUD_RUN_SECRET_PREFIX`: Secret Manager prefix for non-prod deploys. Staging defaults to `instantml-staging-`.
+- `INSTANTML_STAGING_USER_DATA_DATABASE`, `INSTANTML_STAGING_USER_DATA_ENDPOINT`: staging User Data database/path override. Defaults to database `instantml_user_data_staging` on the configured User Data ClickHouse endpoint.
 - `INSTANTML_PUBLIC_API_BASE`: public load balancer/router URL written to local frontend env after a split deploy.
 
 ## HTTP Surface

@@ -100,6 +100,14 @@ mod tests {
             ServicePlaneRole::Data
         ));
         assert!(openapi_path_available_for_plane(
+            "/api/billing/status",
+            ServicePlaneRole::Control
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/billing/status",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
             "/runs",
             ServicePlaneRole::Data
         ));

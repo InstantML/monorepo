@@ -117,6 +117,8 @@ pub fn openapi_path_available_for_plane(
         return true;
     }
     if path.starts_with("/api/auth/")
+        || path == "/api/billing"
+        || path.starts_with("/api/billing/")
         || path == "/api/users"
         || path == "/api/orgs"
         || path == "/api/orgs/memberships"
