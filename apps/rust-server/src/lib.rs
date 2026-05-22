@@ -3,6 +3,7 @@ pub mod auth;
 pub mod config;
 pub mod control_store;
 pub mod domain;
+pub mod email;
 pub mod errors;
 pub mod http;
 pub mod managed_auth;

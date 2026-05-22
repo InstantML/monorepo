@@ -63,6 +63,8 @@ impl Store {
                     | "identity"
                     | "organization"
                     | "membership"
+                    | "org_invitation"
+                    | "email_delivery"
                     | "session"
                     | "service_account"
                     | "api_key"

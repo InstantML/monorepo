@@ -7,7 +7,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
-- Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, reserve invited seats, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified when a paid plan is selected.
+- Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified when a paid plan is selected.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Store artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, R2 references, exact byte counts, hashes, and MIME types.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
@@ -89,12 +89,24 @@ Split deploys write local frontend env with direct control/data Cloud Run servic
 
 Production public API routing is `api.instantml.ai -> instantml-control/instantml-data-us-central1-a`. Staging routing is `staging.api.instantml.ai -> instantml-staging-control/instantml-staging-data-us-central1-a`. Staging uses scoped Secret Manager names and defaults the User Data ClickHouse database path to `instantml_user_data_staging`, so local staging tests do not write production User Data records. Staging still creates real ClickHouse Cloud tenant services when the cloud-service provisioner is exercised.
 
-Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
+Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Organization invitation email uses `INSTANTML_EMAIL_PROVIDER=resend` when `RESEND_API_KEY` is present; `INSTANTML_FRONTEND_BASE_URL` must point at the hosted web app before Resend-backed deploys so invite emails never fall back to localhost links. The deploy helper syncs the Resend secret only to control-plane services. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
+
+Organization invitations are app-owned token records, not Clerk Organization
+memberships. Create and resend write `email_delivery` attempts and share
+rolling send-rate limits; a failed resend keeps the previous delivered token
+valid, while a successful resend clears previous token hashes. Accepted,
+revoked, and expired invitations are not token-indexed after replay, so old
+links cannot re-authorize access. Managed Clerk acceptance must go through
+`POST /api/auth/clerk` with `accept_invite_token` so the server preflights the
+invite and reconciles the current verified Clerk email before creating or
+activating a membership. Legacy `/seats` invited rows still count as reserved
+seats, but a token invite for the same email/org reuses that reservation
+instead of double-counting.
 
 Logical control/data-plane division is available before deployment:
 
 - `INSTANTML_SERVICE_PLANE=combined` is the default and exposes the current full route set from one Rust process.
-- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, billing, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
+- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, invitation, billing, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
 - `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, metrics, logs, attributes, objects, artifacts, export, usage, imports, and demo reset. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
 
 The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
@@ -122,10 +134,14 @@ Environment variables:
 - `CLERK_API_BASE`: Clerk Backend API base URL. Default: `https://api.clerk.com`.
 - `CLERK_JWT_ISSUER`: optional exact Clerk session-token issuer. When unset, tokens must still use an HTTPS Clerk-owned issuer host.
 - `INSTANTML_CLERK_SESSION_MAX_AGE_SECONDS`: maximum accepted age for a Clerk session token exchanged into an InstantML session. Default: `600`.
-- `INSTANTML_FRONTEND_BASE_URL`: base URL of the web frontend used to build the `verification_uri` in device-code responses (e.g. `https://app.instantml.ai`). Falls back to the first entry in `INSTANTML_ALLOWED_FRONTEND_ORIGINS`, then `http://localhost:3000`.
+- `INSTANTML_FRONTEND_BASE_URL`: base URL of the web frontend used to build device-code verification URIs and organization invitation accept links (for example, `https://app.instantml.ai`). Resend-backed email requires a non-localhost value; local/log mode can fall back to `INSTANTML_ALLOWED_FRONTEND_ORIGINS`, then `http://localhost:3000`.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS`: comma-separated exact email allowlist for hosted Clerk signups. Sign-in for existing memberships is still allowed.
 - `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: comma-separated hosted Clerk signup domain allowlist. Domains may be written with or without a leading `@`.
+- `INSTANTML_EMAIL_PROVIDER`: `disabled`, `log`, or `resend`. Defaults to `resend` when `RESEND_API_KEY` is present, `log` in local auth mode, and `disabled` in hosted API-key mode without Resend.
+- `RESEND_API_KEY` or `INSTANTML_RESEND_API_KEY`: Resend API key for send-only organization invitation emails. Required when `INSTANTML_EMAIL_PROVIDER=resend`.
+- `INSTANTML_EMAIL_FROM`: invitation sender address. Default: `InstantML <invites@instantml.ai>`.
+- `INSTANTML_EMAIL_REPLY_TO`: optional invitation reply-to address.
 - `INSTANTML_ARTIFACT_UPLOADS_ENABLED`: enables artifact byte uploads. Defaults to `true` for local artifact storage in local mode, `false` for hosted ClickHouse without R2, and `true` when `INSTANTML_ARTIFACT_BACKEND=r2`.
 - `CLOUDFLARE_R2_ACCOUNT_ID` or `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account id used for R2 bucket management and the S3-compatible endpoint default.
 - `CLOUDFLARE_R2_API_KEY` or `CLOUDFLARE_API_TOKEN`: Cloudflare API token with Workers R2 Storage read/write permissions. Used to create per-org buckets and, when explicit S3 credentials are omitted, derive R2 S3 credentials from the token id and SHA-256 token value. If the token uses Client IP Address Filtering, include the Cloud Run static egress IPs that run artifact uploads.
@@ -226,7 +242,7 @@ Implemented health and platform endpoints:
 - `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation and invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
 Run-summary pages default to 100 rows and are capped at 1,000 rows. Bulk UI
 selection should use `GET /api/runs/summary?projection=selection`, which skips

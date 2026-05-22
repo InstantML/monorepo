@@ -426,6 +426,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["accept_invitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["preview_invitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/series": {
         parameters: {
             query?: never;
@@ -538,6 +570,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["revoke_api_key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orgs/{org_id}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_invitations"];
+        put?: never;
+        post: operations["create_invitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orgs/{org_id}/invitations/{invitation_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resend_invitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orgs/{org_id}/invitations/{invitation_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revoke_invitation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1111,6 +1191,7 @@ export interface components {
         ClerkAuthRequest: {
             /** Format: uuid */
             accept_invite_org_id?: string | null;
+            accept_invite_token?: string | null;
             account_type?: string | null;
             mode?: string | null;
             org_name?: string | null;
@@ -1170,6 +1251,10 @@ export interface components {
             lines?: components["schemas"]["ConsoleLogInput"][] | null;
             stream?: string | null;
         };
+        CreateInvitationRequest: {
+            email?: string | null;
+            role?: string | null;
+        };
         CreateObjectRequest: {
             /** Format: uuid */
             artifact_id?: string | null;
@@ -1225,6 +1310,7 @@ export interface components {
         DevGoogleAuthRequest: {
             /** Format: uuid */
             accept_invite_org_id?: string | null;
+            accept_invite_token?: string | null;
             account_type?: string | null;
             display_name?: string | null;
             email?: string | null;
@@ -1277,6 +1363,30 @@ export interface components {
         InsertedEnvelope: {
             /** Format: int64 */
             inserted: number;
+        };
+        InvitationEnvelope: {
+            delivery_error?: string | null;
+            invitation: components["schemas"]["PublicInvitationRow"];
+            preview_link?: string | null;
+        };
+        InvitationPreviewEnvelope: {
+            invitation: components["schemas"]["InvitationPreviewPayload"];
+        };
+        InvitationPreviewPayload: {
+            email_hint: string;
+            /** Format: date-time */
+            expires_at: string;
+            org_name: string;
+            role: string;
+            status: string;
+        };
+        InvitationTokenRequest: {
+            token?: string | null;
+        };
+        InvitationsEnvelope: {
+            invitations: components["schemas"]["PublicInvitationRow"][];
+            limit: number;
+            offset: number;
         };
         /** @description Free-form key/value response payload used by handlers that build dynamic
          *     JSON objects in the store layer (overview, usage, exports, etc.). Modeled
@@ -1478,6 +1588,26 @@ export interface components {
             storage_backend: string;
             type: string;
             uri: string;
+        };
+        PublicInvitationRow: {
+            /** Format: date-time */
+            accepted_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            delivery_status: string;
+            email: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            last_sent_at?: string | null;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: date-time */
+            revoked_at?: string | null;
+            role: string;
+            status: string;
         };
         ReserveSeatRequest: {
             email?: string | null;
@@ -2595,6 +2725,99 @@ export interface operations {
             };
         };
     };
+    accept_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Session payload for accepted organization */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSessionPayload"];
+                };
+            };
+            /** @description Browser session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invite email mismatch or fresh Clerk exchange required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation expired or revoked */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    preview_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Safe invitation preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPreviewEnvelope"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation preview rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     metrics_series: {
         parameters: {
             query?: never;
@@ -2917,6 +3140,183 @@ export interface operations {
             };
             /** @description API key not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_invitations: {
+        parameters: {
+            query?: {
+                /** @description Maximum rows to return; defaults to 100 */
+                limit?: number;
+                /** @description Rows to skip */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Organization UUID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organization invitations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationsEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Organization UUID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInvitationRequest"];
+            };
+        };
+        responses: {
+            /** @description Created organization invitation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resend_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Organization UUID */
+                org_id: string;
+                /** @description Invitation UUID */
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resent organization invitation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revoke_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Organization UUID */
+                org_id: string;
+                /** @description Invitation UUID */
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked organization invitation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

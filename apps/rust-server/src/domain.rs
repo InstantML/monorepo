@@ -393,6 +393,7 @@ pub struct DevGoogleAuthRequest {
     pub plan_tier: Option<String>,
     pub seat_emails: Option<Vec<String>>,
     pub accept_invite_org_id: Option<Uuid>,
+    pub accept_invite_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -404,6 +405,7 @@ pub struct ClerkAuthRequest {
     pub plan_tier: Option<String>,
     pub seat_emails: Option<Vec<String>>,
     pub accept_invite_org_id: Option<Uuid>,
+    pub accept_invite_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -424,6 +426,77 @@ pub struct SeatUserRow {
 pub struct SeatRow {
     pub membership: MembershipRow,
     pub user: SeatUserRow,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateInvitationRequest {
+    pub email: Option<String>,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct InvitationTokenRequest {
+    pub token: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OrgInvitationRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub email: String,
+    pub role: String,
+    pub status: String,
+    pub token_hash: Vec<u8>,
+    #[serde(default)]
+    pub previous_token_hashes: Vec<Vec<u8>>,
+    pub invited_by_user_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub last_sent_at: Option<DateTime<Utc>>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub accepted_by_user_id: Option<Uuid>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoked_by_user_id: Option<Uuid>,
+    pub delivery_status: String,
+    pub email_provider: Option<String>,
+    pub provider_message_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EmailDeliveryRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub invitation_id: Uuid,
+    pub recipient_email: String,
+    pub provider: String,
+    pub status: String,
+    pub provider_message_id: Option<String>,
+    pub error_code: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct PublicInvitationRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub email: String,
+    pub role: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub last_sent_at: Option<DateTime<Utc>>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub delivery_status: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct InvitationPreviewPayload {
+    pub org_name: String,
+    pub email_hint: String,
+    pub role: String,
+    pub status: String,
+    pub expires_at: DateTime<Utc>,
 }
 
 /// Summary of a single org membership for the org-switcher UI. We surface only

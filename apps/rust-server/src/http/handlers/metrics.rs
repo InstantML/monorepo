@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::{errors::AppResult, store};
 
 use super::super::AppState;
-use super::helpers::context;
+use super::helpers::{context, require_scope};
 
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct MetricsSeriesRequest {
@@ -49,6 +49,7 @@ pub async fn metrics_series(
     Json(body): Json<MetricsSeriesRequest>,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
     let mut query = HashMap::new();
     query.insert("key".to_string(), body.key);
     query.insert("run_ids".to_string(), body.run_ids.join(","));

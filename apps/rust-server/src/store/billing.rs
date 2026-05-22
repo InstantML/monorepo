@@ -1046,13 +1046,7 @@ async fn existing_storage_usage_report(
 }
 
 fn active_or_invited_seats(data: &StoreData, org_id: Uuid) -> usize {
-    data.memberships
-        .values()
-        .filter(|membership| {
-            membership.org_id == org_id
-                && matches!(membership.status.as_str(), "active" | "invited")
-        })
-        .count()
+    reserved_seat_count_in_data(data, org_id, Utc::now())
 }
 
 fn default_billing_account(org: &OrganizationRow) -> BillingAccountProjection {

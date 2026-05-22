@@ -244,6 +244,26 @@ pub fn require_session_scope(session: &SessionContext, scope: &str) -> AppResult
     }
 }
 
+pub fn request_rate_key(headers: &HeaderMap) -> String {
+    let raw = header_text(headers, "cf-connecting-ip")
+        .or_else(|| header_text(headers, "x-real-ip"))
+        .or_else(|| {
+            header_text(headers, "x-forwarded-for").and_then(|value| value.split(',').next())
+        })
+        .unwrap_or("unknown")
+        .trim();
+    let sanitized = raw
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '-'))
+        .take(80)
+        .collect::<String>();
+    if sanitized.is_empty() {
+        "ip:unknown".to_string()
+    } else {
+        format!("ip:{sanitized}")
+    }
+}
+
 pub async fn session_context(
     state: &AppState,
     headers: &HeaderMap,
@@ -466,6 +486,13 @@ pub fn validate_clerk_signup_allowed(
 }
 
 pub fn is_clerk_signup_request(input: &ClerkAuthRequest) -> bool {
+    if input
+        .accept_invite_token
+        .as_deref()
+        .is_some_and(|token| !token.trim().is_empty())
+    {
+        return false;
+    }
     input.mode.as_deref() == Some("signup")
         || input
             .org_name

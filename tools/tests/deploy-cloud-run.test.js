@@ -59,6 +59,19 @@ test("deploy helper rejects cleartext hosted public API bases", () => {
   ]);
 });
 
+test("deploy helper requires hosted frontend base for Resend invites", () => {
+  const result = runDeploy(["--topology=split"], {
+    RESEND_API_KEY: "re_test_key",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Set INSTANTML_FRONTEND_BASE_URL/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
 test("deploy helper keeps public routing HTTPS-only", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
@@ -71,15 +84,17 @@ test("deploy helper keeps public routing HTTPS-only", () => {
   assert.doesNotMatch(source, /--ports", "80/);
 });
 
-test("deploy helper honors R2 aliases and keeps Cloudflare env off control services", () => {
+test("deploy helper scopes provider secrets to the service planes that need them", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
   assert.match(source, /function cloudflareR2AccountId/);
   assert.match(source, /CLOUDFLARE_R2_ACCOUNT_ID/);
   assert.match(source, /function runtimeEnvForTarget/);
   assert.match(source, /function secretEnvForTarget/);
-  assert.match(source, /target\.servicePlane !== "control"/);
+  assert.match(source, /target\.servicePlane === "control"/);
+  assert.match(source, /target\.servicePlane === "data"/);
   assert.match(source, /!mapping\.startsWith\("CLOUDFLARE_"\)/);
+  assert.match(source, /!mapping\.startsWith\("RESEND_API_KEY="/);
 });
 
 test("deploy helper defaults services to one warm manual instance and probes readiness", () => {
@@ -98,6 +113,7 @@ test("deploy helper keeps public router control paths and backend timeout comple
 
   for (const path of [
     "/api/auth/*",
+    "/api/invitations/*",
     "/api/billing/*",
     "/api/dashboard/preferences",
     "/api/users/*",

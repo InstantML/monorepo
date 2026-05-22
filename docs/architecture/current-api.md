@@ -75,10 +75,10 @@ redirect behavior must preserve bearer auth, session/cookie rules,
 
 For local split-service verification, the Rust binary also supports
 `INSTANTML_SERVICE_PLANE=control` and `INSTANTML_SERVICE_PLANE=data`. The
-control role exposes platform, auth/session, user/org, seat, API-key,
-service-account, dashboard preference, and saved workspace-view routes. The
-data role exposes platform and tenant product routes. `combined` remains the
-default and the current deployed shape.
+control role exposes platform, auth/session, organization invitation, user/org,
+seat, API-key, service-account, dashboard preference, and saved workspace-view
+routes. The data role exposes platform and tenant product routes. `combined`
+remains the default and the current deployed shape.
 
 ## Auth Model
 
@@ -215,16 +215,19 @@ Body:
   "account_type": "business",
   "org_name": "InstantML Demo",
   "seat_emails": ["teammate@example.com"],
-  "accept_invite_org_id": null
+  "accept_invite_org_id": null,
+  "accept_invite_token": null
 }
 ```
 
 `mode` is `signup` or `signin`. `plan_tier` accepts `free`, `pro`, or
 `premium`; legacy `lab`/`startup` canonicalize to `pro` and `growth`
-canonicalizes to `premium`. On sign-in, `accept_invite_org_id` can activate a
-pending invited membership for the verified email address. If a verified user
-has multiple pending invites and does not choose one, the server returns `409`
-with `code: "multiple_pending_invites"`.
+canonicalizes to `premium`. On sign-in, `accept_invite_token` accepts a
+token-backed organization invitation when the verified email address matches the
+invite email. `accept_invite_org_id` remains only for local/dev compatibility
+with legacy placeholder invited memberships. If a local/dev verified user has
+multiple legacy pending invites and does not choose one, the server returns
+`409` with `code: "multiple_pending_invites"`.
 
 Output: authenticated session payload plus `Set-Cookie: instantml_session=...`.
 
@@ -242,15 +245,31 @@ Body:
   "account_type": "customer",
   "org_name": "Acme Research",
   "seat_emails": ["teammate@example.com"],
-  "accept_invite_org_id": null
+  "accept_invite_org_id": null,
+  "accept_invite_token": null
 }
 ```
 
 `mode` is `signin` or `signup`. `org_name` is required for signup and omitted
 for normal sign-in. `plan_tier` is required only for plan-specific signup
-behavior and defaults to `free` when omitted. `accept_invite_org_id` is used on
-sign-in to activate a matching invited membership. Output is the authenticated
-session payload plus `Set-Cookie: instantml_session=...`.
+behavior and defaults to `free` when omitted. `accept_invite_token` is used on
+sign-in to activate a matching token-backed invitation; hosted Clerk exchanges
+ignore tokenless legacy invite activation. Output is the authenticated session
+payload plus `Set-Cookie: instantml_session=...`.
+
+### Organization Invitations
+
+Invitation links use `/invite#t=<token>` on the web app. The fragment token is
+read client-side, removed from browser history, previewed through the API, and
+then exchanged only after Clerk or local dev auth confirms a matching email.
+Pending unexpired invitations reserve seats for usage and plan-limit purposes;
+accepted invitations become active `MembershipRow` records and no longer count
+separately. First-slice invitation tokens expire after seven days.
+
+| Method | Path | Auth | Body | Output |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/invitations/preview` | none | `{ "token": "instantml_invite_..." }` | `{ "invitation": { "org_name", "email_hint", "role", "status", "expires_at" } }` |
+| `POST` | `/api/invitations/accept` | browser session | `{ "token": "instantml_invite_..." }` | authenticated session payload plus fresh `Set-Cookie`, bound to the invited org |
 
 ### `GET /api/auth/session`
 
@@ -432,6 +451,10 @@ owner/admin browser session, an unrestricted org API key with
 | `GET` | `/api/orgs/name-availability` | `name` | `{ "name", "slug", "available", "message" }` |
 | `GET` | `/api/orgs/:org_id/seats` | none | `{ "seats": [SeatRow] }` |
 | `POST` | `/api/orgs/:org_id/seats` | `{ "email", "role"?: "owner" | "admin" | "member" | "viewer" }` | `{ "seat": SeatRow }` |
+| `GET` | `/api/orgs/:org_id/invitations` | none | `{ "invitations": [PublicInvitationRow] }` |
+| `POST` | `/api/orgs/:org_id/invitations` | `{ "email", "role"?: "admin" | "member" | "viewer" }` | `{ "invitation": PublicInvitationRow, "preview_link"?: string, "delivery_error"?: string }` |
+| `POST` | `/api/orgs/:org_id/invitations/:invitation_id/resend` | none | `{ "invitation": PublicInvitationRow, "preview_link"?: string, "delivery_error"?: string }` |
+| `POST` | `/api/orgs/:org_id/invitations/:invitation_id/revoke` | none | `{ "invitation": PublicInvitationRow }` |
 | `POST` | `/api/orgs/:org_id/api-keys` | `{ "name"?, "scopes"?, "project_id"?, "project"?, "expires_at"? }` | `{ "api_key", "api_key_available", "key", "message", "service_account" }` |
 | `GET` | `/api/orgs/:org_id/api-keys` | none | `{ "api_keys": [PublicApiKeyRow] }` |
 | `POST` | `/api/orgs/:org_id/api-keys/:api_key_id/revoke` | none | `{ "key": PublicApiKeyRow }` |
@@ -447,6 +470,10 @@ usage:read
 api_keys:write
 export:read
 ```
+
+Tenant read access means owner/admin/member/viewer browser sessions for the
+current org, or API keys that include `export:read`. Data-plane read routes do
+not treat `sdk:ingest` alone as read permission.
 
 ## Stripe Billing
 

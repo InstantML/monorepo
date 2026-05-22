@@ -20,8 +20,8 @@ use crate::{
 
 use super::super::AppState;
 use super::helpers::{
-    clear_session_cookie, header_value, json_with_session_cookie, read_json, session_context,
-    session_cookie, validate_clerk_signup_allowed, validate_mutation_origin,
+    clear_session_cookie, header_value, json_with_session_cookie, read_json, request_rate_key,
+    session_context, session_cookie, validate_clerk_signup_allowed, validate_mutation_origin,
     validate_mutation_origin_required,
 };
 
@@ -49,6 +49,15 @@ pub async fn auth_dev_google(
     }
     validate_mutation_origin(&state, &headers)?;
     let input = read_json::<DevGoogleAuthRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    if let Some(invite_token) = input.accept_invite_token.as_deref() {
+        store::record_invitation_token_attempt(
+            &state.store,
+            invite_token,
+            store::InvitationTokenAttemptScope::Accept,
+            Some(&request_rate_key(&headers)),
+        )
+        .await?;
+    }
     let created =
         store::create_dev_google_session(&state.store, input, Some(&state.config.billing)).await?;
     json_with_session_cookie(&state, &headers, created.payload, &created.token)
@@ -95,6 +104,15 @@ pub async fn auth_clerk(
         state.config.clerk_session_max_token_age,
     )
     .await?;
+    if let Some(invite_token) = input.accept_invite_token.as_deref() {
+        store::record_invitation_token_attempt(
+            &state.store,
+            invite_token,
+            store::InvitationTokenAttemptScope::Accept,
+            Some(&request_rate_key(&headers)),
+        )
+        .await?;
+    }
     validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
     let created =
         store::create_clerk_session(&state.store, principal, input, Some(&state.config.billing))

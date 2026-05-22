@@ -95,6 +95,7 @@ const nextConfig = {
   async rewrites() {
     return [
       { source: "/api/auth/:path*", destination: `${apiBases.control}/api/auth/:path*` },
+      { source: "/api/invitations/:path*", destination: `${apiBases.control}/api/invitations/:path*` },
       { source: "/api/billing/:path*", destination: `${apiBases.control}/api/billing/:path*` },
       { source: "/api/users", destination: `${apiBases.control}/api/users` },
       { source: "/api/users/:path*", destination: `${apiBases.control}/api/users/:path*` },
@@ -114,6 +115,13 @@ const nextConfig = {
       {
         source: "/:path*",
         headers: securityHeaders,
+      },
+      {
+        source: "/invite",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
       },
     ];
   },

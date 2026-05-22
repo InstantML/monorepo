@@ -111,7 +111,7 @@ const TIERS: Tier[] = [
     bestFor: "Solo researcher · academic",
     writers: "1 writer seat",
     extraWriter: "upgrade for more",
-    viewers: "Unlimited free viewers",
+    viewers: "Read-only viewer role",
     storage: "2 GB hosted storage included",
     features: [
       "Full SDK · init / log / finish",
@@ -131,7 +131,7 @@ const TIERS: Tier[] = [
     bestFor: "Small teams · 3–7 people",
     writers: "3 writer seats included",
     extraWriter: "$50 / extra writer",
-    viewers: "Unlimited free viewers",
+    viewers: "Read-only viewer role",
     storage: "1 TB hosted storage included",
     features: [
       "Everything in Free",
@@ -152,7 +152,7 @@ const TIERS: Tier[] = [
     bestFor: "Growth-stage · 100k+ runs",
     writers: "10 writer seats included",
     extraWriter: "$70 / extra writer",
-    viewers: "Unlimited free viewers",
+    viewers: "Read-only viewer role",
     storage: "5 TB hosted storage included",
     features: [
       "Everything in Pro",
@@ -344,7 +344,7 @@ const SURPRISES: Surprise[] = [
     wandb:
       "Every teammate is a paid seat. Teams workaround it by sharing one login — which destroys attribution, RBAC, and the audit trail.",
     instantml:
-      "Unlimited free viewer seats from day one. Bring in PMs, leadership, the whole company — they all get their own login.",
+      "Clear read-only viewer access from day one. Bring in PMs and leadership with their own login, and track seats honestly in usage.",
   },
   {
     title: "Tracked-hour overage on top of seats",
@@ -489,20 +489,20 @@ export function PricingPage() {
           <h1 className="landing-h2 pricing-h1">
             Predictable monthly bill.{" "}
             <span className="font-serif-italic landing-h2-muted">
-              Unlimited free viewers on every tier.
+              Clear seat accounting on every tier.
             </span>
           </h1>
           <p className="landing-section-body">
             No per-tracked-hour creep. Hosted artifact storage is included and
-            visible in usage. Invite your whole team — only writers count toward
-            the bill.
+            visible in usage. Invite teammates with admin, member, or viewer
+            roles and see the seat count before it surprises you.
           </p>
           <div className="pricing-header-chips">
             <span className="landing-proof-chip">
               <span className="landing-proof-chip__check">
                 <IconCheck />
               </span>
-              Unlimited free viewer seats
+              Read-only viewer role
             </span>
             <span className="landing-proof-chip">
               <span className="landing-proof-chip__check">
@@ -639,8 +639,8 @@ export function PricingPage() {
             </h2>
             <p className="landing-cta-desc">
               Start on Free. Upgrade when you outgrow the writer seat. Every
-              viewer is free, forever — no per-call charges, no tracked-hour
-              meter.
+              teammate gets their own role and audit trail — no per-call
+              charges, no tracked-hour meter.
             </p>
             <div className="landing-cta-row">
               <a href="/signup" className="landing-cta-primary">

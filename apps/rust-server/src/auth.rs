@@ -19,6 +19,16 @@ pub fn generate_session_token() -> String {
     format!("instantml_session_{}", URL_SAFE_NO_PAD.encode(bytes))
 }
 
+pub fn generate_invite_token() -> AppResult<String> {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|error| AppError::internal(format!("failed to generate invite token: {error}")))?;
+    Ok(format!(
+        "instantml_invite_{}",
+        URL_SAFE_NO_PAD.encode(bytes)
+    ))
+}
+
 pub fn hash_secret(secret: &str) -> Vec<u8> {
     Sha256::digest(secret.as_bytes()).to_vec()
 }

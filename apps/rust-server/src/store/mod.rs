@@ -59,20 +59,22 @@ use crate::{
         BillingEventRecord, BillingPlanChangeRequest, BillingPortalRequest,
         BillingSeatChangeRequest, BillingSubscriptionRecord, BillingUsageReportRecord,
         ClerkAuthRequest, ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest,
-        CreateAttributesRequest, CreateConsoleLogsRequest, CreateObjectRequest,
-        CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-        CreatedAuthSession, DashboardPreferenceRow, DevGoogleAuthRequest, LogMetricsRequest,
-        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrganizationMembershipSummary,
-        OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow, RequestContext,
-        ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-        ServiceAccountRow, UpdateDashboardPreferencesRequest, UpdateRunRequest,
-        UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
-        BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
-        BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT,
-        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
-        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
-        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RUN_LIMIT,
-        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
+        CreateAttributesRequest, CreateConsoleLogsRequest, CreateInvitationRequest,
+        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
+        CreateUserRequest, CreatedAuthSession, DashboardPreferenceRow, DevGoogleAuthRequest,
+        EmailDeliveryRow, InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest,
+        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
+        OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
+        PublicApiKeyRow, PublicInvitationRow, RequestContext, ReserveSeatRequest, RunRow,
+        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+        UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+        UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED,
+        BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
+        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
+        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
+        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
+        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RUN_LIMIT, MAX_TEXT_BYTES,
+        PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -464,6 +466,12 @@ struct StoreData {
     organizations: BTreeMap<Uuid, OrganizationRow>,
     orgs_by_slug: HashMap<String, Uuid>,
     memberships: BTreeMap<Uuid, MembershipRow>,
+    org_invitations: BTreeMap<Uuid, OrgInvitationRow>,
+    org_invitations_by_token_hash: HashMap<Vec<u8>, Uuid>,
+    invitation_token_attempts: HashMap<Vec<u8>, Vec<DateTime<Utc>>>,
+    invitation_token_global_attempts: Vec<DateTime<Utc>>,
+    invitation_token_client_attempts: HashMap<String, Vec<DateTime<Utc>>>,
+    email_deliveries: BTreeMap<Uuid, EmailDeliveryRow>,
     sessions: BTreeMap<Uuid, SessionRecord>,
     sessions_by_hash: HashMap<Vec<u8>, Uuid>,
     service_accounts: BTreeMap<Uuid, ServiceAccountRow>,
@@ -556,6 +564,8 @@ impl StoreData {
             }
             "organization" => self.insert_org(parse_payload(payload)?),
             "membership" => self.insert_membership(parse_payload(payload)?),
+            "org_invitation" => self.insert_org_invitation(parse_payload(payload)?),
+            "email_delivery" => self.insert_email_delivery(parse_payload(payload)?),
             "session" => self.insert_session(parse_payload(payload)?),
             "service_account" => {
                 let row: ServiceAccountRow = parse_payload(payload)?;
@@ -615,6 +625,10 @@ impl StoreData {
     }
 
     fn insert_user(&mut self, user: UserRow) {
+        if let Some(existing) = self.users.get(&user.id) {
+            self.users_by_email
+                .remove(&existing.primary_email.to_ascii_lowercase());
+        }
         self.users_by_email
             .insert(user.primary_email.to_ascii_lowercase(), user.id);
         self.users.insert(user.id, user);
@@ -627,6 +641,29 @@ impl StoreData {
 
     fn insert_membership(&mut self, membership: MembershipRow) {
         self.memberships.insert(membership.id, membership);
+    }
+
+    fn insert_org_invitation(&mut self, invitation: OrgInvitationRow) {
+        if let Some(existing) = self.org_invitations.get(&invitation.id) {
+            self.org_invitations_by_token_hash
+                .remove(&existing.token_hash);
+            for token_hash in &existing.previous_token_hashes {
+                self.org_invitations_by_token_hash.remove(token_hash);
+            }
+        }
+        if invitation.status == "pending" {
+            self.org_invitations_by_token_hash
+                .insert(invitation.token_hash.clone(), invitation.id);
+            for token_hash in &invitation.previous_token_hashes {
+                self.org_invitations_by_token_hash
+                    .insert(token_hash.clone(), invitation.id);
+            }
+        }
+        self.org_invitations.insert(invitation.id, invitation);
+    }
+
+    fn insert_email_delivery(&mut self, delivery: EmailDeliveryRow) {
+        self.email_deliveries.insert(delivery.id, delivery);
     }
 
     fn insert_session(&mut self, session: SessionRecord) {

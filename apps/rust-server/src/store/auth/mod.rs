@@ -6,7 +6,13 @@ mod sessions;
 mod users;
 
 pub use api_keys::*;
-pub use invitations::{list_seats, reserve_seat};
+pub(in crate::store) use invitations::reserved_seat_count_in_data;
+pub use invitations::{
+    accept_invitation_for_user, create_org_invitation, list_org_invitations, list_seats,
+    preflight_invitation_for_email, preview_invitation, record_invitation_token_attempt,
+    resend_org_invitation, reserve_seat, revoke_org_invitation, InvitationSendOutcome,
+    InvitationTokenAttemptScope,
+};
 pub use orgs::*;
 pub use sessions::*;
 pub use users::*;

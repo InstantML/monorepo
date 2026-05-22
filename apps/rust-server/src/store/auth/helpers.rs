@@ -14,6 +14,7 @@ pub(super) struct NormalizedDevGoogleAuth {
     pub(super) plan_tier: Option<String>,
     pub(super) seat_emails: Vec<String>,
     pub(super) accept_invite_org_id: Option<Uuid>,
+    pub(super) accept_invite_token: Option<String>,
 }
 
 pub(super) struct VerifiedProviderSessionInput {
@@ -28,6 +29,7 @@ pub(super) struct VerifiedProviderSessionInput {
     pub(super) plan_tier: Option<String>,
     pub(super) seat_emails: Vec<String>,
     pub(super) accept_invite_org_id: Option<Uuid>,
+    pub(super) accept_invite_token: Option<String>,
     pub(super) strict_email_linking: bool,
     /// Clerk display name used to auto-derive a workspace name when org_name is absent.
     pub(super) auto_derive_display_name: Option<String>,
@@ -123,6 +125,7 @@ pub(super) fn normalize_dev_google_auth(
             plan_tier: Some("premium".to_string()),
             seat_emails: Vec::new(),
             accept_invite_org_id: None,
+            accept_invite_token: None,
         });
     }
     Ok(NormalizedDevGoogleAuth {
@@ -138,6 +141,7 @@ pub(super) fn normalize_dev_google_auth(
         plan_tier: input.plan_tier,
         seat_emails: input.seat_emails.unwrap_or_default(),
         accept_invite_org_id: input.accept_invite_org_id,
+        accept_invite_token: input.accept_invite_token,
     })
 }
 

@@ -57,6 +57,9 @@ Environment:
   STRIPE_STORAGE_OVERAGE_PRICE_ID        Optional Stripe metered storage overage price id.
   STRIPE_STORAGE_METER_ID                Optional Stripe Billing Meter id for storage overage.
   INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME Optional Stripe meter event name for retained-storage overage.
+  RESEND_API_KEY                         Optional Resend API key for organization invitation emails.
+  INSTANTML_EMAIL_FROM                   Invitation sender address. Defaults in the Rust service.
+  INSTANTML_EMAIL_REPLY_TO               Optional invitation reply-to address.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
   INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none  Skip service access-list updates.
   INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none      Skip Cloud API-key access-list updates.
@@ -117,6 +120,7 @@ const deploymentPlan = deploymentTargets();
 validateDeploymentTargets(deploymentPlan);
 validatePublicRouterConfig();
 validateExplicitPublicApiBaseConfig();
+validateInviteEmailConfig();
 
 preflightBuildContext();
 ensureGcloudAuth();
@@ -227,6 +231,16 @@ function normalizeDeploymentEnv(raw) {
 function value(key) {
   const raw = env[key];
   return typeof raw === "string" && raw.trim() ? raw.trim() : "";
+}
+
+function emailProviderForDeployment() {
+  return (value("INSTANTML_EMAIL_PROVIDER") || (value("RESEND_API_KEY") ? "resend" : "")).toLowerCase();
+}
+
+function validateInviteEmailConfig() {
+  if (emailProviderForDeployment() === "resend" && !value("INSTANTML_FRONTEND_BASE_URL")) {
+    fail("Set INSTANTML_FRONTEND_BASE_URL to the hosted web app origin before deploying Resend-backed invitation email.");
+  }
 }
 
 function printDeployDurationNotice() {
@@ -489,6 +503,7 @@ function syncSecrets(serviceAccountEmail) {
     ["CLOUDFLARE_R2_SECRET_ACCESS_KEY", "instantml-cloudflare-r2-secret-access-key", false],
     ["STRIPE_SECRET_KEY", "instantml-stripe-secret-key", false],
     ["STRIPE_WEBHOOK_SECRET", "instantml-stripe-webhook-secret", false],
+    ["RESEND_API_KEY", "instantml-resend-api-key", false],
   ];
   const mappings = [];
   for (const [envName, secretName, required] of specs) {
@@ -542,6 +557,8 @@ function userDataEndpointForDeployment(raw) {
 function buildRuntimeEnv(staticEgressIp, activeAccount) {
   const origins = value("INSTANTML_ALLOWED_FRONTEND_ORIGINS")
     || "http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai";
+  const emailProvider = emailProviderForDeployment();
+  const frontendBaseUrl = value("INSTANTML_FRONTEND_BASE_URL");
   const allowedEmails = value("INSTANTML_SIGNUP_ALLOWED_EMAILS") || activeAccount;
   const cloudflareAccountId = cloudflareR2AccountId();
   const r2Configured = Boolean(
@@ -564,7 +581,10 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
     INSTANTML_MANAGED_CLERK_ENABLED: value("CLERK_SECRET_KEY") ? "true" : "false",
     INSTANTML_ALLOWED_FRONTEND_ORIGINS: origins,
-    INSTANTML_FRONTEND_BASE_URL: value("INSTANTML_FRONTEND_BASE_URL"),
+    INSTANTML_FRONTEND_BASE_URL: frontendBaseUrl,
+    INSTANTML_EMAIL_PROVIDER: emailProvider,
+    INSTANTML_EMAIL_FROM: value("INSTANTML_EMAIL_FROM"),
+    INSTANTML_EMAIL_REPLY_TO: value("INSTANTML_EMAIL_REPLY_TO"),
     INSTANTML_SIGNUP_ALLOWED_EMAILS: allowedEmails,
     INSTANTML_SIGNUP_ALLOWED_DOMAINS: value("INSTANTML_SIGNUP_ALLOWED_DOMAINS"),
     INSTANTML_ARTIFACT_BACKEND: value("INSTANTML_ARTIFACT_BACKEND") || (r2Configured ? "r2" : "local"),
@@ -603,23 +623,39 @@ function cloudflareR2AccountId() {
 }
 
 function runtimeEnvForTarget(envVars, target) {
-  if (target.servicePlane !== "control") return envVars;
   const output = { ...envVars };
-  for (const key of [
-    "INSTANTML_ARTIFACT_BACKEND",
-    "INSTANTML_ARTIFACT_UPLOADS_ENABLED",
-    "CLOUDFLARE_ACCOUNT_ID",
-    "CLOUDFLARE_R2_BUCKET_PREFIX",
-    "CLOUDFLARE_R2_ENDPOINT",
-  ]) {
-    delete output[key];
+  if (target.servicePlane === "control") {
+    for (const key of [
+      "INSTANTML_ARTIFACT_BACKEND",
+      "INSTANTML_ARTIFACT_UPLOADS_ENABLED",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_R2_BUCKET_PREFIX",
+      "CLOUDFLARE_R2_ENDPOINT",
+    ]) {
+      delete output[key];
+    }
+  }
+  if (target.servicePlane === "data") {
+    for (const key of [
+      "INSTANTML_EMAIL_PROVIDER",
+      "INSTANTML_EMAIL_FROM",
+      "INSTANTML_EMAIL_REPLY_TO",
+    ]) {
+      delete output[key];
+    }
   }
   return output;
 }
 
 function secretEnvForTarget(secretEnv, target) {
-  if (target.servicePlane !== "control") return secretEnv;
-  return secretEnv.filter((mapping) => !mapping.startsWith("CLOUDFLARE_"));
+  let output = secretEnv;
+  if (target.servicePlane === "control") {
+    output = output.filter((mapping) => !mapping.startsWith("CLOUDFLARE_"));
+  }
+  if (target.servicePlane === "data") {
+    output = output.filter((mapping) => !mapping.startsWith("RESEND_API_KEY="));
+  }
+  return output;
 }
 
 function buildImage() {
@@ -1029,6 +1065,8 @@ pathMatchers:
   - paths:
     - /api/auth
     - /api/auth/*
+    - /api/invitations
+    - /api/invitations/*
     - /api/billing
     - /api/billing/*
     - /api/dashboard/preferences

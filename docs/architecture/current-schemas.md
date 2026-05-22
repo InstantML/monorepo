@@ -115,6 +115,8 @@ cursor while `event_id` is random. Full replay is the current safe path.
 | `identity` | `global` | `IdentityRecord.user_id` | `IdentityRecord` |
 | `organization` | `org` | `OrganizationRow.id` | `OrganizationRow` |
 | `membership` | `org` | `MembershipRow.id` | `MembershipRow` |
+| `org_invitation` | `org` | `OrgInvitationRow.id` | Hashed app-owned invitation token plus previous token hashes retained only while a resend has not been confirmed, invited email/role, pending/accepted/revoked/expired state, seven-day expiration, delivery metadata. Terminal invitations are not re-indexed by token hash during replay. |
+| `email_delivery` | `org` | `EmailDeliveryRow.id` | One durable send attempt for an organization invitation. Stores provider, recipient email, queued/sent/failed status, provider message id, and safe error code/message. |
 | `session` | `org` | `SessionRecord.row.id` | `SessionRecord` |
 | `service_account` | `org` | `ServiceAccountRow.id` | `ServiceAccountRow` |
 | `api_key` | `org` | `ApiKeyRecord.row.id` | `ApiKeyRecord` |
@@ -208,10 +210,56 @@ cursor while `event_id` is random. Full replay is the current safe path.
 Roles are validated membership roles. Current auth paths expect owner/admin
 roles for privileged organization administration.
 
-Invites are stored as normal `MembershipRow` records with `status:
-"invited"` and a placeholder user whose primary email is the invite target.
-When that email signs in with a verified identity, the membership is activated
-and the user joins the same org and projects.
+Legacy reserved seats may still exist as normal `MembershipRow` records with
+`status: "invited"` and a placeholder user whose primary email is the invite
+target. The current hosted invite flow stores pending invitations as
+`OrgInvitationRow` control records. When a matching verified identity accepts
+the token before expiration, the server writes an active `MembershipRow` and
+marks the invitation accepted.
+
+### `OrgInvitationRow`
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "email": "teammate@example.com",
+  "role": "member",
+  "status": "pending",
+  "token_hash": [1, 2, 3],
+  "invited_by_user_id": "uuid",
+  "created_at": "2026-05-22T00:00:00Z",
+  "expires_at": "2026-05-29T00:00:00Z",
+  "last_sent_at": "2026-05-22T00:00:00Z",
+  "accepted_at": null,
+  "accepted_by_user_id": null,
+  "revoked_at": null,
+  "revoked_by_user_id": null,
+  "delivery_status": "sent",
+  "email_provider": "resend",
+  "provider_message_id": "provider-message-id"
+}
+```
+
+Plaintext invitation tokens are never stored. Pending unexpired invitations
+reserve a seat; accepted, revoked, and expired invitations do not count beyond
+any active membership they created.
+
+### `EmailDeliveryRow`
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "invitation_id": "uuid",
+  "recipient_email": "teammate@example.com",
+  "provider": "resend",
+  "status": "sent",
+  "provider_message_id": "provider-message-id",
+  "error_code": null,
+  "created_at": "2026-05-22T00:00:00Z"
+}
+```
 
 ### `SeatRow`
 

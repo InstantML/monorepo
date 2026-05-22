@@ -30,7 +30,7 @@ sequenceDiagram
     Browser->>Clerk: "Sign in or sign up"
     Clerk-->>Browser: "Clerk session"
     Browser->>Clerk: "getToken()"
-    Browser->>Rust: "POST /api/auth/clerk { token, mode, org_name?, plan_tier?, accept_invite_org_id? }"
+    Browser->>Rust: "POST /api/auth/clerk { token, mode, org_name?, plan_tier?, accept_invite_token? }"
     Rust->>Clerk: "Fetch JWKS and verify JWT"
     Rust->>Clerk: "Fetch user profile"
     Rust->>UserData: "Upsert user, identity, org, membership, session"
@@ -52,7 +52,7 @@ flowchart TD
     F --> G["Rust verifies Clerk session token and email"]
     G --> H{"Existing active membership?"}
     H -- "Yes" --> I["Create new session for existing org"]
-    H -- "No" --> J["Create org with tenant_routing_tier, owner membership, invited memberships"]
+    H -- "No" --> J["Create org with tenant_routing_tier, owner membership, optional invite records"]
     J --> K{"account_type == business?"}
     K -- "Yes" --> L["Provision dedicated ClickHouse Cloud service"]
     K -- "No" --> M["Point at shared cell — no Cloud provisioning"]
@@ -97,11 +97,15 @@ Existing tenant routes and warehouses are preserved. The signup path creates a
 route only when an org has no route; it does not delete or recreate an existing
 warehouse to match a changed plan.
 
-Invited teammates are inserted as `MembershipRow` records with `status:
-"invited"` and a placeholder user keyed by email. A verified sign-in for that
-email activates the existing membership and gives the teammate access to the
-same org and projects. If the user has multiple pending invites, the client
-must send `accept_invite_org_id`.
+New organization invitations are `org_invitation` control records with a
+seven-day token, delivery status, expiry, and invited email. The pending
+invitation reserves a seat, but no `MembershipRow` is created until accept.
+Hosted Clerk accept requires `accept_invite_token`; tokenless
+`accept_invite_org_id` and single-pending-invite activation remain only as
+legacy local/dev compatibility for old reserved-seat rows. On accept, Rust
+uses the current provider-verified primary email, re-checks billing and seat
+capacity, creates an active membership, and issues a fresh browser session for
+the invited org so dashboard run reads are scoped through that org.
 
 ## API Authorization
 

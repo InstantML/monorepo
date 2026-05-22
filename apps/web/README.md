@@ -8,7 +8,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 
 - Project dashboard.
 - Public landing page (merged from the standalone `github.com/InstantML/landing` repo). The `/` route is an auth-aware Next.js server component: signed-in Clerk users are redirected to `/signin` (which in turn forwards to `/dashboard/runs` if an InstantML session is active), and visitors with no Clerk session are served the full polished landing page. The landing visual system — italic-serif headlines, emerald palette, grid+glow background, bento cards, animated hero spotlight — is preserved in `components/landing/`. See `docs/design/2026-05-17-landing-merge-into-web.md`.
-- Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, Stripe Checkout redirect for paid signup, onboarding, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and Free/Pro/Premium selection remains visible. Paid signups return a `billing_checkout.url` and redirect to Stripe before writes/API-key creation are unlocked; free signups can still receive a ready-to-use `onboarding_api_key` rendered immediately without a separate button click. If a returning browser still has a Clerk session but InstantML cannot mint a scoped session from it, `app/auth-flow.tsx` retries with a non-cached Clerk token and then shows an explicit "refresh your sign-in" recovery path with a sign-out/restart action.
+- Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, Stripe Checkout redirect for paid signup, onboarding, organization invitation acceptance at `/invite#t=...`, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and Free/Pro/Premium selection remains visible. Paid signups return a `billing_checkout.url` and redirect to Stripe before writes/API-key creation are unlocked; free signups can still receive a ready-to-use `onboarding_api_key` rendered immediately without a separate button click. If a returning browser still has a Clerk session but InstantML cannot mint a scoped session from it, `app/auth-flow.tsx` retries with a non-cached Clerk token and then shows an explicit "refresh your sign-in" recovery path with a sign-out/restart action.
 - RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
 - Runs workspace with run selector, sections, line/bar/histogram/dot panels, control-plane saved views, and local workspace layout fallback.
 - Run detail view.
@@ -57,7 +57,7 @@ Current navigation and comparison controls:
 - Browse active-run rich logged objects in Run Detail and Artifacts. The first slice renders table previews, histogram bars, and media cards from `GET /api/runs/:id/objects` plus bounded `GET /api/objects/:id/rows` table reads. Hidden tabs do not fetch object manifests, and Compare keeps using existing artifact context to avoid extra selected-run fan-out.
 - Address tabs through real routes such as `/dashboard/runs`, `/dashboard/alerts`, and `/dashboard/api`; legacy hashes such as `#runs` normalize to the matching dashboard route.
 - Derived workspace tabs use current summaries, selected-run artifacts, local saved views, and documented API routes. They do not yet imply persistent alert, dataset, report, model registry, or integration credential storage.
-- Settings now includes plan and usage visibility, Stripe billing controls, and seat invite/list controls. Metric-point usage is shown for the current UTC calendar month with its reset date; storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts that do not reset monthly. Storage combines exact InstantML-owned local/R2 artifact bytes with exact ClickHouse table bytes for dedicated tenant databases and falls back to metadata estimates only when exact per-org warehouse bytes are unavailable, such as shared-cell orgs. External/imported artifact sizes stay metadata-only and do not consume retained-storage quota. The topbar mirrors the highest usage percentage in a compact badge near account controls. The API tab now lists keys, creates copy-once keys, revokes keys, and still shows request snippets for SDK/API users.
+- Settings now includes plan and usage visibility, Stripe billing controls, token-backed invite/list controls, pending invitation resend/revoke actions, and seat accounting that includes active members plus unexpired pending invitations. Metric-point usage is shown for the current UTC calendar month with its reset date; storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts that do not reset monthly. Storage combines exact InstantML-owned local/R2 artifact bytes with exact ClickHouse table bytes for dedicated tenant databases and falls back to metadata estimates only when exact per-org warehouse bytes are unavailable, such as shared-cell orgs. External/imported artifact sizes stay metadata-only and do not consume retained-storage quota. The topbar mirrors the highest usage percentage in a compact badge near account controls. The API tab now lists keys, creates copy-once keys, revokes keys, and still shows request snippets for SDK/API users.
 
 ## Design Requirement
 
@@ -147,6 +147,21 @@ combined service or set both split bases for control/data before running
 `web:dev`, `web:build`, or `web:start`. Non-loopback API origins must also be
 listed in `INSTANTML_API_ALLOWED_ORIGINS`.
 
+Invite links use `/invite#t=<token>` so the token is not sent to the server as a
+URL path or query string. The invite page reads the fragment once, removes it
+from browser history, keeps only a short timestamped session-storage fallback
+for Clerk redirect handoffs, previews the invitation through
+`/api/invitations/preview`, and then exchanges a fresh verified Clerk session
+or local dev identity with `accept_invite_token` before opening
+`/dashboard/runs`. In managed Clerk mode, the page does not accept invitations
+through an existing InstantML session cookie; it re-checks Clerk, preserves the
+short invite handoff token, and clears the InstantML session when the browser
+is signed in as the wrong account. Settings hides invitation and billing
+mutation controls from non-admin sessions, shows pending invitation delivery
+status plus resend/revoke controls for admins, and exposes ephemeral copy/open
+links for log-provider invites immediately after create/resend for deterministic
+local and staging checks.
+
 When the hosted API returns `code: "warehouse_unavailable"` with HTTP `503`, the
 dashboard treats the API as reachable and shows a "Starting data warehouse"
 loading state while retrying. This is the expected user-facing state when an
@@ -191,6 +206,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/loading-screen.tsx`
 - `app/page.tsx` — auth-aware server component; unauthenticated renders `LandingPage`, Clerk-authenticated redirects to `/signin`
 - `app/auth-flow.tsx`
+- `app/invite/page.tsx`
 - `app/signin/page.tsx`
 - `app/signup/page.tsx`
 - `app/onboarding/page.tsx`
@@ -284,7 +300,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - Keep Runs workspace panel queries bounded by selected runs up to `MAX_SELECTED_RUNS` or filtered page/top N plus metric point limits; do not fetch full metric histories for the panel grid.
 - Keep hidden tab data fetches gated by active tab. Runs should not load Metrics, Run Detail, Compare, or artifact-only data during initial dashboard entry unless that tab is active.
 - Keep workspace layouts schema-versioned and sanitized before applying. The Rust/ClickHouse workspace-views API owns authenticated persistence; local storage is only a compatibility and offline-development fallback.
-- The first hosted auth/onboarding slice exists, but full organization switching, hosted provider credentials, invitation email delivery, and richer auth/no-access states are still follow-ups.
+- The first hosted auth/onboarding and token-backed organization invitation slices exist. Follow-ups are richer provider webhook delivery state, broader organization switching polish, and expanded auth/no-access recovery copy.
 
 ## API type codegen
 

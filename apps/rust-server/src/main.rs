@@ -192,6 +192,7 @@ async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
             plan_tier: None,
             seat_emails: None,
             accept_invite_org_id: None,
+            accept_invite_token: None,
         },
         None,
     )

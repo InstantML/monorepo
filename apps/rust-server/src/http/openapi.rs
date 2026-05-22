@@ -36,15 +36,16 @@ use crate::domain::{
     BillingPlanChangeRequest, BillingPortalRequest, BillingSeatChangeRequest,
     BillingSubscriptionRecord, BillingUsageReportRecord, ClerkAuthRequest, ConsoleLogInput,
     ConsoleLogLine, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
-    CreateConsoleLogsRequest, CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest,
-    CreateRunRequest, CreateUserRequest, DashboardPreferenceRow, DevGoogleAuthRequest,
-    DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
-    LogMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
-    OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-    PublicApiKeyRow, PublicArtifactRow, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest,
-    SeatRow, SeatUserRow, ServiceAccountRow, SwitchOrganizationRequest,
-    UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
-    UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
+    CreateConsoleLogsRequest, CreateInvitationRequest, CreateObjectRequest,
+    CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
+    DashboardPreferenceRow, DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest,
+    DeviceCodePollRequest, DeviceCodeStartRequest, InvitationPreviewPayload,
+    InvitationTokenRequest, LogMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow,
+    OnboardingApiKey, OrganizationMembershipSummary, OrganizationRow, ProjectRow,
+    ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow,
+    ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+    SwitchOrganizationRequest, UpdateDashboardPreferencesRequest, UpdateRunRequest,
+    UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
 };
 
 // ============================================================================
@@ -99,6 +100,27 @@ pub struct SeatEnvelope {
 #[derive(Serialize, ToSchema)]
 pub struct SeatsEnvelope {
     pub seats: Vec<SeatRow>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct InvitationEnvelope {
+    pub invitation: PublicInvitationRow,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_error: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct InvitationsEnvelope {
+    pub invitations: Vec<PublicInvitationRow>,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct InvitationPreviewEnvelope {
+    pub invitation: InvitationPreviewPayload,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -349,6 +371,12 @@ impl Modify for SecurityAddon {
         crate::http::handlers::orgs::disable_service_account,
         crate::http::handlers::orgs::reserve_seat,
         crate::http::handlers::orgs::list_seats,
+        crate::http::handlers::invitations::list_invitations,
+        crate::http::handlers::invitations::create_invitation,
+        crate::http::handlers::invitations::resend_invitation,
+        crate::http::handlers::invitations::revoke_invitation,
+        crate::http::handlers::invitations::preview_invitation,
+        crate::http::handlers::invitations::accept_invitation,
         // runs core
         crate::http::handlers::runs::create_project,
         crate::http::handlers::runs::list_projects,
@@ -401,6 +429,9 @@ impl Modify for SecurityAddon {
         InsertedEnvelope,
         SeatEnvelope,
         SeatsEnvelope,
+        InvitationEnvelope,
+        InvitationsEnvelope,
+        InvitationPreviewEnvelope,
         ApiKeysEnvelope,
         ApiKeyCreatedEnvelope,
         ApiKeyEnvelope,
@@ -447,6 +478,7 @@ impl Modify for SecurityAddon {
         CreateArtifactRequest,
         CreateAttributesRequest,
         CreateConsoleLogsRequest,
+        CreateInvitationRequest,
         CreateObjectRequest,
         CreateOrganizationRequest,
         CreateProjectRequest,
@@ -458,6 +490,8 @@ impl Modify for SecurityAddon {
         DeviceCodeConfirmRequest,
         DeviceCodePollRequest,
         DeviceCodeStartRequest,
+        InvitationPreviewPayload,
+        InvitationTokenRequest,
         LogMetricsRequest,
         MembershipRow,
         MetricPointRow,
@@ -469,6 +503,7 @@ impl Modify for SecurityAddon {
         ProvisioningStatusPayload,
         PublicApiKeyRow,
         ReserveSeatRequest,
+        PublicInvitationRow,
         RunRow,
         SaveWorkspaceViewRequest,
         SeatRow,
@@ -493,6 +528,7 @@ impl Modify for SecurityAddon {
         (name = "auth", description = "Browser session and device-code authentication."),
         (name = "billing", description = "Stripe Checkout, subscriptions, portal, and billing webhooks."),
         (name = "orgs", description = "Organizations, memberships, seats, and API keys."),
+        (name = "invitations", description = "Token-backed organization invitations."),
         (name = "runs", description = "Experiment runs, metrics, attributes, objects, artifacts."),
         (name = "dashboard", description = "Browser dashboard preferences and saved workspace views."),
     ),
