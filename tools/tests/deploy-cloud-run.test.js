@@ -109,6 +109,7 @@ test("deploy helper keeps public router control paths and backend timeout comple
   assert.match(source, /function backendServiceTimeout/);
   assert.match(source, /--timeout", backendServiceTimeout\(\)/);
   assert.match(source, /Timeout sec is not supported for a backend service with Serverless network endpoint groups/);
+  assert.match(source, /function resetPreAttachTimeoutForServerlessBackend/);
 });
 
 test("deploy helper has isolated staging defaults", () => {

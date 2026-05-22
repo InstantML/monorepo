@@ -114,7 +114,10 @@ This keeps the Google HTTPS load balancer from returning a `30s` timeout while
 Cloud Run and Rust are still legitimately processing provisioning/import
 requests. If Google rejects `timeoutSec` because the backend service is attached
 to a serverless NEG, the helper keeps logging enabled and leaves the platform
-timeout in place instead of blocking the route update.
+timeout in place instead of blocking the route update. For newly created
+backend services, the helper attaches the serverless NEG before attempting the
+longer timeout so the add-backend step is not blocked by a pre-set
+`timeoutSec`.
 
 ## Failure Modes
 

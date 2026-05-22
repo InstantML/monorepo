@@ -902,7 +902,7 @@ function ensureBackendService(name, negName) {
   if (service.loadBalancingScheme !== "EXTERNAL_MANAGED" || service.protocol !== "HTTP") {
     fail(`Backend service ${name} exists with scheme/protocol ${service.loadBalancingScheme}/${service.protocol}; expected EXTERNAL_MANAGED/HTTP.`);
   }
-  updateBackendService(name);
+  resetPreAttachTimeoutForServerlessBackend(name, service);
   const negLink = regionalNegSelfLink(negName);
   for (const backend of service.backends || []) {
     if (backend.group === negLink || backend.group?.endsWith(`/networkEndpointGroups/${negName}`)) continue;
@@ -918,6 +918,7 @@ function ensureBackendService(name, negName) {
       "--network-endpoint-group-region", region,
     ]);
   }
+  updateBackendService(name);
 }
 
 function backendServiceTimeout() {
@@ -954,6 +955,17 @@ function updateBackendService(name) {
     "compute", "backend-services", "update", name,
     "--global",
     "--enable-logging",
+  ]);
+}
+
+function resetPreAttachTimeoutForServerlessBackend(name, service) {
+  if ((service.backends || []).length > 0) return;
+  if (!service.timeoutSec || Number(service.timeoutSec) === 30) return;
+  console.warn(`Backend service ${name} has timeoutSec=${service.timeoutSec} before its serverless NEG backend is attached; resetting to 30s so Google accepts the serverless backend.`);
+  run([
+    "compute", "backend-services", "update", name,
+    "--global",
+    "--timeout", "30s",
   ]);
 }
 
