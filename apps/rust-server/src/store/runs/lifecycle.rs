@@ -37,6 +37,7 @@ pub async fn create_run(
             }
         }
     };
+    ensure_billing_write_allowed(store, ctx.org_id, "create a run").await?;
     enforce_plan_capacity(
         store,
         ctx.org_id,
@@ -116,6 +117,7 @@ pub async fn update_run(
     run_id: Uuid,
     input: UpdateRunRequest,
 ) -> AppResult<RunRow> {
+    ensure_billing_write_allowed(store, ctx.org_id, "update a run").await?;
     let mut data = store.data.lock().await;
     let mut run = fetch_run_in_data(&data, ctx, run_id)?;
     if input.status.is_none() && input.tags.is_none() && input.notes.is_none() {

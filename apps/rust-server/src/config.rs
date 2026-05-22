@@ -40,9 +40,58 @@ pub struct AppConfig {
     pub slow_request_threshold: Duration,
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
+    pub billing: BillingConfig,
     /// Base URL of the frontend, used to construct device-code verification URIs.
     /// Defaults to the first allowed_frontend_origins entry if set, else "http://localhost:3000".
     pub frontend_base_url: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BillingConfig {
+    pub enabled: bool,
+    pub stripe_secret_key: Option<String>,
+    pub stripe_publishable_key: Option<String>,
+    pub stripe_webhook_secret: Option<String>,
+    pub stripe_api_version: String,
+    pub pro_price_id: Option<String>,
+    pub premium_price_id: Option<String>,
+    pub extra_seat_price_id: Option<String>,
+    pub storage_overage_price_id: Option<String>,
+    pub storage_meter_id: Option<String>,
+    pub storage_meter_event_name: String,
+    pub success_url: String,
+    pub cancel_url: String,
+    pub portal_return_url: String,
+    pub grace_days: i64,
+    pub extra_seat_monthly_usd: i64,
+    pub storage_overage_cents_per_gib_month: i64,
+}
+
+impl BillingConfig {
+    pub fn disabled(frontend_base_url: Option<&str>) -> Self {
+        let frontend = frontend_base_url
+            .unwrap_or("http://localhost:3000")
+            .trim_end_matches('/');
+        Self {
+            enabled: false,
+            stripe_secret_key: None,
+            stripe_publishable_key: None,
+            stripe_webhook_secret: None,
+            stripe_api_version: "2026-04-22.dahlia".to_string(),
+            pro_price_id: None,
+            premium_price_id: None,
+            extra_seat_price_id: None,
+            storage_overage_price_id: None,
+            storage_meter_id: None,
+            storage_meter_event_name: "instantml_storage_overage_gib_month".to_string(),
+            success_url: format!("{frontend}/billing/return?session_id={{CHECKOUT_SESSION_ID}}"),
+            cancel_url: format!("{frontend}/settings"),
+            portal_return_url: format!("{frontend}/dashboard/settings"),
+            grace_days: 7,
+            extra_seat_monthly_usd: 99,
+            storage_overage_cents_per_gib_month: 3,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -207,6 +256,11 @@ impl AppConfig {
                 ArtifactBackend::Local => hosted_clickhouse.is_none(),
                 ArtifactBackend::R2 => true,
             });
+        let frontend_base_url = env::var("INSTANTML_FRONTEND_BASE_URL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let billing = billing_config(frontend_base_url.as_deref())?;
         Ok(Self {
             clickhouse_url,
             bind_addr,
@@ -247,10 +301,7 @@ impl AppConfig {
             r2_artifacts,
             artifact_uploads_enabled,
             allowed_frontend_origins: env_origin_list("INSTANTML_ALLOWED_FRONTEND_ORIGINS"),
-            frontend_base_url: env::var("INSTANTML_FRONTEND_BASE_URL")
-                .ok()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty()),
+            frontend_base_url,
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
             slow_request_threshold: Duration::from_millis(env_u64(
@@ -259,6 +310,7 @@ impl AppConfig {
             )?),
             log_format,
             hosted_clickhouse,
+            billing,
         })
     }
 }
@@ -394,6 +446,62 @@ fn hosted_clickhouse_config(
         cloud,
         shared_cell_url,
     }))
+}
+
+fn billing_config(frontend_base_url: Option<&str>) -> AppResult<BillingConfig> {
+    let mut config = BillingConfig::disabled(frontend_base_url);
+    config.stripe_secret_key = env_first(&["STRIPE_SECRET_KEY", "INSTANTML_STRIPE_SECRET_KEY"]);
+    config.stripe_publishable_key = env_first(&[
+        "STRIPE_PUBLISHABLE_KEY",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+    ]);
+    config.stripe_webhook_secret =
+        env_first(&["STRIPE_WEBHOOK_SECRET", "INSTANTML_STRIPE_WEBHOOK_SECRET"]);
+    config.stripe_api_version = env_string("STRIPE_API_VERSION", &config.stripe_api_version);
+    config.pro_price_id = env_first(&["STRIPE_PRO_PRICE_ID", "INSTANTML_STRIPE_PRO_PRICE_ID"]);
+    config.premium_price_id = env_first(&[
+        "STRIPE_PREMIUM_PRICE_ID",
+        "INSTANTML_STRIPE_PREMIUM_PRICE_ID",
+    ]);
+    config.extra_seat_price_id = env_first(&[
+        "STRIPE_EXTRA_SEAT_PRICE_ID",
+        "INSTANTML_STRIPE_EXTRA_SEAT_PRICE_ID",
+    ]);
+    config.storage_overage_price_id = env_first(&[
+        "STRIPE_STORAGE_OVERAGE_PRICE_ID",
+        "INSTANTML_STRIPE_STORAGE_OVERAGE_PRICE_ID",
+    ]);
+    config.storage_meter_id = env_first(&[
+        "STRIPE_STORAGE_METER_ID",
+        "INSTANTML_STRIPE_STORAGE_METER_ID",
+    ]);
+    config.storage_meter_event_name = env_string(
+        "INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME",
+        &config.storage_meter_event_name,
+    );
+    config.success_url = env_string("INSTANTML_BILLING_SUCCESS_URL", &config.success_url);
+    config.cancel_url = env_string("INSTANTML_BILLING_CANCEL_URL", &config.cancel_url);
+    config.portal_return_url = env_string(
+        "INSTANTML_BILLING_PORTAL_RETURN_URL",
+        &config.portal_return_url,
+    );
+    config.grace_days = env_u64("INSTANTML_BILLING_GRACE_DAYS", config.grace_days as u64)? as i64;
+    config.extra_seat_monthly_usd = env_u64(
+        "INSTANTML_EXTRA_SEAT_MONTHLY_USD",
+        config.extra_seat_monthly_usd as u64,
+    )? as i64;
+    config.storage_overage_cents_per_gib_month = env_u64(
+        "INSTANTML_STORAGE_OVERAGE_CENTS_PER_GIB_MONTH",
+        config.storage_overage_cents_per_gib_month as u64,
+    )? as i64;
+    config.enabled = env_bool_optional("INSTANTML_BILLING_ENABLED")?
+        .unwrap_or_else(|| config.stripe_secret_key.is_some());
+    if config.enabled && config.stripe_secret_key.is_none() {
+        return Err(AppError::config(
+            "STRIPE_SECRET_KEY is required when billing is enabled",
+        ));
+    }
+    Ok(config)
 }
 
 fn artifact_backend_config() -> AppResult<(ArtifactBackend, Option<R2ArtifactConfig>)> {

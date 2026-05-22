@@ -38,6 +38,7 @@ pub async fn import_payload(
         return Ok(json!({ "dry_run": true, "summary": summary }));
     }
     ensure_import_project_access(store, ctx, &canonical.project).await?;
+    ensure_billing_write_allowed(store, ctx.org_id, "import runs").await?;
     let project_exists = {
         let data = store.data.lock().await;
         ctx.auth.as_ref().and_then(|auth| auth.project_id).is_some()

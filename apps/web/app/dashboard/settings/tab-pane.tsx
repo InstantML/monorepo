@@ -1,4 +1,4 @@
-import { AlertTriangle, Gauge, RefreshCw, Settings, UserPlus } from "lucide-react";
+import { AlertTriangle, CreditCard, Gauge, RefreshCw, Settings, UserPlus } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
 import { MetricCard } from "../ui/metric-card";
@@ -10,6 +10,13 @@ import type { components } from "../../../src/types/api.generated";
 type SeatRow = components["schemas"]["SeatRow"];
 
 type UsageWarning = { code?: string; message?: string };
+type BillingStatus = {
+  access_state?: string;
+  effective_plan_tier?: string;
+  subscription_status?: string | null;
+  cancel_at_period_end?: boolean;
+  message?: string | null;
+};
 
 type Props = {
   activeLimitIncludedSeats: number;
@@ -27,6 +34,9 @@ type Props = {
   onInviteEmail: (email: string) => void;
   onInviteRole: (role: string) => void;
   onInviteSeat: () => void;
+  onOpenBillingPortal: () => void;
+  onChangeBillingPlan: (plan: "free" | "pro" | "premium") => void;
+  onCancelBilling: () => void;
   onLoadOrgSettings: () => void;
   onMetricKey: (key: string) => void;
   onXMode: (mode: string) => void;
@@ -41,6 +51,7 @@ type Props = {
   storageLimit: number;
   usageResetLabel: string;
   xMode: string;
+  billingStatus: BillingStatus | null;
 };
 
 export function SettingsTabPane({
@@ -59,6 +70,9 @@ export function SettingsTabPane({
   onInviteEmail,
   onInviteRole,
   onInviteSeat,
+  onOpenBillingPortal,
+  onChangeBillingPlan,
+  onCancelBilling,
   onLoadOrgSettings,
   onMetricKey,
   onXMode,
@@ -73,7 +87,9 @@ export function SettingsTabPane({
   storageLimit,
   usageResetLabel,
   xMode,
+  billingStatus,
 }: Props) {
+  const billingState = billingStatus?.access_state ?? "free_active";
   return (
     <>
       <PageHead eyebrow="Admin" title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
@@ -105,6 +121,27 @@ export function SettingsTabPane({
                 ))}
               </div>
             ) : null}
+          </div>
+        </section>
+        <section className="panel">
+          <div className="panel-head"><h2><CreditCard size={15} /> Billing</h2></div>
+          <div className="panel-body settings-list">
+            <SettingRow label="Access" value={billingState.replace(/_/g, " ")} />
+            <SettingRow label="Subscription" value={billingStatus?.subscription_status ?? "none"} />
+            <SettingRow label="Effective plan" value={billingStatus?.effective_plan_tier ?? orgPlanTier ?? "free"} />
+            {billingStatus?.message ? (
+              <div className="api-row">
+                <AlertTriangle size={14} />
+                <strong>{billingStatus.message}</strong>
+              </div>
+            ) : null}
+            <div className="admin-form-row">
+              <button className="ghost" disabled={adminBusy} onClick={onOpenBillingPortal} type="button"><CreditCard size={14} /> Portal</button>
+              <button className="ghost" disabled={adminBusy || orgPlanTier === "pro"} onClick={() => onChangeBillingPlan("pro")} type="button">Pro</button>
+              <button className="ghost" disabled={adminBusy || orgPlanTier === "premium"} onClick={() => onChangeBillingPlan("premium")} type="button">Premium</button>
+              <button className="ghost" disabled={adminBusy || orgPlanTier === "free"} onClick={() => onChangeBillingPlan("free")} type="button">Free</button>
+              <button className="ghost" disabled={adminBusy || !billingStatus?.subscription_status} onClick={onCancelBilling} type="button">Cancel</button>
+            </div>
           </div>
         </section>
         <section className="panel">

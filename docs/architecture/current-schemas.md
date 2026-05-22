@@ -68,8 +68,9 @@ in ClickHouse until a future compaction design exists.
 
 Owner: `apps/rust-server/src/control_store.rs`
 
-Purpose: hosted User Data table for account, auth, organization, API-key, and
-tenant-route state that must be visible to control and data services.
+Purpose: hosted User Data table for account, auth, organization, API-key,
+Stripe billing, and tenant-route state that must be visible to control and data
+services.
 
 ```sql
 CREATE TABLE IF NOT EXISTS instantml_user_data (
@@ -118,6 +119,12 @@ cursor while `event_id` is random. Full replay is the current safe path.
 | `service_account` | `org` | `ServiceAccountRow.id` | `ServiceAccountRow` |
 | `api_key` | `org` | `ApiKeyRecord.row.id` | `ApiKeyRecord` |
 | `tenant_route` | `org` | `TenantRouteRecord.org_id` | `TenantRouteRecord` |
+| `billing_account` | `org` | `BillingAccountProjection.org_id` | Billing entitlement projection for write gates and Settings. |
+| `billing_checkout_intent` | `org` | `BillingCheckoutIntent.id` | Pending or fulfilled Stripe Checkout action. |
+| `billing_change_intent` | `org` | `BillingChangeIntent.id` | Pending plan/seat/cancel change action. |
+| `billing_subscription` | `org` | `BillingSubscriptionRecord.stripe_subscription_id` | Last known Stripe subscription projection. |
+| `billing_event` | `org` | `BillingEventRecord.stripe_event_id` | Processed Stripe event idempotency record. |
+| `billing_usage_report` | `org` | `BillingUsageReportRecord.id` | Retained-storage overage report attempt. |
 | `dashboard_preference` | `org` | `dashboard-preference:<org_id>:<user_id>` | `DashboardPreferenceRow` |
 | `workspace_view` | `org` | `WorkspaceViewRow.id` | `WorkspaceViewRow` |
 

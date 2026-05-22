@@ -1,10 +1,10 @@
 "use client";
 
-import { Show, SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
-import { AlertCircle, ArrowRight, CheckCircle2, Copy, Crown, HardDrive, KeyRound, Rocket, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Show, SignInButton, SignUpButton, UserButton, useAuth, useClerk, useUser } from "@clerk/nextjs";
+import { AlertCircle, ArrowRight, CheckCircle2, Copy, Crown, HardDrive, KeyRound, LogOut, RefreshCw, Rocket, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiClient } from "../src/api.js";
+import { ApiClient, ApiError } from "../src/api.js";
 import { sanitizeNextPath } from "../src/routes.js";
 import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
@@ -17,6 +17,7 @@ type SessionPayload = {
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
   onboarding_api_key?: { plaintext: string; prefix: string; id: string } | null;
+  billing_checkout?: { intent_id?: string; status?: string; session_id?: string | null; url?: string | null } | null;
 };
 type DevGoogleAuthPayload = {
   email: string;
@@ -37,9 +38,14 @@ type AuthConfig = {
   managed_clerk_enabled: boolean;
   loaded: boolean;
 };
+type ClerkExchangeOptions = {
+  forceFreshToken?: boolean;
+};
 
 const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
+const CLERK_SESSION_RECOVERY_MESSAGE =
+  "InstantML could not refresh your workspace session from this browser sign-in. Try a fresh token, or sign out and sign back in.";
 const PLAN_OPTIONS: Array<{
   id: PlanTier;
   label: string;
@@ -66,6 +72,14 @@ function stashOnboardingKey(plaintext: string) {
   }
 }
 
+function isUnauthorizedError(error: unknown) {
+  return error instanceof ApiError && error.status === 401;
+}
+
+function isMissingClerkSessionToken(error: unknown) {
+  return error instanceof Error && error.message.includes("Clerk did not return a session token");
+}
+
 function Brand() {
   return (
     <div className="iml-brand">
@@ -80,6 +94,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const clerkExchangeAttemptedRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { getToken, isLoaded: clerkLoaded, isSignedIn } = useAuth();
+  const clerk = useClerk();
   const { user } = useUser();
   const [config, setConfig] = useState<AuthConfig>({ dev_auth_enabled: false, managed_clerk_enabled: false, loaded: false });
   const [session, setSession] = useState<SessionPayload | null>(null);
@@ -99,6 +114,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [orgAvailability, setOrgAvailability] = useState<OrgAvailability>({});
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [showSessionRecovery, setShowSessionRecovery] = useState(false);
   const nextPath = typeof window === "undefined" ? "/dashboard/runs" : sanitizeNextPath(new URLSearchParams(window.location.search).get("next"));
   const signupMode = mode === "signup";
   // Route-based onboarding, plus the in-place post-signup reveal: after a
@@ -219,7 +235,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   // a later valid submit is never silently suppressed.
   useEffect(() => {
     if (!managedClerkReady || !isSignedIn || isOnboarding || clerkExchangeAttemptedRef.current) return;
-    if (signupMode && (!orgName.trim() || orgAvailability.available !== true)) {
+    if (signupMode && managedClerkSignup && orgNameOverride.trim() && orgAvailability.available !== true) {
+      note("Signed in with Clerk. Choose an available organization name to create your workspace.");
+      return;
+    }
+    if (signupMode && !managedClerkSignup && (!orgName.trim() || orgAvailability.available !== true)) {
       // Only auto-create the workspace once the org name is *confirmed*
       // available — `available` is briefly undefined while the debounced
       // check is in flight, so guarding on `!== true` (not `=== false`)
@@ -229,7 +249,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     }
     clerkExchangeAttemptedRef.current = true;
     void createManagedClerkSession();
-  }, [isOnboarding, isSignedIn, managedClerkReady, signupMode, orgName, orgAvailability.available]);
+  }, [isOnboarding, isSignedIn, managedClerkReady, managedClerkSignup, signupMode, orgName, orgNameOverride, orgAvailability.available]);
 
   // Move focus to the page heading on first paint and on each major view
   // change (busy, key revealed, error) so keyboard/SR users land in context.
@@ -245,6 +265,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     try {
       const sessionPayload = await api.post("/api/auth/dev/google", payload);
       setSession(sessionPayload as SessionPayload);
+      const checkoutUrl = (sessionPayload as SessionPayload).billing_checkout?.url;
+      if (checkoutUrl) {
+        note("Workspace created. Opening Stripe Checkout...");
+        window.location.assign(checkoutUrl);
+        return;
+      }
       if (isSharedDemoSession(sessionPayload as SessionPayload)) {
         note("Signed in to the read-only demo. Opening the dashboard...");
         window.location.assign("/dashboard/runs");
@@ -264,33 +290,50 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     }
   }
 
-  async function createManagedClerkSession() {
+  async function exchangeManagedClerkSession(forceFreshToken: boolean) {
+    const token = await getToken(forceFreshToken ? { skipCache: true } : undefined);
+    if (!token) throw new Error("Clerk did not return a session token.");
+    // For managed Clerk signups: send org_name only when the user has explicitly overridden
+    // the auto-derived name. When absent, the server auto-derives from the Clerk profile.
+    const explicitOrgName = managedClerkSignup
+      ? (orgNameOverride.trim() || undefined)
+      : (signupMode ? orgName.trim() : undefined);
+    return await api.post("/api/auth/clerk", {
+      token,
+      mode: signupMode ? "signup" : "signin",
+      account_type: managedClerkSignup ? undefined : accountType,
+      org_name: explicitOrgName,
+      plan_tier: signupMode ? planTier : undefined,
+      seat_emails: signupMode && accountType === "business"
+        ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
+        : [],
+    }) as SessionPayload;
+  }
+
+  async function createManagedClerkSession(options: ClerkExchangeOptions = {}) {
     if (signupMode && orgUnavailable) {
       clerkExchangeAttemptedRef.current = false;
       fail("Choose an available organization name before continuing.");
       return;
     }
     setBusy(true);
+    setShowSessionRecovery(false);
     note(signupMode ? "Creating your hosted workspace..." : "Signing in...");
     try {
-      const token = await getToken();
-      if (!token) throw new Error("Clerk did not return a session token.");
-      // For managed Clerk signups: send org_name only when the user has explicitly overridden
-      // the auto-derived name. When absent, the server auto-derives from the Clerk profile.
-      const explicitOrgName = managedClerkSignup
-        ? (orgNameOverride.trim() || undefined)
-        : (signupMode ? orgName.trim() : undefined);
-      const payload = await api.post("/api/auth/clerk", {
-        token,
-        mode: signupMode ? "signup" : "signin",
-        account_type: managedClerkSignup ? undefined : accountType,
-        org_name: explicitOrgName,
-        plan_tier: signupMode ? planTier : undefined,
-        seat_emails: signupMode && accountType === "business"
-          ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
-          : [],
-      }) as SessionPayload;
+      let payload: SessionPayload;
+      try {
+        payload = await exchangeManagedClerkSession(Boolean(options.forceFreshToken));
+      } catch (error) {
+        if (options.forceFreshToken || !isUnauthorizedError(error)) throw error;
+        note("Refreshing your browser sign-in...");
+        payload = await exchangeManagedClerkSession(true);
+      }
       setSession(payload);
+      if (payload.billing_checkout?.url) {
+        note("Workspace created. Opening Stripe Checkout...");
+        window.location.assign(payload.billing_checkout.url);
+        return;
+      }
       // If the server auto-issued an onboarding key, reveal it immediately
       // in-place (no reload — keeps the copy-once plaintext in memory).
       const onboardingKey = payload.onboarding_api_key?.plaintext;
@@ -305,8 +348,28 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       }
     } catch (error) {
       clerkExchangeAttemptedRef.current = false;
-      fail(error instanceof Error ? error.message : "Unable to sign in with Clerk.");
+      if (isUnauthorizedError(error) || isMissingClerkSessionToken(error)) {
+        setShowSessionRecovery(true);
+        fail(CLERK_SESSION_RECOVERY_MESSAGE);
+      } else {
+        fail(error instanceof Error ? error.message : "Unable to sign in with Clerk.");
+      }
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restartClerkSignIn() {
+    setBusy(true);
+    setShowSessionRecovery(false);
+    note("Restarting your browser sign-in...");
+    try {
+      await api.post("/api/auth/logout", {}).catch(() => undefined);
+      await clerk.signOut({ redirectUrl: `/signin?next=${encodeURIComponent(nextPath)}` });
+    } catch (error) {
+      clerkExchangeAttemptedRef.current = false;
+      setShowSessionRecovery(true);
+      fail(error instanceof Error ? error.message : "Unable to restart sign-in. Use the account menu to sign out, then sign in again.");
       setBusy(false);
     }
   }
@@ -451,7 +514,9 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                     availability={orgAvailability}
                     effectiveName={effectiveOrgName}
                     override={orgNameOverride}
+                    planTier={planTier}
                     onOverride={setOrgNameOverride}
+                    onPlanTier={setPlanTier}
                   />
                 ) : signupMode && config.dev_auth_enabled ? (
                   <SignupFields
@@ -513,6 +578,34 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                         {busy ? "Opening your workspace…" : signupMode ? "Create InstantML workspace" : "Continue to dashboard"}
                         {!busy ? <ArrowRight className="iml-arrow" size={15} /> : null}
                       </button>
+                      <button
+                        className="iml-btn iml-btn--ghost iml-btn--block"
+                        disabled={busy}
+                        onClick={restartClerkSignIn}
+                        type="button"
+                      >
+                        <LogOut size={15} /> Sign out
+                      </button>
+                      {showSessionRecovery ? (
+                        <div className="iml-recovery" role="note" aria-label="Refresh sign-in instructions">
+                          <strong>Refresh your sign-in</strong>
+                          <span>Clerk still remembers this browser, but InstantML could not create a workspace session from that cached sign-in.</span>
+                          <span>Try a fresh token first. If the message returns, sign out and sign in again.</span>
+                          <div className="iml-recovery-actions">
+                            <button
+                              className="iml-btn iml-btn--outline iml-btn--block"
+                              disabled={busy}
+                              onClick={() => { clerkExchangeAttemptedRef.current = true; void createManagedClerkSession({ forceFreshToken: true }); }}
+                              type="button"
+                            >
+                              <RefreshCw size={15} /> Try fresh token
+                            </button>
+                            <button className="iml-btn iml-btn--ghost iml-btn--block" disabled={busy} onClick={restartClerkSignIn} type="button">
+                              <LogOut size={15} /> Sign out and restart
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </Show>
                   </div>
                 ) : null}
@@ -714,39 +807,66 @@ function OnboardingBody({
 }
 
 function WorkspacePreview({
-  autoSlug, availability, effectiveName, override, onOverride,
+  autoSlug, availability, effectiveName, override, planTier, onOverride, onPlanTier,
 }: {
   autoSlug: string;
   availability: OrgAvailability;
   effectiveName: string;
   override: string;
+  planTier: PlanTier;
   onOverride: (value: string) => void;
+  onPlanTier: (value: PlanTier) => void;
 }) {
   return (
-    <div className="iml-field">
-      <span className="iml-legend">Your workspace</span>
-      <div className="iml-wsprev">
-        <span className="iml-wsprev-host">instantml.ai/</span>
-        <strong className="iml-wsprev-slug">{effectiveName || autoSlug || "workspace"}</strong>
+    <>
+      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
+      <div className="iml-field">
+        <span className="iml-legend">Your workspace</span>
+        <div className="iml-wsprev">
+          <span className="iml-wsprev-host">instantml.ai/</span>
+          <strong className="iml-wsprev-slug">{effectiveName || autoSlug || "workspace"}</strong>
+        </div>
+        <details className="iml-wsprev-adv">
+          <summary>Use a different name</summary>
+          <input
+            className="iml-input"
+            id="iml-ws-override"
+            value={override}
+            onChange={(e) => onOverride(e.target.value)}
+            placeholder={autoSlug}
+            aria-label="Override workspace name"
+            aria-describedby={availability.message ? "iml-ws-avail" : undefined}
+          />
+          {availability.message ? (
+            <span id="iml-ws-avail" className={`iml-hint ${availability.available ? "is-ok" : availability.available === false ? "is-err" : ""}`}>
+              {availability.available ? "✓ " : ""}{availability.message}
+            </span>
+          ) : null}
+        </details>
       </div>
-      <details className="iml-wsprev-adv">
-        <summary>Use a different name</summary>
-        <input
-          className="iml-input"
-          id="iml-ws-override"
-          value={override}
-          onChange={(e) => onOverride(e.target.value)}
-          placeholder={autoSlug}
-          aria-label="Override workspace name"
-          aria-describedby={availability.message ? "iml-ws-avail" : undefined}
-        />
-        {availability.message ? (
-          <span id="iml-ws-avail" className={`iml-hint ${availability.available ? "is-ok" : availability.available === false ? "is-err" : ""}`}>
-            {availability.available ? "✓ " : ""}{availability.message}
-          </span>
-        ) : null}
-      </details>
-    </div>
+    </>
+  );
+}
+
+function PlanPicker({ planTier, onPlanTier }: { planTier: PlanTier; onPlanTier: (value: PlanTier) => void }) {
+  return (
+    <fieldset className="iml-field iml-fieldset">
+      <legend className="iml-legend">Plan</legend>
+      <div className="iml-plans">
+        {PLAN_OPTIONS.map((plan) => {
+          const Icon = plan.icon;
+          return (
+            <label className="iml-plan" key={plan.id}>
+              <input checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
+              <span className="iml-plan-h"><Icon size={15} aria-hidden="true" /> {plan.label}</span>
+              <strong className="iml-plan-p">{plan.price}<small>/mo</small></strong>
+              <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {plan.seats}</span>
+              <span className="iml-plan-m"><HardDrive size={12} aria-hidden="true" /> {plan.storage}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -769,23 +889,7 @@ function SignupFields({
   const overLimit = seatCount > Math.max(0, seatLimit - 1);
   return (
     <>
-      <fieldset className="iml-field iml-fieldset">
-        <legend className="iml-legend">Plan</legend>
-        <div className="iml-plans">
-          {PLAN_OPTIONS.map((plan) => {
-            const Icon = plan.icon;
-            return (
-              <label className="iml-plan" key={plan.id}>
-                <input checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
-                <span className="iml-plan-h"><Icon size={15} aria-hidden="true" /> {plan.label}</span>
-                <strong className="iml-plan-p">{plan.price}<small>/mo</small></strong>
-                <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {plan.seats}</span>
-                <span className="iml-plan-m"><HardDrive size={12} aria-hidden="true" /> {plan.storage}</span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
+      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
       <fieldset className="iml-field iml-fieldset">
         <legend className="iml-legend">Account type</legend>
         <div className="iml-seg">

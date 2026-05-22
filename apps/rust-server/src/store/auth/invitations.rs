@@ -67,6 +67,7 @@ pub async fn reserve_seat(
     org_id: Uuid,
     input: ReserveSeatRequest,
 ) -> AppResult<SeatRow> {
+    ensure_billing_write_allowed(store, org_id, "reserve a seat").await?;
     let email = validate_email(input.email.as_deref())?;
     let role = validate_membership_role(input.role.as_deref().or(Some("member")))?;
     if role == "owner" {

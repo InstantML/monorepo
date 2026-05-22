@@ -48,6 +48,18 @@ def api_server(tmp_path):
         thread.join(timeout=2)
 
 
+def test_client_defaults_to_hosted_api_when_env_unset(monkeypatch):
+    monkeypatch.delenv("INSTANTML_API_BASE_URL", raising=False)
+    assert ro.Client().base_url == "https://api.instantml.ai"
+    assert ro.Api().base_url == "https://api.instantml.ai"
+
+
+def test_client_base_url_respects_env_override(monkeypatch):
+    monkeypatch.setenv("INSTANTML_API_BASE_URL", "http://127.0.0.1:8000")
+    assert ro.Client().base_url == "http://127.0.0.1:8000"
+    assert ro.Api().base_url == "http://127.0.0.1:8000"
+
+
 def test_api_runs_builds_expected_query_string(monkeypatch):
     calls = []
 

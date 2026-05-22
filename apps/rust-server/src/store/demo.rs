@@ -2,6 +2,7 @@ use super::*;
 
 pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
+    ensure_billing_write_allowed(store, ctx.org_id, "reset the demo dataset").await?;
     let demo_project_exists = {
         let data = store.data.lock().await;
         data.projects_by_org_name

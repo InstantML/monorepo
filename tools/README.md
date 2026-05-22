@@ -15,6 +15,26 @@ Useful overrides:
 - `INSTANTML_DEV_CH_LOG_DIR`: generated ClickHouse log path for `npm run dev:api`.
 - `INSTANTML_DEV_CH_TCP_PORT`, `INSTANTML_DEV_CH_INTERSERVER_PORT`, `INSTANTML_DEV_CH_MYSQL_PORT`: optional non-HTTP protocol ports when avoiding local collisions.
 
+## Stripe Billing Smoke
+
+`stripe-billing-smoke.mjs` starts a disposable Rust API and ClickHouse, then
+uses the Stripe sandbox API to cover the paid billing path without relying on a
+browser Checkout completion. It creates a paid signup Checkout Session, verifies
+the unpaid sync stays blocked, creates a real test customer/subscription with
+`tok_visa`, delivers signed local webhooks, verifies API-key writes after
+activation, bills an extra seat, upgrades to Premium, records a storage-overage
+report, schedules cancellation, and applies the downgrade webhook. Temporary
+Stripe customers and subscriptions are canceled/deleted during cleanup; reusable
+lookup-key prices and the storage meter are left in the sandbox account.
+
+```bash
+STRIPE_SECRET_KEY=sk_test_... npm run test:stripe-billing
+```
+
+The smoke refuses live keys unless `INSTANTML_STRIPE_SMOKE_ALLOW_LIVE=1` is set.
+Hosted Stripe Checkout itself may still require manual browser completion
+because Stripe test Checkout can present hCaptcha.
+
 ## Cloud Run Deploy Helper
 
 `deploy-cloud-run.mjs` deploys the Rust API to Google Cloud Run for the internal hosted slice described in `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`.
@@ -256,7 +276,7 @@ npm run test:rust:sdk
 npm run test:rust:ui
 ```
 
-`rust-sdk-smoke.py` is the Python SDK overlap check used by `npm run test:rust:sdk`.
+`rust-sdk-smoke.py` is the Python SDK overlap check used by `npm run test:rust:sdk`. The harness creates a disposable local signup and SDK API key before invoking the SDK, so it matches the SDK's credential requirement while still testing a throwaway Rust/ClickHouse stack.
 
 The web smoke in `apps/web/tests/ui-smoke.mjs` follows the same default: no API base means Rust/ClickHouse. Set `INSTANTML_UI_SMOKE_API_BASE` to test an already-running Rust-compatible backend. The full UI smoke covers landing, local auth, onboarding, and dashboard routes, so it depends on Rust session/auth endpoints rather than the deprecated Node compatibility server.
 

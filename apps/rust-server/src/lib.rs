@@ -8,6 +8,7 @@ pub mod http;
 pub mod managed_auth;
 pub mod metric_store;
 pub mod store;
+pub mod stripe_billing;
 pub mod telemetry;
 
 pub use config::{AppConfig, AuthMode};

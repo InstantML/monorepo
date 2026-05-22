@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,7 @@ from .serialization import (
 )
 from .credentials import _check_credentials_or_raise, _resolve_api_key as _resolve_api_key_from_env
 from .http import _error_message, _offline_path, _spool_event
+from .shadow import ShadowWandb, build_shadow as _build_shadow_wandb
 from .source import _environment_metadata, _git_metadata, _source_metadata
 from .validation import (
     CONSOLE_LOG_STREAMS,
@@ -61,6 +62,24 @@ from .validation import (
 DEFAULT_PROCESS_SPOOL_DIR = ".instantml/spool"
 SNAPSHOT_KEYS = {"metrics", "metadata"}
 _PENDING_RUN_ID = "__instantml_pending__"
+
+
+def _is_local_file_uri(uri: str) -> bool:
+    if not isinstance(uri, str):
+        return False
+    if uri.startswith("file://"):
+        return True
+    return "://" not in uri and Path(uri).exists()
+
+
+def _strip_file_uri(uri: str) -> str:
+    return uri[len("file://"):] if uri.startswith("file://") else uri
+
+
+def _default_base_url() -> str:
+    return os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
+
+
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
 
 
@@ -285,7 +304,7 @@ class _FileStats:
 
 @dataclass(frozen=True)
 class Client:
-    base_url: str = "http://127.0.0.1:8000"
+    base_url: str = field(default_factory=_default_base_url)
     timeout: float = 2.0
     offline_dir: str | None = None
     api_key: str | None = None
@@ -309,6 +328,7 @@ class Client:
         system_metrics_interval: float = 15.0,
         capture_console: bool = False,
         async_init: bool = True,
+        shadow_wandb: Any = False,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
@@ -333,6 +353,15 @@ class Client:
             api_key=self.api_key,
         )
 
+        shadow = _build_shadow_wandb(
+            shadow_wandb,
+            project=project,
+            name=name,
+            config=config,
+            tags=tags,
+            notes=notes,
+        )
+
         if not async_init:
             response = self._request("POST", "/runs", create_body)
             run = Run(
@@ -342,6 +371,7 @@ class Client:
                 upload_mode=upload_mode,
                 spool_dir=spool_dir,
                 _local_store=_LocalStore(local_store_dir, response["run"]["id"]) if local_store else None,
+                shadow=shadow,
             )
             if system_metrics:
                 run.start_system_metrics(interval=system_metrics_interval)
@@ -355,6 +385,7 @@ class Client:
             buffer_size=buffer_size,
             upload_mode=upload_mode,
             spool_dir=spool_dir,
+            shadow=shadow,
         )
 
         def _resolve_init() -> None:
@@ -432,7 +463,7 @@ class Client:
 class Api:
     """Tiny raw read-only API helper for post-hoc queries."""
 
-    base_url: str = "http://127.0.0.1:8000"
+    base_url: str = field(default_factory=_default_base_url)
     timeout: float = 2.0
     api_key: str | None = None
 
@@ -513,6 +544,7 @@ class Run:
         spool_dir: str | None = None,
         media_dir: str | None = None,
         _local_store: "_LocalStore | None" = None,
+        shadow: "ShadowWandb | None" = None,
     ) -> None:
         _validate_upload_mode(upload_mode)
         self.client = client
@@ -536,6 +568,7 @@ class Run:
         self._console_capture: "_ConsoleCapture | None" = None
         self._init_done = threading.Event()
         self._init_error: BaseException | None = None
+        self._shadow: "ShadowWandb | None" = shadow
         if run_id and run_id != _PENDING_RUN_ID:
             self._init_done.set()
 
@@ -698,6 +731,8 @@ class Run:
             step=step,
             event_timestamp=metric_timestamp,
         )
+        if self._shadow is not None:
+            self._shadow.log(metrics, step=step)
 
     def log_text(self, data: dict[str, str], step: int | float | None = None, timestamp: str | None = None) -> None:
         step = _validate_step(step)
@@ -853,6 +888,8 @@ class Run:
             "metadata": metadata or {},
         }
         self._record_event("artifact", name, payload, step, _utc_timestamp())
+        if self._shadow is not None and _is_local_file_uri(uri):
+            self._shadow.log_artifact_file(_strip_file_uri(uri), name=name, artifact_type=artifact_type)
         if self.upload_mode == "spool":
             self._submit(
                 "POST",
@@ -1212,6 +1249,8 @@ class Run:
                 self._console_capture = None
             if self._local_store is not None:
                 self._local_store.close()
+            if self._shadow is not None:
+                self._shadow.finish(status)
 
     def _submit(
         self,
@@ -1264,7 +1303,7 @@ def init(
     tags: list[str] | None = None,
     notes: str | None = None,
     metadata: dict[str, Any] | None = None,
-    base_url: str = "http://127.0.0.1:8000",
+    base_url: str | None = None,
     timeout: float = 2.0,
     buffer_size: int = 0,
     offline_dir: str | None = None,
@@ -1278,14 +1317,19 @@ def init(
     system_metrics_interval: float = 15.0,
     capture_console: bool = False,
     async_init: bool = True,
+    shadow_wandb: Any = False,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 
     Raises :class:`InstantMLError` immediately if no credentials are available
     via ``api_key`` kwarg, ``INSTANTML_API_KEY`` env var, or ``~/.instantml/credentials``.
+
+    Set ``shadow_wandb=True`` (or pass a ``dict`` of wandb.init kwargs, or an
+    already-initialized ``wandb.Run``) to mirror every ``log``, ``finish``, and
+    ``log_artifact`` call to Weights & Biases for shadow→graduate pilots.
     """
     _check_credentials_or_raise(api_key)
-    return Client(base_url=base_url, timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
+    return Client(base_url=base_url or _default_base_url(), timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
         project=project,
         name=name,
         config=config,
@@ -1303,6 +1347,7 @@ def init(
         system_metrics_interval=system_metrics_interval,
         capture_console=capture_console,
         async_init=async_init,
+        shadow_wandb=shadow_wandb,
     )
 
 

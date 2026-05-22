@@ -184,8 +184,15 @@ These are the current product defaults implemented in Rust and mirrored in the d
 
 Overage defaults:
 
-- Extra seats: tracked but not billed yet; price target is `$79-$99/seat/month` once billing is implemented.
-- Storage overage: new writes are blocked at the included limit until billable object/accounting reconciliation and paid overages exist. The public pricing target for paid retained-storage overage is `$0.03/GB-month` after the included pool, based on Cloudflare R2 Standard currently listing `$0.015/GB-month`.
+- Extra seats: billed through a Stripe extra-seat subscription item when an org
+  reserves seats beyond the plan's included count. The price target remains
+  `$79-$99/seat/month` until invoice smoke coverage is complete.
+- Storage overage: paid subscriptions include a Stripe meter-backed storage
+  overage item, and the server can report whole GiB-month retained-storage
+  overage to Stripe meter events at the `$0.03/GB-month` sandbox target after
+  the included pool, based on Cloudflare R2 Standard currently listing
+  `$0.015/GB-month`. Public overage invoices still require provider/object-store
+  reconciliation hardening.
 - Metric/event overage: new metric writes are blocked at the current UTC calendar-month fair-use threshold until paid overages or custom terms exist. Metric-point usage resets at 00:00 UTC on the first day of each month.
 - Project/run limits: new projects and runs are blocked at the stored plan limit.
 - Import/storage-heavy workloads: require Premium or custom quote.
@@ -194,14 +201,14 @@ Current implementation status:
 
 - The Rust/ClickHouse server exposes org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
 - Usage is scoped by org and requires `usage:read` in hosted API-key mode.
-- The summary returns the full plan catalog, current org plan, limits, overage policy, the UTC calendar-month usage period, seats, projects, runs, current-period scalar metric points, retained metric-point totals, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, blocked-at-limit storage estimates, and `billable_storage_bytes: null`.
-- New project, run, metric-ingest, artifact, import, and demo-reset writes fail with HTTP 402 and `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit.
+- The summary returns the full plan catalog, current org plan, limits, overage policy, the UTC calendar-month usage period, seats, projects, runs, current-period scalar metric points, retained metric-point totals, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, blocked-at-limit storage estimates, and `billable_storage_bytes: null`; the storage meter endpoint computes a separate non-invoice overage report.
+- Paid signup uses Stripe Checkout; existing paid plan changes, extra-seat changes, cancellation, storage meter reporting, and Customer Portal use Stripe Billing APIs plus User Data billing projections. New project, run, metric-ingest, artifact, import, API-key, seat, and demo-reset writes fail with HTTP 402 and `code: "payment_required"` when the org is pending payment or payment-failed, and with `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit.
 - Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes.
 - Signup accepts `plan_tier` for Free, Pro, and Premium. Legacy plan values `lab` and `startup` canonicalize to Pro; `growth` canonicalizes to Premium for migration compatibility.
 - Local InstantML and the shared `InstantML Demo` org now default to Premium so the seeded demo exercises the Premium-scale warehouse profile and does not trip Free limits.
 - Hosted tenant routes record both requested warehouse profile and applied warehouse profile. Real ClickHouse Cloud create bodies stay capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
-- The dashboard includes plan selection in signup, a compact plan usage badge in the topbar near account controls, full usage and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
-- These values are for pricing validation and debugging, not invoice truth. Rust now writes immutable `usage_daily` snapshots, but billable storage still requires a separate billing implementation and provider/object-store reconciliation.
+- The dashboard includes plan selection in signup, paid signup redirect/return handling, a compact plan usage badge in the topbar near account controls, full usage, billing, and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
+- These values are for pricing validation and debugging, not final invoice truth. Rust now writes immutable `usage_daily` snapshots, Stripe billing control records, and storage meter-event reports, but billable storage still requires provider/object-store reconciliation before public overage invoices are treated as final.
 - Detailed pricing and margin assumptions live in `docs/product/pricing-and-margins.md`.
 
 ### Cost Basis
@@ -396,7 +403,7 @@ Do next:
 
 - Prove server-backed pagination/search/sort at the 90,000-run design-partner scale.
 - Split remaining complex `apps/web/app/page.tsx` logic when a workflow justifies a dedicated container component.
-- Harden hosted org/auth/settings UI with billing enforcement, invite delivery, and org-member management beyond seat reservation.
+- Harden hosted org/auth/settings UI with Stripe webhook smoke coverage, invite delivery, and org-member management beyond seat reservation.
 - Add hosted import UI once that workflow is ready for beta.
 - Add first-class media/table/query/text panels only after the field catalog and persisted workspace-view API are designed.
 - Add URL-addressable high-value state for workspaces/fullscreen panels after the local saved-view shape stabilizes.
@@ -419,14 +426,17 @@ Current state:
   counters.
 - Immutable `usage_daily` snapshots exist for warning/debug rollups.
 - Signup records selected plan and tenant-route warehouse intent.
-- The topbar and Settings expose usage; Settings exposes seat invites; the API
-  tab exposes API-key list/create/revoke.
+- Stripe Checkout/Portal handles paid signup and billing-management redirects;
+  User Data stores billing projections and event idempotency records.
+- The topbar and Settings expose usage; Settings exposes billing controls and
+  seat invites; the API tab exposes API-key list/create/revoke.
 
 Do next:
 
 - Reconcile usage snapshots with object-storage accounting before treating any value as invoice truth.
-- Add real billing, paid extra-seat handling, email delivery, and plan-change
-  flows after the guardrail/debug usage contract stabilizes.
+- Finish live Stripe webhook/price/meter smoke automation, email delivery, and
+  plan-change proration polish after the guardrail/debug usage contract
+  stabilizes.
 - Validate the Free/Pro/Premium thresholds against real team workloads.
 
 Exit criteria:

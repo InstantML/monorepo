@@ -6,8 +6,8 @@ This directory contains the primary Rust backend for InstantML. The current stor
 
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
-- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, and tenant routes in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
-- Accept Free/Pro/Premium signup, reserve invited seats, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation.
+- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
+- Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, reserve invited seats, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified when a paid plan is selected.
 - Store raw metric points and aggregated metric series in ClickHouse via `metric_store::MetricStore`.
 - Store artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, R2 references, exact byte counts, hashes, and MIME types.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
@@ -83,7 +83,7 @@ Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable
 Logical control/data-plane division is available before deployment:
 
 - `INSTANTML_SERVICE_PLANE=combined` is the default and exposes the current full route set from one Rust process.
-- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
+- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, billing, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
 - `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, metrics, logs, attributes, objects, artifacts, export, usage, imports, and demo reset. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
 
 The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
@@ -129,6 +129,24 @@ Environment variables:
 - `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
 - `INSTANTML_SHARED_CELL_URL`: ClickHouse HTTP connection string for the shared cell used by personal/free orgs. When set, new signups with `account_type=personal` (or no `account_type`) write a `tenant_route` record pointing at this cell and do not trigger a ClickHouse Cloud provisioning call. Format: `http://user:pass@host:port/database`. If absent, personal signups fall through to the existing dedicated provisioning path.
 - `INSTANTML_SHARED_CELL_DATABASE`: database name inside the shared cell. Defaults to `instantml_shared`. Only relevant when `INSTANTML_SHARED_CELL_URL` is set.
+- `INSTANTML_BILLING_ENABLED`: enables Stripe billing. Defaults to `true` when `STRIPE_SECRET_KEY` is present.
+- `STRIPE_SECRET_KEY`: Stripe secret key used for Checkout, price lookup/creation, subscription updates, storage meter events, and Customer Portal sessions.
+- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret for `POST /api/billing/webhook`.
+- `STRIPE_API_VERSION`: Stripe API version sent on server-side requests. Default: `2026-04-22.dahlia`.
+- `STRIPE_PRO_PRICE_ID`, `STRIPE_PREMIUM_PRICE_ID`, `STRIPE_EXTRA_SEAT_PRICE_ID`, `STRIPE_STORAGE_OVERAGE_PRICE_ID`: optional Stripe price IDs. When omitted in sandbox, the server discovers or creates stable lookup-key prices for Pro, Premium, extra seats, and retained-storage overage.
+- `STRIPE_STORAGE_METER_ID`: optional Stripe Billing Meter id for retained-storage overage. When omitted in sandbox, the server discovers or creates an active meter with `INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME`.
+- `INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME`: Stripe meter event name used by `POST /api/billing/storage-overage/report`. Default: `instantml_storage_overage_gib_month`.
+- `INSTANTML_BILLING_SUCCESS_URL`, `INSTANTML_BILLING_CANCEL_URL`, `INSTANTML_BILLING_PORTAL_RETURN_URL`: frontend URLs used by Checkout and Customer Portal. Defaults are built from `INSTANTML_FRONTEND_BASE_URL`.
+- `INSTANTML_BILLING_GRACE_DAYS`: payment-failure write grace window. Default: `7`.
+- `INSTANTML_EXTRA_SEAT_MONTHLY_USD`, `INSTANTML_STORAGE_OVERAGE_CENTS_PER_GIB_MONTH`: sandbox/default price creation amounts. Defaults: `$99/seat-month` and `$0.03/GiB-month`.
+
+Run `npm run test:stripe-billing` with a Stripe sandbox `STRIPE_SECRET_KEY` to
+exercise the paid signup, subscription webhook, payment-failure recovery,
+extra-seat, upgrade, storage-overage report, scheduled cancel, and downgrade
+paths against a disposable local Rust API and ClickHouse. The smoke refuses
+live keys unless `INSTANTML_STRIPE_SMOKE_ALLOW_LIVE=1` is set, creates or reuses
+lookup-key sandbox prices/meters, creates temporary test customers and
+subscriptions, and cancels/deletes those temporary Stripe resources at the end.
 
 Cloud-service retries recover from a service that was created before the route credentials were persisted by resetting that service password through the ClickHouse Cloud API, then writing a ready tenant route. This handles browser/API request timeouts during first provisioning without requiring manual User Data edits.
 
@@ -191,7 +209,7 @@ Implemented health and platform endpoints:
 - `GET /metrics`
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, browser sessions, org seat list/reservation and invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation and invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
 Run-summary pages default to 100 rows and are capped at 1,000 rows. Bulk UI
 selection should use `GET /api/runs/summary?projection=selection`, which skips
@@ -255,7 +273,7 @@ npm run test:rust:ui
 npm run test:hosted-clickhouse
 ```
 
-These commands start disposable ClickHouse and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the default Playwright smoke with Rust as `INSTANTML_API_BASE`, including landing, local auth, plan selection, onboarding, topbar/Settings usage/seats, API-key management, initial dashboard load, and fetch-gating checks. Set `INSTANTML_UI_SMOKE_FULL_WORKSPACE=1` for the longer workspace interaction regression. `test:hosted-clickhouse` exercises hosted-shaped routing end to end with separate local `control` and `data` Rust processes: local sign-up writes User Data control records, selected plan metadata and tenant route requested/applied warehouse profiles are preserved, invited teammates can activate into the same org, API-key creation writes User Data records, role-specific route tables are enforced, data-plane auth refreshes control records, direct and Python SDK ingestion write to the tenant database, safe provisioning payloads omit tenant secrets, and dashboard summary reads survive a data-plane API restart. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
+These commands start disposable ClickHouse and the Rust server automatically. `test:rust:contract` and `test:contract:direct` run the shared black-box API contract in API-key mode. `test:rust:sdk` creates a disposable local signup/API key and drives the Python SDK against Rust local mode. `test:rust:ui` and `test:ui:direct` build the Next app and run the default Playwright smoke with Rust as `INSTANTML_API_BASE`, including landing, local auth, plan selection, onboarding, topbar/Settings usage/seats, API-key management, initial dashboard load, and fetch-gating checks. Set `INSTANTML_UI_SMOKE_FULL_WORKSPACE=1` for the longer workspace interaction regression. `test:hosted-clickhouse` exercises hosted-shaped routing end to end with separate local `control` and `data` Rust processes: local sign-up writes User Data control records, selected plan metadata and tenant route requested/applied warehouse profiles are preserved, invited teammates can activate into the same org, API-key creation writes User Data records, role-specific route tables are enforced, data-plane auth refreshes control records, direct and Python SDK ingestion write to the tenant database, safe provisioning payloads omit tenant secrets, and dashboard summary reads survive a data-plane API restart. Use `npm run test:contract:node` only for deprecated Node route-shape compatibility checks.
 
 Large-run benchmark:
 
