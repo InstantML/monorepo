@@ -112,7 +112,9 @@ The deploy helper updates each public-router backend service with
 
 This keeps the Google HTTPS load balancer from returning a `30s` timeout while
 Cloud Run and Rust are still legitimately processing provisioning/import
-requests.
+requests. If Google rejects `timeoutSec` because the backend service is attached
+to a serverless NEG, the helper keeps logging enabled and leaves the platform
+timeout in place instead of blocking the route update.
 
 ## Failure Modes
 
@@ -145,4 +147,3 @@ requests.
   permits sub-agents when the user explicitly asks for them. This document keeps
   the accepted slice narrow and the implementation is verified through deploy
   helper tests plus live GCP checks.
-

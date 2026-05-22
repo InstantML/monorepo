@@ -902,12 +902,7 @@ function ensureBackendService(name, negName) {
   if (service.loadBalancingScheme !== "EXTERNAL_MANAGED" || service.protocol !== "HTTP") {
     fail(`Backend service ${name} exists with scheme/protocol ${service.loadBalancingScheme}/${service.protocol}; expected EXTERNAL_MANAGED/HTTP.`);
   }
-  run([
-    "compute", "backend-services", "update", name,
-    "--global",
-    "--enable-logging",
-    "--timeout", backendServiceTimeout(),
-  ]);
+  updateBackendService(name);
   const negLink = regionalNegSelfLink(negName);
   for (const backend of service.backends || []) {
     if (backend.group === negLink || backend.group?.endsWith(`/networkEndpointGroups/${negName}`)) continue;
@@ -934,6 +929,32 @@ function backendServiceTimeout() {
     fail("INSTANTML_CLOUD_RUN_BACKEND_TIMEOUT_SECONDS must be a positive integer number of seconds.");
   }
   return `${seconds}s`;
+}
+
+function updateBackendService(name) {
+  const updateArgs = [
+    "compute", "backend-services", "update", name,
+    "--global",
+    "--enable-logging",
+    "--timeout", backendServiceTimeout(),
+  ];
+  const result = runResult(updateArgs);
+  if (result.status === 0) {
+    writeCommandOutput(result);
+    return;
+  }
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  if (!output.includes("Timeout sec is not supported for a backend service with Serverless network endpoint groups")) {
+    writeCommandOutput(result);
+    fail(`gcloud ${updateArgs.join(" ")} failed with status ${result.status}`);
+  }
+  writeCommandOutput(result);
+  console.warn(`Backend service ${name} rejected timeoutSec for its serverless NEG backend; leaving the platform default timeout and keeping logging enabled.`);
+  run([
+    "compute", "backend-services", "update", name,
+    "--global",
+    "--enable-logging",
+  ]);
 }
 
 function removeBackendServiceGroup(backendService, groupLink) {
@@ -1348,20 +1369,28 @@ function timestampTag() {
 }
 
 function run(args, options = {}) {
-  const result = spawnSync("gcloud", ["--quiet", "--project", project, ...args], {
-    cwd: repo,
-    encoding: "utf8",
-    input: options.input,
-    timeout: options.timeout ?? 10 * 60 * 1000,
-  });
+  const result = runResult(args, options);
   if (!options.quietOutput) {
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    writeCommandOutput(result);
   }
   if (result.status !== 0) {
     fail(`gcloud ${args.join(" ")} failed with status ${result.status}`);
   }
   return result.stdout;
+}
+
+function runResult(args, options = {}) {
+  return spawnSync("gcloud", ["--quiet", "--project", project, ...args], {
+    cwd: repo,
+    encoding: "utf8",
+    input: options.input,
+    timeout: options.timeout ?? 10 * 60 * 1000,
+  });
+}
+
+function writeCommandOutput(result) {
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
 }
 
 function capture(args) {
