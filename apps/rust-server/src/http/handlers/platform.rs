@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 
 use crate::{
     errors::{AppError, AppResult},
+    http::openapi::AuthConfigResponse,
     store,
 };
 
@@ -143,13 +144,19 @@ pub fn openapi_path_available_for_plane(
         (status = 200, description = "Frontend auth provider availability", body = crate::http::openapi::AuthConfigResponse),
     ),
 )]
-pub async fn auth_config(State(state): State<Arc<AppState>>) -> Json<Value> {
+pub async fn auth_config(State(state): State<Arc<AppState>>) -> Json<AuthConfigResponse> {
     let exposes_auth_routes = state.config.service_plane.includes_control();
-    Json(json!({
-        "dev_auth_enabled": exposes_auth_routes && state.config.dev_auth_enabled,
-        "managed_clerk_enabled": exposes_auth_routes && state.config.managed_clerk_enabled,
-        "service_plane": state.config.service_plane.as_str()
-    }))
+    let clerk_jwt_issuer = if exposes_auth_routes && state.config.managed_clerk_enabled {
+        state.config.clerk_jwt_issuer.clone()
+    } else {
+        None
+    };
+    Json(AuthConfigResponse {
+        dev_auth_enabled: exposes_auth_routes && state.config.dev_auth_enabled,
+        managed_clerk_enabled: exposes_auth_routes && state.config.managed_clerk_enabled,
+        service_plane: state.config.service_plane.as_str().to_string(),
+        clerk_jwt_issuer,
+    })
 }
 
 pub async fn not_found() -> AppError {

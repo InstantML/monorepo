@@ -5,12 +5,15 @@ import { ArrowRight, LogOut, RefreshCw, ShieldCheck, UserPlus } from "lucide-rea
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../../src/api.js";
+import { clerkIssuerConfigError } from "../../src/clerk-config.js";
 import type { components } from "../../src/types/api.generated";
 import { InstantMlMark } from "../instantml-mark";
 
 type AuthConfig = {
   dev_auth_enabled?: boolean;
   managed_clerk_enabled?: boolean;
+  clerk_jwt_issuer?: string | null;
+  clerk_config_error?: string;
   loaded?: boolean;
 };
 type SessionPayload = {
@@ -72,7 +75,17 @@ export default function InvitePage() {
         if (cancelled) return;
         const invite = (previewPayload as { invitation?: InvitationPreview }).invitation;
         if (!invite) throw new Error("Invitation preview was malformed.");
-        const nextConfig = { ...(configPayload as AuthConfig), loaded: true };
+        const managedClerkEnabled = Boolean((configPayload as AuthConfig).managed_clerk_enabled);
+        const clerkConfig = managedClerkEnabled
+          ? clerkIssuerConfigError(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "", (configPayload as AuthConfig).clerk_jwt_issuer)
+          : { message: "", diagnostic: "" };
+        if (clerkConfig.diagnostic) console.warn(clerkConfig.diagnostic);
+        const nextConfig = {
+          ...(configPayload as AuthConfig),
+          managed_clerk_enabled: managedClerkEnabled,
+          clerk_config_error: clerkConfig.message,
+          loaded: true,
+        };
         setConfig(nextConfig);
         setPreview(invite);
         setSession(sessionPayload as SessionPayload);
@@ -80,6 +93,10 @@ export default function InvitePage() {
         if (invite.status !== "pending") {
           clearStoredInviteToken();
           fail(`Invitation is ${invite.status}.`);
+          return;
+        }
+        if (clerkConfig.message) {
+          fail(clerkConfig.message);
           return;
         }
         note(nextConfig.managed_clerk_enabled
@@ -101,18 +118,18 @@ export default function InvitePage() {
 
   useEffect(() => {
     if (!token || !preview || preview.status !== "pending" || busy || acceptStartedRef.current || !config.loaded) return;
-    if (session?.authenticated && !config.managed_clerk_enabled) {
+    if (session?.authenticated && !config.managed_clerk_enabled && !config.clerk_config_error) {
       acceptStartedRef.current = true;
       void acceptCurrentSession();
     }
-  }, [config.loaded, config.managed_clerk_enabled, session?.authenticated, preview, token, busy]);
+  }, [config.loaded, config.managed_clerk_enabled, config.clerk_config_error, session?.authenticated, preview, token, busy]);
 
   useEffect(() => {
     if (!token || !preview || preview.status !== "pending" || !config.loaded) return;
-    if (!config.managed_clerk_enabled || !clerkLoaded || !isSignedIn || attemptedClerkExchangeRef.current || acceptStartedRef.current) return;
+    if (config.clerk_config_error || !config.managed_clerk_enabled || !clerkLoaded || !isSignedIn || attemptedClerkExchangeRef.current || acceptStartedRef.current) return;
     attemptedClerkExchangeRef.current = true;
     void exchangeClerkSession();
-  }, [clerkLoaded, config.loaded, config.managed_clerk_enabled, isSignedIn, preview, token]);
+  }, [clerkLoaded, config.loaded, config.managed_clerk_enabled, config.clerk_config_error, isSignedIn, preview, token]);
 
   async function acceptCurrentSession() {
     if (!token) return;
@@ -205,6 +222,7 @@ export default function InvitePage() {
   const statusClass = isError ? "iml-status is-err" : busy ? "iml-status is-busy" : "iml-status";
   const expires = preview?.expires_at ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(preview.expires_at)) : "";
   const signedInEmail = user?.primaryEmailAddress?.emailAddress ?? session?.user?.primary_email ?? "";
+  const managedClerkAvailable = Boolean(config.managed_clerk_enabled && !config.clerk_config_error);
 
   return (
     <div className="iml-auth">
@@ -232,7 +250,7 @@ export default function InvitePage() {
 
             {preview?.status === "pending" ? (
               <div className="iml-actions">
-                {config.managed_clerk_enabled && clerkLoaded ? (
+                {managedClerkAvailable && clerkLoaded ? (
                   <>
                     {!isSignedIn ? (
                       <>
@@ -267,7 +285,7 @@ export default function InvitePage() {
                     )}
                   </>
                 ) : null}
-                {config.managed_clerk_enabled && !clerkLoaded ? (
+                {managedClerkAvailable && !clerkLoaded ? (
                   <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled type="button">
                     <span className="iml-spin" aria-hidden="true" /> Loading sign-in
                   </button>
@@ -275,7 +293,7 @@ export default function InvitePage() {
 
                 {config.dev_auth_enabled ? (
                   <form className="iml-actions" onSubmit={submitDevAuth} aria-label="Local development invitation sign in">
-                    {config.managed_clerk_enabled ? <p className="iml-hint" style={{ textAlign: "center" }}>— or use local development auth —</p> : null}
+                    {managedClerkAvailable ? <p className="iml-hint" style={{ textAlign: "center" }}>— or use local development auth —</p> : null}
                     <div className="iml-field">
                       <label htmlFor="invite-dev-email">Email</label>
                       <input className="iml-input" id="invite-dev-email" required type="email" value={devEmail} onChange={(event) => setDevEmail(event.target.value)} />
@@ -286,7 +304,13 @@ export default function InvitePage() {
                   </form>
                 ) : null}
 
-                {!config.managed_clerk_enabled && !config.dev_auth_enabled ? (
+                {config.clerk_config_error && !config.dev_auth_enabled ? (
+                  <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={() => window.location.reload()} type="button">
+                    <RefreshCw size={15} /> Check sign-in configuration
+                  </button>
+                ) : null}
+
+                {!managedClerkAvailable && !config.dev_auth_enabled && !config.clerk_config_error ? (
                   <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={() => window.location.reload()} type="button">
                     <RefreshCw size={15} /> Retry
                   </button>

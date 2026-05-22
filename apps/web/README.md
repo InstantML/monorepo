@@ -134,6 +134,13 @@ to `prod`, for pushed production builds. This variable intentionally overrides
 repo-local deploy helper API-base values so staging builds do not accidentally
 inherit a prod `.env` target.
 
+Staging and production frontend builds must use a
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as the
+backend `CLERK_SECRET_KEY`. The backend publishes its expected
+`clerk_jwt_issuer` from `/api/auth/config`; the sign-in and invite pages compare
+that issuer with the frontend key and show a configuration error when the build
+points at the wrong Clerk instance.
+
 After `npm run deploy:cloud-run` succeeds, the deploy helper writes hosted API
 settings into `apps/web/.env.local`. Single-service deploys write
 `INSTANTML_API_BASE`; split control/data deploys write

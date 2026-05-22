@@ -1015,8 +1015,10 @@ export interface components {
             attributes: components["schemas"]["AttributeRow"][];
         };
         AuthConfigResponse: {
+            clerk_jwt_issuer?: string | null;
             dev_auth_enabled: boolean;
             managed_clerk_enabled: boolean;
+            service_plane: string;
         };
         AuthSessionPayload: {
             account_type: string;

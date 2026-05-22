@@ -65,6 +65,9 @@ pub struct HealthResponse {
 pub struct AuthConfigResponse {
     pub dev_auth_enabled: bool,
     pub managed_clerk_enabled: bool,
+    pub service_plane: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clerk_jwt_issuer: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]

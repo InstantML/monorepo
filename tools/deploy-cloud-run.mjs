@@ -75,6 +75,7 @@ Timing:
 const envFile = path.join(repo, ".env");
 const webEnvFile = path.join(repo, "apps", "web", ".env.local");
 const fileEnv = loadDotenv(envFile);
+const webFileEnv = loadDotenv(webEnvFile);
 const env = { ...fileEnv, ...process.env };
 
 const configuredProject = spawnSync("gcloud", ["config", "get-value", "project"], {
@@ -121,6 +122,7 @@ validateDeploymentTargets(deploymentPlan);
 validatePublicRouterConfig();
 validateExplicitPublicApiBaseConfig();
 validateInviteEmailConfig();
+await validateClerkDeploymentConfig();
 
 preflightBuildContext();
 ensureGcloudAuth();
@@ -241,6 +243,181 @@ function validateInviteEmailConfig() {
   if (emailProviderForDeployment() === "resend" && !value("INSTANTML_FRONTEND_BASE_URL")) {
     fail("Set INSTANTML_FRONTEND_BASE_URL to the hosted web app origin before deploying Resend-backed invitation email.");
   }
+}
+
+function managedClerkEnabledForDeployment() {
+  return boolValue("INSTANTML_MANAGED_CLERK_ENABLED", Boolean(value("CLERK_SECRET_KEY")));
+}
+
+function clerkPublishableKeyForDeployment() {
+  return clerkPublishableKeySourcesForDeployment()[0]?.value || "";
+}
+
+function clerkJwtIssuerForDeployment() {
+  return normalizeClerkIssuer(value("CLERK_JWT_ISSUER") || clerkIssuerFromPublishableKey(clerkPublishableKeyForDeployment()));
+}
+
+function clerkApiBaseForDeployment() {
+  const apiBase = normalizeClerkIssuer(value("CLERK_API_BASE") || "https://api.clerk.com", "CLERK_API_BASE");
+  if (apiBase !== "https://api.clerk.com" && !boolValue("INSTANTML_CLOUD_RUN_ALLOW_CUSTOM_CLERK_API_BASE", false)) {
+    fail("CLERK_API_BASE must be https://api.clerk.com for Cloud Run deploys. Set INSTANTML_CLOUD_RUN_ALLOW_CUSTOM_CLERK_API_BASE=1 only for controlled tests.");
+  }
+  return apiBase;
+}
+
+async function validateClerkDeploymentConfig() {
+  if (!managedClerkEnabledForDeployment()) return;
+  const secretKey = value("CLERK_SECRET_KEY");
+  if (!secretKey) {
+    fail("CLERK_SECRET_KEY is required when managed Clerk auth is enabled.");
+  }
+  const publishableKeySources = clerkPublishableKeySourcesForDeployment();
+  if (!publishableKeySources.length) {
+    fail("Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY from the same Clerk application as CLERK_SECRET_KEY before deploying managed Clerk auth.");
+  }
+  for (const source of publishableKeySources) {
+    source.issuer = clerkIssuerFromPublishableKey(source.value);
+  }
+  const derivedIssuer = publishableKeySources[0].issuer;
+  for (const source of publishableKeySources.slice(1)) {
+    if (source.issuer !== derivedIssuer) {
+      fail(`${source.name} decodes to ${source.issuer}, but ${publishableKeySources[0].name} decodes to ${derivedIssuer}. Use one Clerk publishable key across backend deploy and frontend build env files.`);
+    }
+  }
+  validateClerkKeyEnvironment(secretKey, publishableKeySources[0].value);
+  const explicitIssuer = value("CLERK_JWT_ISSUER") ? normalizeClerkIssuer(value("CLERK_JWT_ISSUER")) : "";
+  if (explicitIssuer && explicitIssuer !== derivedIssuer) {
+    fail(`CLERK_JWT_ISSUER (${explicitIssuer}) does not match NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (${derivedIssuer}). Use the public and secret keys from the same Clerk application.`);
+  }
+  await validateClerkSecretMatchesPublishableKey(derivedIssuer);
+}
+
+function clerkPublishableKeySourcesForDeployment() {
+  const processSuppressedKeys = new Set(
+    ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY"]
+      .filter((key) => Object.prototype.hasOwnProperty.call(process.env, key) && !envSourceValue(process.env, key))
+  );
+  const specs = [
+    ["process env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", process.env, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"],
+    ["process env CLERK_PUBLISHABLE_KEY", process.env, "CLERK_PUBLISHABLE_KEY"],
+    [".env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", fileEnv, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"],
+    [".env CLERK_PUBLISHABLE_KEY", fileEnv, "CLERK_PUBLISHABLE_KEY"],
+    ["apps/web/.env.local NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", webFileEnv, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"],
+    ["apps/web/.env.local CLERK_PUBLISHABLE_KEY", webFileEnv, "CLERK_PUBLISHABLE_KEY"],
+  ];
+  const output = [];
+  const seen = new Set();
+  for (const [name, sourceEnv, key] of specs) {
+    if (sourceEnv !== process.env && processSuppressedKeys.has(key)) continue;
+    const raw = envSourceValue(sourceEnv, key);
+    if (!raw || seen.has(raw)) continue;
+    seen.add(raw);
+    output.push({ name, value: raw, issuer: "" });
+  }
+  return output;
+}
+
+function envSourceValue(sourceEnv, key) {
+  const raw = sourceEnv?.[key];
+  return typeof raw === "string" && raw.trim() ? raw.trim() : "";
+}
+
+function validateClerkKeyEnvironment(secretKey, publishableKey) {
+  const secretKind = clerkKeyKind(secretKey, "sk");
+  const publishableKind = clerkKeyKind(publishableKey, "pk");
+  if (secretKind && publishableKind && secretKind !== publishableKind) {
+    fail(`CLERK_SECRET_KEY is ${secretKind}, but NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is ${publishableKind}. Use keys from the same Clerk environment.`);
+  }
+}
+
+function clerkKeyKind(rawKey, prefix) {
+  const match = String(rawKey || "").trim().match(new RegExp(`^${prefix}_(test|live)_`));
+  return match?.[1] || "";
+}
+
+async function validateClerkSecretMatchesPublishableKey(expectedIssuer) {
+  const issuers = await clerkFrontendIssuersFromSecretKey();
+  if (!issuers.includes(expectedIssuer)) {
+    fail(`CLERK_SECRET_KEY belongs to Clerk issuer ${issuers.join(", ")}, but NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY decodes to ${expectedIssuer}. Use the public and secret keys from the same Clerk application.`);
+  }
+  console.log(`Verified CLERK_SECRET_KEY matches Clerk issuer ${expectedIssuer}.`);
+}
+
+async function clerkFrontendIssuersFromSecretKey() {
+  const apiBase = clerkApiBaseForDeployment();
+  let response;
+  try {
+    response = await fetch(`${apiBase.replace(/\/+$/, "")}/v1/domains`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${value("CLERK_SECRET_KEY")}`,
+      },
+    });
+  } catch (error) {
+    fail(`Unable to validate CLERK_SECRET_KEY against Clerk Backend API: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const text = await response.text();
+  if (!response.ok) {
+    fail(`Clerk Backend API rejected CLERK_SECRET_KEY while validating managed Clerk deploy (${response.status}).`);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    fail("Clerk Backend API returned malformed domain metadata while validating CLERK_SECRET_KEY.");
+  }
+  const domains = Array.isArray(payload?.data) ? payload.data : [];
+  const issuers = [...new Set(domains
+    .map((domain) => domain?.frontend_api_url)
+    .filter((url) => typeof url === "string" && url.trim())
+    .map((url) => normalizeClerkIssuer(url, "Clerk domain frontend_api_url")))];
+  if (!issuers.length) {
+    fail("Clerk Backend API did not return a frontend_api_url for CLERK_SECRET_KEY; cannot prove it matches NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.");
+  }
+  return issuers;
+}
+
+function clerkIssuerFromPublishableKey(rawKey) {
+  const raw = String(rawKey || "").trim();
+  const match = raw.match(/^pk_(test|live)_(.+)$/);
+  if (!match) {
+    fail("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must be a Clerk pk_test_ or pk_live_ key.");
+  }
+  let encoded = match[2].replace(/-/g, "+").replace(/_/g, "/");
+  encoded += "=".repeat((4 - (encoded.length % 4)) % 4);
+  let decoded = "";
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8").trim().replace(/\$+$/, "");
+  } catch {
+    fail("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY could not be decoded.");
+  }
+  if (!decoded) fail("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY decoded to an empty Clerk frontend API host.");
+  try {
+    const parsed = decoded.startsWith("http://") || decoded.startsWith("https://")
+      ? new URL(decoded)
+      : new URL(`https://${decoded}`);
+    return normalizeClerkIssuer(parsed.origin);
+  } catch {
+    fail("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY did not decode to a valid Clerk frontend API host.");
+  }
+}
+
+function normalizeClerkIssuer(raw, label = "CLERK_JWT_ISSUER") {
+  const value = String(raw || "").trim().replace(/\/+$/, "");
+  if (!value) return "";
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    fail(`${label} must be an https URL.`);
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    fail(`${label} must be an https origin with no credentials, query, or fragment.`);
+  }
+  if (parsed.pathname && parsed.pathname !== "/") {
+    fail(`${label} must be an https origin without a path.`);
+  }
+  return parsed.origin;
 }
 
 function printDeployDurationNotice() {
@@ -560,6 +737,9 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
   const emailProvider = emailProviderForDeployment();
   const frontendBaseUrl = value("INSTANTML_FRONTEND_BASE_URL");
   const allowedEmails = value("INSTANTML_SIGNUP_ALLOWED_EMAILS") || activeAccount;
+  const managedClerkEnabled = managedClerkEnabledForDeployment();
+  const clerkJwtIssuer = managedClerkEnabled ? clerkJwtIssuerForDeployment() : "";
+  const clerkApiBase = value("CLERK_API_BASE") ? clerkApiBaseForDeployment() : "https://api.clerk.com";
   const cloudflareAccountId = cloudflareR2AccountId();
   const r2Configured = Boolean(
     cloudflareAccountId
@@ -579,7 +759,7 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS: value("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS") || "1",
     INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS: value("INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS") || "600",
     INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
-    INSTANTML_MANAGED_CLERK_ENABLED: value("CLERK_SECRET_KEY") ? "true" : "false",
+    INSTANTML_MANAGED_CLERK_ENABLED: managedClerkEnabled ? "true" : "false",
     INSTANTML_ALLOWED_FRONTEND_ORIGINS: origins,
     INSTANTML_FRONTEND_BASE_URL: frontendBaseUrl,
     INSTANTML_EMAIL_PROVIDER: emailProvider,
@@ -606,8 +786,8 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_BILLING_CANCEL_URL: value("INSTANTML_BILLING_CANCEL_URL"),
     INSTANTML_BILLING_PORTAL_RETURN_URL: value("INSTANTML_BILLING_PORTAL_RETURN_URL"),
     INSTANTML_BILLING_GRACE_DAYS: value("INSTANTML_BILLING_GRACE_DAYS"),
-    CLERK_API_BASE: value("CLERK_API_BASE") || "https://api.clerk.com",
-    CLERK_JWT_ISSUER: value("CLERK_JWT_ISSUER"),
+    CLERK_API_BASE: clerkApiBase,
+    CLERK_JWT_ISSUER: clerkJwtIssuer,
     CLICKHOUSE_CLOUD_ENDPOINT: value("CLICKHOUSE_CLOUD_ENDPOINT") || "https://api.clickhouse.cloud",
   };
   if (staticEgressIp) {
@@ -794,6 +974,23 @@ async function verifyService(url, target) {
       }
       if (config.service_plane !== target.servicePlane) {
         fail(`${target.service} /api/auth/config verification failed; expected ${target.servicePlane}, got ${config.service_plane}.`);
+      }
+      if (managedClerkEnabledForDeployment()) {
+        const expectedIssuer = clerkJwtIssuerForDeployment();
+        const actualIssuer = typeof config.clerk_jwt_issuer === "string" ? normalizeClerkIssuer(config.clerk_jwt_issuer) : "";
+        if (target.servicePlane === "data") {
+          if (config.managed_clerk_enabled !== false) {
+            fail(`${target.service} /api/auth/config verification failed; data-plane auth config must not expose managed Clerk.`);
+          }
+        } else if (config.managed_clerk_enabled !== true) {
+          fail(`${target.service} /api/auth/config verification failed; managed Clerk must be enabled in Cloud Run.`);
+        }
+        if (target.servicePlane !== "data" && actualIssuer !== expectedIssuer) {
+          fail(`${target.service} /api/auth/config verification failed; expected Clerk issuer ${expectedIssuer}, got ${config.clerk_jwt_issuer ?? "unset"}.`);
+        }
+        if (target.servicePlane === "data" && actualIssuer) {
+          fail(`${target.service} /api/auth/config verification failed; only control-plane auth config may expose clerk_jwt_issuer.`);
+        }
       }
     }
     if (pathname === "/openapi.json") {

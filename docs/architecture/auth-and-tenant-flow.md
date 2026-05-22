@@ -169,7 +169,7 @@ Revoked or expired sessions are rejected on the next request. Session payload cr
 - Do not log Clerk session tokens, InstantML session tokens, API key plaintext, ClickHouse passwords, or tenant endpoints.
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is public and used by the Next app.
 - `CLERK_SECRET_KEY` stays server-side and is used by Rust to verify session tokens and fetch Clerk user profiles.
-- `CLERK_JWT_ISSUER`, when set, pins accepted Clerk session tokens to one exact issuer.
+- `CLERK_JWT_ISSUER` pins accepted Clerk session tokens to one exact issuer. Cloud Run deploys derive it from `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` when unset, validate `CLERK_SECRET_KEY` against Clerk Backend API domain metadata, and reject a configured issuer that points at a different Clerk instance. `/api/auth/config` returns this issuer so the frontend can block a broken staging/prod Clerk key mix before token exchange.
 - The browser does not receive ClickHouse tenant credentials.
 - The SDK does not receive Clerk tokens or browser cookies.
 - Cloud-service provisioning is opt-in and can incur cost; use local/database-mode tests for CI.

@@ -72,6 +72,114 @@ test("deploy helper requires hosted frontend base for Resend invites", () => {
   ]);
 });
 
+test("deploy helper requires a matching Clerk publishable key for managed Clerk", () => {
+  const result = runDeploy(["--topology=split"], {
+    CLERK_SECRET_KEY: "sk_test_example",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
+    CLERK_PUBLISHABLE_KEY: "",
+    CLERK_JWT_ISSUER: "",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper rejects Clerk issuer and publishable key mismatches", () => {
+  const result = runDeploy(["--topology=split"], {
+    CLERK_SECRET_KEY: "sk_test_example",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkPublishableKey("modern-mustang-72.clerk.accounts.dev"),
+    CLERK_JWT_ISSUER: "https://other-clerk-instance.clerk.accounts.dev",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /does not match NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper rejects mismatched Clerk publishable key sources", () => {
+  const result = runDeploy(["--topology=split"], {
+    CLERK_SECRET_KEY: "sk_test_example",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkPublishableKey("modern-mustang-72.clerk.accounts.dev"),
+    CLERK_PUBLISHABLE_KEY: clerkPublishableKey("other-clerk-instance.clerk.accounts.dev"),
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Use one Clerk publishable key/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper rejects Clerk secret and publishable environment mismatches", () => {
+  const result = runDeploy(["--topology=split"], {
+    CLERK_SECRET_KEY: "sk_live_example",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkPublishableKey("modern-mustang-72.clerk.accounts.dev"),
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Use keys from the same Clerk environment/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper rejects unsafe Clerk API base before validating secrets", () => {
+  const result = runDeploy(["--topology=split"], {
+    CLERK_SECRET_KEY: "sk_test_example",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkPublishableKey("modern-mustang-72.clerk.accounts.dev"),
+    CLERK_API_BASE: "http://api.clerk.com",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /CLERK_API_BASE must be an https origin/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper rejects custom Clerk API base without explicit override", () => {
+  const result = runDeploy(["--topology=split"], {
+    CLERK_SECRET_KEY: "sk_test_example",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkPublishableKey("modern-mustang-72.clerk.accounts.dev"),
+    CLERK_API_BASE: "https://api.example.com",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /CLERK_API_BASE must be https:\/\/api\.clerk\.com/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper pins Cloud Run Clerk issuer from the frontend publishable key", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /const webFileEnv = loadDotenv\(webEnvFile\)/);
+  assert.match(source, /function clerkApiBaseForDeployment/);
+  assert.match(source, /INSTANTML_CLOUD_RUN_ALLOW_CUSTOM_CLERK_API_BASE/);
+  assert.match(source, /function clerkIssuerFromPublishableKey/);
+  assert.match(source, /function validateClerkSecretMatchesPublishableKey/);
+  assert.match(source, /\/v1\/domains/);
+  assert.match(source, /frontend_api_url/);
+  assert.match(source, /function validateClerkDeploymentConfig/);
+  assert.match(source, /CLERK_JWT_ISSUER: clerkJwtIssuer/);
+  assert.match(source, /Use the public and secret keys from the same Clerk application/);
+  assert.match(source, /managed Clerk must be enabled in Cloud Run/);
+  assert.match(source, /data-plane auth config must not expose managed Clerk/);
+  assert.match(source, /only control-plane auth config may expose clerk_jwt_issuer/);
+});
+
 test("deploy helper keeps public routing HTTPS-only", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
@@ -164,11 +272,15 @@ process.exit(2);
   fs.chmodSync(path.join(binDir, "gcloud"), 0o755);
   const childEnv = {
     ...process.env,
-    ...env,
     PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
     GCP_PROJECT: "",
     INSTANTML_CLOUD_RUN_TOPOLOGY: "",
     INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER: "",
+    CLERK_SECRET_KEY: "",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
+    CLERK_PUBLISHABLE_KEY: "",
+    CLERK_JWT_ISSUER: "",
+    ...env,
   };
   delete childEnv.NODE_V8_COVERAGE;
   const result = spawnSync(process.execPath, ["tools/deploy-cloud-run.mjs", ...args], {
@@ -181,4 +293,13 @@ process.exit(2);
     : [];
   fs.rmSync(tempDir, { recursive: true, force: true });
   return { ...result, gcloudCalls };
+}
+
+function clerkPublishableKey(host) {
+  const encoded = Buffer.from(`${host}$`, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `pk_test_${encoded}`;
 }

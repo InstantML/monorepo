@@ -109,6 +109,21 @@ production with the database path changed to `instantml_user_data_staging`.
 Tenant warehouses created from staging signups remain real ClickHouse Cloud
 services, so operators should treat staging tests as live-cost operations.
 
+Managed Clerk staging deploys require the same Clerk application pair on both
+sides: `CLERK_SECRET_KEY` for the backend and
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` for the frontend. The deploy helper decodes
+the publishable key, derives `CLERK_JWT_ISSUER`, and writes that issuer into
+Cloud Run. It also calls the Clerk Backend API `GET /v1/domains` with
+`CLERK_SECRET_KEY` and compares the returned `frontend_api_url` issuer to the
+publishable-key issuer. If the backend secret, frontend public key, or explicit
+`CLERK_JWT_ISSUER` point at different Clerk instances, the helper exits before
+syncing secrets or deploying Cloud Run. Clerk documents that
+[publishable keys encode the Frontend API URL](https://clerk.com/docs/guides/how-clerk-works/overview),
+and that [Backend API requests use the secret key](https://clerk.com/docs/reference/api/overview).
+For Cloud Run deploys, `CLERK_API_BASE` is pinned to `https://api.clerk.com` by
+default so this validation cannot leak a secret to a custom endpoint; the
+custom-base override is reserved for controlled tests.
+
 ### Timeout Alignment
 
 The deploy helper updates each public-router backend service with
@@ -136,6 +151,22 @@ longer timeout so the add-backend step is not blocked by a pre-set
   secret names outside prod.
 - If Cloudflare DNS cannot be updated by API, the staging A record must be added
   through the Cloudflare dashboard.
+- If staging or preview frontend auth says the Clerk issuer is misconfigured,
+  the frontend was built with a `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` that does
+  not match the backend issuer returned by
+  `https://staging.api.instantml.ai/api/auth/config`; rebuild the frontend with
+  the staging Clerk key or redeploy the API with the matching backend key.
+- To recover from a suspected Clerk key mismatch without printing secrets:
+  1. `curl https://staging.api.instantml.ai/api/auth/config` and note
+     `clerk_jwt_issuer`.
+  2. Decode the frontend build's `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`; it should
+     produce the same issuer.
+  3. Run `npm run deploy:cloud-run:staging` with the intended
+     `CLERK_SECRET_KEY` and publishable key. The helper validates the secret
+     against Clerk domain metadata and stops before cloud mutation if the pair
+     is wrong.
+  4. Confirm the staging secret name is
+     `instantml-staging-clerk-secret-key`, then redeploy from the corrected env.
 
 ## Verification
 
@@ -147,7 +178,8 @@ longer timeout so the add-backend step is not blocked by a pre-set
   - `https://api.instantml.ai/openapi.json` reports `data`
   - control-only paths return control-plane auth errors rather than data-plane
     404s
-  - `https://staging.api.instantml.ai/api/auth/config` reports `control`
+  - `https://staging.api.instantml.ai/api/auth/config` reports `control` and
+    includes the expected `clerk_jwt_issuer` when managed Clerk is enabled
   - `https://staging.api.instantml.ai/openapi.json` reports `data`
 
 ## Review Notes

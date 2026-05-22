@@ -4597,14 +4597,24 @@
         "type": "object",
         "required": [
           "dev_auth_enabled",
-          "managed_clerk_enabled"
+          "managed_clerk_enabled",
+          "service_plane"
         ],
         "properties": {
+          "clerk_jwt_issuer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "dev_auth_enabled": {
             "type": "boolean"
           },
           "managed_clerk_enabled": {
             "type": "boolean"
+          },
+          "service_plane": {
+            "type": "string"
           }
         }
       },
