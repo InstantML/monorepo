@@ -2207,7 +2207,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onRefresh={loadDashboard}
         onSaveView={saveView}
         onSelectTab={selectTab}
-        onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
         onSortBy={changeRunSort}
         onStatus={changeStatus}

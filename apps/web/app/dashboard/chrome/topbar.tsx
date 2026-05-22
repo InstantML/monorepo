@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { Check, ChevronDown, CircleHelp, LogOut, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -166,7 +166,6 @@ export function DashboardTopbar({
   onRefresh,
   onSaveView,
   onSelectTab,
-  onSignOut,
   onShortcutHelp,
   onSortBy,
   onStatus,
@@ -205,7 +204,6 @@ export function DashboardTopbar({
   onRefresh: () => void;
   onSaveView: () => void;
   onSelectTab: (tabId: TabId) => void;
-  onSignOut: () => void;
   onShortcutHelp: () => void;
   onSortBy: (value: string) => void;
   onStatus: (status: string) => void;
@@ -338,15 +336,6 @@ export function DashboardTopbar({
               type="button"
             >
               <CircleHelp size={15} />
-            </button>
-            <button
-              aria-label="Sign out"
-              className="icon-button framed brandbar-action-desktop"
-              onClick={onSignOut}
-              title="Sign out"
-              type="button"
-            >
-              <LogOut size={15} />
             </button>
             <span className="brandbar-action-desktop brandbar-user-avatar" aria-label="Account">
               <UserButton />
