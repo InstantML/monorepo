@@ -45,6 +45,13 @@ Hosted staging router:
 https://staging.api.instantml.ai
 ```
 
+The Next frontend uses same-origin rewrites, not direct browser calls to these
+hosts. In the absence of explicit API-base variables, frontend builds default
+to the production router `https://api.instantml.ai`. Set
+`INSTANTML_WEB_API_ENV=staging` on staging/preview frontend deployments to make
+all control and data rewrites target `https://staging.api.instantml.ai`;
+production builds should leave it unset or set it to `prod`.
+
 The local Next app should normally call the Rust API through same-origin Next
 rewrites. After a direct split `npm run deploy:cloud-run`,
 `apps/web/.env.local` receives:
