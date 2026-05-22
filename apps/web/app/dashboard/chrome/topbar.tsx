@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, CircleHelp, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, Sun, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, LogOut, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -169,7 +169,6 @@ export function DashboardTopbar({
   onShortcutHelp,
   onSortBy,
   onStatus,
-  onThemeToggle,
   onViewName,
   orgMemberships,
   orgSwitchBusy,
@@ -185,7 +184,6 @@ export function DashboardTopbar({
   status,
   metricUsagePercent,
   storageUsagePercent,
-  theme,
   tone,
   usageAvailable,
   usageResetLabel,
@@ -210,7 +208,6 @@ export function DashboardTopbar({
   onShortcutHelp: () => void;
   onSortBy: (value: string) => void;
   onStatus: (status: string) => void;
-  onThemeToggle: () => void;
   onViewName: (value: string) => void;
   orgMemberships: OrgMembershipSummary[];
   orgSwitchBusy: boolean;
@@ -226,7 +223,6 @@ export function DashboardTopbar({
   status: string;
   metricUsagePercent: number;
   storageUsagePercent: number;
-  theme: "light" | "dark";
   tone: "error" | "loading" | "ok";
   usageAvailable: boolean;
   usageResetLabel: string;
@@ -237,7 +233,6 @@ export function DashboardTopbar({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
   const [compactFilters, setCompactFilters] = useState(false);
-  const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
@@ -344,16 +339,6 @@ export function DashboardTopbar({
               <CircleHelp size={15} />
             </button>
             <button
-              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-              aria-pressed={dark}
-              className="icon-button framed brandbar-action-desktop"
-              onClick={onThemeToggle}
-              title={dark ? "Light mode" : "Dark mode"}
-              type="button"
-            >
-              {dark ? <Sun size={15} /> : <Moon size={15} />}
-            </button>
-            <button
               aria-label="Sign out"
               className="icon-button framed brandbar-action-desktop"
               onClick={onSignOut}
@@ -362,7 +347,6 @@ export function DashboardTopbar({
             >
               <LogOut size={15} />
             </button>
-            <div className="avatar brandbar-action-desktop" aria-label="Account">AK</div>
           </div>
         </div>
       </div>
