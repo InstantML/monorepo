@@ -10,7 +10,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    domain::{ClerkAuthRequest, RequestContext, SessionContext},
+    domain::{AuthContext, AuthSessionPayload, ClerkAuthRequest, RequestContext, SessionContext},
     errors::{AppError, AppResult},
     store,
 };
@@ -121,18 +121,18 @@ pub async fn context(
     headers: &HeaderMap,
     tenant_route: bool,
 ) -> AppResult<RequestContext> {
-    // Tier 2: the data plane no longer refreshes control state on every
-    // request. A background task (spawned in `serve()` for the data plane)
-    // keeps the in-memory projection fresh out-of-band, so the request hot
-    // path makes zero control-plane queries. Worst-case staleness is bounded
-    // by `CONTROL_REFRESH_BACKGROUND_INTERVAL` (see store::mod).
+    // Tier 2: valid data-plane requests no longer refresh control state on
+    // every request. A background task (spawned in `serve()` for the data
+    // plane) keeps the in-memory projection fresh out-of-band. On auth miss
+    // only, we force one control refresh and retry so newly created sessions
+    // and API keys become usable immediately after control-plane writes.
     let ctx = match header_text(headers, "authorization") {
         Some(header) => {
             let token = header
                 .strip_prefix("Bearer ")
                 .or_else(|| header.strip_prefix("bearer "))
                 .ok_or_else(|| AppError::unauthorized("authorization must use bearer token"))?;
-            let auth = store::authenticate_api_key(&state.store, token).await?;
+            let auth = authenticate_api_key_with_auth_miss_refresh(state, token).await?;
             RequestContext {
                 org_id: auth.org_id,
                 auth: Some(auth),
@@ -146,7 +146,7 @@ pub async fn context(
                 }
                 return Ok(RequestContext::local());
             };
-            let payload = store::authenticate_session(&state.store, token).await?;
+            let payload = authenticate_session_with_auth_miss_refresh(state, token).await?;
             RequestContext {
                 org_id: payload.organization.id,
                 auth: None,
@@ -163,6 +163,46 @@ pub async fn context(
         state.store.ensure_tenant_loaded(ctx.org_id).await?;
     }
     Ok(ctx)
+}
+
+async fn authenticate_api_key_with_auth_miss_refresh(
+    state: &AppState,
+    token: &str,
+) -> AppResult<AuthContext> {
+    match store::authenticate_api_key(&state.store, token).await {
+        Ok(auth) => Ok(auth),
+        Err(error) if state.config.service_plane.runs_background_control_refresh() => {
+            if let Err(refresh_error) = state.store.refresh_control_records_for_auth_miss().await {
+                tracing::warn!(
+                    error = %refresh_error.message(),
+                    "control-record refresh after API-key auth miss failed"
+                );
+                return Err(error);
+            }
+            store::authenticate_api_key(&state.store, token).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn authenticate_session_with_auth_miss_refresh(
+    state: &AppState,
+    token: &str,
+) -> AppResult<AuthSessionPayload> {
+    match store::authenticate_session(&state.store, token).await {
+        Ok(payload) => Ok(payload),
+        Err(error) if state.config.service_plane.runs_background_control_refresh() => {
+            if let Err(refresh_error) = state.store.refresh_control_records_for_auth_miss().await {
+                tracing::warn!(
+                    error = %refresh_error.message(),
+                    "control-record refresh after session auth miss failed"
+                );
+                return Err(error);
+            }
+            store::authenticate_session(&state.store, token).await
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub fn require_scope(ctx: &RequestContext, scope: &str, state: &AppState) -> AppResult<()> {

@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use std::{process::ExitCode, time::Duration};
 
 use instantml_rust_server::{
     config::{AppConfig, ClickHouseProvisioner, ServicePlaneRole},
@@ -77,7 +77,7 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
     }
-    let store = store::Store::connect(
+    let store = connect_store_with_retry(
         metrics.clone(),
         control_store,
         config.hosted_clickhouse.clone(),
@@ -110,6 +110,53 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         handle.abort();
     }
     result
+}
+
+async fn connect_store_with_retry(
+    metrics: metric_store::MetricStore,
+    control_store: Option<ControlStore>,
+    hosted_clickhouse: Option<instantml_rust_server::config::HostedClickHouseConfig>,
+) -> instantml_rust_server::AppResult<store::Store> {
+    let retry_delays = [
+        Duration::from_secs(1),
+        Duration::from_secs(2),
+        Duration::from_secs(4),
+    ];
+    let max_attempts = retry_delays.len() + 1;
+    for attempt in 1..=max_attempts {
+        match store::Store::connect(
+            metrics.clone(),
+            control_store.clone(),
+            hosted_clickhouse.clone(),
+        )
+        .await
+        {
+            Ok(store) => return Ok(store),
+            Err(error) if attempt < max_attempts => {
+                let delay = retry_delays[attempt - 1];
+                tracing::warn!(
+                    error = %error.message(),
+                    attempt,
+                    max_attempts,
+                    delay_ms = delay.as_millis() as u64,
+                    "store startup projection rebuild failed; retrying"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(error) => {
+                tracing::error!(
+                    error = %error.message(),
+                    attempt,
+                    max_attempts,
+                    "store startup projection rebuild failed after retries"
+                );
+                return Err(error);
+            }
+        }
+    }
+    Err(instantml_rust_server::AppError::internal(
+        "store startup projection rebuild failed",
+    ))
 }
 
 async fn migrate_all(config: AppConfig) -> instantml_rust_server::AppResult<()> {

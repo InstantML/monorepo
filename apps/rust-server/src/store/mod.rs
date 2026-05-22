@@ -135,6 +135,8 @@ pub struct Store {
     inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
+    control_projection_loaded: Arc<Mutex<bool>>,
+    last_control_refresh_error: Arc<Mutex<Option<String>>>,
     /// Coalesces calls to `refresh_control_records`. Reading the entire
     /// control table on every authenticated request hammered ClickHouse Cloud
     /// under burst load, causing transient `client error (Connect)` failures.
@@ -171,6 +173,8 @@ impl Store {
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
         };
         store.rebuild().await?;
@@ -204,7 +208,28 @@ impl Store {
         };
         *self.data.lock().await = data;
         *self.record_clock_micros.lock().await = latest_record_micros;
+        self.mark_control_projection_loaded().await;
         Ok(())
+    }
+
+    async fn mark_control_projection_loaded(&self) {
+        *self.control_projection_loaded.lock().await = true;
+        self.mark_control_refresh_success().await;
+    }
+
+    async fn mark_control_refresh_success(&self) {
+        *self.last_control_refresh_error.lock().await = None;
+    }
+
+    async fn mark_control_refresh_failure(&self, message: &str) {
+        *self.last_control_refresh_error.lock().await = Some(message.to_string());
+    }
+
+    pub async fn control_projection_health(&self) -> ControlProjectionHealth {
+        ControlProjectionHealth {
+            loaded: *self.control_projection_loaded.lock().await,
+            refresh_degraded: self.last_control_refresh_error.lock().await.is_some(),
+        }
     }
 
     /// Spawn a background task that periodically refreshes the in-memory control
@@ -240,6 +265,14 @@ impl Store {
     }
 
     pub async fn refresh_control_records(&self) -> AppResult<()> {
+        self.refresh_control_records_inner(false).await
+    }
+
+    pub async fn refresh_control_records_for_auth_miss(&self) -> AppResult<()> {
+        self.refresh_control_records_inner(true).await
+    }
+
+    async fn refresh_control_records_inner(&self, force: bool) -> AppResult<()> {
         let Some(control_store) = &self.control_store else {
             return Ok(());
         };
@@ -252,9 +285,11 @@ impl Store {
         // explicit callers.
         {
             let mut last = self.last_control_refresh.lock().await;
-            if let Some(prev) = *last {
-                if prev.elapsed() < CONTROL_REFRESH_MIN_INTERVAL {
-                    return Ok(());
+            if !force {
+                if let Some(prev) = *last {
+                    if prev.elapsed() < CONTROL_REFRESH_MIN_INTERVAL {
+                        return Ok(());
+                    }
                 }
             }
             *last = Some(Instant::now());
@@ -273,16 +308,31 @@ impl Store {
         } else {
             None
         };
-        let records = control_store.load_records(since).await?;
+        let records = match control_store.load_records(since).await {
+            Ok(records) => records,
+            Err(error) => {
+                self.mark_control_refresh_failure(error.message()).await;
+                return Err(error);
+            }
+        };
         if records.is_empty() {
+            self.mark_control_refresh_success().await;
             return Ok(());
         }
-        let (stats, changed_tenant_routes) = {
+        let applied = {
             let mut data = self.data.lock().await;
             let previous_routes = data.tenant_routes.clone();
-            let stats = data.apply_control_records(records)?;
-            let changed_routes = changed_tenant_routes(&previous_routes, &data.tenant_routes);
-            (stats, changed_routes)
+            data.apply_control_records(records).map(|stats| {
+                let changed_routes = changed_tenant_routes(&previous_routes, &data.tenant_routes);
+                (stats, changed_routes)
+            })
+        };
+        let (stats, changed_tenant_routes) = match applied {
+            Ok(applied) => applied,
+            Err(error) => {
+                self.mark_control_refresh_failure(error.message()).await;
+                return Err(error);
+            }
         };
         if !changed_tenant_routes.is_empty() {
             let mut loaded = self.tenant_loaded.lock().await;
@@ -294,6 +344,7 @@ impl Store {
         }
         let mut clock = self.record_clock_micros.lock().await;
         *clock = (*clock).max(stats.latest_record_micros);
+        self.mark_control_refresh_success().await;
         Ok(())
     }
 
@@ -925,10 +976,17 @@ pub async fn ready(store: &Store) -> bool {
 }
 
 pub async fn control_ready(store: &Store) -> bool {
-    match &store.control_store {
+    let backing_ready = match &store.control_store {
         Some(control_store) => control_store.ready().await,
         None => true,
-    }
+    };
+    backing_ready && store.control_projection_health().await.loaded
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ControlProjectionHealth {
+    pub loaded: bool,
+    pub refresh_degraded: bool,
 }
 
 fn control_record_scope(kind: &str) -> &'static str {

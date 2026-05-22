@@ -67,7 +67,7 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 `npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. It is now the default split control/data deployment path. `npm run deploy:cloud-run:multi` is the explicit equivalent. `npm run deploy:cloud-run:single` keeps the legacy combined-service path available when an operator needs one service.
 
-The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`.
+The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, configures an HTTP startup probe against `/readyz`, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`.
 
 The first split hosted launch shape is:
 
@@ -75,6 +75,8 @@ The first split hosted launch shape is:
 - `instantml-data-<region>-a` with `INSTANTML_SERVICE_PLANE=data`, manual scaling, and 1 active instance by default.
 
 Control and data-plane cells stay single-writer by default until the durable multi-writer gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are complete. A Cloud Run `maxScale=1` setting reduces risk but is not a correctness mechanism under automatic scaling; customer-facing single-writer cells should use manual scaling or an app-level write lease before relying on one writer. The deploy helper rejects control/data scaling above one active instance unless the matching unsafe test flag is set for a controlled test.
+
+On startup, the server retries the initial operational/User Data projection rebuild with 1s, 2s, and 4s backoff before exiting non-zero. `/readyz` fails until the projection has loaded, so Cloud Run does not route traffic to an instance that has an empty auth/org/API-key view. Later background refresh failures keep serving the last-known-good projection, log a warning, and expose degraded state through `/readyz` and `/metrics`. Valid data-plane requests stay on the warmed in-memory hot path; an API-key or session auth miss forces one control-record refresh and retries auth so newly created keys/sessions are usable immediately after control-plane writes.
 
 Split deploys write local frontend env with direct control/data Cloud Run service URLs by default. When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper creates a managed HTTPS external Application Load Balancer and writes that one public API base. The helper refuses HTTP-only public routing because hosted auth, session cookies, and API keys must not cross a cleartext `http://<ip>` endpoint. The single-service deploy writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
 
@@ -192,9 +194,11 @@ Root helper-only environment variables:
 - `INSTANTML_DEV_CHDATA`, `INSTANTML_DEV_CH_LOG_DIR`: generated ClickHouse state and logs for `npm run dev:api`.
 - `INSTANTML_DEV_CH_TCP_PORT`, `INSTANTML_DEV_CH_INTERSERVER_PORT`, `INSTANTML_DEV_CH_MYSQL_PORT`: optional non-HTTP ports for avoiding local collisions.
 - `INSTANTML_CLOUD_RUN_TOPOLOGY`: `single` or `split` for `tools/deploy-cloud-run.mjs`. `deploy:cloud-run` and `deploy:cloud-run:multi` pass `split`.
+- `INSTANTML_CLOUD_RUN_SCALING`, `INSTANTML_CLOUD_RUN_INSTANCES`: combined-service scaling mode and manual instance count. The legacy single deploy defaults to manual `1`.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
 - `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Both default to `manual`.
-- `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual data instance count. Values above `1` are blocked unless `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1` is set.
+- `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual split instance counts. Values above `1` are blocked unless the matching unsafe control/data test flag is set.
+- `INSTANTML_CLOUD_RUN_STARTUP_PROBE`: optional raw Cloud Run startup probe override. Defaults to `httpGet.path=/readyz,httpGet.port=8000,initialDelaySeconds=0,timeoutSeconds=10,periodSeconds=10,failureThreshold=30`.
 - `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE`: permits control scaling above one instance for controlled tests only.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: managed HTTPS public router controls.
 - `INSTANTML_PUBLIC_API_BASE`: public load balancer/router URL written to local frontend env after a split deploy.
@@ -205,8 +209,8 @@ Implemented health and platform endpoints:
 
 - `GET /health`
 - `GET /healthz`
-- `GET /readyz`
-- `GET /metrics`
+- `GET /readyz`: returns `status`, `control_projection_loaded`, and `control_refresh_degraded`; fails with 503 until ClickHouse is reachable and the local projection has loaded.
+- `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 
 Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation and invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.

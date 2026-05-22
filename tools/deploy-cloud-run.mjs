@@ -19,12 +19,16 @@ Environment:
   GCP_REGION                          Deployment region. Default: us-central1.
   INSTANTML_CLOUD_RUN_TOPOLOGY         single or split. Default: split.
   INSTANTML_CLOUD_RUN_SERVICE          Combined service name. Default: instantml-rust-api.
+  INSTANTML_CLOUD_RUN_SCALING          auto or manual for combined service. Default: manual.
+  INSTANTML_CLOUD_RUN_INSTANCES        Manual combined service instances. Default: 1.
   INSTANTML_CLOUD_RUN_SERVICE_PREFIX   Split service name prefix. Default: instantml.
   INSTANTML_CLOUD_RUN_CONTROL_SERVICE  Split control service name. Default: instantml-control.
   INSTANTML_CLOUD_RUN_DATA_SERVICE     Split data service name. Default: instantml-data-<region>-a.
   INSTANTML_CLOUD_RUN_CONTROL_SCALING  auto or manual. Default: manual.
   INSTANTML_CLOUD_RUN_DATA_SCALING     auto or manual. Default: manual.
+  INSTANTML_CLOUD_RUN_CONTROL_INSTANCES Manual control instances. Default: 1.
   INSTANTML_CLOUD_RUN_DATA_INSTANCES   Manual data instances. Default: 1.
+  INSTANTML_CLOUD_RUN_STARTUP_PROBE    Cloud Run startup probe. Default: HTTP /readyz on port 8000.
   INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1  Permit data scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1  Permit control scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_DATA_SESSION_AFFINITY  Enable Cloud Run session affinity for data as an optimization, not correctness.
@@ -212,7 +216,7 @@ function deploymentTargets() {
     return [{
       service,
       servicePlane: "combined",
-      scaling: automaticScaling("INSTANTML_CLOUD_RUN", "1"),
+      scaling: scalingFor("INSTANTML_CLOUD_RUN", "manual", "1"),
     }];
   }
   return [
@@ -563,6 +567,7 @@ function buildImage() {
 
 function deployService(target, serviceAccountEmail, staticEgressIp, envVars, secretEnv) {
   const envFilePath = writeTempEnvFile(envVars);
+  const containerPort = "8000";
   const args = [
     "run", "deploy", target.service,
     "--image", image,
@@ -571,13 +576,14 @@ function deployService(target, serviceAccountEmail, staticEgressIp, envVars, sec
     "--execution-environment", "gen2",
     "--allow-unauthenticated",
     "--service-account", serviceAccountEmail,
-    "--port", "8000",
+    "--port", containerPort,
     "--cpu", value("INSTANTML_CLOUD_RUN_CPU") || "1",
     "--memory", value("INSTANTML_CLOUD_RUN_MEMORY") || "1Gi",
     "--concurrency", value("INSTANTML_CLOUD_RUN_CONCURRENCY") || "20",
     "--timeout", value("INSTANTML_CLOUD_RUN_TIMEOUT") || "900",
     "--env-vars-file", envFilePath,
   ];
+  appendStartupProbeArgs(args, containerPort);
   appendScalingArgs(args, target.scaling);
   args.push(target.sessionAffinity ? "--session-affinity" : "--no-session-affinity");
   if (secretEnv.length) {
@@ -597,6 +603,19 @@ function deployService(target, serviceAccountEmail, staticEgressIp, envVars, sec
   verifyCloudRunScaling(target, description);
   verifyCloudRunSessionAffinity(target, description);
   return url;
+}
+
+function appendStartupProbeArgs(args, containerPort) {
+  const probe = value("INSTANTML_CLOUD_RUN_STARTUP_PROBE")
+    || [
+      "httpGet.path=/readyz",
+      `httpGet.port=${containerPort}`,
+      "initialDelaySeconds=0",
+      "timeoutSeconds=10",
+      "periodSeconds=10",
+      "failureThreshold=30",
+    ].join(",");
+  args.push("--startup-probe", probe);
 }
 
 function appendScalingArgs(args, scaling) {

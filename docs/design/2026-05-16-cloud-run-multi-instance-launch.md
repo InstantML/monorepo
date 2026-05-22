@@ -22,10 +22,10 @@ export. Both services share the User Data ClickHouse control table and use the
 same static Cloud NAT egress for ClickHouse Cloud allowlisting.
 
 This design does not claim shared-cell multi-writer correctness. The launchable
-default keeps the data cell on manual single-instance scaling while control can
-use automatic bounded scaling. That gives us real operational separation and a
-clean Cloud Run shape without pretending per-process projections are a
-distributed coordination layer.
+default keeps both the control service and each data cell on manual
+single-instance scaling. That gives us real operational separation and a clean
+Cloud Run shape without pretending per-process projections are a distributed
+coordination layer.
 
 After review, "three instances" for the current shared data cell is explicitly
 not production-safe. The safe current deployment is one public HTTPS router, one
@@ -122,6 +122,11 @@ The unsafe overrides exist only to reproduce multi-process bugs or run
 controlled load tests. They must not be used for production traffic until the
 control-plane and data-plane write gates are closed.
 
+The legacy combined deploy also defaults to manual scaling with one active
+instance. Operators can opt into automatic scaling with
+`INSTANTML_CLOUD_RUN_SCALING=auto`, but that path is still a compatibility
+escape hatch rather than the preferred hosted launch shape.
+
 ### Runtime Environment
 
 Both split services receive the existing hosted runtime environment:
@@ -142,6 +147,26 @@ Each target also receives its service plane:
 
 The data target additionally receives `INSTANTML_CELL_ID` for operator
 observability and future route records.
+
+### Startup And Readiness
+
+Every Cloud Run target uses an HTTP startup probe against `/readyz`, not the
+default TCP port probe. The Rust process must finish the initial
+operational/User Data projection rebuild before `/readyz` can return healthy.
+The startup rebuild is retried with 1s, 2s, and 4s backoff; if it still fails,
+the process exits non-zero so Cloud Run marks the revision unhealthy instead of
+routing traffic to an empty in-memory projection.
+
+After startup, background control-record refresh failures do not clear the
+already-loaded projection. The service keeps serving the last-known-good auth,
+org, API-key, and tenant-route view, logs the refresh failure, and exposes the
+degraded state through `/readyz` and `/metrics`.
+
+Data-plane auth uses the warmed projection on the normal valid-key path. If an
+API key or browser session misses the projection, the data service forces one
+control-record refresh and retries auth. That keeps newly minted API keys and
+fresh browser sessions usable immediately after a control-plane write without
+putting a control-table query on every successful SDK metric write.
 
 ### Static Egress And ClickHouse Access
 
@@ -187,6 +212,8 @@ After each Cloud Run service deploy, the helper checks:
 The last two responses must report the expected `service_plane`. The helper also
 verifies the configured scaling mode and session-affinity setting where the
 Cloud Run description exposes them.
+`/readyz` must also report that the control projection has loaded before deploy
+verification can pass.
 
 When the HTTPS router is enabled, the helper verifies:
 

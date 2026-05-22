@@ -15,8 +15,10 @@ The split topology is the one we should use when we want operational separation:
 control-plane routes and data-plane routes run as separate Cloud Run services,
 but both are built from the same Rust image. The data service remains a
 single-writer cell by default until durable multi-writer gates are complete.
-The deploy helper can also create a managed HTTPS external Application Load
-Balancer so local frontend and SDK clients can use one public API origin.
+Control also stays at one active instance by default because auth/org/API-key
+state is still a process-local projection of User Data records. The deploy
+helper can also create a managed HTTPS external Application Load Balancer so
+local frontend and SDK clients can use one public API origin.
 
 ## Topology
 
@@ -53,9 +55,9 @@ assignment.
 
 | Service | Routes | Durable source | Default scale |
 | --- | --- | --- | --- |
-| `combined` | control and data | User Data plus tenant ClickHouse | automatic max 1 in legacy deploy |
+| `combined` | control and data | User Data plus tenant ClickHouse | manual 1 |
 | `control` | auth, sessions, users, orgs, seats, API keys, service accounts | User Data ClickHouse | manual 1 |
-| `data` | projects, runs, metrics, logs, artifacts, objects, imports, usage, export | tenant ClickHouse plus User Data refresh before auth | manual 1 |
+| `data` | projects, runs, metrics, logs, artifacts, objects, imports, usage, export | tenant ClickHouse plus warmed User Data projection | manual 1 |
 
 Platform routes exist on every service:
 
@@ -68,6 +70,13 @@ Platform routes exist on every service:
 
 `/api/auth/config` and `/openapi.json` report the active service plane so
 operators can confirm the deployed service shape.
+`/readyz` fails until ClickHouse is reachable and the process-local control
+projection has loaded. Once loaded, later refresh failures keep the last good
+projection available and mark `control_refresh_degraded=true` in `/readyz` plus
+the `instantml_control_refresh_degraded` gauge in `/metrics`. Fresh API keys
+and browser sessions do not have to wait for the next background tick: the data
+plane forces one User Data refresh and retries auth when a key/session misses
+the warmed projection.
 
 ## Observability
 
@@ -121,8 +130,8 @@ sequenceDiagram
   participant CH as Tenant ClickHouse
 
   S->>D: POST /runs/:id/metrics with bearer key
-  D->>U: full control refresh before auth
-  D->>D: resolve API key, org, scopes, tenant route
+  D->>D: resolve API key, org, scopes, tenant route from warmed projection
+  D->>U: on auth miss only, force refresh and retry
   D->>CH: load tenant operational records if needed
   D->>CH: batch insert metric_points
   D->>CH: append idempotency operational record
@@ -134,13 +143,14 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   start["Data service starts"]
-  controlRefresh["Replay User Data control records"]
+  controlRefresh["Replay User Data control records\nwith startup retry/backoff"]
+  ready["/readyz passes"]
   request["First request for org"]
   route["Resolve tenant route"]
   tenantReplay["Replay tenant operational records"]
   serve["Serve bounded product route"]
 
-  start --> controlRefresh --> request --> route --> tenantReplay --> serve
+  start --> controlRefresh --> ready --> request --> route --> tenantReplay --> serve
 ```
 
 ## Deployment Commands
@@ -187,13 +197,17 @@ verify the public URL and write it into local frontend env.
 | Variable | Purpose |
 | --- | --- |
 | `INSTANTML_CLOUD_RUN_TOPOLOGY` | `single` or `split`; default `split` |
+| `INSTANTML_CLOUD_RUN_SCALING` | `auto` or `manual` for combined service; default `manual` |
+| `INSTANTML_CLOUD_RUN_INSTANCES` | Manual combined instances; default `1` |
 | `INSTANTML_CLOUD_RUN_SERVICE_PREFIX` | Prefix for split service names |
 | `INSTANTML_CLOUD_RUN_CONTROL_SERVICE` | Override control service name |
 | `INSTANTML_CLOUD_RUN_DATA_SERVICE` | Override data service name |
 | `INSTANTML_CLOUD_RUN_DATA_CELL` | Operator label for the data cell |
 | `INSTANTML_CLOUD_RUN_CONTROL_SCALING` | `auto` or `manual` |
 | `INSTANTML_CLOUD_RUN_DATA_SCALING` | `auto` or `manual`; default `manual` |
+| `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES` | Manual control instances; default `1` |
 | `INSTANTML_CLOUD_RUN_DATA_INSTANCES` | Manual data instances; default `1` |
+| `INSTANTML_CLOUD_RUN_STARTUP_PROBE` | Raw Cloud Run startup probe override; defaults to HTTP `/readyz` |
 | `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE` | Set `1` only for controlled tests above one control instance |
 | `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER` | Set `1` only for controlled tests above one data writer |
 | `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER` | Set `1` to create/update the HTTPS public router |
