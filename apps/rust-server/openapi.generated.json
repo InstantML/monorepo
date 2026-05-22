@@ -5780,6 +5780,15 @@
           "run_ids"
         ],
         "properties": {
+          "buckets": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Optional M4 downsampling bucket count.\n\nWhen present and the series has more than `4 * buckets` points, the\nresponse uses M4 aggregation (Jugel et al., 2014) instead of a naive\nprefix limit. The rendered line through the resulting points is\npixel-identical to the chart through all raw points. Value must be\nbetween 1 and 4096 inclusive. Ignored when `start_step` or `end_step`\nis set (zoomed views use the raw path). When absent the existing\nprefix-limited behaviour is unchanged.",
+            "minimum": 0
+          },
           "end_step": {
             "type": [
               "number",

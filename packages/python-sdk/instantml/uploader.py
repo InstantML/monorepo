@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .client import Client, DEFAULT_PROCESS_SPOOL_DIR, InstantMLError
+from .client import Client, DEFAULT_PROCESS_SPOOL_DIR, InstantMLError, _default_base_url
 
 
 LOCK_FILE = ".uploader.lock"
@@ -19,12 +19,12 @@ LOCK_FILE = ".uploader.lock"
 def drain_spool(
     spool_dir: str,
     client: Client | None = None,
-    base_url: str = "http://127.0.0.1:8000",
+    base_url: str | None = None,
     timeout: float = 2.0,
     max_events: int | None = None,
 ) -> int:
     root = Path(spool_dir).expanduser().resolve()
-    active_client = client or Client(base_url=base_url, timeout=timeout, api_key=os.environ.get("INSTANTML_API_KEY"))
+    active_client = client or Client(base_url=base_url or _default_base_url(), timeout=timeout, api_key=os.environ.get("INSTANTML_API_KEY"))
     uploaded = 0
     with _UploaderLock(root):
         for run_dir in _run_dirs(root):
@@ -43,7 +43,7 @@ def drain_spool(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Drain Training Observability SDK spool events.")
     parser.add_argument("--spool-dir", default=DEFAULT_PROCESS_SPOOL_DIR)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.add_argument("--base-url", default=_default_base_url())
     parser.add_argument("--timeout", type=float, default=2.0)
     parser.add_argument("--max-events", type=int, default=None)
     parser.add_argument("--follow", action="store_true")

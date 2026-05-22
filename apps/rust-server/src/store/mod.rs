@@ -76,8 +76,8 @@ use crate::{
     },
     errors::{AppError, AppResult},
     metric_store::{
-        ConsoleLogInsertRow, ConsoleLogReadRow, MetricPointRow as ChMetricPointRow, MetricStore,
-        OperationalRecordRow, SeriesReadRow, SeriesSortMode,
+        ConsoleLogInsertRow, ConsoleLogReadRow, M4BucketRow, MetricPointRow as ChMetricPointRow,
+        MetricStore, OperationalRecordRow, SeriesReadRow, SeriesSortMode,
     },
 };
 
