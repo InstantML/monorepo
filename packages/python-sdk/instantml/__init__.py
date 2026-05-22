@@ -1,5 +1,7 @@
 """Python SDK for Training Observability."""
 
+__version__ = "0.1.0a1"
+
 from .client import (
     Api,
     Artifact,
@@ -35,6 +37,7 @@ __all__ = [
     "Text",
     "TransformersCallback",
     "Video",
+    "__version__",
     "drain_spool",
     "init",
 ]
