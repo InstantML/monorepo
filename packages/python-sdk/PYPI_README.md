@@ -1,11 +1,29 @@
 # InstantML Python SDK
 
-InstantML is a training-loop observability SDK for logging runs, scalar metrics, configs, tags, notes, artifacts, checkpoints, tables, histograms, media, and source context to an InstantML API.
+InstantML is a training-loop observability SDK for logging runs, scalar metrics, configs, tags, notes, artifacts, checkpoints, tables, histograms, media, and source context to the InstantML platform.
+
+## Install
 
 ```bash
-python -m pip install instantml
-python train.py
+pip install --pre instantml
 ```
+
+(The `--pre` flag opts in to the current alpha. Drop it once `0.1.0` ships.)
+
+## Log in
+
+```bash
+instantml login
+```
+
+Opens your browser, completes a device-code flow against the InstantML platform, and stores the resulting credential at `~/.instantml/credentials`. The SDK reads it automatically — no env vars to manage. Same UX as `wandb login`, `gh auth login`, `gcloud auth login`.
+
+```bash
+instantml whoami    # confirm who you're logged in as
+instantml logout    # clear the cached credential
+```
+
+## Log a run
 
 ```python
 import instantml as im
@@ -23,7 +41,23 @@ for step, batch in enumerate(loader):
 run.finish()
 ```
 
-By default the SDK talks to the hosted InstantML API at `https://api.instantml.ai`. Set `INSTANTML_API_KEY` (or pass `api_key=`) — that's all most users need. Override the base URL for local development or self-hosted deployments via `INSTANTML_API_BASE_URL` (or pass `base_url=`):
+## Running on a remote server or CI
+
+Skip `instantml login` and pass credentials explicitly. Two ways:
+
+```bash
+export INSTANTML_API_KEY=instantml_...
+```
+
+```python
+run = im.init(project="cartpole", api_key="instantml_...")
+```
+
+Get a key from **Settings → API Keys** in the dashboard.
+
+## Self-hosted / local development
+
+Override the API base URL via env var or kwarg:
 
 ```bash
 export INSTANTML_API_BASE_URL=http://127.0.0.1:8000
@@ -35,28 +69,6 @@ run = im.init(
     base_url="http://127.0.0.1:8000",
     api_key="instantml_...",
 )
-```
-
-The package also installs the `instantml` CLI for browser-based device login:
-
-```bash
-instantml login --api-host https://api.example.com
-instantml whoami
-instantml logout
-```
-
-The core package has no required third-party runtime dependencies. Optional extras are available for richer local conversions and system metrics:
-
-```bash
-python -m pip install "instantml[media]"
-python -m pip install "instantml[system]"
-python -m pip install "instantml[all]"
-```
-
-The SDK also ships a process-isolated spool uploader:
-
-```bash
-instantml-uploader --spool-dir .instantml/spool --base-url http://127.0.0.1:8000
 ```
 
 ## Shadow Weights & Biases
@@ -85,6 +97,22 @@ run = im.init(project="llm-7b-sft", shadow_wandb=wb_run)
 ```
 
 If `wandb` is not installed or `wandb.init` fails, shadow logging is disabled with a warning and InstantML logging continues unaffected.
+
+## Optional extras
+
+The core package has no required third-party runtime dependencies. Install extras for richer local conversions and system metrics:
+
+```bash
+pip install "instantml[media]"     # Pillow, imageio, moviepy, soundfile
+pip install "instantml[system]"    # psutil, pynvml
+pip install "instantml[all]"
+```
+
+The SDK also ships a process-isolated spool uploader for high-throughput offline replay:
+
+```bash
+instantml-uploader --spool-dir .instantml/spool
+```
 
 ## License
 
