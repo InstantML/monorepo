@@ -1,7 +1,33 @@
 import { auth } from "@clerk/nextjs/server";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { LandingPage } from "../components/landing/LandingPage";
+
+const LANDING_TITLE = "InstantML — Training observability that keeps up with your loop";
+const LANDING_DESCRIPTION =
+  "Training observability that's fast where W&B is slow, cheap where W&B is expensive, and built for the way ML teams actually work in 2026.";
+
+export const metadata: Metadata = {
+  title: {
+    absolute: LANDING_TITLE,
+  },
+  description: LANDING_DESCRIPTION,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "https://instantml.ai/",
+    siteName: "InstantML",
+    title: LANDING_TITLE,
+    description: LANDING_DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: LANDING_TITLE,
+    description: LANDING_DESCRIPTION,
+  },
+};
 
 /**
  * Home route — auth-aware server component.
