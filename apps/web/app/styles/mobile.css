@@ -525,18 +525,21 @@
     min-height: 40px;
   }
 
-  /* Settings — API rows (icon + name + actions) → icon+name on row 1,
-   * actions full-width on row 2. */
+  /* Settings — API rows.
+   * NOTE (audit C5): the component renders 4 children (method + path +
+   * description + copy button), not 3. The earlier grid override here
+   * mis-aligned the 4th child. Switch to flex-wrap so each child sizes
+   * naturally and the description gets its own row.
+   */
   .api-row {
-    grid-template-columns: 40px minmax(0, 1fr);
-    grid-auto-rows: auto;
+    display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
   }
-  .api-row > *:nth-child(3) {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
+  .api-row > * { width: auto; }
+  .api-row > small { flex-basis: 100%; }
+  .api-row > button { margin-left: auto; }
 
   /* Single-column lists across all secondary tabs */
   .settings-list,
@@ -592,5 +595,275 @@
 @media (max-width: 720px) {
   html:has(.shell.mobile-nav-open) {
     overflow: hidden;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Comprehensive mobile audit (2026-05-23)
+ *
+ * Fixes for 30 issues found in the dashboard mobile audit:
+ *   audit-mobile-dashboard.md in the worktree root.
+ *
+ * Severity buckets (audit notation):
+ *   C# = critical (overflow / unusable / iOS auto-zoom)
+ *   H# = high (works but visibly broken)
+ *   M# = medium (rough edges)
+ *   L# = low (polish)
+ *
+ * The biggest non-obvious finding: several layouts in `overhaul.css` were
+ * silently redeclared from `display: grid` to `display: flex`, which
+ * neutralized existing `grid-template-columns: 1fr` mobile overrides.
+ * Where applicable below, we restore the mobile collapse via flex
+ * properties (flex-wrap, flex-direction) instead.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 720px) {
+  /* ── CRITICAL ───────────────────────────────────────────────────────── */
+
+  /* C1: analysis-header / analysis-stat-strip were redeclared as flex in
+   * overhaul.css (lines 1097, 1135), so grid-template-columns overrides
+   * had no effect. Restore mobile collapse via flex-wrap. */
+  .analysis-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .analysis-stat-strip {
+    flex-wrap: wrap;
+    flex: 1 1 auto;
+  }
+  .analysis-stat-strip .analysis-stat {
+    flex: 1 1 calc(50% - 1px);
+    padding: 9px 12px;
+  }
+
+  /* C2: page-head had no flex-wrap; title + emphasis + lede overflowed. */
+  .page-head {
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  .page-head .ph-spacer { display: none; }
+  .page-head .ph-lede { flex-basis: 100%; }
+
+  /* C3: iOS Safari auto-zooms any input with font-size < 16px on focus.
+   * Force all dashboard inputs to 16px on mobile. The !important is needed
+   * because overhaul.css and dashboard.css redeclare font-size on specific
+   * input classes. */
+  input,
+  select,
+  textarea,
+  .workbar-search input,
+  .control input,
+  .control select,
+  .runs-commandbar input,
+  .quick-search-input input,
+  .org-switcher-search input,
+  .column-popover input[type="search"] {
+    font-size: 16px !important;
+  }
+
+  /* C4: select-menu (.select-menu) is left-anchored with no viewport-edge
+   * clamp, so menus opened near the right edge overflow off-screen.
+   * Pin to right edge on mobile and cap width to viewport. */
+  .select-menu {
+    left: auto !important;
+    right: 0 !important;
+    width: min(calc(100vw - 24px), 280px) !important;
+    max-width: calc(100vw - 24px);
+  }
+
+  /* ── HIGH ───────────────────────────────────────────────────────────── */
+
+  /* H1: chart-tooltip min-width 260px covers most of a 375px viewport. */
+  .chart-tooltip {
+    min-width: 0;
+    max-width: calc(100vw - 32px);
+    font-size: 11px;
+    padding: 7px 9px;
+  }
+  .chart-tooltip span { white-space: normal; }
+
+  /* H3: metric-summary-row was min-width 520px with no scroll cue.
+   * Stack vertically on mobile instead of forcing horizontal scroll. */
+  .metric-summary-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-width: 0;
+    grid-auto-rows: auto;
+  }
+  .metric-summary-row > span:not(:first-of-type) {
+    grid-column: 1 / -1;
+  }
+  .metric-summary-head { display: none; }
+
+  /* H4: rich-table-preview uses inline gridTemplateColumns up to 8x96px;
+   * cap the minimum cell width on mobile. */
+  .rich-table-preview {
+    grid-auto-columns: minmax(72px, 1fr);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+  }
+
+  /* H5: org-switcher menu min-width 260px overflows right edge of phone
+   * viewports. Span the brandbar. */
+  .org-switcher-menu {
+    left: 0;
+    right: 0;
+    max-width: calc(100vw - 24px);
+    min-width: 0;
+  }
+
+  /* ── MEDIUM ─────────────────────────────────────────────────────────── */
+
+  /* M1: shortcut-groups 2-col → 1-col inside shortcut-help modal. */
+  .shortcut-groups {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  /* M2: compare matrix / run-table horizontal scroll lacks affordance.
+   * Add smooth touch scroll + a stable scrollbar so users see the cut-off. */
+  .compare-matrix,
+  .compare-run-layout {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+  }
+
+  /* M3: workspace-panel-card min-height 312px is excessive on phones. */
+  .workspace-panel-card {
+    min-height: 240px;
+    --panel-chart-min-height: 160px;
+  }
+
+  /* M4: runs-chart-strip + smoothing-control wrap and shrink. */
+  .runs-chart-strip {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 12px;
+  }
+  .smoothing-control {
+    grid-template-columns: auto 1fr auto;
+  }
+  .smoothing-control input { width: 100%; }
+
+  /* M5: chart-range mini-map hardcoded margin-left: 48px on desktop pushes
+   * the slider off-center on phones. */
+  .chart-range-row {
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+
+  /* M6: side-row (run-detail diff cells) 180px label squishes on phones. */
+  .side-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  /* M7: workspace-summary-selection (run name + selection count) wrap. */
+  .workspace-summary-selection { flex-wrap: wrap; }
+
+  /* M8: chips were truncating with white-space: nowrap and max-width 150px;
+   * let them wrap on mobile. */
+  .chips { max-width: 100%; flex-wrap: wrap; }
+  .chip { max-width: 100%; }
+
+  /* M9: detail-row strong (commit SHA / hostname) was right-aligned nowrap;
+   * allow wrap and left-align on mobile. */
+  .detail-row {
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: flex-start;
+  }
+  .detail-row strong,
+  .summary-row strong {
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+  }
+  .inspector .detail-row strong { max-width: 100%; }
+
+  /* M10: checkpoint-row keeps 2-col grid on mobile so actions stack in a
+   * narrow right column. Collapse to single column. */
+  .checkpoint-row { grid-template-columns: 1fr; }
+  .checkpoint-actions { justify-content: flex-start; }
+  .checkpoint-actions > * { flex: 1 1 auto; }
+
+  /* ── LOW ────────────────────────────────────────────────────────────── */
+
+  /* L2: rail-select-banner margin/padding tighter on mobile. */
+  .workspace-rail-select-banner {
+    margin: 6px 8px;
+    padding: 6px 8px;
+  }
+
+  /* L4: empty / compact-empty states min-height tightens on mobile. */
+  .empty {
+    min-height: 100px;
+    padding: 12px;
+  }
+
+  /* L5: failure-card right-aligned long error strings overflow horizontally. */
+  .failure-card div { flex-wrap: wrap; gap: 4px; }
+  .failure-card b {
+    text-align: left;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* L7: column-popover account for iOS safe-area-inset on notched devices. */
+  .column-popover {
+    inset:
+      max(12px, env(safe-area-inset-top))
+      12px
+      max(12px, env(safe-area-inset-bottom))
+      12px;
+  }
+
+  /* L9: run-workspace-topline / tabs tighten and scroll horizontally on phones. */
+  .run-workspace-topline {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .run-workspace-name { font-size: 16px; }
+  .run-workspace-tabs {
+    gap: 0;
+    padding: 0 4px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .run-workspace-tab {
+    padding: 0 10px;
+    flex: 0 0 auto;
+  }
+
+  /* L10: stat-grid 5th orphan stat — hide on mobile (lowest-actionable stat). */
+  .stat-grid > .stat:nth-child(5) { display: none; }
+}
+
+/* ── Touch / coarse-pointer specific ─────────────────────────────────────
+ * Issues that depend on input modality (touch vs mouse) rather than purely
+ * viewport width. These apply on tablets too, where viewport width may be
+ * large but interaction is still touch-driven.
+ * ──────────────────────────────────────────────────────────────────────── */
+@media (pointer: coarse) {
+  /* H2: panel-resize-handle is unusable on touch — hide it. */
+  .panel-resize-handle { display: none; }
+
+  /* L1: pre blocks (raw JSON config / metrics) — switch to horizontal
+   * scroll for long lines on touch (mouse users can read the wrap fine). */
+  pre {
+    overflow-x: auto;
+    white-space: pre;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* L6: legend chips were truncating long metric names with nowrap on touch.
+   * Allow chips to wrap their text on touch devices. */
+  .chart-legend { grid-template-columns: 1fr; }
+  .legend-chip {
+    white-space: normal;
+    padding: 6px 9px;
+    min-height: 32px;
   }
 }
