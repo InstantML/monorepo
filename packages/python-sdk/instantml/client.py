@@ -306,7 +306,7 @@ class _FileStats:
 @dataclass(frozen=True)
 class Client:
     base_url: str = field(default_factory=_default_base_url)
-    timeout: float = 2.0
+    timeout: float = 10.0
     offline_dir: str | None = None
     api_key: str | None = None
 
@@ -465,7 +465,7 @@ class Api:
     """Tiny raw read-only API helper for post-hoc queries."""
 
     base_url: str = field(default_factory=_default_base_url)
-    timeout: float = 2.0
+    timeout: float = 10.0
     api_key: str | None = None
 
     def runs(
@@ -1341,7 +1341,7 @@ def init(
     notes: str | None = None,
     metadata: dict[str, Any] | None = None,
     base_url: str | None = None,
-    timeout: float = 2.0,
+    timeout: float = 10.0,
     buffer_size: int = 0,
     offline_dir: str | None = None,
     api_key: str | None = None,

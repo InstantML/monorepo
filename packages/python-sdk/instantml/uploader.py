@@ -20,7 +20,7 @@ def drain_spool(
     spool_dir: str,
     client: Client | None = None,
     base_url: str | None = None,
-    timeout: float = 2.0,
+    timeout: float = 10.0,
     max_events: int | None = None,
 ) -> int:
     root = Path(spool_dir).expanduser().resolve()
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Drain Training Observability SDK spool events.")
     parser.add_argument("--spool-dir", default=DEFAULT_PROCESS_SPOOL_DIR)
     parser.add_argument("--base-url", default=_default_base_url())
-    parser.add_argument("--timeout", type=float, default=2.0)
+    parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--max-events", type=int, default=None)
     parser.add_argument("--follow", action="store_true")
     parser.add_argument("--poll-interval", type=float, default=1.0)
