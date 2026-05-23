@@ -30,6 +30,17 @@ test -n "$INSTANTML_API_KEY" && echo "INSTANTML_API_KEY is set"
 Either run `instantml login`, set `INSTANTML_API_KEY`, or pass
 `api_key="instantml_..."` directly to `ro.init(...)`.
 
+## Hosted calls are rate-limited
+
+Short-window `429` responses include `X-InstantML-RateLimit-Scope: second` and
+`Retry-After`; retry after the header delay or reduce request concurrency.
+
+Monthly API quota `429` responses include
+`X-InstantML-RateLimit-Scope: monthly` and reset at the next UTC calendar
+month. Free and non-billable orgs are blocked at the monthly allowance, while
+paid Pro and Premium API request overage is Stripe-metered. See
+[Pricing, limits, and billing](/guides/pricing-limits-billing).
+
 ## The dashboard does not show my run
 
 Check the project name you used in the SDK call. `project="cartpole"` appears in

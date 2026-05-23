@@ -216,6 +216,7 @@ export function DashboardTopbar({
   sortBy,
   status,
   metricUsagePercent,
+  apiRequestUsagePercent,
   storageUsagePercent,
   theme,
   tone,
@@ -258,6 +259,7 @@ export function DashboardTopbar({
   sortBy: string;
   status: string;
   metricUsagePercent: number;
+  apiRequestUsagePercent: number;
   storageUsagePercent: number;
   theme: "light" | "dark";
   tone: "error" | "loading" | "ok";
@@ -343,6 +345,7 @@ export function DashboardTopbar({
           </nav>
           <div className="brandbar-actions">
             <PlanUsageBadge
+              apiRequestPercent={apiRequestUsagePercent}
               metricPercent={metricUsagePercent}
               plan={planLabel}
               resetLabel={usageResetLabel}
@@ -468,19 +471,21 @@ export function DashboardTopbar({
 }
 
 function PlanUsageBadge({
+  apiRequestPercent,
   metricPercent,
   plan,
   resetLabel,
   storagePercent,
   usageAvailable,
 }: {
+  apiRequestPercent: number;
   metricPercent: number;
   plan: string;
   resetLabel: string;
   storagePercent: number;
   usageAvailable: boolean;
 }) {
-  const percent = Math.max(0, Math.min(100, Math.round(Math.max(metricPercent, storagePercent))));
+  const percent = Math.max(0, Math.min(100, Math.round(Math.max(metricPercent, storagePercent, apiRequestPercent))));
   const tone = percent >= 100 ? "bad" : percent >= 80 ? "warn" : "ok";
   const detail = usageAvailable
     ? resetLabel ? `${percent}% used · resets ${resetLabel}` : `${percent}% used`

@@ -332,6 +332,27 @@ impl MetricStore {
             .map_err(clickhouse_read_error)
     }
 
+    pub async fn load_operational_records_by_kind_entity_prefix(
+        &self,
+        kind: &str,
+        org_id: Uuid,
+        entity_prefix: &str,
+    ) -> AppResult<Vec<OperationalRecordRow>> {
+        self.client
+            .query(
+                "SELECT kind, org_id, entity_id, payload, created_at \
+                 FROM operational_records \
+                 WHERE kind = ? AND org_id = ? AND startsWith(entity_id, ?) \
+                 ORDER BY created_at ASC, kind ASC, entity_id ASC",
+            )
+            .bind(kind)
+            .bind(org_id)
+            .bind(entity_prefix)
+            .fetch_all::<OperationalRecordRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
     /// Fetch up to `limit` raw points for a single run, optionally filtered by
     /// key and step range. Returned rows are sorted by step (then created_at).
     pub async fn query_points(

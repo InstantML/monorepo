@@ -85,8 +85,12 @@ pub struct BillingConfig {
     pub premium_price_id: Option<String>,
     pub extra_seat_price_id: Option<String>,
     pub storage_overage_price_id: Option<String>,
+    pub pro_api_request_overage_price_id: Option<String>,
+    pub premium_api_request_overage_price_id: Option<String>,
     pub storage_meter_id: Option<String>,
+    pub api_request_meter_id: Option<String>,
     pub storage_meter_event_name: String,
+    pub api_request_meter_event_name: String,
     pub success_url: String,
     pub cancel_url: String,
     pub portal_return_url: String,
@@ -110,8 +114,12 @@ impl BillingConfig {
             premium_price_id: None,
             extra_seat_price_id: None,
             storage_overage_price_id: None,
+            pro_api_request_overage_price_id: None,
+            premium_api_request_overage_price_id: None,
             storage_meter_id: None,
+            api_request_meter_id: None,
             storage_meter_event_name: "instantml_storage_overage_gib_month".to_string(),
+            api_request_meter_event_name: "instantml_api_request_overage".to_string(),
             success_url: format!("{frontend}/billing/return?session_id={{CHECKOUT_SESSION_ID}}"),
             cancel_url: format!("{frontend}/settings"),
             portal_return_url: format!("{frontend}/dashboard/settings"),
@@ -633,13 +641,29 @@ fn billing_config(frontend_base_url: Option<&str>) -> AppResult<BillingConfig> {
         "STRIPE_STORAGE_OVERAGE_PRICE_ID",
         "INSTANTML_STRIPE_STORAGE_OVERAGE_PRICE_ID",
     ]);
+    config.pro_api_request_overage_price_id = env_first(&[
+        "STRIPE_PRO_API_REQUEST_OVERAGE_PRICE_ID",
+        "INSTANTML_STRIPE_PRO_API_REQUEST_OVERAGE_PRICE_ID",
+    ]);
+    config.premium_api_request_overage_price_id = env_first(&[
+        "STRIPE_PREMIUM_API_REQUEST_OVERAGE_PRICE_ID",
+        "INSTANTML_STRIPE_PREMIUM_API_REQUEST_OVERAGE_PRICE_ID",
+    ]);
     config.storage_meter_id = env_first(&[
         "STRIPE_STORAGE_METER_ID",
         "INSTANTML_STRIPE_STORAGE_METER_ID",
     ]);
+    config.api_request_meter_id = env_first(&[
+        "STRIPE_API_REQUEST_METER_ID",
+        "INSTANTML_STRIPE_API_REQUEST_METER_ID",
+    ]);
     config.storage_meter_event_name = env_string(
         "INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME",
         &config.storage_meter_event_name,
+    );
+    config.api_request_meter_event_name = env_string(
+        "INSTANTML_STRIPE_API_REQUEST_METER_EVENT_NAME",
+        &config.api_request_meter_event_name,
     );
     config.success_url = env_string("INSTANTML_BILLING_SUCCESS_URL", &config.success_url);
     config.cancel_url = env_string("INSTANTML_BILLING_CANCEL_URL", &config.cancel_url);

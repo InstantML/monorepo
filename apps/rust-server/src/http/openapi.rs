@@ -368,6 +368,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::billing::billing_add_seat,
         crate::http::handlers::billing::billing_cancel,
         crate::http::handlers::billing::billing_report_storage_overage,
+        crate::http::handlers::billing::billing_report_usage_overage,
         crate::http::handlers::billing::billing_webhook,
         // dashboard
         crate::http::handlers::dashboard::get_dashboard_preferences,

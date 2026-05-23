@@ -1301,6 +1301,76 @@ def test_client_sends_api_key_and_idempotency_headers(monkeypatch):
     assert captured == {"authorization": "Bearer secret", "idempotency": "event-1", "timeout": 3}
 
 
+def test_client_retries_429_with_retry_after(monkeypatch):
+    sleeps = []
+    attempts = {"count": 0}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, timeout):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            body = BytesIO(json.dumps({"error": "rate limit exceeded"}).encode("utf-8"))
+            raise urllib.error.HTTPError(
+                request.full_url,
+                429,
+                "Too Many Requests",
+                {"Retry-After": "0.01"},
+                body,
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(time, "sleep", lambda delay: sleeps.append(delay))
+
+    assert Client(base_url="http://example.test")._request("GET", "/api/usage") == {"ok": True}
+    assert attempts["count"] == 2
+    assert sleeps == [0.01]
+
+
+def test_rate_limit_retry_delay_falls_back_for_invalid_retry_after():
+    exc = urllib.error.HTTPError(
+        "http://example.test/api/usage",
+        429,
+        "Too Many Requests",
+        {"Retry-After": "not-a-number"},
+        BytesIO(b"{}"),
+    )
+
+    assert client_module._rate_limit_retry_delay(exc, 1) == 0.5
+
+
+def test_client_does_not_retry_monthly_429(monkeypatch):
+    attempts = {"count": 0}
+
+    def fake_urlopen(request, timeout):
+        attempts["count"] += 1
+        body = BytesIO(json.dumps({"error": "monthly limit exceeded"}).encode("utf-8"))
+        raise urllib.error.HTTPError(
+            request.full_url,
+            429,
+            "Too Many Requests",
+            {"X-InstantML-RateLimit-Scope": "monthly", "Retry-After": "1000"},
+            body,
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(time, "sleep", lambda delay: (_ for _ in ()).throw(AssertionError(delay)))
+
+    with pytest.raises(InstantMLError, match="monthly limit exceeded"):
+        Client(base_url="http://example.test")._request("GET", "/projects")
+
+    assert attempts["count"] == 1
+
+
 def test_environment_metadata_contains_expected_keys():
     metadata = _environment_metadata()
     assert {"python", "platform", "hostname", "pid"} <= set(metadata)

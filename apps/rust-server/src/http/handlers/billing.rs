@@ -197,6 +197,26 @@ pub async fn billing_report_storage_overage(
 
 #[utoipa::path(
     post,
+    path = "/api/billing/usage-overage/report",
+    tag = "billing",
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Storage and API request overage meter-event report", body = crate::http::openapi::JsonObjectResponse),
+    ),
+)]
+pub async fn billing_report_usage_overage(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    validate_mutation_origin(&state, &headers)?;
+    let ctx = context(&state, &headers, false).await?;
+    Ok(Json(
+        store::report_usage_overage(&state.store, &state.config.billing, &ctx).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/billing/webhook",
     tag = "billing",
     request_body = serde_json::Value,

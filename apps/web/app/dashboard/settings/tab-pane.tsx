@@ -53,6 +53,11 @@ type Props = {
   metricPercent: number;
   metricUsed: number;
   metricLimit: number;
+  apiRequestsPercent: number;
+  apiRequestsUsed: number;
+  apiRequestsLimit: number;
+  generalRateLimitLabel: string;
+  ingestRateLimitLabel: string;
   onInviteEmail: (email: string) => void;
   onInviteRole: (role: string) => void;
   onInviteSeat: () => void;
@@ -99,6 +104,11 @@ export function SettingsTabPane({
   metricPercent,
   metricUsed,
   metricLimit,
+  apiRequestsPercent,
+  apiRequestsUsed,
+  apiRequestsLimit,
+  generalRateLimitLabel,
+  ingestRateLimitLabel,
   onInviteEmail,
   onInviteRole,
   onInviteSeat,
@@ -151,7 +161,13 @@ export function SettingsTabPane({
             <div className="usage-meter" aria-label="Metric point usage">
               <span style={{ width: `${metricPercent}%` }} />
             </div>
-            <SettingRow label="Metric reset" value={usageResetLabel ? `${usageResetLabel} UTC` : "-"} />
+            <MetricCard label="API requests this month" value={`${formatNumber(apiRequestsUsed, 0)} / ${apiRequestsLimit ? formatNumber(apiRequestsLimit, 0) : "-"}`} tone={apiRequestsPercent > 90 ? "bad" : apiRequestsPercent > 70 ? "live" : "neutral"} />
+            <div className="usage-meter" aria-label="API request usage">
+              <span style={{ width: `${apiRequestsPercent}%` }} />
+            </div>
+            <SettingRow label="General API rate" value={generalRateLimitLabel || "-"} />
+            <SettingRow label="Ingest API rate" value={ingestRateLimitLabel || "-"} />
+            <SettingRow label="Monthly reset" value={usageResetLabel ? `${usageResetLabel} UTC` : "-"} />
             {activeUsageWarnings.length ? (
               <div className="admin-alert-list">
                 {activeUsageWarnings.map((warning, index) => (

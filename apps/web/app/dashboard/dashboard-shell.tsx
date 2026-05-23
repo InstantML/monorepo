@@ -135,6 +135,7 @@ type UsageOrg = {
   usage_period?: UsagePeriod;
   usage: Record<string, number | null | string>;
   limits: Record<string, number>;
+  plan?: Record<string, number | null | string>;
   warnings?: Array<{ code?: string; message?: string }>;
 };
 type UsagePeriod = {
@@ -542,6 +543,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const metricUsed = Number(activeUsage.metric_points ?? 0);
   const metricLimit = Number(activeLimits.metric_points ?? 0);
   const metricPercent = metricLimit ? Math.min(100, Math.round((metricUsed / metricLimit) * 100)) : 0;
+  const apiRequestsUsed = Number(activeUsage.api_requests ?? 0);
+  const apiRequestsLimit = Number(activeLimits.api_requests ?? 0);
+  const apiRequestsPercent = apiRequestsLimit ? Math.min(100, Math.round((apiRequestsUsed / apiRequestsLimit) * 100)) : 0;
+  const activePlanDetails = activeUsageOrg?.plan ?? {};
+  const generalRateLimitLabel = formatRateLimitLabel(activePlanDetails.rate_limit_rps, activePlanDetails.rate_limit_burst);
+  const ingestRateLimitLabel = formatRateLimitLabel(
+    activePlanDetails.ingest_rate_limit_rps,
+    Math.min(
+      Number(activePlanDetails.rate_limit_burst ?? 0),
+      Number(activePlanDetails.ingest_rate_limit_rps ?? 0) * 5,
+    ),
+  );
   const activePlan = planDisplayName(activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier);
   const usagePeriod = activeUsageOrg?.usage_period ?? usagePayload?.usage_period;
   const usageResetLabel = formatUsageResetLabel(usagePeriod?.reset_at ?? usagePeriod?.ends_at);
@@ -2355,6 +2368,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         orgSwitchError={orgSwitchError}
         onSwitchOrg={switchOrganization}
         metricUsagePercent={metricPercent}
+        apiRequestUsagePercent={apiRequestsPercent}
         planLabel={activePlan}
         project={project}
         projects={projects}
@@ -2706,6 +2720,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               metricPercent={metricPercent}
               metricUsed={metricUsed}
               metricLimit={metricLimit}
+              apiRequestsPercent={apiRequestsPercent}
+              apiRequestsUsed={apiRequestsUsed}
+              apiRequestsLimit={apiRequestsLimit}
+              generalRateLimitLabel={generalRateLimitLabel}
+              ingestRateLimitLabel={ingestRateLimitLabel}
               onInviteEmail={setInviteEmail}
               onInviteRole={setInviteRole}
               onInviteSeat={inviteSeat}
@@ -2816,6 +2835,13 @@ function formatUsageResetLabel(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function formatRateLimitLabel(rps?: unknown, burst?: unknown) {
+  const requestsPerSecond = Number(rps ?? 0);
+  const burstSize = Number(burst ?? 0);
+  if (!requestsPerSecond) return "";
+  return `${formatNumber(requestsPerSecond, 0)} req/sec${burstSize ? `, burst ${formatNumber(burstSize, 0)}` : ""}`;
 }
 
 function runsPageMessage(total: number, offset: number, visibleCount: number) {

@@ -35,6 +35,7 @@ Usage includes:
 - Projects.
 - Runs.
 - Current-period metric points.
+- Current-period API requests.
 - Retained metric points.
 - Metric series.
 - Artifacts.
@@ -46,6 +47,7 @@ Usage includes:
 | Counter | Reset behavior |
 | --- | --- |
 | Metric points | Current UTC calendar month |
+| API requests | Current UTC calendar month |
 | Projects | Retained resource |
 | Runs | Retained resource |
 | Seats | Retained resource |
@@ -66,6 +68,12 @@ Affected write paths can include:
 - Artifact writes.
 - Imports.
 - Demo reset.
+
+Short-window API request limits return `429` with `Retry-After`,
+`RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` headers.
+Monthly API request quotas reset at `usage_period.reset_at`: Free and
+non-billable orgs are blocked at the allowance, while paid Pro/Premium overage
+is Stripe-metered.
 
 ## Usage export
 

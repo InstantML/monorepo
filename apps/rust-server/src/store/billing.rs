@@ -460,41 +460,99 @@ pub async fn report_storage_overage(
     config: &crate::config::BillingConfig,
     ctx: &RequestContext,
 ) -> AppResult<Value> {
+    report_usage_overage(store, config, ctx).await
+}
+
+pub async fn report_usage_overage(
+    store: &Store,
+    config: &crate::config::BillingConfig,
+    ctx: &RequestContext,
+) -> AppResult<Value> {
     let session = ctx
         .session
         .as_ref()
         .ok_or_else(|| AppError::unauthorized("browser session required"))?;
     require_org_admin(store, session.user_id, ctx.org_id).await?;
-    let usage = storage_overage_usage_for_org(store, ctx.org_id).await?;
-    if let Some(existing) =
-        existing_storage_usage_report(store, ctx.org_id, usage.period_start).await
-    {
-        return Ok(json!({ "usage_report": existing, "duplicate": true }));
+    let usage = billing_overage_usage_for_org(store, ctx.org_id).await?;
+    let previous = latest_usage_report_for_period(store, ctx.org_id, usage.period_start).await;
+    let previous_storage_gib = previous
+        .as_ref()
+        .map(|report| report.reported_gib)
+        .unwrap_or(0);
+    let previous_api_requests = previous
+        .as_ref()
+        .map(|report| report.reported_api_requests)
+        .unwrap_or(0);
+    let storage_delta = (usage.reported_gib - previous_storage_gib).max(0);
+    let api_request_delta = (usage.billable_api_requests - previous_api_requests).max(0);
+    if storage_delta == 0 && api_request_delta == 0 {
+        if let Some(existing) = previous {
+            return Ok(json!({
+                "usage_report": existing,
+                "duplicate": true,
+                "usage": usage_overage_value(&usage)
+            }));
+        }
     }
-    let account = {
-        let data = store.data.lock().await;
-        data.billing_accounts
-            .get(&ctx.org_id)
-            .cloned()
-            .ok_or_else(|| AppError::validation("billing account is not available"))?
+    let account = if storage_delta > 0 || api_request_delta > 0 {
+        Some({
+            let data = store.data.lock().await;
+            data.billing_accounts
+                .get(&ctx.org_id)
+                .cloned()
+                .ok_or_else(|| AppError::validation("billing account is not available"))?
+        })
+    } else {
+        None
     };
-    let stripe_event_id = if usage.reported_gib > 0 {
-        let customer_id = account.stripe_customer_id.as_deref().ok_or_else(|| {
+    let customer_id = account
+        .as_ref()
+        .and_then(|account| account.stripe_customer_id.as_deref());
+    let timestamp = Utc::now().timestamp();
+    let stripe_storage_event_id = if storage_delta > 0 {
+        let customer_id = customer_id.ok_or_else(|| {
             AppError::validation("Stripe customer is required before reporting storage overage")
         })?;
-        let identifier = format!(
-            "instantml_storage_overage_{}_{}",
+        let identifier = usage_report_event_identifier(
+            "storage",
             ctx.org_id,
-            usage.period_start.format("%Y%m%d")
+            usage.period_start,
+            previous_storage_gib,
+            usage.reported_gib,
         );
         Some(
             crate::stripe_billing::record_storage_meter_event(
                 config,
                 customer_id,
                 &ctx.org_id.to_string(),
-                usage.reported_gib,
+                storage_delta,
                 &identifier,
-                Utc::now().timestamp(),
+                timestamp,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let stripe_api_request_event_id = if api_request_delta > 0 {
+        let customer_id = customer_id.ok_or_else(|| {
+            AppError::validation("Stripe customer is required before reporting API request overage")
+        })?;
+        let identifier = usage_report_event_identifier(
+            "api_requests",
+            ctx.org_id,
+            usage.period_start,
+            previous_api_requests,
+            usage.billable_api_requests,
+        );
+        Some(
+            crate::stripe_billing::record_api_request_meter_event(
+                config,
+                customer_id,
+                &ctx.org_id.to_string(),
+                api_request_delta,
+                &identifier,
+                timestamp,
             )
             .await?,
         )
@@ -509,8 +567,16 @@ pub async fn report_storage_overage(
         usage_period_end: usage.period_end,
         billable_storage_bytes: usage.billable_storage_bytes,
         reported_gib: usage.reported_gib,
-        stripe_event_id,
-        status: if usage.reported_gib > 0 {
+        reported_storage_gib_delta: storage_delta,
+        billable_api_requests: usage.billable_api_requests,
+        reported_api_requests: usage.billable_api_requests,
+        reported_api_requests_delta: api_request_delta,
+        stripe_event_id: stripe_storage_event_id
+            .clone()
+            .or_else(|| stripe_api_request_event_id.clone()),
+        stripe_storage_event_id,
+        stripe_api_request_event_id,
+        status: if storage_delta > 0 || api_request_delta > 0 {
             "reported".to_string()
         } else {
             "no_overage".to_string()
@@ -532,9 +598,7 @@ pub async fn report_storage_overage(
         .insert_billing_usage_report(report.clone());
     Ok(json!({
         "usage_report": report,
-        "usage": {
-            "storage_bytes_for_warnings": usage.storage_bytes_for_warnings
-        }
+        "usage": usage_overage_value(&usage)
     }))
 }
 
@@ -1037,7 +1101,7 @@ async fn apply_local_free_plan(
     Ok(account)
 }
 
-async fn existing_storage_usage_report(
+async fn latest_usage_report_for_period(
     store: &Store,
     org_id: Uuid,
     period_start: DateTime<Utc>,
@@ -1045,8 +1109,33 @@ async fn existing_storage_usage_report(
     let data = store.data.lock().await;
     data.billing_usage_reports
         .values()
-        .find(|report| report.org_id == org_id && report.usage_period_start == period_start)
+        .filter(|report| report.org_id == org_id && report.usage_period_start == period_start)
+        .max_by_key(|report| report.created_at)
         .cloned()
+}
+
+fn usage_report_event_identifier(
+    kind: &str,
+    org_id: Uuid,
+    period_start: DateTime<Utc>,
+    previous: i64,
+    current: i64,
+) -> String {
+    format!(
+        "instantml_{kind}_overage_{org_id}_{}_{}_{}",
+        period_start.format("%Y%m"),
+        previous,
+        current
+    )
+}
+
+fn usage_overage_value(usage: &BillingOverageUsage) -> Value {
+    json!({
+        "storage_bytes_for_warnings": usage.storage_bytes_for_warnings,
+        "billable_storage_bytes": usage.billable_storage_bytes,
+        "reported_gib": usage.reported_gib,
+        "billable_api_requests": usage.billable_api_requests
+    })
 }
 
 fn active_or_invited_seats(data: &StoreData, org_id: Uuid) -> usize {

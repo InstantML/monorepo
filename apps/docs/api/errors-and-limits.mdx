@@ -34,6 +34,8 @@ Most handlers also attach `x-request-id`.
 | --- | --- |
 | `payment_required` | The org needs billing action before writes are accepted |
 | `plan_limit_exceeded` | The write would exceed a blocked plan limit |
+| `rate_limit_exceeded` | The request exceeded a short-window API rate limit |
+| `api_request_monthly_limit_exceeded` | The org reached a monthly API request allowance and does not have billable overage |
 | `warehouse_unavailable` | Hosted tenant warehouse is waking or unavailable |
 
 `warehouse_unavailable` uses HTTP `503` and is retryable from a client point of
@@ -75,6 +77,23 @@ Common limits:
 Metric ingest batches should stay within the API's documented batch size.
 High-frequency loops should batch several scalar values into one `run.log(...)`
 call instead of sending one request per scalar.
+
+Hosted short-window API rate limits are plan-aware:
+
+| Tier | General rate | Ingest rate | Monthly request allowance |
+| --- | ---: | ---: | ---: |
+| Free | 5 req/sec, burst 30 | 2 req/sec | 500k requests |
+| Pro | 50 req/sec, burst 250 | 25 req/sec | 25M requests |
+| Premium | 200 req/sec, burst 1000 | 100 req/sec | 150M requests |
+
+Short-window rate-limit responses use HTTP `429`, return `code:
+"rate_limit_exceeded"`, include `X-InstantML-RateLimit-Scope: second`, and set
+`Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, and
+`RateLimit-Reset`. Monthly quota responses use `code:
+"api_request_monthly_limit_exceeded"` with
+`X-InstantML-RateLimit-Scope: monthly` and reset at the next UTC calendar month.
+The Python SDK retries bounded short-window `429` responses internally and
+does not retry monthly quota failures.
 
 ## Idempotency
 
