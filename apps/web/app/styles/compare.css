@@ -1062,9 +1062,13 @@ button.compare-row-head.active {
     overflow-x: auto;
   }
 
-  table {
-    min-width: 1040px;
-  }
+  /* NOTE (audit H6): this rule used to set `min-width: 1040px` on every
+   * <table> at ≤720px, accidentally overriding mobile.css's 720px floor
+   * because both files redeclare the same selector at the same breakpoint
+   * and compare.css is imported first (so its rule wins via source order
+   * inside the same @media block). The 1040px floor made tables ~45%
+   * wider than the mobile.css target on phones. Removed; mobile.css's
+   * 720px floor now applies. */
 
   .row-check {
     min-height: 44px;
