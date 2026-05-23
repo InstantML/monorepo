@@ -66,11 +66,10 @@
 
 .docs-route-shell {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 840px);
-  gap: clamp(28px, 5vw, 64px);
-  max-width: 1240px;
-  margin: 0 auto;
-  padding: 32px clamp(18px, 4vw, 48px) 72px;
+  grid-template-columns: clamp(248px, 18vw, 320px) minmax(0, 1fr);
+  gap: clamp(28px, 3vw, 56px);
+  margin: 0;
+  padding: 32px clamp(20px, 3vw, 56px) 72px clamp(16px, 2vw, 28px);
 }
 
 .docs-route-sidebar {
@@ -124,6 +123,7 @@
 
 .docs-route-article {
   min-width: 0;
+  width: 100%;
 }
 
 .docs-route-eyebrow {
@@ -228,6 +228,7 @@
   border-radius: 8px;
   background: #111b16;
   box-shadow: 0 18px 50px rgba(21, 32, 26, 0.1);
+  width: 100%;
 }
 
 .docs-route-code-toolbar {

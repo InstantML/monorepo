@@ -159,6 +159,10 @@ export function EmptyWorkspaceSnippet({ orgName }: { orgName: string }) {
             </>
           )}
         </span>
+        <span className="empty-workspace-snippet__docs">
+          Need the full walkthrough? <a className="empty-workspace-snippet__link" href="/docs/quickstart">Open Quickstart</a>.
+          {" "}Also feel free to paste <a className="empty-workspace-snippet__link" href="/docs/quickstart.md">quickstart.md</a> to your agent.
+        </span>
         <a className="empty-workspace-snippet__import" href="/dashboard/integrations">
           Or import from W&amp;B / MLflow / Neptune <ArrowRight size={12} aria-hidden="true" />
         </a>

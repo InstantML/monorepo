@@ -299,6 +299,12 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
 .iml-term-body .pr{color:var(--accent);user-select:none}
 .iml-term-body .key{color:var(--accent-strong);word-break:break-all}
 .iml-term-body .cm{color:var(--muted)}
+.iml-doc-hint{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;
+  padding:10px 12px;border:1px solid var(--line-soft);border-radius:var(--r);
+  background:var(--bg-soft);font:500 12px/1.45 var(--f-sans);color:var(--muted)}
+.iml-doc-hint a{color:var(--accent-strong);font-weight:700;text-decoration:none;
+  border-bottom:1px solid var(--accent-line)}
+.iml-doc-hint a:hover{color:var(--accent);border-bottom-color:var(--accent)}
 
 /* ── landing hero ───────────────────────────────────────────────────────── */
 .iml-hero{width:min(880px,100%);display:grid;gap:18px}

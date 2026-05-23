@@ -22,11 +22,29 @@ const webRoot = path.resolve(__dirname, "..");
 test("docs app route renders docs source instead of redirecting to a docs host", async () => {
   const route = await readFile(path.join(webRoot, "app", "docs", "[[...slug]]", "page.tsx"), "utf8");
   const codeBlock = await readFile(path.join(webRoot, "app", "docs", "docs-code-block.tsx"), "utf8");
+  const styles = await readFile(path.join(webRoot, "app", "styles", "docs.css"), "utf8");
   assert.match(route, /loadDocsPage/);
   assert.match(route, /DocsSidebar/);
   assert.match(route, /DocsCodeBlock/);
   assert.match(codeBlock, /navigator\.clipboard\.writeText/);
+  assert.match(styles, /grid-template-columns: clamp\(248px, 18vw, 320px\) minmax\(0, 1fr\)/);
+  assert.doesNotMatch(styles, /max-width: 1240px/);
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
+});
+
+test("first-run onboarding links to human and agent quickstart docs", async () => {
+  const authFlow = await readFile(path.join(webRoot, "app", "auth-flow.tsx"), "utf8");
+  const emptyWorkspace = await readFile(
+    path.join(webRoot, "app", "dashboard", "components", "empty-workspace-snippet.tsx"),
+    "utf8",
+  );
+
+  assert.match(authFlow, /href="\/docs\/quickstart"/);
+  assert.match(authFlow, /href="\/docs\/quickstart\.md"/);
+  assert.match(authFlow, /paste[\s\S]*quickstart\.md[\s\S]*to your agent/);
+  assert.match(emptyWorkspace, /href="\/docs\/quickstart"/);
+  assert.match(emptyWorkspace, /href="\/docs\/quickstart\.md"/);
+  assert.match(emptyWorkspace, /paste[\s\S]*quickstart\.md[\s\S]*to your agent/);
 });
 
 test("docs routes bypass Clerk proxy middleware", async () => {
