@@ -573,6 +573,80 @@
   transform: none !important;
 }
 
+/* ─── Continuous loading variant ─────────────────────────────────────────
+ *
+ * Applied via .logo-loading on the wrapping <svg> (see InstantMlMark with
+ * loading={true}). The four diagonal Bolt dots chase in sequence; the
+ * twelve currentColor dots breathe softly in the background. The mark
+ * itself is the spinner — no extra UI needed.
+ */
+@keyframes logo-loading-chase {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+    filter: drop-shadow(0 0 12px rgba(31, 184, 119, 0.9));
+  }
+}
+@keyframes logo-loading-breath {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.logo-loading .logo-dot {
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.logo-loading .logo-dot-diagonal {
+  animation: logo-loading-chase 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite both;
+}
+.logo-loading .logo-dot-diagonal.logo-dot-d0 {
+  animation-delay: 0ms;
+}
+.logo-loading .logo-dot-diagonal.logo-dot-d1 {
+  animation-delay: 200ms;
+}
+.logo-loading .logo-dot-diagonal.logo-dot-d2 {
+  animation-delay: 400ms;
+}
+.logo-loading .logo-dot-diagonal.logo-dot-d3 {
+  animation-delay: 600ms;
+}
+.logo-loading .logo-dot:not(.logo-dot-diagonal) {
+  animation: logo-loading-breath 2.4s ease-in-out infinite both;
+}
+.logo-loading .logo-dot:not(.logo-dot-diagonal).logo-dot-r0 {
+  animation-delay: 0ms;
+}
+.logo-loading .logo-dot:not(.logo-dot-diagonal).logo-dot-r1 {
+  animation-delay: 120ms;
+}
+.logo-loading .logo-dot:not(.logo-dot-diagonal).logo-dot-r2 {
+  animation-delay: 240ms;
+}
+.logo-loading .logo-dot:not(.logo-dot-diagonal).logo-dot-r3 {
+  animation-delay: 360ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-loading .logo-dot {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
 /* ─── Hero rise animations ─── */
 @keyframes hero-rise {
   from { opacity: 0; transform: translateY(20px); }

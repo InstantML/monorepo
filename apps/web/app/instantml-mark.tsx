@@ -8,14 +8,27 @@
 // overrides the intro to instant on repeat visits or when
 // prefers-reduced-motion is set.
 //
+// Set `loading` to swap the one-time intro for a continuous "chase"
+// pulse on the diagonal Bolt dots — used by AppLoadingScreen so the mark
+// itself becomes the spinner.
+//
 // This file is the legacy import path used by auth-flow.tsx and other
 // pre-brand-refresh callers. The newer landing-side component lives at
 // components/landing/LogoMark.tsx and renders the same shape.
-export function InstantMlMark({ className = "", size }: { className?: string; size?: number }) {
+export function InstantMlMark({
+  className = "",
+  size,
+  loading = false,
+}: {
+  className?: string;
+  size?: number;
+  loading?: boolean;
+}) {
+  const animClass = loading ? "logo-loading" : "logo-anim";
   return (
     <svg
       aria-hidden="true"
-      className={`instantml-mark-svg logo-anim ${className}`.trim()}
+      className={`instantml-mark-svg ${animClass} ${className}`.trim()}
       focusable="false"
       viewBox="0 0 96 96"
       {...(size ? { width: size, height: size } : {})}
