@@ -3416,6 +3416,296 @@
         ]
       }
     },
+    "/api/storage/clickhouse-connections": {
+      "post": {
+        "tags": [
+          "storage"
+        ],
+        "operationId": "create_customer_clickhouse_connection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickHouseConnectionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved customer ClickHouse connection status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClickHouseConnectionStatusEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid connection settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Storage route is already locked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ClickHouse endpoint unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/storage/clickhouse-connections/current": {
+      "get": {
+        "tags": [
+          "storage"
+        ],
+        "operationId": "customer_clickhouse_connection_status",
+        "responses": {
+          "200": {
+            "description": "Current ClickHouse connection setup status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClickHouseConnectionStatusEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/storage/clickhouse-connections/rotate-credentials": {
+      "post": {
+        "tags": [
+          "storage"
+        ],
+        "operationId": "rotate_customer_clickhouse_credentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickHouseConnectionRotateCredentialsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Rotated customer ClickHouse credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClickHouseConnectionStatusEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid connection settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Customer ClickHouse route missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ClickHouse endpoint or secret store unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/storage/clickhouse-connections/validate": {
+      "post": {
+        "tags": [
+          "storage"
+        ],
+        "operationId": "validate_customer_clickhouse_connection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickHouseConnectionValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Customer ClickHouse validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClickHouseConnectionValidationEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid connection settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ClickHouse endpoint unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/usage": {
       "get": {
         "tags": [
@@ -5297,11 +5587,290 @@
               "type": "string"
             }
           },
+          "storage_choice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "token": {
             "type": [
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ClickHouseConnectionCreateRequest": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "org_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ClickHouseConnectionRotateCredentialsRequest": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ClickHouseConnectionStatus": {
+        "type": "object",
+        "required": [
+          "status",
+          "storage_choice",
+          "storage_state",
+          "required_egress_cidrs",
+          "egress_description",
+          "egress_set_version"
+        ],
+        "properties": {
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "egress_description": {
+            "type": "string"
+          },
+          "egress_set_version": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint_host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_validated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provisioner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_egress_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "storage_choice": {
+            "type": "string"
+          },
+          "storage_state": {
+            "type": "string"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validation_error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warehouse_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ClickHouseConnectionStatusEnvelope": {
+        "type": "object",
+        "required": [
+          "connection"
+        ],
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/ClickHouseConnectionStatus"
+          }
+        }
+      },
+      "ClickHouseConnectionValidateRequest": {
+        "type": "object",
+        "properties": {
+          "allow_create_database": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "org_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "storage_choice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ClickHouseConnectionValidationEnvelope": {
+        "type": "object",
+        "required": [
+          "validation"
+        ],
+        "properties": {
+          "validation": {
+            "$ref": "#/components/schemas/ClickHouseConnectionValidationResponse"
+          }
+        }
+      },
+      "ClickHouseConnectionValidationResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "database",
+          "required_egress_cidrs",
+          "egress_description",
+          "egress_set_version",
+          "can_create_database",
+          "can_migrate_schema",
+          "can_insert_validation_record"
+        ],
+        "properties": {
+          "can_create_database": {
+            "type": "boolean"
+          },
+          "can_insert_validation_record": {
+            "type": "boolean"
+          },
+          "can_migrate_schema": {
+            "type": "boolean"
+          },
+          "current_user": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "database": {
+            "type": "string"
+          },
+          "egress_description": {
+            "type": "string"
+          },
+          "egress_set_version": {
+            "type": "string"
+          },
+          "required_egress_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "server_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -5639,6 +6208,12 @@
               "string",
               "null"
             ]
+          },
+          "storage_choice": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -5850,6 +6425,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "storage_choice": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -6509,6 +7090,12 @@
             "format": "int32"
           },
           "slug": {
+            "type": "string"
+          },
+          "storage_choice": {
+            "type": "string"
+          },
+          "storage_state": {
             "type": "string"
           },
           "tenant_routing_tier": {
@@ -7439,6 +8026,10 @@
     {
       "name": "orgs",
       "description": "Organizations, memberships, seats, and API keys."
+    },
+    {
+      "name": "storage",
+      "description": "Workspace storage setup and customer-owned ClickHouse connection validation."
     },
     {
       "name": "invitations",

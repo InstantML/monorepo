@@ -1,13 +1,24 @@
 use super::*;
 use crate::{
-    config::{ClickHouseCloudConfig, ClickHouseProvisioner},
-    metric_store::{self, connect_connection, parse_clickhouse_url, ClickHouseConnection},
+    config::{ByocClickHouseConfig, ClickHouseCloudConfig, ClickHouseProvisioner},
+    metric_store::{
+        self, connect_connection, migrate_existing_database, parse_clickhouse_url,
+        validate_clickhouse_identifier, ClickHouseConnection, METRIC_SCHEMA_VERSION,
+    },
+    secret_store::{
+        destroy_byoc_clickhouse_password_version, read_byoc_clickhouse_password,
+        store_byoc_clickhouse_password,
+    },
 };
+use std::net::IpAddr;
+use url::Url;
 
 const TENANT_ROUTE_KIND: &str = "tenant_route";
 const TENANT_ROUTE_READY: &str = "ready";
 const TENANT_ROUTE_PROVISIONING: &str = "provisioning";
 const TENANT_ROUTE_FAILED: &str = "failed";
+const CUSTOMER_CLICKHOUSE_PROVISIONER: &str = "customer-clickhouse";
+const CUSTOMER_CLICKHOUSE_WAREHOUSE_KIND: &str = "customer-owned";
 const TENANT_BASE_PASSWORD_REF: &str = "config:tenant_base_url_password";
 
 /// Sentinel UUID that identifies a shared-cell tenant route in design
@@ -44,6 +55,8 @@ pub struct TenantRouteRecord {
     pub username: String,
     pub password_secret_ref: Option<String>,
     pub password_ciphertext: Option<String>,
+    #[serde(default)]
+    pub schema_version: Option<u32>,
     pub service_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -87,11 +100,17 @@ impl Store {
         if self.tenant_loaded.lock().await.contains(&org_id) {
             return Ok(());
         }
-        let route = {
+        let (org, route) = {
             let data = self.data.lock().await;
-            data.tenant_routes.get(&org_id).cloned()
+            (
+                data.organizations.get(&org_id).cloned(),
+                data.tenant_routes.get(&org_id).cloned(),
+            )
+        };
+        if let Some(org) = org.as_ref() {
+            require_org_storage_ready(org)?;
         }
-        .ok_or_else(|| tenant_unavailable("tenant route is not provisioned"))?;
+        let route = route.ok_or_else(|| tenant_unavailable("tenant route is not provisioned"))?;
 
         if route.status != TENANT_ROUTE_READY {
             return Err(tenant_unavailable(
@@ -134,6 +153,9 @@ impl Store {
         if !self.hosted_clickhouse_enabled() {
             return Ok(self.metric_store.clone());
         }
+        if let Some(metric_store) = self.tenant_metric_stores.lock().await.get(&org_id).cloned() {
+            return Ok(metric_store);
+        }
         // Shared-cell orgs never get a per-org tenant metric store entry.
         if self.org_uses_shared_cell(org_id).await {
             return self
@@ -141,12 +163,7 @@ impl Store {
                 .clone()
                 .ok_or_else(|| tenant_unavailable("shared cell is not configured"));
         }
-        self.tenant_metric_stores
-            .lock()
-            .await
-            .get(&org_id)
-            .cloned()
-            .ok_or_else(|| tenant_unavailable("tenant route is not loaded"))
+        Err(tenant_unavailable("tenant route is not loaded"))
     }
 
     /// Returns true when the org's routing tier is "shared" and a shared-cell
@@ -166,6 +183,9 @@ impl Store {
         &self,
         org_id: Uuid,
     ) -> AppResult<Option<i64>> {
+        if self.org_uses_customer_clickhouse(org_id).await {
+            return Ok(None);
+        }
         if self.hosted_clickhouse_enabled() && self.org_uses_shared_cell(org_id).await {
             return Ok(None);
         }
@@ -176,6 +196,17 @@ impl Store {
             .map(Some)
     }
 
+    pub(super) async fn org_uses_customer_clickhouse(&self, org_id: Uuid) -> bool {
+        let data = self.data.lock().await;
+        data.organizations.get(&org_id).is_some_and(|org| {
+            org.storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE
+                || data
+                    .tenant_routes
+                    .get(&org_id)
+                    .is_some_and(|route| route.provisioner == CUSTOMER_CLICKHOUSE_PROVISIONER)
+        })
+    }
+
     pub(super) async fn ensure_tenant_route(
         &self,
         org: &OrganizationRow,
@@ -183,6 +214,7 @@ impl Store {
         if !self.hosted_clickhouse_enabled() {
             return Ok(local_route(org));
         }
+        require_org_storage_ready(org)?;
 
         let existing_route = {
             let data = self.data.lock().await;
@@ -239,6 +271,7 @@ impl Store {
                 username: String::new(),
                 password_secret_ref: None,
                 password_ciphertext: None,
+                schema_version: None,
                 service_id: None,
                 created_at: now,
                 updated_at: now,
@@ -299,6 +332,7 @@ impl Store {
                                 username: String::new(),
                                 password_secret_ref: None,
                                 password_ciphertext: None,
+                                schema_version: None,
                                 service_id: None,
                                 created_at: now,
                                 updated_at: Utc::now(),
@@ -365,6 +399,7 @@ impl Store {
             username: parsed.username,
             password_secret_ref: None,
             password_ciphertext: Some(parsed.password),
+            schema_version: Some(METRIC_SCHEMA_VERSION),
             service_id: None,
             created_at: now,
             updated_at: now,
@@ -424,6 +459,7 @@ impl Store {
                 username: connection.username,
                 password_secret_ref: Some(TENANT_BASE_PASSWORD_REF.to_string()),
                 password_ciphertext: None,
+                schema_version: Some(METRIC_SCHEMA_VERSION),
                 service_id: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
@@ -514,6 +550,7 @@ impl Store {
                     .as_ref()
                     .map(|id| format!("clickhouse-cloud:service:{id}")),
                 password_ciphertext: Some(created.password.clone()),
+                schema_version: None,
                 service_id: created.service_id.clone(),
                 created_at: now,
                 updated_at: now,
@@ -545,7 +582,7 @@ impl Store {
     }
 
     async fn metric_store_from_route(&self, route: &TenantRouteRecord) -> AppResult<MetricStore> {
-        let password = self.tenant_password(route)?;
+        let password = self.tenant_password(route).await?;
         let connection = ClickHouseConnection {
             endpoint: route.endpoint.clone(),
             username: route.username.clone(),
@@ -553,11 +590,25 @@ impl Store {
             database: route.database.clone(),
         };
         let metric_store = connect_connection(&connection)?;
-        metric_store::migrate(&metric_store).await?;
+        if route.provisioner == CUSTOMER_CLICKHOUSE_PROVISIONER {
+            if route.schema_version.unwrap_or_default() < METRIC_SCHEMA_VERSION {
+                migrate_existing_database(&metric_store).await?;
+            }
+        } else {
+            metric_store::migrate(&metric_store).await?;
+        }
         Ok(metric_store)
     }
 
-    fn tenant_password(&self, route: &TenantRouteRecord) -> AppResult<String> {
+    async fn tenant_password(&self, route: &TenantRouteRecord) -> AppResult<String> {
+        if route.provisioner == CUSTOMER_CLICKHOUSE_PROVISIONER {
+            return read_byoc_clickhouse_password(
+                &self.byoc_clickhouse.credential_store,
+                route.password_secret_ref.as_deref(),
+                route.password_ciphertext.as_deref(),
+            )
+            .await;
+        }
         if let Some(password) = &route.password_ciphertext {
             return Ok(password.clone());
         }
@@ -605,6 +656,477 @@ impl Store {
             None => false,
         }
     }
+
+    pub async fn customer_clickhouse_status(
+        &self,
+        org_id: Uuid,
+        config: &ByocClickHouseConfig,
+    ) -> AppResult<ClickHouseConnectionStatus> {
+        let data = self.data.lock().await;
+        let org = data
+            .organizations
+            .get(&org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        let route = data.tenant_routes.get(&org_id).cloned();
+        Ok(connection_status_payload(
+            &org,
+            route.as_ref(),
+            config,
+            None,
+        ))
+    }
+
+    pub async fn validate_customer_clickhouse(
+        &self,
+        input: ClickHouseConnectionValidateRequest,
+        config: &ByocClickHouseConfig,
+    ) -> AppResult<ClickHouseConnectionValidationResponse> {
+        config.require_customer_setup_enabled()?;
+        let org_id = input
+            .org_id
+            .ok_or_else(|| AppError::validation("org_id is required"))?;
+        let connection = customer_connection_from_input(
+            input.endpoint.as_deref(),
+            input.database.as_deref(),
+            input.username.as_deref(),
+            input.password.as_deref(),
+            config,
+        )
+        .await?;
+        if input.allow_create_database.unwrap_or(false) {
+            return Err(AppError::validation(
+                "customer-owned ClickHouse databases must be pre-created in this slice",
+            ));
+        }
+        self.validate_customer_org_for_setup(org_id, false).await?;
+        let mut response = validate_customer_connection_ready(&connection, org_id).await?;
+        response.required_egress_cidrs = config.egress_cidrs.clone();
+        response.egress_set_version = config.egress_set_version.clone();
+        Ok(response)
+    }
+
+    pub async fn create_customer_clickhouse_route(
+        &self,
+        input: ClickHouseConnectionCreateRequest,
+        config: &ByocClickHouseConfig,
+    ) -> AppResult<ClickHouseConnectionStatus> {
+        config.require_customer_setup_enabled()?;
+        let org_id = input
+            .org_id
+            .ok_or_else(|| AppError::validation("org_id is required"))?;
+        let connection = customer_connection_from_input(
+            input.endpoint.as_deref(),
+            input.database.as_deref(),
+            input.username.as_deref(),
+            input.password.as_deref(),
+            config,
+        )
+        .await?;
+        self.validate_customer_org_for_setup(org_id, false).await?;
+        validate_customer_connection_ready(&connection, org_id).await?;
+        let metric_store = connect_connection(&connection)?;
+        migrate_existing_database(&metric_store).await?;
+        insert_validation_record(&metric_store, org_id).await?;
+        let stored_secret =
+            store_byoc_clickhouse_password(&config.credential_store, org_id, &connection.password)
+                .await?;
+
+        let now = Utc::now();
+        let route = TenantRouteRecord {
+            org_id,
+            status: TENANT_ROUTE_READY.to_string(),
+            provisioner: CUSTOMER_CLICKHOUSE_PROVISIONER.to_string(),
+            plan_tier: None,
+            warehouse_kind: Some(CUSTOMER_CLICKHOUSE_WAREHOUSE_KIND.to_string()),
+            requested_min_replica_memory_gb: None,
+            requested_max_replica_memory_gb: None,
+            requested_num_replicas: None,
+            applied_min_replica_memory_gb: None,
+            applied_max_replica_memory_gb: None,
+            applied_num_replicas: None,
+            endpoint: connection.endpoint.clone(),
+            database: connection.database.clone(),
+            username: connection.username.clone(),
+            password_secret_ref: Some(stored_secret.secret_ref),
+            password_ciphertext: stored_secret.local_ciphertext,
+            schema_version: Some(METRIC_SCHEMA_VERSION),
+            service_id: None,
+            created_at: now,
+            updated_at: now,
+            error: None,
+        };
+
+        let mut data = self.data.lock().await;
+        let mut org = data
+            .organizations
+            .get(&org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        ensure_empty_org_data(&data, org_id)?;
+        org.storage_choice = STORAGE_CHOICE_CUSTOMER_CLICKHOUSE.to_string();
+        org.storage_state = STORAGE_STATE_READY.to_string();
+        org.tenant_routing_tier = CUSTOMER_CLICKHOUSE_PROVISIONER.to_string();
+        self.persist_locked("organization", org.id, &org.id.to_string(), &org)
+            .await?;
+        data.insert_org(org.clone());
+        self.persist_locked(TENANT_ROUTE_KIND, org_id, &org_id.to_string(), &route)
+            .await?;
+        data.insert_tenant_route(route.clone());
+        drop(data);
+        self.tenant_metric_stores
+            .lock()
+            .await
+            .insert(org_id, metric_store);
+        self.tenant_loaded.lock().await.insert(org_id);
+        Ok(connection_status_payload(&org, Some(&route), config, None))
+    }
+
+    pub(crate) fn require_customer_clickhouse_signup_ready(&self) -> AppResult<()> {
+        self.byoc_clickhouse.require_customer_setup_enabled()
+    }
+
+    pub async fn rotate_customer_clickhouse_credentials(
+        &self,
+        input: ClickHouseConnectionRotateCredentialsRequest,
+        config: &ByocClickHouseConfig,
+    ) -> AppResult<ClickHouseConnectionStatus> {
+        config.require_customer_setup_enabled()?;
+        let org_id = input
+            .org_id
+            .ok_or_else(|| AppError::validation("org_id is required"))?;
+        let (org, mut route) = {
+            let data = self.data.lock().await;
+            let org = data
+                .organizations
+                .get(&org_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("organization not found"))?;
+            let route = data
+                .tenant_routes
+                .get(&org_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("customer ClickHouse route not found"))?;
+            (org, route)
+        };
+        if route.provisioner != CUSTOMER_CLICKHOUSE_PROVISIONER {
+            return Err(AppError::with_code(
+                axum::http::StatusCode::CONFLICT,
+                "tenant_route_locked",
+                "organization is not using customer-owned ClickHouse",
+            ));
+        }
+        require_org_storage_ready(&org)?;
+        let username = input
+            .username
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(route.username.as_str())
+            .to_string();
+        let password = input
+            .password
+            .as_deref()
+            .ok_or_else(|| AppError::validation("password is required"))?;
+        let connection = ClickHouseConnection {
+            endpoint: route.endpoint.clone(),
+            username,
+            password: password.to_string(),
+            database: route.database.clone(),
+        };
+        validate_customer_runtime_ready(&connection, org_id).await?;
+        let metric_store = connect_connection(&connection)?;
+        let stored_secret =
+            store_byoc_clickhouse_password(&config.credential_store, org_id, &connection.password)
+                .await?;
+        let old_secret_ref = route.password_secret_ref.clone();
+        route.username = connection.username;
+        route.password_secret_ref = Some(stored_secret.secret_ref);
+        route.password_ciphertext = stored_secret.local_ciphertext;
+        route.updated_at = Utc::now();
+        route.error = None;
+        self.persist_locked(TENANT_ROUTE_KIND, org_id, &org_id.to_string(), &route)
+            .await?;
+        self.data.lock().await.insert_tenant_route(route.clone());
+        self.tenant_metric_stores
+            .lock()
+            .await
+            .insert(org_id, metric_store);
+        self.tenant_loaded.lock().await.insert(org_id);
+        if let Err(error) = destroy_byoc_clickhouse_password_version(
+            &config.credential_store,
+            old_secret_ref.as_deref(),
+        )
+        .await
+        {
+            tracing::warn!(
+                org_id = %org_id,
+                error = %error.message(),
+                "failed to destroy previous BYOC ClickHouse credential version after rotation"
+            );
+        }
+        Ok(connection_status_payload(&org, Some(&route), config, None))
+    }
+
+    async fn validate_customer_org_for_setup(
+        &self,
+        org_id: Uuid,
+        commit: bool,
+    ) -> AppResult<OrganizationRow> {
+        let mut data = self.data.lock().await;
+        let mut org = data
+            .organizations
+            .get(&org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        if org.plan_tier != "premium" {
+            return Err(AppError::forbidden(
+                "customer-owned ClickHouse is available for Premium workspaces",
+            ));
+        }
+        if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE
+            && org.storage_state != STORAGE_STATE_UNCONFIGURED
+        {
+            return Err(AppError::with_code(
+                axum::http::StatusCode::CONFLICT,
+                "tenant_route_locked",
+                "storage route is already configured",
+            ));
+        }
+        ensure_empty_org_data(&data, org_id)?;
+        if commit {
+            org.storage_choice = STORAGE_CHOICE_CUSTOMER_CLICKHOUSE.to_string();
+            org.storage_state = STORAGE_STATE_VALIDATING.to_string();
+            self.persist_locked("organization", org.id, &org.id.to_string(), &org)
+                .await?;
+            data.insert_org(org.clone());
+        }
+        Ok(org)
+    }
+}
+
+async fn customer_connection_from_input(
+    endpoint: Option<&str>,
+    database: Option<&str>,
+    username: Option<&str>,
+    password: Option<&str>,
+    config: &ByocClickHouseConfig,
+) -> AppResult<ClickHouseConnection> {
+    let endpoint = normalize_customer_endpoint(endpoint, config).await?;
+    let database = database
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::validation("database is required"))?;
+    validate_clickhouse_identifier(database, "database")?;
+    let username = username
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::validation("username is required"))?;
+    let password = password.ok_or_else(|| AppError::validation("password is required"))?;
+    Ok(ClickHouseConnection {
+        endpoint,
+        username: username.to_string(),
+        password: password.to_string(),
+        database: database.to_string(),
+    })
+}
+
+async fn normalize_customer_endpoint(
+    raw: Option<&str>,
+    config: &ByocClickHouseConfig,
+) -> AppResult<String> {
+    let raw = raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::validation("endpoint is required"))?;
+    let parsed = Url::parse(raw)
+        .map_err(|err| AppError::validation(format!("endpoint is not a valid URL: {err}")))?;
+    if parsed.scheme() != "https" && !config.allow_private_endpoints {
+        return Err(AppError::with_code(
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid_clickhouse_connection",
+            "customer-owned ClickHouse endpoint must use https",
+        ));
+    }
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.path() != "/"
+    {
+        return Err(AppError::with_code(
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid_clickhouse_connection",
+            "endpoint must be an origin like https://host:8443",
+        ));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| AppError::validation("endpoint must include a host"))?;
+    let port = parsed.port().unwrap_or(if parsed.scheme() == "https" {
+        8443
+    } else {
+        8123
+    });
+    if !config.allow_private_endpoints {
+        reject_private_endpoint(host, port).await?;
+    }
+    Ok(format!("{}://{}:{}", parsed.scheme(), host, port))
+}
+
+async fn reject_private_endpoint(host: &str, port: u16) -> AppResult<()> {
+    let addrs = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|_| {
+            AppError::warehouse_unavailable("customer ClickHouse host could not be resolved")
+        })?
+        .collect::<Vec<_>>();
+    if addrs.is_empty() {
+        return Err(AppError::warehouse_unavailable(
+            "customer ClickHouse host resolved no addresses",
+        ));
+    }
+    if addrs.iter().any(|addr| private_or_reserved_ip(addr.ip())) {
+        return Err(AppError::with_code(
+            axum::http::StatusCode::BAD_REQUEST,
+            "unsafe_clickhouse_host",
+            "customer ClickHouse endpoint resolves to a private or reserved address",
+        ));
+    }
+    Ok(())
+}
+
+fn private_or_reserved_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_documentation()
+                || ip.octets()[0] == 0
+                || ip.octets()[0] >= 224
+        }
+        IpAddr::V6(ip) => {
+            let first = ip.segments()[0];
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || first & 0xfe00 == 0xfc00
+                || first & 0xffc0 == 0xfe80
+                || first & 0xff00 == 0xff00
+        }
+    }
+}
+
+async fn validate_customer_connection_ready(
+    connection: &ClickHouseConnection,
+    org_id: Uuid,
+) -> AppResult<ClickHouseConnectionValidationResponse> {
+    let metric_store = connect_connection(connection)?;
+    migrate_existing_database(&metric_store).await?;
+    insert_validation_record(&metric_store, org_id).await?;
+    let server_version = metric_store
+        .client()
+        .query("SELECT version()")
+        .fetch_optional::<String>()
+        .await
+        .ok()
+        .flatten();
+    let current_user = metric_store
+        .client()
+        .query("SELECT currentUser()")
+        .fetch_optional::<String>()
+        .await
+        .ok()
+        .flatten();
+    Ok(ClickHouseConnectionValidationResponse {
+        status: "valid".to_string(),
+        server_version,
+        current_user,
+        database: connection.database.clone(),
+        required_egress_cidrs: Vec::new(),
+        egress_description: "InstantML Rust API/data-plane outbound IPs".to_string(),
+        egress_set_version: "unknown".to_string(),
+        can_create_database: false,
+        can_migrate_schema: true,
+        can_insert_validation_record: true,
+    })
+}
+
+async fn validate_customer_runtime_ready(
+    connection: &ClickHouseConnection,
+    org_id: Uuid,
+) -> AppResult<()> {
+    let metric_store = connect_connection(connection)?;
+    insert_validation_record(&metric_store, org_id).await
+}
+
+async fn insert_validation_record(metric_store: &MetricStore, org_id: Uuid) -> AppResult<()> {
+    metric_store
+        .insert_operational_record(&OperationalRecordRow {
+            kind: "byoc_validation".to_string(),
+            org_id,
+            entity_id: Uuid::new_v4().to_string(),
+            payload: json!({
+                "kind": "byoc_validation",
+                "created_at": Utc::now()
+            })
+            .to_string(),
+            created_at: Utc::now(),
+        })
+        .await
+}
+
+fn ensure_empty_org_data(data: &StoreData, org_id: Uuid) -> AppResult<()> {
+    let has_product_data = data.projects.values().any(|row| row.org_id == org_id)
+        || data.runs.values().any(|row| row.org_id == org_id)
+        || data.artifacts.values().any(|row| row.org_id == org_id)
+        || data.imports.values().any(|row| row.org_id == org_id)
+        || data
+            .tenant_routes
+            .get(&org_id)
+            .is_some_and(|route| route.status == TENANT_ROUTE_READY);
+    if has_product_data {
+        Err(AppError::with_code(
+            axum::http::StatusCode::CONFLICT,
+            "tenant_route_locked",
+            "storage route cannot be changed after product data exists",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn connection_status_payload(
+    org: &OrganizationRow,
+    route: Option<&TenantRouteRecord>,
+    config: &ByocClickHouseConfig,
+    message: Option<String>,
+) -> ClickHouseConnectionStatus {
+    let endpoint = route.map(|route| route.endpoint.clone());
+    let endpoint_host = endpoint
+        .as_deref()
+        .and_then(|value| Url::parse(value).ok())
+        .and_then(|url| url.host_str().map(str::to_string));
+    ClickHouseConnectionStatus {
+        status: route
+            .map(|route| route.status.clone())
+            .unwrap_or_else(|| org.storage_state.clone()),
+        storage_choice: org.storage_choice.clone(),
+        storage_state: org.storage_state.clone(),
+        provisioner: route.map(|route| route.provisioner.clone()),
+        warehouse_kind: route.and_then(|route| route.warehouse_kind.clone()),
+        endpoint,
+        endpoint_host,
+        database: route.map(|route| route.database.clone()),
+        username: route.map(|route| route.username.clone()),
+        required_egress_cidrs: config.egress_cidrs.clone(),
+        egress_description: "InstantML Rust API/data-plane outbound IPs".to_string(),
+        egress_set_version: config.egress_set_version.clone(),
+        last_validated_at: route.map(|route| route.updated_at),
+        validation_error_code: route.and_then(|route| route.error.clone()),
+        message,
+    }
 }
 
 fn tenant_database_name(org_id: Uuid) -> String {
@@ -651,6 +1173,7 @@ fn local_route(org: &OrganizationRow) -> TenantRouteRecord {
             username: String::new(),
             password_secret_ref: None,
             password_ciphertext: None,
+            schema_version: None,
             service_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -1163,6 +1686,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         let name = cloud_service_name(&org);
         assert!(name.len() <= 50);
@@ -1184,6 +1709,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         assert_eq!(
             cloud_service_name(&org),
@@ -1203,6 +1730,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         let second = OrganizationRow {
             id: Uuid::parse_str("bbd330da-8ff1-4643-b916-e0fbcbeb1a8f").unwrap(),
@@ -1214,6 +1743,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         assert_ne!(cloud_service_name(&first), cloud_service_name(&second));
     }
@@ -1230,6 +1761,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         let cloud = ClickHouseCloudConfig {
             endpoint: "https://api.clickhouse.cloud".to_string(),
@@ -1293,6 +1826,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         assert_eq!(org.tenant_routing_tier, "shared");
         assert!(is_personal_account_type(&org.account_type));
@@ -1312,6 +1847,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         let route = local_route(&org);
 
@@ -1331,6 +1868,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         assert_eq!(org.tenant_routing_tier, "dedicated");
         assert!(!is_personal_account_type(&org.account_type));

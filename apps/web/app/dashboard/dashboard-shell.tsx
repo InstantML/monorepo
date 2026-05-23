@@ -107,7 +107,7 @@ type WorkspaceViewSummaryPayload = Partial<Pick<GeneratedWorkspaceViewSummary, "
   Pick<GeneratedWorkspaceViewSummary, "id" | "name" | "project">;
 type DashboardSessionPayload = {
   authenticated?: boolean;
-  organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number };
+  organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string };
   user?: { primary_email: string; display_name?: string | null; avatar_url?: string | null };
   membership?: { role: string; status: string };
   memberships?: Array<{ org_id: string; role: string; status: string }>;
@@ -518,6 +518,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const storageUsed = Number(activeUsage.storage_bytes_for_warnings ?? activeUsage.warehouse_storage_bytes_exact ?? activeUsage.estimated_storage_bytes_for_warnings ?? activeUsage.artifact_bytes_exact ?? 0);
   const storageLimit = Number(activeLimits.included_storage_bytes ?? 0);
   const storagePercent = storageLimit ? Math.min(100, Math.round((storageUsed / storageLimit) * 100)) : 0;
+  const byocStorageAccounting = sessionPayload?.organization?.storage_choice === "customer-clickhouse";
+  const storageUsageLabel = byocStorageAccounting ? "Artifact storage" : "Storage";
+  const storageUsageDescription = byocStorageAccounting
+    ? "BYOC warehouse bytes stay in your ClickHouse account; InstantML counts only artifact bytes stored by us."
+    : "";
   const metricUsed = Number(activeUsage.metric_points ?? 0);
   const metricLimit = Number(activeLimits.metric_points ?? 0);
   const metricPercent = metricLimit ? Math.min(100, Math.round((metricUsed / metricLimit) * 100)) : 0;
@@ -2659,6 +2664,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               storagePercent={storagePercent}
               storageUsed={storageUsed}
               storageLimit={storageLimit}
+              storageUsageLabel={storageUsageLabel}
+              storageUsageDescription={storageUsageDescription}
               usageResetLabel={usageResetLabel}
               xMode={xMode}
               billingStatus={billingPayload?.billing ?? null}

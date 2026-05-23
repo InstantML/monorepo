@@ -76,6 +76,8 @@ type Props = {
   storagePercent: number;
   storageUsed: number;
   storageLimit: number;
+  storageUsageLabel: string;
+  storageUsageDescription: string;
   usageResetLabel: string;
   xMode: string;
   billingStatus: BillingStatus | null;
@@ -120,6 +122,8 @@ export function SettingsTabPane({
   storagePercent,
   storageUsed,
   storageLimit,
+  storageUsageLabel,
+  storageUsageDescription,
   usageResetLabel,
   xMode,
   billingStatus,
@@ -138,8 +142,9 @@ export function SettingsTabPane({
           <div className="panel-body insight-stack">
             <MetricCard label="Plan" value={activePlan} tone="good" />
             <MetricCard label="Seats" value={`${formatNumber(reservedSeatCount, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} tone="neutral" />
-            <MetricCard label="Storage" value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
-            <div className="usage-meter" aria-label="Storage usage">
+            <MetricCard label={storageUsageLabel} value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
+            {storageUsageDescription ? <p className="setting-hint">{storageUsageDescription}</p> : null}
+            <div className="usage-meter" aria-label={`${storageUsageLabel} usage`}>
               <span style={{ width: `${storagePercent}%` }} />
             </div>
             <MetricCard label="Metric points this month" value={`${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}`} tone={metricPercent > 90 ? "bad" : metricPercent > 70 ? "live" : "neutral"} />

@@ -22,6 +22,7 @@ const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
 let controlServer = null;
 let dataServer = null;
 let clickhouse = null;
+const serverLogs = {};
 
 try {
   clickhouse = await ensureLocalClickHouse({
@@ -235,6 +236,14 @@ try {
       2,
     ),
   );
+} catch (error) {
+  if (process.env.INSTANTML_HOSTED_SMOKE_DEBUG === "1") {
+    for (const [servicePlane, logPath] of Object.entries(serverLogs)) {
+      const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "(missing)";
+      console.error(`\n--- ${servicePlane} log: ${logPath} ---\n${log}`);
+    }
+  }
+  throw error;
 } finally {
   await stopServer("data");
   await stopServer("control");
@@ -277,6 +286,7 @@ async function startServer(servicePlane) {
   const port = servicePlane === "control" ? controlPort : dataPort;
   const baseUrl = servicePlane === "control" ? controlBaseUrl : dataBaseUrl;
   const serverLog = path.join(tempDir, `${servicePlane}-api-${Date.now()}.log`);
+  serverLogs[servicePlane] = serverLog;
   const output = fs.openSync(serverLog, "w");
   const child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,

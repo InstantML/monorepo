@@ -31,9 +31,11 @@ pub(super) use invitations::{
 };
 pub(super) use metrics::metrics_series;
 pub(super) use orgs::{
-    create_api_key, create_org, create_user, disable_service_account, list_api_keys,
+    create_api_key, create_customer_clickhouse_connection, create_org, create_user,
+    customer_clickhouse_connection_status, disable_service_account, list_api_keys,
     list_org_memberships, list_orgs, list_seats, list_users, org_name_availability, reserve_seat,
-    revoke_api_key,
+    revoke_api_key, rotate_customer_clickhouse_credentials,
+    validate_customer_clickhouse_connection,
 };
 pub(super) use platform::{
     auth_config, health, metrics as metrics_handler, not_found, openapi_json, readyz,
@@ -140,6 +142,18 @@ mod tests {
             "/runs",
             ServicePlaneRole::Control
         ));
+        assert!(openapi_path_available_for_plane(
+            "/api/storage/clickhouse-connections/current",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
+            "/api/storage/clickhouse-connections/rotate-credentials",
+            ServicePlaneRole::Data
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/storage/clickhouse-connections/current",
+            ServicePlaneRole::Control
+        ));
     }
 
     #[test]
@@ -219,6 +233,10 @@ mod tests {
             "/api/export",
             "/api/usage",
             "/api/usage/export",
+            "/api/storage/clickhouse-connections/current",
+            "/api/storage/clickhouse-connections/validate",
+            "/api/storage/clickhouse-connections",
+            "/api/storage/clickhouse-connections/rotate-credentials",
             "/api/imports",
             "/api/imports/neptune",
             "/api/imports/wandb",
@@ -242,6 +260,8 @@ mod tests {
             "PublicApiKeyRow",
             "WorkspaceViewSummary",
             "AuthSessionPayload",
+            "ClickHouseConnectionStatusEnvelope",
+            "ClickHouseConnectionValidationEnvelope",
             "ProjectEnvelope",
             "RunsEnvelope",
             "InsertedEnvelope",
@@ -264,6 +284,7 @@ mod tests {
             account_type: None,
             org_name: Some("Acme".to_string()),
             plan_tier: None,
+            storage_choice: None,
             seat_emails: None,
             accept_invite_org_id: None,
             accept_invite_token: None,
@@ -278,6 +299,7 @@ mod tests {
             account_type: None,
             org_name: None,
             plan_tier: None,
+            storage_choice: None,
             seat_emails: None,
             accept_invite_org_id: None,
             accept_invite_token: None,
@@ -290,6 +312,7 @@ mod tests {
             account_type: None,
             org_name: Some("Acme".to_string()),
             plan_tier: None,
+            storage_choice: None,
             seat_emails: None,
             accept_invite_org_id: None,
             accept_invite_token: Some("instantml_invite_test".to_string()),
@@ -328,6 +351,12 @@ mod tests {
             slow_request_threshold: std::time::Duration::from_millis(1000),
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "local-dev".to_string(),
+                allow_private_endpoints: false,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
             billing: crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
             email: crate::config::EmailConfig {
                 provider: crate::config::EmailProvider::Log,

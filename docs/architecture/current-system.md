@@ -109,6 +109,15 @@ Cloud Run Rust API -> static Cloud NAT egress IP for ClickHouse service and API-
 
 This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, restricts ClickHouse Cloud services and API keys to the Cloud Run static egress IP plus explicit operator IPs, restricts hosted Clerk signup by allowlist, and enables hosted artifact byte uploads only when Cloudflare R2 credentials are configured.
 
+Premium BYOC orgs keep the same control-plane/session/API-key path, but their
+tenant product route points at a customer-owned ClickHouse HTTPS endpoint after
+owner/admin validation from the data-plane service. Hosted BYOC stores customer
+ClickHouse passwords in the configured BYOC Secret Manager backend and stores
+only the secret reference in the control-plane route record. Product writes and
+SDK-key creation are blocked while the org is `storage_unconfigured`. BYOC
+usage storage guardrails count only InstantML-owned local/R2 artifact bytes,
+not customer ClickHouse table bytes.
+
 Split Cloud Run launch wiring:
 
 ```text
@@ -156,7 +165,7 @@ Deprecated storage:
 Durable hosted direction:
 
 - Control-plane ClickHouse layer for user and account data: users, identities, organizations, memberships, service routing, tenant-route warehouse profile metadata, plans, seats, API keys, and account status.
-- Data-plane ClickHouse layer per shared cell or customer service for API keys, projects, runs, attributes, artifacts, imports, idempotency, audit, usage, and metric tables.
+- Data-plane ClickHouse layer per shared cell, InstantML-hosted customer service, or customer-owned ClickHouse route for projects, runs, attributes, artifacts, imports, idempotency, operational records, usage snapshots, and metric tables.
 - Cloudflare R2 stores production artifact byte payloads in private deterministic per-org buckets. ClickHouse stores artifact catalog rows with `storage_backend`, `storage_key`, `storage_path`, exact `size_bytes`, `sha256`, and `mime_type`; downloads stream through the Rust API rather than exposing raw bucket URLs.
 - JSON state retained only for deprecated Node compatibility and migration tooling.
 
@@ -213,7 +222,7 @@ Core SDK-compatible endpoints:
 - `POST /runs/:run_id/metrics`
 - `GET /runs/:run_id/metrics`
 
-Product endpoints include bootstrap users/orgs/API keys, auth/session/logout, plan-aware signup, org seat invite/list, API-key admin, run summaries, side-by-side comparison, attributes, artifacts, rich objects, imports, export, usage, and demo reset. See `apps/rust-server/README.md` for the maintained list.
+Product endpoints include bootstrap users/orgs/API keys, auth/session/logout, plan-aware signup, customer-owned ClickHouse setup, org seat invite/list, API-key admin, run summaries, side-by-side comparison, attributes, artifacts, rich objects, imports, export, usage, and demo reset. See `apps/rust-server/README.md` for the maintained list.
 
 Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-up selects a plan, records warehouse intent, and establishes an InstantML browser session for one active org membership; Clerk sign-in can activate an invited membership by verified email. SDKs continue to use org-scoped API keys. Session and API-key requests both resolve an org before tenant data is read or mutated.
 
@@ -230,6 +239,7 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-up sele
 - `docs/design/2026-05-22-staging-cloud-run-environment.md`: production URL-map cleanup, backend timeout alignment, and isolated staging Cloud Run services/router.
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, warehouse profile metadata, seat invites, invited-member activation, usage/admin settings, and API-key management.
 - `docs/design/2026-05-21-cloudflare-r2-artifact-storage.md`: Cloudflare R2 per-org buckets, artifact reference metadata, and same-route upload/download preservation.
+- `docs/design/2026-05-22-customer-owned-clickhouse.md`: Premium BYOC ClickHouse onboarding, data-plane-origin validation, storage setup gates, and R2-only storage accounting for customer-owned warehouses.
 - `docs/design/2026-05-21-rust-server-observability.md`: narrowed Rust server logging slice, safe field contract, Cloudflare edge-log capture plan, and request/error correlation.
 - `docs/product/pricing-and-margins.md`: current packaging, cost assumptions, margin targets, and launch guardrails.
 - `docs/architecture/multi-instance-cloud-run.md`: current split Cloud Run overview with diagrams and launch checklist.

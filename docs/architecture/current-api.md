@@ -214,6 +214,7 @@ Body:
   "plan_tier": "premium",
   "account_type": "business",
   "org_name": "InstantML Demo",
+  "storage_choice": "instantml-hosted",
   "seat_emails": ["teammate@example.com"],
   "accept_invite_org_id": null,
   "accept_invite_token": null
@@ -222,7 +223,9 @@ Body:
 
 `mode` is `signup` or `signin`. `plan_tier` accepts `free`, `pro`, or
 `premium`; legacy `lab`/`startup` canonicalize to `pro` and `growth`
-canonicalizes to `premium`. On sign-in, `accept_invite_token` accepts a
+canonicalizes to `premium`. `storage_choice` accepts `instantml-hosted` or
+Premium-only `customer-clickhouse`; BYOC signups do not receive an onboarding
+API key until the storage route is ready. On sign-in, `accept_invite_token` accepts a
 token-backed organization invitation when the verified email address matches the
 invite email. `accept_invite_org_id` remains only for local/dev compatibility
 with legacy placeholder invited memberships. If a local/dev verified user has
@@ -244,6 +247,7 @@ Body:
   "plan_tier": "premium",
   "account_type": "customer",
   "org_name": "Acme Research",
+  "storage_choice": "customer-clickhouse",
   "seat_emails": ["teammate@example.com"],
   "accept_invite_org_id": null,
   "accept_invite_token": null
@@ -252,7 +256,9 @@ Body:
 
 `mode` is `signin` or `signup`. `org_name` is required for signup and omitted
 for normal sign-in. `plan_tier` is required only for plan-specific signup
-behavior and defaults to `free` when omitted. `accept_invite_token` is used on
+behavior and defaults to `free` when omitted. `storage_choice` accepts
+`instantml-hosted` or Premium-only `customer-clickhouse`; BYOC signups stay in
+onboarding until customer storage is validated. `accept_invite_token` is used on
 sign-in to activate a matching token-backed invitation; hosted Clerk exchanges
 ignore tokenless legacy invite activation. Output is the authenticated session
 payload plus `Set-Cookie: instantml_session=...`.
@@ -446,7 +452,7 @@ owner/admin browser session, an unrestricted org API key with
 | --- | --- | --- | --- |
 | `POST` | `/api/users` | `{ "email" or "primary_email", "provider"?, "provider_subject"?, "email_verified"?, "display_name"?, "avatar_url"? }` | `{ "user": UserRow }` |
 | `GET` | `/api/users` | none | `{ "users": [UserRow] }` |
-| `POST` | `/api/orgs` | `{ "name"?, "slug"?, "plan_tier"?, "owner_user_id"? }` | `{ "organization": OrganizationRow }` |
+| `POST` | `/api/orgs` | `{ "name"?, "slug"?, "plan_tier"?, "owner_user_id"?, "storage_choice"? }` | `{ "organization": OrganizationRow }` |
 | `GET` | `/api/orgs` | none | `{ "organizations": [OrganizationRow] }` |
 | `GET` | `/api/orgs/name-availability` | `name` | `{ "name", "slug", "available", "message" }` |
 | `GET` | `/api/orgs/:org_id/seats` | none | `{ "seats": [SeatRow] }` |
@@ -459,6 +465,39 @@ owner/admin browser session, an unrestricted org API key with
 | `GET` | `/api/orgs/:org_id/api-keys` | none | `{ "api_keys": [PublicApiKeyRow] }` |
 | `POST` | `/api/orgs/:org_id/api-keys/:api_key_id/revoke` | none | `{ "key": PublicApiKeyRow }` |
 | `POST` | `/api/orgs/:org_id/service-accounts/:service_account_id/disable` | none | `{ "service_account": ServiceAccountRow }` |
+
+## Customer-Owned ClickHouse Setup
+
+These routes are data-plane routes because validation must originate from the
+same Rust service path that later serves SDK/UI product traffic. They require an
+owner/admin browser session for the current org; API keys and bootstrap tokens
+are not accepted. Shared demo sessions are read-only.
+
+BYOC is currently Premium-only and empty-org-only. Product writes and SDK key
+creation return `409` with `code: "storage_setup_required"` until
+`storage_state` is `storage_ready` or `storage_locked`.
+
+| Method | Path | Body | Output |
+| --- | --- | --- | --- |
+| `GET` | `/api/storage/clickhouse-connections/current` | none | `{ "connection": ClickHouseConnectionStatus }` |
+| `POST` | `/api/storage/clickhouse-connections/validate` | `{ "org_id"?, "endpoint", "database", "username", "password", "allow_create_database"?: false, "storage_choice"?: "customer-clickhouse" }` | `{ "validation": ClickHouseConnectionValidationResponse }` |
+| `POST` | `/api/storage/clickhouse-connections` | `{ "org_id"?, "endpoint", "database", "username", "password" }` | `{ "connection": ClickHouseConnectionStatus }` |
+| `POST` | `/api/storage/clickhouse-connections/rotate-credentials` | `{ "org_id"?, "username"?, "password" }` | `{ "connection": ClickHouseConnectionStatus }` |
+
+The endpoint must be a normalized origin such as
+`https://abc123.us-central1.gcp.clickhouse.cloud:8443`; userinfo, path, query,
+fragment, private/loopback DNS targets, and non-HTTPS schemes are rejected in
+hosted mode. BYOC signup, validation, and route creation are rejected until
+InstantML BYOC egress CIDRs and credential storage are configured. The customer
+database must already exist. Initial validation/save runs BYOC schema migration
+without `CREATE DATABASE`, inserts an operational validation record, stores only
+a Secret Manager reference in the route record, and returns the configured
+`required_egress_cidrs` and `egress_set_version` for customer allowlisting.
+After the route records schema version 1, normal route loads do not rerun schema
+migration. Credential rotation validates the new credential against the existing
+saved endpoint/database without rerunning schema migration, stores a new Secret
+Manager version, swaps the route reference, and attempts to destroy the prior
+version.
 
 Supported API-key scopes:
 

@@ -1444,6 +1444,12 @@ textarea:focus {
   background: var(--accent);
 }
 
+.setting-hint {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font: 500 12px/1.45 var(--font-sans);
+}
+
 /* Usage warnings should read as warnings, matching the redesign's
    semantic color use (warm accent, soft fill, left rail). */
 .admin-alert-list .api-row {

@@ -12,6 +12,7 @@ Current planning docs:
 
 - `2026-05-09-open-source-brand.md`: accepted open-source, brand, and compatibility-name policy.
 - `pricing-and-margins.md`: current Free/Pro/Premium packaging, competitive pricing notes, infrastructure COGS assumptions, margin targets, and launch guardrails.
+- `customer-owned-clickhouse-setup.md`: first-slice BYOC ClickHouse customer/operator setup guidance, egress allowlist expectations, SQL grants, and limitations.
 - `future-directions.md`: exploratory ideas for worker-level raw signals, user-defined reductions, mid-flight run forking, scheduler coordination, and custom step semantics.
 - `day-2-mvp-spec.md`: historical bootstrap MVP context.
 

@@ -40,6 +40,7 @@ pub struct AppConfig {
     pub slow_request_threshold: Duration,
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
+    pub byoc_clickhouse: ByocClickHouseConfig,
     pub billing: BillingConfig,
     pub email: EmailConfig,
     /// Base URL of the frontend, used to construct device-code verification URIs.
@@ -220,6 +221,49 @@ pub struct ClickHouseCloudConfig {
     pub wait_timeout: Duration,
 }
 
+#[derive(Clone, Debug)]
+pub struct ByocClickHouseConfig {
+    pub egress_cidrs: Vec<String>,
+    pub egress_set_version: String,
+    pub allow_private_endpoints: bool,
+    pub credential_store: ByocCredentialStoreConfig,
+}
+
+impl ByocClickHouseConfig {
+    pub fn require_customer_setup_enabled(&self) -> AppResult<()> {
+        if !self.allow_private_endpoints && self.egress_cidrs.is_empty() {
+            return Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "byoc_egress_unconfigured",
+                "customer-owned ClickHouse is not available until InstantML data-plane egress CIDRs are configured",
+            ));
+        }
+        if matches!(self.credential_store, ByocCredentialStoreConfig::Disabled) {
+            return Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "byoc_secret_store_unconfigured",
+                "customer-owned ClickHouse is not available until BYOC credential storage is configured",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ByocCredentialStoreConfig {
+    Disabled,
+    LocalUserData,
+    GcpSecretManager(GcpSecretManagerConfig),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GcpSecretManagerConfig {
+    pub project_id: String,
+    pub secret_prefix: String,
+    pub api_base: String,
+    pub access_token: Option<String>,
+}
+
 impl AppConfig {
     pub fn from_env() -> AppResult<Self> {
         load_dotenv();
@@ -343,6 +387,7 @@ impl AppConfig {
             )?),
             log_format,
             hosted_clickhouse,
+            byoc_clickhouse: byoc_clickhouse_config()?,
             billing,
             email,
         })
@@ -480,6 +525,89 @@ fn hosted_clickhouse_config(
         cloud,
         shared_cell_url,
     }))
+}
+
+fn byoc_clickhouse_config() -> AppResult<ByocClickHouseConfig> {
+    let egress_cidrs = env_string_list("INSTANTML_BYOC_EGRESS_CIDRS")
+        .or_else(|| env_string_list("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST"))
+        .unwrap_or_default();
+    let egress_set_version = env_string(
+        "INSTANTML_BYOC_EGRESS_SET_VERSION",
+        if egress_cidrs.is_empty() {
+            "local-dev"
+        } else {
+            "configured"
+        },
+    );
+    let allow_private_endpoints = env_bool_optional("INSTANTML_BYOC_ALLOW_PRIVATE_ENDPOINTS")
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    let credential_store = byoc_credential_store_config()?;
+    Ok(ByocClickHouseConfig {
+        egress_cidrs,
+        egress_set_version,
+        allow_private_endpoints,
+        credential_store,
+    })
+}
+
+fn byoc_credential_store_config() -> AppResult<ByocCredentialStoreConfig> {
+    let backend = env::var("INSTANTML_BYOC_SECRET_BACKEND")
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
+    match backend.as_deref() {
+        Some("gcp-secret-manager" | "gcp_secret_manager" | "gcp" | "secret-manager") => {
+            let project_id = env_first(&[
+                "INSTANTML_BYOC_SECRET_PROJECT_ID",
+                "GOOGLE_CLOUD_PROJECT",
+                "GCP_PROJECT",
+                "GCLOUD_PROJECT",
+            ])
+            .ok_or_else(|| {
+                AppError::config(
+                    "INSTANTML_BYOC_SECRET_PROJECT_ID is required for GCP BYOC secret storage",
+                )
+            })?;
+            Ok(ByocCredentialStoreConfig::GcpSecretManager(
+                GcpSecretManagerConfig {
+                    project_id,
+                    secret_prefix: env_string(
+                        "INSTANTML_BYOC_SECRET_PREFIX",
+                        "instantml-byoc-clickhouse",
+                    ),
+                    api_base: env_string(
+                        "INSTANTML_BYOC_SECRET_MANAGER_API_BASE",
+                        "https://secretmanager.googleapis.com/v1",
+                    )
+                    .trim_end_matches('/')
+                    .to_string(),
+                    access_token: env_first(&["INSTANTML_BYOC_SECRET_MANAGER_ACCESS_TOKEN"]),
+                },
+            ))
+        }
+        Some("local-user-data" | "local_user_data" | "local") => {
+            Ok(ByocCredentialStoreConfig::LocalUserData)
+        }
+        Some("disabled" | "off" | "none") | None => {
+            if env_bool_optional("INSTANTML_BYOC_ALLOW_USER_DATA_STORED_PASSWORDS")?
+                .or_else(|| {
+                    env_bool_optional("INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS")
+                        .ok()
+                        .flatten()
+                })
+                .unwrap_or(false)
+            {
+                Ok(ByocCredentialStoreConfig::LocalUserData)
+            } else {
+                Ok(ByocCredentialStoreConfig::Disabled)
+            }
+        }
+        Some(_) => Err(AppError::config(
+            "INSTANTML_BYOC_SECRET_BACKEND must be gcp-secret-manager, local-user-data, or disabled",
+        )),
+    }
 }
 
 fn billing_config(frontend_base_url: Option<&str>) -> AppResult<BillingConfig> {

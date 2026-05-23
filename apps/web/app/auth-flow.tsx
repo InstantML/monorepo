@@ -1,7 +1,7 @@
 "use client";
 
 import { Show, SignInButton, SignUpButton, UserButton, useAuth, useClerk, useUser } from "@clerk/nextjs";
-import { AlertCircle, ArrowRight, CheckCircle2, Copy, Crown, HardDrive, KeyRound, LogOut, RefreshCw, Rocket, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Cloud, Copy, Crown, Database, HardDrive, KeyRound, LogOut, RefreshCw, Rocket, ServerCog, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../src/api.js";
@@ -12,9 +12,19 @@ import { InstantMlMark } from "./instantml-mark";
 
 type AuthMode = "signin" | "signup" | "onboarding";
 type PlanTier = "free" | "pro" | "premium";
+type StorageChoice = "instantml-hosted" | "customer-clickhouse";
 type SessionPayload = {
   authenticated?: boolean;
-  organization?: { id: string; name: string; slug: string; account_type?: string; plan_tier?: string; seat_limit?: number };
+  organization?: {
+    id: string;
+    name: string;
+    slug: string;
+    account_type?: string;
+    plan_tier?: string;
+    seat_limit?: number;
+    storage_choice?: StorageChoice | string;
+    storage_state?: string;
+  };
   user?: { primary_email: string; display_name?: string | null };
   membership?: { role: string; status: string };
   onboarding_api_key?: { plaintext: string; prefix: string; id: string } | null;
@@ -27,7 +37,42 @@ type DevGoogleAuthPayload = {
   account_type?: string;
   org_name?: string;
   plan_tier?: PlanTier;
+  storage_choice?: StorageChoice;
   seat_emails?: string[];
+};
+type ClickHouseConnectionStatus = {
+  status: string;
+  storage_choice: string;
+  storage_state: string;
+  provisioner?: string | null;
+  warehouse_kind?: string | null;
+  endpoint?: string | null;
+  endpoint_host?: string | null;
+  database?: string | null;
+  username?: string | null;
+  required_egress_cidrs?: string[];
+  egress_description?: string;
+  egress_set_version?: string;
+  last_validated_at?: string | null;
+  validation_error_code?: string | null;
+  message?: string | null;
+};
+type ClickHouseConnectionValidation = {
+  status: string;
+  server_version?: string | null;
+  current_user?: string | null;
+  database: string;
+  required_egress_cidrs: string[];
+  egress_description: string;
+  egress_set_version: string;
+  can_migrate_schema: boolean;
+  can_insert_validation_record: boolean;
+};
+type ByocForm = {
+  endpoint: string;
+  database: string;
+  username: string;
+  password: string;
 };
 type OrgAvailability = {
   available?: boolean;
@@ -47,6 +92,9 @@ type ClerkExchangeOptions = {
 
 const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
+const STORAGE_HOSTED: StorageChoice = "instantml-hosted";
+const STORAGE_BYOC: StorageChoice = "customer-clickhouse";
+const STORAGE_READY_STATES = new Set(["storage_ready", "storage_locked"]);
 const CLERK_SESSION_RECOVERY_MESSAGE =
   "InstantML could not refresh your workspace session from this browser sign-in. Try a fresh token, or sign out and sign back in.";
 const PLAN_OPTIONS: Array<{
@@ -103,6 +151,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [accountType, setAccountType] = useState("customer");
   const [planTier, setPlanTier] = useState<PlanTier>("free");
+  const [storageChoice, setStorageChoice] = useState<StorageChoice>(STORAGE_HOSTED);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [orgName, setOrgName] = useState("");
@@ -118,6 +167,14 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showSessionRecovery, setShowSessionRecovery] = useState(false);
+  const [byocStatus, setByocStatus] = useState<ClickHouseConnectionStatus | null>(null);
+  const [byocValidation, setByocValidation] = useState<ClickHouseConnectionValidation | null>(null);
+  const [byocForm, setByocForm] = useState<ByocForm>({
+    endpoint: "",
+    database: "instantml",
+    username: "default",
+    password: "",
+  });
   const nextPath = typeof window === "undefined" ? "/dashboard/runs" : sanitizeNextPath(new URLSearchParams(window.location.search).get("next"));
   const signupMode = mode === "signup";
   // Route-based onboarding, plus the in-place post-signup reveal: after a
@@ -139,6 +196,20 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const orgUnavailable = orgNameRequired && (!orgName.trim() || orgAvailability.available === false);
   const managedClerkReady = config.managed_clerk_enabled && !clerkConfigError && clerkLoaded;
   const demoSession = isSharedDemoSession(session);
+
+  function choosePlanTier(next: PlanTier) {
+    setPlanTier(next);
+    if (next !== "premium" && storageChoice === STORAGE_BYOC) {
+      setStorageChoice(STORAGE_HOSTED);
+    }
+  }
+
+  function chooseStorageChoice(next: StorageChoice) {
+    setStorageChoice(next);
+    if (next === STORAGE_BYOC) {
+      setPlanTier("premium");
+    }
+  }
 
   function note(text: string) {
     setIsError(false);
@@ -218,6 +289,45 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       controller.abort();
     };
   }, [api, reloadKey]);
+
+  useEffect(() => {
+    if (!isOnboarding || demoSession || !session?.organization?.id || !workspaceUsesByoc(session) || workspaceStorageReady(session)) {
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await api.get("/api/storage/clickhouse-connections/current", { signal: controller.signal });
+        if (cancelled) return;
+        const connection = (payload as { connection?: ClickHouseConnectionStatus }).connection ?? null;
+        setByocStatus(connection);
+        if (connection) {
+          setByocForm((current) => ({
+            endpoint: current.endpoint || connection.endpoint || "",
+            database: current.database || connection.database || "instantml",
+            username: current.username || connection.username || "default",
+            password: current.password,
+          }));
+        }
+      } catch (error) {
+        if (!cancelled && (error as { name?: string })?.name !== "AbortError") {
+          setByocStatus(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [
+    api,
+    demoSession,
+    isOnboarding,
+    session?.organization?.id,
+    session?.organization?.storage_choice,
+    session?.organization?.storage_state,
+  ]);
 
   useEffect(() => {
     // For managed Clerk signups: only check availability when the user has explicitly overridden
@@ -317,6 +427,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       account_type: managedClerkSignup ? undefined : accountType,
       org_name: explicitOrgName,
       plan_tier: signupMode ? planTier : undefined,
+      storage_choice: signupMode ? storageChoice : undefined,
       seat_emails: signupMode && accountType === "business"
         ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
         : [],
@@ -400,6 +511,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       account_type: accountType,
       org_name: signupMode ? orgName.trim() : orgName || undefined,
       plan_tier: signupMode ? planTier : undefined,
+      storage_choice: signupMode ? storageChoice : undefined,
       seat_emails: signupMode ? seatEmails.split(/[\n,]/).map((item) => item.trim()).filter(Boolean) : [],
     });
   }
@@ -412,6 +524,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       account_type: "business",
       org_name: SHARED_DEMO_ORG,
       plan_tier: "premium",
+      storage_choice: STORAGE_HOSTED,
     });
   }
 
@@ -439,6 +552,77 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     }
   }
 
+  function updateByocField(field: keyof ByocForm, value: string) {
+    setByocForm((current) => ({ ...current, [field]: value }));
+    setByocValidation(null);
+  }
+
+  function byocPayload() {
+    if (!session?.organization?.id) return null;
+    return {
+      org_id: session.organization.id,
+      endpoint: byocForm.endpoint.trim(),
+      database: byocForm.database.trim(),
+      username: byocForm.username.trim(),
+      password: byocForm.password,
+      storage_choice: STORAGE_BYOC,
+      allow_create_database: false,
+    };
+  }
+
+  async function validateByocConnection() {
+    const payload = byocPayload();
+    if (!payload) return;
+    setBusy(true);
+    note("Validating ClickHouse from the data plane...");
+    try {
+      const response = await api.post("/api/storage/clickhouse-connections/validate", payload);
+      const validation = (response as { validation?: ClickHouseConnectionValidation }).validation ?? null;
+      setByocValidation(validation);
+      if (validation) {
+        note("ClickHouse validated. Save the connection to unlock SDK key creation.");
+      } else {
+        fail("ClickHouse validation returned an unexpected response.");
+      }
+    } catch (error) {
+      setByocValidation(null);
+      fail(error instanceof Error ? error.message : "Unable to validate ClickHouse.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveByocConnection() {
+    const payload = byocPayload();
+    if (!payload) return;
+    setBusy(true);
+    note("Saving customer-owned ClickHouse connection...");
+    try {
+      const response = await api.post("/api/storage/clickhouse-connections", payload);
+      const connection = (response as { connection?: ClickHouseConnectionStatus }).connection ?? null;
+      if (!connection) {
+        fail("ClickHouse save returned an unexpected response.");
+        return;
+      }
+      setByocStatus(connection);
+      setByocValidation(null);
+      setByocForm((current) => ({ ...current, password: "" }));
+      setSession((current) => current ? {
+        ...current,
+        organization: current.organization ? {
+          ...current.organization,
+          storage_choice: connection.storage_choice || STORAGE_BYOC,
+          storage_state: connection.storage_state || "storage_ready",
+        } : current.organization,
+      } : current);
+      note("ClickHouse connected. Create your SDK key to finish onboarding.");
+    } catch (error) {
+      fail(error instanceof Error ? error.message : "Unable to save ClickHouse connection.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function copyKey() {
     if (!apiKey) return;
     try {
@@ -453,9 +637,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const eyebrow = config.loaded ? providerLabel(config) : "Checking provider";
   const seatCount = seatEmails.split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length;
   const seatLimit = session?.organization?.seat_limit ?? (accountType === "business" ? 3 : 1);
+  const byocSetupRequired = isOnboarding && !demoSession && workspaceUsesByoc(session) && !workspaceStorageReady(session);
 
   const headline = isOnboarding
-    ? (apiKey ? <>Save it, then <span className="iml-em">go.</span></> : <>Create your <span className="iml-em">SDK key</span></>)
+    ? (byocSetupRequired
+      ? <>Connect your <span className="iml-em">ClickHouse</span></>
+      : apiKey ? <>Save it, then <span className="iml-em">go.</span></> : <>Create your <span className="iml-em">SDK key</span></>)
     : signupMode
       ? <>Set up your <span className="iml-em">{accountType === "business" ? "team org" : "org"}</span></>
       : <>Sign in to your <span className="iml-em">workspace</span></>;
@@ -493,6 +680,8 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 {isOnboarding
                   ? (demoSession
                     ? "The shared demo signs you into sample data — read-only, no SDK key. Look around, then sign up for a real workspace."
+                    : byocSetupRequired
+                      ? "Allowlist the InstantML data-plane egress IPs, connect a pre-created ClickHouse database, then create your SDK key."
                     : apiKey
                       ? "This is the only time the plaintext key is shown. Put it in your environment and you’re logging."
                       : <>A scoped, copy-once key for <code>sdk:ingest</code>, <code>artifacts:write</code>, and <code>export:read</code>. We never store the plaintext.</>)
@@ -516,6 +705,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 copied={copied}
                 busy={busy}
                 nextPath={nextPath}
+                byocStatus={byocStatus}
+                byocValidation={byocValidation}
+                byocForm={byocForm}
+                onByocField={updateByocField}
+                onValidateByoc={validateByocConnection}
+                onSaveByoc={saveByocConnection}
                 onCreateKey={createKey}
                 onCopy={copyKey}
               />
@@ -528,8 +723,10 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                     effectiveName={effectiveOrgName}
                     override={orgNameOverride}
                     planTier={planTier}
+                    storageChoice={storageChoice}
                     onOverride={setOrgNameOverride}
-                    onPlanTier={setPlanTier}
+                    onPlanTier={choosePlanTier}
+                    onStorageChoice={chooseStorageChoice}
                   />
                 ) : signupMode && config.dev_auth_enabled ? (
                   <SignupFields
@@ -540,9 +737,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                     seatCount={seatCount}
                     seatLimit={seatLimit}
                     planTier={planTier}
+                    storageChoice={storageChoice}
                     onAccountType={setAccountType}
                     onOrgName={setOrgName}
-                    onPlanTier={setPlanTier}
+                    onPlanTier={choosePlanTier}
+                    onStorageChoice={chooseStorageChoice}
                     onSeatEmails={setSeatEmails}
                   />
                 ) : null}
@@ -721,6 +920,8 @@ function SigninAside() {
 }
 
 function OnboardingAside({ session, keyDone, demo }: { session: SessionPayload | null; keyDone: boolean; demo: boolean }) {
+  const byoc = workspaceUsesByoc(session);
+  const storageReady = workspaceStorageReady(session);
   if (demo) {
     return (
       <aside className="iml-aside">
@@ -748,14 +949,18 @@ function OnboardingAside({ session, keyDone, demo }: { session: SessionPayload |
       <ol className="iml-steps" aria-label="Onboarding steps">
         <li className="iml-step is-done"><span className="idx" aria-hidden="true">✓</span><div><div className="st-t">Workspace created</div><div className="st-s">{session?.organization?.name ?? "Your org"} · {planLabel(session?.organization?.plan_tier)} plan</div></div></li>
         <li className="iml-step is-done"><span className="idx" aria-hidden="true">✓</span><div><div className="st-t">Identity verified</div><div className="st-s">via Clerk</div></div></li>
-        <li className={`iml-step ${keyDone ? "is-done" : "is-active"}`}><span className="idx" aria-hidden="true">{keyDone ? "✓" : "03"}</span><div><div className="st-t">{keyDone ? "SDK key created" : "Create an SDK key"}</div><div className="st-s">{keyDone ? "Copy it now" : "Then open the dashboard"}</div></div></li>
+        {byoc ? (
+          <li className={`iml-step ${storageReady ? "is-done" : "is-active"}`}><span className="idx" aria-hidden="true">{storageReady ? "✓" : "03"}</span><div><div className="st-t">{storageReady ? "ClickHouse connected" : "Connect ClickHouse"}</div><div className="st-s">{storageReady ? "Customer database ready" : "Validate from data plane"}</div></div></li>
+        ) : null}
+        <li className={`iml-step ${keyDone ? "is-done" : storageReady ? "is-active" : ""}`}><span className="idx" aria-hidden="true">{keyDone ? "✓" : byoc ? "04" : "03"}</span><div><div className="st-t">{keyDone ? "SDK key created" : "Create an SDK key"}</div><div className="st-s">{keyDone ? "Copy it now" : "Then open the dashboard"}</div></div></li>
       </ol>
     </aside>
   );
 }
 
 function OnboardingBody({
-  session, demo, apiKey, copied, busy, nextPath, onCreateKey, onCopy,
+  session, demo, apiKey, copied, busy, nextPath, byocStatus, byocValidation, byocForm,
+  onByocField, onValidateByoc, onSaveByoc, onCreateKey, onCopy,
 }: {
   session: SessionPayload | null;
   demo: boolean;
@@ -763,9 +968,16 @@ function OnboardingBody({
   copied: boolean;
   busy: boolean;
   nextPath: string;
+  byocStatus: ClickHouseConnectionStatus | null;
+  byocValidation: ClickHouseConnectionValidation | null;
+  byocForm: ByocForm;
+  onByocField: (field: keyof ByocForm, value: string) => void;
+  onValidateByoc: () => void;
+  onSaveByoc: () => void;
   onCreateKey: () => void;
   onCopy: () => void;
 }) {
+  const byocRequired = workspaceUsesByoc(session) && !workspaceStorageReady(session);
   return (
     <>
       <div className="iml-org">
@@ -785,6 +997,16 @@ function OnboardingBody({
           </a>
           <a className="iml-btn iml-btn--ghost iml-btn--block" href="/signup">Create a real workspace instead</a>
         </div>
+      ) : byocRequired ? (
+        <ByocSetup
+          busy={busy}
+          form={byocForm}
+          status={byocStatus}
+          validation={byocValidation}
+          onField={onByocField}
+          onValidate={onValidateByoc}
+          onSave={onSaveByoc}
+        />
       ) : !apiKey ? (
         <div className="iml-actions">
           <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy || !session?.organization?.id} onClick={onCreateKey} type="button">
@@ -825,20 +1047,140 @@ function OnboardingBody({
   );
 }
 
+function ByocSetup({
+  busy, form, status, validation, onField, onValidate, onSave,
+}: {
+  busy: boolean;
+  form: ByocForm;
+  status: ClickHouseConnectionStatus | null;
+  validation: ClickHouseConnectionValidation | null;
+  onField: (field: keyof ByocForm, value: string) => void;
+  onValidate: () => void;
+  onSave: () => void;
+}) {
+  const egress = status?.required_egress_cidrs ?? validation?.required_egress_cidrs ?? [];
+  const egressText = egress.join(", ");
+  const database = clickhouseIdentifierPreview(form.database, "instantml");
+  const username = clickhouseIdentifierPreview(form.username, "instantml_writer");
+  const setupSql = [
+    `CREATE DATABASE IF NOT EXISTS ${database};`,
+    `CREATE USER IF NOT EXISTS ${username} IDENTIFIED BY '<copy-once-password>';`,
+    `GRANT SHOW, SELECT, INSERT, CREATE TABLE, ALTER TABLE, DROP TABLE ON ${database}.* TO ${username};`,
+    "",
+    "-- Optional after InstantML validates and saves the connection:",
+    `-- REVOKE CREATE TABLE, ALTER TABLE, DROP TABLE ON ${database}.* FROM ${username};`,
+  ].join("\n");
+  const egressConfigured = egress.length > 0;
+  const canSubmit = Boolean(form.endpoint.trim() && form.database.trim() && form.username.trim() && form.password && egressConfigured);
+  const copyEgress = () => {
+    if (egressText && typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(egressText);
+    }
+  };
+  const copySql = () => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(setupSql);
+    }
+  };
+  return (
+    <div className="iml-actions">
+      <div className="iml-byoc-callout">
+        <div className="iml-byoc-callout-h">
+          <ServerCog size={15} aria-hidden="true" /> Recommended ClickHouse setup
+        </div>
+        <ol className="iml-byoc-steps">
+          <li>ClickHouse Cloud: create a production service with HTTPS enabled.</li>
+          <li>Security: add the InstantML data-plane egress CIDRs to the service IP access list.</li>
+          <li>SQL console: create the database and writer user with the grants below.</li>
+          <li>Paste the HTTPS endpoint, database, username, and password here, then validate.</li>
+        </ol>
+        <div className="iml-egress">
+          <span className="iml-egress-label">Data-plane egress</span>
+          {egress.length > 0 ? egress.map((cidr) => <code key={cidr}>{cidr}</code>) : <span>Not configured. BYOC signup is disabled until egress is set.</span>}
+          {egress.length > 0 ? (
+            <button className="iml-copy" onClick={copyEgress} type="button"><Copy size={12} /> Copy CIDRs</button>
+          ) : null}
+          {status?.egress_set_version || validation?.egress_set_version ? (
+            <span className="iml-egress-version">{status?.egress_set_version || validation?.egress_set_version}</span>
+          ) : null}
+        </div>
+        <div className="iml-byoc-sql">
+          <div className="iml-term-bar">
+            <span className="tl">clickhouse · setup sql</span>
+            <span className="sp" />
+            <button className="iml-copy" onClick={copySql} type="button"><Copy size={12} /> Copy SQL</button>
+          </div>
+          <pre>{setupSql}</pre>
+        </div>
+      </div>
+
+      <div className="iml-field">
+        <label htmlFor="iml-byoc-endpoint">ClickHouse HTTPS endpoint</label>
+        <input
+          className="iml-input"
+          id="iml-byoc-endpoint"
+          inputMode="url"
+          value={form.endpoint}
+          onChange={(event) => onField("endpoint", event.target.value)}
+          placeholder="https://abc123.us-central1.gcp.clickhouse.cloud:8443"
+        />
+        <span className="iml-hint">Use the HTTPS/native secure endpoint origin only, without paths or query strings.</span>
+      </div>
+
+      <div className="iml-byoc-grid">
+        <div className="iml-field">
+          <label htmlFor="iml-byoc-db">Database</label>
+          <input className="iml-input" id="iml-byoc-db" value={form.database} onChange={(event) => onField("database", event.target.value)} placeholder="instantml" />
+        </div>
+        <div className="iml-field">
+          <label htmlFor="iml-byoc-user">Username</label>
+          <input className="iml-input" id="iml-byoc-user" value={form.username} onChange={(event) => onField("username", event.target.value)} placeholder="instantml_writer" />
+        </div>
+      </div>
+
+      <div className="iml-field">
+        <label htmlFor="iml-byoc-password">Password</label>
+        <input className="iml-input" id="iml-byoc-password" value={form.password} onChange={(event) => onField("password", event.target.value)} placeholder="ClickHouse user password" type="password" autoComplete="off" />
+      </div>
+
+      {validation ? (
+        <p className="iml-status is-busy" role="status">
+          <CheckCircle2 size={14} aria-hidden="true" />
+          Validated {validation.database}{validation.server_version ? ` on ClickHouse ${validation.server_version}` : ""}.
+        </p>
+      ) : null}
+
+      <div className="iml-byoc-actions">
+        <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy || !canSubmit} onClick={onValidate} type="button">
+          {busy ? <span className="iml-spin" aria-hidden="true" /> : <Database size={16} />}
+          Validate connection
+        </button>
+        <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy || !canSubmit} onClick={onSave} type="button">
+          {busy ? <span className="iml-spin on-fill" aria-hidden="true" /> : <KeyRound size={16} />}
+          Save connection
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function WorkspacePreview({
-  autoSlug, availability, effectiveName, override, planTier, onOverride, onPlanTier,
+  autoSlug, availability, effectiveName, override, planTier, storageChoice, onOverride, onPlanTier, onStorageChoice,
 }: {
   autoSlug: string;
   availability: OrgAvailability;
   effectiveName: string;
   override: string;
   planTier: PlanTier;
+  storageChoice: StorageChoice;
   onOverride: (value: string) => void;
   onPlanTier: (value: PlanTier) => void;
+  onStorageChoice: (value: StorageChoice) => void;
 }) {
   return (
     <>
       <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
+      <StorageChoicePicker storageChoice={storageChoice} onStorageChoice={onStorageChoice} />
       <div className="iml-field">
         <span className="iml-legend">Your workspace</span>
         <div className="iml-wsprev">
@@ -889,9 +1231,37 @@ function PlanPicker({ planTier, onPlanTier }: { planTier: PlanTier; onPlanTier: 
   );
 }
 
+function StorageChoicePicker({
+  storageChoice, onStorageChoice,
+}: {
+  storageChoice: StorageChoice;
+  onStorageChoice: (value: StorageChoice) => void;
+}) {
+  return (
+    <fieldset className="iml-field iml-fieldset">
+      <legend className="iml-legend">Storage</legend>
+      <div className="iml-seg">
+        <label className="iml-seg-opt">
+          <input checked={storageChoice === STORAGE_HOSTED} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_HOSTED)} type="radio" />
+          <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span><Cloud size={14} aria-hidden="true" /> InstantML-hosted</span>
+          <span className="iml-seg-d">InstantML-managed ClickHouse and R2 artifacts.</span>
+        </label>
+        <label className="iml-seg-opt">
+          <input checked={storageChoice === STORAGE_BYOC} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_BYOC)} type="radio" />
+          <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span><Database size={14} aria-hidden="true" /> Connect my ClickHouse</span>
+          <span className="iml-seg-d">Premium BYOC. R2 artifacts only count toward InstantML storage.</span>
+        </label>
+      </div>
+      {storageChoice === STORAGE_BYOC ? (
+        <span className="iml-hint">BYOC requires Premium and a pre-created ClickHouse database allowlisted for InstantML egress.</span>
+      ) : null}
+    </fieldset>
+  );
+}
+
 function SignupFields({
-  accountType, availability, orgName, seatEmails, seatCount, seatLimit, planTier,
-  onAccountType, onOrgName, onPlanTier, onSeatEmails,
+  accountType, availability, orgName, seatEmails, seatCount, seatLimit, planTier, storageChoice,
+  onAccountType, onOrgName, onPlanTier, onStorageChoice, onSeatEmails,
 }: {
   accountType: string;
   availability: OrgAvailability;
@@ -899,9 +1269,11 @@ function SignupFields({
   seatEmails: string;
   seatCount: number;
   seatLimit: number;
+  storageChoice: StorageChoice;
   onAccountType: (value: string) => void;
   onOrgName: (value: string) => void;
   onPlanTier: (value: PlanTier) => void;
+  onStorageChoice: (value: StorageChoice) => void;
   onSeatEmails: (value: string) => void;
   planTier: PlanTier;
 }) {
@@ -909,6 +1281,7 @@ function SignupFields({
   return (
     <>
       <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
+      <StorageChoicePicker storageChoice={storageChoice} onStorageChoice={onStorageChoice} />
       <fieldset className="iml-field iml-fieldset">
         <legend className="iml-legend">Account type</legend>
         <div className="iml-seg">
@@ -977,6 +1350,20 @@ function providerLabel(config: AuthConfig) {
 
 function planLabel(value?: string) {
   return PLAN_OPTIONS.find((plan) => plan.id === value)?.label ?? "Free";
+}
+
+function workspaceUsesByoc(session: SessionPayload | null) {
+  return session?.organization?.storage_choice === STORAGE_BYOC;
+}
+
+function workspaceStorageReady(session: SessionPayload | null) {
+  if (!workspaceUsesByoc(session)) return true;
+  return STORAGE_READY_STATES.has(session?.organization?.storage_state ?? "");
+}
+
+function clickhouseIdentifierPreview(value: string, fallback: string) {
+  const trimmed = value.trim();
+  return /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(trimmed) ? trimmed : fallback;
 }
 
 function isSharedDemoSession(session: SessionPayload | null) {

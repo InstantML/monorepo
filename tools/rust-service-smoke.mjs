@@ -45,6 +45,7 @@ try {
       INSTANTML_AUTH_MODE: authMode,
       INSTANTML_BOOTSTRAP_TOKEN: bootstrapToken,
       INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+      INSTANTML_BILLING_ENABLED: process.env.INSTANTML_RUST_SMOKE_BILLING_ENABLED || "false",
     },
     stdio: ["ignore", output, output],
   });

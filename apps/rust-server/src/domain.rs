@@ -23,6 +23,13 @@ pub const MAX_CONSOLE_LOG_LINES_PER_BATCH: usize = 50;
 pub const MAX_CONSOLE_LOG_MESSAGE_BYTES: usize = 16 * 1024;
 pub const GIB_BYTES: i64 = 1024 * 1024 * 1024;
 
+pub const STORAGE_CHOICE_HOSTED: &str = "instantml-hosted";
+pub const STORAGE_CHOICE_CUSTOMER_CLICKHOUSE: &str = "customer-clickhouse";
+pub const STORAGE_STATE_UNCONFIGURED: &str = "storage_unconfigured";
+pub const STORAGE_STATE_VALIDATING: &str = "storage_validating";
+pub const STORAGE_STATE_READY: &str = "storage_ready";
+pub const STORAGE_STATE_LOCKED: &str = "storage_locked";
+
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct PlanTier {
     pub id: &'static str,
@@ -155,6 +162,7 @@ pub struct CreateOrganizationRequest {
     pub name: Option<String>,
     pub plan_tier: Option<String>,
     pub owner_user_id: Option<Uuid>,
+    pub storage_choice: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
@@ -174,10 +182,22 @@ pub struct OrganizationRow {
     /// (the safe fallback) via the serde default.
     #[serde(default = "default_routing_tier")]
     pub tenant_routing_tier: String,
+    #[serde(default = "default_storage_choice")]
+    pub storage_choice: String,
+    #[serde(default = "default_storage_state")]
+    pub storage_state: String,
 }
 
 fn default_routing_tier() -> String {
     "dedicated".to_string()
+}
+
+fn default_storage_choice() -> String {
+    STORAGE_CHOICE_HOSTED.to_string()
+}
+
+fn default_storage_state() -> String {
+    STORAGE_STATE_READY.to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
@@ -391,6 +411,7 @@ pub struct DevGoogleAuthRequest {
     pub account_type: Option<String>,
     pub org_name: Option<String>,
     pub plan_tier: Option<String>,
+    pub storage_choice: Option<String>,
     pub seat_emails: Option<Vec<String>>,
     pub accept_invite_org_id: Option<Uuid>,
     pub accept_invite_token: Option<String>,
@@ -403,9 +424,70 @@ pub struct ClerkAuthRequest {
     pub account_type: Option<String>,
     pub org_name: Option<String>,
     pub plan_tier: Option<String>,
+    pub storage_choice: Option<String>,
     pub seat_emails: Option<Vec<String>>,
     pub accept_invite_org_id: Option<Uuid>,
     pub accept_invite_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ClickHouseConnectionValidateRequest {
+    pub org_id: Option<Uuid>,
+    pub endpoint: Option<String>,
+    pub database: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub storage_choice: Option<String>,
+    pub allow_create_database: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ClickHouseConnectionCreateRequest {
+    pub org_id: Option<Uuid>,
+    pub endpoint: Option<String>,
+    pub database: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ClickHouseConnectionRotateCredentialsRequest {
+    pub org_id: Option<Uuid>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct ClickHouseConnectionStatus {
+    pub status: String,
+    pub storage_choice: String,
+    pub storage_state: String,
+    pub provisioner: Option<String>,
+    pub warehouse_kind: Option<String>,
+    pub endpoint: Option<String>,
+    pub endpoint_host: Option<String>,
+    pub database: Option<String>,
+    pub username: Option<String>,
+    pub required_egress_cidrs: Vec<String>,
+    pub egress_description: String,
+    pub egress_set_version: String,
+    pub last_validated_at: Option<DateTime<Utc>>,
+    pub validation_error_code: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct ClickHouseConnectionValidationResponse {
+    pub status: String,
+    pub server_version: Option<String>,
+    pub current_user: Option<String>,
+    pub database: String,
+    pub required_egress_cidrs: Vec<String>,
+    pub egress_description: String,
+    pub egress_set_version: String,
+    pub can_create_database: bool,
+    pub can_migrate_schema: bool,
+    pub can_insert_validation_record: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

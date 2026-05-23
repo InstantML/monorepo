@@ -39,6 +39,8 @@ Environment:
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_NAME  Public router resource name prefix. Default: instantml-public-api.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE  Managed SSL certificate name. Default: <router-name>-cert.
   INSTANTML_CLOUD_RUN_SECRET_PREFIX     Secret Manager prefix for non-prod deploys. Default: <service-prefix>-.
+  INSTANTML_BYOC_SECRET_BACKEND         BYOC credential store. Default: gcp-secret-manager for Cloud Run deploys.
+  INSTANTML_BYOC_SECRET_PREFIX          BYOC Secret Manager secret id prefix. Default: <service-prefix>-byoc-clickhouse.
   INSTANTML_STAGING_USER_DATA_DATABASE  User Data database path for staging. Default: instantml_user_data_staging.
   INSTANTML_STAGING_USER_DATA_ENDPOINT  Full staging User Data endpoint override.
   INSTANTML_PUBLIC_API_BASE            Optional public LB/router URL written to local frontend env.
@@ -626,6 +628,10 @@ function ensureServiceAccount() {
     run(["iam", "service-accounts", "create", serviceAccountName, "--display-name", "InstantML Rust API"]);
   }
   run(["projects", "add-iam-policy-binding", project, "--member", `serviceAccount:${email}`, "--role", "roles/logging.logWriter"], { quietOutput: true });
+  if (byocSecretBackendForDeployment() === "gcp-secret-manager") {
+    // Runtime creates per-org BYOC ClickHouse password secrets on demand.
+    run(["projects", "add-iam-policy-binding", project, "--member", `serviceAccount:${email}`, "--role", "roles/secretmanager.admin"], { quietOutput: true });
+  }
   return email;
 }
 
@@ -765,6 +771,13 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS: value("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS") || "1",
     INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS: value("INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS") || "600",
     INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
+    INSTANTML_BYOC_EGRESS_CIDRS: staticEgressIp
+      ? `${staticEgressIp}/32`
+      : value("INSTANTML_BYOC_EGRESS_CIDRS") || value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST"),
+    INSTANTML_BYOC_EGRESS_SET_VERSION: value("INSTANTML_BYOC_EGRESS_SET_VERSION") || `${deploymentEnv}-${region}-${imageTag}`,
+    INSTANTML_BYOC_SECRET_BACKEND: byocSecretBackendForDeployment(),
+    INSTANTML_BYOC_SECRET_PROJECT_ID: value("INSTANTML_BYOC_SECRET_PROJECT_ID") || project,
+    INSTANTML_BYOC_SECRET_PREFIX: value("INSTANTML_BYOC_SECRET_PREFIX") || `${servicePrefix}-byoc-clickhouse`,
     INSTANTML_MANAGED_CLERK_ENABLED: managedClerkEnabled ? "true" : "false",
     INSTANTML_ALLOWED_FRONTEND_ORIGINS: origins,
     INSTANTML_FRONTEND_BASE_URL: frontendBaseUrl,
@@ -802,6 +815,10 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     output.INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST = value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST");
   }
   return Object.fromEntries(Object.entries(output).filter(([, val]) => val !== ""));
+}
+
+function byocSecretBackendForDeployment() {
+  return value("INSTANTML_BYOC_SECRET_BACKEND") || "gcp-secret-manager";
 }
 
 function cloudflareR2AccountId() {

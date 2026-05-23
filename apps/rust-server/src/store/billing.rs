@@ -756,7 +756,9 @@ async fn activate_paid_plan(
         updated_at: Utc::now(),
     };
     persist_billing_account(store, account.clone()).await?;
-    store.ensure_tenant_route(&org).await?;
+    if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        store.ensure_tenant_route(&org).await?;
+    }
     for email in activation.pending_seat_emails {
         let _ = reserve_seat(
             store,
@@ -902,7 +904,9 @@ async fn apply_subscription_object(
             data.insert_org(org.clone());
             org
         };
-        store.ensure_tenant_route(&org).await?;
+        if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+            store.ensure_tenant_route(&org).await?;
+        }
     }
     persist_billing_account(store, account.clone()).await?;
     if let Some(stripe_subscription_id) = subscription_id {
@@ -1120,6 +1124,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         let account = default_billing_account(&org);
         assert_eq!(account.access_state, BILLING_PAID_ACTIVE);

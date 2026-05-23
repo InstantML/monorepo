@@ -28,6 +28,7 @@ pub async fn create_dev_google_session(
             mode: input.mode,
             org_name: input.org_name,
             plan_tier: input.plan_tier,
+            storage_choice: input.storage_choice,
             seat_emails: input.seat_emails,
             accept_invite_org_id: input.accept_invite_org_id,
             accept_invite_token: input.accept_invite_token,
@@ -71,6 +72,7 @@ pub async fn create_clerk_session(
             mode,
             org_name,
             plan_tier: input.plan_tier,
+            storage_choice: input.storage_choice,
             seat_emails: input.seat_emails.unwrap_or_default(),
             accept_invite_org_id: input.accept_invite_org_id,
             accept_invite_token: input.accept_invite_token,
@@ -96,6 +98,7 @@ pub(super) async fn create_verified_provider_session(
     let mode = validate_auth_mode(input.mode.as_deref(), input.org_name.is_some())?;
     let account_type = validate_account_type(Some(&input.account_type))?;
     let canonical_plan_tier = validate_plan_tier(input.plan_tier.as_deref())?;
+    let storage_choice = validate_storage_choice(input.storage_choice.as_deref())?;
     let plan = plan_tier(&canonical_plan_tier);
     let paid_signup_requires_checkout =
         billing_config.is_some_and(|config| config.enabled) && canonical_plan_tier != "free";
@@ -263,11 +266,21 @@ pub(super) async fn create_verified_provider_session(
     } else {
         account_type.clone()
     };
-    let tenant_routing_tier = if is_personal_account_type(&effective_account_type) {
+    let tenant_routing_tier = if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        "customer-clickhouse".to_string()
+    } else if is_personal_account_type(&effective_account_type) {
         "shared".to_string()
     } else {
         "dedicated".to_string()
     };
+    if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE && canonical_plan_tier != "premium" {
+        return Err(AppError::forbidden(
+            "customer-owned ClickHouse is available for Premium workspaces",
+        ));
+    }
+    if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        store.require_customer_clickhouse_signup_ready()?;
+    }
     let stored_plan_tier = if paid_signup_requires_checkout {
         "free".to_string()
     } else {
@@ -284,6 +297,12 @@ pub(super) async fn create_verified_provider_session(
         created_by_user_id: Some(user.id),
         created_at: Utc::now(),
         tenant_routing_tier,
+        storage_choice: storage_choice.clone(),
+        storage_state: if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+            STORAGE_STATE_UNCONFIGURED.to_string()
+        } else {
+            STORAGE_STATE_READY.to_string()
+        },
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -321,7 +340,9 @@ pub(super) async fn create_verified_provider_session(
             onboarding_api_key: None,
         });
     }
-    store.ensure_tenant_route(&org).await?;
+    if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        store.ensure_tenant_route(&org).await?;
+    }
     let mut data = store.data.lock().await;
     for email in seat_emails {
         let invited_user = get_or_create_placeholder_user(store, &mut data, &email).await?;
@@ -345,7 +366,11 @@ pub(super) async fn create_verified_provider_session(
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
     drop(data);
-    let onboarding_api_key = mint_onboarding_api_key(store, org.id, user.id).await.ok();
+    let onboarding_api_key = if org_storage_ready(&org) {
+        mint_onboarding_api_key(store, org.id, user.id).await.ok()
+    } else {
+        None
+    };
     Ok(CreatedAuthSession {
         token,
         payload,
@@ -358,7 +383,9 @@ pub(super) async fn create_session_for_org(
     user: UserRow,
     org: OrganizationRow,
 ) -> AppResult<CreatedAuthSession> {
-    if !billing_blocks_tenant_route(store, org.id).await {
+    if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE
+        && !billing_blocks_tenant_route(store, org.id).await
+    {
         store.ensure_tenant_route(&org).await?;
     }
     let mut data = store.data.lock().await;
@@ -473,6 +500,7 @@ mod tests {
             account_type: Some("customer".to_string()),
             org_name: Some("Another Org".to_string()),
             plan_tier: Some("premium".to_string()),
+            storage_choice: None,
             seat_emails: Some(vec!["teammate@example.com".to_string()]),
             accept_invite_org_id: Some(Uuid::new_v4()),
             accept_invite_token: Some("instantml_invite_deadbeef".to_string()),
@@ -498,6 +526,7 @@ mod tests {
             account_type: Some("customer".to_string()),
             org_name: Some("Personal Lab".to_string()),
             plan_tier: Some("pro".to_string()),
+            storage_choice: None,
             seat_emails: Some(vec!["teammate@example.com".to_string()]),
             accept_invite_org_id: None,
             accept_invite_token: Some("instantml_invite_test".to_string()),
@@ -567,6 +596,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         data.insert_org(existing_org);
 

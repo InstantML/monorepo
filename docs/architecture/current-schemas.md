@@ -179,7 +179,10 @@ cursor while `event_id` is random. Full replay is the current safe path.
   "account_type": "customer",
   "seat_limit": 3,
   "created_by_user_id": "uuid",
-  "created_at": "2026-05-16T00:00:00Z"
+  "created_at": "2026-05-16T00:00:00Z",
+  "tenant_routing_tier": "customer-clickhouse",
+  "storage_choice": "customer-clickhouse",
+  "storage_state": "storage_unconfigured"
 }
 ```
 
@@ -193,6 +196,9 @@ cursor while `event_id` is random. Full replay is the current safe path.
 | `seat_limit` | integer | Max active plus invited seats from the selected plan: Free 2, Pro 3, Premium 10 by default. |
 | `created_by_user_id` | UUID string or null | Creator when known. |
 | `created_at` | datetime | Creation time. |
+| `tenant_routing_tier` | string | `shared`, `dedicated`, or `customer-clickhouse`. Older records default to `dedicated` on deserialization. |
+| `storage_choice` | string | `instantml-hosted` or `customer-clickhouse`. Older records default to hosted. |
+| `storage_state` | string | `storage_unconfigured`, `storage_validating`, `storage_ready`, or `storage_locked`. Hosted and legacy records default to ready. Product writes and API-key creation are blocked until ready/locked. |
 
 ### `MembershipRow`
 
@@ -392,10 +398,10 @@ clamped to read-only export behavior at authorization time.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `org_id` | UUID string | Tenant owner. |
-| `status` | string | `provisioning`, `ready`, or `failed`. |
-| `provisioner` | string | `database`, `cloud-service`, or `local`. |
+| `status` | string | `provisioning`, `ready`, or `failed`. Customer-owned routes also use the org-level storage state to gate setup. |
+| `provisioner` | string | `database`, `cloud-service`, `local`, `shared-cell`, or `customer-clickhouse`. |
 | `plan_tier` | string or null | Plan selected when the route was created. |
-| `warehouse_kind` | string or null | `shared`, `standard`, or `dedicated` intent from the plan. |
+| `warehouse_kind` | string or null | `shared`, `standard`, `dedicated`, or `customer-owned` intent. |
 | `requested_min_replica_memory_gb` | integer or null | Plan-requested minimum replica memory. |
 | `requested_max_replica_memory_gb` | integer or null | Plan-requested maximum replica memory. |
 | `requested_num_replicas` | integer or null | Plan-requested replica count. |
@@ -405,8 +411,9 @@ clamped to read-only export behavior at authorization time.
 | `endpoint` | string | ClickHouse HTTP endpoint. |
 | `database` | string | Tenant database name, often `default` for cloud-service mode. |
 | `username` | string | ClickHouse username. |
-| `password_secret_ref` | string or null | Future secret-manager reference. |
-| `password_ciphertext` | string or null | Current temporary plaintext field, gated by `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`. Do not expand this pattern. |
+| `password_secret_ref` | string or null | Config/Secret Manager reference. BYOC hosted routes use `gcp-secret-manager:projects/.../versions/...`; local BYOC smoke tests may use `local-user-data-byoc:<org_id>`. |
+| `password_ciphertext` | string or null | Plaintext credential fallback for local smoke tests and the legacy hosted cloud-service provisioner only. Hosted BYOC must leave this null. |
+| `schema_version` | integer or null | Applied InstantML ClickHouse schema version. BYOC route loads skip DDL when this is at least the current metric schema version. |
 | `service_id` | string or null | ClickHouse Cloud service id when known. |
 | `created_at` | datetime | Initial route creation time. |
 | `updated_at` | datetime | Last route state update time. |
@@ -803,9 +810,12 @@ billing is implemented. Storage, projects, runs, seats, artifacts, metric
 series, and API keys are retained-resource counts and do not reset monthly.
 `warehouse_storage_bytes_exact` comes from ClickHouse table parts for dedicated
 tenant databases and is `null` for shared-cell orgs where exact per-org bytes
-are not available. `storage_bytes_for_warnings` is the guardrail value used for
-blocked storage checks; it prefers exact warehouse plus artifact bytes when
-available, otherwise falls back to the metadata estimate. The older
+are not available. It is also `null` for customer-owned ClickHouse orgs because
+InstantML must not meter the customer's warehouse. `storage_bytes_for_warnings`
+is the guardrail value used for blocked storage checks; hosted orgs prefer exact
+warehouse plus artifact bytes when available and otherwise fall back to the
+metadata estimate. BYOC orgs use only retained InstantML-owned artifact bytes.
+The older
 `estimated_storage_bytes_for_warnings` field remains a compatibility alias for
 that guardrail value, not an invoice source.
 
@@ -951,6 +961,7 @@ GROUP BY org_id, run_id, key;
 | Hosted combined | `instantml_user_data` | routed tenant `operational_records` | routed tenant ClickHouse service/database |
 | Hosted split control | `instantml_user_data` | route/provisioning only, via tenant route creation | tenant schema migration/provisioning only |
 | Hosted split data | full User Data replay before auth | routed tenant `operational_records` | routed tenant ClickHouse service/database |
+| Hosted BYOC data | User Data `organization` + `tenant_route` records | customer-owned `operational_records` | customer-owned ClickHouse database |
 
 ## Change Checklist
 

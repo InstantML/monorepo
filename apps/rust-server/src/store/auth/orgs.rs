@@ -14,6 +14,15 @@ pub async fn create_organization(
         None => slugify(&name),
     };
     let canonical_plan_tier = validate_plan_tier(input.plan_tier.as_deref())?;
+    let storage_choice = validate_storage_choice(input.storage_choice.as_deref())?;
+    if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE && canonical_plan_tier != "premium" {
+        return Err(AppError::forbidden(
+            "customer-owned ClickHouse is available for Premium workspaces",
+        ));
+    }
+    if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        store.require_customer_clickhouse_signup_ready()?;
+    }
     let plan = plan_tier(&canonical_plan_tier);
     let mut data = store.data.lock().await;
     if data.orgs_by_slug.contains_key(&slug) {
@@ -25,7 +34,9 @@ pub async fn create_organization(
         }
     }
     let account_type = "customer".to_string();
-    let tenant_routing_tier = if is_personal_account_type(&account_type) {
+    let tenant_routing_tier = if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        "customer-clickhouse".to_string()
+    } else if is_personal_account_type(&account_type) {
         "shared".to_string()
     } else {
         "dedicated".to_string()
@@ -40,6 +51,12 @@ pub async fn create_organization(
         created_by_user_id: input.owner_user_id,
         created_at: Utc::now(),
         tenant_routing_tier,
+        storage_choice: storage_choice.clone(),
+        storage_state: if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+            STORAGE_STATE_UNCONFIGURED.to_string()
+        } else {
+            STORAGE_STATE_READY.to_string()
+        },
     };
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
@@ -58,7 +75,9 @@ pub async fn create_organization(
         data.insert_membership(membership);
     }
     drop(data);
-    store.ensure_tenant_route(&org).await?;
+    if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        store.ensure_tenant_route(&org).await?;
+    }
     Ok(org)
 }
 
@@ -244,6 +263,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         }
     }
 
@@ -272,6 +293,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
 
         assert!(is_shared_demo_org(&org));
@@ -305,6 +328,8 @@ mod tests {
         }"#;
         let org: OrganizationRow = serde_json::from_str(json).unwrap();
         assert_eq!(org.tenant_routing_tier, "dedicated");
+        assert_eq!(org.storage_choice, STORAGE_CHOICE_HOSTED);
+        assert_eq!(org.storage_state, STORAGE_STATE_READY);
     }
 
     #[test]
@@ -319,6 +344,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         assert_eq!(org.tenant_routing_tier, "shared");
     }
@@ -335,6 +362,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         assert_eq!(org.tenant_routing_tier, "dedicated");
     }

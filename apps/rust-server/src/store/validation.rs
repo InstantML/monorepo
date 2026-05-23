@@ -14,6 +14,56 @@ pub(super) fn validate_scopes<'a>(
     Ok(values)
 }
 
+pub(super) fn validate_storage_choice(value: Option<&str>) -> AppResult<String> {
+    let choice = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(STORAGE_CHOICE_HOSTED)
+        .to_ascii_lowercase();
+    match choice.as_str() {
+        STORAGE_CHOICE_HOSTED | "hosted" | "instantml" | "instantml_hosted" => {
+            Ok(STORAGE_CHOICE_HOSTED.to_string())
+        }
+        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE | "byoc" | "customer_clickhouse" => {
+            Ok(STORAGE_CHOICE_CUSTOMER_CLICKHOUSE.to_string())
+        }
+        _ => Err(AppError::validation(
+            "storage_choice must be instantml-hosted or customer-clickhouse",
+        )),
+    }
+}
+
+pub(super) fn storage_setup_required() -> AppError {
+    AppError::with_code(
+        axum::http::StatusCode::CONFLICT,
+        "storage_setup_required",
+        "storage setup is required before product writes",
+    )
+}
+
+pub(super) fn storage_setup_in_progress() -> AppError {
+    AppError::with_code(
+        axum::http::StatusCode::CONFLICT,
+        "storage_setup_in_progress",
+        "storage setup is still validating",
+    )
+}
+
+pub(super) fn org_storage_ready(org: &OrganizationRow) -> bool {
+    matches!(
+        org.storage_state.as_str(),
+        STORAGE_STATE_READY | STORAGE_STATE_LOCKED
+    )
+}
+
+pub(super) fn require_org_storage_ready(org: &OrganizationRow) -> AppResult<()> {
+    match org.storage_state.as_str() {
+        STORAGE_STATE_READY | STORAGE_STATE_LOCKED => Ok(()),
+        STORAGE_STATE_VALIDATING => Err(storage_setup_in_progress()),
+        _ => Err(storage_setup_required()),
+    }
+}
+
 pub(super) fn resolve_key_project(
     data: &StoreData,
     org_id: Uuid,
@@ -475,11 +525,57 @@ mod tests {
             created_by_user_id: None,
             created_at: epoch(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         data.insert_org(org);
 
         assert_eq!(unique_slug(&data, "new-team"), "new-team");
         assert_eq!(unique_slug(&data, "team"), "team-2");
+    }
+
+    #[test]
+    fn storage_choice_accepts_hosted_and_byoc_aliases() {
+        assert_eq!(
+            validate_storage_choice(None).unwrap(),
+            STORAGE_CHOICE_HOSTED
+        );
+        assert_eq!(
+            validate_storage_choice(Some("hosted")).unwrap(),
+            STORAGE_CHOICE_HOSTED
+        );
+        assert_eq!(
+            validate_storage_choice(Some("byoc")).unwrap(),
+            STORAGE_CHOICE_CUSTOMER_CLICKHOUSE
+        );
+        assert!(validate_storage_choice(Some("snowflake")).is_err());
+    }
+
+    #[test]
+    fn storage_ready_gate_blocks_unconfigured_byoc_orgs() {
+        let mut org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "byoc".to_string(),
+            name: "BYOC".to_string(),
+            plan_tier: "premium".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 10,
+            created_by_user_id: None,
+            created_at: epoch(),
+            tenant_routing_tier: "customer-clickhouse".to_string(),
+            storage_choice: STORAGE_CHOICE_CUSTOMER_CLICKHOUSE.to_string(),
+            storage_state: STORAGE_STATE_UNCONFIGURED.to_string(),
+        };
+
+        let error = require_org_storage_ready(&org).unwrap_err();
+        assert_eq!(error.code(), Some("storage_setup_required"));
+
+        org.storage_state = STORAGE_STATE_VALIDATING.to_string();
+        let error = require_org_storage_ready(&org).unwrap_err();
+        assert_eq!(error.code(), Some("storage_setup_in_progress"));
+
+        org.storage_state = STORAGE_STATE_READY.to_string();
+        assert!(require_org_storage_ready(&org).is_ok());
     }
 
     #[test]
