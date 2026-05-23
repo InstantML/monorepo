@@ -237,7 +237,7 @@
   grid-auto-columns: minmax(3px, 1fr);
   align-items: end;
   gap: 2px;
-  height: 56px;
+  height: 130px;
   margin-bottom: 4px;
 }
 .coverage-strip span {

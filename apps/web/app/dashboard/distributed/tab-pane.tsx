@@ -150,11 +150,11 @@ export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }
           </div>
           <section className="analysis-grid two">
             <ReducerChart metricKey={activeKey} reducers={summary!.reducers} />
-            <CoveragePanel coverage={summary!.coverage} />
+            <OutlierPanel outliers={summary!.outliers} truncated={summary!.truncated.outliers} worldSize={latestReducer?.expected_world_size ?? 0} />
           </section>
           <section className="analysis-grid two">
             <PerRankPanel heatmap={summary!.heatmap} metricKey={activeKey} />
-            <OutlierPanel outliers={summary!.outliers} truncated={summary!.truncated.outliers} worldSize={latestReducer?.expected_world_size ?? 0} />
+            <CoveragePanel coverage={summary!.coverage} />
           </section>
           <section className="analysis-grid one">
             <HeatmapPanel heatmap={summary!.heatmap} truncated={summary!.truncated.heatmap} />
@@ -322,11 +322,12 @@ function HeatmapPanel({ heatmap, truncated }: { heatmap: RankHeatmapPoint[]; tru
 }
 
 function OutlierPanel({ outliers, truncated, worldSize }: { outliers: RankOutlierPoint[]; truncated: boolean; worldSize: number }) {
+  const shown = outliers.slice(0, 8);
   return (
-    <Card title="Rank outliers" badge={outliers.length ? `top ${outliers.length}` : undefined}>
+    <Card title="Rank outliers" badge={shown.length ? `top ${shown.length}` : undefined}>
       <div className="analysis-table">
         <div className="analysis-row head"><span>rank</span><span>step</span><span>value</span><span>z-score</span></div>
-        {outliers.map((item) => (
+        {shown.map((item) => (
           <div className="analysis-row" key={`${item.step}-${item.rank}`}>
             <span>r{item.rank}</span>
             <span>step {formatNumber(item.step, 0)}</span>
@@ -334,10 +335,10 @@ function OutlierPanel({ outliers, truncated, worldSize }: { outliers: RankOutlie
             <span className={item.z_score >= 0 ? "pos" : "neg"}>{signed(item.z_score, 2)}z</span>
           </div>
         ))}
-        {!outliers.length ? <div className="empty compact-empty">No outlier ranks detected.</div> : null}
+        {!shown.length ? <div className="empty compact-empty">No outlier ranks detected.</div> : null}
       </div>
       <p className="analysis-note">
-        {truncated ? "Highest-deviation rank/step pairs. " : ""}
+        {truncated || outliers.length > shown.length ? "Highest-deviation rank/step pairs. " : ""}
         z-scores computed across the {worldSize || "reporting"} ranks at each step.
       </p>
     </Card>
