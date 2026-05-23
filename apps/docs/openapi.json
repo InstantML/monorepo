@@ -1,0 +1,4189 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "InstantML Rust API",
+    "description": "Public InstantML API reference for hosted SDK, dashboard, import, export, usage, artifact, and metric workflows.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.instantml.ai",
+      "description": "InstantML hosted API"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "operationId": "readyz",
+        "responses": {
+          "200": {
+            "description": "Operational and metric stores ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/projects": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_projects",
+        "responses": {
+          "200": {
+            "description": "Projects for the caller's organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectsEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "create_project",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created or fetched project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/runs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_runs",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Filter by project name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by run status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (1..=1000)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunsEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "create_run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "get_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "update_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/runs/{run_id}/metrics": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "get_metrics",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "description": "Filter by metric key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_step",
+            "in": "query",
+            "description": "Inclusive start step",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "end_step",
+            "in": "query",
+            "description": "Inclusive end step",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded scalar metric points",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "log_metrics",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogMetricsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Inserted point count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsertedEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/runs/{run_id}/rank-metrics": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "log_rank_metrics",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogRankMetricsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Inserted rank metric point count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsertedEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/overview": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "overview",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Filter by project name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by run status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "metric_key",
+            "in": "query",
+            "description": "Metric key for best-value column",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard overview payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/summary": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "runs_summary",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Filter by project name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by run status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "metric_key",
+            "in": "query",
+            "description": "Metric key for ranked column",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run summary page with metric key catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/side-by-side": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "side_by_side",
+        "parameters": [
+          {
+            "name": "run_ids",
+            "in": "query",
+            "description": "Comma-separated run UUIDs",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runs",
+            "in": "query",
+            "description": "Alias for run_ids",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reference_run_id",
+            "in": "query",
+            "description": "Pin a reference run",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "diff_only",
+            "in": "query",
+            "description": "Only return rows that differ",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Side-by-side comparison rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/metrics/series": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "metrics_series",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricsSeriesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Per-run metric series keyed by run_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/rank-metrics/summary": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "rank_metrics_summary",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "description": "Rank metric key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_step",
+            "in": "query",
+            "description": "Inclusive start step",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "end_step",
+            "in": "query",
+            "description": "Inclusive end step",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Step limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded rank metric summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RankMetricsSummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/attributes": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_attributes",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Filter by attribute kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path_prefix",
+            "in": "query",
+            "description": "Filter by path prefix",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Typed attribute rows for the run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributesEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "create_attributes",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAttributesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created attribute rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributesEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/objects": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_objects",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Filter by object kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "description": "Filter by object key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rich object page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "create_object",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateObjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created rich object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/artifacts": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_artifacts",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact rows for the run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactsEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "create_artifact",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created artifact metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/artifacts/upload": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "upload_artifact",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created artifact with stored bytes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Artifact byte uploads disabled by server configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/logs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_console_logs",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stream",
+            "in": "query",
+            "description": "stdout or stderr",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring filter",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console log page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "log_console_logs",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConsoleLogsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Number of inserted console log lines",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsertedEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/objects/{object_id}/rows": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_object_rows",
+        "parameters": [
+          {
+            "name": "object_id",
+            "in": "path",
+            "description": "Object integer id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Table object rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Object not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifacts/{artifact_id}/download": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "download_artifact",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "description": "Artifact UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact byte stream",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "206": {
+            "description": "Artifact byte range",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Artifact not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/export": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "export_data",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Filter by project name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by run status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "metric_key",
+            "in": "query",
+            "description": "Metric key for export columns",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Versioned export payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing export scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_imports",
+        "responses": {
+          "200": {
+            "description": "Recent imports for the caller's tenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/wandb": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "import_wandb",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Run validation only without persisting",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Normalized W&B JSON payload",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonObjectResponse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run or completed import summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/mlflow": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "import_mlflow",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Run validation only without persisting",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Normalized MLflow JSON payload",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonObjectResponse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run or completed import summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/neptune": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "import_neptune",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Run validation only without persisting",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Normalized Neptune JSON payload",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonObjectResponse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run or completed import summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/usage": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "usage_summary",
+        "responses": {
+          "200": {
+            "description": "Computed org usage summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing usage:read scope or restricted org access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/usage/export": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "usage_export",
+        "responses": {
+          "200": {
+            "description": "Versioned usage export payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing usage:read scope or restricted org access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/dashboard/preferences": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "get_dashboard_preferences",
+        "responses": {
+          "200": {
+            "description": "Dashboard preferences for the caller's tenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardPreferencesEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "update_dashboard_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDashboardPreferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated dashboard preferences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardPreferencesEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/workspace-views": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "list_workspace_views",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved workspace view summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewSummariesEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "create_workspace_view",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveWorkspaceViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created workspace view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/workspace-views/{view_id}": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "get_workspace_view",
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "path",
+            "description": "Workspace view UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace view not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "update_workspace_view",
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "path",
+            "description": "Workspace view UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveWorkspaceViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated workspace view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace view not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "platform",
+      "description": "Health, readiness, OpenAPI spec, and other unauthenticated endpoints."
+    },
+    {
+      "name": "runs",
+      "description": "Experiment runs, metrics, attributes, objects, artifacts."
+    },
+    {
+      "name": "dashboard",
+      "description": "Browser dashboard preferences and saved workspace views."
+    }
+  ],
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        }
+      },
+      "ProjectsEnvelope": {
+        "type": "object",
+        "required": [
+          "projects"
+        ],
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectRow"
+            }
+          }
+        }
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ProjectEnvelope": {
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectRow"
+          }
+        }
+      },
+      "RunsEnvelope": {
+        "type": "object",
+        "required": [
+          "runs"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunRow"
+            }
+          }
+        }
+      },
+      "CreateRunRequest": {
+        "type": "object",
+        "properties": {
+          "config": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RunEnvelope": {
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunRow"
+          }
+        }
+      },
+      "UpdateRunRequest": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "JsonObjectResponse": {
+        "type": "object",
+        "description": "Free-form key/value response payload used by handlers that build dynamic\nJSON objects in the store layer (overview, usage, exports, etc.). Modeled\nas an opaque object so the OpenAPI spec is honest about the shape without\nduplicating the dynamic structure here.",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object"
+          }
+        }
+      },
+      "LogMetricsRequest": {
+        "type": "object",
+        "required": [
+          "metrics",
+          "step"
+        ],
+        "properties": {
+          "metrics": {
+            "type": "object"
+          },
+          "preview": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "preview_completion": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "step": {
+            "type": "object"
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InsertedEnvelope": {
+        "type": "object",
+        "required": [
+          "inserted"
+        ],
+        "properties": {
+          "inserted": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LogRankMetricsRequest": {
+        "type": "object",
+        "required": [
+          "metrics",
+          "step",
+          "rank",
+          "world_size"
+        ],
+        "properties": {
+          "local_rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "metrics": {
+            "type": "object"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "step": {
+            "type": "object"
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "weight": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "MetricsSeriesRequest": {
+        "type": "object",
+        "required": [
+          "key",
+          "run_ids"
+        ],
+        "properties": {
+          "buckets": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Optional M4 downsampling bucket count.\n\nWhen present and the series has more than `4 * buckets` points, the\nresponse uses M4 aggregation (Jugel et al., 2014) instead of a naive\nprefix limit. The rendered line through the resulting points is\npixel-identical to the chart through all raw points. Value must be\nbetween 1 and 4096 inclusive. Ignored when `start_step` or `end_step`\nis set (zoomed views use the raw path). When absent the existing\nprefix-limited behaviour is unchanged.",
+            "minimum": 0
+          },
+          "end_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "key": {
+            "type": "string"
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "run_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "RankMetricsSummaryResponse": {
+        "type": "object",
+        "required": [
+          "keys",
+          "reducers",
+          "heatmap",
+          "outliers",
+          "coverage",
+          "limits",
+          "truncated"
+        ],
+        "properties": {
+          "coverage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankCoveragePoint"
+            }
+          },
+          "heatmap": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankHeatmapPoint"
+            }
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limits": {
+            "$ref": "#/components/schemas/RankMetricLimits"
+          },
+          "outliers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankOutlierPoint"
+            }
+          },
+          "reducers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankReducerPoint"
+            }
+          },
+          "truncated": {
+            "$ref": "#/components/schemas/RankMetricTruncation"
+          }
+        }
+      },
+      "AttributesEnvelope": {
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "properties": {
+          "attributes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributeRow"
+            }
+          }
+        }
+      },
+      "CreateAttributesRequest": {
+        "type": "object",
+        "properties": {
+          "attributes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AttributeInput"
+            }
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "step": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateObjectRequest": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "rows": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "step": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "value": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "ObjectEnvelope": {
+        "type": "object",
+        "required": [
+          "object"
+        ],
+        "properties": {
+          "object": {
+            "type": "object"
+          }
+        }
+      },
+      "ArtifactsEnvelope": {
+        "type": "object",
+        "required": [
+          "artifacts"
+        ],
+        "properties": {
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicArtifactRow"
+            }
+          }
+        }
+      },
+      "CreateArtifactRequest": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "step": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ArtifactEnvelope": {
+        "type": "object",
+        "required": [
+          "artifact"
+        ],
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/PublicArtifactRow"
+          }
+        }
+      },
+      "UploadArtifactRequest": {
+        "type": "object",
+        "properties": {
+          "content_base64": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "step": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateConsoleLogsRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ConsoleLogInput"
+            }
+          },
+          "stream": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DashboardPreferencesEnvelope": {
+        "type": "object",
+        "required": [
+          "preferences"
+        ],
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/DashboardPreferenceRow"
+          }
+        }
+      },
+      "UpdateDashboardPreferencesRequest": {
+        "type": "object",
+        "properties": {
+          "selected_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WorkspaceViewSummariesEnvelope": {
+        "type": "object",
+        "required": [
+          "views"
+        ],
+        "properties": {
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceViewSummary"
+            }
+          }
+        }
+      },
+      "SaveWorkspaceViewRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payload": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WorkspaceViewEnvelope": {
+        "type": "object",
+        "required": [
+          "view"
+        ],
+        "properties": {
+          "view": {
+            "$ref": "#/components/schemas/WorkspaceViewRow"
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "RunRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "project_id",
+          "project",
+          "name",
+          "status",
+          "config",
+          "tags",
+          "metadata",
+          "created_at",
+          "started_at"
+        ],
+        "properties": {
+          "config": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RankCoveragePoint": {
+        "type": "object",
+        "required": [
+          "step",
+          "rank_count",
+          "expected_world_size",
+          "missing_rank_count",
+          "missing_ranks",
+          "world_size_mismatch"
+        ],
+        "properties": {
+          "expected_world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "missing_rank_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "missing_ranks": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "rank_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "world_size_mismatch": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RankHeatmapPoint": {
+        "type": "object",
+        "required": [
+          "step",
+          "rank",
+          "value",
+          "delta_from_mean"
+        ],
+        "properties": {
+          "delta_from_mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "RankMetricLimits": {
+        "type": "object",
+        "required": [
+          "step_limit",
+          "max_world_size",
+          "max_canonical_rows",
+          "max_heatmap_cells",
+          "outlier_limit"
+        ],
+        "properties": {
+          "max_canonical_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_heatmap_cells": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "outlier_limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_limit": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RankOutlierPoint": {
+        "type": "object",
+        "required": [
+          "rank",
+          "step",
+          "value",
+          "delta_from_mean",
+          "z_score"
+        ],
+        "properties": {
+          "delta_from_mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          },
+          "z_score": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "RankReducerPoint": {
+        "type": "object",
+        "required": [
+          "step",
+          "rank_count",
+          "expected_world_size",
+          "world_size_mismatch",
+          "mean",
+          "weighted_mean",
+          "min",
+          "max",
+          "stddev",
+          "p05",
+          "p50",
+          "p95"
+        ],
+        "properties": {
+          "expected_world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max": {
+            "type": "number",
+            "format": "double"
+          },
+          "mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "min": {
+            "type": "number",
+            "format": "double"
+          },
+          "p05": {
+            "type": "number",
+            "format": "double"
+          },
+          "p50": {
+            "type": "number",
+            "format": "double"
+          },
+          "p95": {
+            "type": "number",
+            "format": "double"
+          },
+          "rank_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stddev": {
+            "type": "number",
+            "format": "double"
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "weighted_mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "world_size_mismatch": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RankMetricTruncation": {
+        "type": "object",
+        "required": [
+          "steps",
+          "heatmap",
+          "outliers"
+        ],
+        "properties": {
+          "heatmap": {
+            "type": "boolean"
+          },
+          "outliers": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AttributeRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "run_id",
+          "path",
+          "type",
+          "value",
+          "summary",
+          "created_at"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "logged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "summary": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string"
+          },
+          "value": {
+            "type": "object"
+          }
+        }
+      },
+      "AttributeInput": {
+        "type": "object",
+        "required": [
+          "path",
+          "type",
+          "value"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string"
+          },
+          "step": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "value": {
+            "type": "object"
+          }
+        }
+      },
+      "PublicArtifactRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "run_id",
+          "type",
+          "name",
+          "uri",
+          "storage_backend",
+          "metadata",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "storage_backend": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleLogInput": {
+        "type": "object",
+        "properties": {
+          "line_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DashboardPreferenceRow": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "org_id",
+          "updated_at"
+        ],
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "selected_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "WorkspaceViewSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkspaceViewRow": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "id",
+          "org_id",
+          "name",
+          "payload",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerApiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "InstantML SDK API key sent as Authorization: Bearer instantml_..."
+      },
+      "browserSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "instantml_session",
+        "description": "HttpOnly browser session cookie issued by /api/auth/dev/google or /api/auth/clerk"
+      }
+    }
+  }
+}

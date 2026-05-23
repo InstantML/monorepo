@@ -1,0 +1,47 @@
+---
+title: "Metrics and charts"
+description: "Inspect metric series, grouped averages, smoothing, zoom, and point hover details."
+---
+
+# Metrics and charts
+
+![Metrics dashboard](/images/product/dashboard-metrics.png)
+
+Metrics views are optimized for asking, "what happened to this metric across
+the selected runs?"
+
+## Metric catalog
+
+The metric catalog groups available metric keys by namespace, coverage, point
+count, goal-aware best value, and selected-run presence.
+
+Use namespaces such as `train/`, `eval/`, `reward/`, and `system/` to keep the
+catalog readable.
+
+## Chart controls
+
+Current chart controls include:
+
+- Selected metric.
+- Step or logged-time x-axis.
+- Optional smoothing.
+- Grouped averages.
+- Group by seed, first tag, or selected config keys.
+- Range brush zoom.
+- Hover readouts with run name, metric, step, and value.
+
+Unit-bounded metrics such as accuracy, F1, precision, recall, and AUC use a
+normalized `0..1` y-axis. Return, reward, and loss metrics auto-scale.
+
+## Bounded series requests
+
+Metric series are fetched separately from run summaries. Comparison views should
+request bounded series data by run, metric key, step range, time range, or
+explicit point limit instead of asking the table view to load full history.
+
+## Good metric hygiene
+
+- Keep metric names stable across runs.
+- Prefer slash namespaces.
+- Log one training-loop dictionary per step instead of many tiny calls.
+- Use consistent step semantics inside a project.

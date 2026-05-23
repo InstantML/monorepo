@@ -1,0 +1,66 @@
+---
+title: "Service planes"
+description: "Control and data service roles behind the hosted InstantML API."
+---
+
+# Service planes
+
+The hosted InstantML API is split into control-plane and data-plane
+responsibilities behind one public API URL.
+
+| Mode | Routes | Typical use |
+| --- | --- | --- |
+| `control` | Auth, sessions, orgs, seats, billing, API keys, tenant routes, dashboard preference state. | Hosted control service. |
+| `data` | Projects, runs, metrics, logs, artifacts, objects, imports, export, usage. | Hosted tenant product service. |
+
+Platform routes exist on every service:
+
+- `GET /health`
+- `GET /healthz`
+- `GET /readyz`
+- `GET /metrics`
+- `GET /openapi.json`
+- `GET /api/auth/config`
+
+`/openapi.json` and `/api/auth/config` report the active service plane so
+operators can verify which role is serving a request.
+
+## Split Cloud Run topology
+
+```mermaid
+flowchart LR
+  browser["Browser / Next frontend"]
+  sdk["Python SDK / uploader"]
+  edge["Public HTTPS API URL"]
+  control["Cloud Run control service"]
+  data["Cloud Run data service"]
+  userdata[("User Data ClickHouse")]
+  tenant[("Tenant ClickHouse")]
+
+  browser --> edge
+  sdk --> edge
+  edge --> control
+  edge --> data
+  control --> userdata
+  control --> tenant
+  data --> userdata
+  data --> tenant
+```
+
+Path-based routing is enough for a single data cell. Many cells require a
+discovery step or app-level router because a plain load balancer cannot inspect
+an org hidden inside a bearer token before authentication.
+
+## Readiness
+
+`/readyz` fails until ClickHouse is reachable and the process-local control
+projection has loaded. Data-plane auth misses force one control-record refresh
+and retry, so fresh API keys and browser sessions can become usable without
+waiting for the next background refresh tick.
+
+## Scaling posture
+
+Control and data services are scaled conservatively to preserve tenant
+isolation, predictable routing, and consistent control-record replay. Serious
+customers can use dedicated cells when they need stronger isolation,
+noisy-neighbor protection, or custom retention.

@@ -1,0 +1,56 @@
+---
+title: "CLI login"
+description: "Use the InstantML CLI device-code flow instead of copying API keys by hand."
+---
+
+# CLI login
+
+The `instantml` CLI supports an OAuth 2.0 device-code flow for environments
+where a browser login is easier than pasting an API key.
+
+## Commands
+
+Authenticate:
+
+```bash
+instantml login --api-host https://api.instantml.ai
+```
+
+Print the current credential context:
+
+```bash
+instantml whoami
+```
+
+Remove stored credentials:
+
+```bash
+instantml logout
+```
+
+## Credential resolution
+
+`init()` resolves credentials in this order:
+
+1. Explicit `api_key=...`.
+2. `INSTANTML_API_KEY`.
+3. CLI-stored credentials from `instantml login`.
+4. No credentials, which raises `InstantMLError` for auth-required servers.
+
+Examples:
+
+```python
+# Explicit key
+run = ro.init(project="cartpole", api_key="instantml_...", base_url="https://api.instantml.ai")
+
+# Environment key
+run = ro.init(project="cartpole", base_url="https://api.instantml.ai")
+
+# After `instantml login`
+run = ro.init(project="cartpole", base_url="https://api.instantml.ai")
+```
+
+## Browser confirmation
+
+The device-code confirmation page formats codes as `XXXX-XXXX`, requires a
+browser session, and tells you when the terminal can continue.

@@ -1,0 +1,97 @@
+---
+title: "Import, export, and usage API"
+description: "Run migration importers, export bounded data, and inspect usage guardrails."
+---
+
+# Import, export, and usage API
+
+Use these endpoints for migration, backup, account administration, and usage
+debugging.
+
+## Export
+
+```http
+GET /api/export?project=cartpole&status=finished
+Authorization: Bearer instantml_...
+```
+
+Requires tenant read access. API keys need `export:read`; browser sessions need
+viewer or higher role.
+
+Response shape:
+
+```json
+{
+  "version": 1,
+  "exported_at": "2026-05-16T00:00:00Z",
+  "organizations": [],
+  "projects": [],
+  "runs": [],
+  "metric_series": [],
+  "metrics": [],
+  "attributes": [],
+  "artifacts": [],
+  "table_object_rows": [],
+  "imports": [],
+  "limits": {},
+  "truncated": false
+}
+```
+
+Export is bounded. If `truncated` is true, narrow the filters before treating
+the file as a complete archive.
+
+## Usage summary
+
+```http
+GET /api/usage
+Authorization: Bearer instantml_...
+```
+
+Requires unrestricted org API key with `usage:read` or an owner/admin browser
+session.
+
+Usage includes:
+
+- Plan catalog.
+- Current org plan.
+- Current UTC calendar-month metric usage.
+- Retained projects, runs, metric series, artifacts, API keys, and seats.
+- Exact artifact bytes when available.
+- Exact ClickHouse table bytes when available.
+- Blocked-at-limit storage estimates.
+- Billing precision metadata.
+
+Metric-point usage resets monthly. Most other counters are retained resources.
+
+## Usage export
+
+```http
+GET /api/usage/export
+Authorization: Bearer instantml_...
+```
+
+Use usage export for account audits and support handoff. It should match the
+same org and permission rules as usage summary.
+
+## Importers
+
+Supported importer routes accept transformed or exporter-shaped JSON payloads
+for:
+
+- Neptune.
+- W&B.
+- MLflow.
+
+Importer API keys need `imports:write`.
+
+Practical migration flow:
+
+1. Export from the source tracker.
+2. Transform to the supported JSON shape.
+3. Import into a staging or local InstantML project first.
+4. Verify projects, runs, metrics, configs, tags, notes, artifacts, and counts.
+5. Repeat for production once the mapping is trusted.
+
+Imports can write many records. Treat importer retries as operational jobs and
+keep the returned import ID with logs or support tickets.

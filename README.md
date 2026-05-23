@@ -5,7 +5,11 @@ InstantML is an early-stage W&B (Weights & Biases)-style SaaS competitor for ser
 Start with:
 
 - `SETUP.md` for fresh-clone environment setup.
-- `USER_DOCS.md` for external user-facing SDK usage and UI workflow guidance.
+- `apps/docs/` for the Mintlify public docs source, including user guides,
+  SDK/API references, architecture overview, operations guides, and generated
+  public OpenAPI reference.
+- `USER_DOCS.md` for the older condensed external-user guide. Prefer
+  `apps/docs/` for new public docs work.
 - `PRODUCT_STRATEGY.md` for product direction.
 - `TODO.md` for the editable working task list.
 - `AGENTS.md` for contributor and future-agent guidelines.
@@ -24,6 +28,7 @@ Start with:
 ```text
 monorepo/
   apps/
+    docs/
     api/
     rust-server/
     server/
@@ -43,6 +48,8 @@ Every component directory and meaningful subdirectory should include a README. W
 Current backend ownership:
 
 - Use `apps/rust-server` for current product API, hosted-backend, and UI-serving API work.
+- Use `apps/docs` for the Mintlify public docs site source and generated public
+  OpenAPI reference.
 - Keep `apps/server` as a deprecated Node compatibility oracle and JSON migration source. Use `npm run dev:api:node` or `npm run test:contract:node` only when comparing legacy route behavior.
 - Keep `apps/api` as the Python bootstrap/reference API and SDK compatibility target.
 
@@ -165,6 +172,17 @@ npm run test:scale
 npm run benchmark:large-runs
 npm run benchmark:cloud-run -- --help
 ```
+
+Validate the public Mintlify docs MVP:
+
+```bash
+npm run docs:sync-openapi
+npm run docs:validate
+```
+
+CI runs `npm run docs:validate` after API type drift checks, so public docs fail
+when their filtered OpenAPI copy is stale or when public pages link into
+internal planning docs.
 
 Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust format/lint/unit tests, Node tests, and Python tests. The Rust service, SDK, and UI smokes still run locally because they require disposable service dependencies and are being hardened alongside the ClickHouse metric-store harness.
 

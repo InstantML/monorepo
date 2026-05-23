@@ -28,7 +28,9 @@ Future agents must update documentation whenever they change:
 ## Current Sources Of Truth
 
 - Strategy and roadmap: `../PRODUCT_STRATEGY.md`.
-- External user guide: `../USER_DOCS.md`.
+- Public user, SDK, API, architecture, and operations docs:
+  `../apps/docs/`.
+- Legacy condensed external-user guide: `../USER_DOCS.md`.
 - Working tasks: `../TODO.md`.
 - Fresh setup: `../SETUP.md`.
 - Current implemented architecture: `architecture/current-system.md`.

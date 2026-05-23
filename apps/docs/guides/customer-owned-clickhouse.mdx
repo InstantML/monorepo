@@ -1,0 +1,97 @@
+---
+title: "Customer-owned ClickHouse"
+description: "Configure Premium BYOC storage and understand what InstantML stores where."
+---
+
+# Customer-owned ClickHouse
+
+Premium customer-owned ClickHouse stores tenant product data in a customer's
+ClickHouse database. InstantML still owns identity, sessions, billing, API-key
+metadata, route metadata, and artifact bytes in its hosted control plane.
+
+## What goes into customer ClickHouse
+
+- Projects.
+- Runs.
+- Scalar metrics.
+- Rank-aware metrics.
+- Console logs.
+- Attributes.
+- Rich objects and table preview rows.
+- Artifact metadata.
+- Import records.
+- Tenant operational records.
+
+## What stays in InstantML control storage
+
+- Users and identities.
+- Organizations and memberships.
+- Browser sessions.
+- API keys and service-account metadata.
+- Billing and plan state.
+- Tenant route metadata.
+- Artifact byte storage when InstantML stores uploaded bytes.
+
+Usage storage guardrails for BYOC count only InstantML-owned artifact bytes.
+They do not count customer-owned ClickHouse warehouse bytes.
+
+## Recommended setup
+
+1. Create or choose a read-write ClickHouse Cloud service near the InstantML
+   data-plane region.
+2. Add every InstantML egress CIDR shown in onboarding to the ClickHouse service
+   IP access list. This is the API/data-plane egress, not the browser IP.
+3. Create one dedicated database for the org, such as `instantml_acme`.
+4. Create one dedicated SQL user, such as `instantml_writer`.
+5. Grant schema migration, insert, and read permissions for initial setup.
+6. Paste the HTTPS endpoint origin, database, username, and password into
+   InstantML onboarding.
+7. Validate and save.
+8. Optionally revoke DDL privileges after validation. Future schema migrations
+   may require temporarily granting them again.
+
+Recommended SQL:
+
+```sql
+CREATE DATABASE IF NOT EXISTS instantml_acme;
+
+CREATE USER IF NOT EXISTS instantml_writer
+IDENTIFIED WITH sha256_password BY '<generated-password>';
+
+GRANT SELECT, INSERT, CREATE TABLE, CREATE VIEW, ALTER TABLE, DROP TABLE
+ON instantml_acme.*
+TO instantml_writer;
+
+-- Optional after InstantML validates and saves the connection:
+REVOKE CREATE TABLE, ALTER TABLE, DROP TABLE
+ON instantml_acme.*
+FROM instantml_writer;
+```
+
+Endpoint format:
+
+```text
+https://abc123.us-central1.gcp.clickhouse.cloud:8443
+```
+
+Do not include username, password, path, query string, or fragment in the URL.
+
+## Validation behavior
+
+Validation runs from the data-plane service because that is the same service
+path that later serves SDK and dashboard product traffic. The org remains in a
+storage setup state until validation and save succeed.
+
+Product writes and SDK-key creation are blocked while storage is unconfigured.
+The dashboard should keep users in onboarding and show the required egress
+CIDRs and connection form.
+
+## Current limitations
+
+- BYOC is Premium-only.
+- The org must be empty before switching to BYOC.
+- Hosted mode requires a public HTTPS ClickHouse endpoint.
+- The database must already exist.
+- Initial validation applies the InstantML schema and needs DDL privileges.
+- Runtime password storage should use the configured secret backend. Local
+  user-data password storage is for disposable smoke tests only.

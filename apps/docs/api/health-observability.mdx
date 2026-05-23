@@ -1,0 +1,73 @@
+---
+title: "Health and observability API"
+description: "Health, readiness, metrics, OpenAPI, and request correlation endpoints."
+---
+
+# Health and observability API
+
+These endpoints do not require tenant credentials.
+
+## Health
+
+```bash
+curl https://api.instantml.ai/health
+curl https://api.instantml.ai/healthz
+```
+
+Typical response:
+
+```json
+{ "status": "ok" }
+```
+
+Use health for process liveness checks.
+
+## Readiness
+
+```bash
+curl https://api.instantml.ai/readyz
+```
+
+Ready response:
+
+```json
+{
+  "status": "ok",
+  "control_projection_loaded": true,
+  "control_refresh_degraded": false
+}
+```
+
+Use readiness for load balancers and startup probes. It should fail until the
+server can reach ClickHouse and replay the control projection.
+
+## Prometheus metrics
+
+```bash
+curl https://api.instantml.ai/metrics
+```
+
+The metrics output includes gauges for control projection loaded/degraded state
+and request-level metrics emitted by the Rust service stack.
+
+## OpenAPI
+
+```bash
+curl https://api.instantml.ai/openapi.json
+```
+
+The public docs site consumes a filtered OpenAPI copy. The live service's
+OpenAPI output is useful for operator verification because it reports the
+active service plane.
+
+## Request IDs
+
+Responses include an `x-request-id` header. Keep it with support reports:
+
+```bash
+curl -i https://api.instantml.ai/healthz
+```
+
+Hosted origin logs use this request ID as the primary application correlation
+key. Cloudflare Ray IDs can help correlate edge logs, but they are not a
+replacement for `x-request-id`.

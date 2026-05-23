@@ -1,0 +1,63 @@
+---
+title: "Troubleshooting"
+description: "Fix common hosted API, SDK, API key, and importer issues."
+---
+
+# Troubleshooting
+
+## The SDK cannot connect
+
+Check that the hosted API is reachable:
+
+```bash
+curl https://api.instantml.ai/healthz
+```
+
+Then confirm your SDK key is configured:
+
+```bash
+echo "$INSTANTML_API_KEY"
+```
+
+## Hosted calls are unauthorized
+
+Check that the API key is present:
+
+```bash
+echo "$INSTANTML_API_KEY"
+```
+
+Either set `INSTANTML_API_KEY` or pass `api_key="instantml_..."` directly to
+`ro.init(...)`.
+
+## The dashboard does not show my run
+
+Check the project name you used in the SDK call. `project="cartpole"` appears in
+the dashboard project selector as `cartpole`.
+
+If the run was created but later logging calls failed, call `run.flush()` when
+using buffering and check SDK exceptions for the failed request.
+
+## Offline replay did not create a run
+
+Current limitation: `init()` still needs a reachable server because run creation
+is not spooled yet. `offline_dir` covers failed requests made after a run already
+exists.
+
+## Importer routes
+
+The public API includes JSON importer routes for transformed W&B, MLflow, and
+Neptune-shaped import payloads:
+
+- `POST /api/imports/wandb`
+- `POST /api/imports/mlflow`
+- `POST /api/imports/neptune`
+
+These routes are for implemented transformed JSON inputs. Neptune Exporter
+Parquet imports are not currently supported by the public hosted importer.
+
+## Generated API reference looks stale
+
+The generated reference should match the practical API guides. If a documented
+hosted route is missing, report the page URL, endpoint, and response
+`x-request-id` if a request failed.

@@ -1,0 +1,119 @@
+---
+title: "Metrics and series API"
+description: "Write scalar metrics, read metric history, request batched series, and inspect rank metrics."
+---
+
+# Metrics and series API
+
+Metric writes are the main SDK hot path. Keep them batched and finite.
+
+## Write scalar metrics
+
+```http
+POST /runs/{run_id}/metrics
+Authorization: Bearer instantml_...
+Idempotency-Key: optional-event-id
+Content-Type: application/json
+
+{
+  "metrics": {
+    "train/loss": 0.12,
+    "eval/accuracy": 0.9
+  },
+  "step": 1,
+  "timestamp": "2026-05-16T00:00:00Z"
+}
+```
+
+Requires `sdk:ingest` or a writable browser session.
+
+Validation:
+
+- Step must be finite and nonnegative.
+- Metric values must be finite numbers.
+- Up to 1,000 metrics per batch.
+
+Response:
+
+```json
+{ "inserted": 2 }
+```
+
+## Read one run's metric history
+
+```http
+GET /runs/{run_id}/metrics?key=eval/accuracy&start_step=0&end_step=100&limit=1000
+Authorization: Bearer instantml_...
+```
+
+Query parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `key` | Optional exact metric key. |
+| `start_step` | Optional lower bound. |
+| `end_step` | Optional upper bound. |
+| `limit` | Max 5,000. |
+
+## Read batched metric series
+
+```http
+POST /api/metrics/series
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "key": "eval/accuracy",
+  "run_ids": ["uuid-a", "uuid-b"],
+  "limit": 1000,
+  "start_step": 0,
+  "end_step": 100
+}
+```
+
+Use this endpoint for dashboard-style charting. It accepts up to 2,000 run IDs,
+but the server clamps the effective per-run point limit so one response cannot
+exceed the maximum returned-point budget.
+
+## Write rank-aware metrics
+
+```http
+POST /runs/{run_id}/rank-metrics
+Authorization: Bearer instantml_...
+Idempotency-Key: optional-event-id
+Content-Type: application/json
+
+{
+  "metrics": {
+    "train/loss": 0.12
+  },
+  "step": 1,
+  "rank": 0,
+  "local_rank": 0,
+  "world_size": 8,
+  "weight": 1024,
+  "timestamp": "2026-05-16T00:00:00Z"
+}
+```
+
+Rank and local rank are zero-based. World size must be between 1 and 512.
+Weight defaults to `1.0`.
+
+## Read rank summary
+
+```http
+GET /api/runs/{run_id}/rank-metrics/summary?key=train/loss&limit=1000
+Authorization: Bearer instantml_...
+```
+
+The response includes:
+
+- Available keys.
+- Reducers by step.
+- Heatmap cells.
+- Outlier rows.
+- Coverage rows.
+- Limits and truncation flags.
+
+The summary is intentionally run-scoped, which keeps the Distributed tab fast
+for large projects.

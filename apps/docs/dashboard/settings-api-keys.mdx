@@ -1,0 +1,73 @@
+---
+title: "Settings and API keys"
+description: "Manage plan usage, seats, invitations, billing controls, storage mode, and SDK API keys."
+---
+
+# Settings and API keys
+
+Settings and the API tab are the operational side of the dashboard.
+
+## Plan and usage
+
+The topbar shows a compact plan usage badge. Settings shows more detail:
+
+- Current plan.
+- Metric-point usage for the current UTC calendar month.
+- Retained project and run counts.
+- Storage/accounting estimates.
+- Seat usage.
+- Artifact, metric series, and API-key counts.
+
+Metric-point usage resets monthly. Storage, projects, runs, seats, artifacts,
+metric series, and API keys are retained-resource counts.
+
+## Billing controls
+
+Paid signup and plan changes use hosted billing flows. When an org is pending
+payment or payment-failed, write routes can return a payment-required error.
+
+## Seats and invitations
+
+Admins can invite teammates, resend pending invitations, revoke pending
+invitations, and see seat accounting that includes active members plus
+unexpired pending invitations.
+
+## API keys
+
+The API tab lists active keys, creates copy-once keys, revokes keys, and shows
+copyable route snippets for the hosted REST surface.
+
+![API key creation and copyable REST routes](/images/product/dashboard-api-keys.png)
+
+API keys should be stored in environment variables or a secrets manager:
+
+```bash
+export INSTANTML_API_KEY="instantml_..."
+export INSTANTML_API_BASE_URL="https://api.instantml.ai"
+```
+
+Use the key for SDK runs:
+
+```python
+import instantml as ro
+
+run = ro.init(project="demo")
+run.log({"accuracy": 0.94, "loss": 0.18}, step=10)
+run.finish()
+```
+
+Or for direct automation:
+
+```bash
+curl https://api.instantml.ai/projects \
+  -H "Authorization: Bearer $INSTANTML_API_KEY"
+```
+
+Never commit API keys, session cookies, Clerk secrets, ClickHouse credentials,
+or storage credentials.
+
+## Storage mode
+
+Hosted artifact bytes can use InstantML-owned storage. Customer-owned
+ClickHouse setup appears as a storage/admin workflow for teams that need to
+route product data to their own ClickHouse environment.

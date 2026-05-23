@@ -1,0 +1,54 @@
+---
+title: "Dashboard tour"
+description: "A screenshot-backed tour of the main InstantML dashboard surfaces."
+---
+
+# Dashboard tour
+
+The dashboard is organized around repeated research work: scan many runs,
+inspect metric behavior, open one run, then compare candidates.
+
+## Runs workspace
+
+![Runs workspace with a large sweep](/images/product/dashboard-runs.png)
+
+Use Runs for the broadest view of a project:
+
+- Filter by project, status, search text, and sort mode.
+- Select runs from the rail.
+- Review maintained summary values without loading full metric history.
+- Build line, bar, histogram, or dot panels from logged metric keys.
+- Save named workspace views when the layout should survive a reload.
+
+## Metrics
+
+![Metrics dashboard](/images/product/dashboard-metrics.png)
+
+Metrics is chart-first. Use it when you know the metric you care about and want
+to compare series behavior across selected runs.
+
+## Run Detail
+
+![Run detail page](/images/product/dashboard-run-detail.png)
+
+Run Detail focuses on one run: tags, notes, status, metric summaries, config,
+source context, logs, files, system information, and graph-style run evidence.
+
+## Compare
+
+![Compare dashboard](/images/product/dashboard-compare.png)
+
+Compare lets you inspect selected runs side by side or row by row. Use it after
+the Runs workspace has narrowed the candidate set.
+
+## Research dashboards
+
+![Distributed dashboard](/images/product/dashboard-distributed.png)
+
+Distributed, Advanced, and Insights are research-oriented views for rank-aware
+metrics, grouped reducers, loaded summaries, and exploratory analysis.
+
+![Insights dashboard](/images/product/dashboard-insights.png)
+
+These views are designed for large sweeps and distributed training runs where a
+single scalar chart is not enough context.

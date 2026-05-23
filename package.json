@@ -16,7 +16,7 @@
     "dev:api:rust": "node tools/dev-rust-api.mjs",
     "dev:api:node": "node apps/server/src/server.js --db .instantml/instantml.json --port 8000",
     "dev:web": "cd apps/web && ../../node_modules/.bin/next dev --port 3000",
-    "test": "npm run test:node && npm run test:deploy-cloud-run && npm run rust:test && npm run test:python",
+    "test": "npm run test:node && npm run test:deploy-cloud-run && npm run docs:validate && npm run rust:test && npm run test:python",
     "test:python": "python3 -m pytest",
     "sdk:build": "python3 -m build packages/python-sdk",
     "sdk:check": "python3 -m twine check packages/python-sdk/dist/*",
@@ -45,7 +45,11 @@
     "deploy:cloud-run:single": "node tools/deploy-cloud-run.mjs --topology=single",
     "deploy:cloud-run:multi": "node tools/deploy-cloud-run.mjs --topology=split",
     "deploy:cloud-run:staging": "node tools/deploy-cloud-run.mjs --topology=split --environment=staging --public-router",
-    "test:all": "npm run check:setup && npm run rust:lint && npm run rust:test && npm run test:node && npm run test:deploy-cloud-run && npm run test:python && npm run test:contract && npm run test:rust:sdk && npm run test:scale && npm run test:ui",
+    "docs:sync-openapi": "node tools/sync-docs-openapi.mjs",
+    "docs:check-openapi": "node tools/sync-docs-openapi.mjs --check",
+    "docs:dev": "npm run docs:sync-openapi && cd apps/docs && ../../node_modules/.bin/mint dev",
+    "docs:validate": "npm run docs:check-openapi && node tools/validate-docs-content.mjs && node tools/validate-docs-snippets.mjs && cd apps/docs && ../../node_modules/.bin/mint validate",
+    "test:all": "npm run check:setup && npm run rust:lint && npm run rust:test && npm run test:node && npm run test:deploy-cloud-run && npm run docs:validate && npm run test:python && npm run test:contract && npm run test:rust:sdk && npm run test:scale && npm run test:ui",
     "test:ui": "node tools/rust-service-smoke.mjs ui",
     "test:ui:direct": "node apps/web/tests/ui-smoke.mjs",
     "test:ui:node": "INSTANTML_UI_SMOKE_BACKEND=node node apps/web/tests/ui-smoke.mjs",
@@ -68,6 +72,7 @@
     "@types/node": "22.19.17",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "mint": "4.2.577",
     "openapi-typescript": "7.5.2",
     "playwright": "1.59.1",
     "typescript": "5.7.3"
@@ -80,6 +85,7 @@
     "react-dom": "19.2.6"
   },
   "overrides": {
-    "postcss": "8.5.14"
+    "postcss": "8.5.14",
+    "react": "19.2.6"
   }
 }

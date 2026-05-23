@@ -1,0 +1,103 @@
+---
+title: "Console, system metrics, and integrations"
+description: "Capture stdout/stderr, system metrics, local audit events, and lightweight framework adapters."
+---
+
+# Console, system metrics, and integrations
+
+InstantML keeps the core SDK small. Optional capture features are explicit and
+can be enabled per run.
+
+## Console logs
+
+Log individual lines:
+
+```python
+run.log_stdout("epoch=1 loss=0.42")
+run.log_stderr(["warning: entropy dipped", "retrying evaluation"])
+```
+
+Or let the SDK wrap stdout and stderr:
+
+```python
+run = ro.init(
+    project="train-loop",
+    name="seed-7",
+    capture_console=True,
+)
+```
+
+Captured console lines are written through to the original stream and also sent
+to InstantML. Run Detail fetches them only when the Logs section is opened, so
+normal dashboard entry does not fan out log requests.
+
+## System metrics
+
+Enable periodic system metrics:
+
+```python
+run = ro.init(
+    project="train-loop",
+    name="seed-7",
+    system_metrics=True,
+    system_metrics_interval=15.0,
+)
+```
+
+System metrics log under `system/...` at the current step without incrementing
+the run's implicit step counter. Install the `system` extra for optional system
+dependencies:
+
+```bash
+python3 -m pip install "instantml[system]"
+```
+
+## Local audit store
+
+The local SQLite audit store records attempted SDK events before submit:
+
+```python
+run = ro.init(
+    project="train-loop",
+    local_store=True,
+    local_store_dir=".instantml/local",
+)
+```
+
+This is not replay and is not proof that the server accepted an event. Use it
+when you want local evidence of what the SDK attempted during debugging.
+
+## Source metadata
+
+By default, the SDK captures reproducibility context when it can:
+
+- Python version.
+- Platform.
+- Hostname.
+- Process ID.
+- Current working directory.
+- Command argv.
+- Git repository metadata.
+
+Disable source capture for sensitive jobs:
+
+```python
+run = ro.init(project="private-run", source_tracking=False)
+```
+
+SDK-owned source metadata is reserved and cannot be overwritten by user-provided
+metadata.
+
+## Framework adapters
+
+Adapters stay deliberately thin. They help common frameworks call the same
+public SDK methods rather than adding a second integration model.
+
+```python
+run.watch(model, log="gradients", log_freq=100)
+trainer.add_callback(ro.TransformersCallback(run=run))
+logger = ro.LightningLogger(project="cartpole")
+```
+
+Prefer direct `run.log(...)` calls for custom loops. Use adapters when a
+framework already owns the training lifecycle.

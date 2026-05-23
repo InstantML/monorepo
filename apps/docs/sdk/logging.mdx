@@ -1,0 +1,105 @@
+---
+title: "SDK logging"
+description: "Create runs and log metrics, configs, tags, notes, artifacts, and buffered events."
+---
+
+# SDK logging
+
+The Python package is imported as `instantml`.
+
+```python
+import instantml as ro
+```
+
+## Create a run
+
+```python
+run = ro.init(
+    project="mnist",
+    name="cnn-seed-7",
+    config={"seed": 7, "optimizer": "adam"},
+    tags=["baseline"],
+    notes="First CNN baseline.",
+)
+```
+
+Use `ro.Client(...)` when you want to reuse a base URL, timeout, API key, or
+offline directory across several runs:
+
+```python
+client = ro.Client(
+    base_url="https://api.instantml.ai",
+    timeout=2.0,
+    api_key="instantml_...",
+)
+
+run = client.init(project="cartpole", name="ppo-seed-42")
+```
+
+## Log scalar metrics
+
+`run.log(...)` is the ergonomic API. If `step` is omitted, the SDK
+auto-increments from `1`. If `step` is provided, it uses that value and advances
+the implicit counter to at least that step.
+
+```python
+run.log({"train/reward": 100.0})
+run.log({"train/loss": 0.12, "eval/accuracy": 0.91}, step=2)
+```
+
+Metric steps must be finite, nonnegative numbers. The UI expects each metric's
+step values to move forward over time.
+
+## Add run context
+
+```python
+run.log_config({"optimizer": {"lr": 0.0003}})
+run.add_tags(["ready-for-compare"])
+run.set_notes("Reward improved but entropy dipped late.")
+```
+
+Configs appear in Run Detail and Compare. Tags and notes are searchable in the
+run list and editable from the dashboard.
+
+## Finish cleanly
+
+```python
+run.finish()
+```
+
+You can also use a context manager:
+
+```python
+with ro.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
+    run.log({"train/loss": 0.42}, step=1)
+```
+
+If the block exits normally, the SDK finishes the run as `finished`. If an
+exception escapes the block, the SDK marks it as `failed`.
+
+## Buffering and offline replay
+
+Use buffering when you want to batch post-init SDK calls in memory:
+
+```python
+run = ro.init(project="long-run", buffer_size=25)
+```
+
+Use `offline_dir` to spool failed requests for an already-created run and replay
+them later. Current limitation: run creation still needs a reachable server.
+
+## Process-isolated spool mode
+
+Use `upload_mode="spool"` when your training process should avoid post-init HTTP
+calls. The SDK writes request events to disk, and a separate uploader drains
+them through the existing API.
+
+```python
+run = ro.init(
+    project="long-run",
+    name="seed-42",
+    upload_mode="spool",
+)
+```
+
+Batch many scalar values into one metrics dictionary for high-frequency loops.

@@ -1,0 +1,147 @@
+---
+title: "Core concepts"
+description: "Understand projects, runs, metrics, configs, artifacts, objects, and usage limits."
+---
+
+# Core concepts
+
+InstantML is built around a small set of training-loop concepts. If these are
+clear, the SDK, API, and dashboard all feel predictable.
+
+## Project
+
+A project groups related runs. Most teams use one project per model family,
+benchmark, environment, or product workflow.
+
+Examples:
+
+- `cartpole`
+- `mnist`
+- `rank-scale-rl`
+- `customer-support-finetune`
+
+Projects are also a useful API-key boundary. Project-scoped keys can restrict
+SDK logging and reads to one project.
+
+## Run
+
+A run is one training, evaluation, sweep, import, or experiment execution.
+
+Runs carry:
+
+- Name and status.
+- Start/end timing.
+- Config values.
+- Searchable tags and notes.
+- Maintained metric summaries.
+- Source metadata when the SDK can capture it.
+- Artifacts, checkpoints, rich objects, logs, and media.
+
+## Metric
+
+A metric is a named scalar time series logged at a numeric step.
+
+Good metric keys are stable and namespaced:
+
+| Pattern | Example |
+| --- | --- |
+| Training loss | `train/loss` |
+| Evaluation score | `eval/accuracy` |
+| Reward component | `reward/forward_velocity` |
+| System signal | `system/gpu_utilization` |
+
+Use consistent names across runs so the dashboard can compare them directly.
+
+## Step
+
+Step is the x-axis coordinate for metric series. Steps must be finite,
+nonnegative numbers. The SDK warns when a lower step is logged for the same
+metric after a higher step.
+
+Typical step choices:
+
+- Global optimizer step.
+- Environment step.
+- Epoch.
+- Evaluation checkpoint number.
+
+Pick one convention per project and keep it boring.
+
+## Config
+
+Config is run-level context that should explain why a run differs from others.
+
+Good config fields include:
+
+- `seed`
+- `model`
+- `dataset`
+- `optimizer.lr`
+- `batch_size`
+- `algorithm`
+- `checkpoint_source`
+
+Configs appear in Run Detail, Compare, and search context.
+
+## Tags and notes
+
+Tags and notes are first-class run identity fields.
+
+Use tags for compact labels:
+
+```python
+run.set_tags(["baseline", "ppo", "ready-for-compare"])
+```
+
+Use notes for human context:
+
+```python
+run.set_notes("Reward improved, but entropy dipped late.")
+```
+
+Both are searchable in the dashboard and visible in comparison workflows.
+
+## Artifact
+
+Artifacts track files or external references associated with a run.
+
+Use artifacts for:
+
+- Model checkpoints.
+- Prediction files.
+- Confusion matrices.
+- Eval reports.
+- Rollout videos.
+- Audio samples.
+- Dataset profiles.
+
+Stored artifact bytes are uploaded through the API and served back through a
+same-origin download route. External references remain copyable metadata.
+
+## Rich object
+
+Rich objects are structured logged values for dashboard previews.
+
+Current public object types include:
+
+- Tables.
+- Histograms.
+- Media objects linked to artifacts.
+
+The dashboard fetches object manifests separately from run summaries so hidden
+tabs do not load large object payloads by accident.
+
+## Usage and limits
+
+Usage is scoped to the current organization.
+
+Important limit types:
+
+- Metric points in the current UTC calendar month.
+- Retained projects and runs.
+- Retained storage.
+- Seats.
+- API keys.
+
+When a blocked limit is reached, write endpoints return a plan-limit error
+instead of silently accepting partial product state.

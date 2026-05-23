@@ -1,0 +1,150 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "aspen",
+  "name": "InstantML Docs",
+  "description": "Documentation for logging, comparing, and debugging training runs with InstantML.",
+  "colors": {
+    "primary": "#1FB877",
+    "light": "#1FB877",
+    "dark": "#34D399"
+  },
+  "logo": {
+    "light": "/images/instantml-lockup-light.svg",
+    "dark": "/images/instantml-lockup-dark.svg"
+  },
+  "favicon": {
+    "light": "/images/instantml-mark-light.svg",
+    "dark": "/images/instantml-mark-dark.svg"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "background": {
+    "decoration": "grid"
+  },
+  "seo": {
+    "metatags": {
+      "canonical": "https://docs.instantml.ai"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get Started",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "quickstart",
+              "concepts/core-concepts",
+              "guides/examples"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDK",
+        "groups": [
+          {
+            "group": "Python SDK",
+            "pages": [
+              "sdk/installation-auth",
+              "sdk/logging",
+              "sdk/metrics-steps",
+              "sdk/config-tags-notes",
+              "sdk/artifacts-checkpoints",
+              "sdk/rich-objects",
+              "sdk/distributed-training",
+              "sdk/console-system-integrations",
+              "sdk/reliability",
+              "sdk/cli-login",
+              "sdk/querying-data",
+              "sdk/examples-patterns"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Dashboard",
+        "groups": [
+          {
+            "group": "Dashboard",
+            "pages": [
+              "dashboard/tour",
+              "dashboard/runs-workspace",
+              "dashboard/metrics-charts",
+              "dashboard/run-detail",
+              "dashboard/compare-runs",
+              "dashboard/research-dashboards",
+              "dashboard/artifacts-files",
+              "dashboard/settings-api-keys"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Data",
+        "groups": [
+          {
+            "group": "Data and account",
+            "pages": [
+              "guides/imports",
+              "guides/export-usage-limits",
+              "guides/auth-billing-storage",
+              "guides/customer-owned-clickhouse",
+              "guides/observability"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API",
+        "groups": [
+          {
+            "group": "Practical API guides",
+            "pages": [
+              "api/authentication",
+              "api/errors-and-limits",
+              "api/health-observability",
+              "api/projects-runs",
+              "api/metrics-series",
+              "api/attributes-objects",
+              "api/artifacts",
+              "api/import-export-usage",
+              "api/dashboard-control-state",
+              "troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Architecture",
+        "groups": [
+          {
+            "group": "System",
+            "pages": [
+              "architecture/system-overview",
+              "architecture/storage-model",
+              "architecture/auth-tenancy",
+              "architecture/service-planes",
+              "architecture/schema-reference"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "openapi.json"
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "App",
+        "href": "https://instantml.ai"
+      }
+    ]
+  }
+}

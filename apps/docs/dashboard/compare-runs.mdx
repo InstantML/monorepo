@@ -1,0 +1,63 @@
+---
+title: "Compare runs"
+description: "Use the dashboard to scan runs, chart metrics, inspect details, and compare evidence."
+---
+
+# Compare runs
+
+After logging runs, the dashboard gives you a dense workflow for finding the
+best candidates and understanding what changed.
+
+![Compare dashboard](/images/product/dashboard-compare.png)
+
+## Runs workspace
+
+Use the Runs workspace for the broad scan:
+
+- Search run names, tags, notes, configs, and other indexed summary text.
+- Sort by newest, selected metric latest or best value, name, status, or
+  duration.
+- Select runs from the rail to drive charts and comparison views.
+- Add line, bar, histogram, or dot panels for metric summaries and series.
+
+The run list uses bounded summary data. Full metric series are fetched through
+separate chart requests when a panel needs them.
+
+## Run Detail
+
+Open Run Detail when one run needs closer inspection:
+
+- Metric chart for the selected run.
+- Config, tags, notes, and source metadata.
+- Logged artifacts, files, checkpoints, rollouts, tables, and histograms when
+  present.
+- Logs and file previews loaded only when their local sections are opened.
+
+## Compare
+
+Use Compare after selecting multiple runs:
+
+- Pick a reference run.
+- Switch between row-oriented and matrix-style views.
+- Filter to differences.
+- Add metric columns.
+- Sort evidence rows and run columns.
+- Jump from artifact counts to the selected run's artifact context.
+
+Keep selected sets focused for human review. The current side-by-side endpoint
+has a selected-run cap, and broad metric scans belong in the Runs workspace.
+
+## Row mode
+
+Row mode is useful when runs are the primary objects of inspection. It keeps
+metric, config, tag, note, and artifact context close to each row.
+
+## Matrix mode
+
+Matrix mode is useful when config or metric differences are the primary objects
+of inspection. Switch the reference run when the baseline changes.
+
+## Diff-only mode
+
+Diff-only mode hides rows that match the reference. Use it when many selected
+runs share the same config defaults.

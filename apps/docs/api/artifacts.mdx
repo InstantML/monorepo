@@ -1,0 +1,95 @@
+---
+title: "Artifacts API"
+description: "Create artifact metadata, upload bytes, list artifacts, and download stored bytes."
+---
+
+# Artifacts API
+
+Artifacts attach files, checkpoints, rollouts, reports, and media to a run.
+They can be metadata-only external references or server-managed stored bytes.
+
+## Create metadata
+
+```http
+POST /api/runs/{run_id}/artifacts
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "type": "checkpoint",
+  "name": "policy.pt",
+  "uri": "s3://bucket/policy.pt",
+  "step": 1,
+  "size_bytes": 12345,
+  "sha256": "hex",
+  "mime_type": "application/octet-stream",
+  "metadata": {},
+  "path": "policy.pt"
+}
+```
+
+Requires `artifacts:write` or a writable browser session.
+
+Use metadata artifacts when bytes already live in customer storage or when the
+artifact is too large for direct upload.
+
+## Upload bytes
+
+```http
+POST /api/runs/{run_id}/artifacts/upload
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "type": "file",
+  "name": "plot.png",
+  "content_base64": "base64-bytes",
+  "step": 1,
+  "mime_type": "image/png",
+  "metadata": {},
+  "path": "plots/plot.png"
+}
+```
+
+The server validates decoded byte size and projected storage usage before
+touching the byte backend.
+
+Stored bytes return public metadata with an opaque URI:
+
+```text
+instantml://artifacts/<artifact_id>
+```
+
+Raw local paths, bucket names, object keys, and signed URLs are not exposed in
+public artifact metadata.
+
+## List artifacts
+
+```http
+GET /api/runs/{run_id}/artifacts?limit=100
+Authorization: Bearer instantml_...
+```
+
+Requires tenant read access. API keys need `export:read`; browser sessions need
+viewer or higher role.
+
+The limit caps at 1,000.
+
+## Download stored bytes
+
+```http
+GET /api/artifacts/{artifact_id}/download
+Authorization: Bearer instantml_...
+```
+
+The API streams local or object-storage bytes with the artifact MIME type.
+Hosted object-storage downloads stream through the same-origin API route and
+forward valid `Range` requests for media previews.
+
+External metadata-only artifact rows are not downloadable through this endpoint.
+
+## UI behavior
+
+Run Detail and Compare preview safe same-origin images, audio, and video when
+stored bytes and supported MIME types are available. Unsupported artifacts still
+show metadata and copy/download actions when applicable.

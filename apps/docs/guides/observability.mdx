@@ -1,0 +1,100 @@
+---
+title: "Observability"
+description: "Use health endpoints, request IDs, structured logs, and safe error fields to debug InstantML."
+---
+
+# Observability
+
+InstantML exposes lightweight health endpoints, Prometheus-compatible metrics,
+and structured request logs. The logging contract is intentionally conservative
+so support can debug incidents without leaking user payloads.
+
+## Health endpoints
+
+| Endpoint | Meaning |
+| --- | --- |
+| `GET /health` | Process is alive. |
+| `GET /healthz` | Alias for health checks. |
+| `GET /readyz` | ClickHouse stores are reachable and the control projection has loaded. |
+| `GET /metrics` | Prometheus text metrics. |
+| `GET /openapi.json` | Compact OpenAPI route index for the active service plane. |
+
+`/readyz` fails until startup replay has completed. In hosted mode, later
+control refresh failures can keep serving the last-known-good projection while
+surfacing degraded state in `/readyz` and `/metrics`.
+
+## Request correlation
+
+Every response should include `x-request-id`. Keep this value with bug reports,
+screenshots, and support tickets.
+
+Hosted Rust origin logs include:
+
+- Request ID.
+- Observed Cloudflare Ray ID when present.
+- Method.
+- Path without query string.
+- Status.
+- Latency.
+- Service plane.
+- Coarse user-agent family.
+
+Cloudflare Ray IDs are edge correlation hints, not unique application request
+IDs. Pair them with timestamp, host, path, status, and `x-request-id`.
+
+## Safe log fields
+
+Server-error logs include stable fields such as status, code, retryability, and
+a safe summary. Workflow logs cover metric ingestion, console-log ingestion,
+artifact upload/download, imports, readiness, startup, and worker cleanup.
+
+Logs may include stable product IDs:
+
+- `org_id`
+- `project_id`
+- `run_id`
+- `artifact_id`
+- `import_id`
+
+Logs must not include:
+
+- Bearer tokens.
+- Session IDs.
+- API-key plaintext.
+- Cookies.
+- User emails.
+- Query strings.
+- Request bodies.
+- Project or run names.
+- Metric keys or values.
+- Console messages.
+- Artifact filenames.
+- Object-storage bucket names, keys, or signed URLs.
+
+## Hosted settings
+
+Recommended hosted defaults:
+
+```text
+INSTANTML_LOG_FORMAT=json
+RUST_LOG=instantml_rust_server=info,tower_http=info
+INSTANTML_SLOW_REQUEST_MS=1000
+```
+
+Use debug logging only for a short incident window and confirm that provider
+errors and request payloads remain sanitized.
+
+## Client-facing transient state
+
+When a tenant warehouse is waking or temporarily unavailable, the API can return
+HTTP `503` with:
+
+```json
+{
+  "error": "warehouse unavailable",
+  "code": "warehouse_unavailable"
+}
+```
+
+The dashboard treats that as "API reachable, data warehouse starting" rather
+than a generic offline state.

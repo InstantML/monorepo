@@ -1,0 +1,114 @@
+---
+title: "Install and authenticate the SDK"
+description: "Install InstantML, choose the hosted API, and provide SDK credentials."
+---
+
+# Install and authenticate the SDK
+
+The Python package is named `instantml` and is usually imported as `ro`.
+
+```python
+import instantml as ro
+```
+
+## Install
+
+InstantML currently ships as an alpha Python package:
+
+```bash
+python3 -m pip install --pre instantml
+```
+
+Optional extras install lazily used integrations:
+
+```bash
+python3 -m pip install --pre "instantml[media]"
+python3 -m pip install --pre "instantml[system]"
+python3 -m pip install --pre "instantml[all]"
+```
+
+Use `media` when you create image, audio, or video objects from in-memory data.
+Use `system` when you want psutil/NVML-style system metrics.
+
+## API host
+
+Hosted API:
+
+```text
+https://api.instantml.ai
+```
+
+The SDK defaults to the hosted API. Set an explicit host only when your team has
+been given a different hosted endpoint:
+
+```python
+run = ro.init(project="cartpole", base_url="https://api.instantml.ai")
+```
+
+Or create a reusable client:
+
+```python
+client = ro.Client(base_url="https://api.instantml.ai", timeout=2.0)
+run = client.init(project="cartpole", name="ppo-seed-42")
+```
+
+## Authenticate
+
+Hosted InstantML requires an SDK API key. Browser sessions and Clerk tokens are
+for the dashboard; they are not SDK credentials.
+
+Credential resolution order:
+
+1. Explicit `api_key=` argument.
+2. `INSTANTML_API_KEY` environment variable.
+3. `~/.instantml/credentials`, written by `instantml login`.
+
+Explicit key:
+
+```python
+run = ro.init(
+    project="cartpole",
+    base_url="https://api.instantml.ai",
+    api_key="instantml_...",
+)
+```
+
+Environment key:
+
+```bash
+export INSTANTML_API_KEY="instantml_..."
+export INSTANTML_API_BASE_URL="https://api.instantml.ai"
+python3 train.py
+```
+
+Device login:
+
+```bash
+instantml login --api-host https://api.instantml.ai
+instantml whoami
+```
+
+After login, `ro.init(...)` can read the stored credential file without another
+argument.
+
+## API-key scopes
+
+Create keys from onboarding or from the dashboard API tab. Use the smallest
+scope set that matches the job.
+
+| Scope | Allows |
+| --- | --- |
+| `sdk:ingest` | Create runs, update run status, log metrics, logs, attributes, and rich objects. |
+| `artifacts:write` | Create artifact metadata and upload artifact bytes. |
+| `imports:write` | Run supported importer routes. |
+| `export:read` | Read tenant data, download artifacts, and export bounded data. |
+| `usage:read` | Read usage summaries and usage exports. |
+| `api_keys:write` | Administer organization API keys. |
+
+Project-scoped keys can only access their assigned project. Org-scoped keys can
+access every project allowed by their scopes.
+
+## Create keys from the dashboard
+
+Create keys from onboarding or the dashboard API tab. Copy the plaintext key
+when it is shown; after that InstantML only stores its hash.

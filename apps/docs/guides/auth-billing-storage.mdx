@@ -1,0 +1,63 @@
+---
+title: "Auth, billing, and storage"
+description: "Understand browser sessions, API keys, billing states, hosted storage, and customer-owned storage."
+---
+
+# Auth, billing, and storage
+
+This page connects the user-facing operational pieces: identity, API keys,
+billing state, and storage.
+
+## Browser sessions
+
+Humans use browser sessions for the dashboard through the hosted InstantML
+identity flow.
+
+Browser sessions are scoped to an organization and role.
+
+## SDK API keys
+
+SDKs, uploaders, importers, exports, and automation use bearer API keys.
+
+```bash
+export INSTANTML_API_KEY="instantml_..."
+```
+
+API keys can be unrestricted for an org or restricted to a project depending on
+how they were created.
+
+## Billing states
+
+Paid signup and billing changes go through hosted checkout or portal flows.
+
+When an org is pending payment or payment-failed, product write routes can
+return a payment-required error. Reads remain separate from write gates.
+
+## Hosted storage
+
+Uploaded artifact bytes are stored by the API in the org's configured artifact
+backend. The public artifact row returns opaque InstantML metadata rather than a
+raw storage URL.
+
+Downloads go through:
+
+```text
+GET /api/artifacts/:artifact_id/download
+```
+
+## Customer-owned storage posture
+
+Teams that need stronger data-control boundaries can use customer-owned storage
+setup flows where product data routes to a customer-owned ClickHouse
+environment. Hosted artifact bytes and customer-owned warehouse bytes are
+accounted for differently in usage surfaces.
+
+## Secret handling
+
+Do not commit:
+
+- API keys.
+- Session cookies.
+- Auth provider secrets.
+- ClickHouse credentials.
+- Object-storage credentials.

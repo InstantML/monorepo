@@ -1,0 +1,69 @@
+---
+title: "Runs workspace"
+description: "Search, select, sort, chart, and save workspace views for many runs."
+---
+
+# Runs workspace
+
+![Runs workspace](/images/product/dashboard-runs.png)
+
+The Runs workspace is the daily command center. It combines a run selector,
+summary stats, metric panels, saved views, and a bounded server-backed run list.
+
+## Search and sort
+
+Use the search field for names, tags, notes, configs, and indexed run context.
+
+Sort modes include:
+
+- Newest.
+- Selected metric latest value.
+- Selected metric best value.
+- Name.
+- Status.
+- Duration.
+
+## Bulk selection
+
+The run rail supports:
+
+- A master checkbox for the visible page.
+- Shift-click range selection.
+- A banner to select all matching runs when more runs match than fit on the
+  current page.
+
+Large selection pages use a lightweight selection projection so the UI does not
+fetch full metric aggregates for every selected run.
+
+## Panels
+
+Automatic mode creates a capped high-signal set of line panels from logged
+metric keys. Manual mode starts blank so you can add only the charts you need.
+
+Panel types:
+
+- Line panels for metric series.
+- Bar panels for latest values.
+- Histogram panels for distributions.
+- Dot panels for point-style comparisons.
+
+Line panels load selected-run series through bounded chunked requests. Dense
+series render paths on canvas while preserving axes and hover readouts.
+
+## Layouts and saved views
+
+Panels can be moved, resized, collapsed, edited, and opened fullscreen. Named
+layouts are saved through the control-plane workspace-view API.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd/Ctrl+K` | Quick search |
+| `?` | Shortcut help |
+| `Esc` | Dismiss top overlay |
+| `Cmd/Ctrl+Z` | Undo workspace change |
+| `Cmd+Shift+Z` / `Ctrl+Y` | Redo workspace change |
+| `Cmd/Ctrl+.` | Collapse or restore run selector |
+| `Cmd/Ctrl+J` | Move focus between Runs selector and canvas |
+| Left/Right Arrow | Traverse fullscreen panels |
