@@ -21,6 +21,7 @@
  *   overhaul.css        — visual overhaul layers 2026-05-15 (Phase 3: merge into files)
  *   mobile.css          — mobile redesign (≤720px)
  *   landing-system.css  — landing visual system + @keyframes animations
+ *   docs.css            — first-party /docs documentation route
  *
  * See docs/design/2026-05-18-globals-css-audit.md for the refactor plan.
  * ────────────────────────────────────────────────────────────────────────── */
@@ -40,3 +41,4 @@
 @import "./styles/mobile.css";
 @import "./styles/landing-system.css";
 @import "./styles/pricing.css";
+@import "./styles/docs.css";

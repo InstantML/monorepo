@@ -8,6 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY apps/web ./apps/web
+COPY apps/docs ./apps/docs
 
 ARG INSTANTML_WEB_API_ENV=staging
 ARG INSTANTML_WEB_EXPLICIT_API_BASES=0
@@ -44,6 +45,7 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/apps/web/.next ./apps/web/.next
 COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder /app/apps/web/next.config.mjs ./apps/web/next.config.mjs
+COPY --from=builder /app/apps/docs ./apps/docs
 
 EXPOSE 8080
 

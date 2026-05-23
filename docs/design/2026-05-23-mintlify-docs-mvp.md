@@ -15,11 +15,11 @@ a docs-as-code Mintlify site under `apps/docs`, backed by a checked-in
 `docs.json`, a handful of MDX pages, and a copied OpenAPI artifact generated
 from the existing Rust `utoipa` output.
 
-This keeps the MVP mostly content and configuration. It does not add product
-runtime code, new backend routes, new storage, or a custom docs renderer. It
-uses Mintlify because W&B's docs are Mintlify-based, Mintlify supports
-`docs.json` configuration, monorepo docs paths, and OpenAPI 3.0/3.1 generated
-API documentation from repository-local specs:
+This keeps the MVP mostly content and configuration. It does not add backend
+routes, storage, or product data dependencies. It uses Mintlify-compatible
+source because W&B's docs are Mintlify-based, Mintlify supports `docs.json`
+configuration, monorepo docs paths, and OpenAPI 3.0/3.1 generated API
+documentation from repository-local specs:
 
 - <https://github.com/wandb/docs>
 - <https://www.mintlify.com/docs/organize/settings>
@@ -29,6 +29,13 @@ API documentation from repository-local specs:
 The public docs source stays separate from internal strategy, design,
 architecture, and pricing-planning docs so a future Mintlify deploy can point at
 `/apps/docs` without exposing private implementation notes.
+
+2026-05-23 amendment: the production user path is now remerged into the main
+Next app at `/docs` instead of redirecting to a separate docs host. `apps/docs`
+remains the public docs source and Mintlify validation/preview surface, while
+`apps/web` owns a lightweight same-origin docs route that renders the MDX and
+filtered OpenAPI copy. This avoids a `docs.instantml.ai` dependency until that
+domain is intentionally configured.
 
 ## Goals
 
@@ -45,7 +52,10 @@ architecture, and pricing-planning docs so a future Mintlify deploy can point at
 - Do not deploy the docs site or configure a custom domain in this change.
 - Do not expose the internal `docs/design`, `docs/architecture`, `docs/product`,
   or `docs/users` trees as public docs.
-- Do not redesign the main Next app or move docs into `apps/web`.
+- Do not expose public docs through the product dashboard shell or require an
+  authenticated session for docs. The accepted amendment adds a public
+  same-origin `/docs` route in `apps/web` while keeping source content in
+  `apps/docs`.
 - Do not add SDK public APIs, backend endpoints, auth changes, or storage
   changes.
 - Do not generate full Python API reference from docstrings in this first slice.
@@ -68,7 +78,7 @@ Core workflows:
 
 ## Proposed Design
 
-Add `apps/docs` as a new runnable docs component.
+Add `apps/docs` as the public docs source component.
 
 Initial files:
 
@@ -144,6 +154,14 @@ CI should run `npm run docs:validate` after the existing API type drift check so
 the public docs OpenAPI copy cannot lag behind committed generated Rust API
 artifacts.
 
+Add a first-party Next route under `apps/web/app/docs/` that renders this public
+source at `/docs` and `/docs/:path*`. The route reads `apps/docs/docs.json`,
+MDX pages, screenshots, and `openapi.json` directly. Keep this renderer
+deliberately small: headings, paragraphs, lists, tables, code fences, images,
+the docs landing cards, and a generated API reference page are enough for the
+current content set. The web container must copy `apps/docs` into production
+images because the route reads the source files at runtime.
+
 Add the Mintlify CLI package as a root dev dependency so commands are
 versioned with the repo instead of requiring a global install. The root lockfile
 is expected to change because this repo does not use npm workspaces and `.npmrc`
@@ -174,8 +192,10 @@ Backend:
 
 Frontend:
 
-- No change to `apps/web`.
-- A new `apps/docs` docs frontend component is added, run by Mintlify.
+- `apps/web` owns the production `/docs` route and serves docs screenshots from
+  `apps/docs/images`.
+- `apps/docs` remains the source component, run by Mintlify for content preview
+  and validation.
 
 Python SDK:
 
@@ -188,7 +208,8 @@ Storage:
 
 Docs:
 
-- New public docs-site component under `apps/docs`.
+- Public docs source component under `apps/docs`.
+- First-party public docs route under `apps/web/app/docs`.
 - Internal docs remain in the existing root `docs/` tree.
 
 ## Data Model
@@ -206,11 +227,14 @@ an empty generated license value if needed. It does not define product behavior.
 
 ## Performance Considerations
 
-- Expected rows/items per user action: none; this is a static docs site.
+- Expected rows/items per user action: small checked-in docs pages and a
+  filtered OpenAPI route list.
 - Expected write frequency: docs content changes through git commits.
-- Expected read/query shape: static file serving and Mintlify client-side docs
-  interactions.
-- Latency target: hosted docs should load like a static documentation site.
+- Expected read/query shape: same-origin Next `/docs` requests read small
+  checked-in MDX/OpenAPI files and docs image assets; Mintlify preview remains
+  a local validation path.
+- Latency target: hosted docs should load like a lightweight documentation
+  route.
 - Pagination, limits, streaming, indexes: not applicable.
 - Memory concerns: none beyond Mintlify build/render requirements.
 - Batching needs: none.
@@ -219,10 +243,11 @@ an empty generated license value if needed. It does not define product behavior.
 
 ## Simplicity Review
 
-This first slice uses Mintlify as the renderer instead of building custom docs
-inside Next. It adds one isolated component, a small set of pages, and a simple
-OpenAPI sync script. It avoids publishing internal docs, avoids a custom search
-stack, avoids Python docstring extraction, and avoids automated deployment.
+This first slice keeps Mintlify as the docs source validator and previewer, then
+adds a deliberately small Next renderer for same-origin `/docs` serving. It adds
+one isolated content component, a compact web route, and a simple OpenAPI sync
+script. It avoids publishing internal docs, avoids a custom search stack,
+avoids Python docstring extraction, and avoids automated deployment.
 
 Deferred complexity:
 
@@ -235,7 +260,8 @@ Deferred complexity:
 ## Failure Modes
 
 - Mintlify config or MDX is invalid: `npm run docs:validate` should fail before
-  deployment.
+  deployment, and `npm run web:build` catches renderer/runtime mistakes in the
+  same-origin route.
 - Rust OpenAPI copy drifts: `npm run docs:validate` runs
   `docs:check-openapi` and fails without writing if `apps/docs/openapi.json` is
   stale. Contributors should run `npm run docs:sync-openapi` to update it.
@@ -245,7 +271,7 @@ Deferred complexity:
   excludes it by default; adding it requires an intentional script change plus
   review.
 - Public docs link to internal planning docs: `tools/validate-docs-content.mjs`
-  fails validation before Mintlify deploy.
+  fails validation before publishing.
 - Public docs accidentally reference internal-only behavior: review should keep
   MVP pages focused on `USER_DOCS.md`, SDK README, and current API reference.
 - Mintlify changes CLI behavior: the pinned dev dependency keeps local
@@ -258,21 +284,25 @@ Deferred complexity:
 - Add a focused Node test for the OpenAPI normalization helper.
 - Add a focused Node test for path allowlisting and component schema pruning.
 - Add a focused Node test for the internal-link content guard.
+- Add focused web tests for `/docs` route ownership, slug/link mapping, MDX
+  parsing, asset serving, and generated API reference loading.
 - Run the focused Node test directly.
 - Run `npm run docs:validate`.
+- Run `npm run test:node` and `npm run web:build`.
 
 Coverage:
 
 - The new docs content is MDX/config, not first-party product logic.
-- The small sync and content-guard helpers have focused unit tests for the
-  normalization, public-route filtering, component pruning, and internal-link
-  behavior.
+- The small sync/content-guard helpers and web docs renderer have focused tests
+  for normalization, public-route filtering, component pruning, internal-link
+  behavior, route ownership, slug/link mapping, and source loading.
 
 ## Documentation Plan
 
 - Add `apps/docs/README.md`.
 - Update `apps/README.md` to list the new docs app.
 - Update root `README.md` to mention the public docs MVP and commands.
+- Update `apps/web/README.md` to document the same-origin `/docs` route.
 - Update `docs/design/README.md` after acceptance.
 - Record fresh review notes in this design doc before implementation.
 
@@ -294,8 +324,9 @@ Fumadocs in Next:
 
 - Viable and likely the best self-hosted long-term option if docs need deep
   integration with the existing Next stack. Rejected for the MVP because the
-  user explicitly asked for Mintlify and the fastest path is configuration plus
-  MDX content.
+  user explicitly asked for Mintlify and the fastest first source format was
+  Mintlify-compatible MDX/config. The accepted amendment now uses a lightweight
+  custom Next renderer around that source rather than adopting Fumadocs.
 
 Expose the existing root `docs/` directory:
 
@@ -341,4 +372,5 @@ None.
 ## Decision
 
 Accepted after fresh-agent review. Implement the narrowed Mintlify MVP with a
-filtered public OpenAPI reference, no deployment, and validation-first scripts.
+filtered public OpenAPI reference, same-origin `/docs` serving from `apps/web`,
+no separate docs-domain deployment, and validation-first scripts.

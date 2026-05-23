@@ -123,12 +123,20 @@ test("findInternalDocsReferences catches local-only public docs URLs", () => {
       path: "apps/docs/openapi.json",
       content: '{"servers":[{"url":"http://127.0.0.1:8000"}]}',
     },
+    {
+      path: "apps/docs/index.mdx",
+      content: "Use troubleshooting when local server behavior is confusing.",
+    },
   ]);
 
   assert.deepEqual(violations, [
     {
       path: "apps/docs/openapi.json",
       pattern: "127.0.0.1",
+    },
+    {
+      path: "apps/docs/index.mdx",
+      pattern: "local server",
     },
   ]);
 });

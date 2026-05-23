@@ -21,6 +21,7 @@ Split from the original `globals.css` (11,348 lines) as part of the
 | `overhaul.css` | Visual overhaul layers 2026-05-15 (Phase 3 target) | Duplicated rules from all feature areas |
 | `mobile.css` | Mobile redesign ≤720px | `@media (max-width: 720px)` |
 | `landing-system.css` | Landing visual system + animations | `.landing-root`, `.bento-*`, `@keyframes` |
+| `docs.css` | First-party documentation route | `.docs-route-*` |
 
 ## Import order
 
