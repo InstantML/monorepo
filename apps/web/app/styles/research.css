@@ -1,240 +1,423 @@
+/* ── research.css — Distributed and Insights dashboard panels ───────────────
+ * Consumes the canonical design tokens from tokens.css and reuses the shared
+ * .analysis-* / .panel layout language defined in overhaul.css. The Advanced
+ * tab composes the Distributed and Insights panes under one page header with
+ * lightweight section bands instead of repeating full page headers.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
 .analysis-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px;
 }
 
-.advanced-view-stack,
+.advanced-view-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
 .embedded-analysis {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.embedded-analysis {
+  gap: 14px;
   padding: 0;
 }
 
-.advanced-page > .analysis-header {
-  border-left: 3px solid var(--accent);
-}
-
-.analysis-header {
-  align-items: end;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 8px;
+/* ── Section band — separates the two analysis modes inside the Advanced
+ *    page without a second heavy page header. ─────────────────────────────── */
+.advanced-section-band {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-}
-
-.analysis-header h1 {
-  font-size: 1.25rem;
-  margin: 2px 0;
-}
-
-.analysis-header span,
-.analysis-note {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.analysis-controls {
-  min-width: 240px;
-}
-
-.analysis-grid {
-  display: grid;
+  align-items: center;
   gap: 14px;
+  min-height: 28px;
+}
+.advanced-section-band .seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.advanced-section-band .seg .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+.advanced-section-band .rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.advanced-section-band .hint {
+  font: 500 11px/1 var(--font-mono);
+  color: var(--faint);
+  white-space: nowrap;
+}
+.advanced-section-band .band-control {
+  flex: 0 0 auto;
+  min-width: 220px;
 }
 
+/* ── Grids ───────────────────────────────────────────────────────────────── */
+.analysis-grid { display: grid; gap: 14px; }
 .analysis-grid.one { grid-template-columns: minmax(0, 1fr); }
 .analysis-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .analysis-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
+/* ── Cards — match the canonical .panel surface ─────────────────────────────── */
 .analysis-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
-
-.analysis-card h2 {
-  font-size: 0.95rem;
-  margin: 0 0 10px;
+.analysis-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line-soft);
 }
-
-.metric-tile span,
-.eval-mini-card span {
+.analysis-card-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text);
+  font: 600 14px/1 var(--font-sans);
+}
+.analysis-card-head .card-badge {
+  display: inline-grid;
+  place-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   color: var(--muted);
+  font: 600 10.5px/1 var(--font-mono);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.analysis-card-body { padding: 16px; }
+
+/* ── KPI tile strip — reuses the segmented .analysis-stat-strip language ──── */
+.rank-tile-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.rank-tile {
+  padding: 13px 16px;
+  border-inline-end: 1px solid var(--line-soft);
+}
+.rank-tile:last-child { border-inline-end: 0; }
+.rank-tile span {
   display: block;
-  font-size: 0.78rem;
+  font: 600 10.5px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rank-tile strong {
+  display: block;
+  margin-top: 7px;
+  font: 700 21px/1.1 var(--font-sans);
+  letter-spacing: var(--tracking-display);
+  color: var(--text);
+}
+.rank-tile small {
+  display: block;
+  margin-top: 5px;
+  font: 500 11px/1 var(--font-mono);
+  color: var(--faint);
 }
 
-.metric-tile strong {
-  display: block;
-  font-size: 1.35rem;
-  margin-top: 4px;
-}
-
+/* ── Charts ──────────────────────────────────────────────────────────────── */
 .analysis-line-chart,
 .analysis-scatter,
 .parallel-chart {
   display: block;
-  height: auto;
   width: 100%;
+  height: auto;
+}
+.analysis-grid-line { stroke: var(--chart-grid); stroke-width: 1; }
+.analysis-axis-line { stroke: var(--chart-axis); stroke-width: 1; }
+.analysis-tick { fill: var(--faint); font: 500 10px var(--font-mono); }
+.analysis-axis-title {
+  fill: var(--muted);
+  font: 600 9.5px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .rank-mean-line,
 .rank-weighted-line,
-.rank-band-line,
+.rank-median-line,
 .parallel-line {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-
-.rank-mean-line { stroke: var(--series-1); stroke-width: 2.2; }
+.rank-mean-line { stroke: var(--series-3); stroke-width: 2.2; }
 .rank-weighted-line { stroke: var(--series-2); stroke-width: 2.2; }
-.rank-band-line { stroke: var(--muted); stroke-dasharray: 4 4; stroke-width: 1.2; opacity: 0.72; }
+.rank-median-line { stroke: var(--series-4); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.rank-band-area { fill: var(--accent-soft); stroke: none; }
 
 .analysis-legend,
 .cluster-list,
-.rank-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.rank-chip-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.analysis-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 11px/1 var(--font-mono);
+  color: var(--muted);
+}
+.analysis-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.analysis-legend i.swatch { width: 11px; height: 11px; border-radius: 3px; }
+.analysis-legend i.rank-mean { background: var(--series-3); }
+.analysis-legend i.rank-weighted { background: var(--series-2); }
+.analysis-legend i.rank-median { background: var(--series-4); }
+.analysis-legend i.rank-band { background: var(--accent-soft); border: 1px solid var(--accent-line); }
+
+.analysis-note {
+  margin: 10px 0 0;
+  font: 500 11.5px/1.5 var(--font-mono);
+  color: var(--muted);
 }
 
-.legend-dot.rank-mean { background: var(--series-1); }
-.legend-dot.rank-weighted { background: var(--series-2); }
-.legend-dot.rank-band { background: var(--muted); }
+/* ── Per-rank straggler bars ───────────────────────────────────────────────── */
+.rank-bar-list { display: flex; flex-direction: column; gap: 8px; }
+.rank-bar-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 78px;
+  align-items: center;
+  gap: 10px;
+}
+.rank-bar-row .rank-id { font: 600 11.5px/1 var(--font-mono); color: var(--muted); }
+.rank-bar-row .rank-track {
+  position: relative;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.rank-bar-row .rank-track i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.rank-bar-row.straggler .rank-track i { background: var(--coral); }
+.rank-bar-row .rank-val { font: 600 11.5px/1 var(--font-mono); color: var(--text); text-align: right; }
+.rank-bar-row.straggler .rank-val { color: var(--coral); }
 
+/* ── Coverage timeline — honest fill = ranks reporting / expected ─────────── */
 .coverage-strip {
   display: grid;
-  grid-template-columns: repeat(40, minmax(2px, 1fr));
-  gap: 3px;
-  margin-bottom: 10px;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(3px, 1fr);
+  align-items: end;
+  gap: 2px;
+  height: 56px;
+  margin-bottom: 4px;
 }
-
 .coverage-strip span {
+  display: block;
+  width: 100%;
+  border-radius: 2px 2px 0 0;
   background: var(--accent);
-  border-radius: 2px;
-  height: 34px;
+  min-height: 2px;
 }
+.coverage-strip span.partial { background: var(--amber); }
+.coverage-strip span.mismatch { background: var(--coral); }
 
 .rank-chip-row span,
 .cluster-list span {
-  background: var(--subtle);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill, 999px);
   color: var(--muted);
-  font-size: 0.76rem;
-  padding: 2px 8px;
+  font: 500 10.5px/1 var(--font-mono);
+  padding: 4px 9px;
 }
 
+/* ── Heatmap — rank axis + diverging cells + step ticks ─────────────────────── */
+.rank-heatmap-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.rank-heatmap-axis {
+  display: grid;
+  gap: 2px;
+  font: 500 9.5px/1 var(--font-mono);
+  color: var(--faint);
+}
+.rank-heatmap-axis span {
+  height: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
 .rank-heatmap {
   display: grid;
-  grid-template-columns: repeat(32, minmax(5px, 1fr));
   gap: 2px;
-  max-height: 360px;
+  max-height: 340px;
   overflow: auto;
 }
-
-.rank-heatmap span {
-  aspect-ratio: 1;
-  border-radius: 2px;
-}
-
-.analysis-table {
+.rank-heatmap i { height: 15px; border-radius: 2px; display: block; }
+.rank-heatmap-foot {
+  grid-column: 2;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  justify-content: space-between;
+  font: 500 9.5px/1 var(--font-mono);
+  color: var(--faint);
+  margin-top: 2px;
 }
-
-.analysis-row {
+.heatmap-scale {
+  display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border);
-  display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
-  padding: 6px 0;
+  margin-top: 12px;
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--muted);
+}
+.heatmap-scale .ramp {
+  height: 10px;
+  width: 140px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--series-2), var(--surface-2), var(--coral));
+  border: 1px solid var(--line);
 }
 
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.analysis-table { display: flex; flex-direction: column; }
+.analysis-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 0.7fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.analysis-row:last-child { border-bottom: 0; }
+.analysis-row.head { padding-top: 0; }
+.analysis-row.head span {
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+}
 .analysis-row span {
+  font: 500 12px/1 var(--font-mono);
   color: var(--muted);
-  font-size: 0.82rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.analysis-row strong {
-  font-size: 0.88rem;
+.analysis-row strong { font: 600 12.5px/1 var(--font-sans); color: var(--text); }
+.analysis-row .pos { color: var(--coral); }
+.analysis-row .neg { color: var(--series-2); }
+.group-bar {
+  display: block;
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
 }
+.group-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
 
+/* ── Evaluation cards ──────────────────────────────────────────────────────── */
 .eval-card-grid {
   display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-
 .eval-mini-card {
-  background: var(--subtle);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 11px;
 }
-
+.eval-mini-card span {
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .eval-mini-card strong {
   display: block;
-  font-size: 1.05rem;
-  margin: 3px 0;
+  margin: 7px 0 5px;
+  font: 700 18px/1 var(--font-sans);
+  color: var(--text);
 }
-
 .eval-mini-card small {
-  color: var(--muted);
   display: block;
+  font: 500 10px/1 var(--font-mono);
+  color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.eval-mini-card.missing strong { color: var(--dim); }
 
-.analysis-scatter circle {
-  fill: var(--accent);
-  opacity: 0.72;
-}
-
+/* ── Scatter / clusters ────────────────────────────────────────────────────── */
+.analysis-scatter circle { fill: var(--series-2); opacity: 0.7; }
 .analysis-scatter.clusters .cluster-dot { opacity: 0.78; }
-.cluster-0 { fill: var(--series-1); }
-.cluster-1 { fill: var(--series-2); }
-.cluster-2 { fill: var(--series-3); }
-.cluster-3 { fill: var(--series-6); }
-
-.parallel-axis {
-  stroke: var(--border-strong, var(--border));
+.cluster-dot.cluster-0 { fill: var(--series-3); }
+.cluster-dot.cluster-1 { fill: var(--series-2); }
+.cluster-dot.cluster-2 { fill: var(--series-4); }
+.cluster-dot.cluster-3 { fill: var(--series-5); }
+.cluster-list span i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
 }
+.cluster-list span i.cluster-0 { background: var(--series-3); }
+.cluster-list span i.cluster-1 { background: var(--series-2); }
+.cluster-list span i.cluster-2 { background: var(--series-4); }
+.cluster-list span i.cluster-3 { background: var(--series-5); }
 
-.parallel-line {
-  stroke: var(--accent);
-  stroke-width: 1;
-  opacity: 0.18;
-}
+.parallel-axis { stroke: var(--line-strong); }
+.parallel-line { stroke: var(--accent); stroke-width: 1; opacity: 0.16; }
+.parallel-line.highlight { stroke: var(--series-4); stroke-width: 1.6; opacity: 0.7; }
 
+/* ── Empty / banner states ─────────────────────────────────────────────────── */
+.compact-empty { padding: 28px 12px; text-align: center; }
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .analysis-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .analysis-grid.two,
-  .analysis-grid.four,
-  .eval-card-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  .analysis-grid.four { grid-template-columns: minmax(0, 1fr); }
+  .rank-tile-strip,
+  .eval-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .advanced-section-band { flex-wrap: wrap; }
+  .advanced-section-band .band-control { min-width: 0; flex: 1 1 100%; }
+}
+@media (max-width: 520px) {
+  .rank-tile-strip,
+  .eval-card-grid { grid-template-columns: minmax(0, 1fr); }
+  .rank-tile { border-inline-end: 0; border-bottom: 1px solid var(--line-soft); }
 }
