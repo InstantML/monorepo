@@ -16,7 +16,7 @@ curl https://api.instantml.ai/healthz
 Then confirm your SDK key is configured:
 
 ```bash
-echo "$INSTANTML_API_KEY"
+test -n "$INSTANTML_API_KEY" && echo "INSTANTML_API_KEY is set"
 ```
 
 ## Hosted calls are unauthorized
@@ -24,11 +24,11 @@ echo "$INSTANTML_API_KEY"
 Check that the API key is present:
 
 ```bash
-echo "$INSTANTML_API_KEY"
+test -n "$INSTANTML_API_KEY" && echo "INSTANTML_API_KEY is set"
 ```
 
-Either set `INSTANTML_API_KEY` or pass `api_key="instantml_..."` directly to
-`ro.init(...)`.
+Either run `instantml login`, set `INSTANTML_API_KEY`, or pass
+`api_key="instantml_..."` directly to `ro.init(...)`.
 
 ## The dashboard does not show my run
 

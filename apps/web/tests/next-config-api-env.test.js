@@ -15,7 +15,7 @@ test("Next API rewrites use staging when INSTANTML_WEB_API_ENV requests staging"
     INSTANTML_CONTROL_API_BASE: "https://api.instantml.ai",
     INSTANTML_DATA_API_BASE: "https://api.instantml.ai",
   });
-  assertRewriteDestinations(rewrites, "https://staging.api.instantml.ai");
+  assertRewriteDestinations(apiProxyRewrites(rewrites), "https://staging.api.instantml.ai");
 });
 
 test("Next API rewrites default pushed frontend target to prod when env selects prod", () => {
@@ -25,7 +25,7 @@ test("Next API rewrites default pushed frontend target to prod when env selects 
     INSTANTML_CONTROL_API_BASE: "https://staging.api.instantml.ai",
     INSTANTML_DATA_API_BASE: "https://staging.api.instantml.ai",
   });
-  assertRewriteDestinations(rewrites, "https://api.instantml.ai");
+  assertRewriteDestinations(apiProxyRewrites(rewrites), "https://api.instantml.ai");
 });
 
 test("Next API rewrites allow explicit staging split bases for hosted frontend smoke", () => {
@@ -99,4 +99,8 @@ function assertRewriteDestinations(rewrites, expectedBase) {
       `${rewrite.source} routed to ${rewrite.destination}`,
     );
   }
+}
+
+function apiProxyRewrites(rewrites) {
+  return rewrites.filter((rewrite) => /^https?:\/\//.test(rewrite.destination));
 }

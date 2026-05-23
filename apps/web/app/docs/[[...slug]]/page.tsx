@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { DocsCodeBlock } from "../docs-code-block";
 import {
   docsHref,
   loadDocsPage,
@@ -147,14 +148,7 @@ function DocsBlockView({ block }: { block: DocsBlock }) {
   }
 
   if (block.type === "code") {
-    return (
-      <div className="docs-route-code">
-        <div className="docs-route-code-label">{block.language}</div>
-        <pre>
-          <code>{block.code}</code>
-        </pre>
-      </div>
-    );
+    return <DocsCodeBlock code={block.code} language={block.language} />;
   }
 
   if (block.type === "table") {
@@ -211,7 +205,16 @@ function DocsBlockView({ block }: { block: DocsBlock }) {
 function ApiReference({
   endpoints,
 }: {
-  endpoints: Array<{ method: string; path: string; summary: string; tags: string[] }>;
+  endpoints: Array<{
+    method: string;
+    path: string;
+    summary: string;
+    tags: string[];
+    parameters?: Array<{ name: string; in: string; required: boolean; description: string }>;
+    requestBody?: boolean;
+    responseCodes?: string[];
+    security?: string[];
+  }>;
 }) {
   return (
     <div className="docs-route-api-list">
@@ -220,6 +223,34 @@ function ApiReference({
           <span className={`docs-route-method method-${endpoint.method.toLowerCase()}`}>{endpoint.method}</span>
           <code>{endpoint.path}</code>
           <p>{endpoint.summary}</p>
+          <dl>
+            {endpoint.security?.length ? (
+              <>
+                <dt>Auth</dt>
+                <dd>{endpoint.security.join(", ")}</dd>
+              </>
+            ) : null}
+            {endpoint.parameters?.length ? (
+              <>
+                <dt>Parameters</dt>
+                <dd>
+                  {endpoint.parameters.map((parameter) => `${parameter.name}${parameter.required ? " required" : ""}`).join(", ")}
+                </dd>
+              </>
+            ) : null}
+            {endpoint.requestBody ? (
+              <>
+                <dt>Request body</dt>
+                <dd>Yes</dd>
+              </>
+            ) : null}
+            {endpoint.responseCodes?.length ? (
+              <>
+                <dt>Responses</dt>
+                <dd>{endpoint.responseCodes.join(", ")}</dd>
+              </>
+            ) : null}
+          </dl>
         </section>
       ))}
     </div>

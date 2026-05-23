@@ -8,16 +8,35 @@ description: "Choose the right SDK reliability mode for training loops."
 The SDK starts simple and lets you opt into more durable modes when the training
 loop needs it.
 
-## Default synchronous calls
+## Default initialization and sync writes
 
-By default, SDK calls use synchronous HTTP requests with a short timeout and
-raise `InstantMLError` for network or non-2xx API failures.
+By default, `ro.init(...)` starts run creation in the background and returns a
+run handle immediately. The first write waits for run creation if it has not
+finished yet, and foreground failures surface as `InstantMLError`.
 
 ```python
 run = ro.init(project="demo")
 run.log({"train/loss": 0.2}, step=1)
 run.finish()
 ```
+
+Use `run.wait_for_init()` when a script wants to fail before expensive training
+starts:
+
+```python
+run = ro.init(project="demo")
+run.wait_for_init()
+```
+
+Set `async_init=False` for fully synchronous run creation:
+
+```python
+run = ro.init(project="demo", async_init=False)
+```
+
+After initialization, normal SDK calls use synchronous HTTP requests with a
+10-second default timeout and raise `InstantMLError` for network or non-2xx API
+failures.
 
 ## In-memory buffering
 
@@ -83,7 +102,7 @@ compatible server can safely accept retries.
 
 | Need | Mode |
 | --- | --- |
-| Small script, easiest behavior | Default sync |
+| Small script, easiest behavior | Default async init plus sync writes |
 | Fewer HTTP calls | `buffer_size` |
 | Replay failed requests after temporary outage | `offline_dir` |
 | Keep post-init HTTP out of the training process | `upload_mode="spool"` |

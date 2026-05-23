@@ -94,13 +94,12 @@ Artifact metadata lives in ClickHouse. Artifact bytes live in a byte backend:
 
 | Backend | Use |
 | --- | --- |
-| Local filesystem | Development and local smoke tests. |
 | Private object storage | Hosted artifact uploads. |
 | External URI metadata | Records pointers to customer storage without uploading bytes. |
 
-Stored local/object-storage bytes use opaque `instantml://artifacts/<id>` URIs
-in public artifact rows. Raw bucket names, storage keys, and signed URLs are not
-returned in public metadata.
+Stored bytes use opaque `instantml://artifacts/<id>` URIs in public artifact
+rows. Raw bucket names, storage keys, and signed URLs are not returned in
+public metadata.
 
 ## Usage counters
 

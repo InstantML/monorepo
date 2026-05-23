@@ -5,12 +5,17 @@ description: "Run bundled training examples against hosted InstantML and know wh
 
 # Examples
 
-The repository includes examples that exercise different training-loop shapes.
-For hosted SaaS usage, create an SDK API key first and export it:
+The companion examples exercise different training-loop shapes. For hosted SaaS
+usage, authenticate once:
+
+```bash
+instantml login
+```
+
+For CI or remote jobs that cannot use browser login, set an SDK key instead:
 
 ```bash
 export INSTANTML_API_KEY="instantml_..."
-export INSTANTML_API_BASE_URL="https://api.instantml.ai"
 ```
 
 The examples use the same public Python SDK calls that production training

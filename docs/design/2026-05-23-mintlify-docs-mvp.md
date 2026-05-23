@@ -37,6 +37,12 @@ remains the public docs source and Mintlify validation/preview surface, while
 filtered OpenAPI copy. This avoids a `docs.instantml.ai` dependency until that
 domain is intentionally configured.
 
+2026-05-23 amendment: the same Next app also exposes generated Markdown mirrors
+for every public docs page at `/docs/:path*.md`, plus `/llms.txt` and
+`/llms-full.txt`. The Markdown is generated from the checked-in MDX/OpenAPI
+source at request time so public docs are not duplicated across `.mdx` and
+`.md` files.
+
 ## Goals
 
 - Add a Mintlify MVP docs site that can be run and validated locally.
@@ -210,6 +216,7 @@ Docs:
 
 - Public docs source component under `apps/docs`.
 - First-party public docs route under `apps/web/app/docs`.
+- Generated Markdown mirrors and agent indexes under the web app.
 - Internal docs remain in the existing root `docs/` tree.
 
 ## Data Model

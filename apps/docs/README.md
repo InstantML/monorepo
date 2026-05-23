@@ -9,8 +9,8 @@ documents.
 
 ## Purpose
 
-- Give users a polished quickstart, SDK guide, dashboard workflow guide, and API
-  reference.
+- Give users a polished quickstart, SDK guide, dashboard workflow guide, API
+  reference, and agent-readable Markdown mirrors.
 - Keep public docs content in git and review it with product changes.
 - Generate the public API reference from the Rust OpenAPI artifact through a
   filtered docs copy.
@@ -52,6 +52,10 @@ QA. The production user path is still the Next app's `/docs` route.
 
 The current production docs path is the same-origin web route
 `https://instantml.ai/docs`.
+
+The web app also serves Markdown mirrors for every public page, such as
+`https://instantml.ai/docs/quickstart.md`, plus `/llms.txt` and
+`/llms-full.txt` for agent and offline-reader ingestion.
 
 If a separate `docs.instantml.ai` site is reintroduced later, add the domain in
 Mintlify, create the verification `TXT` records shown in the dashboard, wait
@@ -95,6 +99,8 @@ Node tests.
 - `api/`: practical API guides plus the generated OpenAPI reference tab.
 - `images/`: docs-local brand and product assets served by the Next `/docs`
   asset route and the Mintlify preview.
+- Web-rendered Markdown mirrors are generated at request time from these MDX
+  files; do not maintain duplicate checked-in `.md` copies.
 
 ## Design Docs
 

@@ -74,3 +74,11 @@ InstantML keeps list and series reads bounded:
 
 If you need a bulk data movement path, use export or an importer/exporter flow
 instead of repeatedly fetching every chart series from a notebook.
+
+## Existing-run writes
+
+The current public SDK does not expose a high-level `load_run(...)` or
+resume-by-run-ID helper for appending events to an existing run. Use
+`Api.runs(...)` for read-only lookup and `Api.download_artifact(...)` for
+restore workflows. Start a new run with `ro.init(...)` when you want to log new
+training events.

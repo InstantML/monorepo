@@ -13,13 +13,11 @@ The topbar shows a compact plan usage badge. Settings shows more detail:
 
 - Current plan.
 - Metric-point usage for the current UTC calendar month.
-- Retained project and run counts.
-- Storage/accounting estimates.
 - Seat usage.
-- Artifact, metric series, and API-key counts.
+- Storage usage and accounting notes.
 
-Metric-point usage resets monthly. Storage, projects, runs, seats, artifacts,
-metric series, and API keys are retained-resource counts.
+Metric-point usage resets monthly. Storage and seats are retained-resource
+posture. API-key counts and route snippets live in the API tab.
 
 ## Billing controls
 
@@ -34,8 +32,10 @@ unexpired pending invitations.
 
 ## API keys
 
-The API tab lists active keys, creates copy-once keys, revokes keys, and shows
-copyable route snippets for the hosted REST surface.
+The API tab lists active keys, creates copy-once default SDK keys by name,
+revokes keys, and shows copyable route snippets for the hosted REST surface.
+Use the key immediately when it is revealed; InstantML only stores a hash after
+creation.
 
 ![API key creation and copyable REST routes](/images/product/dashboard-api-keys.png)
 
@@ -43,7 +43,6 @@ API keys should be stored in environment variables or a secrets manager:
 
 ```bash
 export INSTANTML_API_KEY="instantml_..."
-export INSTANTML_API_BASE_URL="https://api.instantml.ai"
 ```
 
 Use the key for SDK runs:

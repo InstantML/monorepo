@@ -67,8 +67,27 @@ run.log_rollout("eval-rollout", "s3://bucket/eval.mp4", step=1000)
 run.log_video("rollout.mp4", "s3://bucket/rollout.mp4", step=1000)
 ```
 
+These calls create metadata artifacts for externally stored media. To store
+bytes through InstantML for same-origin preview and download, upload the local
+file:
+
+```python
+run.upload_file("outputs/rollout.mp4", artifact_type="video", step=1000)
+```
+
+Use rich media objects when you want the file to appear as previewable evidence
+inside Run Detail:
+
+```python
+run.log_objects(
+    {"eval/rollout": ro.Video(path="outputs/rollout.mp4", caption="Evaluation rollout")},
+    step=1000,
+)
+```
+
 Stored same-origin media can preview in the dashboard when the browser supports
-the file type.
+the MIME type. External object-store references remain copy/download metadata
+only.
 
 ## Where artifacts appear
 

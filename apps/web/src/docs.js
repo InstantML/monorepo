@@ -25,6 +25,16 @@ export function docsPathForSlug(slug = []) {
   return cleanParts.join("/");
 }
 
+export function docsMarkdownPathForSlug(slug = []) {
+  const parts = Array.isArray(slug) ? slug : [];
+  const cleanParts = parts.map((part) => String(part));
+  if (cleanParts.length > 0) {
+    const lastIndex = cleanParts.length - 1;
+    cleanParts[lastIndex] = cleanParts[lastIndex].replace(/\.md$/i, "");
+  }
+  return docsPathForSlug(cleanParts);
+}
+
 export function docsHref(href = "") {
   if (!href) return "#";
   if (/^(https?:|mailto:|tel:)/i.test(href) || href.startsWith("#")) return href;
@@ -70,6 +80,67 @@ export async function loadDocsPage(slug = []) {
     navigation,
     ...parsed,
   };
+}
+
+export async function loadDocsMarkdown(slug = []) {
+  const pagePath = docsMarkdownPathForSlug(slug);
+  if (pagePath === "api-reference") {
+    return {
+      path: pagePath,
+      title: "API Reference",
+      markdown: await apiReferenceMarkdown(),
+    };
+  }
+
+  const filePath = safeJoin(docsRoot, `${pagePath}.mdx`);
+  const raw = await readFile(filePath, "utf8");
+  const parsed = parseDocsMdx(raw);
+  return {
+    path: pagePath,
+    title: parsed.frontmatter.title || pagePathToTitle(pagePath),
+    markdown: mdxToMarkdown(raw),
+  };
+}
+
+export async function loadDocsMarkdownIndex() {
+  const pages = await markdownPagesFromConfig();
+  const lines = [
+    "# InstantML Docs",
+    "",
+    "Agent-readable Markdown mirrors for the public InstantML documentation.",
+    "",
+    "- [Full documentation bundle](/llms-full.txt)",
+    "",
+    "## Pages",
+    "",
+  ];
+  for (const page of pages) {
+    lines.push(`- [${page.title}](${docsMarkdownUrl(page.path)})`);
+  }
+  return lines.join("\n").trimEnd() + "\n";
+}
+
+export async function loadDocsMarkdownFull() {
+  const pages = await markdownPagesFromConfig();
+  const sections = [
+    "# InstantML Docs",
+    "",
+    "This file concatenates the public InstantML docs for agents and offline readers.",
+  ];
+  for (const page of pages) {
+    const slug = page.path.split("/");
+    slug[slug.length - 1] = `${slug[slug.length - 1]}.md`;
+    const markdown = await loadDocsMarkdown(slug);
+    sections.push(
+      "",
+      "---",
+      "",
+      `Source: ${docsMarkdownUrl(page.path)}`,
+      "",
+      markdown.markdown.trimEnd(),
+    );
+  }
+  return sections.join("\n").trimEnd() + "\n";
 }
 
 export function flattenDocsNavigation(config) {
@@ -252,10 +323,104 @@ async function loadApiReferenceEndpoints() {
         path: route,
         summary: operation.summary || operation.description || `${method.toUpperCase()} ${route}`,
         tags: operation.tags ?? [],
+        parameters: (operation.parameters ?? []).map((parameter) => ({
+          name: parameter.name,
+          in: parameter.in,
+          required: Boolean(parameter.required),
+          description: parameter.description || "",
+        })),
+        requestBody: Boolean(operation.requestBody),
+        responseCodes: Object.keys(operation.responses ?? {}),
+        security: (operation.security ?? []).flatMap((entry) => Object.keys(entry)),
       });
     }
   }
   return endpoints.sort((left, right) => `${left.path} ${left.method}`.localeCompare(`${right.path} ${right.method}`));
+}
+
+async function apiReferenceMarkdown() {
+  const endpoints = await loadApiReferenceEndpoints();
+  return [
+    "# API Reference",
+    "",
+    "Public InstantML API routes generated from the Rust service OpenAPI specification.",
+    "",
+    ...endpoints.flatMap((endpoint) => [
+      `## ${endpoint.method} ${endpoint.path}`,
+      "",
+      endpoint.summary,
+      "",
+      endpoint.tags?.length ? `Tags: ${endpoint.tags.join(", ")}` : "",
+      endpoint.security?.length ? `Auth: ${endpoint.security.join(", ")}` : "",
+      endpoint.parameters?.length
+        ? `Parameters: ${endpoint.parameters.map((parameter) => `${parameter.name}${parameter.required ? " (required)" : ""}`).join(", ")}`
+        : "",
+      endpoint.requestBody ? "Request body: yes" : "",
+      endpoint.responseCodes?.length ? `Responses: ${endpoint.responseCodes.join(", ")}` : "",
+      "",
+    ]),
+  ].filter((line, index, lines) => line || lines[index - 1] !== "").join("\n").trimEnd() + "\n";
+}
+
+async function markdownPagesFromConfig() {
+  const config = await loadDocsConfig();
+  const navigation = flattenDocsNavigation(config);
+  const pages = [];
+  const seen = new Set();
+  for (const tab of navigation) {
+    for (const group of tab.groups) {
+      for (const page of group.pages) {
+        if (seen.has(page.path)) continue;
+        seen.add(page.path);
+        pages.push(page);
+      }
+    }
+  }
+  return pages;
+}
+
+function docsMarkdownUrl(pagePath) {
+  if (pagePath === "index") return "/docs/index.md";
+  return `/docs/${pagePath}.md`;
+}
+
+function mdxToMarkdown(raw) {
+  const { body } = parseFrontmatter(raw);
+  return normalizeMarkdownLinks(
+    body.replace(/<CardGroup[^>]*>([\s\S]*?)<\/CardGroup>/g, (_match, inner) => {
+      const cards = parseCardGroup(`<CardGroup>${inner}</CardGroup>`).cards;
+      return cards.map((card) => `- [${card.title}](${docsMarkdownHref(card.href)}): ${card.description}`).join("\n");
+    }),
+  ).trimEnd() + "\n";
+}
+
+function normalizeMarkdownLinks(markdown) {
+  return markdown.replace(/(!?)\[([^\]]+)\]\(([^)]+)\)/g, (_match, bang, label, href) => {
+    const mapped = bang ? mapMarkdownImageSrc(href) : docsMarkdownHref(href);
+    return `${bang}[${label}](${mapped})`;
+  });
+}
+
+function mapMarkdownImageSrc(src = "") {
+  if (src.startsWith("/images/")) return `/docs/assets${src}`;
+  return src;
+}
+
+function docsMarkdownHref(href = "") {
+  if (!href) return "#";
+  if (/^(https?:|mailto:|tel:)/i.test(href) || href.startsWith("#")) return href;
+  if (href.startsWith("/docs/assets/")) return href;
+  if (href.startsWith("/images/")) return mapMarkdownImageSrc(href);
+  if (href === "/" || href === "/docs") return "/docs/index.md";
+  if (href.startsWith("/docs/")) {
+    const path = href.slice("/docs/".length).replace(/\/$/, "");
+    if (!path || path === "index") return "/docs/index.md";
+    if (path.startsWith("api-reference")) return "/docs/api-reference.md";
+    return `/docs/${path.replace(/\.md$/i, "")}.md`;
+  }
+  const normalized = href.startsWith("/") ? href.slice(1) : href;
+  if (normalized.startsWith("api-reference")) return "/docs/api-reference.md";
+  return `/docs/${normalized.replace(/\/index$/, "").replace(/\.md$/i, "")}.md`;
 }
 
 function parseCardGroup(source) {

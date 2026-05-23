@@ -6,8 +6,9 @@ description: "Use research dashboards for rank-aware metrics, grouped reducers, 
 # Distributed, Advanced, and Insights
 
 Some training workflows need more than a line chart. InstantML includes
-research-oriented surfaces for distributed runs, large sweeps, and loaded
-summary analysis.
+research-oriented surfaces for distributed runs and loaded-summary analysis.
+These views operate on the selected run, selected runs, or the currently loaded
+summary page; they do not pull every run across every page in a project.
 
 ## Distributed
 
@@ -29,8 +30,8 @@ analysis panels.
 
 ![Insights dashboard](/images/product/dashboard-insights.png)
 
-Insights is for exploratory loaded-summary views such as grouped reducers,
-hyperparameter inspection, clustering, and evaluation panels.
+Insights is for exploratory views over the loaded run summaries, such as
+grouped reducers, hyperparameter inspection, clustering, and evaluation panels.
 
 ## When to use each surface
 
@@ -42,4 +43,4 @@ hyperparameter inspection, clustering, and evaluation panels.
 | Compare | You have a candidate set and need differences |
 | Distributed | Rank/worker context matters |
 | Advanced | You need specialized analysis controls |
-| Insights | You want exploratory summaries over many runs |
+| Insights | You want exploratory summaries over the loaded/selected runs |

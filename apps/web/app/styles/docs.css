@@ -230,13 +230,40 @@
   box-shadow: 0 18px 50px rgba(21, 32, 26, 0.1);
 }
 
-.docs-route-code-label {
+.docs-route-code-toolbar {
+  align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 9px 10px 9px 14px;
+}
+
+.docs-route-code-label {
   color: #9ab7aa;
   font-size: 12px;
   font-weight: 700;
-  padding: 10px 14px;
   text-transform: uppercase;
+}
+
+.docs-route-code-copy {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  color: rgba(248, 250, 252, 0.88);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 0.35rem;
+  min-height: 28px;
+  padding: 0 0.55rem;
+}
+
+.docs-route-code-copy:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .docs-route-code pre {
@@ -380,6 +407,25 @@
   line-height: 1.5;
 }
 
+.docs-route-api-row dl {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 4px 0 0;
+  color: #52625a;
+  font-size: 13px;
+}
+
+.docs-route-api-row dt {
+  color: #27362f;
+  font-weight: 800;
+}
+
+.docs-route-api-row dd {
+  margin: 0;
+}
+
 .docs-route-api-row code {
   color: #17211b;
   font-size: 14px;
@@ -450,5 +496,10 @@
 
   .docs-route-api-row p {
     grid-column: 1;
+  }
+
+  .docs-route-api-row dl {
+    grid-column: 1;
+    grid-template-columns: minmax(0, 1fr);
   }
 }

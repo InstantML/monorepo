@@ -1,0 +1,26 @@
+---
+title: "Alerts"
+description: "Use derived run-health alerts for the current dashboard filters."
+---
+
+# Alerts
+
+The Alerts tab summarizes run-health signals from the runs currently in scope.
+It is a read surface, not a persistent alert-rule builder.
+
+## What appears
+
+- Failed-run signals.
+- Active-run signals.
+- Metric-point volume.
+- A best/latest value for the selected dashboard metric.
+
+## How to use it
+
+1. Choose the project, status filter, search query, and metric in the dashboard.
+2. Open Alerts.
+3. Refresh when you want to recompute the derived alert rows from the current
+   filter state.
+4. Jump back to Runs, Metrics, or Run Detail to inspect the underlying runs.
+
+If no derived alerts match the current filters, the tab shows an empty state.

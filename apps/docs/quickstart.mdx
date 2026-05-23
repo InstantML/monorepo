@@ -1,60 +1,223 @@
 ---
 title: "Quickstart"
-description: "Create an InstantML account, install the SDK, and log one hosted run."
+description: "Install InstantML, log in, run one training loop, load runs, and shadow W&B safely."
 ---
 
 # Quickstart
 
-This path uses hosted InstantML. You only need an InstantML account, Python
-3.11 or newer, and an SDK API key.
+This is the fastest hosted SaaS path. You need Python 3.11 or newer and an
+InstantML account. For an interactive machine, use `instantml login` instead
+of exporting an API key.
 
-## 1. Create an SDK key
+## 1. Install
 
-Sign in to [InstantML](https://app.instantml.ai), open the API keys page, and
-create a copy-once SDK key with `sdk:ingest`, `artifacts:write`, and
-`export:read` scopes.
+Create an isolated Python environment and install the current alpha package:
 
-Export it before running a training script:
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --pre instantml
+instantml --help
+```
+
+Install optional extras only when your script needs them:
+
+```bash
+python -m pip install --pre "instantml[media]"
+python -m pip install --pre "instantml[system]"
+```
+
+## 2. Log in
+
+Authenticate once from the terminal:
+
+```bash
+instantml login
+instantml whoami
+```
+
+The CLI opens a browser device-code confirmation page, then stores a scoped SDK
+credential in `~/.instantml/credentials`. The Python SDK reads that credential
+automatically.
+
+The hosted SDK default is `https://api.instantml.ai`, so normal hosted users do
+not need `INSTANTML_API_BASE_URL`.
+
+## 3. Run your first script
+
+Create `train.py`:
+
+```python
+import math
+import random
+
+import instantml as im
+
+run = im.init(
+    project="quickstart",
+    name="baseline-seed-42",
+    config={
+        "seed": 42,
+        "model": "tiny-mlp",
+        "optimizer": "adam",
+        "learning_rate": 3e-4,
+    },
+    tags=["quickstart", "baseline"],
+    notes="First hosted InstantML run.",
+)
+
+random.seed(42)
+
+for step in range(1, 51):
+    loss = math.exp(-step / 18) + random.random() * 0.02
+    accuracy = min(0.98, 0.5 + step / 120 + random.random() * 0.01)
+    run.log(
+        {
+            "train/loss": loss,
+            "eval/accuracy": accuracy,
+        },
+        step=step,
+    )
+
+run.finish()
+print(f"InstantML run finished: {run.run_id}")
+```
+
+Run it:
+
+```bash
+python train.py
+```
+
+Open [InstantML](https://instantml.ai), choose the `quickstart` project, and
+inspect the run in Runs, Metrics, Run Detail, and Compare.
+
+## 4. CI and remote jobs
+
+Use a secrets manager or environment variable when a job cannot use browser
+login:
 
 ```bash
 export INSTANTML_API_KEY="instantml_..."
-export INSTANTML_API_BASE_URL="https://api.instantml.ai"
+python train.py
 ```
 
-## 2. Install the SDK
+For the first scalar-only run, the key only needs `sdk:ingest`. Add
+`artifacts:write` for file uploads, `export:read` for read/export jobs, and
+`usage:read` for usage reporting.
 
-```bash
-python3 -m pip install --pre instantml
-```
-
-## 3. Log one run
+You can also pass the key directly:
 
 ```python
-import instantml as ro
+run = im.init(project="quickstart", api_key="instantml_...")
+```
 
-run = ro.init(
-    project="cartpole",
-    name="ppo-seed-42",
-    config={"seed": 42, "algorithm": "ppo"},
-    tags=["ppo", "baseline"],
-    notes="First PPO baseline.",
+## 5. Load existing runs
+
+Use the read-only API helper to find existing runs from scripts or notebooks:
+
+```python
+import instantml as im
+
+api = im.Api()
+page = api.runs(
+    project="quickstart",
+    q="baseline",
+    sort_by="metric-best",
+    metric_key="eval/accuracy",
+    limit=10,
 )
 
-for step in range(10):
-    run.log({"train/reward": step * 1.5, "train/loss": 1.0 / (step + 1)}, step=step)
+for row in page["runs"]:
+    print(row["id"], row["name"], row.get("status"))
+```
 
+`Api.runs(...)` reads the same bounded summary shape used by the dashboard. The
+current SDK does not have a high-level `load_run(...)` or resume-by-run-ID
+helper for writing more events to an existing run. Treat existing-run access as
+read/query/download unless a future SDK release documents an attach workflow.
+
+Download stored checkpoint or file artifacts with:
+
+```python
+path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
+print(path)
+```
+
+## 6. Shadow a W&B run
+
+Use shadow logging when you want InstantML and Weights & Biases side by side
+during migration. Install and authenticate W&B exactly as you normally would,
+then enable `shadow_wandb`:
+
+```bash
+python -m pip install wandb
+wandb login
+```
+
+```python
+import instantml as im
+
+run = im.init(
+    project="quickstart",
+    name="wandb-shadow-seed-42",
+    config={"seed": 42, "optimizer": "adam"},
+    tags=["shadow", "wandb"],
+    shadow_wandb=True,
+)
+
+for step in range(1, 11):
+    run.log({"train/loss": 1.0 / step, "eval/accuracy": step / 10}, step=step)
+
+run.log_artifact("weights", "file://weights.pt", artifact_type="model", step=10)
 run.finish()
 ```
 
-The SDK defaults to `https://api.instantml.ai`. Set `INSTANTML_API_BASE_URL`
-only when your team has been given a different hosted API endpoint.
+You can set a different W&B project or entity without changing the InstantML
+project:
 
-## 4. Inspect the run
+```python
+run = im.init(
+    project="quickstart",
+    shadow_wandb={"project": "wandb-comparison", "entity": "my-team"},
+)
+```
 
-In the dashboard:
+Or attach to an existing `wandb.Run`:
 
-- Open the project selector and choose `cartpole`.
-- Use the Runs workspace to see the run row and latest metric summaries.
-- Open Run Detail to inspect config, tags, notes, metrics, source context, and
-  artifacts.
-- Select multiple runs later to compare metrics and config differences.
+```python
+import instantml as im
+import wandb
+
+wb_run = wandb.init(project="wandb-comparison")
+run = im.init(project="quickstart", shadow_wandb=wb_run)
+```
+
+Shadow logging mirrors scalar `run.log(...)` calls, `finish()`, and local-file
+metadata artifacts created with `log_artifact("name", "file://path", ...)`.
+InstantML remains the source of truth for rich objects, uploaded files,
+checkpoint uploads, console capture, and system metrics.
+
+If W&B is not installed or `wandb.init(...)` fails, InstantML warns and keeps
+logging to InstantML.
+
+## 7. First failure checks
+
+If the SDK cannot start:
+
+```bash
+instantml whoami
+curl -fsS https://api.instantml.ai/health
+```
+
+If credentials are configured through CI, check presence without printing the
+secret:
+
+```bash
+test -n "$INSTANTML_API_KEY" && echo "INSTANTML_API_KEY is set"
+```
+
+If the dashboard does not show the run, confirm the project name in your script
+matches the project selector and call `run.finish()` or `run.flush()` before
+the process exits.

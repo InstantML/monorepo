@@ -13,7 +13,7 @@ where a browser login is easier than pasting an API key.
 Authenticate:
 
 ```bash
-instantml login --api-host https://api.instantml.ai
+instantml login
 ```
 
 Print the current credential context:
@@ -35,7 +35,8 @@ instantml logout
 1. Explicit `api_key=...`.
 2. `INSTANTML_API_KEY`.
 3. CLI-stored credentials from `instantml login`.
-4. No credentials, which raises `InstantMLError` for auth-required servers.
+4. No credentials, which makes top-level `ro.init(...)` raise
+   `InstantMLError` before it creates a run.
 
 Examples:
 
@@ -47,8 +48,14 @@ run = ro.init(project="cartpole", api_key="instantml_...", base_url="https://api
 run = ro.init(project="cartpole", base_url="https://api.instantml.ai")
 
 # After `instantml login`
-run = ro.init(project="cartpole", base_url="https://api.instantml.ai")
+run = ro.init(project="cartpole")
 ```
+
+The hosted SDK default is `https://api.instantml.ai`. Use
+`instantml login --api-host ...` only when the login flow itself should contact
+a different hosted API. That flag does not change the SDK host for future
+scripts; set `INSTANTML_API_BASE_URL` or pass `base_url=...` if your team has a
+different API endpoint.
 
 ## Browser confirmation
 
