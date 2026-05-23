@@ -10,7 +10,7 @@ import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPa
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
-import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { AdvancedTabPane } from "./advanced/tab-pane";
@@ -313,6 +313,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [groupBy, setGroupBy] = useState("");
   const [xMode, setXMode] = useState("step");
   const [smoothing, setSmoothing] = useState(0);
+  const [identifierMode, setIdentifierMode] = useState("name");
   const [groupAverage, setGroupAverage] = useState(false);
   const [diffOnly, setDiffOnly] = useState(false);
   const [referenceRunId, setReferenceRunId] = useState("");
@@ -467,8 +468,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const currentMessageTone = messageTone(message);
   const seriesWithGroups = useMemo(() => series.map((item) => {
     const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
-    return { ...item, group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all" };
-  }), [groupBy, selectedRunDetails, series, sortedRuns]);
+    return {
+      ...item,
+      group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
+      identifier: (run ? identifierForRun(run, identifierMode) : undefined) ?? item.name,
+    };
+  }), [groupBy, identifierMode, selectedRunDetails, series, sortedRuns]);
 
   const displaySeries = useMemo(() => {
     const grouped = groupAverage ? averageGroupedSeries(seriesWithGroups) : seriesWithGroups;
@@ -498,7 +503,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         const rawSeries = panelSeries[metric] ?? [];
         const groupedSeries = rawSeries.map((item) => {
           const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
-          return { ...item, group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all" };
+          return {
+            ...item,
+            group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
+            identifier: (run ? identifierForRun(run, identifierMode) : undefined) ?? item.name,
+          };
         });
         const preparedSeries = smoothSeries(groupAverage ? averageGroupedSeries(groupedSeries) : groupedSeries, smoothing);
         const zoomRange = pinnedChartZoomRanges[metric] ?? null;
@@ -513,7 +522,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           zoomRange,
         };
       })
-  ), [groupAverage, groupBy, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns, xMode]);
+  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns, xMode]);
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
@@ -1702,6 +1711,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       groupBy,
       xMode,
       smoothing,
+      identifierMode,
       groupAverage,
       diffOnly,
       compareLayout,
@@ -1797,6 +1807,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setGroupBy(view.groupBy ?? "");
     setXMode(view.xMode ?? "step");
     setSmoothing(view.smoothing ?? 0);
+    setIdentifierMode(["name", "notes", "tags"].includes(view.identifierMode) ? view.identifierMode : "name");
     setGroupAverage(Boolean(view.groupAverage));
     setDiffOnly(Boolean(view.diffOnly));
     setCompareLayout(compareLayouts.has(view.compareLayout) ? (view.compareLayout === "auto" ? "rows" : view.compareLayout) : "rows");
@@ -2510,6 +2521,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
               onSmoothing={setSmoothing}
               onXMode={setXMode}
+              identifierMode={identifierMode}
+              onIdentifierMode={setIdentifierMode}
               onZoomRangeChange={setChartZoomRange}
               pinnedChartPanels={pinnedChartPanels}
               pinnedMetrics={pinnedMetrics}
