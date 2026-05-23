@@ -72,12 +72,19 @@ export function numericFieldRows(runs, metricKey) {
 
 export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
   const { fields, rows } = numericFieldRows(runs, metricKey);
-  const selectedFields = fields.slice(0, 6);
+  // Cluster on configuration features only. Seed-like fields are run identifiers
+  // (index noise), and metric fields would leak the outcome into the feature
+  // space — making clusters partly "accuracy bins" and any later
+  // "this cluster scores higher" reading circular. Fall back to all non-seed
+  // numeric fields if a run logged no usable config fields.
+  const configFields = fields.filter((field) => field.startsWith("config.") && !/(^|[._])seed$/i.test(field));
+  const nonSeedFields = fields.filter((field) => !/(^|[._])seed$/i.test(field));
+  const selectedFields = (configFields.length >= 2 ? configFields : nonSeedFields).slice(0, 6);
   const vectors = rows
     .map((row) => ({ run: row.run, vector: selectedFields.map((field) => row.values[field]) }))
     .filter((row) => row.vector.every(isFiniteNumber));
   if (vectors.length < 3 || selectedFields.length < 2) {
-    return { clusters: [], fields: selectedFields, points: [] };
+    return { clusters: [], fields: selectedFields, axes: selectedFields.slice(0, 2), points: [] };
   }
   const normalized = normalizeVectors(vectors.map((row) => row.vector));
   const clusterCount = Math.min(k, vectors.length);
@@ -104,14 +111,22 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
       topRuns: members.slice(0, 3).map((item) => item.run.name),
     };
   }).filter((cluster) => cluster.count > 0);
+  // Project onto the two highest-resolution dimensions so the scatter spreads
+  // points instead of collapsing low-cardinality fields onto a coarse grid.
+  const distinctCount = (field) => new Set(vectors.map((item) => item.vector[selectedFields.indexOf(field)])).size;
+  const axisOrder = selectedFields
+    .map((field, index) => ({ index, distinct: distinctCount(field) }))
+    .sort((a, b) => b.distinct - a.distinct);
+  const xDim = axisOrder[0]?.index ?? 0;
+  const yDim = (axisOrder[1]?.index ?? 1) === xDim ? Math.min(1, selectedFields.length - 1) : (axisOrder[1]?.index ?? 1);
   const points = vectors.map((item, index) => ({
     id: item.run.id,
     name: item.run.name,
     cluster: assignments[index],
-    x: normalized[index][0],
-    y: normalized[index][1],
+    x: normalized[index][xDim],
+    y: normalized[index][yDim],
   }));
-  return { clusters, fields: selectedFields, points };
+  return { clusters, fields: selectedFields, axes: [selectedFields[xDim], selectedFields[yDim]], points };
 }
 
 export function evaluationCards(runs) {

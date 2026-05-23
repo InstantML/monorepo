@@ -145,16 +145,14 @@ pub async fn rank_metrics_summary(
         .filter(|value| !value.trim().is_empty())
         .map(|raw| validate_name(Some(raw.as_str()), "key"))
         .transpose()?;
-    let keys = match requested_key.as_ref() {
-        Some(key) => vec![key.clone()],
-        None => {
-            metric_store
-                .query_rank_metric_keys(ctx.org_id, run_id, 200)
-                .await?
-        }
-    };
-    let selected_key = match query.get("key").filter(|value| !value.trim().is_empty()) {
-        Some(_) => requested_key,
+    // Always return the full set of available rank keys so the dashboard key
+    // selector lists every key, not just the one being viewed. Requesting a
+    // specific key only changes which key's reducers are computed below.
+    let keys = metric_store
+        .query_rank_metric_keys(ctx.org_id, run_id, 200)
+        .await?;
+    let selected_key = match requested_key {
+        Some(key) => Some(key),
         None => keys.first().cloned(),
     };
     let Some(key) = selected_key else {
