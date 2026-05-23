@@ -471,6 +471,103 @@
     max-width: 100%;
     white-space: normal;
   }
+
+  /* ── Secondary tabs (alerts / artifacts / datasets / models /
+   *    reports / settings / integrations)
+   *
+   * Until now these tabs inherited their desktop multi-column grids on
+   * mobile, with no overrides. Every rule below collapses one of those
+   * grids to a stacked or scrollable mobile-friendly layout.
+   * ─────────────────────────────────────────────────────────────────── */
+
+  /* Models tab: 2-col grid (main + 332px sidebar) → stacked. */
+  .tab-grid.two-col {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Integrations tab: 3-col card grid → 1 column. */
+  .integration-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .integration-card {
+    padding: 12px;
+  }
+  .integration-top {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  /* Datasets table: desktop is a 4-col grid (≥480px). Scroll
+   * horizontally rather than collapse — collapsing would break
+   * header↔row alignment. */
+  .compact-table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .compact-row {
+    min-width: 560px;
+  }
+
+  /* Settings — admin form rows (label + input + button) → stack. */
+  .admin-form-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .admin-form-row > * {
+    width: 100%;
+  }
+  .admin-form-row input,
+  .admin-form-row select,
+  .admin-form-row button {
+    min-height: 40px;
+  }
+
+  /* Settings — API rows (icon + name + actions) → icon+name on row 1,
+   * actions full-width on row 2. */
+  .api-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+    grid-auto-rows: auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .api-row > *:nth-child(3) {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  /* Single-column lists across all secondary tabs */
+  .settings-list,
+  .api-list,
+  .admin-list,
+  .admin-alert-list,
+  .admin-stack,
+  .timeline-list,
+  .event-list {
+    grid-template-columns: 1fr;
+  }
+
+  /* Event rows (alerts / reports timelines) — let timestamp/label wrap */
+  .event-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Panel container tightening across all secondary tabs */
+  .panel-body {
+    padding: 12px;
+  }
+  .panel-head {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .panel-head h2,
+  .panel-head h3 {
+    font-size: 15px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -483,6 +580,12 @@
   }
   .brandbar-row { gap: 6px; }
   .brand-wordmark { display: none; }
+
+  /* Secondary tabs — tighter still under 480px */
+  .compact-row { min-width: 440px; }
+  .panel-body { padding: 10px; }
+  .panel-head { padding: 8px 10px; }
+  .integration-card { padding: 10px; }
 }
 
 /* Prevent body scroll while the nav drawer is open on mobile */
