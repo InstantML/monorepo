@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isAbortError, queryString } from "../../../src/api.js";
 import { formatNumber } from "../../../src/state.js";
@@ -62,17 +62,21 @@ type Props = {
   api: { get: (path: string, options?: Record<string, unknown>) => Promise<any> };
   embedded?: boolean;
   primaryRun: RunSummary | null;
+  onMeta?: (meta: { worldSize: number; rankKeys: number }) => void;
 };
 
-export function DistributedTabPane({ api, embedded = false, primaryRun }: Props) {
+export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }: Props) {
   const [summary, setSummary] = useState<RankSummary | null>(null);
   const [rankKey, setRankKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const onMetaRef = useRef(onMeta);
+  onMetaRef.current = onMeta;
 
   useEffect(() => {
     if (!primaryRun?.id) {
       setSummary(null);
+      onMetaRef.current?.({ worldSize: 0, rankKeys: 0 });
       return;
     }
     const controller = new AbortController();
@@ -85,6 +89,7 @@ export function DistributedTabPane({ api, embedded = false, primaryRun }: Props)
       const next = payload as RankSummary;
       setSummary(next);
       if (!rankKey && next.key) setRankKey(next.key);
+      onMetaRef.current?.({ worldSize: next.reducers.at(-1)?.expected_world_size ?? 0, rankKeys: next.keys.length });
     }).catch((err) => {
       if (!isAbortError(err)) setError(err instanceof Error ? err.message : "Unable to load rank metrics.");
     }).finally(() => {
