@@ -3,8 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
 import { DocsCodeBlock } from "../docs-code-block";
 import {
+  docsMarkdownUrl,
   docsHref,
   loadDocsPage,
   mapDocsAssetSrc,
@@ -60,6 +62,7 @@ export default async function DocsPage({ params }: DocsParams) {
   }
   const blocks = "blocks" in page && Array.isArray(page.blocks) ? (page.blocks as DocsBlock[]) : [];
   const endpoints = "endpoints" in page && Array.isArray(page.endpoints) ? page.endpoints : [];
+  const markdownHref = docsMarkdownUrl(page.path);
 
   return (
     <main className="docs-route">
@@ -80,9 +83,19 @@ export default async function DocsPage({ params }: DocsParams) {
       <div className="docs-route-shell">
         <DocsSidebar navigation={page.navigation as DocsNavigation} currentPath={page.path} />
         <article className="docs-route-article">
-          <div className="docs-route-eyebrow">InstantML documentation</div>
-          <h1>{page.title}</h1>
-          {page.description ? <p className="docs-route-description">{page.description}</p> : null}
+          <header className="docs-route-article-header">
+            <div>
+              <div className="docs-route-eyebrow">InstantML documentation</div>
+              <h1>{page.title}</h1>
+              {page.description ? <p className="docs-route-description">{page.description}</p> : null}
+            </div>
+            <div className="docs-route-agent-actions" aria-label="Agent-readable docs actions">
+              <DocsAgentMarkdownButton href={markdownHref} />
+              <Link className="docs-route-agent-link" href={markdownHref}>
+                Open .md
+              </Link>
+            </div>
+          </header>
           {page.kind === "api-reference" ? (
             <ApiReference endpoints={endpoints} />
           ) : (

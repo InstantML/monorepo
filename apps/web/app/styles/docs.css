@@ -126,6 +126,49 @@
   width: 100%;
 }
 
+.docs-route-article-header {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.docs-route-agent-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.docs-route-agent-copy,
+.docs-route-agent-link {
+  align-items: center;
+  border: 1px solid rgba(24, 122, 82, 0.22);
+  border-radius: 8px;
+  background: rgba(233, 242, 236, 0.88);
+  color: #0f6d47;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 0.4rem;
+  min-height: 34px;
+  padding: 0 0.7rem;
+  text-decoration: none;
+}
+
+.docs-route-agent-copy {
+  cursor: pointer;
+}
+
+.docs-route-agent-copy:hover,
+.docs-route-agent-link:hover {
+  background: #dceee3;
+  border-color: rgba(24, 122, 82, 0.34);
+}
+
 .docs-route-eyebrow {
   margin-bottom: 12px;
   color: #1a8a5e;
@@ -459,6 +502,14 @@
   .docs-route-shell {
     grid-template-columns: minmax(0, 1fr);
     padding-top: 22px;
+  }
+
+  .docs-route-article-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docs-route-agent-actions {
+    justify-content: flex-start;
   }
 
   .docs-route-sidebar {

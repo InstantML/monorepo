@@ -21,11 +21,16 @@ const webRoot = path.resolve(__dirname, "..");
 
 test("docs app route renders docs source instead of redirecting to a docs host", async () => {
   const route = await readFile(path.join(webRoot, "app", "docs", "[[...slug]]", "page.tsx"), "utf8");
+  const agentButton = await readFile(path.join(webRoot, "app", "docs", "docs-agent-markdown-button.tsx"), "utf8");
   const codeBlock = await readFile(path.join(webRoot, "app", "docs", "docs-code-block.tsx"), "utf8");
   const styles = await readFile(path.join(webRoot, "app", "styles", "docs.css"), "utf8");
   assert.match(route, /loadDocsPage/);
   assert.match(route, /DocsSidebar/);
   assert.match(route, /DocsCodeBlock/);
+  assert.match(route, /DocsAgentMarkdownButton/);
+  assert.match(route, /Open \.md/);
+  assert.match(agentButton, /fetch\(href/);
+  assert.match(agentButton, /Copy \.md for agent/);
   assert.match(codeBlock, /navigator\.clipboard\.writeText/);
   assert.match(styles, /grid-template-columns: clamp\(248px, 18vw, 320px\) minmax\(0, 1fr\)/);
   assert.doesNotMatch(styles, /max-width: 1240px/);
@@ -152,10 +157,14 @@ test("docs markdown loader mirrors pages and agent indexes", async () => {
   assert.match(quickstart.markdown, /^# Quickstart/m);
   assert.doesNotMatch(quickstart.markdown, /^---/);
   assert.match(quickstart.markdown, /instantml login/);
+  assert.match(quickstart.markdown, /## Agent navigation/);
+  assert.match(quickstart.markdown, /\[Logging\]\(\/docs\/sdk\/logging\.md\)/);
+  assert.match(quickstart.markdown, /\[Quickstart\]\(\/docs\/quickstart\.md\) \(current page\)/);
 
   const apiReference = await loadDocsMarkdown(["api-reference.md"]);
   assert.match(apiReference.markdown, /^# API Reference/m);
   assert.match(apiReference.markdown, /## GET \/health/);
+  assert.match(apiReference.markdown, /\[Quickstart\]\(\/docs\/quickstart\.md\)/);
 
   const index = await loadDocsMarkdownIndex();
   assert.match(index, /\[Quickstart\]\(\/docs\/quickstart\.md\)/);

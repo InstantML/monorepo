@@ -82,13 +82,15 @@ export async function loadDocsPage(slug = []) {
   };
 }
 
-export async function loadDocsMarkdown(slug = []) {
+export async function loadDocsMarkdown(slug = [], options = {}) {
+  const includeNavigation = options.includeNavigation ?? true;
   const pagePath = docsMarkdownPathForSlug(slug);
   if (pagePath === "api-reference") {
+    const markdown = await apiReferenceMarkdown();
     return {
       path: pagePath,
       title: "API Reference",
-      markdown: await apiReferenceMarkdown(),
+      markdown: includeNavigation ? await appendMarkdownNavigation(markdown, pagePath) : markdown,
     };
   }
 
@@ -98,7 +100,7 @@ export async function loadDocsMarkdown(slug = []) {
   return {
     path: pagePath,
     title: parsed.frontmatter.title || pagePathToTitle(pagePath),
-    markdown: mdxToMarkdown(raw),
+    markdown: includeNavigation ? await appendMarkdownNavigation(mdxToMarkdown(raw), pagePath) : mdxToMarkdown(raw),
   };
 }
 
@@ -130,7 +132,7 @@ export async function loadDocsMarkdownFull() {
   for (const page of pages) {
     const slug = page.path.split("/");
     slug[slug.length - 1] = `${slug[slug.length - 1]}.md`;
-    const markdown = await loadDocsMarkdown(slug);
+    const markdown = await loadDocsMarkdown(slug, { includeNavigation: false });
     sections.push(
       "",
       "---",
@@ -379,9 +381,34 @@ async function markdownPagesFromConfig() {
   return pages;
 }
 
-function docsMarkdownUrl(pagePath) {
+export function docsMarkdownUrl(pagePath) {
   if (pagePath === "index") return "/docs/index.md";
   return `/docs/${pagePath}.md`;
+}
+
+async function appendMarkdownNavigation(markdown, currentPath) {
+  const config = await loadDocsConfig();
+  const navigation = flattenDocsNavigation(config);
+  const lines = [
+    "",
+    "## Agent navigation",
+    "",
+    "- [Docs index](/llms.txt)",
+    "- [Full docs bundle](/llms-full.txt)",
+  ];
+
+  for (const tab of navigation) {
+    lines.push("", `### ${tab.tab}`, "");
+    for (const group of tab.groups) {
+      if (tab.groups.length > 1) lines.push(`**${group.group}**`, "");
+      for (const page of group.pages) {
+        const current = page.path === currentPath ? " (current page)" : "";
+        lines.push(`- [${page.title}](${docsMarkdownUrl(page.path)})${current}`);
+      }
+    }
+  }
+
+  return markdown.trimEnd() + "\n" + lines.join("\n").trimEnd() + "\n";
 }
 
 function mdxToMarkdown(raw) {
