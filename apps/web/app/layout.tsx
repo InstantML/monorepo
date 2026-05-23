@@ -2,6 +2,7 @@ import "./globals.css";
 import "./auth.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 
 const sans = Space_Grotesk({
@@ -58,23 +59,92 @@ const logoIntroFlag = `
 })();
 `;
 
-export const metadata = {
+const SITE_URL = "https://instantml.ai";
+const SITE_TAGLINE =
+  "Training observability that's fast where W&B is slow, cheap where W&B is expensive, and built for the way ML teams actually work in 2026.";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "InstantML",
+    default: "InstantML — Training observability that keeps up with your loop",
     template: "%s · InstantML",
   },
-  description: "Training observability that's fast where W&B is slow, cheap where W&B is expensive, and built for the way ML teams actually work in 2026.",
+  description: SITE_TAGLINE,
+  applicationName: "InstantML",
+  authors: [{ name: "InstantML" }],
+  keywords: [
+    "InstantML",
+    "ML observability",
+    "training observability",
+    "experiment tracking",
+    "Weights and Biases alternative",
+    "W&B alternative",
+    "ML experiment tracker",
+    "machine learning",
+  ],
+  category: "technology",
+  formatDetection: { telephone: false },
+  alternates: { canonical: "/" },
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/instantml-mark.svg",
     apple: "/instantml-mark.svg",
   },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "InstantML",
+    title: "InstantML — Training observability that keeps up with your loop",
+    description: SITE_TAGLINE,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "InstantML — Training observability that keeps up with your loop",
+    description: SITE_TAGLINE,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
 };
 
-export const viewport = {
+export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
   themeColor: "#0E1116",
+};
+
+const organizationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "InstantML",
+  url: SITE_URL,
+  logo: `${SITE_URL}/instantml-mark.svg`,
+};
+
+const softwareApplicationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "InstantML",
+  url: SITE_URL,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Web",
+  description: SITE_TAGLINE,
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+    name: "Free",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -83,6 +153,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
         <script dangerouslySetInnerHTML={{ __html: logoIntroFlag }} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+        />
       </head>
       <body>
         <ClerkProvider>{children}</ClerkProvider>

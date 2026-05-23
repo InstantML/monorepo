@@ -15,10 +15,27 @@ import { PricingPage } from "../../components/pricing/PricingPage";
  * Placeholder W&B numbers — confirm with a sales rep / public quote
  * before going live. Marked TODO in PricingPage.tsx.
  */
+const PRICING_TITLE = "Pricing";
+const PRICING_DESCRIPTION =
+  "Flat monthly pricing for InstantML — Free, Pro, Premium. Role-aware seats, no per-tracked-hour bill creep, no surprise artifact storage charges.";
+
 export const metadata: Metadata = {
-  title: "Pricing",
-  description:
-    "Flat monthly pricing for InstantML — Free, Pro, Premium. Role-aware seats, no per-tracked-hour bill creep, no surprise artifact storage charges.",
+  title: PRICING_TITLE,
+  description: PRICING_DESCRIPTION,
+  alternates: { canonical: "/pricing" },
+  openGraph: {
+    type: "website",
+    url: "https://instantml.ai/pricing",
+    siteName: "InstantML",
+    title: `${PRICING_TITLE} · InstantML`,
+    description: PRICING_DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${PRICING_TITLE} · InstantML`,
+    description: PRICING_DESCRIPTION,
+  },
 };
 
 export default function PricingRoute() {
