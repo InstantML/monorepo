@@ -64,7 +64,10 @@
 }
 
 /* ── Grids ───────────────────────────────────────────────────────────────── */
-.analysis-grid { display: grid; gap: 14px; }
+/* Panels size to their own content instead of stretching to the tallest panel
+ * in the row — otherwise a short panel (coverage, per-rank) next to a tall one
+ * (reducer chart, outlier table) renders with an awkward empty stretch. */
+.analysis-grid { display: grid; gap: 14px; align-items: start; }
 .analysis-grid.one { grid-template-columns: minmax(0, 1fr); }
 .analysis-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .analysis-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
