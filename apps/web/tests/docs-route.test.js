@@ -33,6 +33,17 @@ test("docs asset route serves images from the docs source tree", async () => {
   assert.match(route, /Content-Type/);
 });
 
+test("main app navigation links to the same-origin docs route", async () => {
+  const landing = await readFile(path.join(webRoot, "components", "landing", "LandingPage.tsx"), "utf8");
+  const topbar = await readFile(path.join(webRoot, "app", "dashboard", "chrome", "topbar.tsx"), "utf8");
+  const navRail = await readFile(path.join(webRoot, "app", "dashboard", "chrome", "nav-rail.tsx"), "utf8");
+
+  assert.match(landing, /href="\/docs"/);
+  assert.match(topbar, /href="\/docs"/);
+  assert.match(navRail, /href="\/docs"/);
+  assert.doesNotMatch(`${landing}\n${topbar}\n${navRail}`, /docs\.instantml\.ai/);
+});
+
 test("docs slug paths are normalized and reject traversal", () => {
   assert.equal(docsPathForSlug([]), "index");
   assert.equal(docsPathForSlug(["sdk", "logging"]), "sdk/logging");
