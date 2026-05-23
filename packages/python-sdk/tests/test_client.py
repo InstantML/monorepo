@@ -60,6 +60,16 @@ def test_client_base_url_respects_env_override(monkeypatch):
     assert ro.Api().base_url == "http://127.0.0.1:8000"
 
 
+def test_client_default_http_timeout_has_cold_path_headroom():
+    # The default must cover the first cold-path request, which can spend
+    # multiple seconds on warehouse routing + ClickHouse migrate work.
+    # The old 2.0s default timed out real users before warmup finished;
+    # 10s is generous for cold start while still failing fast on a
+    # genuinely unreachable backend.
+    assert ro.Client().timeout >= 10.0
+    assert ro.Api().timeout >= 10.0
+
+
 def test_api_runs_builds_expected_query_string(monkeypatch):
     calls = []
 
