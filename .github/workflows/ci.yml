@@ -76,6 +76,13 @@ jobs:
         # commit the diff to fix.
         run: npm run verify:api-types
 
+      - name: Validate Public Docs
+        # Checks that the Mintlify source builds, the filtered public OpenAPI
+        # copy is current, and public docs do not link into internal planning
+        # docs. Run `npm run docs:sync-openapi` and commit the diff to fix
+        # OpenAPI drift.
+        run: npm run docs:validate
+
       - name: Node Tests
         run: npm run test:node
 

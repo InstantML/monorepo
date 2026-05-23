@@ -1,0 +1,57 @@
+---
+title: "Imports"
+description: "Import transformed W&B, MLflow, and Neptune-shaped JSON payloads."
+---
+
+# Imports
+
+InstantML includes JSON importer endpoints so teams can evaluate without
+starting from an empty project.
+
+## Supported importer routes
+
+| Source shape | Route |
+| --- | --- |
+| W&B transformed JSON | `POST /api/imports/wandb` |
+| MLflow transformed JSON | `POST /api/imports/mlflow` |
+| Neptune-shaped transformed JSON | `POST /api/imports/neptune` |
+
+These routes accept transformed JSON inputs. They are not raw vendor database
+readers.
+
+## What importers preserve
+
+Importer payloads should preserve the useful experiment-tracking spine:
+
+- Projects.
+- Runs.
+- Config/params.
+- Tags and notes when present.
+- Metric history and summaries.
+- Artifact references or uploaded artifact metadata.
+- Import status and diagnostics.
+
+## API-key auth
+
+Importer calls use bearer API keys with import/write permission:
+
+```bash
+curl https://api.instantml.ai/api/imports/mlflow \
+  -H "Authorization: Bearer instantml_..." \
+  -H "Content-Type: application/json" \
+  --data @mlflow-transformed.json
+```
+
+## Practical migration flow
+
+1. Export or transform source data outside InstantML.
+2. Validate the JSON shape with a small project first.
+3. Import one representative project.
+4. Open the dashboard and inspect runs, metric counts, configs, notes, and
+   artifacts.
+5. Repeat for larger projects once the shape looks right.
+
+## Current limitation
+
+Real Neptune Exporter Parquet import is not part of this public docs surface.
+Use the Neptune-shaped JSON importer route for transformed payloads.

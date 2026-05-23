@@ -1,0 +1,97 @@
+---
+title: "Dashboard control-state API"
+description: "Persist selected project preferences and saved workspace views."
+---
+
+# Dashboard control-state API
+
+Dashboard control-state routes store human UI preferences. SDK API keys are not
+accepted for these routes; use a browser session with organization membership.
+
+## Project preference
+
+Read:
+
+```http
+GET /api/dashboard/preferences
+Cookie: instantml_session=...
+```
+
+Response when saved:
+
+```json
+{
+  "preferences": {
+    "selected_project": "hosted-scale-data",
+    "updated_at": "2026-05-17T00:00:00Z"
+  }
+}
+```
+
+Save:
+
+```http
+PUT /api/dashboard/preferences
+Cookie: instantml_session=...
+Content-Type: application/json
+
+{
+  "selected_project": "cartpole"
+}
+```
+
+Set `selected_project` to `null` to clear the preference.
+
+## List workspace views
+
+```http
+GET /api/workspace-views?limit=50
+Cookie: instantml_session=...
+```
+
+List rows are summaries and do not include the full saved layout payload.
+
+## Create a workspace view
+
+```http
+POST /api/workspace-views
+Cookie: instantml_session=...
+Content-Type: application/json
+
+{
+  "name": "Daily comparison",
+  "project": "cartpole",
+  "payload": {
+    "schema_version": 1,
+    "tab": "runs",
+    "workspace_view": {}
+  }
+}
+```
+
+The payload must be a JSON object and must serialize to at most 64 KiB.
+
+## Read or update one workspace view
+
+```http
+GET /api/workspace-views/{view_id}
+Cookie: instantml_session=...
+```
+
+```http
+PUT /api/workspace-views/{view_id}
+Cookie: instantml_session=...
+Content-Type: application/json
+
+{
+  "name": "Daily eval pass"
+}
+```
+
+Update accepts any subset of `name`, `project`, and `payload`.
+
+## Demo and local behavior
+
+Shared demo sessions are read-only and cannot save dashboard control state.
+Local compatibility mode can keep the same route shapes for development, and
+the dashboard has validated local-storage fallback when the API is unavailable.

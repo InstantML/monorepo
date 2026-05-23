@@ -1,5 +1,9 @@
 # InstantML User Guide
 
+The canonical public documentation now lives in the Mintlify source under
+`apps/docs/`. Keep this file only as a condensed legacy handoff until all
+external docs consumers have moved to the Mintlify site.
+
 InstantML helps you log training runs from Python, compare metrics across runs, inspect configs and artifacts, and turn those logs into a fast experiment workspace.
 
 This guide is written for users of the product and SDK. It avoids internal implementation detail unless it affects how you log data.

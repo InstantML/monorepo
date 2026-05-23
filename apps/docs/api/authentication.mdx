@@ -1,0 +1,64 @@
+---
+title: "API authentication"
+description: "Understand hosted base URLs, SDK API keys, and bearer authentication."
+---
+
+# API authentication
+
+InstantML has two day-to-day credential paths:
+
+| Credential | Transport | Main use |
+| --- | --- | --- |
+| Browser session | `instantml_session` HttpOnly cookie | Dashboard after hosted sign-in |
+| SDK API key | `Authorization: Bearer instantml_...` | SDK, uploader, import, export, usage, and automation calls |
+
+Bootstrap/operator tokens are intentionally outside the public hosted API
+contract.
+
+## Base URLs
+
+Hosted public router:
+
+```text
+https://api.instantml.ai
+```
+
+The current public client contract is one stable API base URL. The frontend
+usually calls the API through same-origin Next rewrites, while SDK/API-key
+clients call the API base directly.
+
+## SDK API keys
+
+Set an API key in the environment:
+
+```bash
+export INSTANTML_API_KEY="instantml_..."
+```
+
+Or pass it directly:
+
+```python
+import instantml as ro
+
+run = ro.init(
+    project="demo",
+    api_key="instantml_...",
+    base_url="https://api.instantml.ai",
+)
+```
+
+For direct HTTP calls, send the same key as a bearer token:
+
+```bash
+curl https://api.instantml.ai/projects \
+  -H "Authorization: Bearer instantml_..."
+```
+
+## Common errors
+
+All JSON API errors use HTTP status codes and a body with at least an `error`
+string. Some errors also include a stable `code`.
+
+Hosted tenant warehouse wake/start failures return `503` with
+`code: "warehouse_unavailable"`. Treat this as a retryable "warehouse is
+starting" state, not as an authentication failure.

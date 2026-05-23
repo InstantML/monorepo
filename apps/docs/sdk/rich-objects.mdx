@@ -1,0 +1,68 @@
+---
+title: "Tables, histograms, and media"
+description: "Log rich objects for table previews, histogram previews, and media evidence."
+---
+
+# Tables, histograms, and media
+
+Scalar metrics explain trends. Rich objects explain evidence.
+
+## Tables
+
+Use tables for bounded previewable rows such as predictions, eval samples, or
+per-example metrics.
+
+```python
+run.log_table_object(
+    "eval/predictions",
+    ["id", "target", "prediction", "score"],
+    [
+        {"id": "ex-1", "target": "cat", "prediction": "cat", "score": 0.98},
+        {"id": "ex-2", "target": "dog", "prediction": "cat", "score": 0.61},
+    ],
+    step=10,
+)
+```
+
+The dashboard fetches table rows through a separate bounded endpoint.
+
+## Histograms
+
+Use histograms for distributions such as logits, rewards, gradient norms, or
+latency samples.
+
+```python
+run.log_objects(
+    {"eval/confidence": ro.Histogram.from_values([0.91, 0.72, 0.88, 0.43], bins=8)},
+    step=10,
+)
+```
+
+Histograms appear as previews in Run Detail and artifact/object surfaces.
+
+## Text
+
+```python
+run.log_text({"notes/eval": "Policy stabilized after the reward schedule change."}, step=10)
+```
+
+Text values are useful for short generated summaries, explanations, or compact
+debug output.
+
+## Mixed `log(...)` payloads
+
+`run.log(...)` classifies values before sending requests:
+
+```python
+run.log(
+    {
+        "train/loss": 0.12,
+        "notes/eval": "policy stabilized",
+    },
+    step=2,
+)
+```
+
+Mixed payloads are deterministic but not atomic across routes. Metrics are sent
+first, then text, objects, files, and media. If a later request fails, earlier
+requests may already be stored.

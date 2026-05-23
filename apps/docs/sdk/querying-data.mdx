@@ -1,0 +1,76 @@
+---
+title: "Query runs and download artifacts"
+description: "Use the raw API helper for run summaries, bounded pages, and artifact downloads."
+---
+
+# Query runs and download artifacts
+
+Most training scripts only write data. Use `ro.Api(...)` when a script or
+notebook needs to query runs, export data, or restore artifacts.
+
+## Create an API helper
+
+```python
+import instantml as ro
+
+api = ro.Api(
+    base_url="https://api.instantml.ai",
+    api_key="instantml_...",
+)
+```
+
+The key needs a read scope such as `export:read` for tenant read routes.
+
+## List run summaries
+
+```python
+page = api.runs(
+    project="cartpole",
+    q="seed 13",
+    sort_by="metric-best",
+    metric_key="eval/return_mean",
+    limit=25,
+)
+```
+
+Accepted filters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `project` | Project name. Omit or use `all` for all projects. |
+| `project_id` | Exact project ID filter. |
+| `status` | `running`, `finished`, `failed`, or `all`. |
+| `q` | Token search over run name, tags, notes, config, and metadata. |
+| `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, or `metric-best`. |
+| `metric_key` | Metric used for metric sorts. |
+| `limit` | Page size. |
+| `cursor` | Cursor returned by the previous page. |
+| `offset` | Offset pagination for compatibility paths. |
+
+Do not combine `cursor` with a nonzero `offset`; the helper raises
+`ValueError`.
+
+## Download artifact bytes
+
+```python
+path = api.download_artifact(
+    "artifact-id",
+    "checkpoints/policy.pt",
+)
+print(path)
+```
+
+The helper creates parent directories and returns the written path. It is the
+same restore primitive used by checkpoint resume snippets in the dashboard.
+
+## Bounded reads
+
+InstantML keeps list and series reads bounded:
+
+- Run summary pages default to 100 rows.
+- Raw metric history is requested through metric-specific series endpoints.
+- Artifact lists are capped.
+- Export responses include truncation metadata when limits are hit.
+
+If you need a bulk data movement path, use export or an importer/exporter flow
+instead of repeatedly fetching every chart series from a notebook.

@@ -1,0 +1,83 @@
+---
+title: "System overview"
+description: "How the SDK, dashboard, Rust API, ClickHouse, and artifact storage fit together."
+---
+
+# System overview
+
+InstantML is a training observability system: SDKs write training-loop events,
+the API stores bounded and queryable records, and the dashboard turns those
+records into run comparison workflows.
+
+## Primary product path
+
+```mermaid
+flowchart LR
+  sdk["Python SDK / uploader"]
+  web["Next dashboard"]
+  api["Rust API"]
+  op[("ClickHouse operational records")]
+  metrics[("ClickHouse metric tables")]
+  artifacts[("Artifact byte storage")]
+
+  sdk --> api
+  web --> api
+  api --> op
+  api --> metrics
+  api --> artifacts
+```
+
+The Rust API is the primary backend. It owns the product route contract for SDK
+ingestion, dashboard reads, imports, exports, usage, billing gates, and artifact
+metadata.
+
+## Component responsibilities
+
+| Component | Responsibility |
+| --- | --- |
+| Python SDK | Create runs, log metrics, logs, attributes, artifacts, rich objects, checkpoints, and source context. |
+| Uploader | Drain process-isolated spool events from disk and replay them through the API. |
+| Rust API | Validate requests, enforce auth/scopes/limits, store records, stream artifact downloads, and expose dashboard/API routes. |
+| ClickHouse operational layer | Store low-volume append-only product and control records. |
+| ClickHouse metric layer | Store raw scalar/rank metrics and maintained metric summaries. |
+| Artifact store | Store hosted private object-storage bytes for uploaded artifacts. |
+| Next dashboard | Browse, chart, compare, annotate, export, and administer workspaces. |
+| Mintlify docs | Public user, SDK, API, architecture, and operations documentation. |
+
+## Hosted topology
+
+```mermaid
+flowchart LR
+  browser["Browser / Next app"]
+  sdk["Python SDK / uploader"]
+  edge["Public HTTPS API"]
+  control["Rust control service"]
+  data["Rust data service"]
+  userdata[("User Data ClickHouse")]
+  tenant[("Tenant ClickHouse")]
+  r2[("Private artifact buckets")]
+
+  browser --> edge
+  sdk --> edge
+  edge --> control
+  edge --> data
+  control --> userdata
+  control --> tenant
+  data --> userdata
+  data --> tenant
+  data --> r2
+```
+
+The control service handles auth, orgs, sessions, API keys, billing, seats, and
+tenant route metadata. The data service handles projects, runs, metrics, logs,
+attributes, rich objects, imports, export, usage, and artifact data paths.
+
+## Design constraints users can rely on
+
+- List endpoints are bounded.
+- Raw metric history is fetched through dedicated series endpoints.
+- Metric summaries are maintained during ingestion, so run tables do not scan
+  full metric history.
+- Artifact byte paths are separate from scalar metric ingestion.
+- API keys resolve to one organization and optional project scope.
+- Exports are explicit and bounded.

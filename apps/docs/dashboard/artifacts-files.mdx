@@ -1,0 +1,46 @@
+---
+title: "Artifacts, files, and media"
+description: "Browse stored artifacts, files, checkpoints, rollouts, tables, histograms, and media previews."
+---
+
+# Artifacts, files, and media
+
+Artifacts connect metric behavior to the files and evidence produced by a run.
+
+## Artifact browser
+
+The Artifacts tab lists artifact metadata for the active project and selected
+run context.
+
+Artifacts can represent:
+
+- Uploaded files.
+- External file references.
+- Checkpoints.
+- Rollouts.
+- Videos and audio.
+- Table and histogram objects.
+- Evaluation outputs.
+
+## Files in Run Detail
+
+Run Detail includes a Files section that previews the selected run's artifacts
+and rich objects without introducing a separate storage layer.
+
+## Safe previews
+
+Same-origin image, audio, and video artifacts can preview in Run Detail and
+Compare when bytes are stored through InstantML. Unsupported or external-only
+artifacts fall back to copy/download actions.
+
+## Checkpoint workflow
+
+Checkpoint artifacts are visible in checkpoint-oriented surfaces and can carry
+restore metadata such as source run and step. When checkpoint bytes are stored
+through the API, downloads go through the same-origin artifact download route.
+
+## API snippets
+
+Artifact and API tabs expose copyable identifiers and route snippets so a user
+can fetch artifacts or inspect API behavior without digging through browser
+network panels.

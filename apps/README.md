@@ -7,6 +7,8 @@ Use the root `../SETUP.md` before running app commands from a fresh clone.
 Expected apps:
 
 - `api/`: Python bootstrap/reference API service.
+- `docs/`: Mintlify public documentation site source and filtered OpenAPI
+  reference.
 - `rust-server/`: Primary Rust API and worker service home. It contains the accepted ClickHouse schema migration, ClickHouse metric-store integration, runnable service commands, and product API.
 - `server/`: Deprecated Node.js compatibility server for route-shape regression tests, JSON migration fixtures, and legacy local fallback.
 - `web/`: Next/React frontend web application.
@@ -30,3 +32,7 @@ packages/python-sdk/uploader -> apps/server -> .instantml/instantml.json + local
 ```
 
 Rust work should preserve documented route shapes, use the schema in `rust-server/clickhouse/`, keep ClickHouse metric-store behavior compatible, and keep `npm run test:contract`, `npm run test:rust:sdk`, `npm run test:ui`, and Node compatibility checks passing.
+
+Public docs work should start in `apps/docs/`. Run
+`npm run docs:sync-openapi` after API codegen changes that should appear in
+public docs, and run `npm run docs:validate` before finishing docs-site edits.

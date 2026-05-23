@@ -1,0 +1,170 @@
+---
+title: "Schema reference"
+description: "Public storage-shape reference for core InstantML entities and metric tables."
+---
+
+# Schema reference
+
+This page describes the public storage shapes users and integrators need to
+understand exports, imports, API responses, and dashboard behavior. Physical
+database details can evolve, but the entity meanings should remain stable.
+
+## Project
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "name": "cartpole",
+  "description": null,
+  "created_at": "2026-05-16T00:00:00Z"
+}
+```
+
+A project groups runs inside one organization. SDK run creation can create a
+project automatically unless a project-scoped API key forbids it.
+
+## Run
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "project_id": "uuid",
+  "project": "cartpole",
+  "name": "ppo-seed-42",
+  "status": "running",
+  "config": { "seed": 42 },
+  "tags": ["baseline"],
+  "metadata": { "notes": "first pass" },
+  "created_at": "2026-05-16T00:00:00Z",
+  "started_at": "2026-05-16T00:00:00Z",
+  "finished_at": null
+}
+```
+
+Run statuses:
+
+- `running`
+- `finished`
+- `failed`
+
+Notes are stored in run metadata and treated as searchable run identity by the
+dashboard.
+
+## Metric point
+
+```json
+{
+  "key": "eval/accuracy",
+  "step": 1,
+  "value": 0.9,
+  "created_at": "2026-05-16T00:00:00Z"
+}
+```
+
+Values and steps must be finite nonnegative numbers. A batch can include up to
+1,000 metrics for one run and step.
+
+## Rank metric point
+
+```json
+{
+  "key": "train/loss",
+  "step": 1,
+  "rank": 0,
+  "local_rank": 0,
+  "world_size": 8,
+  "weight": 1024,
+  "value": 0.12
+}
+```
+
+Rank metrics are used for distributed reducers, coverage, heatmaps, and outlier
+views.
+
+## Attribute
+
+```json
+{
+  "path": "config/optimizer",
+  "type": "text",
+  "step": 1,
+  "timestamp": "2026-05-16T00:00:00Z",
+  "value": "adam",
+  "summary": {},
+  "artifact_id": null
+}
+```
+
+Attributes hold typed non-scalar context such as text series, config history,
+histograms, and file references.
+
+## Rich object
+
+```json
+{
+  "key": "eval/samples",
+  "kind": "table",
+  "step": 1,
+  "artifact_id": null,
+  "metadata": {},
+  "summary": { "columns": ["prompt", "score"] }
+}
+```
+
+Supported kinds:
+
+- `table`
+- `image`
+- `video`
+- `audio`
+- `histogram_series`
+
+Table row previews are paginated separately.
+
+## Artifact
+
+```json
+{
+  "id": "uuid",
+  "run_id": "uuid",
+  "type": "checkpoint",
+  "name": "policy.pt",
+  "uri": "instantml://artifacts/uuid",
+  "step": 1000,
+  "size_bytes": 42000000,
+  "sha256": "hex",
+  "mime_type": "application/octet-stream",
+  "metadata": {},
+  "path": "checkpoints/policy.pt"
+}
+```
+
+Artifacts can be metadata-only external references or server-managed stored
+bytes. Stored bytes use opaque InstantML artifact URIs in public responses.
+
+## Export envelope
+
+Exports are explicit and bounded:
+
+```json
+{
+  "version": 1,
+  "exported_at": "2026-05-16T00:00:00Z",
+  "organizations": [],
+  "projects": [],
+  "runs": [],
+  "metric_series": [],
+  "metrics": [],
+  "attributes": [],
+  "artifacts": [],
+  "table_object_rows": [],
+  "imports": [],
+  "limits": {},
+  "truncated": false
+}
+```
+
+When `truncated` is true, inspect `limits` and narrow the filters before using
+the export as a complete archive.

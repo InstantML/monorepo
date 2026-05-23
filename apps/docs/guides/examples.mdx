@@ -1,0 +1,127 @@
+---
+title: "Examples"
+description: "Run bundled training examples against hosted InstantML and know what to inspect."
+---
+
+# Examples
+
+The repository includes examples that exercise different training-loop shapes.
+For hosted SaaS usage, create an SDK API key first and export it:
+
+```bash
+export INSTANTML_API_KEY="instantml_..."
+export INSTANTML_API_BASE_URL="https://api.instantml.ai"
+```
+
+The examples use the same public Python SDK calls that production training
+scripts use. When an example accepts `--server`, pass the hosted API URL.
+
+## Iris classification
+
+Real-data NumPy softmax classifier on the UCI Iris dataset.
+
+```bash
+PYTHONPATH=packages/python-sdk:examples/iris-classification \
+  python3 examples/iris-classification/train.py \
+  --server https://api.instantml.ai \
+  --summary-json .instantml/iris-classification-summary.json
+```
+
+What to inspect:
+
+- Project `iris-classification`.
+- Metrics `val/accuracy`, `test/accuracy`, `test/macro_f1`, `test/ece`.
+- Config rows for seed, learning rate, and L2.
+- Uploaded artifacts: dataset profile, model JSON, predictions, confusion matrix.
+
+## Checkpoints
+
+Tiny deterministic checkpoint workflow with upload and resume.
+
+```bash
+PYTHONPATH=packages/python-sdk \
+  python3 examples/checkpoints/train.py \
+  --server https://api.instantml.ai \
+  --api-key "$INSTANTML_API_KEY" \
+  --steps 12 \
+  --checkpoint-every 4
+```
+
+Open Run Detail and inspect checkpoint artifacts. The dashboard should expose
+download and resume-code actions.
+
+## RL CartPole-style
+
+Deterministic RL-style metrics without requiring a simulator dependency.
+
+```bash
+PYTHONPATH=packages/python-sdk:examples/rl-cartpole \
+  python3 examples/rl-cartpole/train.py \
+  --server https://api.instantml.ai
+```
+
+Use this example to test scalar logging, status transitions, and spool mode.
+
+## Q-learning gridworld
+
+Small tabular Q-learning loop with checkpoints and rollout metadata.
+
+```bash
+PYTHONPATH=packages/python-sdk \
+  python3 examples/q-learning-gridworld/train.py \
+  --server https://api.instantml.ai
+```
+
+Compare `train/episode_return`, `train/success_rate`, `train/td_error`, and
+`train/epsilon`.
+
+## Contextual bandit
+
+Online bandit workflow with multiple policies and seeds.
+
+```bash
+PYTHONPATH=packages/python-sdk:examples/contextual-bandit \
+  python3 examples/contextual-bandit/train.py \
+  --server https://api.instantml.ai
+```
+
+Compare `eval/return_mean`, `train/click_rate_50`,
+`train/cumulative_regret`, `eval/optimality_gap`, and
+`policy/arm_entropy`.
+
+## Supervised regression
+
+Synthetic tabular regression sweep.
+
+```bash
+PYTHONPATH=packages/python-sdk:examples/supervised-regression \
+  python3 examples/supervised-regression/train.py \
+  --server https://api.instantml.ai \
+  --seeds 11,29 \
+  --epochs 30
+```
+
+Inspect train/validation loss, RMSE, MAE, R2, optimizer grad norm, and artifact
+metadata.
+
+## Rank insights
+
+Distributed-rank and sweep-analysis seed data for Distributed and Insights.
+
+```bash
+PYTHONPATH=packages/python-sdk python3 examples/rank-insights/train.py
+```
+
+Open the dashboard, select the generated rank-insights project, and inspect
+Distributed and Insights for rank coverage, outliers, reducer differences, and
+clustered run groups.
+
+## What to capture
+
+After running an example, confirm:
+
+- The project appears in the project selector.
+- Runs have expected tags, notes, and config values.
+- Metrics are chartable in Runs, Metrics, Run Detail, and Compare.
+- Artifact metadata or uploaded bytes appear in Run Detail and Artifacts.
+- Failed scripts mark runs as `failed` instead of leaving them `running`.

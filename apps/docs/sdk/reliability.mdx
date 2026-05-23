@@ -1,0 +1,91 @@
+---
+title: "Buffering, offline replay, and spool mode"
+description: "Choose the right SDK reliability mode for training loops."
+---
+
+# Buffering, offline replay, and spool mode
+
+The SDK starts simple and lets you opt into more durable modes when the training
+loop needs it.
+
+## Default synchronous calls
+
+By default, SDK calls use synchronous HTTP requests with a short timeout and
+raise `InstantMLError` for network or non-2xx API failures.
+
+```python
+run = ro.init(project="demo")
+run.log({"train/loss": 0.2}, step=1)
+run.finish()
+```
+
+## In-memory buffering
+
+Use buffering to batch post-init SDK calls in memory:
+
+```python
+run = ro.init(project="long-run", buffer_size=25)
+
+for step in range(1000):
+    run.log({"train/loss": 1.0 / (step + 1)}, step=step)
+
+run.flush()
+run.finish()
+```
+
+Call `flush()` before process exit or before you need writes visible in the UI.
+
+## Offline replay for existing runs
+
+Use `offline_dir` to store failed post-init requests and replay them later:
+
+```python
+run = ro.init(
+    project="resilient-run",
+    offline_dir=".instantml/offline",
+)
+
+run.log({"train/loss": 0.2}, step=1)
+
+# Later, after the server is reachable:
+replayed = run.replay_offline()
+```
+
+Current limitation: `init()` still needs a reachable server because run creation
+is not spooled yet.
+
+## Process-isolated spool mode
+
+Use `upload_mode="spool"` when the training process should avoid post-init HTTP
+calls:
+
+```python
+run = ro.init(
+    project="long-run",
+    name="seed-42",
+    upload_mode="spool",
+    spool_dir=".instantml/spool",
+)
+```
+
+Drain the spool from a separate process:
+
+```bash
+python -m instantml.uploader \
+  --spool-dir .instantml/spool \
+  --base-url https://api.instantml.ai
+```
+
+Metric and console-log events send their event ID as `Idempotency-Key`, so a
+compatible server can safely accept retries.
+
+## Which mode should I use?
+
+| Need | Mode |
+| --- | --- |
+| Small script, easiest behavior | Default sync |
+| Fewer HTTP calls | `buffer_size` |
+| Replay failed requests after temporary outage | `offline_dir` |
+| Keep post-init HTTP out of the training process | `upload_mode="spool"` |
+
+Batch many scalar values into one metrics dictionary for high-frequency loops.

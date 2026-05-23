@@ -1,0 +1,81 @@
+---
+title: "Artifacts and checkpoints"
+description: "Log files, artifacts, checkpoints, rollouts, and media from Python."
+---
+
+# Artifacts and checkpoints
+
+Artifacts let a run keep evidence near the metrics that produced it.
+
+## Metadata artifacts
+
+Use `log_artifact(...)` when the bytes are stored elsewhere or when you want to
+record an external reference.
+
+```python
+run.log_artifact(
+    name="eval-report",
+    uri="s3://bucket/evals/report.json",
+    artifact_type="report",
+    step=10,
+)
+```
+
+## Upload a local file
+
+Use `upload_file(...)` when InstantML should store the file bytes.
+
+```python
+artifact = run.upload_file(
+    "outputs/confusion_matrix.png",
+    name="confusion-matrix",
+    artifact_type="image",
+    step=10,
+)
+```
+
+The SDK records size and SHA-256 metadata, then uploads through the API.
+
+## Checkpoints
+
+Use checkpoint helpers when the file is a restart point for training.
+
+```python
+run.log_checkpoint(
+    name="policy-step-1000",
+    uri="s3://bucket/checkpoints/policy.pt",
+    step=1000,
+)
+```
+
+For local checkpoint bytes:
+
+```python
+run.log_checkpoint_file(
+    "checkpoints/policy.pt",
+    name="policy-step-1000",
+    step=1000,
+)
+```
+
+Use `CheckpointPolicy(every_steps=N)` in loops that save on a fixed interval.
+
+## Rollouts and video
+
+```python
+run.log_rollout("eval-rollout", "s3://bucket/eval.mp4", step=1000)
+run.log_video("rollout.mp4", "s3://bucket/rollout.mp4", step=1000)
+```
+
+Stored same-origin media can preview in the dashboard when the browser supports
+the file type.
+
+## Where artifacts appear
+
+- Run Detail summary and Files section.
+- Artifacts tab.
+- Compare artifact context.
+- API snippets for download/copy workflows.
+
+Raw object-storage URLs are not shown directly in the dashboard when the API
+stores bytes for the org.

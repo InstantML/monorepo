@@ -1,0 +1,60 @@
+---
+title: "Quickstart"
+description: "Create an InstantML account, install the SDK, and log one hosted run."
+---
+
+# Quickstart
+
+This path uses hosted InstantML. You only need an InstantML account, Python
+3.11 or newer, and an SDK API key.
+
+## 1. Create an SDK key
+
+Sign in to [InstantML](https://app.instantml.ai), open the API keys page, and
+create a copy-once SDK key with `sdk:ingest`, `artifacts:write`, and
+`export:read` scopes.
+
+Export it before running a training script:
+
+```bash
+export INSTANTML_API_KEY="instantml_..."
+export INSTANTML_API_BASE_URL="https://api.instantml.ai"
+```
+
+## 2. Install the SDK
+
+```bash
+python3 -m pip install --pre instantml
+```
+
+## 3. Log one run
+
+```python
+import instantml as ro
+
+run = ro.init(
+    project="cartpole",
+    name="ppo-seed-42",
+    config={"seed": 42, "algorithm": "ppo"},
+    tags=["ppo", "baseline"],
+    notes="First PPO baseline.",
+)
+
+for step in range(10):
+    run.log({"train/reward": step * 1.5, "train/loss": 1.0 / (step + 1)}, step=step)
+
+run.finish()
+```
+
+The SDK defaults to `https://api.instantml.ai`. Set `INSTANTML_API_BASE_URL`
+only when your team has been given a different hosted API endpoint.
+
+## 4. Inspect the run
+
+In the dashboard:
+
+- Open the project selector and choose `cartpole`.
+- Use the Runs workspace to see the run row and latest metric summaries.
+- Open Run Detail to inspect config, tags, notes, metrics, source context, and
+  artifacts.
+- Select multiple runs later to compare metrics and config differences.

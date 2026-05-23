@@ -1,0 +1,121 @@
+---
+title: "Attributes and objects API"
+description: "Write typed attributes, create rich objects, list object manifests, and page table rows."
+---
+
+# Attributes and objects API
+
+Attributes store typed non-scalar context. Rich objects store first-class table,
+media, and histogram payloads for Run Detail and artifact-style inspection.
+
+## Write attributes
+
+Batch form:
+
+```http
+POST /api/runs/{run_id}/attributes
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "attributes": [
+    {
+      "path": "config/optimizer",
+      "type": "text",
+      "step": 1,
+      "timestamp": "2026-05-16T00:00:00Z",
+      "value": "adam",
+      "summary": {},
+      "artifact_id": null
+    }
+  ]
+}
+```
+
+Single-attribute form can put `path`, `type`, `step`, `timestamp`, `value`,
+and `summary` at the top level.
+
+Use rich object endpoints for tables and media.
+
+## List attributes
+
+```http
+GET /api/runs/{run_id}/attributes?type=text&path_prefix=config/&limit=100
+Authorization: Bearer instantml_...
+```
+
+Filters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `type` | Optional attribute type. |
+| `path_prefix` | Optional path prefix. |
+| `limit` | Max 5,000. |
+| `offset` | Offset pagination. |
+
+## Create a rich object
+
+```http
+POST /api/runs/{run_id}/objects
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "key": "eval/samples",
+  "kind": "table",
+  "step": 1,
+  "artifact_id": null,
+  "metadata": {},
+  "summary": { "columns": ["prompt", "score"] },
+  "value": { "kind": "table" },
+  "rows": [
+    { "prompt": "hello", "score": 0.92 }
+  ]
+}
+```
+
+Supported kinds:
+
+- `table`
+- `image`
+- `video`
+- `audio`
+- `histogram_series`
+
+Media objects require an artifact ID from the same run. Tables accept up to
+1,000 rows per create request.
+
+## List rich objects
+
+```http
+GET /api/runs/{run_id}/objects?kind=table&limit=100&offset=0
+Authorization: Bearer instantml_...
+```
+
+The response includes object manifests, not full table contents.
+
+## Page table rows
+
+```http
+GET /api/objects/{object_id}/rows?limit=100&offset=0
+Authorization: Bearer instantml_...
+```
+
+Response:
+
+```json
+{
+  "object_id": 123,
+  "rows": [
+    {
+      "row_index": 0,
+      "row": { "prompt": "hello", "score": 0.92 },
+      "created_at": "2026-05-16T00:00:00Z"
+    }
+  ],
+  "limit": 100,
+  "offset": 0
+}
+```
+
+Table row reads default to 100 rows and cap at 1,000 rows.

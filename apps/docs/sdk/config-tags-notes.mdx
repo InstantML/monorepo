@@ -1,0 +1,85 @@
+---
+title: "Configs, tags, and notes"
+description: "Make runs searchable and comparable with structured config, tags, and notes."
+---
+
+# Configs, tags, and notes
+
+Runs are easier to compare when each one carries enough identity to explain
+what changed.
+
+## Configs
+
+Pass config at run creation:
+
+```python
+run = ro.init(
+    project="mnist",
+    name="cnn-seed-7",
+    config={
+        "seed": 7,
+        "model": "small-cnn",
+        "optimizer": {"name": "adam", "lr": 3e-4},
+        "batch_size": 128,
+    },
+)
+```
+
+Add or update config later:
+
+```python
+run.log_config({"schedule": {"warmup_steps": 500}})
+```
+
+Use config for values that should appear in Run Detail and Compare.
+
+## Tags
+
+Use `set_tags(...)` for the tags you want the Runs list, search, and Compare
+views to treat as run identity.
+
+```python
+run.set_tags(["baseline", "ready-for-compare"])
+```
+
+Use `add_tags(...)` when you want to append tag-style history:
+
+```python
+run.add_tags(["manual-review"])
+```
+
+## Notes
+
+Notes are searchable free text.
+
+```python
+run.set_notes("New tokenizer improved eval accuracy but increased train loss.")
+```
+
+Good notes explain what a future reviewer would otherwise have to reconstruct
+from memory.
+
+## How they show up in the UI
+
+| SDK input | Dashboard surface |
+| --- | --- |
+| `config` | Run Detail, Compare config rows, search/filter context |
+| `tags` | Run rows, run selector chips, Run Detail, Compare, run search |
+| `notes` | Runs list, Run Detail, Compare, run search |
+
+## Practical pattern
+
+```python
+run = ro.init(
+    project="finetune",
+    name="llama8b-lora-seed-12",
+    config={
+        "seed": 12,
+        "base_model": "llama-8b",
+        "adapter": "lora",
+        "dataset": "support-tickets-v3",
+    },
+    tags=["lora", "support", "baseline"],
+    notes="Baseline before adding retrieval examples.",
+)
+```

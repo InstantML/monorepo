@@ -1,0 +1,85 @@
+---
+title: "InstantML Docs"
+description: "Log, compare, and debug training runs with the InstantML SDK, API, and dashboard."
+---
+
+# Training observability without the maze
+
+InstantML helps small ML teams track runs, compare metrics, inspect configs,
+and keep artifacts close to the training loop. Create an API key, log a run
+from Python, then use the dashboard to sort, chart, and compare what happened.
+
+![InstantML Runs workspace](/images/product/dashboard-runs.png)
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create an SDK key, install InstantML, and log your first hosted Python run.
+  </Card>
+  <Card title="Install the SDK" icon="package" href="/sdk/installation-auth">
+    Install the Python package, configure an API host, and provide SDK credentials.
+  </Card>
+  <Card title="Log from Python" icon="terminal" href="/sdk/logging">
+    Create runs, log scalar metrics, attach configs, add tags, and finish cleanly.
+  </Card>
+  <Card title="Compare runs" icon="line-chart" href="/dashboard/compare-runs">
+    Use the Runs workspace, charts, Run Detail, and Compare views after logging.
+  </Card>
+  <Card title="Dashboard tour" icon="layout-dashboard" href="/dashboard/tour">
+    Walk through the main product surfaces with screenshots from a representative project.
+  </Card>
+  <Card title="API reference" icon="book-open" href="/api-reference/platform/get-health">
+    Browse the filtered public API reference generated from the Rust OpenAPI spec.
+  </Card>
+  <Card title="System architecture" icon="network" href="/architecture/system-overview">
+    Understand the SDK, dashboard, Rust API, ClickHouse storage, and service planes.
+  </Card>
+  <Card title="Examples" icon="flask-conical" href="/guides/examples">
+    Run the bundled supervised, RL, checkpoint, and distributed training examples.
+  </Card>
+  <Card title="Usage and limits" icon="gauge" href="/guides/export-usage-limits">
+    Understand exports, usage counters, plan limits, and write gates.
+  </Card>
+</CardGroup>
+
+## The first useful loop
+
+```python
+import instantml as ro
+
+run = ro.init(
+    project="cartpole",
+    name="ppo-seed-42",
+    config={"seed": 42, "algorithm": "ppo", "learning_rate": 3e-4},
+    tags=["ppo", "baseline"],
+    notes="First PPO baseline.",
+)
+
+for step in range(100):
+    run.log(
+        {
+            "train/reward": step * 1.5,
+            "train/loss": 1.0 / (step + 1),
+            "eval/accuracy": min(1.0, 0.5 + step / 200),
+        },
+        step=step,
+    )
+
+run.finish()
+```
+
+In the dashboard, the project appears in the project selector, the run appears
+in the run list, config values appear in Run Detail and Compare, and metric keys
+become chartable series.
+
+## Where to go next
+
+- Use the quickstart if you want the fastest hosted path from API key to first
+  run.
+- Use the SDK guides when you are wiring InstantML into a real training loop.
+- Use the dashboard guides when you want to understand the Runs workspace,
+  metric charts, run detail, Compare, research dashboards, artifacts, and
+  settings.
+- Use the architecture and API guides when you need a durable technical
+  reference for storage, auth, routes, and limits.
+- Use troubleshooting when local server, API key, or SDK connection behavior is
+  not what you expected.

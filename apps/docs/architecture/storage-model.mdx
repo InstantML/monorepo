@@ -1,0 +1,118 @@
+---
+title: "Storage model"
+description: "Control records, tenant records, metric tables, artifact bytes, and usage counters."
+---
+
+# Storage model
+
+InstantML separates low-volume operational state from high-volume metric
+history. That keeps run tables and charts fast without turning every dashboard
+view into a full history scan.
+
+## Logical planes
+
+```text
+Control plane:
+  Users, identities, organizations, memberships, sessions, API keys,
+  billing state, invitations, and tenant routes.
+
+Data plane:
+  Projects, runs, attributes, artifacts, imports, usage snapshots,
+  console logs, scalar metrics, rank metrics, and rich object rows.
+```
+
+Local mode may keep both planes in one ClickHouse database. Hosted mode stores
+global account/control records in User Data ClickHouse and tenant product rows
+in the org's routed ClickHouse database or service.
+
+## Append-only operational records
+
+Durable low-volume records are append-only. A newer record for the same entity
+replaces the in-memory projection when replayed, but older records remain in
+ClickHouse until compaction exists.
+
+Operational records include:
+
+- Projects.
+- Runs.
+- Attributes.
+- Artifacts.
+- Imports.
+- Idempotency records.
+- Usage snapshots.
+- Table preview rows.
+- Local-mode user/org/session/API-key records.
+
+Hosted User Data records include:
+
+- Users and identities.
+- Organizations and memberships.
+- Sessions.
+- API keys and service accounts.
+- Billing projections and events.
+- Invitations and email deliveries.
+- Tenant routes.
+- Dashboard preferences and saved workspace views.
+
+## Metric tables
+
+Scalar metrics are stored in raw `metric_points` rows and maintained summary
+tables. Rank-aware metrics are stored separately so distributed dashboards can
+compute per-rank reducers, coverage, heatmaps, and outliers.
+
+Metric row shape:
+
+```json
+{
+  "org_id": "uuid",
+  "run_id": "uuid",
+  "key": "eval/accuracy",
+  "step": 10,
+  "value": 0.91,
+  "logged_at": "2026-05-16T00:00:00Z",
+  "created_at": "2026-05-16T00:00:01Z"
+}
+```
+
+Summary reads derive count, min, max, latest, best, mean, and variance from
+maintained aggregate state. Raw series reads remain bounded by run ID, key,
+step range, time range, and limit.
+
+## Console logs
+
+Console logs are stored as bounded line records per run and stream. The
+dashboard fetches them only when the selected run's Logs section is opened.
+
+Streams:
+
+- `stdout`
+- `stderr`
+
+## Artifacts
+
+Artifact metadata lives in ClickHouse. Artifact bytes live in a byte backend:
+
+| Backend | Use |
+| --- | --- |
+| Local filesystem | Development and local smoke tests. |
+| Private object storage | Hosted artifact uploads. |
+| External URI metadata | Records pointers to customer storage without uploading bytes. |
+
+Stored local/object-storage bytes use opaque `instantml://artifacts/<id>` URIs
+in public artifact rows. Raw bucket names, storage keys, and signed URLs are not
+returned in public metadata.
+
+## Usage counters
+
+Usage combines current retained-resource counts and current-period ingest
+counters:
+
+- Metric points reset by UTC calendar month.
+- Projects, runs, seats, API keys, artifacts, metric series, and storage are
+  retained-resource counts.
+- Hosted storage can include exact artifact bytes and exact tenant warehouse
+  table bytes when available.
+- Customer-owned ClickHouse storage counts only InstantML-owned artifact bytes.
+
+Writes can fail with plan-limit or payment-required errors when a new write
+would cross an enforced limit.

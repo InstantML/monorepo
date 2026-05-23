@@ -1,0 +1,73 @@
+---
+title: "Export, usage, and limits"
+description: "Understand data export, usage visibility, retained resources, and blocked-at-limit behavior."
+---
+
+# Export, usage, and limits
+
+InstantML treats export and usage visibility as first-class product surfaces.
+
+## Export
+
+Use `GET /api/export` to retrieve a bounded JSON export for the current org and
+project context.
+
+Typical export contents include:
+
+- Projects.
+- Runs.
+- Scalar metric history.
+- Attributes and rich object metadata.
+- Artifact metadata.
+- Import records.
+- Limit/truncation metadata.
+
+Use export for backups, migrations, debugging, and vendor evaluation.
+
+## Usage summary
+
+Use `GET /api/usage` to inspect plan catalog data, current org usage, limits,
+and overage policy.
+
+Usage includes:
+
+- Seats.
+- Projects.
+- Runs.
+- Current-period metric points.
+- Retained metric points.
+- Metric series.
+- Artifacts.
+- API keys.
+- Artifact bytes and metadata estimates.
+
+## Retained vs monthly counters
+
+| Counter | Reset behavior |
+| --- | --- |
+| Metric points | Current UTC calendar month |
+| Projects | Retained resource |
+| Runs | Retained resource |
+| Seats | Retained resource |
+| Storage | Retained resource |
+| Artifacts | Retained resource |
+| API keys | Retained resource |
+
+## Blocked-at-limit behavior
+
+When a blocked limit would be exceeded, write routes return a plan-limit error
+instead of accepting a partial product state.
+
+Affected write paths can include:
+
+- New projects.
+- New runs.
+- Metric ingest.
+- Artifact writes.
+- Imports.
+- Demo reset.
+
+## Usage export
+
+Use `GET /api/usage/export` when you need versioned usage data for operations
+or support workflows.

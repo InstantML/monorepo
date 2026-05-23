@@ -1,0 +1,132 @@
+---
+title: "SDK patterns by workflow"
+description: "Recommended logging patterns for supervised learning, RL, distributed jobs, and checkpoints."
+---
+
+# SDK patterns by workflow
+
+These patterns are intentionally boring. They keep run data easy to search,
+compare, export, and replay.
+
+## Supervised learning
+
+```python
+run = ro.init(
+    project="iris-classification",
+    name="softmax-baseline-seed-7",
+    config={
+        "dataset": "UCI Iris",
+        "model": "softmax-regression",
+        "seed": 7,
+        "learning_rate": 0.14,
+        "l2": 0.0005,
+        "epochs": 160,
+    },
+    tags=["example", "real-data", "numpy", "classification"],
+    notes="Track validation accuracy, calibration, and class-level errors.",
+)
+
+for epoch in range(1, 161):
+    run.log_metrics(
+        {
+            "train/loss": train_loss,
+            "val/loss": val_loss,
+            "val/accuracy": val_accuracy,
+            "optimizer/grad_norm": grad_norm,
+        },
+        step=epoch,
+    )
+
+run.upload_file("artifacts/model.json", artifact_type="checkpoint", step=160)
+run.finish()
+```
+
+Compare by validation metrics first, then use Run Detail for config, artifacts,
+and source context.
+
+## RL or simulation
+
+```python
+run = ro.init(
+    project="cartpole",
+    name="ppo-seed-42",
+    config={"algorithm": "ppo", "seed": 42, "env": "CartPole-v1"},
+    tags=["ppo", "baseline"],
+)
+
+for global_step in range(0, 100_000, 1_000):
+    run.log_metrics(
+        {
+            "train/episode_return": episode_return,
+            "train/policy_loss": policy_loss,
+            "eval/return_mean": eval_return,
+            "eval/success_rate": success_rate,
+        },
+        step=global_step,
+    )
+
+run.log_video("eval-rollout.mp4", "s3://bucket/rollouts/eval-rollout.mp4", step=100_000)
+run.finish()
+```
+
+Use `eval/...` keys for periodic policy evaluation and `train/...` keys for
+noisy online learning signals.
+
+## Long-running jobs
+
+```python
+run = ro.init(
+    project="humanoid",
+    upload_mode="spool",
+    spool_dir=".instantml/spool",
+    buffer_size=50,
+)
+```
+
+Run a separate uploader process:
+
+```bash
+python3 -m instantml.uploader \
+  --spool-dir .instantml/spool \
+  --base-url https://api.instantml.ai \
+  --follow
+```
+
+Spool mode keeps the training process from blocking on post-init HTTP calls.
+
+## Checkpoint resume
+
+```python
+policy = ro.CheckpointPolicy(every_steps=1000)
+
+if policy.should_save(step):
+    run.log_checkpoint_file(
+        "checkpoints/policy.pt",
+        step=step,
+        metadata={"framework": "pytorch"},
+    )
+```
+
+Run Detail shows checkpoint artifacts with download and resume snippets. Use
+the `Api.download_artifact(...)` helper in automated restore scripts.
+
+## Error handling
+
+Use context managers when a failing script should mark the run as failed:
+
+```python
+with ro.init(project="sweep", name="seed-7") as run:
+    train(run)
+```
+
+Use explicit `try/finally` when a framework owns the training loop:
+
+```python
+run = ro.init(project="sweep", name="seed-7")
+try:
+    train(run)
+    run.finish()
+except Exception:
+    run.finish("failed")
+    raise
+```

@@ -1,0 +1,113 @@
+---
+title: "Metrics and steps"
+description: "Name metrics, choose steps, batch scalar values, and understand how charts read series."
+---
+
+# Metrics and steps
+
+Metrics are the hot path. Good metric shape makes runs easier to compare and
+keeps training loops light.
+
+## Name metrics by namespace
+
+Use slash-separated metric keys:
+
+```text
+train/loss
+train/reward
+val/accuracy
+eval/return_mean
+test/macro_f1
+optimizer/grad_norm
+system/gpu_memory_mb
+```
+
+The dashboard groups panels and catalog entries by prefix. Namespaces also make
+search and Compare rows readable when a project has many keys.
+
+Good defaults:
+
+| Namespace | Typical use |
+| --- | --- |
+| `train/` | Training loss, reward, throughput, gradient health. |
+| `val/` | Validation loss, validation accuracy, validation calibration. |
+| `eval/` | Offline or periodic evaluation metrics. |
+| `test/` | Final held-out metrics. |
+| `optimizer/` | Learning rate, grad norm, scheduler values. |
+| `model/` | Weight norm, parameter count, architecture metadata. |
+| `system/` | CPU, GPU, memory, and runtime counters. |
+
+## Choose step semantics
+
+Steps must be finite, nonnegative numbers.
+
+```python
+run.log_metrics({"train/loss": 0.42}, step=10)
+```
+
+Use one meaning consistently inside a project:
+
+| Workflow | Recommended step |
+| --- | --- |
+| Epoch training | Epoch number. |
+| Long training loop | Optimizer step or global batch step. |
+| RL | Environment step, episode index, or evaluation interval. Pick one per metric namespace. |
+| Distributed training | Global step shared by all ranks. |
+
+The UI expects a metric series to move forward over time. The SDK warns when a
+new value for the same metric uses a lower step than a value already logged in
+the process.
+
+## Batch scalar values
+
+Prefer one `log_metrics(...)` call per step:
+
+```python
+run.log_metrics(
+    {
+        "train/loss": loss,
+        "train/tokens_per_second": tokens_per_second,
+        "optimizer/grad_norm": grad_norm,
+        "eval/accuracy": eval_accuracy,
+    },
+    step=global_step,
+)
+```
+
+Avoid one network call per metric unless a metric is produced by a separate
+process. Each batch accepts up to 1,000 scalar metrics.
+
+## Use timestamps when needed
+
+If you omit a timestamp, the server records the ingest time. Provide an
+explicit timestamp when you replay data or when step order and wall-clock order
+are intentionally different.
+
+```python
+run.log_metrics(
+    {"train/loss": 0.18},
+    step=21,
+    timestamp="2026-05-10T12:00:00Z",
+)
+```
+
+Charts can use step or logged time as the x-axis. Step is usually better for
+model comparison; time is useful for wall-clock debugging.
+
+## Unit-bounded metrics
+
+Accuracy, precision, recall, F1, and AUC usually live in `0..1`. The dashboard
+uses normalized y-axes for common unit-bounded metrics so small differences are
+legible across runs.
+
+Return, reward, loss, and arbitrary custom metrics auto-scale to observed
+values.
+
+## Summary values
+
+Run lists and Compare use maintained summaries instead of scanning every metric
+point on every page load. For each run and key, the server tracks count, min,
+max, latest, latest step, best, and aggregate moments used for mean/variance.
+
+Raw history remains available through bounded series endpoints, which is why
+large charts can request only the keys and run IDs they need.
