@@ -69,6 +69,8 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /setSavedViewKey\(option\.value\)/, "saving a view should optimistically select the saved option");
   assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
+  assert.match(shell, /ADVANCED_REDUCERS_VIEW_KEY\s*=\s*"system:advanced-reducers"/, "advanced reducer preset should be a built-in view, not the default route");
+  assert.match(shell, /selectTab\("advanced"\)/, "advanced reducer preset should open the advanced route");
 
   const quickSearch = readFileSync(`${root}app/dashboard/chrome/quick-search.tsx`, "utf8");
   assert.match(quickSearch, /className="workspace-modal command-modal"/, "quick search should keep a full-screen backdrop");

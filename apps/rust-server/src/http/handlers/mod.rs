@@ -43,7 +43,8 @@ pub(super) use platform::{
 pub(super) use runs::{
     create_attributes, create_object, create_project, create_run, get_metrics, get_run,
     list_attributes, list_console_logs, list_object_rows, list_objects, list_projects, list_runs,
-    log_console_logs, log_metrics, overview, runs_summary, side_by_side, update_run,
+    log_console_logs, log_metrics, log_rank_metrics, overview, rank_metrics_summary, runs_summary,
+    side_by_side, update_run,
 };
 pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
@@ -215,12 +216,14 @@ mod tests {
             "/runs",
             "/runs/{run_id}",
             "/runs/{run_id}/metrics",
+            "/runs/{run_id}/rank-metrics",
             "/api/runs/{run_id}/logs",
             "/api/metrics/series",
             // dashboard analytics
             "/api/overview",
             "/api/runs/summary",
             "/api/runs/side-by-side",
+            "/api/runs/{run_id}/rank-metrics/summary",
             // attributes / objects
             "/api/runs/{run_id}/attributes",
             "/api/runs/{run_id}/objects",
@@ -265,6 +268,12 @@ mod tests {
             "ProjectEnvelope",
             "RunsEnvelope",
             "InsertedEnvelope",
+            "LogRankMetricsRequest",
+            "RankMetricsSummaryResponse",
+            "RankReducerPoint",
+            "RankHeatmapPoint",
+            "RankOutlierPoint",
+            "RankCoveragePoint",
         ] {
             assert!(
                 schemas.contains_key(expected),

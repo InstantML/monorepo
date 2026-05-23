@@ -34,7 +34,7 @@ pub async fn storage_overage_usage_for_org(
     store: &Store,
     org_id: Uuid,
 ) -> AppResult<StorageOverageUsage> {
-    let counts = usage_counts_for_org(store, org_id).await?;
+    let counts = usage_counts_for_org(store, org_id, UsageCountMode::Summary).await?;
     let billable_storage_bytes =
         (counts.storage_bytes_for_warnings - counts.plan.included_storage_bytes).max(0);
     let reported_gib = if billable_storage_bytes == 0 {
@@ -57,7 +57,7 @@ pub async fn enforce_plan_capacity(
     delta: UsageDelta,
     action: &str,
 ) -> AppResult<()> {
-    let counts = usage_counts_for_org(store, org_id).await?;
+    let counts = usage_counts_for_org(store, org_id, UsageCountMode::WriteGate).await?;
     if let Some(violation) = first_blocking_violation(&counts, delta) {
         return Err(AppError::with_code(
             axum::http::StatusCode::PAYMENT_REQUIRED,
@@ -74,7 +74,7 @@ pub async fn enforce_plan_capacity(
 }
 
 async fn usage_summary_for_org(store: &Store, org_id: Uuid) -> AppResult<Value> {
-    let counts = usage_counts_for_org(store, org_id).await?;
+    let counts = usage_counts_for_org(store, org_id, UsageCountMode::Summary).await?;
     let period = usage_period_value(&counts.period);
     Ok(json!({
         "schema_version": 1,
@@ -88,13 +88,32 @@ async fn usage_summary_for_org(store: &Store, org_id: Uuid) -> AppResult<Value> 
     }))
 }
 
-async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCounts> {
+#[derive(Clone, Copy)]
+enum UsageCountMode {
+    Summary,
+    WriteGate,
+}
+
+async fn usage_counts_for_org(
+    store: &Store,
+    org_id: Uuid,
+    mode: UsageCountMode,
+) -> AppResult<UsageCounts> {
     let period = current_usage_period(Utc::now());
     let metric_store = store.metric_store_for_org(org_id).await?;
-    let metric_points_retained_total = metric_store.count_points_for_org(org_id).await?;
-    let metric_points = metric_store
+    let scalar_points_retained_total = metric_store.count_points_for_org(org_id).await?;
+    let rank_points_retained_total = match mode {
+        UsageCountMode::Summary => metric_store.count_rank_points_for_org(org_id).await?,
+        UsageCountMode::WriteGate => 0,
+    };
+    let metric_points_retained_total = scalar_points_retained_total + rank_points_retained_total;
+    let scalar_metric_points = metric_store
         .count_points_for_org_period(org_id, period.starts_at, period.ends_at)
         .await?;
+    let rank_metric_points = metric_store
+        .count_rank_points_for_org_period(org_id, period.starts_at, period.ends_at)
+        .await?;
+    let metric_points = scalar_metric_points + rank_metric_points;
     let metric_series = metric_store.count_series_for_org(org_id).await?;
     let warehouse_storage_bytes_exact = store.warehouse_storage_bytes_for_org(org_id).await?;
     let data = store.data.lock().await;

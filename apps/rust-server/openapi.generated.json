@@ -3416,6 +3416,104 @@
         ]
       }
     },
+    "/api/runs/{run_id}/rank-metrics/summary": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "rank_metrics_summary",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "description": "Rank metric key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_step",
+            "in": "query",
+            "description": "Inclusive start step",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "end_step",
+            "in": "query",
+            "description": "Inclusive end step",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Step limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded rank metric summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RankMetricsSummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/storage/clickhouse-connections": {
       "post": {
         "tags": [
@@ -4653,6 +4751,75 @@
         "responses": {
           "200": {
             "description": "Inserted point count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsertedEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/runs/{run_id}/rank-metrics": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "log_rank_metrics",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogRankMetricsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Inserted rank metric point count",
             "content": {
               "application/json": {
                 "schema": {
@@ -6750,6 +6917,54 @@
           }
         }
       },
+      "LogRankMetricsRequest": {
+        "type": "object",
+        "required": [
+          "metrics",
+          "step",
+          "rank",
+          "world_size"
+        ],
+        "properties": {
+          "local_rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "metrics": {
+            "type": "object"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "step": {
+            "type": "object"
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "weight": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "MembershipRow": {
         "type": "object",
         "required": [
@@ -7400,6 +7615,283 @@
           },
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "RankCoveragePoint": {
+        "type": "object",
+        "required": [
+          "step",
+          "rank_count",
+          "expected_world_size",
+          "missing_rank_count",
+          "missing_ranks",
+          "world_size_mismatch"
+        ],
+        "properties": {
+          "expected_world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "missing_rank_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "missing_ranks": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "rank_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "world_size_mismatch": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RankHeatmapPoint": {
+        "type": "object",
+        "required": [
+          "step",
+          "rank",
+          "value",
+          "delta_from_mean"
+        ],
+        "properties": {
+          "delta_from_mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "RankMetricLimits": {
+        "type": "object",
+        "required": [
+          "step_limit",
+          "max_world_size",
+          "max_canonical_rows",
+          "max_heatmap_cells",
+          "outlier_limit"
+        ],
+        "properties": {
+          "max_canonical_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_heatmap_cells": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "outlier_limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_limit": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RankMetricTruncation": {
+        "type": "object",
+        "required": [
+          "steps",
+          "heatmap",
+          "outliers"
+        ],
+        "properties": {
+          "heatmap": {
+            "type": "boolean"
+          },
+          "outliers": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RankMetricsSummaryResponse": {
+        "type": "object",
+        "required": [
+          "keys",
+          "reducers",
+          "heatmap",
+          "outliers",
+          "coverage",
+          "limits",
+          "truncated"
+        ],
+        "properties": {
+          "coverage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankCoveragePoint"
+            }
+          },
+          "heatmap": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankHeatmapPoint"
+            }
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limits": {
+            "$ref": "#/components/schemas/RankMetricLimits"
+          },
+          "outliers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankOutlierPoint"
+            }
+          },
+          "reducers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankReducerPoint"
+            }
+          },
+          "truncated": {
+            "$ref": "#/components/schemas/RankMetricTruncation"
+          }
+        }
+      },
+      "RankOutlierPoint": {
+        "type": "object",
+        "required": [
+          "rank",
+          "step",
+          "value",
+          "delta_from_mean",
+          "z_score"
+        ],
+        "properties": {
+          "delta_from_mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          },
+          "z_score": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "RankReducerPoint": {
+        "type": "object",
+        "required": [
+          "step",
+          "rank_count",
+          "expected_world_size",
+          "world_size_mismatch",
+          "mean",
+          "weighted_mean",
+          "min",
+          "max",
+          "stddev",
+          "p05",
+          "p50",
+          "p95"
+        ],
+        "properties": {
+          "expected_world_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max": {
+            "type": "number",
+            "format": "double"
+          },
+          "mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "min": {
+            "type": "number",
+            "format": "double"
+          },
+          "p05": {
+            "type": "number",
+            "format": "double"
+          },
+          "p50": {
+            "type": "number",
+            "format": "double"
+          },
+          "p95": {
+            "type": "number",
+            "format": "double"
+          },
+          "rank_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stddev": {
+            "type": "number",
+            "format": "double"
+          },
+          "step": {
+            "type": "number",
+            "format": "double"
+          },
+          "weighted_mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "world_size_mismatch": {
+            "type": "boolean"
           }
         }
       },

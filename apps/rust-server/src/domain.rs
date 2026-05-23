@@ -13,6 +13,10 @@ pub const MAX_TEXT_BYTES: usize = 512;
 pub const MAX_METRICS_PER_BATCH: usize = 1_000;
 pub const DEFAULT_METRIC_LIMIT: i64 = 1_000;
 pub const MAX_METRIC_LIMIT: i64 = 5_000;
+pub const MAX_RANK_WORLD_SIZE: u32 = 512;
+pub const MAX_RANK_HEATMAP_CELLS: usize = 16_384;
+pub const MAX_RANK_CANONICAL_ROWS: usize = 65_536;
+pub const MAX_RANK_OUTLIERS: usize = 20;
 pub const DEFAULT_RUN_LIMIT: i64 = 100;
 pub const MAX_RUN_LIMIT: i64 = 1_000;
 pub const MAX_METRIC_SERIES_RUN_IDS: usize = 2_000;
@@ -744,6 +748,91 @@ pub struct LogMetricsRequest {
     pub preview: Option<bool>,
     #[schema(value_type = Option<Object>)]
     pub preview_completion: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct LogRankMetricsRequest {
+    #[schema(value_type = Object)]
+    pub metrics: Value,
+    #[schema(value_type = Object)]
+    pub step: Value,
+    pub rank: u32,
+    pub world_size: u32,
+    pub local_rank: Option<u32>,
+    #[serde(default)]
+    pub weight: Option<f64>,
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct RankReducerPoint {
+    pub step: f64,
+    pub rank_count: usize,
+    pub expected_world_size: u32,
+    pub world_size_mismatch: bool,
+    pub mean: f64,
+    pub weighted_mean: f64,
+    pub min: f64,
+    pub max: f64,
+    pub stddev: f64,
+    pub p05: f64,
+    pub p50: f64,
+    pub p95: f64,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct RankHeatmapPoint {
+    pub step: f64,
+    pub rank: u32,
+    pub value: f64,
+    pub delta_from_mean: f64,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct RankOutlierPoint {
+    pub rank: u32,
+    pub step: f64,
+    pub value: f64,
+    pub delta_from_mean: f64,
+    pub z_score: f64,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct RankCoveragePoint {
+    pub step: f64,
+    pub rank_count: usize,
+    pub expected_world_size: u32,
+    pub missing_rank_count: usize,
+    pub missing_ranks: Vec<u32>,
+    pub world_size_mismatch: bool,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct RankMetricLimits {
+    pub step_limit: i64,
+    pub max_world_size: u32,
+    pub max_canonical_rows: usize,
+    pub max_heatmap_cells: usize,
+    pub outlier_limit: usize,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct RankMetricTruncation {
+    pub steps: bool,
+    pub heatmap: bool,
+    pub outliers: bool,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct RankMetricsSummaryResponse {
+    pub keys: Vec<String>,
+    pub key: Option<String>,
+    pub reducers: Vec<RankReducerPoint>,
+    pub heatmap: Vec<RankHeatmapPoint>,
+    pub outliers: Vec<RankOutlierPoint>,
+    pub coverage: Vec<RankCoveragePoint>,
+    pub limits: RankMetricLimits,
+    pub truncated: RankMetricTruncation,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

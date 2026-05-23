@@ -6,6 +6,8 @@ This directory contains the Python SDK used by training scripts to send runs, me
 
 - Initialize runs.
 - Log scalar metrics with explicit `log_metrics()` or ergonomic auto-step `log()`.
+- Log rank-aware scalar metrics with `log_rank_metrics()` for distributed
+  training reducers and coverage/outlier dashboards.
 - Log configs, searchable run tags, and searchable run notes.
 - Log rich table/histogram/image/audio/video objects.
 - Log local file and artifact wrappers through the upload route. The SDK contract is unchanged for hosted R2 storage: it still sends the upload payload to the Rust API, which stores bytes in the organization's configured artifact backend and returns the public artifact metadata row with an opaque `instantml://artifacts/<artifact_id>` URI for stored bytes.
@@ -39,6 +41,14 @@ run = ro.init(
 run.log({"train/loss": 0.12})  # implicit step 1
 run.log({"train/reward": 100.0}, step=2)
 run.log_metrics({"train/reward": 100.0}, step=1)
+run.log_rank_metrics(
+    {"train/loss": 0.12},
+    step=1,
+    rank=0,
+    world_size=8,
+    local_rank=0,
+    weight=1024,
+)
 run.log_stdout("Epoch 1 reward=100.0")
 run.log_stderr(["warning: entropy dipped"])
 run.log_text({"notes/eval": "policy stabilized"}, step=1)
@@ -139,6 +149,12 @@ page = api.runs(
 `Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI.
 
 Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
+
+`Run.log_rank_metrics(data, step, rank, world_size, local_rank=None, weight=None,
+timestamp=None)` posts to `/runs/:run_id/rank-metrics`. `rank` is zero-based,
+`world_size` is capped at 512, and `weight` defaults to `1.0`. Process-isolated
+spool mode writes the same request shape to JSONL and the uploader replays it
+with the spooled event id as `Idempotency-Key`.
 
 Process-isolated upload mode for long training loops:
 

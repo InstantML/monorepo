@@ -31,7 +31,8 @@ import {
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { buildCheckpointResumeCode } from "../src/checkpoints.js";
-import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
+import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
+import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
 import { deriveClerkSlug, slugify } from "../src/workspace.js";
@@ -44,6 +45,49 @@ test("selection is capped and toggled", () => {
   assert.equal(selected.includes("run-0"), false);
   assert.equal(selected.at(-1), `run-${MAX_SELECTED_RUNS}`);
   assert.deepEqual(toggleSelection(selected, "run-4"), selected.filter((id) => id !== "run-4"));
+});
+
+test("research insights helpers scope runs, extract fields, cluster, and detect eval metrics", () => {
+  const runs = [
+    {
+      id: "a",
+      name: "run-a",
+      tags: ["base"],
+      config: { seed: 1, optimizer: { lr: 0.001 }, width: 128 },
+      latest_metrics: { "eval/accuracy": 0.8, "eval/f1": 0.7, "train/loss": 0.4 },
+      metric_aggregates: { "eval/accuracy": { max: 0.82, latest: 0.8 }, "train/loss": { min: 0.3, latest: 0.4 } },
+    },
+    {
+      id: "b",
+      name: "run-b",
+      tags: ["base"],
+      config: { seed: 2, optimizer: { lr: 0.002 }, width: 256 },
+      latest_metrics: { "eval/accuracy": 0.9, "eval/f1": 0.8, "train/loss": 0.2 },
+      metric_aggregates: { "eval/accuracy": { max: 0.92, latest: 0.9 }, "train/loss": { min: 0.2, latest: 0.2 } },
+    },
+    {
+      id: "c",
+      name: "run-c",
+      tags: ["alt"],
+      config: { seed: 3, optimizer: { lr: 0.003 }, width: 512 },
+      latest_metrics: { "eval/accuracy": 0.7, "eval/f1": 0.6, "train/loss": 0.8 },
+      metric_aggregates: { "eval/accuracy": { max: 0.72, latest: 0.7 }, "train/loss": { min: 0.6, latest: 0.8 } },
+    },
+  ];
+  const universe = insightsRunUniverse(["a", "missing"], runs);
+  assert.deepEqual(universe.runs.map((run) => run.id), ["a"]);
+  assert.equal(universe.excluded, 1);
+  const grouped = groupedRunReducers(runs, "eval/accuracy");
+  assert.equal(grouped.length, 3);
+  const fields = numericFieldRows(runs, "eval/accuracy").fields;
+  assert(fields.includes("config.optimizer.lr"));
+  assert(fields.includes("metric.best.eval/accuracy"));
+  const clusters = kMeansClusters(runs, "eval/accuracy", 2);
+  assert.equal(clusters.points.length, 3);
+  assert(clusters.clusters.length >= 1);
+  const cards = evaluationCards(runs);
+  assert.equal(cards.find((card) => card.id === "accuracy").key, "eval/accuracy");
+  assert.equal(cards.find((card) => card.id === "f1").count, 3);
 });
 
 test("dashboard panel helpers chunk large selections and merge patches in run order", () => {
@@ -513,8 +557,13 @@ test("retryTransientRequest retries only recoverable API failures", async () => 
 });
 
 test("route helpers canonicalize dashboard paths and safe auth redirects", () => {
+  assert.equal(DEFAULT_DASHBOARD_TAB, "runs");
   assert.equal(tabToPath("metrics"), "/dashboard/metrics");
+  assert.equal(tabToPath("distributed"), "/dashboard/distributed");
+  assert.equal(tabToPath("advanced"), "/dashboard/advanced");
+  assert.equal(tabToPath("insights"), "/dashboard/insights");
   assert.equal(tabToPath("unknown"), "/dashboard/runs");
+  assert.equal(tabFromPath("/dashboard/advanced?x=1"), "advanced");
   assert.equal(tabFromPath("/dashboard/compare?x=1"), "compare");
   assert.equal(tabFromPath("/dashboard/not-real"), "runs");
   assert.equal(canonicalDashboardPath("/dashboard"), "/dashboard/runs");

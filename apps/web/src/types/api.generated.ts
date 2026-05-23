@@ -784,6 +784,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/rank-metrics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["rank_metrics_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/storage/clickhouse-connections": {
         parameters: {
             query?: never;
@@ -1018,6 +1034,22 @@ export interface paths {
         get: operations["get_metrics"];
         put?: never;
         post: operations["log_metrics"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/rank-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["log_rank_metrics"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1531,6 +1563,19 @@ export interface components {
             step: Record<string, never>;
             timestamp?: string | null;
         };
+        LogRankMetricsRequest: {
+            /** Format: int32 */
+            local_rank?: number | null;
+            metrics: Record<string, never>;
+            /** Format: int32 */
+            rank: number;
+            step: Record<string, never>;
+            timestamp?: string | null;
+            /** Format: double */
+            weight?: number | null;
+            /** Format: int32 */
+            world_size: number;
+        };
         MembershipRow: {
             /** Format: date-time */
             created_at: string;
@@ -1739,6 +1784,86 @@ export interface components {
             revoked_at?: string | null;
             role: string;
             status: string;
+        };
+        RankCoveragePoint: {
+            /** Format: int32 */
+            expected_world_size: number;
+            missing_rank_count: number;
+            missing_ranks: number[];
+            rank_count: number;
+            /** Format: double */
+            step: number;
+            world_size_mismatch: boolean;
+        };
+        RankHeatmapPoint: {
+            /** Format: double */
+            delta_from_mean: number;
+            /** Format: int32 */
+            rank: number;
+            /** Format: double */
+            step: number;
+            /** Format: double */
+            value: number;
+        };
+        RankMetricLimits: {
+            max_canonical_rows: number;
+            max_heatmap_cells: number;
+            /** Format: int32 */
+            max_world_size: number;
+            outlier_limit: number;
+            /** Format: int64 */
+            step_limit: number;
+        };
+        RankMetricTruncation: {
+            heatmap: boolean;
+            outliers: boolean;
+            steps: boolean;
+        };
+        RankMetricsSummaryResponse: {
+            coverage: components["schemas"]["RankCoveragePoint"][];
+            heatmap: components["schemas"]["RankHeatmapPoint"][];
+            key?: string | null;
+            keys: string[];
+            limits: components["schemas"]["RankMetricLimits"];
+            outliers: components["schemas"]["RankOutlierPoint"][];
+            reducers: components["schemas"]["RankReducerPoint"][];
+            truncated: components["schemas"]["RankMetricTruncation"];
+        };
+        RankOutlierPoint: {
+            /** Format: double */
+            delta_from_mean: number;
+            /** Format: int32 */
+            rank: number;
+            /** Format: double */
+            step: number;
+            /** Format: double */
+            value: number;
+            /** Format: double */
+            z_score: number;
+        };
+        RankReducerPoint: {
+            /** Format: int32 */
+            expected_world_size: number;
+            /** Format: double */
+            max: number;
+            /** Format: double */
+            mean: number;
+            /** Format: double */
+            min: number;
+            /** Format: double */
+            p05: number;
+            /** Format: double */
+            p50: number;
+            /** Format: double */
+            p95: number;
+            rank_count: number;
+            /** Format: double */
+            stddev: number;
+            /** Format: double */
+            step: number;
+            /** Format: double */
+            weighted_mean: number;
+            world_size_mismatch: boolean;
         };
         ReserveSeatRequest: {
             email?: string | null;
@@ -4199,6 +4324,56 @@ export interface operations {
             };
         };
     };
+    rank_metrics_summary: {
+        parameters: {
+            query?: {
+                /** @description Rank metric key */
+                key?: string;
+                /** @description Inclusive start step */
+                start_step?: number;
+                /** @description Inclusive end step */
+                end_step?: number;
+                /** @description Step limit */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded rank metric summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RankMetricsSummaryResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     create_customer_clickhouse_connection: {
         parameters: {
             query?: never;
@@ -5088,6 +5263,51 @@ export interface operations {
         };
         responses: {
             /** @description Inserted point count */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsertedEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    log_rank_metrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogRankMetricsRequest"];
+            };
+        };
+        responses: {
+            /** @description Inserted rank metric point count */
             200: {
                 headers: {
                     [name: string]: unknown;

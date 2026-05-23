@@ -39,6 +39,8 @@
     "benchmark:sdk-overhead": "python3 benchmarks/sdk_logging_overhead.py run",
     "seed:hosted-scale": "node tools/hosted-tenant-scale-seed.mjs",
     "benchmark:rich-objects": "node tools/rust-rich-objects-benchmark.mjs",
+    "benchmark:rank-insights": "node tools/rank-insights-benchmark.mjs",
+    "example:rank-scale": "node examples/rank-insights/scale-projects.mjs",
     "deploy:cloud-run": "node tools/deploy-cloud-run.mjs --topology=split",
     "deploy:cloud-run:single": "node tools/deploy-cloud-run.mjs --topology=single",
     "deploy:cloud-run:multi": "node tools/deploy-cloud-run.mjs --topology=split",

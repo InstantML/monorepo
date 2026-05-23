@@ -66,6 +66,8 @@ def _is_scalar_number(value: Any) -> bool:
 def _validate_metrics(data: dict[str, Any]) -> dict[str, float]:
     if not isinstance(data, dict):
         raise TypeError("metrics must be a dictionary")
+    if not data:
+        raise ValueError("metrics must include at least one key")
     metrics: dict[str, float] = {}
     for key, value in data.items():
         metric_key = _validate_text(key, "metric key")

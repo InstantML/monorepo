@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use crate::{
     domain::{
         CreateConsoleLogsRequest, CreateProjectRequest, CreateRunRequest, LogMetricsRequest,
-        UpdateRunRequest,
+        LogRankMetricsRequest, UpdateRunRequest,
     },
     errors::AppResult,
     store,
@@ -228,6 +228,39 @@ pub async fn log_metrics(
 }
 
 #[utoipa::path(
+    post,
+    path = "/runs/{run_id}/rank-metrics",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    request_body = crate::domain::LogRankMetricsRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Inserted rank metric point count", body = crate::http::openapi::InsertedEnvelope),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn log_rank_metrics(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) =
+        read_json_with_raw::<LogRankMetricsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    let inserted =
+        store::log_rank_metrics(&state.store, &ctx, run_id, raw, input, idempotency_key).await?;
+    Ok(Json(json!({ "inserted": inserted })))
+}
+
+#[utoipa::path(
     get,
     path = "/runs/{run_id}/metrics",
     tag = "runs",
@@ -256,6 +289,39 @@ pub async fn get_metrics(
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         store::get_metrics(&state.store, &ctx, run_id, &query).await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/runs/{run_id}/rank-metrics/summary",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+        ("key" = Option<String>, Query, description = "Rank metric key"),
+        ("start_step" = Option<f64>, Query, description = "Inclusive start step"),
+        ("end_step" = Option<f64>, Query, description = "Inclusive end step"),
+        ("limit" = Option<i64>, Query, description = "Step limit"),
+    ),
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Bounded rank metric summary", body = crate::domain::RankMetricsSummaryResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn rank_metrics_summary(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let summary = store::rank_metrics_summary(&state.store, &ctx, run_id, &query).await?;
+    Ok(Json(
+        serde_json::to_value(summary).unwrap_or_else(|_| json!({})),
     ))
 }
 

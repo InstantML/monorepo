@@ -122,6 +122,8 @@ impl Store {
         }
 
         let metric_store = self.metric_store_from_route(&route).await?;
+        self.persist_upgraded_route_schema_version_if_needed(&route)
+            .await?;
         let records = metric_store.load_operational_records().await?;
         let stats = {
             let mut data = self.data.lock().await;
@@ -498,6 +500,7 @@ impl Store {
         })?;
         let mut ready = route.clone();
         ready.status = TENANT_ROUTE_READY.to_string();
+        ready.schema_version = Some(METRIC_SCHEMA_VERSION);
         ready.updated_at = Utc::now();
         ready.error = None;
         self.persist_tenant_route(ready.clone()).await?;
@@ -598,6 +601,19 @@ impl Store {
             metric_store::migrate(&metric_store).await?;
         }
         Ok(metric_store)
+    }
+
+    async fn persist_upgraded_route_schema_version_if_needed(
+        &self,
+        route: &TenantRouteRecord,
+    ) -> AppResult<()> {
+        if route.schema_version.unwrap_or_default() >= METRIC_SCHEMA_VERSION {
+            return Ok(());
+        }
+        let mut upgraded = route.clone();
+        upgraded.schema_version = Some(METRIC_SCHEMA_VERSION);
+        upgraded.updated_at = Utc::now();
+        self.persist_tenant_route(upgraded).await
     }
 
     async fn tenant_password(&self, route: &TenantRouteRecord) -> AppResult<String> {

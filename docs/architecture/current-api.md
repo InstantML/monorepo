@@ -147,6 +147,8 @@ Validation limits that affect callers:
 | Text fields such as names, paths, tags | 512 bytes |
 | Metrics per batch | 1,000 |
 | Metric query limit | Default 1,000, max 5,000 |
+| Rank metrics per batch | 1,000 metrics for one `(run, step, rank)` |
+| Rank metric world size | Max 512 ranks; summary heatmaps return max 16,384 cells |
 | Run page limit | Default 100, max 1,000 |
 | Batched metric series run IDs | 2,000 |
 | Batched metric series response | Max 120,000 returned points; `effective_limit` is clamped per run |
@@ -493,8 +495,10 @@ database must already exist. Initial validation/save runs BYOC schema migration
 without `CREATE DATABASE`, inserts an operational validation record, stores only
 a Secret Manager reference in the route record, and returns the configured
 `required_egress_cidrs` and `egress_set_version` for customer allowlisting.
-After the route records schema version 1, normal route loads do not rerun schema
-migration. Credential rotation validates the new credential against the existing
+After the route records the current metric schema version, normal route loads
+skip schema migration. Version 2 adds the `rank_metric_points` table; older
+ready BYOC routes are migrated and updated on first load. Credential rotation
+validates the new credential against the existing
 saved endpoint/database without rerunning schema migration, stores a new Secret
 Manager version, swaps the route reference, and attempts to destroy the prior
 version.
@@ -708,6 +712,102 @@ Output:
 ```json
 { "metrics": [] }
 ```
+
+### `POST /runs/:run_id/rank-metrics`
+
+Auth: `sdk:ingest` API key or owner/admin/member session.
+
+Optional header: `Idempotency-Key`. Process-spool uploaders set this to the
+spooled event id. The durable table keeps append-only rows; summary reads use
+the newest `(created_at, event_id)` value for a `(run, key, step, rank)`.
+
+Body:
+
+```json
+{
+  "metrics": {
+    "train/loss": 0.12
+  },
+  "step": 1,
+  "rank": 0,
+  "local_rank": 0,
+  "world_size": 8,
+  "weight": 1024,
+  "timestamp": "2026-05-16T00:00:00Z"
+}
+```
+
+`rank` and `local_rank` are zero-based. `world_size` must be between 1 and
+512. `weight` is optional and defaults to `1.0`; it supports sample-weighted
+mean reducers for uneven rank workloads. Rank metric rows count against the
+same monthly `metric_points` write guardrail as scalar metric rows.
+
+Output:
+
+```json
+{ "inserted": 1 }
+```
+
+### `GET /api/runs/:run_id/rank-metrics/summary`
+
+Auth: tenant read access.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `key` | Optional metric key filter. Defaults to the first key for the run. |
+| `start_step` | Optional lower step bound |
+| `end_step` | Optional upper step bound |
+| `limit` | Max step count requested, capped at 5,000. The server may lower this to keep canonical rank rows under `limits.max_canonical_rows`. |
+
+Output:
+
+```json
+{
+  "keys": ["train/loss"],
+  "key": "train/loss",
+  "reducers": [
+    {
+      "step": 1,
+      "rank_count": 8,
+      "expected_world_size": 8,
+      "world_size_mismatch": false,
+      "mean": 0.12,
+      "weighted_mean": 0.12,
+      "min": 0.10,
+      "max": 0.14,
+      "stddev": 0.01,
+      "p05": 0.10,
+      "p50": 0.12,
+      "p95": 0.14
+    }
+  ],
+  "heatmap": [{ "step": 1, "rank": 0, "value": 0.12, "delta_from_mean": 0.0 }],
+  "outliers": [{ "step": 1, "rank": 7, "value": 0.14, "z_score": 2.1, "delta_from_mean": 0.02 }],
+  "coverage": [{
+    "step": 1,
+    "rank_count": 8,
+    "expected_world_size": 8,
+    "missing_rank_count": 0,
+    "missing_ranks": [],
+    "world_size_mismatch": false
+  }],
+  "limits": {
+    "step_limit": 1000,
+    "max_world_size": 512,
+    "max_canonical_rows": 65536,
+    "max_heatmap_cells": 16384,
+    "outlier_limit": 20
+  },
+  "truncated": { "steps": false, "heatmap": false, "outliers": false }
+}
+```
+
+The summary endpoint is intentionally run-scoped for the first slice. It backs
+the dashboard's Distributed tab without adding a cross-run rank query fan-out.
+When a key is supplied, the API skips full key discovery and returns `keys`
+containing the selected key only.
 
 ### `POST /api/metrics/series`
 
@@ -1233,8 +1333,8 @@ prefers exact warehouse bytes plus exact artifact bytes when available.
 `usage.estimated_storage_bytes_for_warnings` is retained as a compatibility
 alias for clients that have not yet moved to the exact/guardrail split.
 
-New project, run, metric-ingest, artifact, import, and demo-reset writes that
-exceed blocked limits fail with:
+New project, run, scalar metric ingest, rank metric ingest, artifact, import,
+and demo-reset writes that exceed blocked limits fail with:
 
 ```json
 {
