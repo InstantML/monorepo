@@ -81,6 +81,7 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         metrics.clone(),
         control_store,
         config.hosted_clickhouse.clone(),
+        config.byoc_clickhouse.clone(),
     )
     .await?;
     // Data plane: poll the control table out-of-band so the request hot path
@@ -117,6 +118,7 @@ async fn connect_store_with_retry(
     metrics: metric_store::MetricStore,
     control_store: Option<ControlStore>,
     hosted_clickhouse: Option<instantml_rust_server::config::HostedClickHouseConfig>,
+    byoc_clickhouse: instantml_rust_server::config::ByocClickHouseConfig,
 ) -> instantml_rust_server::AppResult<store::Store> {
     let retry_delays = [
         Duration::from_secs(1),
@@ -129,6 +131,7 @@ async fn connect_store_with_retry(
             metrics.clone(),
             control_store.clone(),
             hosted_clickhouse.clone(),
+            byoc_clickhouse.clone(),
         )
         .await
         {
@@ -180,8 +183,13 @@ async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
     }
-    let store =
-        store::Store::connect(metrics, control_store, config.hosted_clickhouse.clone()).await?;
+    let store = store::Store::connect(
+        metrics,
+        control_store,
+        config.hosted_clickhouse.clone(),
+        config.byoc_clickhouse.clone(),
+    )
+    .await?;
     let session = store::create_dev_google_session(
         &store,
         DevGoogleAuthRequest {
@@ -191,6 +199,7 @@ async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
             account_type: None,
             org_name: None,
             plan_tier: None,
+            storage_choice: None,
             seat_emails: None,
             accept_invite_org_id: None,
             accept_invite_token: None,
@@ -224,8 +233,13 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
     }
-    let store =
-        store::Store::connect(metrics, control_store, config.hosted_clickhouse.clone()).await?;
+    let store = store::Store::connect(
+        metrics,
+        control_store,
+        config.hosted_clickhouse.clone(),
+        config.byoc_clickhouse.clone(),
+    )
+    .await?;
     let deleted = store::delete_expired_idempotency(&store).await?;
     let deleted_sessions = store::delete_expired_or_revoked_sessions(&store).await?;
     let usage_snapshots = store::write_usage_daily_snapshots(&store).await?;

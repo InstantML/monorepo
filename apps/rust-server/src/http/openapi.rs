@@ -34,18 +34,21 @@ use crate::domain::{
     BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo, BillingCheckoutIntent,
     BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
     BillingPlanChangeRequest, BillingPortalRequest, BillingSeatChangeRequest,
-    BillingSubscriptionRecord, BillingUsageReportRecord, ClerkAuthRequest, ConsoleLogInput,
-    ConsoleLogLine, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
-    CreateConsoleLogsRequest, CreateInvitationRequest, CreateObjectRequest,
-    CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-    DashboardPreferenceRow, DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest,
-    DeviceCodePollRequest, DeviceCodeStartRequest, InvitationPreviewPayload,
-    InvitationTokenRequest, LogMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow,
-    OnboardingApiKey, OrganizationMembershipSummary, OrganizationRow, ProjectRow,
-    ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow,
-    ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
-    SwitchOrganizationRequest, UpdateDashboardPreferencesRequest, UpdateRunRequest,
-    UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
+    BillingSubscriptionRecord, BillingUsageReportRecord, ClerkAuthRequest,
+    ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
+    ClickHouseConnectionStatus, ClickHouseConnectionValidateRequest,
+    ClickHouseConnectionValidationResponse, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
+    CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
+    CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest,
+    CreateRunRequest, CreateUserRequest, DashboardPreferenceRow, DevGoogleAuthRequest,
+    DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
+    InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, MembershipRow,
+    MetricPointRow, MetricSeriesRow, OnboardingApiKey, OrganizationMembershipSummary,
+    OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactRow,
+    PublicInvitationRow, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow,
+    SeatUserRow, ServiceAccountRow, SwitchOrganizationRequest, UpdateDashboardPreferencesRequest,
+    UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
+    WorkspaceViewSummary,
 };
 
 // ============================================================================
@@ -232,6 +235,16 @@ pub struct OrganizationNameAvailability {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct ClickHouseConnectionStatusEnvelope {
+    pub connection: ClickHouseConnectionStatus,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ClickHouseConnectionValidationEnvelope {
+    pub validation: ClickHouseConnectionValidationResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct DeviceCodeStartResponse {
     pub device_code: String,
     pub user_code: String,
@@ -374,6 +387,10 @@ impl Modify for SecurityAddon {
         crate::http::handlers::orgs::disable_service_account,
         crate::http::handlers::orgs::reserve_seat,
         crate::http::handlers::orgs::list_seats,
+        crate::http::handlers::orgs::customer_clickhouse_connection_status,
+        crate::http::handlers::orgs::validate_customer_clickhouse_connection,
+        crate::http::handlers::orgs::create_customer_clickhouse_connection,
+        crate::http::handlers::orgs::rotate_customer_clickhouse_credentials,
         crate::http::handlers::invitations::list_invitations,
         crate::http::handlers::invitations::create_invitation,
         crate::http::handlers::invitations::resend_invitation,
@@ -443,6 +460,8 @@ impl Modify for SecurityAddon {
         OrganizationsEnvelope,
         OrgMembershipsEnvelope,
         OrganizationNameAvailability,
+        ClickHouseConnectionStatusEnvelope,
+        ClickHouseConnectionValidationEnvelope,
         DeviceCodeStartResponse,
         DeviceCodePollResponse,
         DeviceCodeConfirmResponse,
@@ -475,6 +494,11 @@ impl Modify for SecurityAddon {
         BillingSubscriptionRecord,
         BillingUsageReportRecord,
         ClerkAuthRequest,
+        ClickHouseConnectionCreateRequest,
+        ClickHouseConnectionRotateCredentialsRequest,
+        ClickHouseConnectionStatus,
+        ClickHouseConnectionValidateRequest,
+        ClickHouseConnectionValidationResponse,
         ConsoleLogInput,
         ConsoleLogLine,
         CreateApiKeyRequest,
@@ -531,6 +555,7 @@ impl Modify for SecurityAddon {
         (name = "auth", description = "Browser session and device-code authentication."),
         (name = "billing", description = "Stripe Checkout, subscriptions, portal, and billing webhooks."),
         (name = "orgs", description = "Organizations, memberships, seats, and API keys."),
+        (name = "storage", description = "Workspace storage setup and customer-owned ClickHouse connection validation."),
         (name = "invitations", description = "Token-backed organization invitations."),
         (name = "runs", description = "Experiment runs, metrics, attributes, objects, artifacts."),
         (name = "dashboard", description = "Browser dashboard preferences and saved workspace views."),

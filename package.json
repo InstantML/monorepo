@@ -30,6 +30,7 @@
     "test:rust:sdk": "node tools/rust-service-smoke.mjs sdk",
     "test:rust:ui": "node tools/rust-service-smoke.mjs ui",
     "test:stripe-billing": "node tools/stripe-billing-smoke.mjs",
+    "test:byoc-clickhouse": "node tools/byoc-clickhouse-smoke.mjs",
     "test:hosted-clickhouse": "node tools/hosted-clickhouse-smoke.mjs",
     "test:scale": "node tools/scale-smoke.mjs",
     "benchmark:large-runs": "node tools/rust-large-run-benchmark.mjs",

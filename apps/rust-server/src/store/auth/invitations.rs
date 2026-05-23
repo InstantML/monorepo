@@ -1633,6 +1633,12 @@ mod tests {
             metric_store,
             control_store: None,
             hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "local-dev".to_string(),
+                allow_private_endpoints: false,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
@@ -1656,6 +1662,8 @@ mod tests {
             created_by_user_id: Some(owner_id),
             created_at: Utc::now(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         }
     }
 

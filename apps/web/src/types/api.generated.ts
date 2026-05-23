@@ -784,6 +784,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/storage/clickhouse-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_customer_clickhouse_connection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/clickhouse-connections/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["customer_clickhouse_connection_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/clickhouse-connections/rotate-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rotate_customer_clickhouse_credentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/storage/clickhouse-connections/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["validate_customer_clickhouse_connection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/usage": {
         parameters: {
             query?: never;
@@ -1199,7 +1263,68 @@ export interface components {
             org_name?: string | null;
             plan_tier?: string | null;
             seat_emails?: string[] | null;
+            storage_choice?: string | null;
             token?: string | null;
+        };
+        ClickHouseConnectionCreateRequest: {
+            database?: string | null;
+            endpoint?: string | null;
+            /** Format: uuid */
+            org_id?: string | null;
+            password?: string | null;
+            username?: string | null;
+        };
+        ClickHouseConnectionRotateCredentialsRequest: {
+            /** Format: uuid */
+            org_id?: string | null;
+            password?: string | null;
+            username?: string | null;
+        };
+        ClickHouseConnectionStatus: {
+            database?: string | null;
+            egress_description: string;
+            egress_set_version: string;
+            endpoint?: string | null;
+            endpoint_host?: string | null;
+            /** Format: date-time */
+            last_validated_at?: string | null;
+            message?: string | null;
+            provisioner?: string | null;
+            required_egress_cidrs: string[];
+            status: string;
+            storage_choice: string;
+            storage_state: string;
+            username?: string | null;
+            validation_error_code?: string | null;
+            warehouse_kind?: string | null;
+        };
+        ClickHouseConnectionStatusEnvelope: {
+            connection: components["schemas"]["ClickHouseConnectionStatus"];
+        };
+        ClickHouseConnectionValidateRequest: {
+            allow_create_database?: boolean | null;
+            database?: string | null;
+            endpoint?: string | null;
+            /** Format: uuid */
+            org_id?: string | null;
+            password?: string | null;
+            storage_choice?: string | null;
+            username?: string | null;
+        };
+        ClickHouseConnectionValidationEnvelope: {
+            validation: components["schemas"]["ClickHouseConnectionValidationResponse"];
+        };
+        ClickHouseConnectionValidationResponse: {
+            can_create_database: boolean;
+            can_insert_validation_record: boolean;
+            can_migrate_schema: boolean;
+            current_user?: string | null;
+            database: string;
+            egress_description: string;
+            egress_set_version: string;
+            required_egress_cidrs: string[];
+            server_version?: string | null;
+            status: string;
         };
         ConsoleLogInput: {
             /** Format: int64 */
@@ -1274,6 +1399,7 @@ export interface components {
             owner_user_id?: string | null;
             plan_tier?: string | null;
             slug?: string | null;
+            storage_choice?: string | null;
         };
         CreateProjectRequest: {
             description?: string | null;
@@ -1320,6 +1446,7 @@ export interface components {
             org_name?: string | null;
             plan_tier?: string | null;
             seat_emails?: string[] | null;
+            storage_choice?: string | null;
         };
         DeviceCodeClientInfo: {
             name?: string | null;
@@ -1518,6 +1645,8 @@ export interface components {
             /** Format: int32 */
             seat_limit: number;
             slug: string;
+            storage_choice?: string;
+            storage_state?: string;
             /** @description Routing tier for this org's ClickHouse data plane.
              *     `"shared"` — routes to the shared cell (free/personal orgs).
              *     `"dedicated"` — routes to a per-org provisioned service.
@@ -4061,6 +4190,242 @@ export interface operations {
             };
             /** @description Run not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_customer_clickhouse_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClickHouseConnectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved customer ClickHouse connection status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClickHouseConnectionStatusEnvelope"];
+                };
+            };
+            /** @description Invalid connection settings */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Storage route is already locked */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description ClickHouse endpoint unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    customer_clickhouse_connection_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current ClickHouse connection setup status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClickHouseConnectionStatusEnvelope"];
+                };
+            };
+            /** @description Missing session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotate_customer_clickhouse_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClickHouseConnectionRotateCredentialsRequest"];
+            };
+        };
+        responses: {
+            /** @description Rotated customer ClickHouse credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClickHouseConnectionStatusEnvelope"];
+                };
+            };
+            /** @description Invalid connection settings */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer ClickHouse route missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description ClickHouse endpoint or secret store unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    validate_customer_clickhouse_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClickHouseConnectionValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Customer ClickHouse validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClickHouseConnectionValidationEnvelope"];
+                };
+            };
+            /** @description Invalid connection settings */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description ClickHouse endpoint unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

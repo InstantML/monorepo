@@ -133,6 +133,7 @@ async fn usage_counts_for_org(store: &Store, org_id: Uuid) -> AppResult<UsageCou
         artifact_usage.artifact_bytes_exact,
         estimated_metadata_bytes,
         warehouse_storage_bytes_exact,
+        &org.storage_choice,
     );
     Ok(UsageCounts {
         org,
@@ -251,7 +252,11 @@ fn storage_bytes_for_warnings(
     artifact_bytes_exact: i64,
     estimated_metadata_bytes: i64,
     warehouse_storage_bytes_exact: Option<i64>,
+    storage_choice: &str,
 ) -> i64 {
+    if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        return artifact_bytes_exact;
+    }
     artifact_bytes_exact + warehouse_storage_bytes_exact.unwrap_or(estimated_metadata_bytes)
 }
 
@@ -632,8 +637,22 @@ mod tests {
 
     #[test]
     fn storage_warning_bytes_use_scoped_warehouse_bytes_or_metadata_estimate() {
-        assert_eq!(storage_bytes_for_warnings(50, 10, Some(4_600)), 4_650);
-        assert_eq!(storage_bytes_for_warnings(50, 10, None), 60);
+        assert_eq!(
+            storage_bytes_for_warnings(50, 10, Some(4_600), STORAGE_CHOICE_HOSTED),
+            4_650
+        );
+        assert_eq!(
+            storage_bytes_for_warnings(50, 10, None, STORAGE_CHOICE_HOSTED),
+            60
+        );
+        assert_eq!(
+            storage_bytes_for_warnings(50, 10, Some(4_600), STORAGE_CHOICE_CUSTOMER_CLICKHOUSE),
+            50
+        );
+        assert_eq!(
+            storage_bytes_for_warnings(50, 10, None, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE),
+            50
+        );
     }
 
     #[test]
@@ -709,6 +728,8 @@ mod tests {
             seat_limit: plan_tier(tier).included_seats,
             created_by_user_id: None,
             created_at: Utc::now(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         UsageCounts {
             org,

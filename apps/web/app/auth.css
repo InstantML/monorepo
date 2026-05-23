@@ -249,6 +249,30 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
 .iml-wsprev-adv>summary:hover{color:var(--text-2)}
 .iml-wsprev-adv>*+*{margin-top:7px}
 
+.iml-byoc-callout{display:grid;gap:10px;padding:13px 14px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--bg-soft)}
+.iml-byoc-callout-h{display:flex;align-items:center;gap:8px;
+  font:700 12px/1 var(--f-sans);color:var(--text-2)}
+.iml-byoc-callout-h svg{color:var(--accent)}
+.iml-byoc-steps{display:grid;gap:6px;margin:0;padding-left:18px;
+  font:500 12px/1.45 var(--f-sans);color:var(--muted)}
+.iml-byoc-steps code{font-family:var(--f-mono);color:var(--text-2)}
+.iml-egress{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-top:2px}
+.iml-egress-label{font:600 11px/1 var(--f-mono);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--muted);margin-right:2px}
+.iml-egress code,.iml-egress-version{display:inline-flex;align-items:center;min-height:22px;
+  padding:0 8px;border:1px solid var(--accent-line);border-radius:var(--r-sm);
+  background:var(--accent-soft);color:var(--accent-strong);font:600 11px/1 var(--f-mono)}
+.iml-egress span:not(.iml-egress-label):not(.iml-egress-version){font:500 11px/1.4 var(--f-mono);
+  color:var(--muted)}
+.iml-egress-version{border-color:var(--line);background:var(--surface-2);color:var(--muted)}
+.iml-byoc-sql{overflow:hidden;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface)}
+.iml-byoc-sql pre{margin:0;padding:10px 12px;overflow:auto;white-space:pre;
+  color:var(--text-2);font:500 11px/1.5 var(--f-mono)}
+.iml-byoc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.iml-byoc-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
 .iml-org{display:flex;align-items:center;gap:13px;padding:14px 16px;
   border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
 .iml-org-badge{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
@@ -292,6 +316,7 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
   .iml-seg{grid-template-columns:1fr}
   .iml-plans{grid-template-columns:1fr}
   .iml-recovery-actions{grid-template-columns:1fr}
+  .iml-byoc-grid,.iml-byoc-actions{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){
   .iml-auth *,.iml-landing *{animation:none!important;transition:none!important}

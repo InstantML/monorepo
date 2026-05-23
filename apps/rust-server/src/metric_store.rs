@@ -167,6 +167,7 @@ pub enum SeriesSortMode {
     BestMin,
 }
 
+pub const METRIC_SCHEMA_VERSION: u32 = 1;
 const INITIAL_SCHEMA: &str = include_str!("../clickhouse/0001_initial.sql");
 
 /// Wraps a configured ClickHouse client alongside the database it targets.
@@ -934,6 +935,19 @@ pub fn parse_clickhouse_url(raw_url: &str, label: &str) -> AppResult<ClickHouseC
 /// `CREATE ... IF NOT EXISTS`.
 pub async fn migrate(store: &MetricStore) -> AppResult<()> {
     ensure_database(store).await?;
+    apply_schema(store).await
+}
+
+/// Apply schema to a database that must already exist. Used by customer-owned
+/// ClickHouse routes so a database-scoped user does not need server-wide
+/// `CREATE DATABASE` privilege.
+pub async fn migrate_existing_database(store: &MetricStore) -> AppResult<()> {
+    validate_clickhouse_identifier(&store.database, "database")?;
+    ensure_database_exists(store).await?;
+    apply_schema(store).await
+}
+
+async fn apply_schema(store: &MetricStore) -> AppResult<()> {
     for statement in split_statements(INITIAL_SCHEMA) {
         store
             .client
@@ -956,6 +970,7 @@ pub async fn ensure_database(store: &MetricStore) -> AppResult<()> {
     if store.database.is_empty() || store.database == "default" {
         return Ok(());
     }
+    validate_clickhouse_identifier(&store.database, "database")?;
     let bootstrap = store.client.clone().with_database("default");
     let statement = format!("CREATE DATABASE IF NOT EXISTS {}", store.database);
     bootstrap
@@ -963,6 +978,46 @@ pub async fn ensure_database(store: &MetricStore) -> AppResult<()> {
         .execute()
         .await
         .map_err(|err| clickhouse_storage_error("clickhouse create database failed", err))?;
+    Ok(())
+}
+
+async fn ensure_database_exists(store: &MetricStore) -> AppResult<()> {
+    if store.database.is_empty() || store.database == "default" {
+        return Ok(());
+    }
+    let bootstrap = store.client.clone().with_database("default");
+    let exists: Option<u8> = bootstrap
+        .query("SELECT 1 FROM system.databases WHERE name = ? LIMIT 1")
+        .bind(store.database.clone())
+        .fetch_optional()
+        .await
+        .map_err(|err| clickhouse_storage_error("clickhouse database lookup failed", err))?;
+    if exists == Some(1) {
+        Ok(())
+    } else {
+        Err(AppError::with_code(
+            axum::http::StatusCode::FORBIDDEN,
+            "clickhouse_migration_denied",
+            "customer-owned ClickHouse database must already exist",
+        ))
+    }
+}
+
+pub fn validate_clickhouse_identifier(value: &str, label: &str) -> AppResult<()> {
+    let mut chars = value.chars();
+    let first = chars
+        .next()
+        .ok_or_else(|| AppError::validation(format!("{label} is required")))?;
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return Err(AppError::validation(format!(
+            "{label} must start with a letter or underscore"
+        )));
+    }
+    if value.len() > 128 || !chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric()) {
+        return Err(AppError::validation(format!(
+            "{label} may only contain letters, numbers, and underscores"
+        )));
+    }
     Ok(())
 }
 
@@ -1011,6 +1066,17 @@ mod tests {
         assert_eq!(statements.len(), 2);
         assert!(statements[0].starts_with("CREATE TABLE a"));
         assert!(statements[1].starts_with("CREATE TABLE b"));
+    }
+
+    #[test]
+    fn validate_clickhouse_identifier_rejects_unsafe_names() {
+        assert!(validate_clickhouse_identifier("instantml_acme_1", "database").is_ok());
+        for candidate in ["", "1bad", "bad-name", "bad.name", "bad name", "bad;DROP"] {
+            assert!(
+                validate_clickhouse_identifier(candidate, "database").is_err(),
+                "expected {candidate:?} to be rejected"
+            );
+        }
     }
 
     #[test]

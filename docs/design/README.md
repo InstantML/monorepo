@@ -43,7 +43,10 @@ Current implemented design sequence:
 
 Current draft/revised designs awaiting implementation approval:
 
-- None.
+- `2026-05-22-customer-owned-clickhouse.md`: draft research plan for routing an
+  org's product data to customer-owned ClickHouse through a direct database
+  connection first, with ClickHouse Cloud API automation deferred pending
+  security and architecture review.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

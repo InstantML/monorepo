@@ -8,6 +8,7 @@ pub mod errors;
 pub mod http;
 pub mod managed_auth;
 pub mod metric_store;
+pub mod secret_store;
 pub mod store;
 pub mod stripe_billing;
 pub mod telemetry;

@@ -117,6 +117,7 @@ async fn create_api_key_inner(
         .ok_or_else(|| AppError::not_found("organization not found"))?;
     drop(data);
     ensure_billing_write_allowed(store, org_id, "create API keys").await?;
+    require_org_storage_ready(&org)?;
     store.ensure_tenant_route(&org).await?;
     let mut data = store.data.lock().await;
     let project_id =
@@ -331,6 +332,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());
@@ -364,6 +367,8 @@ mod tests {
             created_by_user_id: None,
             created_at: Utc::now(),
             tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         };
         let mut data = StoreData::default();
         data.insert_org(org.clone());

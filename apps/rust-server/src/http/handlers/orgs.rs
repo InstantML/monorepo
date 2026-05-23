@@ -11,7 +11,9 @@ use serde_json::{json, Value};
 
 use crate::{
     domain::{
-        CreateApiKeyRequest, CreateOrganizationRequest, CreateUserRequest, ReserveSeatRequest,
+        ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
+        ClickHouseConnectionValidateRequest, CreateApiKeyRequest, CreateOrganizationRequest,
+        CreateUserRequest, ReserveSeatRequest,
     },
     errors::AppResult,
     store,
@@ -156,6 +158,168 @@ pub async fn org_name_availability(
         store::organization_name_availability(&state.store, query.get("name").map(String::as_str))
             .await?,
     ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/storage/clickhouse-connections/current",
+    tag = "storage",
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Current ClickHouse connection setup status", body = crate::http::openapi::ClickHouseConnectionStatusEnvelope),
+        (status = 401, description = "Missing session", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient role", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn customer_clickhouse_connection_status(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let session = session_context(&state, &headers).await?;
+    store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    Ok(Json(json!({
+        "connection": state.store.customer_clickhouse_status(
+            session.organization.id,
+            &state.config.byoc_clickhouse,
+        ).await?
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/storage/clickhouse-connections/validate",
+    tag = "storage",
+    request_body = crate::domain::ClickHouseConnectionValidateRequest,
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Customer ClickHouse validation result", body = crate::http::openapi::ClickHouseConnectionValidationEnvelope),
+        (status = 400, description = "Invalid connection settings", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Missing session", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient role", body = crate::http::openapi::ErrorResponse),
+        (status = 503, description = "ClickHouse endpoint unavailable", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn validate_customer_clickhouse_connection(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
+    let session = session_context(&state, &headers).await?;
+    store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    let mut input = read_json::<ClickHouseConnectionValidateRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    if let Some(org_id) = input.org_id {
+        if org_id != session.organization.id {
+            return Err(crate::errors::AppError::forbidden(
+                "session belongs to a different organization",
+            ));
+        }
+    } else {
+        input.org_id = Some(session.organization.id);
+    }
+    Ok(Json(json!({
+        "validation": state.store.validate_customer_clickhouse(
+            input,
+            &state.config.byoc_clickhouse,
+        ).await?
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/storage/clickhouse-connections",
+    tag = "storage",
+    request_body = crate::domain::ClickHouseConnectionCreateRequest,
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Saved customer ClickHouse connection status", body = crate::http::openapi::ClickHouseConnectionStatusEnvelope),
+        (status = 400, description = "Invalid connection settings", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Missing session", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient role", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Storage route is already locked", body = crate::http::openapi::ErrorResponse),
+        (status = 503, description = "ClickHouse endpoint unavailable", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn create_customer_clickhouse_connection(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
+    let session = session_context(&state, &headers).await?;
+    store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    let mut input = read_json::<ClickHouseConnectionCreateRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    if let Some(org_id) = input.org_id {
+        if org_id != session.organization.id {
+            return Err(crate::errors::AppError::forbidden(
+                "session belongs to a different organization",
+            ));
+        }
+    } else {
+        input.org_id = Some(session.organization.id);
+    }
+    Ok(Json(json!({
+        "connection": state.store.create_customer_clickhouse_route(
+            input,
+            &state.config.byoc_clickhouse,
+        ).await?
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/storage/clickhouse-connections/rotate-credentials",
+    tag = "storage",
+    request_body = crate::domain::ClickHouseConnectionRotateCredentialsRequest,
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Rotated customer ClickHouse credentials", body = crate::http::openapi::ClickHouseConnectionStatusEnvelope),
+        (status = 400, description = "Invalid connection settings", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Missing session", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient role", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Customer ClickHouse route missing", body = crate::http::openapi::ErrorResponse),
+        (status = 503, description = "ClickHouse endpoint or secret store unavailable", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn rotate_customer_clickhouse_credentials(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
+    let session = session_context(&state, &headers).await?;
+    store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    let mut input = read_json::<ClickHouseConnectionRotateCredentialsRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    if let Some(org_id) = input.org_id {
+        if org_id != session.organization.id {
+            return Err(crate::errors::AppError::forbidden(
+                "session belongs to a different organization",
+            ));
+        }
+    } else {
+        input.org_id = Some(session.organization.id);
+    }
+    Ok(Json(json!({
+        "connection": state.store.rotate_customer_clickhouse_credentials(
+            input,
+            &state.config.byoc_clickhouse,
+        ).await?
+    })))
 }
 
 #[utoipa::path(
