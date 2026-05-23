@@ -44,9 +44,10 @@ Current implemented design sequence:
   bounded rank reducers, SDK logging helper, Distributed dashboard, and
   exploratory loaded-summary Insights dashboard for grouped reducers,
   hyperparameter views, K-means clustering, and evaluation panels.
-- `2026-05-23-mintlify-docs-mvp.md`: Mintlify public docs MVP under
-  `apps/docs`, filtered public OpenAPI reference generation, validation scripts,
-  and docs-site guardrails that keep internal planning docs unpublished.
+- `2026-05-23-mintlify-docs-mvp.md`: public docs source under `apps/docs`,
+  same-origin `/docs` rendering from `apps/web`, filtered public OpenAPI
+  reference generation, validation scripts, and docs-site guardrails that keep
+  internal planning docs unpublished.
 
 Current draft/revised designs awaiting implementation approval:
 

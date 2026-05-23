@@ -115,6 +115,12 @@ test("NavLogo avoids invalid SVG auto dimensions", () => {
   assert.match(src, /const width = Math\.round\(height \* \(520 \/ 120\)\)/);
 });
 
+test("LandingPage top navigation links to docs", () => {
+  const src = fs.readFileSync(path.join(componentsDir, "LandingPage.tsx"), "utf8");
+  assert.match(src, /href="\/docs"/);
+  assert.match(src, />Docs<\/a>/);
+});
+
 // ── page.tsx: server component wiring ────────────────────────────────────────
 describe("app/page.tsx — auth-aware home route", () => {
   const pagePath = path.join(__dirname, "..", "app", "page.tsx");

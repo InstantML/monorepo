@@ -5,9 +5,9 @@ InstantML is an early-stage W&B (Weights & Biases)-style SaaS competitor for ser
 Start with:
 
 - `SETUP.md` for fresh-clone environment setup.
-- `apps/docs/` for the Mintlify public docs source, including user guides,
-  SDK/API references, architecture overview, operations guides, and generated
-  public OpenAPI reference.
+- `apps/docs/` for the public docs source rendered at `/docs` by the web app,
+  including user guides, SDK/API references, architecture overview, operations
+  guides, and generated public OpenAPI reference.
 - `USER_DOCS.md` for the older condensed external-user guide. Prefer
   `apps/docs/` for new public docs work.
 - `PRODUCT_STRATEGY.md` for product direction.
@@ -48,8 +48,8 @@ Every component directory and meaningful subdirectory should include a README. W
 Current backend ownership:
 
 - Use `apps/rust-server` for current product API, hosted-backend, and UI-serving API work.
-- Use `apps/docs` for the Mintlify public docs site source and generated public
-  OpenAPI reference.
+- Use `apps/docs` for public docs source and generated public OpenAPI
+  reference; `apps/web` renders it at `/docs`.
 - Keep `apps/server` as a deprecated Node compatibility oracle and JSON migration source. Use `npm run dev:api:node` or `npm run test:contract:node` only when comparing legacy route behavior.
 - Keep `apps/api` as the Python bootstrap/reference API and SDK compatibility target.
 

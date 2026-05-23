@@ -1,9 +1,11 @@
-# Public Docs Site
+# Public Docs Source
 
-This directory contains the Mintlify source for the public InstantML
-documentation site. It is intentionally separate from the repository-level
-`docs/` tree, which contains internal design, architecture, product, and user
-research documents.
+This directory contains the public InstantML documentation source. The
+production `/docs` route in `apps/web` renders this MDX/OpenAPI content
+same-origin, and Mintlify remains the validation/preview surface for the docs
+source. This tree is intentionally separate from the repository-level `docs/`
+tree, which contains internal design, architecture, product, and user research
+documents.
 
 ## Purpose
 
@@ -43,18 +45,19 @@ public route allowlist and writes `apps/docs/openapi.json`.
 public MDX/config for accidental internal-doc links, then runs `mint validate`.
 CI runs the same validation after the Rust API type-drift check.
 
-`docs:dev` syncs the OpenAPI copy, then starts the local Mintlify preview.
+`docs:dev` syncs the OpenAPI copy, then starts the Mintlify preview for content
+QA. The production user path is still the Next app's `/docs` route.
 
 ## Publishing
 
-The intended production docs domain is `https://docs.instantml.ai`.
+The current production docs path is the same-origin web route
+`https://instantml.ai/docs`.
 
-Mintlify supports custom documentation domains through the Mintlify dashboard.
-For `docs.instantml.ai`, add the domain in Mintlify, create the verification
-`TXT` records shown in the dashboard, wait for verification/TLS provisioning,
-then point the `docs` CNAME at the current Mintlify target
-`cname.mintlify.builders`. Keep the `docs.json` canonical URL pointed at
-`https://docs.instantml.ai`.
+If a separate `docs.instantml.ai` site is reintroduced later, add the domain in
+Mintlify, create the verification `TXT` records shown in the dashboard, wait
+for verification/TLS provisioning, then point the `docs` CNAME at the current
+Mintlify target `cname.mintlify.builders`. Update `docs.json` canonical metadata
+only in the same change that changes the production docs URL.
 
 ## Testing Commands
 
@@ -78,7 +81,7 @@ Node tests.
 
 ## Key Files And Subdirectories
 
-- `docs.json`: Mintlify site configuration and navigation.
+- `docs.json`: Mintlify site configuration, navigation, and canonical metadata.
 - `openapi.json`: generated public API reference copy. Do not edit by hand.
 - `index.mdx`: public docs landing page.
 - `quickstart.mdx`: hosted SaaS and SDK first-run path.
@@ -90,7 +93,8 @@ Node tests.
 - `guides/`: examples, imports, export, usage, auth, billing, storage, and
   observability guides.
 - `api/`: practical API guides plus the generated OpenAPI reference tab.
-- `images/`: docs-local copies of brand assets from `apps/web/public/`.
+- `images/`: docs-local brand and product assets served by the Next `/docs`
+  asset route and the Mintlify preview.
 
 ## Design Docs
 
@@ -100,6 +104,8 @@ Node tests.
 
 - Do not point Mintlify at the root `docs/` directory. It contains internal
   documents that are not public product docs.
+- Keep `apps/web/src/docs.js` and `apps/web/app/docs/` compatible with this
+  content shape when adding new MDX components or asset directories.
 - Add public API paths to `tools/sync-docs-openapi.mjs` intentionally. The docs
   OpenAPI copy is a filtered public reference, not a full service dump.
 - Run `npm run codegen:api` before `npm run docs:sync-openapi` when Rust

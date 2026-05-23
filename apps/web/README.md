@@ -8,6 +8,11 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 
 - Project dashboard.
 - Public landing page (merged from the standalone `github.com/InstantML/landing` repo). The `/` route is an auth-aware Next.js server component: signed-in Clerk users are redirected to `/signin` (which in turn forwards to `/dashboard/runs` if an InstantML session is active), and visitors with no Clerk session are served the full polished landing page. The landing visual system — italic-serif headlines, emerald palette, grid+glow background, bento cards, animated hero spotlight — is preserved in `components/landing/`. See `docs/design/2026-05-17-landing-merge-into-web.md`.
+- Public documentation at `/docs` and `/docs/:path*`. The route is rendered by
+  the same Next app from the public docs source in `apps/docs`, keeping
+  production docs same-origin until a separate docs domain is intentionally
+  reintroduced. The public landing nav and authenticated dashboard chrome link
+  directly to `/docs`.
 - Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, hosted-vs-BYOC storage choice, Stripe Checkout redirect for paid signup, onboarding, organization invitation acceptance at `/invite#t=...`, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and Free/Pro/Premium selection remains visible. Paid signups return a `billing_checkout.url` and redirect to Stripe before writes/API-key creation are unlocked; free hosted signups can still receive a ready-to-use `onboarding_api_key` rendered immediately without a separate button click. Premium BYOC signups go to onboarding without an SDK key until an owner/admin validates and saves a customer ClickHouse connection. If a returning browser still has a Clerk session but InstantML cannot mint a scoped session from it, `app/auth-flow.tsx` retries with a non-cached Clerk token and then shows an explicit "refresh your sign-in" recovery path with a sign-out/restart action.
 - RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
 - Runs workspace with run selector, sections, line/bar/histogram/dot panels, control-plane saved views, and local workspace layout fallback.
@@ -139,6 +144,13 @@ rewrites through `https://staging.api.instantml.ai`; leave it unset, or set it
 to `prod`, for pushed production builds. This variable intentionally overrides
 repo-local deploy helper API-base values so staging builds do not accidentally
 inherit a prod `.env` target.
+
+The `/docs` route is served by the web app in development, staging, and
+production. It reads the public MDX/OpenAPI source from `apps/docs`, so run
+`npm run docs:sync-openapi` after Rust OpenAPI changes and
+`npm run docs:validate` before shipping docs updates. `npm run docs:dev` is
+still useful for validating the Mintlify source view, but it is not required
+for the Next `/docs` route.
 
 Staging and production frontend builds must use a
 `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as the

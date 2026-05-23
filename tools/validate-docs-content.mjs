@@ -21,6 +21,7 @@ export const blockedPublicDocsPatterns = [
   "docker compose",
   "source checkout",
   "local dev",
+  "local server",
 ];
 
 async function listPublicDocsFiles(root) {

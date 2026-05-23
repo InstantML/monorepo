@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleHelp, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Sun } from "lucide-react";
+import { BookOpen, CircleHelp, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Sun } from "lucide-react";
 import { useRef } from "react";
 import type { MouseEvent } from "react";
 
@@ -92,33 +92,35 @@ export function DashboardNav({
           <span className="tab-label">{pinned ? "Unpin" : "Pin"}</span>
         </button>
       </div>
-      {onThemeToggle || onShortcutHelp || onSignOut ? (
-        <div className="nav-mobile-actions">
-          {onThemeToggle ? (
-            <button
-              className="tab-button"
-              type="button"
-              onClick={onThemeToggle}
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-              <span className="tab-label">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-            </button>
-          ) : null}
-          {onShortcutHelp ? (
-            <button className="tab-button" type="button" onClick={onShortcutHelp} aria-label="Keyboard shortcuts">
-              <CircleHelp size={15} />
-              <span className="tab-label">Shortcuts</span>
-            </button>
-          ) : null}
-          {onSignOut ? (
-            <button className="tab-button" type="button" onClick={onSignOut} aria-label="Sign out">
-              <LogOut size={15} />
-              <span className="tab-label">Sign out</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="nav-mobile-actions">
+        <a className="tab-button" href="/docs" aria-label="Docs">
+          <BookOpen size={15} />
+          <span className="tab-label">Docs</span>
+        </a>
+        {onThemeToggle ? (
+          <button
+            className="tab-button"
+            type="button"
+            onClick={onThemeToggle}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+            <span className="tab-label">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+          </button>
+        ) : null}
+        {onShortcutHelp ? (
+          <button className="tab-button" type="button" onClick={onShortcutHelp} aria-label="Keyboard shortcuts">
+            <CircleHelp size={15} />
+            <span className="tab-label">Shortcuts</span>
+          </button>
+        ) : null}
+        {onSignOut ? (
+          <button className="tab-button" type="button" onClick={onSignOut} aria-label="Sign out">
+            <LogOut size={15} />
+            <span className="tab-label">Sign out</span>
+          </button>
+        ) : null}
+      </div>
     </nav>
   );
 }
