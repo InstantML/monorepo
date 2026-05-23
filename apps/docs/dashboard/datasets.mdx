@@ -1,0 +1,38 @@
+---
+title: "Datasets"
+description: "Inspect dataset and environment fields inferred from run configs."
+---
+
+# Datasets
+
+The Datasets tab groups loaded runs by dataset-like or environment-like config
+fields. It helps you spot whether a comparison mixes different data sources.
+
+## What it reads
+
+Dataset rows are derived from the run summaries currently loaded in the
+dashboard. They are not a separate dataset registry.
+
+## What appears
+
+- Dataset or environment name inferred from config.
+- Number of runs that reference it.
+- Seed values seen in those runs.
+- The selected dashboard metric's best value for that group.
+
+## Good config keys
+
+Put stable data identity into run config:
+
+```python
+run = im.init(
+    project="finetune",
+    config={
+        "dataset": "support-tickets-v3",
+        "split": "train-2026-05",
+        "seed": 42,
+    },
+)
+```
+
+The tab is most useful when projects use consistent config names across runs.

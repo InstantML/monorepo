@@ -40,6 +40,40 @@ run.log_objects(
 
 Histograms appear as previews in Run Detail and artifact/object surfaces.
 
+## Media objects
+
+Use media objects when the dashboard should treat a stored image, audio, or
+video as previewable run evidence. Media objects link to uploaded artifact bytes
+from the same run.
+
+```python
+image = run.upload_file("outputs/confusion-matrix.png", artifact_type="image", step=10)
+run.log_objects(
+    {
+        "eval/confusion_matrix": ro.Image(
+            path="outputs/confusion-matrix.png",
+            caption="Validation confusion matrix",
+        )
+    },
+    step=10,
+)
+```
+
+For videos and audio, upload the file bytes first, then log a rich object when
+you want Run Detail and artifact surfaces to render a preview:
+
+```python
+run.upload_file("outputs/rollout.mp4", artifact_type="video", step=100)
+run.log_objects(
+    {"eval/rollout": ro.Video(path="outputs/rollout.mp4", caption="Evaluation rollout")},
+    step=100,
+)
+```
+
+External references such as object-store URIs remain metadata artifacts. They
+are useful for provenance, but they are not previewable unless bytes are stored
+through InstantML.
+
 ## Text
 
 ```python

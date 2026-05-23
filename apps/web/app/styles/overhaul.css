@@ -762,12 +762,18 @@ textarea:focus {
 }
 .empty-workspace-snippet__foot {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
   font: 500 12px/1.5 var(--font-sans);
   color: var(--muted);
+}
+.empty-workspace-snippet__foot > span {
+  flex: 1 1 280px;
+}
+.empty-workspace-snippet__docs {
+  max-width: 390px;
 }
 .empty-workspace-snippet__foot code {
   font: 600 11.5px/1 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);

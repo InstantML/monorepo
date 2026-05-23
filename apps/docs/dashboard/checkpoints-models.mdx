@@ -1,0 +1,42 @@
+---
+title: "Checkpoints and models"
+description: "Inspect checkpoint lineage and model context for the selected run."
+---
+
+# Checkpoints and models
+
+The dashboard nav labels this area as Models. The page title is Checkpoints and
+lineage because the current implementation focuses on checkpoint artifacts and
+their run context.
+
+## What appears
+
+- Checkpoint artifact rows derived from logged artifacts.
+- Source run and step context when metadata is available.
+- Model context for the selected run.
+
+## Log checkpoint bytes
+
+```python
+policy = im.CheckpointPolicy(every_steps=1000)
+
+if policy.should_save(step):
+    run.log_checkpoint_file(
+        "checkpoints/policy.pt",
+        step=step,
+        metadata={"framework": "pytorch"},
+    )
+```
+
+Metadata-only checkpoints are also supported:
+
+```python
+run.log_checkpoint(
+    name="policy-step-1000",
+    uri="s3://team-bucket/checkpoints/policy.pt",
+    step=1000,
+)
+```
+
+Stored bytes can be downloaded through the artifact download route. External
+URI checkpoints remain provenance records.

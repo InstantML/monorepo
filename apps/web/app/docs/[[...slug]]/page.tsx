@@ -3,7 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
+import { DocsCodeBlock } from "../docs-code-block";
 import {
+  docsMarkdownUrl,
   docsHref,
   loadDocsPage,
   mapDocsAssetSrc,
@@ -59,6 +62,7 @@ export default async function DocsPage({ params }: DocsParams) {
   }
   const blocks = "blocks" in page && Array.isArray(page.blocks) ? (page.blocks as DocsBlock[]) : [];
   const endpoints = "endpoints" in page && Array.isArray(page.endpoints) ? page.endpoints : [];
+  const markdownHref = docsMarkdownUrl(page.path);
 
   return (
     <main className="docs-route">
@@ -79,9 +83,19 @@ export default async function DocsPage({ params }: DocsParams) {
       <div className="docs-route-shell">
         <DocsSidebar navigation={page.navigation as DocsNavigation} currentPath={page.path} />
         <article className="docs-route-article">
-          <div className="docs-route-eyebrow">InstantML documentation</div>
-          <h1>{page.title}</h1>
-          {page.description ? <p className="docs-route-description">{page.description}</p> : null}
+          <header className="docs-route-article-header">
+            <div>
+              <div className="docs-route-eyebrow">InstantML documentation</div>
+              <h1>{page.title}</h1>
+              {page.description ? <p className="docs-route-description">{page.description}</p> : null}
+            </div>
+            <div className="docs-route-agent-actions" aria-label="Agent-readable docs actions">
+              <DocsAgentMarkdownButton href={markdownHref} />
+              <Link className="docs-route-agent-link" href={markdownHref}>
+                Open .md
+              </Link>
+            </div>
+          </header>
           {page.kind === "api-reference" ? (
             <ApiReference endpoints={endpoints} />
           ) : (
@@ -147,14 +161,7 @@ function DocsBlockView({ block }: { block: DocsBlock }) {
   }
 
   if (block.type === "code") {
-    return (
-      <div className="docs-route-code">
-        <div className="docs-route-code-label">{block.language}</div>
-        <pre>
-          <code>{block.code}</code>
-        </pre>
-      </div>
-    );
+    return <DocsCodeBlock code={block.code} language={block.language} />;
   }
 
   if (block.type === "table") {
@@ -211,7 +218,16 @@ function DocsBlockView({ block }: { block: DocsBlock }) {
 function ApiReference({
   endpoints,
 }: {
-  endpoints: Array<{ method: string; path: string; summary: string; tags: string[] }>;
+  endpoints: Array<{
+    method: string;
+    path: string;
+    summary: string;
+    tags: string[];
+    parameters?: Array<{ name: string; in: string; required: boolean; description: string }>;
+    requestBody?: boolean;
+    responseCodes?: string[];
+    security?: string[];
+  }>;
 }) {
   return (
     <div className="docs-route-api-list">
@@ -220,6 +236,34 @@ function ApiReference({
           <span className={`docs-route-method method-${endpoint.method.toLowerCase()}`}>{endpoint.method}</span>
           <code>{endpoint.path}</code>
           <p>{endpoint.summary}</p>
+          <dl>
+            {endpoint.security?.length ? (
+              <>
+                <dt>Auth</dt>
+                <dd>{endpoint.security.join(", ")}</dd>
+              </>
+            ) : null}
+            {endpoint.parameters?.length ? (
+              <>
+                <dt>Parameters</dt>
+                <dd>
+                  {endpoint.parameters.map((parameter) => `${parameter.name}${parameter.required ? " required" : ""}`).join(", ")}
+                </dd>
+              </>
+            ) : null}
+            {endpoint.requestBody ? (
+              <>
+                <dt>Request body</dt>
+                <dd>Yes</dd>
+              </>
+            ) : null}
+            {endpoint.responseCodes?.length ? (
+              <>
+                <dt>Responses</dt>
+                <dd>{endpoint.responseCodes.join(", ")}</dd>
+              </>
+            ) : null}
+          </dl>
         </section>
       ))}
     </div>

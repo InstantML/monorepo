@@ -90,8 +90,8 @@ Content-Type: application/json
 
 Update accepts any subset of `name`, `project`, and `payload`.
 
-## Demo and local behavior
+## Demo behavior
 
 Shared demo sessions are read-only and cannot save dashboard control state.
-Local compatibility mode can keep the same route shapes for development, and
-the dashboard has validated local-storage fallback when the API is unavailable.
+If the control-state API is temporarily unavailable, the dashboard keeps the
+current page usable and retries later.

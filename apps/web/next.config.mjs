@@ -100,6 +100,7 @@ const nextConfig = {
   },
   async rewrites() {
     return [
+      { source: "/docs/:path*.md", destination: "/docs-md/:path*.md" },
       { source: "/api/auth/:path*", destination: `${apiBases.control}/api/auth/:path*` },
       { source: "/api/invitations/:path*", destination: `${apiBases.control}/api/invitations/:path*` },
       { source: "/api/billing/:path*", destination: `${apiBases.control}/api/billing/:path*` },

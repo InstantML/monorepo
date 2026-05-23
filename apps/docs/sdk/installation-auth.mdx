@@ -77,19 +77,27 @@ Environment key:
 
 ```bash
 export INSTANTML_API_KEY="instantml_..."
-export INSTANTML_API_BASE_URL="https://api.instantml.ai"
 python3 train.py
 ```
 
 Device login:
 
 ```bash
-instantml login --api-host https://api.instantml.ai
+instantml login
 instantml whoami
 ```
 
 After login, `ro.init(...)` can read the stored credential file without another
 argument.
+
+Top-level `ro.init(...)` fails fast when no explicit key, environment key, or
+CLI credential exists. Lower-level `Client(...)` objects can still be
+constructed without credentials, but authenticated hosted writes fail once they
+make a request.
+
+`instantml login --api-host ...` changes the host used by the login flow. It
+does not change the SDK host for later Python scripts; use
+`INSTANTML_API_BASE_URL` or `base_url=...` for a non-default hosted endpoint.
 
 ## API-key scopes
 

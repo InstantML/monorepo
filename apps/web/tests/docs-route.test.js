@@ -6,7 +6,11 @@ import { fileURLToPath } from "node:url";
 
 import {
   docsHref,
+  docsMarkdownPathForSlug,
   docsPathForSlug,
+  loadDocsMarkdown,
+  loadDocsMarkdownFull,
+  loadDocsMarkdownIndex,
   loadDocsPage,
   mapDocsAssetSrc,
   parseDocsMdx,
@@ -17,20 +21,61 @@ const webRoot = path.resolve(__dirname, "..");
 
 test("docs app route renders docs source instead of redirecting to a docs host", async () => {
   const route = await readFile(path.join(webRoot, "app", "docs", "[[...slug]]", "page.tsx"), "utf8");
+  const agentButton = await readFile(path.join(webRoot, "app", "docs", "docs-agent-markdown-button.tsx"), "utf8");
+  const codeBlock = await readFile(path.join(webRoot, "app", "docs", "docs-code-block.tsx"), "utf8");
+  const styles = await readFile(path.join(webRoot, "app", "styles", "docs.css"), "utf8");
   assert.match(route, /loadDocsPage/);
   assert.match(route, /DocsSidebar/);
+  assert.match(route, /DocsCodeBlock/);
+  assert.match(route, /DocsAgentMarkdownButton/);
+  assert.match(route, /Open \.md/);
+  assert.match(agentButton, /fetch\(href/);
+  assert.match(agentButton, /Copy \.md for agent/);
+  assert.match(codeBlock, /navigator\.clipboard\.writeText/);
+  assert.match(styles, /grid-template-columns: clamp\(248px, 18vw, 320px\) minmax\(0, 1fr\)/);
+  assert.doesNotMatch(styles, /max-width: 1240px/);
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
+});
+
+test("first-run onboarding links to human and agent quickstart docs", async () => {
+  const authFlow = await readFile(path.join(webRoot, "app", "auth-flow.tsx"), "utf8");
+  const emptyWorkspace = await readFile(
+    path.join(webRoot, "app", "dashboard", "components", "empty-workspace-snippet.tsx"),
+    "utf8",
+  );
+
+  assert.match(authFlow, /href="\/docs\/quickstart"/);
+  assert.match(authFlow, /href="\/docs\/quickstart\.md"/);
+  assert.match(authFlow, /paste[\s\S]*quickstart\.md[\s\S]*to your agent/);
+  assert.match(emptyWorkspace, /href="\/docs\/quickstart"/);
+  assert.match(emptyWorkspace, /href="\/docs\/quickstart\.md"/);
+  assert.match(emptyWorkspace, /paste[\s\S]*quickstart\.md[\s\S]*to your agent/);
 });
 
 test("docs routes bypass Clerk proxy middleware", async () => {
   const proxy = await readFile(path.join(webRoot, "proxy.ts"), "utf8");
   assert.match(proxy, /\(\?!_next\|docs\|/);
+  assert.match(proxy, /txt\|xml\|webmanifest/);
 });
 
 test("docs asset route serves images from the docs source tree", async () => {
   const route = await readFile(path.join(webRoot, "app", "docs", "assets", "[...path]", "route.ts"), "utf8");
   assert.match(route, /docsImagesRoot/);
   assert.match(route, /Content-Type/);
+});
+
+test("docs markdown mirrors are routed from /docs/*.md", async () => {
+  const config = await readFile(path.join(webRoot, "next.config.mjs"), "utf8");
+  const route = await readFile(path.join(webRoot, "app", "docs-md", "[[...slug]]", "route.ts"), "utf8");
+  const llms = await readFile(path.join(webRoot, "app", "llms.txt", "route.ts"), "utf8");
+  const llmsFull = await readFile(path.join(webRoot, "app", "llms-full.txt", "route.ts"), "utf8");
+
+  assert.match(config, /source: "\/docs\/:path\*\.md"/);
+  assert.match(config, /destination: "\/docs-md\/:path\*\.md"/);
+  assert.match(route, /loadDocsMarkdown/);
+  assert.match(route, /text\/markdown/);
+  assert.match(llms, /loadDocsMarkdownIndex/);
+  assert.match(llmsFull, /loadDocsMarkdownFull/);
 });
 
 test("main app navigation links to the same-origin docs route", async () => {
@@ -48,8 +93,12 @@ test("docs slug paths are normalized and reject traversal", () => {
   assert.equal(docsPathForSlug([]), "index");
   assert.equal(docsPathForSlug(["sdk", "logging"]), "sdk/logging");
   assert.equal(docsPathForSlug(["api-reference", "platform", "get-health"]), "api-reference");
+  assert.equal(docsMarkdownPathForSlug(["quickstart.md"]), "quickstart");
+  assert.equal(docsMarkdownPathForSlug(["sdk", "logging.md"]), "sdk/logging");
+  assert.equal(docsMarkdownPathForSlug(["api-reference", "platform", "get-health.md"]), "api-reference");
   assert.throws(() => docsPathForSlug([".."]), /Unsafe docs slug segment/);
   assert.throws(() => docsPathForSlug(["sdk/logging"]), /Unsafe docs slug segment/);
+  assert.throws(() => docsMarkdownPathForSlug(["../quickstart.md"]), /Unsafe docs slug segment/);
 });
 
 test("docs links and assets are mapped to same-origin /docs URLs", () => {
@@ -100,4 +149,27 @@ test("docs loader can read an MDX page and the generated API reference", async (
   const apiReference = await loadDocsPage(["api-reference", "platform", "get-health"]);
   assert.equal(apiReference.kind, "api-reference");
   assert.ok(apiReference.endpoints.length > 0);
+});
+
+test("docs markdown loader mirrors pages and agent indexes", async () => {
+  const quickstart = await loadDocsMarkdown(["quickstart.md"]);
+  assert.equal(quickstart.path, "quickstart");
+  assert.match(quickstart.markdown, /^# Quickstart/m);
+  assert.doesNotMatch(quickstart.markdown, /^---/);
+  assert.match(quickstart.markdown, /instantml login/);
+  assert.match(quickstart.markdown, /## Agent navigation/);
+  assert.match(quickstart.markdown, /\[Logging\]\(\/docs\/sdk\/logging\.md\)/);
+  assert.match(quickstart.markdown, /\[Quickstart\]\(\/docs\/quickstart\.md\) \(current page\)/);
+
+  const apiReference = await loadDocsMarkdown(["api-reference.md"]);
+  assert.match(apiReference.markdown, /^# API Reference/m);
+  assert.match(apiReference.markdown, /## GET \/health/);
+  assert.match(apiReference.markdown, /\[Quickstart\]\(\/docs\/quickstart\.md\)/);
+
+  const index = await loadDocsMarkdownIndex();
+  assert.match(index, /\[Quickstart\]\(\/docs\/quickstart\.md\)/);
+
+  const full = await loadDocsMarkdownFull();
+  assert.match(full, /Source: \/docs\/quickstart\.md/);
+  assert.match(full, /Shadow a W&B run/);
 });

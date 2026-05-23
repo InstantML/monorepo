@@ -1036,6 +1036,13 @@ function OnboardingBody({
               <span className="ln"><span className="pr">$ </span>python train.py</span>
             </div>
           </div>
+          <div className="iml-doc-hint">
+            <span>Need the full setup path?</span>
+            <a href="/docs/quickstart">Open Quickstart</a>
+            <span>or paste</span>
+            <a href="/docs/quickstart.md">quickstart.md</a>
+            <span>to your agent.</span>
+          </div>
           <div className="iml-actions">
             <a className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href={nextPath}>
               Open dashboard <ArrowRight className="iml-arrow" size={15} />

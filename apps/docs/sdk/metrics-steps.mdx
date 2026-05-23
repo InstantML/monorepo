@@ -75,7 +75,8 @@ run.log_metrics(
 ```
 
 Avoid one network call per metric unless a metric is produced by a separate
-process. Each batch accepts up to 1,000 scalar metrics.
+process. The hosted API accepts up to 1,000 scalar metrics per batch; the SDK
+does not preflight the batch count before the request.
 
 ## Use timestamps when needed
 

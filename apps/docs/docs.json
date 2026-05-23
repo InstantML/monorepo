@@ -78,7 +78,14 @@
               "dashboard/compare-runs",
               "dashboard/research-dashboards",
               "dashboard/artifacts-files",
-              "dashboard/settings-api-keys"
+              "dashboard/alerts",
+              "dashboard/datasets",
+              "dashboard/checkpoints-models",
+              "dashboard/reports",
+              "dashboard/integrations",
+              "dashboard/settings-api-keys",
+              "dashboard/api-tab",
+              "dashboard/onboarding-team-billing"
             ]
           }
         ]

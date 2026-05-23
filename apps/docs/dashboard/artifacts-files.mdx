@@ -9,8 +9,8 @@ Artifacts connect metric behavior to the files and evidence produced by a run.
 
 ## Artifact browser
 
-The Artifacts tab lists artifact metadata for the active project and selected
-run context.
+The Artifacts tab focuses on the selected run context. Select a run first, then
+use the tab to inspect that run's artifact metadata and stored bytes.
 
 Artifacts can represent:
 
@@ -35,9 +35,10 @@ artifacts fall back to copy/download actions.
 
 ## Checkpoint workflow
 
-Checkpoint artifacts are visible in checkpoint-oriented surfaces and can carry
-restore metadata such as source run and step. When checkpoint bytes are stored
-through the API, downloads go through the same-origin artifact download route.
+Checkpoint artifacts are visible in Run Detail and in the Models/Checkpoints
+workspace. They can carry restore metadata such as source run and step. When
+checkpoint bytes are stored through the API, downloads go through the
+same-origin artifact download route.
 
 ## API snippets
 

@@ -1,0 +1,34 @@
+---
+title: "API tab"
+description: "Create copy-once SDK keys and inspect hosted REST route snippets."
+---
+
+# API tab
+
+The API tab is the dashboard surface for SDK keys and copyable API snippets.
+
+## API keys
+
+Admins can:
+
+- List active and revoked keys.
+- Create a copy-once key by name.
+- Copy the plaintext key while it is visible.
+- Revoke keys that should no longer be used.
+
+Store keys in a secrets manager or environment variable:
+
+```bash
+export INSTANTML_API_KEY="instantml_..."
+```
+
+The current dashboard key form creates the default hosted SDK key shape. It does
+not expose per-scope or per-project controls in the form yet.
+
+## API snippets
+
+The API Surface panel shows route examples based on current dashboard context,
+including project, selected run, selected metric, and selected run IDs.
+
+Use the practical API guides when you need request bodies, limits, and
+permissions for a route.

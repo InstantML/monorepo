@@ -77,6 +77,10 @@ with ro.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
 If the block exits normally, the SDK finishes the run as `finished`. If an
 exception escapes the block, the SDK marks it as `failed`.
 
+By default, run creation starts in the background so training scripts can avoid
+waiting on startup. Call `run.wait_for_init()` before expensive work when you
+want credential or connectivity failures to surface immediately.
+
 ## Buffering and offline replay
 
 Use buffering when you want to batch post-init SDK calls in memory:
