@@ -11,10 +11,12 @@ import {
   FileBarChart,
   GitCompare,
   HardDrive,
+  Network,
   Package,
   Plug,
   Server,
   Settings,
+  Telescope,
 } from "lucide-react";
 
 import type { IntegrationRow, TabId } from "./dashboard-types";
@@ -25,6 +27,8 @@ export const navGroups = [
     items: [
       { id: "runs", label: "Runs", icon: Activity },
       { id: "metrics", label: "Metrics", icon: BarChart3 },
+      { id: "distributed", label: "Distributed", icon: Network },
+      { id: "advanced", label: "Advanced", icon: Telescope },
       { id: "compare", label: "Compare", icon: GitCompare },
     ],
   },
@@ -32,6 +36,7 @@ export const navGroups = [
     id: "workspace",
     items: [
       { id: "alerts", label: "Alerts", icon: AlertTriangle },
+      { id: "insights", label: "Insights", icon: Telescope },
       { id: "datasets", label: "Datasets", icon: Database },
       { id: "artifacts", label: "Artifacts", icon: Package },
       { id: "models", label: "Models", icon: Box },

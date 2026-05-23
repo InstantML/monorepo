@@ -1,6 +1,6 @@
 # InstantML Python SDK
 
-InstantML is a training-loop observability SDK for logging runs, scalar metrics, configs, tags, notes, artifacts, checkpoints, tables, histograms, media, and source context to the InstantML platform.
+InstantML is a training-loop observability SDK for logging runs, scalar metrics, rank-aware distributed metrics, configs, tags, notes, artifacts, checkpoints, tables, histograms, media, and source context to the InstantML platform.
 
 ## Install
 
@@ -26,14 +26,26 @@ instantml logout    # clear the cached credential
 ## Log a run
 
 ```python
+import os
 import instantml as im
 
 run = im.init(project="llm-7b-sft", config=cfg)
 checkpoint_policy = im.CheckpointPolicy(every_steps=500)
+rank = int(os.environ.get("RANK", "0"))
+world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
 for step, batch in enumerate(loader):
     loss = train_step(batch)
     run.log({"loss": loss}, step=step)
+    # Optional: distributed workers can log per-rank values for reducer,
+    # coverage, heatmap, and outlier dashboards.
+    run.log_rank_metrics(
+        {"loss": loss},
+        step=step,
+        rank=rank,
+        world_size=world_size,
+        weight=len(batch),
+    )
     if checkpoint_policy.should_save(step):
         save_model("./ckpt/model.pt")
         run.log_checkpoint_file("./ckpt/model.pt", step=step)

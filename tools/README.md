@@ -123,6 +123,26 @@ Useful environment variables:
 - `INSTANTML_BENCH_WEB=1`: additionally build/start the Next app and measure first useful render.
 - `INSTANTML_BENCH_ENFORCE=1`: exit nonzero if local budgets fail.
 
+## Rank Insights Benchmark
+
+`rank-insights-benchmark.mjs` measures the local frontend helper computations
+behind the Insights dashboard over synthetic run summaries: grouped reducers,
+numeric field extraction, k-means clustering, and evaluation metric cards. It
+does not start ClickHouse or a browser.
+
+```bash
+npm run benchmark:rank-insights
+INSTANTML_RANK_INSIGHTS_RUNS=2000 INSTANTML_RANK_INSIGHTS_SAMPLES=20 npm run benchmark:rank-insights
+```
+
+Useful environment variables:
+
+- `INSTANTML_RANK_INSIGHTS_RUNS`: number of synthetic runs. Default: `1000`.
+- `INSTANTML_RANK_INSIGHTS_SAMPLES`: measured repetitions. Default: `12`.
+- `INSTANTML_RANK_INSIGHTS_WARMUPS`: warmup repetitions. Default: `3`.
+- `INSTANTML_RANK_INSIGHTS_ENFORCE=1`: exit nonzero if local p95 exceeds the
+  helper budget.
+
 ## Hosted Demo Benchmark Seed
 
 `hosted-demo-seed-benchmark.mjs` signs in as the shared demo account, provisions or reuses its ClickHouse Cloud service, seeds the 100,000-run benchmark into that service once, restarts its temporary Rust server so tenant replay reads the direct seed, and prints sanitized hosted API p50/p95 timings. It benchmarks newest run pages, 100-row pages, name/tag/config/notes search, status filters, combined search+filter, selected-metric sorting, project overview, and a bounded chart series. It reads ClickHouse credentials from the local `.env`; do not run it from CI or against a disposable account unless you intend to create/use a hosted ClickHouse service.

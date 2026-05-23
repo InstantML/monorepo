@@ -34,8 +34,8 @@ Data plane:
   ClickHouse table operational_records
   -> tenant product metadata and low-volume state
 
-  ClickHouse tables metric_points, console_log_lines, metric_series
-  -> high-volume scalar metrics, console logs, and maintained summaries
+  ClickHouse tables metric_points, rank_metric_points, console_log_lines, metric_series
+  -> high-volume scalar metrics, per-rank metrics, console logs, and maintained summaries
 ```
 
 In local/non-hosted mode, `operational_records` may contain both control and
@@ -413,7 +413,7 @@ clamped to read-only export behavior at authorization time.
 | `username` | string | ClickHouse username. |
 | `password_secret_ref` | string or null | Config/Secret Manager reference. BYOC hosted routes use `gcp-secret-manager:projects/.../versions/...`; local BYOC smoke tests may use `local-user-data-byoc:<org_id>`. |
 | `password_ciphertext` | string or null | Plaintext credential fallback for local smoke tests and the legacy hosted cloud-service provisioner only. Hosted BYOC must leave this null. |
-| `schema_version` | integer or null | Applied InstantML ClickHouse schema version. BYOC route loads skip DDL when this is at least the current metric schema version. |
+| `schema_version` | integer or null | Applied InstantML ClickHouse schema version. BYOC route loads skip DDL when this is at least the current metric schema version. The current version is 2. |
 | `service_id` | string or null | ClickHouse Cloud service id when known. |
 | `created_at` | datetime | Initial route creation time. |
 | `updated_at` | datetime | Last route state update time. |
@@ -452,7 +452,7 @@ spend gates are in place.
   "name": "Daily comparison",
   "project": "hosted-scale-data",
   "payload": {
-    "schema_version": 1,
+    "schema_version": 2,
     "tab": "runs",
     "workspace_view": {}
   },
@@ -796,10 +796,10 @@ writes horizontally.
 }
 ```
 
-Usage is guardrail/debugging data, not invoice truth. Metric-point usage is
-counted for the current UTC calendar-month `usage_period`; the same current
-period value is exposed as `usage.metric_points` and
-`usage.metric_points_current_period`, while
+Usage is guardrail/debugging data, not invoice truth. Scalar and rank
+metric-point usage is counted for the current UTC calendar-month
+`usage_period`; the same current period value is exposed as
+`usage.metric_points` and `usage.metric_points_current_period`, while
 `usage.metric_points_retained_total` records retained history. Plan-owned
 data-plane writes are checked against the stored tier before commit. New
 project, run, metric-ingest, artifact, import, and demo-reset writes return
@@ -856,6 +856,55 @@ SETTINGS index_granularity = 8192;
 Metric list/chart endpoints must stay bounded by run, key, explicit limits, or
 series chunking. Run-summary endpoints should read maintained series summaries,
 not full metric history.
+
+### `rank_metric_points`
+
+Owner: `apps/rust-server/clickhouse/0001_initial.sql`
+
+Purpose: append-only per-rank scalar metric storage for distributed training
+debugging. The first API slice writes one row per `(run, key, step, rank)` and
+derives reducers, coverage, heatmap, and outlier views at read time.
+
+```sql
+CREATE TABLE IF NOT EXISTS rank_metric_points (
+    org_id     UUID,
+    run_id     UUID,
+    key        LowCardinality(String),
+    step       Float64 CODEC(Delta, ZSTD(3)),
+    rank       UInt32 CODEC(Delta, ZSTD(3)),
+    local_rank UInt32 CODEC(Delta, ZSTD(3)),
+    world_size UInt32 CODEC(Delta, ZSTD(3)),
+    value      Float64 CODEC(ZSTD(3)),
+    weight     Float64 DEFAULT 1 CODEC(ZSTD(3)),
+    logged_at  DateTime64(6, 'UTC') CODEC(Delta, ZSTD(3)),
+    created_at DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD(3)),
+    event_id   UUID
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (org_id, run_id, key, step, rank, created_at, event_id)
+SETTINGS index_granularity = 8192;
+```
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `org_id` | `UUID` | Tenant owner. |
+| `run_id` | `UUID` | Run owner. |
+| `key` | `LowCardinality(String)` | Metric key, for example `train/loss`. |
+| `step` | `Float64` | Finite nonnegative training step. |
+| `rank` | `UInt32` | Zero-based global rank. Must be `< world_size`. |
+| `local_rank` | `UInt32` | Zero-based rank on the local node. Defaults to `rank`. |
+| `world_size` | `UInt32` | Expected number of global ranks, capped at 512. |
+| `value` | `Float64` | Finite scalar value for this rank. |
+| `weight` | `Float64` | Positive finite sample/work weight for weighted reducers. |
+| `logged_at` | `DateTime64(6, 'UTC')` | Client-supplied or server-normalized metric time. |
+| `created_at` | `DateTime64(6, 'UTC')` | Server insert time. |
+| `event_id` | `UUID` | Per-insert tie-breaker used by summary read dedupe. |
+
+Summary queries canonicalize duplicate `(org_id, run_id, key, step, rank)` rows
+with `argMax(..., tuple(created_at, event_id))`. Rank metric rows count against
+the same monthly metric-point usage guardrail as scalar metric rows, but do not
+currently feed `metric_series`.
 
 ### `console_log_lines`
 

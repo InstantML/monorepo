@@ -3,9 +3,12 @@ export const DEFAULT_DASHBOARD_TAB = "runs";
 export const DASHBOARD_TAB_IDS = [
   "runs",
   "metrics",
+  "distributed",
+  "advanced",
   "detail",
   "compare",
   "alerts",
+  "insights",
   "datasets",
   "artifacts",
   "models",

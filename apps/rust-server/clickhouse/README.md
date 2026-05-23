@@ -8,10 +8,15 @@ schema version tracking built in.
 ## Layout
 
 - `0001_initial.sql` — `operational_records` (low-volume replay log),
-  `metric_points` (raw time series), `console_log_lines` (bounded stdout/stderr
-  reads by run/stream/cursor), `metric_series` (aggregated summary via
-  `AggregatingMergeTree`), and `metric_series_mv` (the materialized view that
-  populates `metric_series` from `metric_points` on insert).
+  `metric_points` (raw scalar time series), `rank_metric_points` (raw
+  per-rank scalar metrics for distributed reducer/coverage views),
+  `console_log_lines` (bounded stdout/stderr reads by run/stream/cursor),
+  `metric_series` (aggregated summary via `AggregatingMergeTree`), and
+  `metric_series_mv` (the materialized view that populates `metric_series`
+  from `metric_points` on insert).
+
+`METRIC_SCHEMA_VERSION = 2` in `src/metric_store.rs` exists so existing BYOC
+tenant routes created before `rank_metric_points` are migrated on first load.
 
 ## Read patterns
 
@@ -42,3 +47,8 @@ Console log reads query one `(org_id, run_id, stream)` at a time from
 `console_log_lines`, ordered by `(line_number, ingest_id)`. Clients provide
 line numbers; the API returns opaque cursors so the UI can page stdout/stderr
 without loading entire logs.
+
+Rank summary reads query one `(org_id, run_id, key)` at a time from
+`rank_metric_points`. Duplicate `(step, rank)` rows are canonicalized at read
+time with `argMax(..., tuple(created_at, event_id))`, then reducers, coverage,
+heatmap cells, and outliers are derived inside the Rust store layer.

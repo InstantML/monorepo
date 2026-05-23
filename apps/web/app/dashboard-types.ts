@@ -125,10 +125,13 @@ export type CompareRunSort =
 export type TabId =
   | "runs"
   | "metrics"
+  | "distributed"
+  | "advanced"
   | "detail"
   | "compare"
   | "alerts"
   | "datasets"
+  | "insights"
   | "artifacts"
   | "models"
   | "reports"

@@ -21,7 +21,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 
 Current navigation and comparison controls:
 
-- Route-backed navigation for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
+- Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Advanced`, `Run Detail`, `Compare`, `Insights`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
 - The topbar account badge uses the signed-in user's managed-auth avatar when available, then falls back to initials derived from the display name or email handle.
 - Unauthenticated visitors land on `/`, can sign in or sign up through Clerk in hosted mode, or through the explicitly labeled local dev Google-style flow in local mode. Signup chooses Free, Pro, or Premium, chooses either InstantML-provisioned storage or Premium BYOC ClickHouse, can reserve included teammate seats by email, creates a copy-once SDK API key, and then enters `/dashboard/runs`. BYOC onboarding displays copy-ready ClickHouse setup SQL, the configured InstantML data-plane egress CIDRs to allowlist, and an endpoint/database/user/password validation form before SDK key creation is enabled. The shared demo action signs in as `hello@instantml.ai`, reuses the Premium-tier `InstantML Demo` org/service, skips SDK-key reveal, and is enforced read-only server-side so demo visitors browse sample data instead of pushing data. In hosted ClickHouse mode, auth writes users/orgs/sessions/API keys and tenant-route plan metadata to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
@@ -29,6 +29,9 @@ Current navigation and comparison controls:
 - Refresh/loading experience: the root layout applies the saved theme before paint and the app shows a branded loading shell during the first dashboard API load instead of flashing an empty white page.
 - Desktop `Runs` workspace with a top filter rectangle, left run selector, searchable panel canvas, collapsible sections, add-panel drawer, edit drawer, and fullscreen panel inspection.
 - Metrics, Run Detail, and Compare now share the analysis-suite layout: compact header stats, responsive toolbars, chart-first metric inspection, a Run Detail metric picker/dossier, and row-first comparison evidence that visually matches the Runs workspace.
+- Distributed is a rank-aware per-run dashboard backed by `GET /api/runs/:id/rank-metrics/summary`; it renders reduce mean/weighted mean/min/max/range/stddev/p50/p95, rank coverage, heatmap cells, and outlier rows only when the tab is active.
+- Insights is a local exploratory dashboard over the currently loaded/selected run summaries. It renders grouped reducer comparisons, evaluation cards, hyperparameter scatter, k-means clusters, and parallel-coordinate traces without introducing new persisted analysis state.
+- Advanced is a built-in research view that combines the Distributed rank reducer panels with the Insights analysis panels. `/dashboard/runs` remains the default route, and the View selector includes a non-persisted `Advanced reducers` preset for opening this combined view without overwriting a user's saved views.
 - Run Detail now contains a local Pluto-style Run Workspace with a sticky run header and Summary, Data, Logs, Files, System, and Graph sections. These are intentionally local run tabs, not new global dashboard tabs.
 - Logs fetch `GET /api/runs/:id/logs` only when the local Logs section is opened, render stdout/stderr through a virtualized terminal with safe ANSI spans, and keep search bounded to the selected run/stream.
 - Files is an evidence explorer over the selected run's existing artifact and rich-object endpoints. It previews checkpoints, uploaded files, media objects, table objects, and histograms without introducing a separate file storage layer. Run Detail summary also surfaces checkpoint artifacts directly, with download and `Resume Code` copy actions that start resumed SDK runs in project `checkpoints`.
@@ -39,7 +42,9 @@ Current navigation and comparison controls:
 - Production polish from Computer Use QA: modal/drawer focus traps, safer quick-search routing while typing, tokenized run search such as `seed 13`, visible panel action affordances, compact run rows, responsive Run Detail KPI wrapping, horizontally contained Compare matrices, and polished fullscreen panel charts with non-duplicated headers.
 - The topbar sliders button now has an honest state on both desktop and mobile: it collapses/expands the run-filter workbar on desktop and opens the mobile filter drawer on phones.
 - W&B/Grafana-inspired workspace behavior: automatic mode creates a capped high-signal set of line panels from logged metric keys grouped by prefix; the metric catalog and single top-level add-panel drawer expose the full key set plus chart type choices. Manual mode starts blank so researchers can add only the panels they need. Runs workspace line panels plot explicitly selected runs first, with selection capped at 2,000 runs, then fall back to the filtered page/top-N preview when nothing is selected. Dense line charts render series paths on canvas while preserving SVG axes, gridlines, labels, and range controls. Bar, histogram, and dot panels summarize latest metric values from run summaries so researchers can inspect distributions without fetching full histories. Panel headers distinguish plotted series from selected runs, legends show every plotted series up to the compact legend cap, and selected runs that do not log a line-panel metric are called out with a `no data for metric` chip. Panels can be dragged between sections or into the unsectioned area and resized from their lower-right handle; placement and size are saved in the workspace layout.
-- True x/y scatter, parallel coordinates, media, query, and text panels still need the future field catalog described in `docs/design/2026-05-10-runs-workspace-panels.md`.
+- Persisted x/y scatter and parallel-coordinate workspace panels, plus media,
+  query, and text panels, still need the future field catalog described in
+  `docs/design/2026-05-10-runs-workspace-panels.md`.
 - Agent-review hardening: run names inspect a primary run, checkboxes are reserved for compare selection, visible table-column preferences remain available through the `Columns` menu, and empty filters render a clear action in the run rail.
 - Tags and notes are first-class run identification fields in the current UI: the Runs table has a default `Notes` column, the workspace selector shows compact tag chips plus a one-line note preview, and server-backed search matches tag/note text through the Rust `q` route. Run Detail and Compare share a small editor that saves `runs.tags` and `metadata.notes` through `PATCH /runs/:id`; Compare has its own edit-run picker so annotation does not change the reference run.
 - Large-run browsing is server-backed: the Runs workspace uses Rust `next_cursor` values for Next/Previous pagination, falls back to offset pagination for the deprecated Node compatibility server, clears cursors when filters/sorts/page size change, and disables pagination while a page request is in flight. The benchmark target is now 100,000 run records with a 20,000-step long-run series; the earlier 90,000-run benchmark slice measured production first useful render at 387 ms locally on 2026-05-11.
@@ -250,6 +255,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/styles/dashboard-runs.css` — runs workspace rail, rows, filter strip
 - `app/styles/panels.css` — workspace panels, canvas, sections, modals
 - `app/styles/charts.css` — metric charts, axes, series, range, tooltip
+- `app/styles/research.css` — Distributed and Insights dashboard surfaces
 - `app/styles/run-detail.css` — run detail, KPIs, inspector, evidence, timeline
 - `app/styles/compare.css` — compare view, leaderboard, evidence cells
 - `app/styles/dark-overrides.css` — dark-theme overrides (Phase 3 target: dissolve into each file)
@@ -290,6 +296,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `docs/design/2026-05-11-large-run-query-performance.md`
 - `docs/design/2026-05-11-landing-auth-onboarding.md`
 - `docs/design/2026-05-14-hosted-clickhouse-routing.md`
+- `docs/design/2026-05-23-rank-aware-research-dashboards.md`
 - `docs/design/2026-05-14-pluto-style-frontend-workspace.md`
 - `docs/design/2026-05-14-instantml-rescheme-and-chart-polish.md`
 - `docs/design/2026-05-16-device-code-cli-login.md`

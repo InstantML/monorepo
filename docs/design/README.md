@@ -40,6 +40,10 @@ Current implemented design sequence:
 - `2026-05-22-staging-cloud-run-environment.md`: production router cleanup, backend timeout alignment, and isolated staging Cloud Run services/router under `staging.api.instantml.ai`.
 - `2026-05-22-organization-invites-email-verification.md`: app-owned organization invite tokens, Resend send-only email delivery, verified-email acceptance, fresh-session control-plane membership activation, pending-invite seat accounting, seven-day expiration, and recorded fresh-agent review notes.
 - `2026-05-18-m4-chart-aggregation.md`: spike-preserving M4 chart downsampling for high-density series via an optional `buckets` body field on `POST /api/metrics/series`, with raw-path fallback when zoomed and a per-run threshold gate.
+- `2026-05-23-rank-aware-research-dashboards.md`: rank-aware metric ingest,
+  bounded rank reducers, SDK logging helper, Distributed dashboard, and
+  exploratory loaded-summary Insights dashboard for grouped reducers,
+  hyperparameter views, K-means clustering, and evaluation panels.
 
 Current draft/revised designs awaiting implementation approval:
 

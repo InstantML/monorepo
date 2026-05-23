@@ -14,6 +14,7 @@ Split from the original `globals.css` (11,348 lines) as part of the
 | `dashboard-runs.css` | Runs workspace rail and rows | `.runs-*`, `.workspace-run-*` |
 | `panels.css` | Workspace panels, canvas, modals | `.workspace-panel-*`, `.panel-drawer` |
 | `charts.css` | Metric charts, axes, series | `.metric-*`, `.chart-*`, `.axis` |
+| `research.css` | Distributed and Insights dashboards | `.rank-*`, `.insights-*`, `.cluster-*` |
 | `run-detail.css` | Run detail, KPIs, inspector | `.run-detail-*`, `.run-kpi-*`, `.inspector` |
 | `compare.css` | Compare view, leaderboard | `.compare-*`, `.leaderboard-*` |
 | `dark-overrides.css` | Dark-theme overrides (Phase 3 target) | `:root[data-theme="dark"] *` |

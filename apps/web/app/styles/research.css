@@ -1,0 +1,240 @@
+.analysis-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.advanced-view-stack,
+.embedded-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.embedded-analysis {
+  padding: 0;
+}
+
+.advanced-page > .analysis-header {
+  border-left: 3px solid var(--accent);
+}
+
+.analysis-header {
+  align-items: end;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.analysis-header h1 {
+  font-size: 1.25rem;
+  margin: 2px 0;
+}
+
+.analysis-header span,
+.analysis-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.analysis-controls {
+  min-width: 240px;
+}
+
+.analysis-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.analysis-grid.one { grid-template-columns: minmax(0, 1fr); }
+.analysis-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.analysis-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.analysis-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.analysis-card h2 {
+  font-size: 0.95rem;
+  margin: 0 0 10px;
+}
+
+.metric-tile span,
+.eval-mini-card span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.78rem;
+}
+
+.metric-tile strong {
+  display: block;
+  font-size: 1.35rem;
+  margin-top: 4px;
+}
+
+.analysis-line-chart,
+.analysis-scatter,
+.parallel-chart {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.rank-mean-line,
+.rank-weighted-line,
+.rank-band-line,
+.parallel-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rank-mean-line { stroke: var(--series-1); stroke-width: 2.2; }
+.rank-weighted-line { stroke: var(--series-2); stroke-width: 2.2; }
+.rank-band-line { stroke: var(--muted); stroke-dasharray: 4 4; stroke-width: 1.2; opacity: 0.72; }
+
+.analysis-legend,
+.cluster-list,
+.rank-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.legend-dot.rank-mean { background: var(--series-1); }
+.legend-dot.rank-weighted { background: var(--series-2); }
+.legend-dot.rank-band { background: var(--muted); }
+
+.coverage-strip {
+  display: grid;
+  grid-template-columns: repeat(40, minmax(2px, 1fr));
+  gap: 3px;
+  margin-bottom: 10px;
+}
+
+.coverage-strip span {
+  background: var(--accent);
+  border-radius: 2px;
+  height: 34px;
+}
+
+.rank-chip-row span,
+.cluster-list span {
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  padding: 2px 8px;
+}
+
+.rank-heatmap {
+  display: grid;
+  grid-template-columns: repeat(32, minmax(5px, 1fr));
+  gap: 2px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.rank-heatmap span {
+  aspect-ratio: 1;
+  border-radius: 2px;
+}
+
+.analysis-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analysis-row {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
+  padding: 6px 0;
+}
+
+.analysis-row span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-row strong {
+  font-size: 0.88rem;
+}
+
+.eval-card-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.eval-mini-card {
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.eval-mini-card strong {
+  display: block;
+  font-size: 1.05rem;
+  margin: 3px 0;
+}
+
+.eval-mini-card small {
+  color: var(--muted);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-scatter circle {
+  fill: var(--accent);
+  opacity: 0.72;
+}
+
+.analysis-scatter.clusters .cluster-dot { opacity: 0.78; }
+.cluster-0 { fill: var(--series-1); }
+.cluster-1 { fill: var(--series-2); }
+.cluster-2 { fill: var(--series-3); }
+.cluster-3 { fill: var(--series-6); }
+
+.parallel-axis {
+  stroke: var(--border-strong, var(--border));
+}
+
+.parallel-line {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.18;
+}
+
+@media (max-width: 900px) {
+  .analysis-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .analysis-grid.two,
+  .analysis-grid.four,
+  .eval-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

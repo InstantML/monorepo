@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import sqlite3
@@ -733,6 +734,42 @@ class Run:
         )
         if self._shadow is not None:
             self._shadow.log(metrics, step=step)
+
+    def log_rank_metrics(
+        self,
+        data: dict[str, float],
+        step: int | float,
+        rank: int,
+        world_size: int,
+        local_rank: int | None = None,
+        weight: int | float | None = None,
+        timestamp: str | None = None,
+    ) -> None:
+        step = _validate_step(step)
+        if step is None:
+            raise ValueError("step is required for rank metrics")
+        metrics = _validate_metrics(data)
+        rank, world_size, local_rank = _validate_rank_context(rank, world_size, local_rank)
+        rank_weight = _validate_rank_weight(weight)
+        metric_timestamp = timestamp
+        if self.upload_mode == "spool" and metric_timestamp is None:
+            metric_timestamp = _utc_timestamp()
+        self._submit(
+            "POST",
+            f"/runs/{self.run_id}/rank-metrics",
+            {
+                "metrics": metrics,
+                "step": step,
+                "rank": rank,
+                "world_size": world_size,
+                "local_rank": local_rank,
+                "weight": rank_weight,
+                "timestamp": metric_timestamp,
+            },
+            data={"rank_metrics": metrics, "rank": rank, "world_size": world_size},
+            step=step,
+            event_timestamp=metric_timestamp,
+        )
 
     def log_text(self, data: dict[str, str], step: int | float | None = None, timestamp: str | None = None) -> None:
         step = _validate_step(step)
@@ -1707,6 +1744,36 @@ def _classify_log_payload(
         else:
             raise TypeError(f"log value for {key!r} has unsupported type {type(value).__name__}")
     return metrics, text, objects, files
+
+
+def _validate_rank_context(rank: int, world_size: int, local_rank: int | None) -> tuple[int, int, int]:
+    if not isinstance(world_size, int) or isinstance(world_size, bool):
+        raise TypeError("world_size must be an integer")
+    if world_size < 1:
+        raise ValueError("world_size must be at least 1")
+    if world_size > 512:
+        raise ValueError("world_size must be at most 512")
+    if not isinstance(rank, int) or isinstance(rank, bool):
+        raise TypeError("rank must be an integer")
+    if rank < 0 or rank >= world_size:
+        raise ValueError("rank must be between 0 and world_size - 1")
+    resolved_local_rank = rank if local_rank is None else local_rank
+    if not isinstance(resolved_local_rank, int) or isinstance(resolved_local_rank, bool):
+        raise TypeError("local_rank must be an integer")
+    if resolved_local_rank < 0 or resolved_local_rank >= world_size:
+        raise ValueError("local_rank must be between 0 and world_size - 1")
+    return rank, world_size, resolved_local_rank
+
+
+def _validate_rank_weight(weight: int | float | None) -> float:
+    if weight is None:
+        return 1.0
+    if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+        raise TypeError("weight must be a number")
+    value = float(weight)
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("weight must be finite and positive")
+    return value
 
 
 def _classify_log_sequence(

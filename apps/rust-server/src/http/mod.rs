@@ -39,10 +39,10 @@ use handlers::{
     import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
     list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
     list_org_memberships, list_orgs, list_projects, list_runs, list_seats, list_users,
-    list_workspace_views, log_console_logs, log_metrics, metrics_handler, metrics_series,
-    not_found, openapi_json, org_name_availability, overview, preview_invitation, readyz,
-    resend_invitation, reserve_seat, reset_demo, revoke_api_key, revoke_invitation,
-    rotate_customer_clickhouse_credentials, runs_summary, side_by_side,
+    list_workspace_views, log_console_logs, log_metrics, log_rank_metrics, metrics_handler,
+    metrics_series, not_found, openapi_json, org_name_availability, overview, preview_invitation,
+    rank_metrics_summary, readyz, resend_invitation, reserve_seat, reset_demo, revoke_api_key,
+    revoke_invitation, rotate_customer_clickhouse_credentials, runs_summary, side_by_side,
     update_dashboard_preferences, update_run, update_workspace_view, upload_artifact, usage_export,
     usage_summary, validate_customer_clickhouse_connection,
 };
@@ -206,6 +206,11 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/runs", post(create_run).get(list_runs))
         .route("/runs/:run_id", get(get_run).patch(update_run))
         .route("/runs/:run_id/metrics", post(log_metrics).get(get_metrics))
+        .route("/runs/:run_id/rank-metrics", post(log_rank_metrics))
+        .route(
+            "/api/runs/:run_id/rank-metrics/summary",
+            get(rank_metrics_summary),
+        )
         .route("/api/metrics/series", post(metrics_series))
         .route(
             "/api/runs/:run_id/logs",

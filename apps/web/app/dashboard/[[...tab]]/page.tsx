@@ -8,10 +8,13 @@ type DashboardPageProps = {
 const tabIds = new Set([
   "runs",
   "metrics",
+  "distributed",
+  "advanced",
   "detail",
   "compare",
   "alerts",
   "datasets",
+  "insights",
   "artifacts",
   "models",
   "reports",

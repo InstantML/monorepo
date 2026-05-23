@@ -993,6 +993,55 @@ def test_process_uploader_drains_spool_and_cli(monkeypatch, tmp_path):
     assert calls[-1][3:] == ("http://cli.test", 0.5)
 
 
+def test_log_rank_metrics_posts_rank_context_and_validates() -> None:
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {"inserted": len(body["metrics"])}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    run.log_rank_metrics({"loss": 0.5}, step=3, rank=1, world_size=4, local_rank=1, weight=8)
+    assert calls == [(
+        "POST",
+        "/runs/run-1/rank-metrics",
+        {
+            "metrics": {"loss": 0.5},
+            "step": 3,
+            "rank": 1,
+            "world_size": 4,
+            "local_rank": 1,
+            "weight": 8.0,
+            "timestamp": None,
+        },
+    )]
+    with pytest.raises(ValueError, match="world_size"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=0, world_size=0)
+    with pytest.raises(TypeError, match="world_size"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=0, world_size=1.5)
+    with pytest.raises(ValueError, match="world_size"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=0, world_size=513)
+    with pytest.raises(TypeError, match="rank"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=True, world_size=4)
+    with pytest.raises(ValueError, match="rank"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=4, world_size=4)
+    with pytest.raises(TypeError, match="local_rank"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=0, world_size=4, local_rank=False)
+    with pytest.raises(ValueError, match="local_rank"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=0, world_size=4, local_rank=4)
+    with pytest.raises(TypeError, match="weight"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=0, world_size=4, weight="heavy")
+    with pytest.raises(ValueError, match="weight"):
+        run.log_rank_metrics({"loss": 0.5}, step=3, rank=0, world_size=4, weight=0)
+    with pytest.raises(ValueError, match="step"):
+        run.log_rank_metrics({"loss": 0.5}, step=None, rank=0, world_size=4)
+    with pytest.raises(ValueError, match="at least one key"):
+        run.log_rank_metrics({}, step=3, rank=0, world_size=4)
+
+
 def test_process_uploader_sends_event_id_as_metric_idempotency_key(tmp_path):
     calls = []
 
@@ -1006,6 +1055,30 @@ def test_process_uploader_sends_event_id_as_metric_idempotency_key(tmp_path):
     event_id = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))["event_id"]
 
     assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
+    assert calls[0][3] == event_id
+
+
+def test_process_uploader_sends_event_id_as_rank_metric_idempotency_key(tmp_path):
+    calls = []
+
+    class IdempotentClient:
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {}
+
+    run = Run(client=IdempotentClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
+    run.log_rank_metrics(
+        {"loss": 0.5},
+        step=4,
+        rank=1,
+        world_size=2,
+    )
+    event = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))
+    event_id = event["event_id"]
+    assert event["requests"][0]["body"]["timestamp"]
+
+    assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
+    assert calls[0][1] == "/runs/run-1/rank-metrics"
     assert calls[0][3] == event_id
 
 

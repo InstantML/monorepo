@@ -35,6 +35,30 @@ pub struct MetricPointRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// One row in the ClickHouse `rank_metric_points` table.
+///
+/// Field order matches the schema in `clickhouse/0001_initial.sql`.
+#[derive(Row, Serialize)]
+pub struct RankMetricPointRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub org_id: Uuid,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    pub key: String,
+    pub step: f64,
+    pub rank: u32,
+    pub local_rank: u32,
+    pub world_size: u32,
+    pub value: f64,
+    pub weight: f64,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub logged_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub event_id: Uuid,
+}
+
 /// One row in the ClickHouse `console_log_lines` table.
 ///
 /// Field order matches the schema in `clickhouse/0001_initial.sql`.
@@ -109,6 +133,17 @@ pub struct RunPointCountRow {
     pub count: u64,
 }
 
+/// Canonical rank metric row after deterministic read-time dedupe.
+#[derive(Row, Deserialize)]
+pub struct RankMetricCanonicalRow {
+    pub step: f64,
+    pub rank: u32,
+    pub local_rank: u32,
+    pub world_size: u32,
+    pub value: f64,
+    pub weight: f64,
+}
+
 /// Read shape for multi-run batched point queries — same as `PointReadRow` but
 /// with the run id included so callers can fan out by run.
 #[derive(Row, Deserialize)]
@@ -160,6 +195,14 @@ pub struct MetricKeyReadRow {
     pub key: String,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct RankMetricStepWindow {
+    pub start_step: Option<f64>,
+    pub end_step: Option<f64>,
+    pub step_limit: i64,
+    pub row_limit: i64,
+}
+
 #[derive(Clone, Copy)]
 pub enum SeriesSortMode {
     Latest,
@@ -167,7 +210,7 @@ pub enum SeriesSortMode {
     BestMin,
 }
 
-pub const METRIC_SCHEMA_VERSION: u32 = 1;
+pub const METRIC_SCHEMA_VERSION: u32 = 2;
 const INITIAL_SCHEMA: &str = include_str!("../clickhouse/0001_initial.sql");
 
 /// Wraps a configured ClickHouse client alongside the database it targets.
@@ -221,6 +264,26 @@ impl MetricStore {
             .end()
             .await
             .map_err(|err| clickhouse_storage_error("clickhouse insert flush failed", err))?;
+        Ok(())
+    }
+
+    pub async fn insert_rank_points(&self, points: &[RankMetricPointRow]) -> AppResult<()> {
+        if points.is_empty() {
+            return Ok(());
+        }
+        let mut inserter = self
+            .client
+            .insert("rank_metric_points")
+            .map_err(|err| clickhouse_storage_error("clickhouse rank insert init failed", err))?;
+        for point in points {
+            inserter.write(point).await.map_err(|err| {
+                clickhouse_storage_error("clickhouse rank insert write failed", err)
+            })?;
+        }
+        inserter
+            .end()
+            .await
+            .map_err(|err| clickhouse_storage_error("clickhouse rank insert flush failed", err))?;
         Ok(())
     }
 
@@ -426,6 +489,120 @@ impl MetricStore {
             .bind(run_id)
             .bind(key)
             .fetch_all::<M4BucketRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn query_rank_metric_keys(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+        limit: i64,
+    ) -> AppResult<Vec<String>> {
+        let rows = self
+            .client
+            .query(
+                "SELECT key \
+                 FROM rank_metric_points \
+                 WHERE org_id = ? AND run_id = ? \
+                 GROUP BY key \
+                 ORDER BY key \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .bind(limit)
+            .fetch_all::<MetricKeyReadRow>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(rows.into_iter().map(|row| row.key).collect())
+    }
+
+    pub async fn query_rank_metric_max_world_size(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+        key: &str,
+        start_step: Option<f64>,
+        end_step: Option<f64>,
+    ) -> AppResult<u32> {
+        let (start_flag, start_val) = bind_optional_step(start_step);
+        let (end_flag, end_val) = bind_optional_step(end_step);
+        let world_size: u64 = self
+            .client
+            .query(
+                "SELECT toUInt64(max(world_size)) \
+                 FROM rank_metric_points \
+                 WHERE org_id = ? AND run_id = ? AND key = ? \
+                   AND (? = 0 OR step >= ?) \
+                   AND (? = 0 OR step <= ?)",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .bind(key)
+            .bind(start_flag)
+            .bind(start_val)
+            .bind(end_flag)
+            .bind(end_val)
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(world_size.min(u32::MAX as u64) as u32)
+    }
+
+    pub async fn query_rank_points_canonical(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+        key: &str,
+        window: RankMetricStepWindow,
+    ) -> AppResult<Vec<RankMetricCanonicalRow>> {
+        let (start_flag, start_val) = bind_optional_step(window.start_step);
+        let (end_flag, end_val) = bind_optional_step(window.end_step);
+        self.client
+            .query(
+                "WITH steps AS ( \
+                   SELECT step \
+                   FROM rank_metric_points \
+                   WHERE org_id = ? AND run_id = ? AND key = ? \
+                     AND (? = 0 OR step >= ?) \
+                     AND (? = 0 OR step <= ?) \
+                   GROUP BY step \
+                   ORDER BY step DESC \
+                   LIMIT ? \
+                 ) \
+                 SELECT \
+                   step, \
+                   rank, \
+                   argMax(local_rank, tuple(created_at, event_id)) AS local_rank, \
+                   argMax(world_size, tuple(created_at, event_id)) AS world_size, \
+                   argMax(value, tuple(created_at, event_id)) AS value, \
+                   argMax(weight, tuple(created_at, event_id)) AS weight \
+                 FROM rank_metric_points \
+                 WHERE org_id = ? AND run_id = ? AND key = ? AND step IN (SELECT step FROM steps) \
+                   AND (? = 0 OR step >= ?) \
+                   AND (? = 0 OR step <= ?) \
+                 GROUP BY step, rank \
+                 ORDER BY step ASC, rank ASC \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .bind(key)
+            .bind(start_flag)
+            .bind(start_val)
+            .bind(end_flag)
+            .bind(end_val)
+            .bind(window.step_limit)
+            .bind(org_id)
+            .bind(run_id)
+            .bind(key)
+            .bind(start_flag)
+            .bind(start_val)
+            .bind(end_flag)
+            .bind(end_val)
+            .bind(window.row_limit)
+            .fetch_all::<RankMetricCanonicalRow>()
             .await
             .map_err(clickhouse_read_error)
     }
@@ -742,6 +919,41 @@ impl MetricStore {
             .query(
                 "SELECT count() \
                  FROM metric_points \
+                 WHERE org_id = ? \
+                 AND created_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
+                 AND created_at < parseDateTime64BestEffort(?, 6, 'UTC')",
+            )
+            .bind(org_id)
+            .bind(period_start.to_rfc3339())
+            .bind(period_end.to_rfc3339())
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(count as i64)
+    }
+
+    pub async fn count_rank_points_for_org(&self, org_id: Uuid) -> AppResult<i64> {
+        let count: u64 = self
+            .client
+            .query("SELECT count() FROM rank_metric_points WHERE org_id = ?")
+            .bind(org_id)
+            .fetch_one::<u64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(count as i64)
+    }
+
+    pub async fn count_rank_points_for_org_period(
+        &self,
+        org_id: Uuid,
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
+    ) -> AppResult<i64> {
+        let count: u64 = self
+            .client
+            .query(
+                "SELECT count() \
+                 FROM rank_metric_points \
                  WHERE org_id = ? \
                  AND created_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
                  AND created_at < parseDateTime64BestEffort(?, 6, 'UTC')",
