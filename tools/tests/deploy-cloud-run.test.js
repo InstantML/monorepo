@@ -263,6 +263,67 @@ test("deploy helper has isolated staging defaults", () => {
   assert.match(pkg.scripts["deploy:cloud-run:staging"], /--environment=staging --public-router/);
 });
 
+test("deploy helper supports --from-secret-manager for CI deploys", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  // CLI flag, process env, and CI auto-detection all reach the same resolver.
+  assert.match(source, /--from-secret-manager/);
+  assert.match(source, /INSTANTML_FROM_SECRET_MANAGER/);
+  assert.match(source, /function resolveFromSecretManager/);
+  assert.match(source, /GITHUB_ACTIONS/);
+  // Hydration calls Secret Manager up front so the Clerk consistency check
+  // (which already saved a deploy from a stale publishable key) keeps running
+  // against the live secret store, not a stale .env on a laptop.
+  assert.match(source, /function hydrateEnvFromSecretManager/);
+  assert.match(source, /secrets", "versions", "access", "latest"/);
+  assert.match(source, /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY/);
+  // syncSecrets must not push a duplicate version when CI hydrated the value
+  // from the same secret; otherwise every deploy creates a no-op version.
+  assert.match(source, /Skipping versions add for \$\{scopedSecretName\}/);
+});
+
+test("deploy helper keeps writing the local frontend env off in CI mode", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(
+    source,
+    /boolValue\("INSTANTML_WRITE_LOCAL_FRONTEND_ENV", !fromSecretManager\)/,
+  );
+});
+
+test("GitHub Actions deploy workflow gates on stable quality gates and uses WIF", () => {
+  const workflowPath = path.join(repo, ".github", "workflows", "deploy-cloud-run.yml");
+  const source = fs.readFileSync(workflowPath, "utf8");
+
+  // Workflow surface: manual button + tag push.
+  assert.match(source, /workflow_dispatch:/);
+  assert.match(source, /tags:[\s\S]*deploy-\*/);
+  assert.match(source, /tags:[\s\S]*release-\*/);
+  // Gate on the existing CI workflow before promoting any image. We use the
+  // GitHub REST API to look up the latest ci.yml run for the deploy SHA
+  // rather than `workflow_run`, which cannot be combined with
+  // workflow_dispatch/push and would not trigger on a tag push.
+  assert.match(source, /Require Stable Quality Gates/);
+  assert.match(source, /actions\/workflows\/ci\.yml\/runs/);
+  // No static GCP service-account JSON — workload identity federation only.
+  assert.match(source, /google-github-actions\/auth/);
+  assert.match(source, /workload_identity_provider:/);
+  assert.match(source, /vars\.GCP_WIF_PROVIDER/);
+  assert.match(source, /vars\.GCP_DEPLOY_SERVICE_ACCOUNT/);
+  assert.doesNotMatch(source, /credentials_json:/);
+  // Production environment gate (manual reviewers attached via repo settings).
+  // The job-level `environment.name` must reference the dispatch input with a
+  // 'prod' default so the GitHub Environment with required reviewers is the
+  // gate for any GCP mutation. The comment regex allows interleaved lines.
+  assert.match(
+    source,
+    /name: \$\{\{ github\.event\.inputs\.environment \|\| 'prod' \}\}/,
+  );
+  // Reuse the existing deploy logic — don't reimplement it in YAML.
+  assert.match(source, /tools\/deploy-cloud-run\.mjs/);
+  assert.match(source, /--from-secret-manager/);
+});
+
 function runDeploy(args, env = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-deploy-test-"));
   const binDir = path.join(tempDir, "bin");
@@ -294,6 +355,14 @@ process.exit(2);
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
     CLERK_PUBLISHABLE_KEY: "",
     CLERK_JWT_ISSUER: "",
+    // The deploy helper auto-enables --from-secret-manager when running under
+    // GitHub Actions (CI=true && GITHUB_ACTIONS=true). These unit tests stub
+    // gcloud to a single `config get-value project` call and would otherwise
+    // panic on the unexpected `gcloud secrets versions access` hydration
+    // calls. Force the local code path so the tests stay deterministic in CI.
+    CI: "",
+    GITHUB_ACTIONS: "",
+    INSTANTML_FROM_SECRET_MANAGER: "",
     ...env,
   };
   delete childEnv.NODE_V8_COVERAGE;
