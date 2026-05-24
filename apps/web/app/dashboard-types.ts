@@ -11,6 +11,8 @@ export type RunSummary = {
   created_at: string;
   started_at: string;
   finished_at: string | null;
+  last_heartbeat_at?: string | null;
+  last_event_at?: string | null;
   latest_metrics: Record<string, number>;
   metric_aggregates: Record<string, Record<string, number>>;
   artifact_counts: { checkpoint: number; rollout: number; file: number };

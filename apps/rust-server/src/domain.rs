@@ -658,6 +658,8 @@ pub struct ProjectRow {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateRunRequest {
+    pub id: Option<Uuid>,
+    pub resume: Option<String>,
     pub project: Option<String>,
     pub name: Option<String>,
     #[schema(value_type = Option<Object>)]
@@ -720,6 +722,13 @@ pub struct UpdateRunRequest {
     pub notes: Option<String>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RunHeartbeatRequest {
+    pub process_id: Option<Uuid>,
+    pub timestamp: Option<String>,
+    pub state: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct RunRow {
     pub id: Uuid,
@@ -736,6 +745,10 @@ pub struct RunRow {
     pub created_at: DateTime<Utc>,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_heartbeat_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_event_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1190,11 +1203,14 @@ pub fn validate_tags(tags: Option<Vec<String>>) -> AppResult<Vec<String>> {
 
 pub fn validate_status(status: &str) -> AppResult<String> {
     let status = validate_name(Some(status), "status")?;
-    if matches!(status.as_str(), "running" | "finished" | "failed") {
+    if matches!(
+        status.as_str(),
+        "running" | "finished" | "failed" | "crashed"
+    ) {
         Ok(status)
     } else {
         Err(AppError::validation(
-            "status must be one of: failed, finished, running",
+            "status must be one of: crashed, failed, finished, running",
         ))
     }
 }
@@ -1282,6 +1298,13 @@ mod tests {
 
         assert_eq!(public.uri, "s3://customer-bucket/model.pt");
         assert_eq!(public.storage_backend, "external");
+    }
+
+    #[test]
+    fn validate_status_accepts_crashed_and_rejects_launch_only_states() {
+        assert_eq!(validate_status("crashed").unwrap(), "crashed");
+        assert!(validate_status("queued").is_err());
+        assert!(validate_status("killed").is_err());
     }
 
     fn artifact_row(storage_backend: &str, uri: &str) -> ArtifactRow {

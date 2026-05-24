@@ -32,6 +32,7 @@ SDK_ROOT = REPO_ROOT / "packages" / "python-sdk"
 DEFAULT_CASES = [
     "noop",
     "instantml-sync-null",
+    "instantml-sync-live-null",
     "instantml-log-null",
     "instantml-spool-durable",
     "wandb-offline",
@@ -47,6 +48,7 @@ BASE_METRIC_KEYS = [
 CASE_DESCRIPTIONS = {
     "noop": "Synthetic metric computation with no SDK logging.",
     "instantml-sync-null": "InstantML internal Run.log_metrics microbenchmark through a fake local transport that serializes bodies and does no network I/O.",
+    "instantml-sync-live-null": "InstantML internal Run.log_metrics microbenchmark with the online heartbeat thread enabled through the same fake local transport.",
     "instantml-log-null": "InstantML internal ergonomic Run.log microbenchmark through the same fake local transport, including scalar classification.",
     "instantml-spool-durable": "InstantML process-spool mode writing one durable local event file per log call.",
     "wandb-offline": "W&B offline mode with quiet/no-git/no-code/no-console settings.",
@@ -61,6 +63,7 @@ class WorkerConfig:
     steps: int
     metrics_per_log: int
     warmup_logs: int
+    heartbeat_interval: float
     tmp_root: Path
 
 
@@ -227,6 +230,8 @@ def setup_instantml_run(config: WorkerConfig) -> tuple[Any, FakeClient]:
         upload_mode=upload_mode,
         spool_dir=str(config.tmp_root / "spool"),
     )
+    if config.case == "instantml-sync-live-null":
+        run._start_heartbeat(interval=config.heartbeat_interval)
     return run, client
 
 
@@ -272,6 +277,7 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
         steps=config.steps,
         metrics_per_log=config.metrics_per_log,
         warmup_logs=config.warmup_logs,
+        heartbeat_interval=config.heartbeat_interval,
         tmp_root=case_root,
     )
     target: Any = None
@@ -334,6 +340,7 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
         "metrics_per_log": active_config.metrics_per_log,
         "scalar_values": active_config.steps * active_config.metrics_per_log,
         "warmup_logs": active_config.warmup_logs,
+        "heartbeat_interval": active_config.heartbeat_interval if active_config.case == "instantml-sync-live-null" else None,
         "setup": setup_delta,
         "hot_loop": with_per_log(hot_delta, active_config.steps),
         "finish": finish_delta,
@@ -517,6 +524,8 @@ def run_worker_subprocess(
         str(config.metrics_per_log),
         "--warmup-logs",
         str(config.warmup_logs),
+        "--heartbeat-interval",
+        str(config.heartbeat_interval),
         "--tmp-root",
         str(config.tmp_root),
     ]
@@ -629,6 +638,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                     steps=args.steps,
                     metrics_per_log=args.metrics_per_log,
                     warmup_logs=args.warmup_logs,
+                    heartbeat_interval=args.heartbeat_interval,
                     tmp_root=tmp_root,
                 ),
                 args.python,
@@ -642,6 +652,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                 "steps": args.steps,
                 "metrics_per_log": args.metrics_per_log,
                 "warmup_logs_per_worker": args.warmup_logs,
+                "heartbeat_interval": args.heartbeat_interval,
                 "seed": args.seed,
                 "cases": cases,
                 "sample_order": sample_plan(cases, args.samples, args.seed),
@@ -659,6 +670,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             "notes": [
                 "Hot-loop timings exclude setup/init and finish/drain phases; those phases are reported separately.",
                 "InstantML sync-null/log-null are internal null-transport microbenchmarks and are not remote persistence benchmarks.",
+                "InstantML sync-live-null uses the same null transport plus the SDK heartbeat thread. The heartbeat interval is configurable so runs can report default and stress settings explicitly.",
                 "InstantML spool-durable writes one local durable event file per log call; uploader drain CPU is reported separately.",
                 "W&B offline uses local/offline mode and may perform work in a service process; hot-loop tree CPU is phase-sampled, while total worker CPU is monitored from the parent process.",
                 "Finish and drain columns are case-specific lifecycle costs, not identical provider phases.",
@@ -707,6 +719,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"- Metrics per log call: `{protocol['metrics_per_log']}`",
         f"- Samples per case: `{protocol['samples']}`",
         f"- Warmup logs per worker: `{protocol['warmup_logs_per_worker']}`",
+        f"- Live heartbeat interval: `{protocol.get('heartbeat_interval')}` seconds",
         f"- Sample order seed: `{protocol.get('seed')}`",
         "",
         "## Caveats",
@@ -775,6 +788,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--metrics-per-log", type=int, default=6)
     run_parser.add_argument("--samples", type=int, default=5)
     run_parser.add_argument("--warmup-logs", type=int, default=100)
+    run_parser.add_argument("--heartbeat-interval", type=float, default=15.0)
     run_parser.add_argument("--seed", type=int, default=20260521)
     run_parser.add_argument("--cases", default=",".join(DEFAULT_CASES))
     run_parser.add_argument("--python", default=sys.executable)
@@ -789,6 +803,7 @@ def build_parser() -> argparse.ArgumentParser:
     worker_parser.add_argument("--steps", type=int, required=True)
     worker_parser.add_argument("--metrics-per-log", type=int, required=True)
     worker_parser.add_argument("--warmup-logs", type=int, required=True)
+    worker_parser.add_argument("--heartbeat-interval", type=float, required=True)
     worker_parser.add_argument("--tmp-root", required=True)
     return parser
 
@@ -803,6 +818,7 @@ def main(argv: list[str] | None = None) -> int:
                 steps=args.steps,
                 metrics_per_log=args.metrics_per_log,
                 warmup_logs=args.warmup_logs,
+                heartbeat_interval=args.heartbeat_interval,
                 tmp_root=Path(args.tmp_root),
             )
         )

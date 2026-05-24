@@ -12,8 +12,9 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
         let data = store.data.lock().await;
         artifact_counts_for_runs(&data, &run_ids)
     };
+    let liveness = store.liveness_for_runs(&run_ids).await;
     runs.into_iter()
-        .map(|run| summarize_run(run, &series, &counts))
+        .map(|run| summarize_run(run, &series, &counts, &liveness))
         .collect::<AppResult<Vec<_>>>()
 }
 
@@ -25,7 +26,8 @@ pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<V
         let data = store.data.lock().await;
         artifact_counts_for_runs(&data, &run_ids)
     };
-    summarize_run(run, &series, &counts)
+    let liveness = store.liveness_for_runs(&run_ids).await;
+    summarize_run(run, &series, &counts, &liveness)
 }
 
 pub(super) fn selection_run_value(run: RunRow) -> AppResult<Value> {
@@ -51,6 +53,7 @@ pub(super) fn summarize_run(
     run: RunRow,
     series: &[MetricSeriesRow],
     artifact_counts: &HashMap<Uuid, BTreeMap<String, i64>>,
+    liveness: &HashMap<Uuid, RunLivenessRow>,
 ) -> AppResult<Value> {
     let mut latest = Map::new();
     let mut aggregates = Map::new();
@@ -79,9 +82,17 @@ pub(super) fn summarize_run(
             ("file".to_string(), 0),
         ])
     });
+    let run_id = run.id;
     let mut value = serde_json::to_value(run)
         .map_err(|_| AppError::internal("run summary serialization failed"))?;
     if let Value::Object(map) = &mut value {
+        if let Some(row) = liveness.get(&run_id) {
+            map.insert(
+                "last_heartbeat_at".to_string(),
+                json!(row.last_heartbeat_at),
+            );
+            map.insert("last_event_at".to_string(), json!(row.last_event_at));
+        }
         map.insert("latest_metrics".to_string(), Value::Object(latest));
         map.insert("metric_aggregates".to_string(), Value::Object(aggregates));
         map.insert("metric_keys".to_string(), json!(keys));

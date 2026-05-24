@@ -444,6 +444,12 @@
   background: rgba(31, 184, 119, 0.14);
 }
 
+:root[data-theme="dark"] .pill.neutral,
+:root[data-theme="dark"] .live-follow-strip {
+  border-color: var(--line-soft);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 :root[data-theme="dark"] .axis,
 :root[data-theme="dark"] .grid-line {
   stroke: #21334b;

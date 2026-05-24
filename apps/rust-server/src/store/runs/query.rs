@@ -607,6 +607,8 @@ mod tests {
             created_at,
             started_at: created_at,
             finished_at: Some(created_at + ChronoDuration::seconds(30)),
+            last_heartbeat_at: None,
+            last_event_at: None,
         }
     }
 

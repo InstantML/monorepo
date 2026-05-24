@@ -92,6 +92,14 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     } else {
         None
     };
+    let liveness_sweeper = if config.service_plane.includes_data() {
+        Some(store.spawn_liveness_sweeper(
+            config.run_heartbeat_timeout,
+            config.run_liveness_sweep_interval,
+        ))
+    } else {
+        None
+    };
     let bind_addr = config.bind_addr;
     let service_plane = config.service_plane;
     let app = instantml_rust_server::http::router(AppState::new(store, config));
@@ -109,6 +117,9 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     .await
     .map_err(|error| instantml_rust_server::AppError::internal(format!("server failed: {error}")));
     if let Some(handle) = background_refresh {
+        handle.abort();
+    }
+    if let Some(handle) = liveness_sweeper {
         handle.abort();
     }
     result
@@ -242,6 +253,7 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     .await?;
     let deleted = store::delete_expired_idempotency(&store).await?;
     let deleted_sessions = store::delete_expired_or_revoked_sessions(&store).await?;
+    let crashed_runs = store::mark_stale_runs_crashed(&store, config.run_heartbeat_timeout).await?;
     let usage_snapshots = store::write_usage_daily_snapshots(&store).await?;
     tracing::info!(
         workflow = "worker",
@@ -253,6 +265,7 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         retryable = false,
         deleted_idempotency_rows = deleted,
         deleted_session_rows = deleted_sessions,
+        crashed_runs,
         usage_daily_snapshots = usage_snapshots,
         "worker cleanup outcome"
     );

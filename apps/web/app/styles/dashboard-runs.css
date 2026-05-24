@@ -408,6 +408,29 @@
   white-space: nowrap;
 }
 
+.workspace-run-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-run-status .pill {
+  flex: 0 0 auto;
+  min-height: 18px;
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.workspace-run-status small {
+  min-width: 0;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workspace-eye {
   position: relative;
   display: grid;

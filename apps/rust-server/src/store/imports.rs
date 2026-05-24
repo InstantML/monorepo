@@ -93,6 +93,8 @@ pub async fn import_payload(
             created_at: Utc::now(),
             started_at,
             finished_at,
+            last_heartbeat_at: None,
+            last_event_at: None,
         };
         store
             .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)

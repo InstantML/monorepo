@@ -16,6 +16,7 @@ import instantml.client as client_module
 import instantml.uploader as uploader
 from instantml.client import (
     Client,
+    InstantMLHTTPError,
     InstantMLError,
     Run,
     _ConsoleStream,
@@ -31,6 +32,7 @@ from instantml.client import (
     _write_image_data,
     _write_video_data,
 )
+from instantml.http import _error_message
 from instantml_api.server import create_server
 
 
@@ -604,6 +606,7 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
         upload_mode="spool",
         spool_dir=str(tmp_path),
         source_tracking=False,
+        heartbeat_interval=None,
     )
     run.wait_for_init(timeout=2.0)
 
@@ -616,6 +619,105 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
         Client(base_url="http://example.test").init(project="demo", notes="x" * 513)
     with pytest.raises(ValueError, match="upload_mode"):
         Client(base_url="http://example.test").init(project="demo", upload_mode="background")
+
+
+def test_client_init_sends_uuid_resume_and_applies_resume_step(monkeypatch):
+    calls = []
+    run_id = "11111111-1111-4111-8111-111111111111"
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path, body))
+        return {
+            "run": {"id": run_id},
+            "created": False,
+            "resumed": True,
+            "resume_from_step": 12,
+            "latest_steps_by_key": {"reward": 12, "loss": 7},
+        }
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        id=run_id,
+        resume="allow",
+        source_tracking=False,
+        async_init=False,
+        heartbeat_interval=None,
+    )
+
+    method, path, body = calls[0]
+    assert method == "POST"
+    assert path == "/runs"
+    assert body["project"] == "demo"
+    assert body["id"] == run_id
+    assert body["resume"] == "allow"
+    assert body["metadata"]["python"]
+    assert run._auto_step == 12
+    assert run._last_steps == {"reward": 12.0, "loss": 7.0}
+    assert run._resolve_log_step(None) == 13
+
+
+def test_client_init_rejects_invalid_resume_inputs():
+    with pytest.raises(TypeError, match="UUID"):
+        Client(base_url="http://example.test").init(project="demo", id=123, source_tracking=False)
+    with pytest.raises(ValueError, match="UUID"):
+        Client(base_url="http://example.test").init(project="demo", id="not-a-uuid", source_tracking=False)
+    with pytest.raises(ValueError, match="resume"):
+        Client(base_url="http://example.test").init(project="demo", resume="auto", source_tracking=False)
+
+
+def test_run_heartbeat_rejects_nonpositive_interval():
+    run = Run(client=SimpleNamespace(offline_dir=None), run_id="run-1")
+    with pytest.raises(ValueError, match="heartbeat_interval"):
+        run._start_heartbeat(interval=0)
+
+
+def test_run_heartbeat_start_is_idempotent_and_stops_when_finished():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    run._start_heartbeat(interval=0.01)
+    first_thread = run._heartbeat_thread
+    run._start_heartbeat(interval=0.01)
+    assert run._heartbeat_thread is first_thread
+    with run._lock:
+        run._finished = True
+    first_thread.join(timeout=1.0)
+    assert not first_thread.is_alive()
+    assert calls == []
+
+
+def test_run_heartbeat_starts_and_stops_without_raising():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            if path.endswith("/heartbeat") and len(calls) == 1:
+                raise InstantMLError("temporary heartbeat failure")
+            return {"run": {"id": "run-1"}}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    run._start_heartbeat(interval=0.01)
+    deadline = time.time() + 1
+    while len([call for call in calls if call[1].endswith("/heartbeat")]) < 2 and time.time() < deadline:
+        time.sleep(0.01)
+    run.finish("failed")
+
+    heartbeat_calls = [call for call in calls if call[1].endswith("/heartbeat")]
+    assert len(heartbeat_calls) >= 2
+    assert heartbeat_calls[-1][2]["process_id"]
+    assert calls[-1] == ("PATCH", "/runs/run-1", {"status": "failed"})
 
 
 def test_async_init_returns_run_before_post_completes(monkeypatch):
@@ -635,6 +737,7 @@ def test_async_init_returns_run_before_post_completes(monkeypatch):
     run = Client(base_url="http://example.test").init(
         project="demo",
         source_tracking=False,
+        heartbeat_interval=None,
     )
     elapsed = time.monotonic() - started_at
 
@@ -660,6 +763,7 @@ def test_async_init_surfaces_server_error_on_run_id_access(monkeypatch):
     run = Client(base_url="http://example.test").init(
         project="demo",
         source_tracking=False,
+        heartbeat_interval=None,
     )
 
     with pytest.raises(InstantMLError, match="boom"):
@@ -681,6 +785,7 @@ def test_sync_init_still_blocks_when_async_init_disabled(monkeypatch):
         project="demo",
         source_tracking=False,
         async_init=False,
+        heartbeat_interval=None,
     )
 
     # In sync mode the POST has already happened by the time init returns.
@@ -1247,6 +1352,7 @@ def test_client_init_reserves_sdk_source_metadata(monkeypatch):
         buffer_size=3,
         offline_dir="/run-offline",
         metadata={"source": {"user": "owned"}},
+        heartbeat_interval=None,
     )
 
     assert run.run_id == "run-123"
@@ -1266,7 +1372,7 @@ def test_client_init_can_disable_source_tracking(monkeypatch):
         return {"run": {"id": "run-123"}}
 
     monkeypatch.setattr(Client, "_request", fake_request)
-    Client(base_url="http://example.test").init(project="demo", source_tracking=False)
+    Client(base_url="http://example.test").init(project="demo", source_tracking=False, heartbeat_interval=None)
 
     assert "_rlobs" not in calls[0][2]["metadata"]
 
@@ -1379,6 +1485,12 @@ def test_sdk_http_error_non_error_object_message(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", fail)
     with pytest.raises(InstantMLError, match="HTTP Error 500"):
         Client()._request("GET", "/health")
+
+
+def test_http_error_message_wrapper_uses_safe_detail():
+    body = BytesIO(json.dumps({"error": "safe failure", "code": "safe_code"}).encode("utf-8"))
+    exc = urllib.error.HTTPError("url", 400, "bad", {}, body)
+    assert _error_message(exc) == "safe failure"
 
 
 def test_log_auto_step_classifies_metrics_text_objects_and_files(tmp_path):
@@ -1793,6 +1905,7 @@ def test_wrapper_constructor_edge_cases_and_client_init_options(monkeypatch, tmp
         system_metrics_interval=3.0,
         capture_console=True,
         async_init=False,
+        heartbeat_interval=None,
     )
     run.wait_for_init(timeout=2.0)
 
@@ -1854,6 +1967,7 @@ def test_async_init_ignores_optional_system_and_console_failures(monkeypatch, tm
         system_metrics=True,
         system_metrics_interval=4.0,
         capture_console=True,
+        heartbeat_interval=None,
     )
 
     assert run.wait_for_init(timeout=2.0) == "run-optional"
@@ -2307,7 +2421,7 @@ def test_init_succeeds_with_explicit_api_key(monkeypatch):
         return {"run": {"id": "run-1"}}
 
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", api_key="my-key", base_url="http://example.test")
+    run = ro.init(project="test", api_key="my-key", base_url="http://example.test", heartbeat_interval=None)
     assert run.run_id == "run-1"
 
 
@@ -2320,7 +2434,7 @@ def test_init_succeeds_with_env_var(monkeypatch):
 
     monkeypatch.setenv("INSTANTML_API_KEY", "env-key")
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", base_url="http://example.test")
+    run = ro.init(project="test", base_url="http://example.test", heartbeat_interval=None)
     assert run.run_id == "run-2"
 
 
@@ -2336,5 +2450,5 @@ def test_init_succeeds_with_credentials_file(monkeypatch, tmp_path):
     creds.write_text('api_key = "file-key"\n')
     monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", creds)
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", base_url="http://example.test")
+    run = ro.init(project="test", base_url="http://example.test", heartbeat_interval=None)
     assert run.run_id == "run-3"

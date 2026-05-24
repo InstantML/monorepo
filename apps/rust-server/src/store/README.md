@@ -4,18 +4,18 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
 
 ## Module Map
 
-- `mod.rs`: shared `Store`/`StoreData` types, deterministic control/tenant operational replay, data-plane control-record refresh, tenant replay validation, local org bootstrap, durable append helper, readiness checks, and public re-exports.
+- `mod.rs`: shared `Store`/`StoreData` types, deterministic control/tenant operational replay, data-plane control-record refresh, tenant replay validation, local org bootstrap, live-run notification fanout, liveness sweeping, durable append helper, readiness checks, and public re-exports.
 - `auth.rs`: users, organizations, memberships, sessions, service accounts, API keys, and admin checks.
 - `billing.rs`: Stripe billing projections, Checkout intent fulfillment, Customer Portal responses, webhook event idempotency, and payment-state write gates.
-- `console_logs.rs`: bounded stdout/stderr validation, idempotent log writes, cursor encoding, and log read response shaping.
-- `runs.rs`: project/run creation, run filtering, summaries, scalar metric writes, rank metric writes/summaries, and metric point/series reads.
+- `console_logs.rs`: bounded stdout/stderr validation, idempotent log writes, liveness/event updates, cursor encoding, and log read response shaping.
+- `runs.rs`: project/run creation and resume, heartbeat/liveness updates, run filtering, summaries, scalar metric writes, rank metric writes/summaries, and metric point/series reads.
 - `objects.rs`: typed attributes, rich objects, table rows, artifact metadata, and local upload metadata writes.
 - `imports.rs`: Neptune, W&B, and MLflow import normalization plus import record creation/listing.
 - `export.rs`: side-by-side comparison and bounded export response assembly.
 - `usage.rs`: usage summaries, daily snapshots, idempotency cleanup, and session cleanup.
 - `demo.rs`: synthetic demo project reset data.
 - `access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
-- `summaries.rs`: run summaries, artifact counts, metric-series conversion, and export metric reads.
+- `summaries.rs`: run summaries with liveness decoration, artifact counts, metric-series conversion, and export metric reads.
 - `tenants.rs`: hosted tenant route payloads, database/cloud-service provisioning, lazy tenant loading, and per-org MetricStore resolution.
 - `device_code.rs`: RFC 8628 device-code grant state machine — pending/authorized/denied/expired lifecycle, rate-limit enforcement, user-code generation, and API key issuance on confirm.
 - `validation.rs`: shared validation, JSON value shaping, slugging, and focused unit tests.

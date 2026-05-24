@@ -252,11 +252,11 @@
         },
         "responses": {
           "200": {
-            "description": "Created run",
+            "description": "Created or resumed run",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunEnvelope"
+                  "$ref": "#/components/schemas/CreateRunEnvelope"
                 }
               }
             }
@@ -273,6 +273,26 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resume target missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resume conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -2879,6 +2899,13 @@
               "null"
             ]
           },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "metadata": {
             "type": [
               "object",
@@ -2897,6 +2924,12 @@
               "null"
             ]
           },
+          "resume": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "tags": {
             "type": [
               "array",
@@ -2905,6 +2938,34 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "CreateRunEnvelope": {
+        "type": "object",
+        "required": [
+          "run",
+          "created",
+          "resumed",
+          "resume_from_step",
+          "latest_steps_by_key"
+        ],
+        "properties": {
+          "created": {
+            "type": "boolean"
+          },
+          "latest_steps_by_key": {
+            "type": "object"
+          },
+          "resume_from_step": {
+            "type": "number",
+            "format": "double"
+          },
+          "resumed": {
+            "type": "boolean"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunRow"
           }
         }
       },
@@ -3584,6 +3645,20 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "last_event_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_heartbeat_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
           "metadata": {
             "type": "object"

@@ -1648,6 +1648,8 @@ mod tests {
             control_projection_loaded: Arc::new(Mutex::new(false)),
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
+            live_events: tokio::sync::broadcast::channel(1_024).0,
+            live_sequence: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -1681,6 +1683,8 @@ mod tests {
             created_at: Utc::now(),
             started_at: Utc::now(),
             finished_at: Some(Utc::now()),
+            last_heartbeat_at: None,
+            last_event_at: None,
         }
     }
 

@@ -1407,6 +1407,71 @@
         "security": []
       }
     },
+    "/api/live/runs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "live_runs",
+        "parameters": [
+          {
+            "name": "run_ids",
+            "in": "query",
+            "description": "Comma-separated run UUIDs, capped at 100",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "metric_keys",
+            "in": "query",
+            "description": "Comma-separated metric keys, capped at 50",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run live event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/metrics/series": {
       "post": {
         "tags": [
@@ -4469,11 +4534,11 @@
         },
         "responses": {
           "200": {
-            "description": "Created run",
+            "description": "Created or resumed run",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunEnvelope"
+                  "$ref": "#/components/schemas/CreateRunEnvelope"
                 }
               }
             }
@@ -4490,6 +4555,26 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resume target missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resume conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -4606,6 +4691,95 @@
           },
           "404": {
             "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/runs/{run_id}/heartbeat": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "heartbeat_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunHeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated run liveness",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Run is terminal",
             "content": {
               "application/json": {
                 "schema": {
@@ -6401,6 +6575,34 @@
           }
         }
       },
+      "CreateRunEnvelope": {
+        "type": "object",
+        "required": [
+          "run",
+          "created",
+          "resumed",
+          "resume_from_step",
+          "latest_steps_by_key"
+        ],
+        "properties": {
+          "created": {
+            "type": "boolean"
+          },
+          "latest_steps_by_key": {
+            "type": "object"
+          },
+          "resume_from_step": {
+            "type": "number",
+            "format": "double"
+          },
+          "resumed": {
+            "type": "boolean"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunRow"
+          }
+        }
+      },
       "CreateRunRequest": {
         "type": "object",
         "properties": {
@@ -6409,6 +6611,13 @@
               "object",
               "null"
             ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           },
           "metadata": {
             "type": [
@@ -6423,6 +6632,12 @@
             ]
           },
           "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resume": {
             "type": [
               "string",
               "null"
@@ -7923,6 +8138,30 @@
           }
         }
       },
+      "RunHeartbeatRequest": {
+        "type": "object",
+        "properties": {
+          "process_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "RunRow": {
         "type": "object",
         "required": [
@@ -7956,6 +8195,20 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "last_event_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_heartbeat_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
           "metadata": {
             "type": "object"

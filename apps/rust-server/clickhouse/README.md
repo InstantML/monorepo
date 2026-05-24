@@ -11,12 +11,14 @@ schema version tracking built in.
   `metric_points` (raw scalar time series), `rank_metric_points` (raw
   per-rank scalar metrics for distributed reducer/coverage views),
   `console_log_lines` (bounded stdout/stderr reads by run/stream/cursor),
+  `run_liveness` (heartbeat and last-event timestamps for live runs),
   `metric_series` (aggregated summary via `AggregatingMergeTree`), and
   `metric_series_mv` (the materialized view that populates `metric_series`
   from `metric_points` on insert).
 
-`METRIC_SCHEMA_VERSION = 2` in `src/metric_store.rs` exists so existing BYOC
-tenant routes created before `rank_metric_points` are migrated on first load.
+`METRIC_SCHEMA_VERSION = 3` in `src/metric_store.rs` exists so existing BYOC
+tenant routes created before `rank_metric_points` or `run_liveness` are
+migrated on first load.
 
 ## Read patterns
 
@@ -47,6 +49,10 @@ Console log reads query one `(org_id, run_id, stream)` at a time from
 `console_log_lines`, ordered by `(line_number, ingest_id)`. Clients provide
 line numbers; the API returns opaque cursors so the UI can page stdout/stderr
 without loading entire logs.
+
+Run liveness reads query the newest `run_liveness` row per `(org_id, run_id)`.
+Rows are append-only heartbeat/event snapshots with a 30-day TTL; authoritative
+run status still lives in the `run` operational record.
 
 Rank summary reads query one `(org_id, run_id, key)` at a time from
 `rank_metric_points`. Duplicate `(step, rank)` rows are canonicalized at read

@@ -186,6 +186,7 @@ export function durationLabel(run) {
 
 export function statusTone(status) {
   if (status === "finished") return "good";
-  if (status === "failed") return "bad";
-  return "live";
+  if (status === "failed" || status === "crashed") return "bad";
+  if (status === "running") return "live";
+  return "neutral";
 }

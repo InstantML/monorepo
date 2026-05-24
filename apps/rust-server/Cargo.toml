@@ -13,6 +13,7 @@ axum = { version = "=0.7.9", features = ["macros", "json"] }
 base64 = "=0.22.1"
 chrono = { version = "=0.4.39", features = ["serde"] }
 clickhouse = { version = "=0.13.2", features = ["uuid", "chrono", "rustls-tls-ring", "rustls-tls-webpki-roots"] }
+futures-util = "=0.3.31"
 getrandom = "=0.2.15"
 hex = "=0.4.3"
 hmac = "=0.12.1"

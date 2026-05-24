@@ -13,6 +13,7 @@ pub async fn log_metrics(
     let timestamp = validate_timestamp(input.timestamp.as_deref())?;
     let request_hash = hash_idempotency(run_id, &raw)?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let metric_keys = metrics.keys().cloned().collect::<Vec<_>>();
     let points = metrics
         .iter()
         .map(|(key, value)| ChMetricPointRow {
@@ -51,7 +52,8 @@ pub async fn log_metrics(
                 }
                 let run = fetch_run_in_data(&data, ctx, run_id)?;
                 ensure_run_access_in_data(ctx, &run)?;
-            }
+                run
+            };
             ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
             enforce_plan_capacity(
                 store,
@@ -64,6 +66,20 @@ pub async fn log_metrics(
             )
             .await?;
             metric_store.insert_points(&points).await?;
+            let run = note_run_event(store, ctx, run_id).await?;
+            store.publish_live_event(
+                ctx.org_id,
+                run.project_id,
+                run_id,
+                "run_metric_batch",
+                json!({
+                    "run_id": run_id,
+                    "metric_keys": metric_keys,
+                    "min_step": step,
+                    "max_step": step,
+                    "point_count": points.len()
+                }),
+            );
             let record = IdempotencyRecord {
                 org_id: ctx.org_id,
                 key: key.clone(),
@@ -103,6 +119,20 @@ pub async fn log_metrics(
     )
     .await?;
     metric_store.insert_points(&points).await?;
+    let run = note_run_event(store, ctx, run_id).await?;
+    store.publish_live_event(
+        ctx.org_id,
+        run.project_id,
+        run_id,
+        "run_metric_batch",
+        json!({
+            "run_id": run_id,
+            "metric_keys": metric_keys,
+            "min_step": step,
+            "max_step": step,
+            "point_count": points.len()
+        }),
+    );
     Ok(points.len())
 }
 

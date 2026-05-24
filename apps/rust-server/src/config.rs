@@ -37,6 +37,8 @@ pub struct AppConfig {
     pub artifact_uploads_enabled: bool,
     pub allowed_frontend_origins: Vec<String>,
     pub request_timeout: Duration,
+    pub run_heartbeat_timeout: Duration,
+    pub run_liveness_sweep_interval: Duration,
     pub slow_request_threshold: Duration,
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
@@ -381,6 +383,14 @@ impl AppConfig {
             frontend_base_url,
             auth_mode,
             request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
+            run_heartbeat_timeout: Duration::from_secs(env_u64(
+                "INSTANTML_RUN_HEARTBEAT_TIMEOUT_SECONDS",
+                300,
+            )?),
+            run_liveness_sweep_interval: Duration::from_secs(env_u64(
+                "INSTANTML_RUN_LIVENESS_SWEEP_SECONDS",
+                60,
+            )?),
             slow_request_threshold: Duration::from_millis(env_u64(
                 "INSTANTML_SLOW_REQUEST_MS",
                 1000,

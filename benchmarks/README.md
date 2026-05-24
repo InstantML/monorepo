@@ -155,6 +155,9 @@ The default matrix is:
 - `instantml-sync-null`: `Run.log_metrics()` through a fake local transport, so
   validation/serialization cost is visible without network noise. This is an
   internal/null-transport microbenchmark, not a public hosted persistence path.
+- `instantml-sync-live-null`: the same sync-null path with the SDK heartbeat
+  thread enabled. Use `--heartbeat-interval` to record either the production
+  default interval or a stress interval explicitly.
 - `instantml-log-null`: ergonomic `Run.log()` through the same fake transport,
   including scalar classification.
 - `instantml-spool-durable`: process-spool mode writing one durable local event

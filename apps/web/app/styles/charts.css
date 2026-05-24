@@ -325,6 +325,14 @@ tr.selected.inspected {
   width: 12%;
 }
 
+.col-status small {
+  display: block;
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .col-tags {
   width: 13%;
 }
@@ -465,6 +473,12 @@ small {
   border-color: #c7d9f7;
   background: #f4f8ff;
   color: var(--blue);
+}
+
+.pill.neutral {
+  border-color: var(--line-soft);
+  background: #f8fafc;
+  color: var(--muted);
 }
 
 .chips {

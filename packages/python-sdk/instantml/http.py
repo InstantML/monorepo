@@ -19,12 +19,17 @@ def _spool_event(offline_dir: str, run_id: str, event: dict[str, Any]) -> None:
         handle.write(json.dumps(event) + "\n")
 
 
-def _error_message(exc: urllib.error.HTTPError) -> str:
+def _error_details(exc: urllib.error.HTTPError) -> tuple[str, str | None]:
     try:
         payload = exc.read().decode("utf-8")
         decoded = json.loads(payload)
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return str(exc)
+        return str(exc), None
     if isinstance(decoded, dict) and isinstance(decoded.get("error"), str):
-        return decoded["error"]
-    return str(exc)
+        code = decoded.get("code")
+        return decoded["error"], code if isinstance(code, str) else None
+    return str(exc), None
+
+
+def _error_message(exc: urllib.error.HTTPError) -> str:
+    return _error_details(exc)[0]

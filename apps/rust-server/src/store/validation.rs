@@ -506,6 +506,8 @@ mod tests {
             created_at: epoch(),
             started_at: epoch(),
             finished_at: Some(epoch() + ChronoDuration::seconds(5)),
+            last_heartbeat_at: None,
+            last_event_at: None,
         }
     }
 

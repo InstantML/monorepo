@@ -3,7 +3,7 @@
 import { Star } from "lucide-react";
 
 import { bestMetric, durationLabel, formatNumber, statusTone } from "../../../src/state.js";
-import { formatRunTime, runConfigSummary, runNoteText, shortMetricName } from "../../dashboard-models";
+import { formatRunTime, runConfigSummary, runLastSeenLabel, runNoteText, shortMetricName } from "../../dashboard-models";
 import type { RunSummary, TableColumns } from "../../dashboard-types";
 
 function Chips({ values }: { values: string[] }) {
@@ -77,7 +77,12 @@ export function RunsTable({
                     <small>{run.project} · {runConfigSummary(run)}</small>
                   </div>
                 </td>
-                {columns.status ? <td className="col-status"><span className={`pill ${statusTone(run.status)}`}>{run.status}</span></td> : null}
+                {columns.status ? (
+                  <td className="col-status">
+                    <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
+                    {run.status === "running" || run.status === "crashed" ? <small>last seen {runLastSeenLabel(run)}</small> : null}
+                  </td>
+                ) : null}
                 {columns.tags ? <td className="col-tags"><Chips values={run.tags} /></td> : null}
                 {columns.notes ? <td className="col-notes"><span className="note-preview" title={note}>{note || "-"}</span></td> : null}
                 {columns.started ? <td className="col-started">{formatRunTime(run.started_at ?? run.created_at)}</td> : null}

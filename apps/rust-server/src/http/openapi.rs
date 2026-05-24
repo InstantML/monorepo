@@ -22,12 +22,11 @@
 //! See `docs/design/2026-05-19-utoipa-migration.md` for context on why this
 //! pattern replaced the legacy hand-rolled `openapi_json` index.
 use serde::Serialize;
+use serde_json::Value;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, SecurityScheme},
     Modify, OpenApi, ToSchema,
 };
-
-use serde_json::Value;
 
 use crate::domain::{
     AttributeInput, AttributeRow, AuthSessionPayload, BillingAccountProjection,
@@ -47,10 +46,10 @@ use crate::domain::{
     OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
     PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
     RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-    RankReducerPoint, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-    ServiceAccountRow, SwitchOrganizationRequest, UpdateDashboardPreferencesRequest,
-    UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
-    WorkspaceViewSummary,
+    RankReducerPoint, ReserveSeatRequest, RunHeartbeatRequest, RunRow, SaveWorkspaceViewRequest,
+    SeatRow, SeatUserRow, ServiceAccountRow, SwitchOrganizationRequest,
+    UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+    UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
 };
 
 // ============================================================================
@@ -88,6 +87,16 @@ pub struct ProjectsEnvelope {
 #[derive(Serialize, ToSchema)]
 pub struct RunEnvelope {
     pub run: RunRow,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CreateRunEnvelope {
+    pub run: RunRow,
+    pub created: bool,
+    pub resumed: bool,
+    pub resume_from_step: f64,
+    #[schema(value_type = Object)]
+    pub latest_steps_by_key: Value,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -406,12 +415,14 @@ impl Modify for SecurityAddon {
         crate::http::handlers::runs::list_runs,
         crate::http::handlers::runs::get_run,
         crate::http::handlers::runs::update_run,
+        crate::http::handlers::runs::heartbeat_run,
         crate::http::handlers::runs::log_metrics,
         crate::http::handlers::runs::get_metrics,
         crate::http::handlers::runs::log_rank_metrics,
         crate::http::handlers::runs::rank_metrics_summary,
         crate::http::handlers::runs::log_console_logs,
         crate::http::handlers::runs::list_console_logs,
+        crate::http::handlers::runs::live_runs,
         crate::http::handlers::metrics::metrics_series,
         // dashboard analytics
         crate::http::handlers::runs::overview,
@@ -513,6 +524,7 @@ impl Modify for SecurityAddon {
         CreateObjectRequest,
         CreateOrganizationRequest,
         CreateProjectRequest,
+        CreateRunEnvelope,
         CreateRunRequest,
         CreateUserRequest,
         DashboardPreferenceRow,
@@ -543,6 +555,7 @@ impl Modify for SecurityAddon {
         RankMetricsSummaryResponse,
         RankOutlierPoint,
         RankReducerPoint,
+        RunHeartbeatRequest,
         RunRow,
         SaveWorkspaceViewRequest,
         SeatRow,

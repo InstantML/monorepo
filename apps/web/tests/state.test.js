@@ -30,7 +30,7 @@ import {
   visibleSelectionState,
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
-import { buildCheckpointResumeCode } from "../src/checkpoints.js";
+import { buildCheckpointResumeCode, buildRunResumeCode, buildRunRetryCode } from "../src/checkpoints.js";
 import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
@@ -274,7 +274,9 @@ test("summary helpers format stable UI values", () => {
   assert.equal(formatNumber(1234.567, 1), "1,234.6");
   assert.equal(statusTone("finished"), "good");
   assert.equal(statusTone("failed"), "bad");
+  assert.equal(statusTone("crashed"), "bad");
   assert.equal(statusTone("running"), "live");
+  assert.equal(statusTone("queued"), "neutral");
   assert.equal(durationLabel({ started_at: "2026-01-01T00:00:00.000Z", finished_at: "2026-01-01T00:00:02.000Z" }), "2s");
 });
 
@@ -413,6 +415,22 @@ test("checkpoint resume helper handles fallback metadata and python literals", (
   assert.match(invalidMetadataCode, /name="resume-from-no-step"/);
   assert.match(invalidMetadataCode, /checkpoints\/artifact-3\.ckpt/);
   assert.match(invalidMetadataCode, /"checkpoint_step": None/);
+});
+
+test("run restart helpers produce copyable resume and retry snippets", () => {
+  const run = {
+    id: "11111111-1111-4111-8111-111111111111",
+    project: "cartpole",
+    name: "seed-42",
+    config: { seed: 42 },
+    tags: ["failed"],
+  };
+  const resume = buildRunResumeCode(run);
+  const retry = buildRunRetryCode(run);
+  assert.match(resume, /id="11111111-1111-4111-8111-111111111111"/);
+  assert.match(resume, /resume="must"/);
+  assert.match(retry, /retry_of_run_id/);
+  assert.match(retry, /"retry"/);
 });
 
 test("comparison helpers sort, aggregate, group, smooth, and average runs", () => {

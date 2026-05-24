@@ -421,6 +421,7 @@ export function DashboardTopbar({
               { value: "running", label: "Running" },
               { value: "finished", label: "Finished" },
               { value: "failed", label: "Failed" },
+              { value: "crashed", label: "Crashed" },
             ]}
           />
           <span className="workbar-divider" aria-hidden="true" />

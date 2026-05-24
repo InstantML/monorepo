@@ -458,6 +458,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/live/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["live_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/series": {
         parameters: {
             query?: never;
@@ -1024,6 +1040,22 @@ export interface paths {
         patch: operations["update_run"];
         trace?: never;
     };
+    "/runs/{run_id}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["heartbeat_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/metrics": {
         parameters: {
             query?: never;
@@ -1437,11 +1469,22 @@ export interface components {
             description?: string | null;
             name?: string | null;
         };
+        CreateRunEnvelope: {
+            created: boolean;
+            latest_steps_by_key: Record<string, never>;
+            /** Format: double */
+            resume_from_step: number;
+            resumed: boolean;
+            run: components["schemas"]["RunRow"];
+        };
         CreateRunRequest: {
             config?: Record<string, never> | null;
+            /** Format: uuid */
+            id?: string | null;
             metadata?: Record<string, never> | null;
             name?: string | null;
             project?: string | null;
+            resume?: string | null;
             tags?: string[] | null;
         };
         CreateUserRequest: {
@@ -1872,6 +1915,12 @@ export interface components {
         RunEnvelope: {
             run: components["schemas"]["RunRow"];
         };
+        RunHeartbeatRequest: {
+            /** Format: uuid */
+            process_id?: string | null;
+            state?: string | null;
+            timestamp?: string | null;
+        };
         RunRow: {
             config: Record<string, never>;
             /** Format: date-time */
@@ -1880,6 +1929,10 @@ export interface components {
             finished_at?: string | null;
             /** Format: uuid */
             id: string;
+            /** Format: date-time */
+            last_event_at?: string | null;
+            /** Format: date-time */
+            last_heartbeat_at?: string | null;
             metadata: Record<string, never>;
             name: string;
             /** Format: uuid */
@@ -3065,6 +3118,49 @@ export interface operations {
             };
             /** @description Invitation preview rate limited */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    live_runs: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated run UUIDs, capped at 100 */
+                run_ids?: string;
+                /** @description Comma-separated metric keys, capped at 50 */
+                metric_keys?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run live event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5090,13 +5186,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created run */
+            /** @description Created or resumed run */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunEnvelope"];
+                    "application/json": components["schemas"]["CreateRunEnvelope"];
                 };
             };
             /** @description Validation error */
@@ -5110,6 +5206,24 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resume target missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resume conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5187,6 +5301,69 @@ export interface operations {
             };
             /** @description Run not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    heartbeat_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunHeartbeatRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated run liveness */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run is terminal */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

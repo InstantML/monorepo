@@ -48,6 +48,10 @@ Current implemented design sequence:
   same-origin `/docs` rendering from `apps/web`, filtered public OpenAPI
   reference generation, validation scripts, and docs-site guardrails that keep
   internal planning docs unpublished.
+- `2026-05-23-live-run-streaming-and-restart.md`: accepted live online run
+  monitoring slice with explicit UUID resume, heartbeat-backed run liveness,
+  SSE dashboard live follow with polling fallback, and copyable retry/resume
+  commands before any future launch-agent queue.
 
 Current draft/revised designs awaiting implementation approval:
 

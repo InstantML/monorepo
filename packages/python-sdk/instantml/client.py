@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .errors import InstantMLError
+from .errors import InstantMLError, InstantMLHTTPError
 from .serialization import (
     _flatten,
     _flatten_numeric_value,
@@ -36,7 +36,7 @@ from .serialization import (
     _validate_optional_json_object,
 )
 from .credentials import _check_credentials_or_raise, _resolve_api_key as _resolve_api_key_from_env
-from .http import _error_message, _offline_path, _spool_event
+from .http import _error_details, _offline_path, _spool_event
 from .shadow import ShadowWandb, build_shadow as _build_shadow_wandb
 from .source import _environment_metadata, _git_metadata, _source_metadata
 from .validation import (
@@ -82,6 +82,24 @@ def _default_base_url() -> str:
 
 
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
+_RESUME_MODES = {"never", "allow", "must"}
+
+
+def _validate_run_id(value: str | None) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise TypeError("id must be a UUID string")
+    try:
+        return str(uuid.UUID(value))
+    except ValueError as exc:
+        raise ValueError("id must be a UUID string") from exc
+
+
+def _validate_resume(value: str) -> str:
+    if value not in _RESUME_MODES:
+        raise ValueError("resume must be one of: allow, must, never")
+    return value
 
 
 class Table:
@@ -313,6 +331,8 @@ class Client:
     def init(
         self,
         project: str,
+        id: str | None = None,
+        resume: str = "never",
         name: str | None = None,
         config: dict[str, Any] | None = None,
         tags: list[str] | None = None,
@@ -330,8 +350,11 @@ class Client:
         capture_console: bool = False,
         async_init: bool = True,
         shadow_wandb: Any = False,
+        heartbeat_interval: float | None = 15.0,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
+        run_id = _validate_run_id(id or os.environ.get("INSTANTML_RUN_ID"))
+        resume_mode = _validate_resume(os.environ.get("INSTANTML_RESUME", resume))
         if metadata and "_rlobs" in metadata:
             raise ValueError("metadata key '_rlobs' is reserved for SDK-owned metadata")
         combined_metadata = _environment_metadata()
@@ -347,6 +370,10 @@ class Client:
             "tags": tags or [],
             "metadata": combined_metadata,
         }
+        if run_id:
+            create_body["id"] = run_id
+        if resume_mode != "never" or run_id:
+            create_body["resume"] = resume_mode
         run_client = Client(
             base_url=self.base_url,
             timeout=self.timeout,
@@ -374,6 +401,8 @@ class Client:
                 _local_store=_LocalStore(local_store_dir, response["run"]["id"]) if local_store else None,
                 shadow=shadow,
             )
+            run._apply_resume_state(response)
+            run._start_heartbeat_if_supported(upload_mode, heartbeat_interval)
             if system_metrics:
                 run.start_system_metrics(interval=system_metrics_interval)
             if capture_console:
@@ -396,6 +425,8 @@ class Client:
                 if local_store:
                     run._local_store = _LocalStore(local_store_dir, real_run_id)
                 run._set_run_id(real_run_id)
+                run._apply_resume_state(response)
+                run._start_heartbeat_if_supported(upload_mode, heartbeat_interval)
                 if system_metrics:
                     try:
                         run.start_system_metrics(interval=system_metrics_interval)
@@ -447,8 +478,12 @@ class Client:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
-            message = _error_message(exc)
-            raise InstantMLError(f"{method} {path} failed: {message}") from exc
+            message, code = _error_details(exc)
+            raise InstantMLHTTPError(
+                f"{method} {path} failed: {message}",
+                status_code=exc.code,
+                code=code,
+            ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise InstantMLError(f"{method} {path} failed: {exc}") from exc
         try:
@@ -527,8 +562,12 @@ class Api:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = response.read()
         except urllib.error.HTTPError as exc:
-            message = _error_message(exc)
-            raise InstantMLError(f"GET /api/artifacts/{artifact_id}/download failed: {message}") from exc
+            message, code = _error_details(exc)
+            raise InstantMLHTTPError(
+                f"GET /api/artifacts/{artifact_id}/download failed: {message}",
+                status_code=exc.code,
+                code=code,
+            ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise InstantMLError(f"GET /api/artifacts/{artifact_id}/download failed: {exc}") from exc
         target.write_bytes(payload)
@@ -567,6 +606,9 @@ class Run:
         self._local_store: "_LocalStore | None" = _local_store
         self._system_sampler: "_SystemMetricsSampler | None" = None
         self._console_capture: "_ConsoleCapture | None" = None
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread: threading.Thread | None = None
+        self._heartbeat_process_id = str(uuid.uuid4())
         self._init_done = threading.Event()
         self._init_error: BaseException | None = None
         self._shadow: "ShadowWandb | None" = shadow
@@ -593,6 +635,66 @@ class Run:
             if self.upload_mode == "spool":
                 self._process_spool_run_dir = _process_spool_run_dir(self.spool_dir, value)
                 self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
+
+    def _apply_resume_state(self, response: dict[str, Any]) -> None:
+        if not response.get("resumed"):
+            return
+        resume_from_step = response.get("resume_from_step", 0)
+        latest_steps = response.get("latest_steps_by_key") or {}
+        with self._lock:
+            if isinstance(resume_from_step, (int, float)) and not isinstance(resume_from_step, bool):
+                self._auto_step = max(float(self._auto_step), float(resume_from_step))
+            if isinstance(latest_steps, dict):
+                for key, value in latest_steps.items():
+                    if isinstance(key, str) and isinstance(value, (int, float)) and not isinstance(value, bool):
+                        self._last_steps[key] = float(value)
+
+    def _start_heartbeat_if_supported(self, upload_mode: str, interval: float | None) -> None:
+        if upload_mode != "sync" or interval is None:
+            return
+        self._start_heartbeat(interval=interval)
+
+    def _start_heartbeat(self, interval: float = 15.0) -> None:
+        if interval <= 0:
+            raise ValueError("heartbeat_interval must be positive")
+        with self._lock:
+            if self._heartbeat_thread is not None:
+                return
+            self._heartbeat_stop.clear()
+
+        def _loop() -> None:
+            while not self._heartbeat_stop.wait(interval):
+                if self._is_finished():
+                    return
+                try:
+                    self.client._request(
+                        "POST",
+                        f"/runs/{self.run_id}/heartbeat",
+                        {
+                            "process_id": self._heartbeat_process_id,
+                            "timestamp": _utc_timestamp(),
+                            "state": "running",
+                        },
+                    )
+                except Exception:
+                    # Heartbeats are liveness hints. They must never raise into
+                    # the user's training loop or block metric logging.
+                    continue
+
+        thread = threading.Thread(
+            target=_loop,
+            name=f"instantml-heartbeat-{self._run_id}",
+            daemon=True,
+        )
+        with self._lock:
+            self._heartbeat_thread = thread
+        thread.start()
+
+    def _stop_heartbeat(self) -> None:
+        self._heartbeat_stop.set()
+        thread = self._heartbeat_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
 
     def wait_for_init(self, timeout: float | None = None) -> str:
         """Block until init resolves and return the real run_id.
@@ -1280,10 +1382,12 @@ class Run:
                 return
             self._request_or_spool("PATCH", f"/runs/{self.run_id}", {"status": status})
         finally:
+            self._stop_heartbeat()
             with self._lock:
                 self._finished = True
                 self._system_sampler = None
                 self._console_capture = None
+                self._heartbeat_thread = None
             if self._local_store is not None:
                 self._local_store.close()
             if self._shadow is not None:
@@ -1335,6 +1439,8 @@ class Run:
 
 def init(
     project: str,
+    id: str | None = None,
+    resume: str = "never",
     name: str | None = None,
     config: dict[str, Any] | None = None,
     tags: list[str] | None = None,
@@ -1355,6 +1461,7 @@ def init(
     capture_console: bool = False,
     async_init: bool = True,
     shadow_wandb: Any = False,
+    heartbeat_interval: float | None = 15.0,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 
@@ -1368,6 +1475,8 @@ def init(
     _check_credentials_or_raise(api_key)
     return Client(base_url=base_url or _default_base_url(), timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
         project=project,
+        id=id,
+        resume=resume,
         name=name,
         config=config,
         tags=tags,
@@ -1385,6 +1494,7 @@ def init(
         capture_console=capture_console,
         async_init=async_init,
         shadow_wandb=shadow_wandb,
+        heartbeat_interval=heartbeat_interval,
     )
 
 

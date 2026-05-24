@@ -1,20 +1,25 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
     http::HeaderMap,
+    response::sse::{Event, KeepAlive, Sse},
     Json,
 };
+use futures_util::stream;
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use crate::{
     domain::{
         CreateConsoleLogsRequest, CreateProjectRequest, CreateRunRequest, LogMetricsRequest,
-        LogRankMetricsRequest, UpdateRunRequest,
+        LogRankMetricsRequest, RunHeartbeatRequest, UpdateRunRequest,
     },
-    errors::AppResult,
+    errors::{AppError, AppResult},
     store,
 };
 
@@ -78,9 +83,11 @@ pub async fn list_projects(
     request_body = crate::domain::CreateRunRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Created run", body = crate::http::openapi::RunEnvelope),
+        (status = 200, description = "Created or resumed run", body = crate::http::openapi::CreateRunEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Resume target missing", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Resume conflict", body = crate::http::openapi::ErrorResponse),
     ),
 )]
 pub async fn create_run(
@@ -93,7 +100,8 @@ pub async fn create_run(
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
     Ok(Json(
-        json!({ "run": store::create_run(&state.store, &ctx, input).await? }),
+        serde_json::to_value(store::create_run(&state.store, &ctx, input).await?)
+            .map_err(|_| AppError::internal("create run response serialization failed"))?,
     ))
 }
 
@@ -178,6 +186,185 @@ pub async fn update_run(
     Ok(Json(
         json!({ "run": store::update_run(&state.store, &ctx, run_id, input).await? }),
     ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/runs/{run_id}/heartbeat",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    request_body = crate::domain::RunHeartbeatRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Updated run liveness", body = crate::http::openapi::RunEnvelope),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Run is terminal", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn heartbeat_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let input = read_json::<RunHeartbeatRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(json!({
+        "run": store::record_run_heartbeat(&state.store, &ctx, run_id, input).await?
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/live/runs",
+    tag = "runs",
+    params(
+        ("run_ids" = Option<String>, Query, description = "Comma-separated run UUIDs, capped at 100"),
+        ("metric_keys" = Option<String>, Query, description = "Comma-separated metric keys, capped at 50"),
+    ),
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Run live event stream", content_type = "text/event-stream", body = String),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn live_runs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
+    let filter = LiveRunFilter::from_query(ctx.org_id, &query)?;
+    let receiver = state.store.subscribe_live_events();
+    let stream = stream::unfold((receiver, filter), |(mut receiver, filter)| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(event) if filter.matches(&event) => {
+                    let data =
+                        serde_json::to_string(&event.payload).unwrap_or_else(|_| "{}".to_string());
+                    let sse = Event::default()
+                        .event(event.event)
+                        .id(event.id.to_string())
+                        .data(data);
+                    return Some((Ok(sse), (receiver, filter)));
+                }
+                Ok(_) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    let sse = Event::default()
+                        .event("full_refresh_required")
+                        .data("{\"reason\":\"lagged\"}");
+                    return Some((Ok(sse), (receiver, filter)));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(25))
+            .text("keepalive"),
+    ))
+}
+
+#[derive(Clone)]
+struct LiveRunFilter {
+    org_id: Uuid,
+    run_ids: Option<HashSet<Uuid>>,
+    metric_keys: Option<HashSet<String>>,
+}
+
+impl LiveRunFilter {
+    fn from_query(org_id: Uuid, query: &HashMap<String, String>) -> AppResult<Self> {
+        let run_ids = query
+            .get("run_ids")
+            .map(|raw| parse_live_run_ids(raw))
+            .transpose()?;
+        let metric_keys = query
+            .get("metric_keys")
+            .map(|raw| parse_live_metric_keys(raw))
+            .transpose()?;
+        Ok(Self {
+            org_id,
+            run_ids,
+            metric_keys,
+        })
+    }
+
+    fn matches(&self, event: &store::LiveEvent) -> bool {
+        if event.org_id != self.org_id {
+            return false;
+        }
+        if let Some(run_ids) = &self.run_ids {
+            if !run_ids.contains(&event.run_id) {
+                return false;
+            }
+        }
+        if event.event == "run_metric_batch" {
+            if let Some(metric_keys) = &self.metric_keys {
+                let Some(keys) = event.payload.get("metric_keys").and_then(Value::as_array) else {
+                    return false;
+                };
+                return keys
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|key| metric_keys.contains(key));
+            }
+        }
+        true
+    }
+}
+
+fn parse_live_run_ids(raw: &str) -> AppResult<HashSet<Uuid>> {
+    let values = split_live_csv(raw);
+    if values.is_empty() {
+        return Ok(HashSet::new());
+    }
+    if values.len() > 100 {
+        return Err(AppError::validation(
+            "live stream run_ids cannot exceed 100",
+        ));
+    }
+    values
+        .into_iter()
+        .map(|value| {
+            value
+                .parse::<Uuid>()
+                .map_err(|_| AppError::validation("run_ids must be UUIDs"))
+        })
+        .collect::<AppResult<HashSet<_>>>()
+}
+
+fn parse_live_metric_keys(raw: &str) -> AppResult<HashSet<String>> {
+    let values = split_live_csv(raw);
+    if values.is_empty() {
+        return Ok(HashSet::new());
+    }
+    if values.len() > 50 {
+        return Err(AppError::validation(
+            "live stream metric_keys cannot exceed 50",
+        ));
+    }
+    values
+        .into_iter()
+        .map(|value| crate::domain::validate_name(Some(&value), "metric key"))
+        .collect::<AppResult<HashSet<_>>>()
+}
+
+fn split_live_csv(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 #[utoipa::path(

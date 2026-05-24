@@ -107,6 +107,11 @@ export function formatRunTime(value: string) {
   return `${month} ${day}, ${hour}:${minute}`;
 }
 
+export function runLastSeenLabel(run: Pick<RunSummary, "last_heartbeat_at" | "last_event_at">) {
+  const lastSeen = run.last_heartbeat_at ?? run.last_event_at;
+  return lastSeen ? formatRunTime(lastSeen) : "-";
+}
+
 export function shortMetricName(metricKey: string) {
   const parts = metricKey.split("/");
   return parts[parts.length - 1] || metricKey;

@@ -34,6 +34,8 @@ import instantml as ro
 
 run = ro.init(
     project="cartpole",
+    id=None,
+    resume="never",
     config={"seed": 42},
     tags=["baseline"],
     notes="Initial CartPole baseline.",
@@ -73,6 +75,15 @@ run.finish()
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 checkpoint_path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
 ```
+
+`init(id=..., resume=...)` supports explicit UUID-based resume for preempted or
+failed jobs. Use `resume="allow"` to create the UUID if it does not exist or
+resume it if it does, and `resume="must"` when the run must already exist. When
+the API resumes a run, it returns `resume_from_step`; the SDK advances implicit
+`log()` steps from that value. Online sync runs send heartbeat requests in the
+background so the dashboard can mark dead processes as `crashed`. Process-spool
+mode intentionally does not send foreground heartbeats yet; it remains a
+non-live post-init upload path until a follow-mode uploader is designed.
 
 ## CLI: Login, logout, whoami
 
@@ -403,7 +414,7 @@ PYTHONPATH=packages/python-sdk python3 -c "import instantml as ro; print(ro.Clie
 python3 -m pytest
 ```
 
-The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `InstantMLError` for network or non-2xx API failures. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
+The SDK uses synchronous HTTP calls by default with a 10 second timeout and raises `InstantMLError` for network failures or `InstantMLHTTPError` for non-2xx API responses. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 

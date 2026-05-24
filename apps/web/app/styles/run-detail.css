@@ -523,6 +523,18 @@ pre {
   gap: 6px;
 }
 
+.restart-section small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.restart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
 .empty {
   display: grid;
   min-height: 140px;

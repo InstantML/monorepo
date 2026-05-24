@@ -367,6 +367,44 @@
   flex: 0 0 auto;
 }
 
+.live-follow-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 14px 4px calc(14px + env(safe-area-inset-left));
+  border-bottom: 1px solid var(--line-soft);
+  background: #fbfcfd;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.live-follow-strip strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #9aa6b2;
+}
+
+.live-dot.streaming {
+  background: var(--green);
+}
+
+.live-dot.polling {
+  background: var(--blue);
+}
+
+.live-follow-strip .copy-button {
+  min-height: 26px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;

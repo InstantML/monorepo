@@ -79,6 +79,26 @@ pub struct ConsoleLogInsertRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// One row in the ClickHouse `run_liveness` table.
+///
+/// Field order matches the schema in `clickhouse/0001_initial.sql`.
+#[derive(Row, Serialize, Deserialize, Clone)]
+pub struct RunLivenessRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub org_id: Uuid,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub process_id: Uuid,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub last_heartbeat_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub last_event_at: DateTime<Utc>,
+    pub state: String,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
+}
+
 /// One durable operational record in the ClickHouse control/data-plane layer.
 ///
 /// Operational state is intentionally stored as complete JSON payloads in an
@@ -210,7 +230,7 @@ pub enum SeriesSortMode {
     BestMin,
 }
 
-pub const METRIC_SCHEMA_VERSION: u32 = 2;
+pub const METRIC_SCHEMA_VERSION: u32 = 3;
 const INITIAL_SCHEMA: &str = include_str!("../clickhouse/0001_initial.sql");
 
 /// Wraps a configured ClickHouse client alongside the database it targets.
@@ -305,6 +325,88 @@ impl MetricStore {
             .await
             .map_err(|err| clickhouse_storage_error("clickhouse log insert flush failed", err))?;
         Ok(())
+    }
+
+    pub async fn insert_run_liveness(&self, row: &RunLivenessRow) -> AppResult<()> {
+        let mut inserter = self.client.insert("run_liveness").map_err(|err| {
+            clickhouse_storage_error("clickhouse liveness insert init failed", err)
+        })?;
+        inserter.write(row).await.map_err(|err| {
+            clickhouse_storage_error("clickhouse liveness insert write failed", err)
+        })?;
+        inserter.end().await.map_err(|err| {
+            clickhouse_storage_error("clickhouse liveness insert flush failed", err)
+        })?;
+        Ok(())
+    }
+
+    pub async fn load_latest_run_liveness(&self) -> AppResult<Vec<RunLivenessRow>> {
+        self.client
+            .query(
+                "SELECT \
+                   org_id, run_id, \
+                   argMax(process_id, created_at) AS process_id, \
+                   max(last_heartbeat_at) AS last_heartbeat_at, \
+                   max(last_event_at) AS last_event_at, \
+                   argMax(state, created_at) AS state, \
+                   max(created_at) AS created_at \
+                 FROM run_liveness \
+                 GROUP BY org_id, run_id",
+            )
+            .fetch_all::<RunLivenessRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn resume_step_for_run(&self, org_id: Uuid, run_id: Uuid) -> AppResult<f64> {
+        let latest_step = self
+            .client
+            .query(
+                "SELECT max(latest_step) \
+                 FROM ( \
+                   SELECT maxMerge(latest_step) AS latest_step \
+                   FROM metric_series \
+                   WHERE org_id = ? AND run_id = ? \
+                   GROUP BY key \
+                 )",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .fetch_optional::<f64>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(latest_step.unwrap_or(0.0))
+    }
+
+    pub async fn latest_steps_by_key(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+    ) -> AppResult<Vec<(String, f64)>> {
+        #[derive(Row, Deserialize)]
+        struct LatestStepRow {
+            key: String,
+            latest_step: f64,
+        }
+
+        let rows = self
+            .client
+            .query(
+                "SELECT key, maxMerge(latest_step) AS latest_step \
+                 FROM metric_series \
+                 WHERE org_id = ? AND run_id = ? \
+                 GROUP BY key \
+                 ORDER BY key",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .fetch_all::<LatestStepRow>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.key, row.latest_step))
+            .collect())
     }
 
     pub async fn insert_operational_record(&self, row: &OperationalRecordRow) -> AppResult<()> {

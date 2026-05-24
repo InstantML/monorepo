@@ -35,16 +35,16 @@ use handlers::{
     create_project, create_run, create_user, create_workspace_view,
     customer_clickhouse_connection_status, device_code_confirm, device_code_poll,
     device_code_start, disable_service_account, download_artifact, export_data,
-    get_dashboard_preferences, get_metrics, get_run, get_workspace_view, health, import_mlflow,
-    import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
+    get_dashboard_preferences, get_metrics, get_run, get_workspace_view, health, heartbeat_run,
+    import_mlflow, import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
     list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
     list_org_memberships, list_orgs, list_projects, list_runs, list_seats, list_users,
-    list_workspace_views, log_console_logs, log_metrics, log_rank_metrics, metrics_handler,
-    metrics_series, not_found, openapi_json, org_name_availability, overview, preview_invitation,
-    rank_metrics_summary, readyz, resend_invitation, reserve_seat, reset_demo, revoke_api_key,
-    revoke_invitation, rotate_customer_clickhouse_credentials, runs_summary, side_by_side,
-    update_dashboard_preferences, update_run, update_workspace_view, upload_artifact, usage_export,
-    usage_summary, validate_customer_clickhouse_connection,
+    list_workspace_views, live_runs, log_console_logs, log_metrics, log_rank_metrics,
+    metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
+    preview_invitation, rank_metrics_summary, readyz, resend_invitation, reserve_seat, reset_demo,
+    revoke_api_key, revoke_invitation, rotate_customer_clickhouse_credentials, runs_summary,
+    side_by_side, update_dashboard_preferences, update_run, update_workspace_view, upload_artifact,
+    usage_export, usage_summary, validate_customer_clickhouse_connection,
 };
 
 const SESSION_COOKIE: &str = "instantml_session";
@@ -70,6 +70,7 @@ pub fn router(state: AppState) -> Router {
     let service_plane = state.config.service_plane;
     let shared = Arc::new(state);
     let cors = cors_layer(&shared.config);
+    let live_cors = cors_layer(&shared.config);
 
     let mut app = platform_routes();
     if service_plane.includes_control() {
@@ -79,8 +80,9 @@ pub fn router(state: AppState) -> Router {
         app = app.merge(data_routes(max_upload));
     }
 
-    app.fallback(not_found)
-        .with_state(shared)
+    let regular = app
+        .fallback(not_found)
+        .with_state(shared.clone())
         .layer(
             ServiceBuilder::new()
                 .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
@@ -114,7 +116,48 @@ pub fn router(state: AppState) -> Router {
                 .layer(CompressionLayer::new())
                 .layer(TimeoutLayer::new(request_timeout)),
         )
-        .layer(DefaultBodyLimit::max(max_body))
+        .layer(DefaultBodyLimit::max(max_body));
+
+    let live = if service_plane.includes_data() {
+        live_routes()
+            .with_state(shared)
+            .layer(
+                ServiceBuilder::new()
+                    .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+                    .layer(PropagateRequestIdLayer::x_request_id())
+                    .layer(
+                        TraceLayer::new_for_http()
+                            .make_span_with(move |request: &axum::http::Request<_>| {
+                                observability::request_span(request, service_plane)
+                            })
+                            .on_response(
+                                move |response: &axum::http::Response<_>,
+                                      latency: Duration,
+                                      span: &tracing::Span| {
+                                    observability::on_response(
+                                        response,
+                                        latency,
+                                        span,
+                                        slow_request_threshold,
+                                    );
+                                },
+                            )
+                            .on_failure(
+                                move |failure_class: tower_http::classify::ServerErrorsFailureClass,
+                                      latency: Duration,
+                                      span: &tracing::Span| {
+                                    observability::on_failure(&failure_class, latency, span);
+                                },
+                            ),
+                    )
+                    .layer(live_cors),
+            )
+            .layer(DefaultBodyLimit::max(max_body))
+    } else {
+        Router::new()
+    };
+
+    regular.merge(live)
 }
 
 fn platform_routes() -> Router<Arc<AppState>> {
@@ -205,6 +248,7 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/projects", post(create_project).get(list_projects))
         .route("/runs", post(create_run).get(list_runs))
         .route("/runs/:run_id", get(get_run).patch(update_run))
+        .route("/runs/:run_id/heartbeat", post(heartbeat_run))
         .route("/runs/:run_id/metrics", post(log_metrics).get(get_metrics))
         .route("/runs/:run_id/rank-metrics", post(log_rank_metrics))
         .route(
@@ -264,6 +308,10 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/api/imports/neptune", post(import_neptune))
         .route("/api/imports/wandb", post(import_wandb))
         .route("/api/imports/mlflow", post(import_mlflow))
+}
+
+fn live_routes() -> Router<Arc<AppState>> {
+    Router::new().route("/api/live/runs", get(live_runs))
 }
 
 fn cors_layer(config: &AppConfig) -> CorsLayer {

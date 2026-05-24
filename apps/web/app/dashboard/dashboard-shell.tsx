@@ -167,6 +167,9 @@ const WORKSPACE_HISTORY_LIMIT = 50;
 const WAREHOUSE_RETRY_MS = 5_000;
 const DASHBOARD_REQUEST_RETRY_DELAYS_MS = [250, 700, 1_500];
 const METRIC_SERIES_RETRY_DELAYS_MS = [350, 900, 1_800];
+const LIVE_FOLLOW_RUN_LIMIT = 100;
+const LIVE_REFRESH_DEBOUNCE_MS = 800;
+const LIVE_POLL_INTERVAL_MS = 5_000;
 // M4 bucket count passed with every /api/metrics/series request.
 // Must match or exceed the widest chart pixel width so the downsampled series
 // is lossless for rendering. Reference chart width is 560 px; 1200 gives 2×
@@ -291,6 +294,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const workspaceFocusRegionRef = useRef<"runs" | "canvas">("canvas");
   const summaryTotalRef = useRef(0);
   const warehouseRetryTimerRef = useRef<number | null>(null);
+  const liveRefreshTimerRef = useRef<number | null>(null);
   const projectPreferenceLoadedRef = useRef(false);
   const userTouchedDashboardFiltersRef = useRef(false);
   const defaultSelectionInitializedRef = useRef(false);
@@ -329,6 +333,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [pageOffset, setPageOffset] = useState(0);
   const [pageCursorStack, setPageCursorStack] = useState<string[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [livePaused, setLivePaused] = useState(false);
+  const [liveMode, setLiveMode] = useState<"idle" | "streaming" | "polling">("idle");
   const [pageNavigationPending, setPageNavigationPending] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
   const [summary, setSummary] = useState<Summary>({ runs: [], metric_keys: [], total: 0 });
@@ -601,6 +607,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
     return sortedRuns.slice(0, maxWorkspacePanelRuns);
   }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
+  const liveFollowRuns = useMemo(() => {
+    const candidates = selectedRuns.length ? selectedRuns : sortedRuns;
+    return candidates
+      .filter((run) => run.status === "running")
+      .slice(0, LIVE_FOLLOW_RUN_LIMIT);
+  }, [selectedRuns, sortedRuns]);
+  const liveFollowRunKey = useMemo(() => liveFollowRuns.map((run) => run.id).join(","), [liveFollowRuns]);
+  const liveMetricKey = useMemo(() => (
+    [metricKey, ...workspacePanelMetrics, ...pinnedMetrics]
+      .filter(Boolean)
+      .slice(0, 50)
+      .join(",")
+  ), [metricKey, pinnedMetrics, workspacePanelMetrics]);
   const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
   const editingPanelContext = useMemo(() => {
     if (!editingPanelRef) return null;
@@ -765,7 +784,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
   }, [api]);
 
-  const loadDashboard = useCallback(async (options: { signal?: AbortSignal } = {}) => {
+  const loadDashboard = useCallback(async (options: { signal?: AbortSignal; silent?: boolean } = {}) => {
     const requestOptions = options && "signal" in options ? options : {};
     const requestId = dashboardRequestRef.current + 1;
     if (warehouseRetryTimerRef.current) {
@@ -773,9 +792,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       warehouseRetryTimerRef.current = null;
     }
     dashboardRequestRef.current = requestId;
-    setDashboardLoading(true);
-    setLoadingDetail("Loading runs");
-    setMessage("Loading runs...");
+    if (!options.silent) {
+      setDashboardLoading(true);
+      setLoadingDetail("Loading runs");
+      setMessage("Loading runs...");
+    }
     let keepLoadingScreen = false;
     try {
       const params = currentPageCursor
@@ -804,7 +825,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return next.ids;
       });
       setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
-      if (overviewResult.status === "rejected" && !isWarehouseStartingError(overviewResult.reason)) {
+      if (options.silent) {
+        setMessage((current) => current.startsWith("Loading ") ? "Live updates synced." : current);
+      } else if (overviewResult.status === "rejected" && !isWarehouseStartingError(overviewResult.reason)) {
         setMessage("Runs loaded. Overview is still syncing.");
       } else {
         setMessage(runsPageMessage(nextSummary.total, pageOffset, nextSummary.runs.length));
@@ -812,7 +835,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } catch (error) {
       if (requestId === dashboardRequestRef.current && !isAbortError(error)) {
         const detail = error instanceof Error ? error.message : "Unable to load runs.";
-        setMessage(detail);
+        if (!options.silent) setMessage(detail);
         if (isWarehouseStartingError(error) && !options.signal?.aborted) {
           setLoadingDetail("Starting data warehouse");
           keepLoadingScreen = !initialLoadDone;
@@ -824,7 +847,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
     } finally {
       if (requestId === dashboardRequestRef.current) {
-        setDashboardLoading(keepLoadingScreen);
+        if (!options.silent) setDashboardLoading(keepLoadingScreen);
         pageNavigationPendingRef.current = false;
         setPageNavigationPending(false);
         if (!keepLoadingScreen && !options.signal?.aborted) setInitialLoadDone(true);
@@ -942,6 +965,75 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [dashboardAuthorized, loadDashboard]);
 
   useEffect(() => {
+    if (!dashboardAuthorized || livePaused || !liveFollowRunKey) {
+      setLiveMode("idle");
+      return;
+    }
+    let stopped = false;
+    let pollTimer: number | null = null;
+
+    const scheduleRefresh = () => {
+      if (liveRefreshTimerRef.current) window.clearTimeout(liveRefreshTimerRef.current);
+      liveRefreshTimerRef.current = window.setTimeout(() => {
+        liveRefreshTimerRef.current = null;
+        if (!stopped) void loadDashboard({ silent: true });
+      }, LIVE_REFRESH_DEBOUNCE_MS);
+    };
+
+    const startPolling = () => {
+      if (stopped || pollTimer) return;
+      setLiveMode("polling");
+      pollTimer = window.setInterval(() => {
+        if (!document.hidden) void loadDashboard({ silent: true });
+      }, LIVE_POLL_INTERVAL_MS);
+    };
+    const startRefreshWatchdog = () => {
+      if (stopped || pollTimer) return;
+      pollTimer = window.setInterval(() => {
+        if (!document.hidden) void loadDashboard({ silent: true });
+      }, LIVE_POLL_INTERVAL_MS);
+    };
+
+    if (typeof window === "undefined" || typeof window.EventSource !== "function") {
+      startPolling();
+      return () => {
+        stopped = true;
+        if (pollTimer) window.clearInterval(pollTimer);
+      };
+    }
+
+    const streamPath = `/api/live/runs${queryString({ run_ids: liveFollowRunKey, metric_keys: liveMetricKey })}`;
+    const source = new window.EventSource(streamPath, { withCredentials: true });
+    setLiveMode("streaming");
+    // Keep a bounded watchdog even while SSE is open. Browsers and same-origin
+    // proxies can occasionally hold a stream without delivering events or
+    // surfacing an error; SSE remains the fast path, the poll preserves liveness.
+    startRefreshWatchdog();
+    source.addEventListener("run_metric_batch", scheduleRefresh);
+    source.addEventListener("run_console_batch", scheduleRefresh);
+    source.addEventListener("run_status", scheduleRefresh);
+    source.addEventListener("full_refresh_required", scheduleRefresh);
+    source.onerror = () => {
+      source.close();
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      startPolling();
+    };
+
+    return () => {
+      stopped = true;
+      source.close();
+      if (pollTimer) window.clearInterval(pollTimer);
+      if (liveRefreshTimerRef.current) {
+        window.clearTimeout(liveRefreshTimerRef.current);
+        liveRefreshTimerRef.current = null;
+      }
+    };
+  }, [dashboardAuthorized, liveFollowRunKey, liveMetricKey, livePaused, loadDashboard]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setQuery(queryInput), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [queryInput]);
@@ -977,6 +1069,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     return () => {
       if (warehouseRetryTimerRef.current) window.clearTimeout(warehouseRetryTimerRef.current);
+      if (liveRefreshTimerRef.current) window.clearTimeout(liveRefreshTimerRef.current);
     };
   }, []);
 
@@ -2372,6 +2465,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         workspaceName={sessionPayload?.organization?.name ?? ""}
         workspaceId={activeOrgId}
       />
+
+      {liveMode !== "idle" || liveFollowRuns.length ? (
+        <div className="live-follow-strip">
+          <span className={`live-dot ${liveMode}`} />
+          <span>{livePaused ? "Live follow paused" : liveMode === "polling" ? "Live follow polling" : "Live follow streaming"}</span>
+          <strong>{liveFollowRuns.length} running</strong>
+          <button className="copy-button" type="button" onClick={() => setLivePaused((current) => !current)}>
+            {livePaused ? "Resume" : "Pause"}
+          </button>
+        </div>
+      ) : null}
 
       {isMobile && mobileNavOpen ? (
         <div

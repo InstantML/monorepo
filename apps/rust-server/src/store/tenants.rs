@@ -125,9 +125,16 @@ impl Store {
         self.persist_upgraded_route_schema_version_if_needed(&route)
             .await?;
         let records = metric_store.load_operational_records().await?;
+        let liveness_rows = metric_store.load_latest_run_liveness().await?;
         let stats = {
             let mut data = self.data.lock().await;
-            data.apply_operational_records(records, ReplayScope::Tenant(org_id))?
+            let stats = data.apply_operational_records(records, ReplayScope::Tenant(org_id))?;
+            for row in liveness_rows {
+                if row.org_id == org_id {
+                    data.run_liveness.insert(row.run_id, row);
+                }
+            }
+            stats
         };
         self.tenant_metric_stores
             .lock()

@@ -53,6 +53,18 @@ pub async fn log_console_logs(
                 ensure_run_access_in_data(ctx, &run)?;
             }
             metric_store.insert_console_logs(&rows).await?;
+            let run = note_run_event(store, ctx, run_id).await?;
+            store.publish_live_event(
+                ctx.org_id,
+                run.project_id,
+                run_id,
+                "run_console_batch",
+                json!({
+                    "run_id": run_id,
+                    "stream": stream,
+                    "line_count": rows.len()
+                }),
+            );
             let record = IdempotencyRecord {
                 org_id: ctx.org_id,
                 key: key.clone(),
@@ -81,6 +93,18 @@ pub async fn log_console_logs(
         ensure_run_access_in_data(ctx, &run)?;
     }
     metric_store.insert_console_logs(&rows).await?;
+    let run = note_run_event(store, ctx, run_id).await?;
+    store.publish_live_event(
+        ctx.org_id,
+        run.project_id,
+        run_id,
+        "run_console_batch",
+        json!({
+            "run_id": run_id,
+            "stream": stream,
+            "line_count": rows.len()
+        }),
+    );
     Ok(rows.len())
 }
 

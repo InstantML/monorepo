@@ -63,7 +63,7 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- migrate
 cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 ```
 
-`worker` prunes expired idempotency keys and expired/revoked browser sessions from the single-process index, then writes immutable `usage_daily` snapshots for each organization. With the ClickHouse-only first slice, cleanup compacts live memory only; durable operational-log compaction is deferred to the hosted storage follow-up.
+`worker` prunes expired idempotency keys and expired/revoked browser sessions from the single-process index, marks heartbeat-expired `running` runs as `crashed`, then writes immutable `usage_daily` snapshots for each organization. With the ClickHouse-only first slice, cleanup compacts live memory only; durable operational-log compaction is deferred to the hosted storage follow-up.
 
 ## Hosted Cloud Run Deployment
 
@@ -127,6 +127,8 @@ Environment variables:
 - `INSTANTML_MAX_BODY_BYTES`: general JSON body cap. Default: `1000000`.
 - `INSTANTML_MAX_UPLOAD_BODY_BYTES`: upload JSON body cap. Default: `50000000`.
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: HTTP timeout. Default: `30`.
+- `INSTANTML_RUN_HEARTBEAT_TIMEOUT_SECONDS`: age after which a `running` run with no heartbeat is marked `crashed` by the liveness sweeper/worker. Default: `300`.
+- `INSTANTML_RUN_LIVENESS_SWEEP_SECONDS`: interval for the in-process liveness sweeper in `serve`/`all` mode. Default: `60`.
 - `INSTANTML_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
 - `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warning logs. Default: `1000`.
 - `INSTANTML_DEV_AUTH_ENABLED`: enables the local Google-style auth endpoint when `INSTANTML_AUTH_MODE=local`. Loopback local binds enable it by default.
@@ -253,7 +255,16 @@ Implemented health and platform endpoints:
 - `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, per-rank metric ingest and run-scoped rank summaries, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, scalar metrics, per-rank metric ingest and run-scoped rank summaries, run heartbeats/liveness, browser-session SSE live-run invalidations, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+
+Run creation accepts an optional UUID `id` and `resume` mode (`never`, `allow`,
+or `must`). Responses include the run plus `created`, `resumed`,
+`resume_from_step`, and `latest_steps_by_key` so SDK clients can resume
+implicit step counters safely. `POST /runs/:run_id/heartbeat` records online
+SDK liveness, and `GET /api/live/runs` exposes browser-session SSE
+notifications for metric/log/status invalidations. SSE events are hints only;
+the persisted REST endpoints remain the source of truth, and the frontend must
+fall back to bounded polling when the stream is unavailable or lagged.
 
 Run-summary pages default to 100 rows and are capped at 1,000 rows. Bulk UI
 selection should use `GET /api/runs/summary?projection=selection`, which skips

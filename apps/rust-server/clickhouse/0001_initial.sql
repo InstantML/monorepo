@@ -65,6 +65,21 @@ PARTITION BY toYYYYMM(created_at)
 ORDER BY (org_id, run_id, stream, line_number, ingest_id)
 SETTINGS index_granularity = 8192;
 
+CREATE TABLE IF NOT EXISTS run_liveness (
+    org_id             UUID,
+    run_id             UUID,
+    process_id         UUID,
+    last_heartbeat_at  DateTime64(6, 'UTC') CODEC(Delta, ZSTD(3)),
+    last_event_at      DateTime64(6, 'UTC') CODEC(Delta, ZSTD(3)),
+    state              LowCardinality(String),
+    created_at         DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (org_id, run_id, created_at)
+TTL toDateTime(created_at) + INTERVAL 30 DAY DELETE
+SETTINGS index_granularity = 8192;
+
 CREATE TABLE IF NOT EXISTS metric_series (
     org_id           UUID,
     run_id           UUID,

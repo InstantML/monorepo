@@ -496,8 +496,9 @@ without `CREATE DATABASE`, inserts an operational validation record, stores only
 a Secret Manager reference in the route record, and returns the configured
 `required_egress_cidrs` and `egress_set_version` for customer allowlisting.
 After the route records the current metric schema version, normal route loads
-skip schema migration. Version 2 adds the `rank_metric_points` table; older
-ready BYOC routes are migrated and updated on first load. Credential rotation
+skip schema migration. Version 2 adds the `rank_metric_points` table, and
+version 3 adds `run_liveness`; older ready BYOC routes are migrated and updated
+on first load. Credential rotation
 validates the new credential against the existing
 saved endpoint/database without rerunning schema migration, stores a new Secret
 Manager version, swaps the route reference, and attempts to destroy the prior
@@ -589,6 +590,8 @@ Body:
 
 ```json
 {
+  "id": "1f5c597f-e678-4fc1-8e1e-f11a1edb1f84",
+  "resume": "never",
   "project": "cartpole",
   "name": "seed-7",
   "config": { "seed": 7 },
@@ -598,12 +601,21 @@ Body:
 ```
 
 The project is created automatically unless the caller uses a project-scoped
-API key for a different project.
+API key for a different project. `id` is an optional UUID supplied by clients
+that need retry/resume behavior. `resume` accepts `never`, `allow`, or `must`;
+`never` conflicts when the supplied ID already exists, `must` requires an
+existing run, and `allow` resumes if present or creates the run otherwise.
 
 Output:
 
 ```json
-{ "run": {} }
+{
+  "run": {},
+  "created": true,
+  "resumed": false,
+  "resume_from_step": 0,
+  "latest_steps_by_key": {}
+}
 ```
 
 ### `GET /runs`
@@ -615,7 +627,7 @@ Query:
 | Parameter | Meaning |
 | --- | --- |
 | `project` | Project name, omit or `all` for all projects |
-| `status` | `running`, `finished`, `failed`, omit or `all` for all statuses |
+| `status` | `running`, `finished`, `failed`, `crashed`, omit or `all` for all statuses |
 | `q` | Whitespace-token search over run name, tags, config, metadata, and notes |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, `metric-best` |
 | `metric_key` | Metric used by metric sorts, default `eval/return_mean` |
@@ -655,14 +667,83 @@ Body:
 }
 ```
 
-At least one field is required. `status` must be `running`, `finished`, or
-`failed`. Empty notes remove the stored note.
+At least one field is required. `status` must be `running`, `finished`,
+`failed`, or `crashed`. Empty notes remove the stored note.
 
 Output:
 
 ```json
 { "run": {} }
 ```
+
+### `POST /runs/:run_id/heartbeat`
+
+Auth: `sdk:ingest` API key or owner/admin/member session.
+
+Body:
+
+```json
+{
+  "process_id": "3fef02a6-4204-4a13-8c37-6de1acb01144",
+  "timestamp": "2026-05-23T12:00:00Z",
+  "state": "running"
+}
+```
+
+`process_id` is optional; the server creates one when omitted. `timestamp`
+defaults to server time. `state` currently accepts `running`. The endpoint
+stores append-only liveness snapshots in ClickHouse and updates run summaries
+with `last_heartbeat_at` and `last_event_at`.
+
+Output:
+
+```json
+{
+  "run": {
+    "id": "uuid",
+    "status": "running",
+    "last_heartbeat_at": "2026-05-23T12:00:00Z",
+    "last_event_at": "2026-05-23T12:00:00Z"
+  }
+}
+```
+
+The worker and in-process sweeper mark `running` runs as `crashed` after
+`INSTANTML_RUN_HEARTBEAT_TIMEOUT_SECONDS` without a fresh heartbeat.
+
+### `GET /api/live/runs`
+
+Auth: owner/admin/member/viewer browser session.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `run_ids` | Comma-separated run IDs to follow, max 100 |
+| `metric_keys` | Optional comma-separated metric keys for metric invalidations, max 50 |
+
+Output: `text/event-stream`.
+
+Events are compact invalidation hints, not durable data:
+
+```text
+event: run_metric_batch
+data: {"run_id":"uuid","metric_keys":["train/loss"],"point_count":1}
+
+event: run_console_batch
+data: {"run_id":"uuid","stream":"stdout","line_count":3}
+
+event: run_status
+data: {"run_id":"uuid","status":"crashed","last_heartbeat_at":"2026-05-23T12:00:00Z"}
+
+event: full_refresh_required
+data: {"reason":"lagged"}
+```
+
+Clients should debounce bounded REST refetches and use polling fallback when
+the stream is unavailable. SSE is currently process-local fanout; persisted
+REST endpoints remain authoritative across service restarts and multi-instance
+deployments.
 
 ## Metrics
 

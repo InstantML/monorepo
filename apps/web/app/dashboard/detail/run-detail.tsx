@@ -2,9 +2,9 @@
 
 import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, Server, Star, Tag } from "lucide-react";
 
-import { buildCheckpointResumeCode } from "../../../src/checkpoints.js";
+import { buildCheckpointResumeCode, buildRunResumeCode, buildRunRetryCode } from "../../../src/checkpoints.js";
 import { durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
-import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
+import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runLastSeenLabel, runNoteText, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
 import { ArtifactMediaPreview } from "./artifact-panel";
@@ -127,6 +127,24 @@ function CheckpointList({ artifacts, run }: { artifacts: Artifact[]; run: RunSum
   );
 }
 
+function RestartCommands({ run }: { run: RunSummary }) {
+  if (run.status !== "failed" && run.status !== "crashed") return null;
+  return (
+    <section className="detail-section restart-section">
+      <h3><Copy size={15} /> Restart Commands</h3>
+      <div className="restart-actions">
+        <button className="copy-button" type="button" onClick={() => copyText(buildRunRetryCode(run))}>
+          <Copy size={13} /> Retry as new run
+        </button>
+        <button className="copy-button" type="button" onClick={() => copyText(buildRunResumeCode(run))}>
+          <Copy size={13} /> Resume same run
+        </button>
+      </div>
+      <small>One-click agent restart is not configured yet.</small>
+    </section>
+  );
+}
+
 function artifactCountForRun(run: RunSummary, loadedCount: number) {
   const counted = Object.values(run.artifact_counts ?? {}).reduce((total, value) => (
     total + (typeof value === "number" && Number.isFinite(value) ? value : 0)
@@ -169,6 +187,8 @@ export function RunDetail({
     ["Start time", formatRunTime(run.started_at ?? run.created_at)],
     ["End time", run.finished_at ? formatRunTime(run.finished_at) : "-"],
     ["Duration", durationLabel(run)],
+    ["Last heartbeat", run.last_heartbeat_at ? formatRunTime(run.last_heartbeat_at) : "-"],
+    ["Last event", runLastSeenLabel(run)],
     ["Host", compactValue(run.metadata.hostname ?? run.metadata.host ?? "-")],
     ["PID", compactValue(run.metadata.pid ?? "-")],
     ["Commit", compactValue(run.metadata.git_commit ?? run.metadata.commit ?? "-")],
@@ -228,9 +248,9 @@ export function RunDetail({
         <MetricCard label="Artifacts" value={formatNumber(artifactCount, 0)} tone={artifactCount ? "good" : "neutral"} />
       </div>
       {hover ? <div className="detail-row highlight"><span>Hovered point</span><strong>{hover.runName} / step {hover.point.step} / {formatNumber(hover.point.value, 4)}</strong></div> : null}
-      {run.status === "failed" ? (
+      {run.status === "failed" || run.status === "crashed" ? (
         <section className="failure-card">
-          <strong>Failed run triage</strong>
+          <strong>{run.status === "crashed" ? "Crashed run triage" : "Failed run triage"}</strong>
           <div><span>Last metric step</span><b>{lastMetricStep(run)}</b></div>
           <div><span>Likely reason</span><b>{compactValue(run.metadata.error ?? run.metadata.exit_reason ?? "No failure reason logged")}</b></div>
           <div><span>Checkpoint coverage</span><b>{formatNumber(run.artifact_counts?.checkpoint ?? 0, 0)} checkpoints</b></div>
@@ -244,6 +264,7 @@ export function RunDetail({
           </section>
           {!workspaceSummary ? (
             <>
+              <RestartCommands run={run} />
               <CheckpointList artifacts={artifacts} run={run} />
               <section className="detail-section">
                 <h3><Folder size={15} /> Recent Artifacts ({artifacts.length})</h3>

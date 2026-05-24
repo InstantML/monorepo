@@ -34,8 +34,8 @@ Data plane:
   ClickHouse table operational_records
   -> tenant product metadata and low-volume state
 
-  ClickHouse tables metric_points, rank_metric_points, console_log_lines, metric_series
-  -> high-volume scalar metrics, per-rank metrics, console logs, and maintained summaries
+  ClickHouse tables metric_points, rank_metric_points, console_log_lines, run_liveness, metric_series
+  -> high-volume scalar metrics, per-rank metrics, console logs, run liveness, and maintained summaries
 ```
 
 In local/non-hosted mode, `operational_records` may contain both control and
@@ -413,7 +413,7 @@ clamped to read-only export behavior at authorization time.
 | `username` | string | ClickHouse username. |
 | `password_secret_ref` | string or null | Config/Secret Manager reference. BYOC hosted routes use `gcp-secret-manager:projects/.../versions/...`; local BYOC smoke tests may use `local-user-data-byoc:<org_id>`. |
 | `password_ciphertext` | string or null | Plaintext credential fallback for local smoke tests and the legacy hosted cloud-service provisioner only. Hosted BYOC must leave this null. |
-| `schema_version` | integer or null | Applied InstantML ClickHouse schema version. BYOC route loads skip DDL when this is at least the current metric schema version. The current version is 2. |
+| `schema_version` | integer or null | Applied InstantML ClickHouse schema version. BYOC route loads skip DDL when this is at least the current metric schema version. The current version is 3. |
 | `service_id` | string or null | ClickHouse Cloud service id when known. |
 | `created_at` | datetime | Initial route creation time. |
 | `updated_at` | datetime | Last route state update time. |
@@ -452,7 +452,7 @@ spend gates are in place.
   "name": "Daily comparison",
   "project": "hosted-scale-data",
   "payload": {
-    "schema_version": 2,
+    "schema_version": 3,
     "tab": "runs",
     "workspace_view": {}
   },
@@ -577,16 +577,20 @@ product metadata when replayed.
   "metadata": {},
   "created_at": "2026-05-16T00:00:00Z",
   "started_at": "2026-05-16T00:00:00Z",
-  "finished_at": null
+  "finished_at": null,
+  "last_heartbeat_at": null,
+  "last_event_at": "2026-05-16T00:01:00Z"
 }
 ```
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `status` | string | Validated run status such as `running`, `finished`, or `failed`. |
+| `status` | string | Validated run status: `running`, `finished`, `failed`, or heartbeat-derived `crashed`. |
 | `config` | JSON object | User config object. |
 | `tags` | string array | Searchable run tags. |
 | `metadata` | JSON object | Searchable metadata. Notes are stored under metadata when edited. |
+| `last_heartbeat_at` | datetime or null | Summary decoration from the newest `run_liveness` row; `null` in persisted `run` operational records. |
+| `last_event_at` | datetime or null | Summary decoration from metrics/logs/heartbeat liveness; `null` in persisted `run` operational records. |
 
 ### `AttributeRow`
 
@@ -937,6 +941,42 @@ SETTINGS index_granularity = 8192;
 | `message` | `String` | Log line text. |
 | `logged_at` | `DateTime64(6, 'UTC')` | Client-supplied or server-normalized line time. |
 | `created_at` | `DateTime64(6, 'UTC')` | Server insert time. |
+
+### `run_liveness`
+
+Purpose: append-only heartbeat/event snapshots used to decorate run summaries
+and mark dead online runs as `crashed`.
+
+```sql
+CREATE TABLE IF NOT EXISTS run_liveness (
+    org_id             UUID,
+    run_id             UUID,
+    process_id         UUID,
+    last_heartbeat_at  DateTime64(6, 'UTC') CODEC(Delta, ZSTD(3)),
+    last_event_at      DateTime64(6, 'UTC') CODEC(Delta, ZSTD(3)),
+    state              LowCardinality(String),
+    created_at         DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (org_id, run_id, created_at)
+TTL toDateTime(created_at) + INTERVAL 30 DAY DELETE
+SETTINGS index_granularity = 8192;
+```
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `org_id` | `UUID` | Tenant owner. |
+| `run_id` | `UUID` | Run owner. |
+| `process_id` | `UUID` | SDK process heartbeat identity. |
+| `last_heartbeat_at` | `DateTime64(6, 'UTC')` | Last explicit SDK heartbeat time. |
+| `last_event_at` | `DateTime64(6, 'UTC')` | Last metric/log/heartbeat event time. |
+| `state` | `LowCardinality(String)` | Liveness state, currently `running`. |
+| `created_at` | `DateTime64(6, 'UTC')` | Server insert time. |
+
+Reads choose the newest row per `(org_id, run_id)`. Terminal run status remains
+the `run` operational record; liveness rows only decorate summaries and feed
+heartbeat-expiry crash detection.
 
 ### `metric_series`
 

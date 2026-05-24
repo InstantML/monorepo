@@ -1,6 +1,9 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration as StdDuration, Instant},
 };
 
@@ -39,7 +42,7 @@ pub use workspace_views::*;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
@@ -70,26 +73,26 @@ use crate::{
         OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
         PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
         RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-        RankReducerPoint, RequestContext, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest,
-        SeatRow, SeatUserRow, ServiceAccountRow, UpdateDashboardPreferencesRequest,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
-        WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE,
-        BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED,
-        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES,
-        MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES,
-        MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS,
-        MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS,
-        MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE,
-        PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED,
-        STORAGE_STATE_LOCKED, STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED,
-        STORAGE_STATE_VALIDATING,
+        RankReducerPoint, RequestContext, ReserveSeatRequest, RunHeartbeatRequest, RunRow,
+        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+        UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+        UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED,
+        BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
+        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
+        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
+        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
+        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
+        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
+        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
+        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
+        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
         ConsoleLogInsertRow, ConsoleLogReadRow, M4BucketRow, MetricPointRow as ChMetricPointRow,
         MetricStore, OperationalRecordRow, RankMetricCanonicalRow,
-        RankMetricPointRow as ChRankMetricPointRow, RankMetricStepWindow, SeriesReadRow,
-        SeriesSortMode,
+        RankMetricPointRow as ChRankMetricPointRow, RankMetricStepWindow, RunLivenessRow,
+        SeriesReadRow, SeriesSortMode,
     },
 };
 
@@ -155,6 +158,8 @@ pub struct Store {
     /// under burst load, causing transient `client error (Connect)` failures.
     /// We skip the refresh if the last one ran within `CONTROL_REFRESH_MIN_INTERVAL`.
     last_control_refresh: Arc<Mutex<Option<Instant>>>,
+    live_events: broadcast::Sender<LiveEvent>,
+    live_sequence: Arc<AtomicU64>,
 }
 
 const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
@@ -166,6 +171,25 @@ const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
 /// removal). If this becomes a load problem, the right fix is push-based
 /// invalidation (Tier 3), not a longer interval.
 const CONTROL_REFRESH_BACKGROUND_INTERVAL: StdDuration = StdDuration::from_secs(2);
+
+#[derive(Clone, Debug, Serialize)]
+pub struct LiveEvent {
+    pub id: u64,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub run_id: Uuid,
+    pub event: String,
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CreateRunResult {
+    pub run: RunRow,
+    pub created: bool,
+    pub resumed: bool,
+    pub resume_from_step: f64,
+    pub latest_steps_by_key: BTreeMap<String, f64>,
+}
 
 impl Store {
     pub async fn connect(
@@ -191,6 +215,8 @@ impl Store {
             control_projection_loaded: Arc::new(Mutex::new(false)),
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
+            live_events: broadcast::channel(1_024).0,
+            live_sequence: Arc::new(AtomicU64::new(0)),
         };
         store.rebuild().await?;
         if !store.hosted_clickhouse_enabled() {
@@ -208,8 +234,54 @@ impl Store {
         &self.metric_store
     }
 
+    pub fn subscribe_live_events(&self) -> broadcast::Receiver<LiveEvent> {
+        self.live_events.subscribe()
+    }
+
+    fn publish_live_event(
+        &self,
+        org_id: Uuid,
+        project_id: Uuid,
+        run_id: Uuid,
+        event: &str,
+        payload: Value,
+    ) {
+        let id = self.live_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+        let _ = self.live_events.send(LiveEvent {
+            id,
+            org_id,
+            project_id,
+            run_id,
+            event: event.to_string(),
+            payload,
+        });
+    }
+
+    pub async fn publish_full_refresh(&self, org_id: Uuid, project_id: Uuid, run_id: Uuid) {
+        self.publish_live_event(
+            org_id,
+            project_id,
+            run_id,
+            "full_refresh_required",
+            json!({ "run_id": run_id }),
+        );
+    }
+
+    pub async fn liveness_for_runs(&self, run_ids: &[Uuid]) -> HashMap<Uuid, RunLivenessRow> {
+        let data = self.data.lock().await;
+        run_ids
+            .iter()
+            .filter_map(|run_id| {
+                data.run_liveness
+                    .get(run_id)
+                    .cloned()
+                    .map(|row| (*run_id, row))
+            })
+            .collect()
+    }
+
     async fn rebuild(&self) -> AppResult<()> {
-        let (data, latest_record_micros) = if let Some(control_store) = &self.control_store {
+        let (mut data, latest_record_micros) = if let Some(control_store) = &self.control_store {
             // First load: no cursor, so this still pulls every control record.
             let records = control_store.load_records(None).await?;
             let mut data = StoreData::default();
@@ -221,6 +293,11 @@ impl Store {
             let stats = data.apply_operational_records(records, ReplayScope::All)?;
             (data, stats.latest_record_micros)
         };
+        if let Ok(rows) = self.metric_store.load_latest_run_liveness().await {
+            for row in rows {
+                data.run_liveness.insert(row.run_id, row);
+            }
+        }
         *self.data.lock().await = data;
         *self.record_clock_micros.lock().await = latest_record_micros;
         self.mark_control_projection_loaded().await;
@@ -277,6 +354,26 @@ impl Store {
             }
         });
         Some(handle)
+    }
+
+    pub fn spawn_liveness_sweeper(
+        &self,
+        timeout: StdDuration,
+        interval: StdDuration,
+    ) -> JoinHandle<()> {
+        let store = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(interval).await;
+            loop {
+                if let Err(error) = mark_stale_runs_crashed(&store, timeout).await {
+                    tracing::warn!(
+                        error = %error.message(),
+                        "run liveness sweep failed; will retry"
+                    );
+                }
+                tokio::time::sleep(interval).await;
+            }
+        })
     }
 
     pub async fn refresh_control_records(&self) -> AppResult<()> {
@@ -500,6 +597,7 @@ struct StoreData {
     runs_by_org_created: BTreeMap<(Uuid, DateTime<Utc>, Uuid), Uuid>,
     runs_by_org_project_created: BTreeMap<(Uuid, String, DateTime<Utc>, Uuid), Uuid>,
     run_search_texts: HashMap<Uuid, String>,
+    run_liveness: BTreeMap<Uuid, RunLivenessRow>,
     attributes: BTreeMap<(Uuid, i64), AttributeRow>,
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
     artifacts: BTreeMap<Uuid, ArtifactRow>,
@@ -1151,6 +1249,8 @@ mod tests {
             created_at: epoch(),
             started_at: epoch(),
             finished_at: None,
+            last_heartbeat_at: None,
+            last_event_at: None,
         }
     }
 

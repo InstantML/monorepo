@@ -61,3 +61,15 @@ export function buildCheckpointResumeCode(artifact, run, options = {}) {
 
   return `import instantml as im\n\napi = im.Api(base_url=${pythonString(baseUrl)}, api_key=${pythonString(apiKey)})\ncheckpoint_path = api.download_artifact(\n    ${pythonString(artifact.id)},\n    ${pythonString(downloadPath)},\n)\n\nrun = im.init(\n    project="checkpoints",\n    name=${pythonString(runName)},\n    config=${pythonLiteral(config, 4)},\n    tags=["resumed", "checkpoint"],\n    metadata=${pythonLiteral(metadata, 4)},\n)\n\n# Load checkpoint_path with your framework, then continue training and logging to run.\n`;
 }
+
+export function buildRunResumeCode(run) {
+  return `import instantml as im\n\nrun = im.init(\n    project=${pythonString(run.project)},\n    id=${pythonString(run.id)},\n    resume="must",\n)\n\n# Continue logging to the same run after restoring your training state.\n`;
+}
+
+export function buildRunRetryCode(run) {
+  const metadata = {
+    retry_of_run_id: run.id,
+    retry_of_run_name: run.name,
+  };
+  return `import instantml as im\n\nrun = im.init(\n    project=${pythonString(run.project)},\n    name=${pythonString(`retry-${run.name}`)},\n    config=${pythonLiteral(run.config ?? {}, 4)},\n    tags=${pythonLiteral([...(run.tags ?? []), "retry"], 4)},\n    metadata=${pythonLiteral(metadata, 4)},\n)\n\n# Restore checkpoints or state in your training code, then continue logging to the new run.\n`;
+}

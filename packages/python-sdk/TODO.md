@@ -21,14 +21,15 @@ Primary W&B references reviewed:
 
 ## P0 - Run Lifecycle And Settings
 
-- [ ] Design SDK lifecycle parity: `id`, `name`, `notes`, `tags`, `group`, `job_type`, `mode`, `resume`, `resume_from`, `fork_from`, `reinit`, `dir`, settings, and environment-variable defaults.
+- [ ] Design SDK lifecycle parity: `name`, `notes`, `tags`, `group`, `job_type`, `mode`, `resume_from`, `fork_from`, `reinit`, `dir`, settings, and environment-variable defaults.
+  - Accepted first slice: `docs/design/2026-05-23-live-run-streaming-and-restart.md` covers UUID `id`, `resume`, heartbeat, and copyable UI restart commands.
 - [x] Make tags and notes first-class in the public API, examples, and docs so users naturally label runs in ways the web search and compare surfaces can use.
 - [x] Add ergonomic helpers for replacing tags and updating notes after run creation once Rust exposes safe post-hoc mutation routes.
   - Implemented: `init(notes=...)`, `Run.set_notes(...)`, and `Run.set_tags(...)`.
   - Remaining: append/remove tag helpers after a server-side append/remove route or public API read-modify-write design exists.
 - [ ] Add true offline run creation with a local run directory and later sync. Keep the current post-run-create replay limitation documented until this lands.
 - [ ] Add disabled/no-op mode for tests and scripts that want the API shape without network or disk writes.
-- [ ] Add client-generated run IDs and resume modes that match Rust server semantics.
+- [x] Add client-generated UUID run IDs and `resume="never" | "allow" | "must"` modes that match Rust server semantics.
 - [ ] Add config include/exclude handling and clear config mutation rules.
 - [ ] Add `INSTANTML_PROJECT`, `INSTANTML_ENTITY` or org equivalent, `INSTANTML_RUN_ID`, `INSTANTML_RUN_GROUP`, `INSTANTML_MODE`, cache/data/artifact dir variables, and documented precedence with explicit arguments.
 - [ ] Keep context-manager finish behavior and make failed/keyboard-interrupted exits explicit in tests.
