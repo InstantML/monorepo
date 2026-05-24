@@ -48,6 +48,9 @@ permissions:
   # Required for the GitHub OIDC -> GCP WIF token exchange. We do NOT enable
   # any write permissions on the repo from this workflow.
   id-token: write
+  # Required so the "Require Stable Quality Gates" pre-gate can query the
+  # ci.yml workflow run history for the SHA being deployed.
+  actions: read
 
 concurrency:
   # Serialize deploys to the same environment so a tag push cannot race a
