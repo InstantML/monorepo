@@ -10,7 +10,7 @@ import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPa
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
-import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { AdvancedTabPane } from "./advanced/tab-pane";
@@ -135,6 +135,7 @@ type UsageOrg = {
   usage_period?: UsagePeriod;
   usage: Record<string, number | null | string>;
   limits: Record<string, number>;
+  plan?: Record<string, number | null | string>;
   warnings?: Array<{ code?: string; message?: string }>;
 };
 type UsagePeriod = {
@@ -313,6 +314,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [groupBy, setGroupBy] = useState("");
   const [xMode, setXMode] = useState("step");
   const [smoothing, setSmoothing] = useState(0);
+  const [identifierMode, setIdentifierMode] = useState("name");
   const [groupAverage, setGroupAverage] = useState(false);
   const [diffOnly, setDiffOnly] = useState(false);
   const [referenceRunId, setReferenceRunId] = useState("");
@@ -467,8 +469,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const currentMessageTone = messageTone(message);
   const seriesWithGroups = useMemo(() => series.map((item) => {
     const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
-    return { ...item, group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all" };
-  }), [groupBy, selectedRunDetails, series, sortedRuns]);
+    return {
+      ...item,
+      group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
+      identifier: (run ? identifierForRun(run, identifierMode) : undefined) ?? item.name,
+    };
+  }), [groupBy, identifierMode, selectedRunDetails, series, sortedRuns]);
 
   const displaySeries = useMemo(() => {
     const grouped = groupAverage ? averageGroupedSeries(seriesWithGroups) : seriesWithGroups;
@@ -498,7 +504,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         const rawSeries = panelSeries[metric] ?? [];
         const groupedSeries = rawSeries.map((item) => {
           const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
-          return { ...item, group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all" };
+          return {
+            ...item,
+            group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
+            identifier: (run ? identifierForRun(run, identifierMode) : undefined) ?? item.name,
+          };
         });
         const preparedSeries = smoothSeries(groupAverage ? averageGroupedSeries(groupedSeries) : groupedSeries, smoothing);
         const zoomRange = pinnedChartZoomRanges[metric] ?? null;
@@ -513,7 +523,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           zoomRange,
         };
       })
-  ), [groupAverage, groupBy, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns, xMode]);
+  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns, xMode]);
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
@@ -542,6 +552,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const metricUsed = Number(activeUsage.metric_points ?? 0);
   const metricLimit = Number(activeLimits.metric_points ?? 0);
   const metricPercent = metricLimit ? Math.min(100, Math.round((metricUsed / metricLimit) * 100)) : 0;
+  const apiRequestsUsed = Number(activeUsage.api_requests ?? 0);
+  const apiRequestsLimit = Number(activeLimits.api_requests ?? 0);
+  const apiRequestsPercent = apiRequestsLimit ? Math.min(100, Math.round((apiRequestsUsed / apiRequestsLimit) * 100)) : 0;
+  const activePlanDetails = activeUsageOrg?.plan ?? {};
+  const generalRateLimitLabel = formatRateLimitLabel(activePlanDetails.rate_limit_rps, activePlanDetails.rate_limit_burst);
+  const ingestRateLimitLabel = formatRateLimitLabel(
+    activePlanDetails.ingest_rate_limit_rps,
+    Math.min(
+      Number(activePlanDetails.rate_limit_burst ?? 0),
+      Number(activePlanDetails.ingest_rate_limit_rps ?? 0) * 5,
+    ),
+  );
   const activePlan = planDisplayName(activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier);
   const usagePeriod = activeUsageOrg?.usage_period ?? usagePayload?.usage_period;
   const usageResetLabel = formatUsageResetLabel(usagePeriod?.reset_at ?? usagePeriod?.ends_at);
@@ -1702,6 +1724,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       groupBy,
       xMode,
       smoothing,
+      identifierMode,
       groupAverage,
       diffOnly,
       compareLayout,
@@ -1797,6 +1820,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setGroupBy(view.groupBy ?? "");
     setXMode(view.xMode ?? "step");
     setSmoothing(view.smoothing ?? 0);
+    setIdentifierMode(["name", "notes", "tags"].includes(view.identifierMode) ? view.identifierMode : "name");
     setGroupAverage(Boolean(view.groupAverage));
     setDiffOnly(Boolean(view.diffOnly));
     setCompareLayout(compareLayouts.has(view.compareLayout) ? (view.compareLayout === "auto" ? "rows" : view.compareLayout) : "rows");
@@ -2355,6 +2379,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         orgSwitchError={orgSwitchError}
         onSwitchOrg={switchOrganization}
         metricUsagePercent={metricPercent}
+        apiRequestUsagePercent={apiRequestsPercent}
         planLabel={activePlan}
         project={project}
         projects={projects}
@@ -2510,6 +2535,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
               onSmoothing={setSmoothing}
               onXMode={setXMode}
+              identifierMode={identifierMode}
+              onIdentifierMode={setIdentifierMode}
               onZoomRangeChange={setChartZoomRange}
               pinnedChartPanels={pinnedChartPanels}
               pinnedMetrics={pinnedMetrics}
@@ -2706,6 +2733,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               metricPercent={metricPercent}
               metricUsed={metricUsed}
               metricLimit={metricLimit}
+              apiRequestsPercent={apiRequestsPercent}
+              apiRequestsUsed={apiRequestsUsed}
+              apiRequestsLimit={apiRequestsLimit}
+              generalRateLimitLabel={generalRateLimitLabel}
+              ingestRateLimitLabel={ingestRateLimitLabel}
               onInviteEmail={setInviteEmail}
               onInviteRole={setInviteRole}
               onInviteSeat={inviteSeat}
@@ -2816,6 +2848,13 @@ function formatUsageResetLabel(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function formatRateLimitLabel(rps?: unknown, burst?: unknown) {
+  const requestsPerSecond = Number(rps ?? 0);
+  const burstSize = Number(burst ?? 0);
+  if (!requestsPerSecond) return "";
+  return `${formatNumber(requestsPerSecond, 0)} req/sec${burstSize ? `, burst ${formatNumber(burstSize, 0)}` : ""}`;
 }
 
 function runsPageMessage(total: number, offset: number, visibleCount: number) {

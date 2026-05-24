@@ -10,8 +10,8 @@
 #   1. Provisions a VM in the existing instantml-cloud-run VPC + subnet
 #      (same as the rust-server services, so they reach it at <5ms latency).
 #   2. Installs Docker + ClickHouse via a startup script.
-#   3. Generates a random ClickHouse password (printed once to your terminal,
-#      then immediately written to Secret Manager).
+#   3. Generates a random ClickHouse password on first provisioning and writes
+#      it to Secret Manager without printing it.
 #   4. Adds a firewall rule allowing Cloud Run egress (136.115.243.188/32) to
 #      reach ClickHouse's HTTP and native ports.
 #   5. Updates the 3 Secret Manager entries that the rust-server reads.
@@ -23,7 +23,7 @@
 #     credits expired; their data is mostly demo seed which is regeneratable.
 #     If you DO need to pull data, add a card to ClickHouse Cloud first,
 #     resume, dump via `clickhouse-client INTO OUTFILE`, then run this.
-#   - Set up nightly backups. See the README addendum after this lands.
+#   - Set up nightly backups. See docs/architecture/self-hosted-gcp-clickhouse.md.
 #   - Delete the orphaned per-org warehouse (`InstantML - Warehouse 9d380753`)
 #     on the ClickHouse Cloud side — do that manually in their console after
 #     verifying the new VM works.
@@ -33,7 +33,8 @@
 #
 # Idempotency:
 #   Each step checks if the target already exists before creating. Safe to
-#   re-run if a step fails mid-way.
+#   re-run if a step fails mid-way. When the VM already exists, the script
+#   reuses the current Secret Manager password rather than rotating it.
 
 set -euo pipefail
 
@@ -103,6 +104,27 @@ if [ "$current_project" != "$PROJECT_ID" ]; then
 fi
 ok "project: $PROJECT_ID"
 
+VM_EXISTS=0
+if gcloud compute instances describe "$VM_NAME" --zone="$ZONE" >/dev/null 2>&1; then
+  VM_EXISTS=1
+fi
+
+CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
+if [ "$VM_EXISTS" = "1" ]; then
+  case "${INSTANTML_CLICKHOUSE_ROTATE_PASSWORD:-0}" in
+    1|true|TRUE|yes|YES|on|ON)
+      die "VM '$VM_NAME' already exists. Refusing to rotate ClickHouse password in this migration script; rotate inside ClickHouse first, then update Secret Manager separately."
+      ;;
+  esac
+  if [ -z "$CLICKHOUSE_PASSWORD" ]; then
+    CLICKHOUSE_PASSWORD="$(gcloud secrets versions access latest --secret="$SECRET_PASSWORD" 2>/dev/null || true)"
+  fi
+  [ -n "$CLICKHOUSE_PASSWORD" ] || die "VM '$VM_NAME' already exists, but $SECRET_PASSWORD has no accessible latest version. Provide CLICKHOUSE_PASSWORD or repair Secret Manager before rerunning."
+  PASSWORD_PLAN="reused from Secret Manager"
+else
+  PASSWORD_PLAN="generated on first provisioning and stored in Secret Manager"
+fi
+
 # ──────────────────────────────────────────────────────────────────────────
 # Plan summary
 # ──────────────────────────────────────────────────────────────────────────
@@ -112,7 +134,7 @@ cat <<EOF
   VM:               $VM_NAME ($MACHINE_TYPE, ${BOOT_DISK_SIZE_GB}GB pd-ssd)
   Zone / Network:   $ZONE / $NETWORK / $SUBNET
   ClickHouse image: $CLICKHOUSE_IMAGE
-  ClickHouse user:  $CLICKHOUSE_USER (password: generated, stored in Secret Manager)
+  ClickHouse user:  $CLICKHOUSE_USER (password: $PASSWORD_PLAN)
   Firewall:         allow $CLOUD_RUN_EGRESS_IP → tcp:8123,9000 on $NETWORK
   Secret Manager:   update $SECRET_ENDPOINT, $SECRET_USERNAME, $SECRET_PASSWORD
   Cloud Run roll:   $CONTROL_SERVICE, $DATA_SERVICE
@@ -126,16 +148,21 @@ EOF
 confirm "Proceed?" || die "Aborted by user."
 
 # ──────────────────────────────────────────────────────────────────────────
-# 1. Generate ClickHouse password (32 random url-safe bytes)
+# 1. Generate or reuse ClickHouse password
 # ──────────────────────────────────────────────────────────────────────────
-log "Generating ClickHouse password"
-CLICKHOUSE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-ok "password generated (stays in this shell only; will be written to Secret Manager)"
+if [ -z "$CLICKHOUSE_PASSWORD" ]; then
+  log "Generating ClickHouse password"
+  CLICKHOUSE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  ok "password generated (stays in this shell only; will be written to Secret Manager)"
+else
+  ok "using existing ClickHouse password from Secret Manager or CLICKHOUSE_PASSWORD"
+fi
 
 # ──────────────────────────────────────────────────────────────────────────
 # 2. Provision VM (with ClickHouse startup script)
 # ──────────────────────────────────────────────────────────────────────────
-if gcloud compute instances describe "$VM_NAME" --zone="$ZONE" >/dev/null 2>&1; then
+REMOVE_STARTUP_METADATA=0
+if [ "$VM_EXISTS" = "1" ]; then
   warn "VM '$VM_NAME' already exists in $ZONE — skipping creation"
 else
   log "Provisioning VM: $VM_NAME"
@@ -170,10 +197,23 @@ STARTUP
     --metadata-from-file="startup-script=/dev/stdin" \
     <<<"$startup_script" >/dev/null
   ok "VM created"
+  REMOVE_STARTUP_METADATA=1
 fi
 
-log "Waiting for VM to be reachable + ClickHouse to start (~60s)..."
-sleep 60
+if [ "$VM_EXISTS" = "1" ]; then
+  log "VM already exists; skipping first-boot wait"
+else
+  log "Waiting for VM to be reachable + ClickHouse to start (~60s)..."
+  sleep 60
+fi
+
+if [ "$REMOVE_STARTUP_METADATA" = "1" ]; then
+  if gcloud compute instances remove-metadata "$VM_NAME" --zone="$ZONE" --keys=startup-script >/dev/null 2>&1; then
+    ok "removed one-time startup script metadata from VM"
+  else
+    warn "could not remove startup script metadata; remove it manually so the generated password is not retained in instance metadata"
+  fi
+fi
 
 VM_IP="$(gcloud compute instances describe "$VM_NAME" --zone="$ZONE" \
   --format='value(networkInterfaces[0].networkIP)')"

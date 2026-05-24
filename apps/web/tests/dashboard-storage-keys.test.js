@@ -83,3 +83,18 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
 });
+
+test("dashboard plan usage surfaces API request usage", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+  const settings = readFileSync(`${root}app/dashboard/settings/tab-pane.tsx`, "utf8");
+  const topbar = readFileSync(`${root}app/dashboard/chrome/topbar.tsx`, "utf8");
+
+  assert.match(shell, /activeUsage\.api_requests/, "dashboard shell should read API request usage");
+  assert.match(shell, /activeLimits\.api_requests/, "dashboard shell should read API request limits");
+  assert.match(settings, /API requests this month/, "Settings should show API request usage");
+  assert.match(settings, /aria-label="API request usage"/, "Settings should expose an API request usage meter");
+  assert.match(settings, /General API rate/, "Settings should show the per-second general rate policy");
+  assert.match(settings, /Ingest API rate/, "Settings should show the per-second ingest rate policy");
+  assert.match(settings, /Monthly reset/, "Settings should show monthly reset timing");
+  assert.match(topbar, /apiRequestPercent/, "topbar plan badge should include API request pressure");
+});

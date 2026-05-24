@@ -803,6 +803,31 @@
         ]
       }
     },
+    "/api/billing/usage-overage/report": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "billing_report_usage_overage",
+        "responses": {
+          "200": {
+            "description": "Storage and API request overage meter-event report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/billing/webhook": {
       "post": {
         "tags": [
@@ -6501,6 +6526,10 @@
           "created_at"
         ],
         "properties": {
+          "billable_api_requests": {
+            "type": "integer",
+            "format": "int64"
+          },
           "billable_storage_bytes": {
             "type": "integer",
             "format": "int64"
@@ -6517,7 +6546,19 @@
             "type": "string",
             "format": "uuid"
           },
+          "reported_api_requests": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reported_api_requests_delta": {
+            "type": "integer",
+            "format": "int64"
+          },
           "reported_gib": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reported_storage_gib_delta": {
             "type": "integer",
             "format": "int64"
           },
@@ -6528,7 +6569,19 @@
           "status": {
             "type": "string"
           },
+          "stripe_api_request_event_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "stripe_event_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_storage_event_id": {
             "type": [
               "string",
               "null"

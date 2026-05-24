@@ -14,12 +14,14 @@ export function ChartControls(props: {
   xMode: string;
   smoothing: number;
   groupAverage: boolean;
+  identifierMode: string;
   pinnedMetrics: string[];
   onMetricFilter: (value: string) => void;
   onMetricKey: (value: string) => void;
   onGroupBy: (value: string) => void;
   onXMode: (value: string) => void;
   onSmoothing: (value: number) => void;
+  onIdentifierMode: (value: string) => void;
   onGroupAverage: (value: boolean) => void;
   onPinnedMetric: (metric: string) => void;
 }) {
@@ -69,6 +71,17 @@ export function ChartControls(props: {
           { value: "time", label: "Logged time" },
         ]}
         value={props.xMode}
+      />
+      <CustomSelect
+        id={`${idPrefix}identifier-mode`}
+        label="Identifier"
+        onChange={props.onIdentifierMode}
+        options={[
+          { value: "name", label: "Name" },
+          { value: "notes", label: "Notes" },
+          { value: "tags", label: "Tags" },
+        ]}
+        value={props.identifierMode}
       />
       <label className="control">
         Smooth {props.smoothing}

@@ -13,6 +13,9 @@ const webhookSecret = "whsec_instantml_local_smoke";
 const storageMeterEventName =
   cleanEnv(process.env.INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME) ||
   "instantml_storage_overage_gib_month";
+const apiRequestMeterEventName =
+  cleanEnv(process.env.INSTANTML_STRIPE_API_REQUEST_METER_EVENT_NAME) ||
+  "instantml_api_request_overage";
 
 if (!stripeSecret) {
   console.error(
@@ -73,6 +76,7 @@ try {
       STRIPE_WEBHOOK_SECRET: webhookSecret,
       STRIPE_API_VERSION: stripeApiVersion,
       INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME: storageMeterEventName,
+      INSTANTML_STRIPE_API_REQUEST_METER_EVENT_NAME: apiRequestMeterEventName,
     },
     stdio: ["ignore", output, output],
   });
@@ -114,6 +118,7 @@ try {
     ["items[0][price]", prices.pro],
     ["items[0][quantity]", "1"],
     ["items[1][price]", prices.storage],
+    ["items[2][price]", prices.proApiRequests],
     ["payment_behavior", "error_if_incomplete"],
     ["metadata[org_id]", orgId],
     ["metadata[user_id]", userId],
@@ -124,6 +129,8 @@ try {
   ]);
   cleanupSubscriptionId = subscription.id;
   assertTruthy(["active", "trialing"].includes(subscription.status), "Stripe subscription is active");
+  assertSubscriptionHasPrice(subscription, prices.storage, "storage overage price");
+  assertSubscriptionHasPrice(subscription, prices.proApiRequests, "Pro API request overage price");
 
   const createdWebhook = await postWebhook(
     "customer.subscription.created",
@@ -187,11 +194,30 @@ try {
   const premium = await apiJson("POST", "/api/billing/change-plan", { plan_tier: "premium" });
   assertEqual(premium.billing?.access_state, "paid_active", "plan change remains active");
   assertEqual(premium.billing?.plan_tier, "premium", "plan change projects Premium");
+  const premiumSubscription = await stripeRequest(
+    "GET",
+    `/v1/subscriptions/${subscription.id}`,
+    [["expand[]", "items.data.price"]],
+  );
+  assertSubscriptionHasPrice(
+    premiumSubscription,
+    prices.premiumApiRequests,
+    "Premium API request overage price",
+  );
 
   const storageReport = await apiJson("POST", "/api/billing/storage-overage/report", {});
   assertTruthy(
     ["no_overage", "reported"].includes(storageReport.usage_report?.status),
     "storage overage report is recorded",
+  );
+  assertTruthy(
+    Number.isInteger(storageReport.usage_report?.reported_api_requests_delta),
+    "storage alias returns API request delta field",
+  );
+  const usageReport = await apiJson("POST", "/api/billing/usage-overage/report", {});
+  assertTruthy(
+    ["no_overage", "reported"].includes(usageReport.usage_report?.status) || usageReport.duplicate === true,
+    "combined usage overage report is recorded or deduplicated",
   );
 
   const cancel = await apiJson("POST", "/api/billing/cancel", { at_period_end: true });
@@ -234,7 +260,11 @@ async function ensureStripeCatalog() {
   const meter =
     cleanEnv(process.env.STRIPE_STORAGE_METER_ID) ||
     cleanEnv(process.env.INSTANTML_STRIPE_STORAGE_METER_ID) ||
-    await ensureMeter();
+    await ensureMeter(storageMeterEventName, "InstantML retained storage overage GiB-month");
+  const apiMeter =
+    cleanEnv(process.env.STRIPE_API_REQUEST_METER_ID) ||
+    cleanEnv(process.env.INSTANTML_STRIPE_API_REQUEST_METER_ID) ||
+    await ensureMeter(apiRequestMeterEventName, "InstantML API request overage");
   const pro =
     cleanEnv(process.env.STRIPE_PRO_PRICE_ID) ||
     cleanEnv(process.env.INSTANTML_STRIPE_PRO_PRICE_ID) ||
@@ -257,14 +287,38 @@ async function ensureStripeCatalog() {
       true,
       meter,
     );
+  const proApiRequests =
+    cleanEnv(process.env.STRIPE_PRO_API_REQUEST_OVERAGE_PRICE_ID) ||
+    cleanEnv(process.env.INSTANTML_STRIPE_PRO_API_REQUEST_OVERAGE_PRICE_ID) ||
+    await ensurePrice(
+      "instantml_pro_api_request_overage",
+      "InstantML Pro API request overage",
+      "0.0002",
+      true,
+      apiMeter,
+      { decimal: true },
+    );
+  const premiumApiRequests =
+    cleanEnv(process.env.STRIPE_PREMIUM_API_REQUEST_OVERAGE_PRICE_ID) ||
+    cleanEnv(process.env.INSTANTML_STRIPE_PREMIUM_API_REQUEST_OVERAGE_PRICE_ID) ||
+    await ensurePrice(
+      "instantml_premium_api_request_overage",
+      "InstantML Premium API request overage",
+      "0.0001",
+      true,
+      apiMeter,
+      { decimal: true },
+    );
   assertPresent(pro, "Pro price id");
   assertPresent(premium, "Premium price id");
   assertPresent(extraSeat, "extra-seat price id");
   assertPresent(storage, "storage overage price id");
-  return { pro, premium, extraSeat, storage, meter };
+  assertPresent(proApiRequests, "Pro API request overage price id");
+  assertPresent(premiumApiRequests, "Premium API request overage price id");
+  return { pro, premium, extraSeat, storage, meter, apiMeter, proApiRequests, premiumApiRequests };
 }
 
-async function ensurePrice(lookupKey, productName, unitAmountCents, metered, meterId = null) {
+async function ensurePrice(lookupKey, productName, unitAmountCents, metered, meterId = null, options = {}) {
   const existing = await stripeRequest("GET", "/v1/prices", [
     ["active", "true"],
     ["lookup_keys[]", lookupKey],
@@ -275,11 +329,14 @@ async function ensurePrice(lookupKey, productName, unitAmountCents, metered, met
 
   const fields = [
     ["currency", "usd"],
-    ["unit_amount", String(unitAmountCents)],
     ["recurring[interval]", "month"],
     ["product_data[name]", productName],
     ["lookup_key", lookupKey],
   ];
+  fields.push([
+    options.decimal ? "unit_amount_decimal" : "unit_amount",
+    String(unitAmountCents),
+  ]);
   if (metered) {
     fields.push(["recurring[meter]", meterId]);
     fields.push(["recurring[usage_type]", "metered"]);
@@ -288,16 +345,16 @@ async function ensurePrice(lookupKey, productName, unitAmountCents, metered, met
   return created.id;
 }
 
-async function ensureMeter() {
+async function ensureMeter(eventName, displayName) {
   const meters = await stripeRequest("GET", "/v1/billing/meters", [["limit", "100"]]);
   const existing = meters.data?.find(
-    (meter) => meter.event_name === storageMeterEventName && meter.status === "active",
+    (meter) => meter.event_name === eventName && meter.status === "active",
   );
   if (existing?.id) return existing.id;
 
   const created = await stripeRequest("POST", "/v1/billing/meters", [
-    ["display_name", "InstantML retained storage overage GiB-month"],
-    ["event_name", storageMeterEventName],
+    ["display_name", displayName],
+    ["event_name", eventName],
     ["default_aggregation[formula]", "sum"],
     ["value_settings[event_payload_key]", "value"],
     ["customer_mapping[type]", "by_id"],
@@ -475,6 +532,13 @@ function assertTruthy(value, message) {
 function assertPresent(value, message) {
   if (value === undefined || value === null || value === "") {
     throw new Error(`${message} is required`);
+  }
+}
+
+function assertSubscriptionHasPrice(subscription, priceId, message) {
+  const prices = subscription.items?.data?.map((item) => item.price?.id).filter(Boolean) || [];
+  if (!prices.includes(priceId)) {
+    throw new Error(`${message}: subscription prices ${JSON.stringify(prices)} did not include ${priceId}`);
   }
 }
 

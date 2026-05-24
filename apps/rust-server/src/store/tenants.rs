@@ -1608,6 +1608,12 @@ fn cloud_service_name(org: &OrganizationRow) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ByocCredentialStoreConfig, HostedClickHouseConfig};
+    use std::{
+        collections::{BTreeSet, HashMap},
+        sync::Arc,
+    };
+    use tokio::sync::Mutex;
 
     #[test]
     fn tenant_database_name_is_clickhouse_identifier_safe() {
@@ -1872,6 +1878,55 @@ mod tests {
         assert!(org_should_use_shared_cell(&org, None, true));
     }
 
+    #[tokio::test]
+    async fn warehouse_storage_bytes_do_not_count_shared_or_customer_databases_as_org_exact() {
+        let shared_org_id = Uuid::from_u128(0x51_00);
+        let customer_org_id = Uuid::from_u128(0xC0_00);
+        let mut data = StoreData::default();
+        data.insert_org(test_org(
+            shared_org_id,
+            "shared-org",
+            "personal",
+            "shared",
+            STORAGE_CHOICE_HOSTED,
+        ));
+        data.insert_tenant_route(test_route(
+            shared_org_id,
+            SHARED_CELL_PROVISIONER,
+            "instantml_shared",
+        ));
+        data.insert_org(test_org(
+            customer_org_id,
+            "customer-org",
+            "customer",
+            CUSTOMER_CLICKHOUSE_PROVISIONER,
+            STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
+        ));
+        data.insert_tenant_route(test_route(
+            customer_org_id,
+            CUSTOMER_CLICKHOUSE_PROVISIONER,
+            "customer_db",
+        ));
+        let store = test_hosted_store(data, true);
+
+        assert_eq!(
+            store
+                .warehouse_storage_bytes_for_org(shared_org_id)
+                .await
+                .unwrap(),
+            None,
+            "a shared-cell database may contain many orgs, so database-wide bytes are not org-exact"
+        );
+        assert_eq!(
+            store
+                .warehouse_storage_bytes_for_org(customer_org_id)
+                .await
+                .unwrap(),
+            None,
+            "customer-owned ClickHouse storage should not count warehouse bytes against InstantML-hosted storage"
+        );
+    }
+
     #[test]
     fn business_org_routes_to_dedicated_tier() {
         let org = OrganizationRow {
@@ -1890,5 +1945,97 @@ mod tests {
         assert_eq!(org.tenant_routing_tier, "dedicated");
         assert!(!is_personal_account_type(&org.account_type));
         assert!(!should_route_to_shared_cell(&org, true));
+    }
+
+    fn test_hosted_store(data: StoreData, shared_cell_enabled: bool) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_test_primary",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: Some(HostedClickHouseConfig {
+                user_data_url: "http://default:@127.0.0.1:8123/instantml_user_data_test"
+                    .to_string(),
+                tenant_base_url: "http://default:@127.0.0.1:8123/instantml_tenant_base_test"
+                    .to_string(),
+                provisioner: ClickHouseProvisioner::Database,
+                allow_stored_tenant_passwords: false,
+                cloud: None,
+                shared_cell_url: shared_cell_enabled
+                    .then(|| "http://default:@127.0.0.1:8123/instantml_shared_test".to_string()),
+            }),
+            byoc_clickhouse: ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: ByocCredentialStoreConfig::LocalUserData,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: shared_cell_enabled.then(|| {
+                crate::metric_store::connect_url(
+                    "http://default:@127.0.0.1:8123/instantml_shared_test",
+                    "TEST_SHARED_CLICKHOUSE_URL",
+                )
+                .unwrap()
+            }),
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn test_org(
+        org_id: Uuid,
+        slug: &str,
+        account_type: &str,
+        tenant_routing_tier: &str,
+        storage_choice: &str,
+    ) -> OrganizationRow {
+        OrganizationRow {
+            id: org_id,
+            slug: slug.to_string(),
+            name: slug.to_string(),
+            plan_tier: "premium".to_string(),
+            account_type: account_type.to_string(),
+            seat_limit: 10,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: tenant_routing_tier.to_string(),
+            storage_choice: storage_choice.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        }
+    }
+
+    fn test_route(org_id: Uuid, provisioner: &str, database: &str) -> TenantRouteRecord {
+        let now = Utc::now();
+        TenantRouteRecord {
+            org_id,
+            status: TENANT_ROUTE_READY.to_string(),
+            provisioner: provisioner.to_string(),
+            plan_tier: Some("premium".to_string()),
+            warehouse_kind: Some("test".to_string()),
+            requested_min_replica_memory_gb: None,
+            requested_max_replica_memory_gb: None,
+            requested_num_replicas: None,
+            applied_min_replica_memory_gb: None,
+            applied_max_replica_memory_gb: None,
+            applied_num_replicas: None,
+            endpoint: "http://127.0.0.1:8123".to_string(),
+            database: database.to_string(),
+            username: "default".to_string(),
+            password_secret_ref: Some(TENANT_BASE_PASSWORD_REF.to_string()),
+            password_ciphertext: None,
+            schema_version: Some(METRIC_SCHEMA_VERSION),
+            service_id: None,
+            created_at: now,
+            updated_at: now,
+            error: None,
+        }
     }
 }

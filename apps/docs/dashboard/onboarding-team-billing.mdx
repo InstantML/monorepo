@@ -16,9 +16,19 @@ redirect through hosted checkout before write access is unlocked.
 
 ## Plans
 
-The current product tiers are Free, Pro, and Premium. Premium can include
-customer-owned ClickHouse setup for teams that need tenant data routed to their
-own warehouse.
+The current product tiers are Free, Pro, and Premium:
+
+| Plan | Price | Included storage | API requests / month |
+| --- | ---: | ---: | ---: |
+| Free | $0 / org / month | 2 GB | 500k |
+| Pro | $199 / org / month | 1 TB | 25M |
+| Premium | $699 / org / month | 5 TB | 150M |
+
+Premium can include customer-owned ClickHouse setup for teams that need tenant
+data routed to their own warehouse.
+
+For the full limit table, storage overage, request overage, and API rate-limit
+policy, see [Pricing, limits, and billing](/guides/pricing-limits-billing).
 
 ## Invitations
 
@@ -33,4 +43,5 @@ Admins can resend or revoke pending invitations while they are active.
 When an organization is pending payment or payment-failed, write routes can
 return a payment-required error. The dashboard exposes hosted billing actions
 for checkout, plan changes, customer portal access, and cancellation where the
-organization role allows it.
+organization role allows it. Paid subscriptions include Stripe-metered hosted
+storage and API request overage items.

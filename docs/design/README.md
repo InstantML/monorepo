@@ -48,6 +48,10 @@ Current implemented design sequence:
   same-origin `/docs` rendering from `apps/web`, filtered public OpenAPI
   reference generation, validation scripts, and docs-site guardrails that keep
   internal planning docs unpublished.
+- `2026-05-23-api-request-rate-limits.md`: accepted first slice for
+  Free/Pro/Premium API request allowances, per-process short-window rate
+  limits, bounded request-usage rollups, SDK `429` retry/backoff, dashboard
+  usage visibility, and pricing/docs updates.
 - `2026-05-24-admin-operator-app.md`: separate read-only Next admin app plus a
   bootstrap-protected Rust operator overview for users, orgs, storage, API
   keys, billing posture, and risk queues.
@@ -61,7 +65,7 @@ Current draft/revised designs awaiting implementation approval:
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
-Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The current public tier model is Free, Pro, and Premium, with Stripe-backed payment collection for paid signup and plan changes plus blocked-at-limit usage guardrails. Metric-point limits are scoped to the current UTC calendar month and reset on the first day of the next month; storage/project/run quotas are retained-resource posture. Storage overage remains guarded until provider reconciliation is complete. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
+Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The current public tier model is Free, Pro, and Premium, with Stripe-backed payment collection for paid signup and plan changes plus blocked-at-limit usage guardrails. Metric-point and API-request limits are scoped to the current UTC calendar month and reset on the first day of the next month; storage/project/run quotas are retained-resource posture. Free/non-billable API request overage is blocked, paid Pro/Premium request overage is Stripe-metered, and paid storage overage is reported as current-month high-water retained GiB deltas. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.
 
 Backend direction:
 

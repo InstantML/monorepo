@@ -1,5 +1,40 @@
 # Hosted Cloud Comparison Results
 
+Latest update: `2026-05-23`
+
+Current hosted storage now uses InstantML-owned self-hosted ClickHouse on Google
+Cloud. The latest InstantML rerun measured Cloud Run direct to the GCP
+ClickHouse VM against the `normal-runs-50k` showcase project: 50,000 runs and
+522,000,000 metric points on `train/loss`. The run passed the current
+read-path budgets; full sanitized details are in
+`benchmarks/2026-05-23-gcp-clickhouse-cloud-run-results.md`.
+
+Fresh W&B numbers were not collected on 2026-05-23 because this workspace had
+no W&B package installed and no W&B API key or netrc auth. The W&B measurements
+below remain the historical May 18 public API run and should be treated as
+directional context, not a fresh A/B against the self-hosted GCP workload.
+
+## Latest GCP ClickHouse Result
+
+| Case | p95 | Notes |
+| --- | ---: | --- |
+| Org newest 100 | 325 ms | 70,029 org-wide runs visible during benchmark |
+| Org metric-best sort | 272 ms | `train/loss` |
+| Org overview | 414 ms | 570,162,046 org-wide metric points |
+| Project newest 100 | 236 ms | `normal-runs-50k` |
+| Project metric-best sort | 307 ms | 50,000-run project |
+| Project overview | 418 ms | 522,000,000 project metric points |
+| Single-run chart | 224 ms | 1,000 returned points from 20,000-step source series |
+
+These results replace the ClickHouse Cloud hosted-path result as the current
+InstantML beta operating signal. The closest historical ClickHouse Cloud result
+used a different dataset shape, so compare it only directionally: the new GCP
+project overview p95 is 418 ms versus roughly 2.9 s in the old project-overview
+cases, while summary and chart reads remain within the same sub-second budget
+class.
+
+## Historical May 18 Report
+
 Generated: `2026-05-18T19:18:43.230082Z`
 
 This report compares the existing InstantML hosted Cloud Run benchmark against W&B hosted cloud using documented public APIs. No InstantML hosted ClickHouse seed command was run for this report.

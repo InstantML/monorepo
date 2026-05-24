@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { ChevronRight, Globe } from "lucide-react";
 
 import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
 import { DocsCodeBlock } from "../docs-code-block";
+import { DocsSearch } from "../docs-search";
+import { InstantMlMark } from "../../instantml-mark";
 import {
   docsMarkdownUrl,
   docsHref,
@@ -63,25 +66,51 @@ export default async function DocsPage({ params }: DocsParams) {
   const blocks = "blocks" in page && Array.isArray(page.blocks) ? (page.blocks as DocsBlock[]) : [];
   const endpoints = "endpoints" in page && Array.isArray(page.endpoints) ? page.endpoints : [];
   const markdownHref = docsMarkdownUrl(page.path);
+  const navigation = page.navigation as DocsNavigation;
+  const activeTab = findActiveTab(navigation, page.path);
 
   return (
     <main className="docs-route">
       <header className="docs-route-topbar">
-        <Link className="docs-route-brand" href="/docs" aria-label="InstantML Docs home">
-          <span className="docs-route-brand-mark">I</span>
-          <span>
-            <strong>InstantML</strong>
-            <small>Docs</small>
-          </span>
-        </Link>
-        <nav aria-label="Docs links">
-          <Link href="/dashboard">App</Link>
-          <Link href="/docs/api-reference">API reference</Link>
-        </nav>
+        <div className="docs-route-topbar-row docs-route-topbar-row-primary">
+          <Link className="docs-route-brand" href="/docs" aria-label="InstantML Docs home">
+            <span className="docs-route-brand-mark" aria-hidden>
+              <InstantMlMark />
+            </span>
+            <span className="docs-route-brand-text">
+              <strong>InstantML</strong>
+              <small>Docs</small>
+            </span>
+          </Link>
+          <DocsSearch navigation={navigation} />
+
+          <nav className="docs-route-topbar-actions" aria-label="Docs account actions">
+            <Link href="/dashboard">App</Link>
+            <Link href="/docs/api-reference">API reference</Link>
+          </nav>
+        </div>
+        <div className="docs-route-topbar-row docs-route-topbar-row-secondary">
+          <nav className="docs-route-tabs" aria-label="Docs sections">
+            {navigation.map((tab) => {
+              const targetPath = firstPagePath(tab);
+              const href = targetPath ? pageUrl(targetPath) : "/docs";
+              const isActive = tab.tab === activeTab;
+              return (
+                <Link
+                  className={isActive ? "docs-route-tab is-active" : "docs-route-tab"}
+                  href={href}
+                  key={tab.tab}
+                >
+                  {tab.tab}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
       </header>
 
       <div className="docs-route-shell">
-        <DocsSidebar navigation={page.navigation as DocsNavigation} currentPath={page.path} />
+        <DocsSidebar navigation={navigation} currentPath={page.path} activeTab={activeTab} />
         <article className="docs-route-article">
           <header className="docs-route-article-header">
             <div>
@@ -111,28 +140,85 @@ export default async function DocsPage({ params }: DocsParams) {
   );
 }
 
-function DocsSidebar({ navigation, currentPath }: { navigation: DocsNavigation; currentPath: string }) {
+function findActiveTab(navigation: DocsNavigation, currentPath: string): string | null {
+  for (const tab of navigation) {
+    for (const group of tab.groups) {
+      if (group.pages.some((page) => page.path === currentPath)) return tab.tab;
+    }
+  }
+  return navigation[0]?.tab ?? null;
+}
+
+function firstPagePath(tab: DocsNavigation[number]): string | null {
+  for (const group of tab.groups) {
+    if (group.pages.length > 0) return group.pages[0].path;
+  }
+  return null;
+}
+
+function DocsSidebar({
+  navigation,
+  currentPath,
+  activeTab,
+}: {
+  navigation: DocsNavigation;
+  currentPath: string;
+  activeTab: string | null;
+}) {
+  const visibleTabs = activeTab
+    ? navigation.filter((tab) => tab.tab === activeTab)
+    : navigation;
   return (
     <aside className="docs-route-sidebar" aria-label="Documentation navigation">
-      {navigation.map((tab) => (
-        <section key={tab.tab}>
-          <h2>{tab.tab}</h2>
-          {tab.groups.map((group) => (
-            <div className="docs-route-nav-group" key={`${tab.tab}-${group.group}`}>
-              <h3>{group.group}</h3>
-              {group.pages.map((page) => (
-                <Link
-                  className={page.path === currentPath ? "active" : ""}
-                  href={pageUrl(page.path)}
-                  key={page.path}
+      <div className="docs-route-sidebar-scroll">
+        <Link className="docs-route-sidebar-overview" href="/docs">
+          Overview
+        </Link>
+        {visibleTabs.map((tab) => (
+          <section key={tab.tab}>
+            {tab.groups.map((group) => {
+              const groupHasActive = group.pages.some((page) => page.path === currentPath);
+              return (
+                <details
+                  className="docs-route-nav-group"
+                  key={`${tab.tab}-${group.group}`}
+                  open={groupHasActive}
                 >
-                  {page.title}
-                </Link>
-              ))}
-            </div>
-          ))}
-        </section>
-      ))}
+                  <summary className="docs-route-nav-group-summary">
+                    <ChevronRight aria-hidden size={12} className="docs-route-nav-chevron" />
+                    <h3>{group.group}</h3>
+                  </summary>
+                  <div className="docs-route-nav-links">
+                    {group.pages.map((page) => (
+                      <Link
+                        className={
+                          page.path === currentPath
+                            ? "docs-route-nav-link is-active"
+                            : "docs-route-nav-link"
+                        }
+                        href={pageUrl(page.path)}
+                        key={page.path}
+                      >
+                        <span>{page.title}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </section>
+        ))}
+      </div>
+      <div className="docs-route-sidebar-footer">
+        <button type="button" className="docs-route-sidebar-locale">
+          <span aria-hidden>🇺🇸</span>
+          <span>United States</span>
+        </button>
+        <button type="button" className="docs-route-sidebar-locale">
+          <Globe aria-hidden size={14} />
+          <span>English (United States)</span>
+        </button>
+      </div>
     </aside>
   );
 }

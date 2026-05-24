@@ -314,6 +314,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/usage-overage/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_report_usage_overage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/billing/webhook": {
         parameters: {
             query?: never;
@@ -1471,6 +1487,8 @@ export interface components {
         };
         BillingUsageReportRecord: {
             /** Format: int64 */
+            billable_api_requests?: number;
+            /** Format: int64 */
             billable_storage_bytes: number;
             /** Format: date-time */
             created_at: string;
@@ -1479,11 +1497,19 @@ export interface components {
             /** Format: uuid */
             org_id: string;
             /** Format: int64 */
+            reported_api_requests?: number;
+            /** Format: int64 */
+            reported_api_requests_delta?: number;
+            /** Format: int64 */
             reported_gib: number;
+            /** Format: int64 */
+            reported_storage_gib_delta?: number;
             /** Format: int32 */
             schema_version: number;
             status: string;
+            stripe_api_request_event_id?: string | null;
             stripe_event_id?: string | null;
+            stripe_storage_event_id?: string | null;
             /** Format: date-time */
             usage_period_end: string;
             /** Format: date-time */
@@ -2832,6 +2858,26 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Storage overage meter-event report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+        };
+    };
+    billing_report_usage_overage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage and API request overage meter-event report */
             200: {
                 headers: {
                     [name: string]: unknown;

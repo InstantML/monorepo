@@ -63,6 +63,9 @@ from .validation import (
 DEFAULT_PROCESS_SPOOL_DIR = ".instantml/spool"
 SNAPSHOT_KEYS = {"metrics", "metadata"}
 _PENDING_RUN_ID = "__instantml_pending__"
+_RATE_LIMIT_RETRY_ATTEMPTS = 3
+_RATE_LIMIT_RETRY_BASE_SECONDS = 0.25
+_RATE_LIMIT_RETRY_MAX_SECONDS = 5.0
 
 
 def _is_local_file_uri(uri: str) -> bool:
@@ -437,20 +440,26 @@ class Client:
             headers["Authorization"] = f"Bearer {api_key}"
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
-        request = urllib.request.Request(
-            url,
-            data=data,
-            method=method,
-            headers=headers,
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                payload = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            message = _error_message(exc)
-            raise InstantMLError(f"{method} {path} failed: {message}") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise InstantMLError(f"{method} {path} failed: {exc}") from exc
+        payload = ""
+        for attempt in range(_RATE_LIMIT_RETRY_ATTEMPTS + 1):
+            request = urllib.request.Request(
+                url,
+                data=data,
+                method=method,
+                headers=headers,
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    payload = response.read().decode("utf-8")
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429 and _is_retryable_rate_limit(exc) and attempt < _RATE_LIMIT_RETRY_ATTEMPTS:
+                    time.sleep(_rate_limit_retry_delay(exc, attempt))
+                    continue
+                message = _error_message(exc)
+                raise InstantMLError(f"{method} {path} failed: {message}") from exc
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                raise InstantMLError(f"{method} {path} failed: {exc}") from exc
         try:
             decoded = json.loads(payload)
         except json.JSONDecodeError as exc:
@@ -458,6 +467,26 @@ class Client:
         if not isinstance(decoded, dict):
             raise InstantMLError("server returned a non-object JSON payload")
         return decoded
+
+
+def _rate_limit_retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
+    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+    if retry_after:
+        try:
+            seconds = float(retry_after)
+        except (TypeError, ValueError):
+            seconds = 0.0
+        if seconds > 0:
+            return min(seconds, _RATE_LIMIT_RETRY_MAX_SECONDS)
+    return min(
+        _RATE_LIMIT_RETRY_BASE_SECONDS * (2**attempt),
+        _RATE_LIMIT_RETRY_MAX_SECONDS,
+    )
+
+
+def _is_retryable_rate_limit(exc: urllib.error.HTTPError) -> bool:
+    scope = exc.headers.get("X-InstantML-RateLimit-Scope") if exc.headers else None
+    return str(scope or "second").strip().lower() != "monthly"
 
 
 @dataclass(frozen=True)

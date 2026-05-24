@@ -20,6 +20,8 @@ Start with:
 - `docs/design/2026-05-14-clickhouse-only-storage.md` for the primary Rust/ClickHouse storage direction.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md` for the internal Cloud Run deployment slice.
 - `docs/architecture/multi-instance-cloud-run.md` for the current split Cloud Run control/data topology.
+- `docs/architecture/self-hosted-gcp-clickhouse.md` for the current
+  InstantML-owned GCP ClickHouse production/staging operating model.
 - `docs/design/2026-05-19-utoipa-migration.md` for the OpenAPI-driven TS codegen pipeline. Run `npm run codegen:api` after any Rust handler change.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
@@ -63,7 +65,7 @@ Next/React frontend -> Rust API -> ClickHouse operational layer + ClickHouse met
 Python SDK/uploader -> Rust API -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 ```
 
-The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment now supports both a combined single Cloud Run service, split `control`/`data` Cloud Run services, and an optional managed HTTPS public router. Data-plane cells remain single-writer by default until the coordination/reconciliation gates for shared multi-writer cells are implemented.
+The Rust service should use `axum`, `tokio`, `tower-http`, ClickHouse for operational records and high-volume metric time series, structured tracing, and a small worker path. The current local/test slice rebuilds operational state into an in-process index from ClickHouse records. Hosted deployment now supports both a combined single Cloud Run service, split `control`/`data` Cloud Run services, and an optional managed HTTPS public router. Production and staging currently use InstantML-owned self-hosted ClickHouse on Google Cloud for User Data and tenant databases, with Cloudflare R2 for artifact bytes. Data-plane cells remain single-writer by default until the coordination/reconciliation gates for shared multi-writer cells are implemented.
 
 Migration rule: the Node server is deprecated but remains the compatibility oracle and JSON migration source until P4 migration tooling and any remaining legacy fallback needs are retired.
 
@@ -121,7 +123,7 @@ Training-observability roadmap first slice is implemented:
 - Neptune Exporter-shaped, transformed W&B, and transformed MLflow JSON importer endpoints and CLIs.
 - Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
 - Docker Compose for a one-command local Rust/ClickHouse API and artifact-storage stack.
-- Internal Cloud Run deployment for the Rust API with Secret Manager secrets, single-instance scaling, static egress to ClickHouse Cloud services/API keys, and local frontend-only development against the hosted API.
+- Internal Cloud Run deployment for the Rust API with Secret Manager secrets, bounded single-instance control/data cells, private VPC access to the self-hosted GCP ClickHouse VM, and local frontend-only development against the hosted API.
 - Structured Rust server observability: JSON Cloud Run logs include request completion events, sanitized 5xx error fields, slow-request warnings, and first-slice workflow outcomes for metric/log ingestion, artifacts, imports, readiness, and worker cleanup. Hosted edge correlation uses `x-request-id` and observed Cloudflare `cf-ray` when the API is proxied through Cloudflare.
 
 Known follow-ups before broadening the roadmap:
@@ -133,7 +135,7 @@ Known follow-ups before broadening the roadmap:
 - Keep frontend async loaders cancellation-safe as workflow components continue to split.
 - Validate W&B/MLflow/Neptune import and future W&B dual logging with real teams before broadening migration claims.
 - Implement real Neptune Exporter Parquet import after a dependency/schema design.
-- Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 100,000+ run design-partner scale before making public hosted speed claims. The local run-list/search/sort benchmark slice is complete, and `npm run benchmark:cloud-run` is the default hosted backend signal for API calls through Cloud Run into ClickHouse Cloud. High metric-key cardinality, Compare payloads, and richer workspace panel fan-out still need dedicated gates.
+- Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 100,000+ run design-partner scale before making public hosted speed claims. The local run-list/search/sort benchmark slice is complete, and `npm run benchmark:cloud-run` is the default hosted backend signal for API calls through Cloud Run into the self-hosted GCP ClickHouse tenant database. High metric-key cardinality, Compare payloads, and richer workspace panel fan-out still need dedicated gates.
 
 ## Quickstart
 
@@ -189,7 +191,22 @@ Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust for
 
 Default smoke behavior is Rust/ClickHouse-first: `npm run test:contract`, `npm run test:contract:direct`, `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocations of `tools/contract-smoke.mjs` or `apps/web/tests/ui-smoke.mjs` all start disposable ClickHouse and `apps/rust-server`. The deprecated Node backend is opt-in for contract compatibility through `npm run test:contract:node` or `INSTANTML_CONTRACT_BACKEND=node`; full UI smoke now depends on Rust session/auth endpoints.
 
-Start the primary Rust API with local generated ClickHouse state:
+Default development setup is a local Next frontend on localhost with its
+server-side rewrites pointed at the hosted staging API:
+
+```bash
+INSTANTML_WEB_API_ENV=staging npm run web:dev
+```
+
+Then open `http://127.0.0.1:3000`. `INSTANTML_WEB_API_ENV=staging` routes the
+Next rewrite proxy to `https://staging.api.instantml.ai` and intentionally
+overrides stale API-base values in repo-local env files. Restart `next dev`
+after changing rewrite env. Hosted sign-in requires a
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as staging;
+the local dev Google-style auth flow is only for a local Rust API.
+
+When backend work needs a disposable local API and ClickHouse state instead,
+start the primary Rust API:
 
 ```bash
 npm run dev:api
@@ -219,13 +236,24 @@ For faster frontend iteration:
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
+Use explicit split bases only when you intentionally want the local Next proxy
+to bypass the staging router and call direct Cloud Run services:
+
+```bash
+INSTANTML_WEB_EXPLICIT_API_BASES=1 \
+INSTANTML_CONTROL_API_BASE=https://instantml-staging-control-<hash>-uc.a.run.app \
+INSTANTML_DATA_API_BASE=https://instantml-staging-data-us-central1-a-<hash>-uc.a.run.app \
+INSTANTML_API_ALLOWED_ORIGINS=https://instantml-staging-control-<hash>-uc.a.run.app,https://instantml-staging-data-us-central1-a-<hash>-uc.a.run.app \
+npm run web:dev
+```
+
 Deploy the default split control/data Cloud Run topology:
 
 ```bash
 npm run deploy:cloud-run
 ```
 
-`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Control and data services default to manual one-instance scaling until durable multi-process gates land; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads use Cloudflare R2 when `INSTANTML_ARTIFACT_BACKEND=r2` and Cloudflare credentials are configured.
+`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Prod control/data services default to manual one-instance scaling, while staging defaults to automatic min `0` max `1`; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads use Cloudflare R2 when `INSTANTML_ARTIFACT_BACKEND=r2` and Cloudflare credentials are configured.
 
 Hosted Rust logs should run with `INSTANTML_LOG_FORMAT=json`,
 `RUST_LOG=instantml_rust_server=info,tower_http=info`, and
@@ -242,7 +270,7 @@ npm run deploy:cloud-run:multi
 npm run deploy:cloud-run:single
 ```
 
-Use `deploy:cloud-run:single` only for the legacy combined Cloud Run service. A single-service deploy writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local`, so subsequent frontend sessions only need `npm run web:dev`.
+Use `deploy:cloud-run:single` only for the legacy combined Cloud Run service. A single-service deploy writes `INSTANTML_API_BASE` and `INSTANTML_API_ALLOWED_ORIGINS` into `apps/web/.env.local`; the normal localhost frontend path still runs `INSTANTML_WEB_API_ENV=staging npm run web:dev` so stale deploy-helper bases do not override the staging router.
 
 Run the one-command local stack:
 

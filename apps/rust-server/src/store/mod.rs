@@ -38,7 +38,7 @@ pub use usage::*;
 use validation::*;
 pub use workspace_views::*;
 
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Datelike, Duration as ChronoDuration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::sync::Mutex;
@@ -510,6 +510,9 @@ struct StoreData {
     imports: BTreeMap<(Uuid, i64), ImportRow>,
     idempotency: HashMap<(Uuid, String), IdempotencyRecord>,
     usage_daily: Vec<Value>,
+    api_request_rollups: BTreeMap<String, ApiRequestUsageRollup>,
+    api_request_rollup_flushes: HashMap<String, ApiRequestRollupFlush>,
+    api_request_rollup_refreshes: HashMap<String, DateTime<Utc>>,
     tenant_routes: BTreeMap<Uuid, TenantRouteRecord>,
     billing_accounts: BTreeMap<Uuid, BillingAccountProjection>,
     billing_checkout_intents: BTreeMap<Uuid, BillingCheckoutIntent>,
@@ -609,6 +612,7 @@ impl StoreData {
                     .insert((item.org_id, item.key.clone()), item);
             }
             "usage_daily" => self.usage_daily.push(parse_payload(payload)?),
+            "api_usage_monthly" => self.insert_api_request_usage_rollup(parse_payload(payload)?),
             "tenant_route" => self.insert_tenant_route(parse_payload(payload)?),
             "billing_account" => self.insert_billing_account(parse_payload(payload)?),
             "billing_checkout_intent" => {
@@ -848,6 +852,139 @@ impl StoreData {
         *next += 1;
         id
     }
+
+    fn insert_api_request_usage_rollup(&mut self, rollup: ApiRequestUsageRollup) {
+        let entity_id = rollup.entity_id();
+        self.api_request_rollups
+            .entry(entity_id)
+            .and_modify(|existing| {
+                if rollup.request_count >= existing.request_count {
+                    *existing = rollup.clone();
+                }
+            })
+            .or_insert(rollup);
+    }
+
+    fn increment_api_request_rollup(
+        &mut self,
+        org_id: Uuid,
+        class: &str,
+        instance_id: &str,
+        now: DateTime<Utc>,
+    ) -> (ApiRequestUsageRollup, bool) {
+        let period = api_request_usage_period_key(now);
+        let window_started_at = api_request_usage_window_start(now);
+        let rollup_key = format!(
+            "{}:{class}:{instance_id}",
+            window_started_at.format("%Y-%m-%dT%H:%MZ")
+        );
+        let entity_id =
+            api_request_usage_entity_id(org_id, &period, class, instance_id, window_started_at);
+        let rollup = self
+            .api_request_rollups
+            .entry(entity_id.clone())
+            .or_insert_with(|| ApiRequestUsageRollup {
+                org_id,
+                period: period.clone(),
+                rollup_key,
+                request_count: 0,
+                class: class.to_string(),
+                instance_id: instance_id.to_string(),
+                window_started_at,
+                updated_at: now,
+                created_at: window_started_at,
+            });
+        rollup.request_count = rollup.request_count.saturating_add(1);
+        rollup.updated_at = now;
+        let flush = self
+            .api_request_rollup_flushes
+            .entry(entity_id)
+            .or_default();
+        let should_flush = flush.last_persisted_count == 0
+            || (rollup.request_count > flush.last_persisted_count
+                && now.signed_duration_since(flush.last_flushed_at) >= ChronoDuration::seconds(10));
+        (rollup.clone(), should_flush)
+    }
+
+    fn mark_api_request_rollup_persisted(&mut self, rollup: &ApiRequestUsageRollup) {
+        let entity_id = rollup.entity_id();
+        let flush = self
+            .api_request_rollup_flushes
+            .entry(entity_id)
+            .or_default();
+        flush.last_flushed_at = rollup.updated_at;
+        flush.last_persisted_count = rollup.request_count;
+    }
+
+    fn api_request_usage_for_org_period(&self, org_id: Uuid, period: &str) -> i64 {
+        self.api_request_rollups
+            .values()
+            .filter(|rollup| rollup.org_id == org_id && rollup.period == period)
+            .map(|rollup| rollup.request_count)
+            .sum()
+    }
+
+    fn api_request_rollup_refresh_due(
+        &self,
+        org_id: Uuid,
+        period: &str,
+        now: DateTime<Utc>,
+    ) -> bool {
+        let key = api_request_rollup_refresh_key(org_id, period);
+        self.api_request_rollup_refreshes
+            .get(&key)
+            .is_none_or(|last| now.signed_duration_since(*last) >= ChronoDuration::seconds(2))
+    }
+
+    fn mark_api_request_rollups_refreshed(
+        &mut self,
+        org_id: Uuid,
+        period: &str,
+        now: DateTime<Utc>,
+    ) {
+        self.api_request_rollup_refreshes
+            .insert(api_request_rollup_refresh_key(org_id, period), now);
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApiRequestUsageRollup {
+    pub org_id: Uuid,
+    pub period: String,
+    pub rollup_key: String,
+    pub request_count: i64,
+    pub class: String,
+    pub instance_id: String,
+    pub window_started_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ApiRequestUsageRollup {
+    fn entity_id(&self) -> String {
+        api_request_usage_entity_id(
+            self.org_id,
+            &self.period,
+            &self.class,
+            &self.instance_id,
+            self.window_started_at,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ApiRequestRollupFlush {
+    last_flushed_at: DateTime<Utc>,
+    last_persisted_count: i64,
+}
+
+impl Default for ApiRequestRollupFlush {
+    fn default() -> Self {
+        Self {
+            last_flushed_at: DateTime::<Utc>::UNIX_EPOCH,
+            last_persisted_count: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -926,6 +1063,34 @@ fn parse_payload<T: for<'de> Deserialize<'de>>(payload: &str) -> AppResult<T> {
         .map_err(|_| AppError::internal("stored operational record is invalid"))
 }
 
+fn api_request_usage_period_key(now: DateTime<Utc>) -> String {
+    format!("{:04}-{:02}", now.year(), now.month())
+}
+
+fn api_request_rollup_refresh_key(org_id: Uuid, period: &str) -> String {
+    format!("{org_id}:{period}")
+}
+
+fn api_request_usage_window_start(now: DateTime<Utc>) -> DateTime<Utc> {
+    now.with_second(0)
+        .and_then(|value| value.with_nanosecond(0))
+        .expect("valid UTC minute boundary")
+}
+
+fn api_request_usage_entity_id(
+    org_id: Uuid,
+    period: &str,
+    class: &str,
+    instance_id: &str,
+    window_started_at: DateTime<Utc>,
+) -> String {
+    format!(
+        "{}:{period}:{class}:{instance_id}:{}",
+        org_id,
+        window_started_at.format("%Y-%m-%dT%H:%MZ")
+    )
+}
+
 fn validate_tenant_record_for_replay(
     expected_org_id: Uuid,
     record: &OperationalRecordRow,
@@ -965,6 +1130,7 @@ fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value)
         "project_delete" => validate_payload_string_id(record, payload, "project_name"),
         "table_rows" => validate_payload_i64_id(record, payload, "attribute_id"),
         "usage_daily" => validate_usage_daily_orgs(record.org_id, payload),
+        "api_usage_monthly" => validate_api_usage_monthly_entity(record, payload),
         _ => Ok(()),
     }
 }
@@ -1018,6 +1184,20 @@ fn validate_usage_daily_orgs(expected_org_id: Uuid, payload: &Value) -> AppResul
                 "tenant usage snapshot belonged to a different org",
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_api_usage_monthly_entity(
+    record: &OperationalRecordRow,
+    payload: &Value,
+) -> AppResult<()> {
+    let rollup: ApiRequestUsageRollup = serde_json::from_value(payload.clone())
+        .map_err(|_| AppError::internal("tenant API usage rollup payload is invalid"))?;
+    if rollup.entity_id() != record.entity_id {
+        return Err(AppError::internal(
+            "tenant API usage rollup entity id mismatch",
+        ));
     }
     Ok(())
 }
@@ -1093,6 +1273,7 @@ async fn build_shared_cell_metric_store(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     fn replay_row<T: Serialize>(
         kind: &str,
@@ -1562,6 +1743,80 @@ mod tests {
             .apply_operational_records(
                 vec![replay_row("usage_daily", expected, "daily", &snapshot, 10)],
                 ReplayScope::Tenant(expected),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn api_usage_rollup_replay_keeps_latest_absolute_count() {
+        let org_id = Uuid::from_u128(1);
+        let window_started_at = Utc
+            .with_ymd_and_hms(2026, 5, 23, 18, 42, 0)
+            .single()
+            .unwrap();
+        let mut older = ApiRequestUsageRollup {
+            org_id,
+            period: "2026-05".to_string(),
+            rollup_key: "2026-05-23T18:42Z:general:instance-a".to_string(),
+            request_count: 3,
+            class: "general".to_string(),
+            instance_id: "instance-a".to_string(),
+            window_started_at,
+            updated_at: window_started_at,
+            created_at: window_started_at,
+        };
+        let mut newer = older.clone();
+        newer.request_count = 8;
+        newer.updated_at = window_started_at + ChronoDuration::seconds(7);
+        let entity_id = newer.entity_id();
+        let mut data = StoreData::default();
+
+        data.apply_operational_records(
+            vec![
+                replay_row("api_usage_monthly", org_id, &entity_id, &newer, 20),
+                replay_row("api_usage_monthly", org_id, &entity_id, &older, 10),
+            ],
+            ReplayScope::All,
+        )
+        .unwrap();
+
+        assert_eq!(data.api_request_usage_for_org_period(org_id, "2026-05"), 8);
+
+        older.request_count = 2;
+        data.insert_api_request_usage_rollup(older);
+        assert_eq!(data.api_request_usage_for_org_period(org_id, "2026-05"), 8);
+    }
+
+    #[test]
+    fn tenant_replay_rejects_api_usage_entity_mismatch() {
+        let org_id = Uuid::from_u128(1);
+        let window_started_at = Utc
+            .with_ymd_and_hms(2026, 5, 23, 18, 42, 0)
+            .single()
+            .unwrap();
+        let rollup = ApiRequestUsageRollup {
+            org_id,
+            period: "2026-05".to_string(),
+            rollup_key: "2026-05-23T18:42Z:general:instance-a".to_string(),
+            request_count: 3,
+            class: "general".to_string(),
+            instance_id: "instance-a".to_string(),
+            window_started_at,
+            updated_at: window_started_at,
+            created_at: window_started_at,
+        };
+        let mut data = StoreData::default();
+
+        assert!(data
+            .apply_operational_records(
+                vec![replay_row(
+                    "api_usage_monthly",
+                    org_id,
+                    "wrong-entity",
+                    &rollup,
+                    10,
+                )],
+                ReplayScope::Tenant(org_id),
             )
             .is_err());
     }

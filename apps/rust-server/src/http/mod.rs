@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::DefaultBodyLimit,
     http::{HeaderName, Method},
+    middleware,
     routing::{get, post},
     Router,
 };
@@ -25,14 +26,15 @@ use crate::{config::AppConfig, store};
 pub(crate) mod handlers;
 pub(crate) mod observability;
 pub mod openapi;
+pub(crate) mod rate_limit;
 
 use handlers::{
     accept_invitation, admin_overview, auth_clerk, auth_config, auth_dev_google, auth_logout,
     auth_session, auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
     billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
-    billing_status, billing_webhook, create_api_key, create_artifact, create_attributes,
-    create_customer_clickhouse_connection, create_invitation, create_object, create_org,
-    create_project, create_run, create_user, create_workspace_view,
+    billing_report_usage_overage, billing_status, billing_webhook, create_api_key, create_artifact,
+    create_attributes, create_customer_clickhouse_connection, create_invitation, create_object,
+    create_org, create_project, create_run, create_user, create_workspace_view,
     customer_clickhouse_connection_status, device_code_confirm, device_code_poll,
     device_code_start, disable_service_account, download_artifact, export_data,
     get_dashboard_preferences, get_metrics, get_run, get_workspace_view, health, import_mlflow,
@@ -54,11 +56,16 @@ const SESSION_COOKIE_MAX_AGE_SECS: u64 = 60 * 60 * 24 * 30;
 pub struct AppState {
     pub store: store::Store,
     pub config: AppConfig,
+    pub rate_limiter: rate_limit::RateLimiter,
 }
 
 impl AppState {
     pub fn new(store: store::Store, config: AppConfig) -> Self {
-        Self { store, config }
+        Self {
+            store,
+            config,
+            rate_limiter: rate_limit::RateLimiter::new(),
+        }
     }
 }
 
@@ -76,7 +83,12 @@ pub fn router(state: AppState) -> Router {
         app = app.merge(control_routes());
     }
     if service_plane.includes_data() {
-        app = app.merge(data_routes(max_upload));
+        app = app.merge(
+            data_routes(max_upload).route_layer(middleware::from_fn_with_state(
+                shared.clone(),
+                rate_limit::data_plane_rate_limit,
+            )),
+        );
     }
 
     app.fallback(not_found)
@@ -153,6 +165,10 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route(
             "/api/billing/storage-overage/report",
             post(billing_report_storage_overage),
+        )
+        .route(
+            "/api/billing/usage-overage/report",
+            post(billing_report_usage_overage),
         )
         .route("/api/billing/webhook", post(billing_webhook))
         .route(

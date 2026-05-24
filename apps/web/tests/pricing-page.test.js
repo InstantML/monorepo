@@ -80,6 +80,18 @@ describe("PricingPage — tier numbers match auth-flow.tsx", () => {
     assert.ok(src.includes('price: "$699"'), "Premium price must be $699");
   });
 
+  test("API request allowances are shown", () => {
+    assert.match(src, /500k API requests/i);
+    assert.match(src, /25M API requests/i);
+    assert.match(src, /150M API requests/i);
+    assert.match(src, /\$2 \/ 1M overage/i);
+    assert.match(src, /\$1 \/ 1M overage/i);
+  });
+
+  test("paid storage overage is shown", () => {
+    assert.match(src, /\$0\.03 \/ GB-month overage/i);
+  });
+
   test("Pro tier marked as the highlight (Jay-class default)", () => {
     // The Pro card carries the highlight flag — the Jay-pitch lands on Pro.
     assert.match(src, /id:\s*"pro"[\s\S]*?highlight:\s*true/m);

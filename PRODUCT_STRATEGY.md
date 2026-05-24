@@ -44,8 +44,21 @@ Target stack snapshot:
 - Analytical plane: ClickHouse `metric_points` (MergeTree) and `metric_series` (AggregatingMergeTree, populated by a materialized view) for high-volume metric time series and fast summary/chart queries.
 - Artifact plane: local filesystem storage for development and Cloudflare R2-backed private per-org buckets for hosted artifact bytes, with ClickHouse retaining artifact references, sizes, hashes, and MIME metadata.
 - Auth plane: managed Google login for humans plus database-owned memberships, service accounts, hashed API keys, scopes, project restrictions, and audit events.
-- Hosting preference: Google Cloud Run or equivalent container hosting for Rust services, managed ClickHouse-compatible storage for operational and analytical data, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity.
+- Hosting preference: Google Cloud Run or equivalent container hosting for Rust services, InstantML-owned ClickHouse on Google Cloud for the current hosted beta, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity. Managed ClickHouse-compatible and customer-owned ClickHouse remain future/Enterprise deployment options when their cost and isolation tradeoffs are justified.
 - Migration rule: Node is deprecated and retained as the compatibility oracle, JSON migration source, and legacy fallback. New backend work defaults to Rust/ClickHouse; route-shape changes should still run Node compatibility checks before breaking old clients.
+
+Current hosted performance signal:
+
+- On 2026-05-23, the self-hosted GCP ClickHouse path passed the hosted
+  read-path benchmark against the `normal-runs-50k` showcase project: 50,000
+  runs and 522,000,000 metric points.
+- Project read p95s were `236 ms` for newest-100, `307 ms` for metric-best
+  sort, `418 ms` for overview, and `224 ms` for a 1,000-point chart response
+  from a 20,000-step source series.
+- This makes self-hosted GCP ClickHouse the preferred beta path forward for
+  InstantML-owned hosted storage. The remaining product risk is operational,
+  not basic query viability: backups, monitoring, disk capacity, and HA need to
+  mature before broad paid launch.
 
 ## Product Positioning
 
@@ -177,9 +190,9 @@ These are the current product defaults implemented in Rust and mirrored in the d
 
 | Tier | Draft price | Included |
 | --- | ---: | --- |
-| Free | `$0/org/mo` | 2 seats, 2 GiB included storage, 2 projects, 100 runs, 1M metric points, shared 8 GiB warehouse intent |
-| Pro | `$199/org/mo` | 3 seats, 1 TiB included storage, 100 projects, 100k runs, 250M metric points, standard 12 GiB warehouse intent |
-| Premium | `$699/org/mo` | 10 seats, 5 TiB included storage, 500 projects, 1M runs, 2B metric points, dedicated 16 GiB x 2 replica warehouse intent |
+| Free | `$0/org/mo` | 2 seats, 2 GiB included storage, 2 projects, 100 runs, 1M metric points, 500k API requests/month, shared 8 GiB warehouse intent |
+| Pro | `$199/org/mo` | 3 seats, 1 TiB included storage, 100 projects, 100k runs, 250M metric points, 25M API requests/month, standard 12 GiB warehouse intent |
+| Premium | `$699/org/mo` | 10 seats, 5 TiB included storage, 500 projects, 1M runs, 2B metric points, 150M API requests/month, dedicated 16 GiB x 2 replica warehouse intent |
 | Enterprise | Custom | SSO/SAML, VPC or self-host option, custom retention, compliance, dedicated support, custom warehouse and storage terms |
 
 Overage defaults:
@@ -188,12 +201,14 @@ Overage defaults:
   reserves seats beyond the plan's included count. The price target remains
   `$79-$99/seat/month` until invoice smoke coverage is complete.
 - Storage overage: paid subscriptions include a Stripe meter-backed storage
-  overage item, and the server can report whole GiB-month retained-storage
-  overage to Stripe meter events at the `$0.03/GB-month` sandbox target after
-  the included pool, based on Cloudflare R2 Standard currently listing
-  `$0.015/GB-month`. Public overage invoices still require provider/object-store
-  reconciliation hardening.
+  overage item, and the server reports positive deltas of the current-month
+  high-water retained-storage overage at `$0.03/GB-month` after the included
+  pool, based on Cloudflare R2 Standard currently listing `$0.015/GB-month`.
 - Metric/event overage: new metric writes are blocked at the current UTC calendar-month fair-use threshold until paid overages or custom terms exist. Metric-point usage resets at 00:00 UTC on the first day of each month.
+- API request overage: Free is blocked at 500k requests/month. Paid Pro and
+  Premium subscriptions attach Stripe metered request-overage prices at
+  `$2 / 1M` Pro requests and `$1 / 1M` Premium requests after the included
+  monthly allowance, reported as exact request-unit deltas.
 - Project/run limits: new projects and runs are blocked at the stored plan limit.
 - Import/storage-heavy workloads: require Premium or custom quote.
 
@@ -201,14 +216,14 @@ Current implementation status:
 
 - The Rust/ClickHouse server exposes org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
 - Usage is scoped by org and requires `usage:read` in hosted API-key mode.
-- The summary returns the full plan catalog, current org plan, limits, overage policy, the UTC calendar-month usage period, seats, projects, runs, current-period scalar metric points, retained metric-point totals, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, blocked-at-limit storage estimates, and `billable_storage_bytes: null`; the storage meter endpoint computes a separate non-invoice overage report.
-- Paid signup uses Stripe Checkout; existing paid plan changes, extra-seat changes, cancellation, storage meter reporting, and Customer Portal use Stripe Billing APIs plus User Data billing projections. New project, run, metric-ingest, artifact, import, API-key, seat, and demo-reset writes fail with HTTP 402 and `code: "payment_required"` when the org is pending payment or payment-failed, and with `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit.
-- Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes.
+- The summary returns the full plan catalog, current org plan, limits, overage policy, the UTC calendar-month usage period, seats, projects, runs, current-period scalar metric points, current-period API requests, billable storage/request overage fields, retained metric-point totals, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, and blocked-at-limit storage estimates.
+- Paid signup uses Stripe Checkout; existing paid plan changes, extra-seat changes, cancellation, storage/API request overage reporting, and Customer Portal use Stripe Billing APIs plus User Data billing projections. New project, run, metric-ingest, artifact, import, API-key, seat, and demo-reset writes fail with HTTP 402 and `code: "payment_required"` when the org is pending payment or payment-failed, with `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit, and with HTTP 429 `code: "api_request_monthly_limit_exceeded"` when a Free or non-billable org reaches the monthly API request allowance.
+- Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes. Metric-point and API-request counters reset monthly.
 - Signup accepts `plan_tier` for Free, Pro, and Premium. Legacy plan values `lab` and `startup` canonicalize to Pro; `growth` canonicalizes to Premium for migration compatibility.
 - Local InstantML and the shared `InstantML Demo` org now default to Premium so the seeded demo exercises the Premium-scale warehouse profile and does not trip Free limits.
-- Hosted tenant routes record both requested warehouse profile and applied warehouse profile. Real ClickHouse Cloud create bodies stay capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
+- Hosted tenant routes record both requested warehouse profile and applied warehouse profile. The current InstantML-owned hosted path uses database-mode tenant routing on self-hosted GCP ClickHouse; legacy provider-backed `cloud-service` create bodies remain capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
 - The dashboard includes plan selection in signup, paid signup redirect/return handling, a compact plan usage badge in the topbar near account controls, full usage, billing, and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
-- These values are for pricing validation and debugging, not final invoice truth. Rust now writes immutable `usage_daily` snapshots, Stripe billing control records, and storage meter-event reports, but billable storage still requires provider/object-store reconciliation before public overage invoices are treated as final.
+- These values are for pricing validation, billing operations, and debugging. Rust now writes immutable `usage_daily` snapshots, bounded API request usage rollups, Stripe billing control records, and storage/API request meter-event reports. Provider/object-store reconciliation remains a hardening item, but paid subscriptions now include the metered storage and request overage items.
 - Detailed pricing and margin assumptions live in `docs/product/pricing-and-margins.md`.
 
 ### Cost Basis
@@ -216,21 +231,21 @@ Current implementation status:
 Preferred first hosted stack:
 
 - Rust API: Google Cloud Run.
-- Operational and analytical storage: managed ClickHouse-compatible storage.
+- Operational and analytical storage: InstantML-owned self-hosted ClickHouse on Google Cloud for the beta hosted path.
 - Artifact storage: Cloudflare R2 private per-org buckets.
 - Auth: Clerk or equivalent managed auth provider.
 
 Why:
 
 - Cloud Run offers low-ops container hosting with request/resource billing.
-- Managed ClickHouse-compatible providers offer columnar storage and compute for both operational records and metric workloads.
+- Self-hosted ClickHouse on Google Cloud keeps the beta data path fast, private to the Cloud Run VPC, and materially cheaper while workload shape is still being validated.
 - Cloudflare R2 offers low-cost S3-compatible storage with free egress.
 - Clerk offers managed auth, Google login, B2B organizations, and machine/API-key primitives.
+- Managed ClickHouse-compatible providers can still be reconsidered for Enterprise/VPC or high-availability needs once real usage and cost data justify the extra operating expense.
 
 Sources:
 
 - [Google Cloud Run pricing](https://cloud.google.com/run/pricing)
-- [ClickHouse Cloud pricing](https://clickhouse.com/pricing)
 - [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/)
 - [Clerk pricing](https://clerk.com/pricing)
 - [Render pricing](https://render.com/pricing)

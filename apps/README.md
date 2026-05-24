@@ -27,6 +27,10 @@ apps/admin -> apps/rust-server control plane -> projected users/orgs/API keys/st
 packages/python-sdk/uploader -> apps/rust-server -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 ```
 
+Hosted production/staging currently implement that target with split Cloud Run
+control/data services, self-hosted ClickHouse on Google Cloud for User Data and
+tenant databases, and Cloudflare R2 for artifact bytes.
+
 Deprecated local compatibility target:
 
 ```text

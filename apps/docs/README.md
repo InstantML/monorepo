@@ -89,9 +89,13 @@ Node tests.
 - `openapi.json`: generated public API reference copy. Do not edit by hand.
 - `index.mdx`: public docs landing page.
 - `quickstart.mdx`: hosted SaaS and SDK first-run path.
+- `guides/pricing-limits-billing.mdx`: public Free/Pro/Premium pricing,
+  included usage, API request rate limits, storage/request overage, and billing
+  behavior.
 - `concepts/`: core product concepts.
 - `architecture/`: public system, storage, auth, service-plane, and schema
-  reference docs.
+  reference docs, including the current Google Cloud ClickHouse hosted storage
+  page.
 - `sdk/`: SDK usage docs.
 - `dashboard/`: dashboard workflow docs.
 - `guides/`: examples, imports, export, usage, auth, billing, storage, and

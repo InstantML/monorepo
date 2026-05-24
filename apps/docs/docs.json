@@ -38,6 +38,7 @@
               "index",
               "quickstart",
               "concepts/core-concepts",
+              "guides/pricing-limits-billing",
               "guides/examples"
             ]
           }
@@ -98,6 +99,7 @@
             "pages": [
               "guides/imports",
               "guides/export-usage-limits",
+              "guides/pricing-limits-billing",
               "guides/auth-billing-storage",
               "guides/customer-owned-clickhouse",
               "guides/observability"
@@ -133,6 +135,7 @@
             "pages": [
               "architecture/system-overview",
               "architecture/storage-model",
+              "architecture/google-clickhouse",
               "architecture/auth-tenancy",
               "architecture/service-planes",
               "architecture/schema-reference"

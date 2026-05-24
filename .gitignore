@@ -5,6 +5,7 @@
 venv/
 .env
 .env.local
+.envrc
 apps/web/.env.local
 node_modules/
 .next/

@@ -212,6 +212,50 @@ pub enum SeriesSortMode {
 
 pub const METRIC_SCHEMA_VERSION: u32 = 2;
 const INITIAL_SCHEMA: &str = include_str!("../clickhouse/0001_initial.sql");
+const COUNT_POINTS_FOR_ORG_SQL: &str = "SELECT toUInt64(sum(count)) \
+                 FROM ( \
+                   SELECT countMerge(count) AS count \
+                   FROM metric_series \
+                   WHERE org_id = ? \
+                   GROUP BY run_id, key \
+                 )";
+const COUNT_DATABASE_STORAGE_BYTES_SQL: &str = "SELECT toUInt64(coalesce(sum(bytes_on_disk), 0)) \
+                 FROM system.parts \
+                 WHERE active AND database = ?";
+const COUNT_POINTS_FOR_ORG_PERIOD_SQL: &str = "SELECT count() \
+                 FROM metric_points \
+                 WHERE org_id = ? \
+                 AND created_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
+                 AND created_at < parseDateTime64BestEffort(?, 6, 'UTC')";
+const COUNT_RANK_POINTS_FOR_ORG_SQL: &str =
+    "SELECT count() FROM rank_metric_points WHERE org_id = ?";
+const COUNT_RANK_POINTS_FOR_ORG_PERIOD_SQL: &str = "SELECT count() \
+                 FROM rank_metric_points \
+                 WHERE org_id = ? \
+                 AND created_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
+                 AND created_at < parseDateTime64BestEffort(?, 6, 'UTC')";
+const COUNT_POINTS_FOR_PROJECT_SQL: &str = "SELECT toUInt64(sum(count)) \
+                 FROM ( \
+                   SELECT countMerge(count) AS count \
+                   FROM metric_series \
+                   WHERE org_id = ? AND run_id IN ( \
+                     SELECT toUUID(entity_id) \
+                     FROM operational_records \
+                     WHERE org_id = ? AND kind = 'run' \
+                       AND JSONExtractString(payload, 'project') = ? \
+                   ) \
+                   GROUP BY run_id, key \
+                 )";
+const COUNT_POINTS_FOR_RUNS_SQL: &str = "SELECT toUInt64(sum(count)) \
+                 FROM ( \
+                   SELECT countMerge(count) AS count \
+                   FROM metric_series \
+                   WHERE org_id = ? AND run_id IN ? \
+                   GROUP BY run_id, key \
+                 )";
+const COUNT_SERIES_FOR_ORG_SQL: &str =
+    "SELECT count() FROM (SELECT run_id, key FROM metric_series \
+                 WHERE org_id = ? GROUP BY run_id, key)";
 
 /// Wraps a configured ClickHouse client alongside the database it targets.
 ///
@@ -327,6 +371,27 @@ impl MetricStore {
                  FROM operational_records \
                  ORDER BY created_at ASC, kind ASC, entity_id ASC",
             )
+            .fetch_all::<OperationalRecordRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn load_operational_records_by_kind_entity_prefix(
+        &self,
+        kind: &str,
+        org_id: Uuid,
+        entity_prefix: &str,
+    ) -> AppResult<Vec<OperationalRecordRow>> {
+        self.client
+            .query(
+                "SELECT kind, org_id, entity_id, payload, created_at \
+                 FROM operational_records \
+                 WHERE kind = ? AND org_id = ? AND startsWith(entity_id, ?) \
+                 ORDER BY created_at ASC, kind ASC, entity_id ASC",
+            )
+            .bind(kind)
+            .bind(org_id)
+            .bind(entity_prefix)
             .fetch_all::<OperationalRecordRow>()
             .await
             .map_err(clickhouse_read_error)
@@ -872,15 +937,7 @@ impl MetricStore {
     pub async fn count_points_for_org(&self, org_id: Uuid) -> AppResult<i64> {
         let count: u64 = self
             .client
-            .query(
-                "SELECT toUInt64(sum(count)) \
-                 FROM ( \
-                   SELECT countMerge(count) AS count \
-                   FROM metric_series \
-                   WHERE org_id = ? \
-                   GROUP BY run_id, key \
-                 )",
-            )
+            .query(COUNT_POINTS_FOR_ORG_SQL)
             .bind(org_id)
             .fetch_one::<u64>()
             .await
@@ -895,11 +952,7 @@ impl MetricStore {
     pub async fn count_database_storage_bytes(&self) -> AppResult<i64> {
         let bytes: u64 = self
             .client
-            .query(
-                "SELECT toUInt64(coalesce(sum(bytes_on_disk), 0)) \
-                 FROM system.parts \
-                 WHERE active AND database = ?",
-            )
+            .query(COUNT_DATABASE_STORAGE_BYTES_SQL)
             .bind(self.database())
             .fetch_one::<u64>()
             .await
@@ -916,13 +969,7 @@ impl MetricStore {
     ) -> AppResult<i64> {
         let count: u64 = self
             .client
-            .query(
-                "SELECT count() \
-                 FROM metric_points \
-                 WHERE org_id = ? \
-                 AND created_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
-                 AND created_at < parseDateTime64BestEffort(?, 6, 'UTC')",
-            )
+            .query(COUNT_POINTS_FOR_ORG_PERIOD_SQL)
             .bind(org_id)
             .bind(period_start.to_rfc3339())
             .bind(period_end.to_rfc3339())
@@ -935,7 +982,7 @@ impl MetricStore {
     pub async fn count_rank_points_for_org(&self, org_id: Uuid) -> AppResult<i64> {
         let count: u64 = self
             .client
-            .query("SELECT count() FROM rank_metric_points WHERE org_id = ?")
+            .query(COUNT_RANK_POINTS_FOR_ORG_SQL)
             .bind(org_id)
             .fetch_one::<u64>()
             .await
@@ -951,13 +998,7 @@ impl MetricStore {
     ) -> AppResult<i64> {
         let count: u64 = self
             .client
-            .query(
-                "SELECT count() \
-                 FROM rank_metric_points \
-                 WHERE org_id = ? \
-                 AND created_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
-                 AND created_at < parseDateTime64BestEffort(?, 6, 'UTC')",
-            )
+            .query(COUNT_RANK_POINTS_FOR_ORG_PERIOD_SQL)
             .bind(org_id)
             .bind(period_start.to_rfc3339())
             .bind(period_end.to_rfc3339())
@@ -970,20 +1011,7 @@ impl MetricStore {
     pub async fn count_points_for_project(&self, org_id: Uuid, project: &str) -> AppResult<i64> {
         let count: u64 = self
             .client
-            .query(
-                "SELECT toUInt64(sum(count)) \
-                 FROM ( \
-                   SELECT countMerge(count) AS count \
-                   FROM metric_series \
-                   WHERE org_id = ? AND run_id IN ( \
-                     SELECT toUUID(entity_id) \
-                     FROM operational_records \
-                     WHERE org_id = ? AND kind = 'run' \
-                       AND JSONExtractString(payload, 'project') = ? \
-                   ) \
-                   GROUP BY run_id, key \
-                 )",
-            )
+            .query(COUNT_POINTS_FOR_PROJECT_SQL)
             .bind(org_id)
             .bind(org_id)
             .bind(project)
@@ -999,15 +1027,7 @@ impl MetricStore {
         }
         let count: u64 = self
             .client
-            .query(
-                "SELECT toUInt64(sum(count)) \
-                 FROM ( \
-                   SELECT countMerge(count) AS count \
-                   FROM metric_series \
-                   WHERE org_id = ? AND run_id IN ? \
-                   GROUP BY run_id, key \
-                 )",
-            )
+            .query(COUNT_POINTS_FOR_RUNS_SQL)
             .bind(org_id)
             .bind(run_ids)
             .fetch_one::<u64>()
@@ -1021,10 +1041,7 @@ impl MetricStore {
     pub async fn count_series_for_org(&self, org_id: Uuid) -> AppResult<i64> {
         let count: u64 = self
             .client
-            .query(
-                "SELECT count() FROM (SELECT run_id, key FROM metric_series \
-                 WHERE org_id = ? GROUP BY run_id, key)",
-            )
+            .query(COUNT_SERIES_FOR_ORG_SQL)
             .bind(org_id)
             .fetch_one::<u64>()
             .await
@@ -1289,6 +1306,56 @@ mod tests {
                 "expected {candidate:?} to be rejected"
             );
         }
+    }
+
+    #[test]
+    fn usage_metric_count_queries_are_org_scoped() {
+        for (name, sql) in [
+            ("retained scalar points", COUNT_POINTS_FOR_ORG_SQL),
+            (
+                "current-period scalar points",
+                COUNT_POINTS_FOR_ORG_PERIOD_SQL,
+            ),
+            ("retained rank points", COUNT_RANK_POINTS_FOR_ORG_SQL),
+            (
+                "current-period rank points",
+                COUNT_RANK_POINTS_FOR_ORG_PERIOD_SQL,
+            ),
+            ("run selection points", COUNT_POINTS_FOR_RUNS_SQL),
+            ("series count", COUNT_SERIES_FOR_ORG_SQL),
+        ] {
+            assert!(
+                sql.contains("WHERE org_id = ?"),
+                "{name} query must keep an org_id predicate"
+            );
+        }
+    }
+
+    #[test]
+    fn project_metric_count_scopes_both_metrics_and_run_metadata() {
+        assert!(
+            COUNT_POINTS_FOR_PROJECT_SQL.contains("FROM metric_series"),
+            "project count must read metric summaries"
+        );
+        assert!(
+            COUNT_POINTS_FOR_PROJECT_SQL.contains("WHERE org_id = ? AND run_id IN"),
+            "project metric count must scope metric rows by org_id"
+        );
+        assert!(
+            COUNT_POINTS_FOR_PROJECT_SQL.contains("FROM operational_records")
+                && COUNT_POINTS_FOR_PROJECT_SQL.contains("WHERE org_id = ? AND kind = 'run'"),
+            "project metric count must scope run metadata by org_id"
+        );
+    }
+
+    #[test]
+    fn database_storage_count_is_database_scoped_only() {
+        assert!(COUNT_DATABASE_STORAGE_BYTES_SQL.contains("FROM system.parts"));
+        assert!(COUNT_DATABASE_STORAGE_BYTES_SQL.contains("active AND database = ?"));
+        assert!(
+            !COUNT_DATABASE_STORAGE_BYTES_SQL.contains("org_id"),
+            "system.parts has no tenant org_id; callers must only use this for org-scoped databases"
+        );
     }
 
     #[test]

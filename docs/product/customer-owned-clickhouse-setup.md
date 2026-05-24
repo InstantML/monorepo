@@ -15,10 +15,12 @@ artifact backend.
 Storage usage for BYOC orgs counts only artifact bytes stored by InstantML. It
 does not count the customer's ClickHouse warehouse bytes.
 
-## Recommended ClickHouse Cloud Setup
+## Recommended ClickHouse Setup
 
 1. Create or choose a read-write ClickHouse service in a region close to the
-   InstantML data-plane region.
+   InstantML data-plane region. ClickHouse Cloud and self-hosted ClickHouse can
+   both work as long as the endpoint is reachable over public HTTPS from the
+   InstantML data plane.
 2. Add every InstantML egress CIDR displayed in onboarding to the ClickHouse
    service IP access list. This is the Rust API/data-plane egress, not the
    user's browser IP.
@@ -58,7 +60,8 @@ https://abc123.us-central1.gcp.clickhouse.cloud:8443
 ```
 
 Do not include username/password in the URL, and do not include a path, query
-string, or fragment.
+string, or fragment. Hosted BYOC currently requires a public HTTPS endpoint;
+private VPC-only endpoints are local/operator-test only.
 
 ## Current Limitations
 

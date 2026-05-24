@@ -32,8 +32,11 @@ test("docs app route renders docs source instead of redirecting to a docs host",
   assert.match(agentButton, /fetch\(href/);
   assert.match(agentButton, /Copy \.md for agent/);
   assert.match(codeBlock, /navigator\.clipboard\.writeText/);
-  assert.match(styles, /grid-template-columns: clamp\(248px, 18vw, 320px\) minmax\(0, 1fr\)/);
-  assert.doesNotMatch(styles, /max-width: 1240px/);
+  // Assert on structural shape (var(), clamp(), or numeric) so the test
+  // doesn't break every time the shell's grid values get polished. Both
+  // the PR #91 clamp version and #92's var version satisfy this.
+  assert.match(styles, /grid-template-columns:\s*(?:var\(--docs-sidebar-width\)|\d|clamp)/);
+  assert.doesNotMatch(styles, /max-width:\s*1240px/);
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
 });
 

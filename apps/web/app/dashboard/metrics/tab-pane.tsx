@@ -52,6 +52,8 @@ type Props = {
   onPinnedChartZoomRangeChange: (metric: string, range: ChartZoomRange) => void;
   onSmoothing: (value: number) => void;
   onXMode: (mode: string) => void;
+  identifierMode: string;
+  onIdentifierMode: (mode: string) => void;
   onZoomRangeChange: (range: ChartZoomRange) => void;
   pinnedChartPanels: PinnedChartPanel[];
   pinnedMetrics: string[];
@@ -91,6 +93,8 @@ export function MetricsTabPane({
   onPinnedChartZoomRangeChange,
   onSmoothing,
   onXMode,
+  identifierMode,
+  onIdentifierMode,
   onZoomRangeChange,
   pinnedChartPanels,
   pinnedMetrics,
@@ -137,12 +141,14 @@ export function MetricsTabPane({
               xMode={xMode}
               smoothing={smoothing}
               groupAverage={groupAverage}
+              identifierMode={identifierMode}
               pinnedMetrics={pinnedMetrics}
               onMetricFilter={onMetricFilter}
               onMetricKey={onMetricKey}
               onGroupBy={onGroupBy}
               onXMode={onXMode}
               onSmoothing={onSmoothing}
+              onIdentifierMode={onIdentifierMode}
               onGroupAverage={onGroupAverage}
               onPinnedMetric={onPinnedMetric}
             />
