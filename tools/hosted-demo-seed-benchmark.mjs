@@ -30,6 +30,9 @@ const existingApiBase = process.env.INSTANTML_HOSTED_DEMO_API_BASE;
 const resultPath = process.env.INSTANTML_HOSTED_DEMO_RESULT_PATH || "";
 const enforceBudgets = process.env.INSTANTML_HOSTED_DEMO_ENFORCE === "1";
 const metricKey = process.env.INSTANTML_HOSTED_DEMO_METRIC_KEY || "eval/return_mean";
+const hostedDemoProvisioner = normalizeClickHouseProvisioner(
+  process.env.INSTANTML_HOSTED_DEMO_PROVISIONER || process.env.INSTANTML_CLICKHOUSE_PROVISIONER || "database",
+);
 const userDataUrl = clickhouseUrlFromEnv(
   "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT",
   "CLICKHOUSE_INSTANTML_USER_DATA_USERNAME",
@@ -40,9 +43,9 @@ const cloudLocation = inferCloudLocation(userDataUrl);
 const cloudProvider = process.env.INSTANTML_CLICKHOUSE_CLOUD_PROVIDER || cloudLocation.provider;
 const cloudRegion = process.env.INSTANTML_CLICKHOUSE_CLOUD_REGION || cloudLocation.region;
 if (process.env.INSTANTML_HOSTED_DEMO_ALLOW_PROVISION !== "1") {
-  throw new Error("hosted demo benchmark can create paid ClickHouse Cloud services; set INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 to continue");
+  throw new Error("hosted demo benchmark can create/use hosted ClickHouse storage; set INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 to continue");
 }
-if (!existingApiBase && (!cloudProvider || !cloudRegion)) {
+if (hostedDemoProvisioner === "cloud-service" && !existingApiBase && (!cloudProvider || !cloudRegion)) {
   throw new Error("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER and INSTANTML_CLICKHOUSE_CLOUD_REGION are required when the User Data endpoint is not a ClickHouse Cloud hostname");
 }
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-hosted-demo-"));
@@ -69,11 +72,6 @@ try {
 
   const route = await latestTenantRoute(orgId);
   if (route.status !== "ready") throw new Error(`demo tenant route is ${route.status}: ${route.error || ""}`);
-  if (route.provisioner !== "cloud-service" && process.env.INSTANTML_HOSTED_DEMO_ALLOW_DATABASE_ROUTE !== "1") {
-    throw new Error(
-      `demo tenant route uses ${route.provisioner}; set INSTANTML_CLICKHOUSE_PROVISIONER=cloud-service before seeding the hosted demo service`,
-    );
-  }
 
   const tenantUrl = tenantUrlFromRoute(route);
   const existingRuns = await seededRunCount(tenantUrl, orgId);
@@ -164,20 +162,23 @@ try {
 async function startServer(port) {
   const serverLog = path.join(tempDir, `api-${Date.now()}.log`);
   const output = fs.openSync(serverLog, "w");
+  const childEnv = {
+    ...process.env,
+    INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
+    INSTANTML_CLICKHOUSE_PROVISIONER: hostedDemoProvisioner,
+    INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
+    INSTANTML_AUTH_MODE: "local",
+    INSTANTML_REQUEST_TIMEOUT_SECONDS: process.env.INSTANTML_REQUEST_TIMEOUT_SECONDS || "900",
+    INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
+  };
+  if (hostedDemoProvisioner === "cloud-service") {
+    childEnv.INSTANTML_CLICKHOUSE_CLOUD_PROVIDER = cloudProvider;
+    childEnv.INSTANTML_CLICKHOUSE_CLOUD_REGION = cloudRegion;
+    childEnv.INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS = "true";
+  }
   const child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
-    env: {
-      ...process.env,
-      INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
-      INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service",
-      INSTANTML_CLICKHOUSE_CLOUD_PROVIDER: cloudProvider,
-      INSTANTML_CLICKHOUSE_CLOUD_REGION: cloudRegion,
-      INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
-      INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
-      INSTANTML_AUTH_MODE: "local",
-      INSTANTML_REQUEST_TIMEOUT_SECONDS: process.env.INSTANTML_REQUEST_TIMEOUT_SECONDS || "900",
-      INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
-    },
+    env: childEnv,
     stdio: ["ignore", output, output],
   });
   fs.closeSync(output);
@@ -503,6 +504,12 @@ function inferCloudLocation(clickhouseUrl) {
   const host = new URL(clickhouseUrl).hostname;
   const match = host.match(/^[^.]+\.([^.]+)\.([^.]+)\.clickhouse\.cloud$/);
   return match ? { region: match[1], provider: match[2] } : {};
+}
+
+function normalizeClickHouseProvisioner(raw) {
+  const value = raw.trim().replaceAll("_", "-").toLowerCase();
+  if (value === "database" || value === "cloud-service") return value;
+  throw new Error("INSTANTML_HOSTED_DEMO_PROVISIONER must be database or cloud-service");
 }
 
 function gitMetadata() {

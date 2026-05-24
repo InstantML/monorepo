@@ -44,7 +44,7 @@ npm run deploy:cloud-run
 npm run deploy:cloud-run -- --help
 ```
 
-The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, updates ClickHouse Cloud service and Cloud API-key IP access lists when API credentials are available, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL.
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
 
 Important environment variables:
 
@@ -53,6 +53,9 @@ Important environment variables:
 - `INSTANTML_CLOUD_RUN_SERVICE`: legacy combined Cloud Run service name. Default: `instantml-rust-api`.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`: split control Cloud Run service name. Default: `instantml-control`.
 - `INSTANTML_CLOUD_RUN_DATA_SERVICE`: split data Cloud Run service name. Default: `instantml-data-<region>-a`.
+- `INSTANTML_CLOUD_RUN_CONTROL_SCALING` / `INSTANTML_CLOUD_RUN_DATA_SCALING`: `manual` or `auto`. Prod defaults to manual one-instance services; staging defaults to auto min `0` max `1`.
+- `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES` / `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES`: auto-scaling bounds for control. Defaults: `0` and `1`.
+- `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES` / `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for data. Defaults: `0` and `1`.
 - `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1`: permits control scaling above one instance for controlled tests only.
 - `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual data instance count. Values above `1` fail unless `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1` is set for a controlled test.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1`: creates or updates the managed HTTPS public router.
@@ -62,10 +65,13 @@ Important environment variables:
 - `INSTANTML_FRONTEND_BASE_URL`: hosted web app origin used in device-code and organization invite links. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
 - `INSTANTML_EMAIL_FROM`: verified sender used for organization invite email. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
-- `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup and requires manual ClickHouse Cloud allowlisting.
-- `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips ClickHouse Cloud access-list updates.
-- `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips ClickHouse Cloud API-key access-list updates.
-- `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation can wait for ClickHouse Cloud tenant provisioning.
+- `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup. Keep static/private egress enabled for hosted GCP ClickHouse and BYOC/customer endpoints unless there is an explicit networking plan.
+- `INSTANTML_CLOUD_RUN_VPC_EGRESS`: Cloud Run VPC egress mode when static egress is enabled. Default: `all-traffic`; use `private-ranges-only` only when the service does not need the NAT IP for public BYOC/provider allowlists.
+- `INSTANTML_CLOUD_RUN_NAT_LOGGING=1`: enables Cloud NAT logging for newly created NATs. Default is off to avoid paying for idle translation logs.
+- `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips legacy ClickHouse Cloud access-list updates.
+- `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips legacy ClickHouse Cloud API-key access-list updates.
+- `INSTANTML_CLICKHOUSE_PROVISIONER=database`: current hosted GCP ClickHouse tenant-routing mode.
+- `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation and tenant schema setup have room to finish.
 - `INSTANTML_ARTIFACT_BACKEND`: artifact byte backend. The helper defaults hosted deploys to `r2` when Cloudflare R2 credentials are present and to disabled local storage otherwise.
 - `CLOUDFLARE_R2_ACCOUNT_ID` / `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account used for per-org R2 buckets. The deploy helper normalizes either name to `CLOUDFLARE_ACCOUNT_ID` for the Rust service.
 - `CLOUDFLARE_R2_API_KEY` / `CLOUDFLARE_API_TOKEN`: Cloudflare token used for R2 bucket management and S3-compatible object access.
@@ -73,7 +79,7 @@ Important environment variables:
 - `INSTANTML_LOG_FORMAT`: log format for the Rust service. Hosted deploys set `json`.
 - `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warnings. Default: `1000`.
 
-Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, provision public Cloud Run or load-balancer URLs, and create Cloudflare R2 buckets when artifact uploads are enabled. The default deployment is the split `control` plus `data` shape; both services remain manual single-instance by default until the hosted operational-index coordination work lands. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Hosted artifact byte uploads use Cloudflare R2 when configured; the helper mounts Cloudflare env/secrets only on non-control services, and any Cloudflare token Client IP filter must include every Cloud Run static egress IP that can run artifact uploads.
+Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, provision public Cloud Run or load-balancer URLs, and create Cloudflare R2 buckets when artifact uploads are enabled. The default deployment is the split `control` plus `data` shape; prod stays warm with one manual instance per service, while staging uses automatic min `0` max `1` to reduce idle cost without allowing multiple writers. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Hosted artifact byte uploads use Cloudflare R2 when configured; the helper mounts Cloudflare env/secrets only on non-control services, and any Cloudflare token Client IP filter must include every Cloud Run static egress IP that can run artifact uploads. See `docs/architecture/self-hosted-gcp-clickhouse.md` for the current self-hosted GCP ClickHouse operating model.
 
 Hosted Rust origin logs are Cloud Run stdout/stderr JSON logs. They include
 request completion events, sanitized server-error fields, slow-request warnings,
@@ -83,6 +89,20 @@ through Cloudflare, configure Cloudflare Log Explorer or Logpush separately for
 edge request logs. Prefer path-only fields and custom `ResponseHeaders.x-request-id`
 capture; avoid full URI fields in normal jobs because query strings can contain
 user data. Treat observed `cf-ray` as a correlation field, not a unique join key.
+
+## Self-Hosted ClickHouse Migration Helper
+
+`migrate-to-self-hosted-clickhouse.sh` is the one-off operator helper for the
+current InstantML-owned GCP ClickHouse VM. It provisions or reuses the
+`instantml-clickhouse` VM, writes the Rust server's User Data ClickHouse
+secrets, and rolls the prod Cloud Run services.
+
+The helper is rerun-safe for the common recovery path: when the VM already
+exists, it reuses the latest `instantml-clickhouse-user-data-password` Secret
+Manager value instead of generating a new password that the existing
+ClickHouse container does not know. Password rotation is deliberately not
+handled by this script; rotate inside ClickHouse first, then update Secret
+Manager through a separate runbook.
 
 ## Import Helpers
 
@@ -145,7 +165,7 @@ Useful environment variables:
 
 ## Hosted Demo Benchmark Seed
 
-`hosted-demo-seed-benchmark.mjs` signs in as the shared demo account, provisions or reuses its ClickHouse Cloud service, seeds the 100,000-run benchmark into that service once, restarts its temporary Rust server so tenant replay reads the direct seed, and prints sanitized hosted API p50/p95 timings. It benchmarks newest run pages, 100-row pages, name/tag/config/notes search, status filters, combined search+filter, selected-metric sorting, project overview, and a bounded chart series. It reads ClickHouse credentials from the local `.env`; do not run it from CI or against a disposable account unless you intend to create/use a hosted ClickHouse service.
+`hosted-demo-seed-benchmark.mjs` signs in as the shared demo account, provisions or reuses its hosted tenant route, seeds the 100,000-run benchmark into that route once, restarts its temporary Rust server so tenant replay reads the direct seed, and prints sanitized hosted API p50/p95 timings. It benchmarks newest run pages, 100-row pages, name/tag/config/notes search, status filters, combined search+filter, selected-metric sorting, project overview, and a bounded chart series. It reads ClickHouse credentials from the local `.env`; do not run it from CI or against a disposable account unless you intend to create/use a hosted ClickHouse database or legacy provider service.
 
 ```bash
 INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
@@ -155,7 +175,8 @@ INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/i
 
 Useful environment variables:
 
-- `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1`: required confirmation because this tool can create/use paid ClickHouse Cloud services.
+- `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1`: required confirmation because this tool can create/use hosted tenant storage. In current prod/staging this should be database-mode self-hosted GCP ClickHouse; legacy cloud-service mode can still create paid provider services.
+- `INSTANTML_HOSTED_DEMO_PROVISIONER`: `database` or `cloud-service`. Defaults to `INSTANTML_CLICKHOUSE_PROVISIONER` and then `database`.
 - `INSTANTML_HOSTED_DEMO_EMAIL`: shared demo email. Default: `hello@instantml.ai`.
 - `INSTANTML_HOSTED_DEMO_ORG`: shared demo organization name. Default: `InstantML Demo`.
 - `INSTANTML_HOSTED_DEMO_PROJECT`: seeded project name. Default: `instantml-demo-100k`.
@@ -167,8 +188,8 @@ Useful environment variables:
 - `INSTANTML_HOSTED_DEMO_RESULT_PATH`: optional path for sanitized JSON output. The result includes endpoint host only, not ClickHouse credentials, cookies, raw URLs, or org/user IDs.
 - `INSTANTML_HOSTED_DEMO_ENFORCE=1`: exit nonzero if hosted p95 budgets fail. Default budgets are 750 ms for run pages/charts and 1000 ms for search/filter/sort/overview.
 - `INSTANTML_HOSTED_DEMO_API_BASE`: use an already-running API instead of starting a temporary Rust server. Restart that API after a direct seed before expecting the dashboard to replay the new rows.
-- `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`: service location. When unset, the tool infers these from the User Data ClickHouse Cloud host when possible.
-- `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`: comma-separated CIDRs allowed to query the tenant service. Required for `cloud-service` provisioning; the Cloud Run deployment uses `136.115.243.188/32`.
+- `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`: legacy cloud-service location. Current self-hosted GCP ClickHouse/database-mode seeds do not need these.
+- `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`: comma-separated CIDRs allowed to query a legacy provider-backed tenant service. Current self-hosted GCP ClickHouse uses private VPC access instead.
 
 ## Hosted Cloud Run API Benchmark
 
@@ -178,7 +199,7 @@ live 100,000+ run tenant, usually created by `seed:hosted-scale`, and measures
 the real path the SDK/frontend use in production:
 
 ```text
-benchmark client -> Cloud Run data service or HTTPS router -> ClickHouse Cloud tenant
+benchmark client -> Cloud Run data service or HTTPS router -> self-hosted GCP ClickHouse tenant database
 ```
 
 Run it from the repo root after setting an SDK API key for the tenant:
@@ -242,7 +263,7 @@ npm run seed:hosted-scale
 
 Useful environment variables:
 
-- `INSTANTML_HOSTED_SCALE_SEED_ALLOW=1`: required confirmation because this writes to live ClickHouse Cloud.
+- `INSTANTML_HOSTED_SCALE_SEED_ALLOW=1`: required confirmation because this writes to live hosted ClickHouse.
 - `INSTANTML_HOSTED_SCALE_TRUNCATE=1`: wipe tenant `operational_records`, `metric_points`, `metric_series`, and `console_log_lines` before seeding.
 - `INSTANTML_HOSTED_SCALE_ORG_ID`: target a specific org route; otherwise the latest ready tenant route is used.
 - `INSTANTML_HOSTED_SCALE_RUNS`: total runs. Default: `100000`.
@@ -251,6 +272,7 @@ Useful environment variables:
 - `INSTANTML_HOSTED_SCALE_METRIC_KEYS`: comma-separated metric keys. Defaults include `eval/return_mean`, `eval/success_rate`, training metrics, and system metrics.
 - `INSTANTML_HOSTED_SCALE_RUN_BATCH`: run batch size per server-side metric insert. Default: `500`.
 - `INSTANTML_HOSTED_SCALE_KEEP_SEED_TABLE=1`: keep the temporary ClickHouse seed table for debugging.
+- `INSTANTML_HOSTED_SCALE_CLICKHOUSE_ENDPOINT_OVERRIDE`: operator-only connection endpoint override for private hosted ClickHouse, such as an IAP/SSH tunnel to `http://127.0.0.1:18123`. The helper still uses the tenant route's database and credentials; only the network endpoint used by this local script changes.
 
 ## Rust Rich-Object Benchmark
 
@@ -321,7 +343,7 @@ tenant provisioning, and `INSTANTML_SERVICE_PLANE=data` for project/run/metric
 and dashboard routes. It verifies role-specific route tables, data-plane
 control-record refresh before auth, Python SDK ingestion through the data role,
 and dashboard readback after a data-process restart. It does not deploy or touch
-live ClickHouse Cloud/GCP resources.
+live GCP ClickHouse, ClickHouse Cloud, or Cloud Run resources.
 
 Expected import JSON shape:
 

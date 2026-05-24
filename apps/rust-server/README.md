@@ -1,12 +1,12 @@
 # Rust Server
 
-This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, tenant routes, dashboard preferences, and saved workspace views, then stores tenant-owned runs and metrics in the org's routed ClickHouse database/service. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
+This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, tenant routes, dashboard preferences, and saved workspace views, then stores tenant-owned runs and metrics in the org's routed ClickHouse database. Production and staging currently use InstantML-owned self-hosted ClickHouse on Google Cloud for this hosted path. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Purpose
 
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
-- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant data plane.
+- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
 - Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready.
 - Support Premium customer-owned ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
@@ -69,7 +69,7 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 `npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. It is now the default production split control/data deployment path. `npm run deploy:cloud-run:multi` is the explicit equivalent. `npm run deploy:cloud-run:single` keeps the legacy combined-service path available when an operator needs one service. `npm run deploy:cloud-run:staging` deploys isolated staging Cloud Run services and a staging HTTPS router for `staging.api.instantml.ai`.
 
-The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures a regional VPC/Cloud NAT static egress IP, updates ClickHouse Cloud service and API-key access lists when ClickHouse Cloud API credentials are available, builds through Cloud Build, configures an HTTP startup probe against `/readyz`, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`.
+The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures VPC/static egress, builds through Cloud Build, configures an HTTP startup probe against `/readyz`, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`. The active production/staging storage target is self-hosted GCP ClickHouse reached over the Google Cloud VPC; ClickHouse Cloud allowlist updates are legacy/optional and only matter when the provider-backed route path is explicitly configured.
 
 Expect hosted deploys to take a while. A normal `npm run deploy:cloud-run` or
 `npm run deploy:cloud-run:staging` run can take 10-30 minutes because Cloud
@@ -79,8 +79,9 @@ or quiet `gcloud` output during those phases is not a timeout by itself.
 
 The first split hosted launch shape is:
 
-- `instantml-control` with `INSTANTML_SERVICE_PLANE=control`, manual scaling, and 1 active instance by default.
-- `instantml-data-<region>-a` with `INSTANTML_SERVICE_PLANE=data`, manual scaling, and 1 active instance by default.
+- `instantml-control` with `INSTANTML_SERVICE_PLANE=control`, manual scaling, and 1 active instance by default in prod.
+- `instantml-data-<region>-a` with `INSTANTML_SERVICE_PLANE=data`, manual scaling, and 1 active instance by default in prod.
+- staging control/data services default to automatic scaling with min `0` and max `1` so local staging tests do not keep idle instances warm.
 
 Control and data-plane cells stay single-writer by default until the durable multi-writer gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are complete. A Cloud Run `maxScale=1` setting reduces risk but is not a correctness mechanism under automatic scaling; customer-facing single-writer cells should use manual scaling or an app-level write lease before relying on one writer. The deploy helper rejects control/data scaling above one active instance unless the matching unsafe test flag is set for a controlled test.
 
@@ -88,7 +89,14 @@ On startup, the server retries the initial operational/User Data projection rebu
 
 Split deploys write local frontend env with direct control/data Cloud Run service URLs by default. When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper creates a managed HTTPS external Application Load Balancer and writes that one public API base. The helper refuses HTTP-only public routing because hosted auth, session cookies, and API keys must not cross a cleartext `http://<ip>` endpoint. The single-service deploy writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
 
-Production public API routing is `api.instantml.ai -> instantml-control/instantml-data-us-central1-a`. Staging routing is `staging.api.instantml.ai -> instantml-staging-control/instantml-staging-data-us-central1-a`. Staging uses scoped Secret Manager names and defaults the User Data ClickHouse database path to `instantml_user_data_staging`, so local staging tests do not write production User Data records. Staging still creates real ClickHouse Cloud tenant services when the cloud-service provisioner is exercised.
+Production public API routing is `api.instantml.ai -> instantml-control/instantml-data-us-central1-a`. Staging routing is `staging.api.instantml.ai -> instantml-staging-control/instantml-staging-data-us-central1-a`. Staging uses scoped Secret Manager names and defaults the User Data ClickHouse database path to `instantml_user_data_staging`, so local staging tests do not write production User Data records. Prod and staging can share the same self-hosted GCP ClickHouse instance, but their User Data databases must remain separate. Staging should not create ClickHouse Cloud tenant services unless an operator deliberately tests the legacy `cloud-service` provisioner.
+
+Usage accounting is isolated at the same boundary. Metric-point usage queries
+bind `org_id` for scalar and rank tables, dedicated database-mode tenants count
+exact warehouse bytes only from their own `instantml_org_<org_id.simple>`
+database, shared-cell tenants do not expose database-wide `system.parts` bytes
+as org-exact usage, and customer-owned ClickHouse tenants count only
+InstantML-owned artifact bytes.
 
 Hosted deploys use `INSTANTML_AUTH_MODE=api-key`, disable local dev auth, enable hosted ClickHouse routing, and enable Clerk only when `CLERK_SECRET_KEY` is configured. Managed Clerk deploys must also provide `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` or `CLERK_PUBLISHABLE_KEY` from the same Clerk application; the deploy helper decodes that public key, derives `CLERK_JWT_ISSUER`, validates `CLERK_SECRET_KEY` against Clerk Backend API domain metadata, writes the issuer into Cloud Run, and fails before cloud mutation when the secret, public key, or explicit issuer point at different Clerk instances. `GET /api/auth/config` exposes the client-safe `clerk_jwt_issuer` so a staging frontend can detect when it was built with the wrong publishable key instead of failing later during token exchange. Organization invitation email uses `INSTANTML_EMAIL_PROVIDER=resend` when `RESEND_API_KEY` is present; `INSTANTML_FRONTEND_BASE_URL` must point at the hosted web app and `INSTANTML_EMAIL_FROM` must point at a verified sender before Resend-backed deploys so invite emails never fall back to localhost links or an unverified sender. The deploy helper syncs the Resend secret only to control-plane services. Bootstrap routes remain disabled unless an operator explicitly provides `INSTANTML_BOOTSTRAP_TOKEN`.
 
@@ -152,11 +160,11 @@ Environment variables:
 - `CLOUDFLARE_R2_ENDPOINT`: optional S3-compatible endpoint. Default: `https://<account_id>.r2.cloudflarestorage.com`.
 - `INSTANTML_HOSTED_CLICKHOUSE_ENABLED`: enables User Data control-plane storage and tenant routing. Default: disabled.
 - `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`, `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`: ClickHouse endpoint and credentials for the `instantml_user_data` control table. Values may live in local `.env`; process env wins when both are set.
-- `INSTANTML_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted experiments; falling back to the User Data endpoint is only a local/test convenience.
-- `INSTANTML_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default: `database`, which is local/test only unless paired with per-org least-privilege ClickHouse users and cross-database denial tests.
-- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: cloud-service provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` is required in cloud-service mode and should include the Cloud Run static egress CIDR, currently `136.115.243.188/32`, so every new tenant service is created with API-only ClickHouse access. Cloud-service mode is opt-in because it can create external paid services. `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=false` keeps selected Free/Pro/Premium warehouse sizes as recorded route intent while actual creation stays capped by operator memory/replica defaults.
+- `INSTANTML_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted GCP ClickHouse so new tenant routes use the self-hosted deployment; falling back to the User Data endpoint is only a local/test convenience.
+- `INSTANTML_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default server value is `database`; current production/staging hosted deploys should use `database` against the self-hosted GCP ClickHouse deployment. Use `cloud-service` only for the legacy provider-backed path that intentionally creates external paid ClickHouse services.
+- `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: legacy provider-backed `cloud-service` provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` is required in cloud-service mode and should include the Cloud Run static egress CIDR, currently `136.115.243.188/32`, so every new provider-managed tenant service is created with API-only ClickHouse access. Cloud-service mode is opt-in because it can create external paid services. `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=false` keeps selected Free/Pro/Premium warehouse sizes as recorded route intent while actual creation stays capped by operator memory/replica defaults.
 - `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
-- `INSTANTML_SHARED_CELL_URL`: ClickHouse HTTP connection string for the shared cell used by personal/free orgs. When set, new signups with `account_type=personal` (or no `account_type`) write a `tenant_route` record pointing at this cell and do not trigger a ClickHouse Cloud provisioning call. Format: `http://user:pass@host:port/database`. If absent, personal signups fall through to the existing dedicated provisioning path.
+- `INSTANTML_SHARED_CELL_URL`: ClickHouse HTTP connection string for the shared cell used by personal/free orgs. When set, new signups with `account_type=personal` (or no `account_type`) write a `tenant_route` record pointing at this cell and do not create a dedicated tenant database or external provider service. Format: `http://user:pass@host:port/database`. If absent, personal signups fall through to the existing dedicated provisioning path.
 - `INSTANTML_SHARED_CELL_DATABASE`: database name inside the shared cell. Defaults to `instantml_shared`. Only relevant when `INSTANTML_SHARED_CELL_URL` is set.
 - `INSTANTML_BYOC_EGRESS_CIDRS`: comma-separated static egress CIDRs shown to BYOC customers for ClickHouse IP allowlisting. Defaults to `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` when unset. Hosted BYOC signup/validation is rejected until this is configured; local private-endpoint smoke tests can bypass it with `INSTANTML_BYOC_ALLOW_PRIVATE_ENDPOINTS=true`.
 - `INSTANTML_BYOC_EGRESS_SET_VERSION`: operator label for the currently displayed BYOC egress set. Defaults to `configured` when CIDRs exist and `local-dev` otherwise.
@@ -186,7 +194,7 @@ live keys unless `INSTANTML_STRIPE_SMOKE_ALLOW_LIVE=1` is set, creates or reuses
 lookup-key sandbox prices/meters, creates temporary test customers and
 subscriptions, and cancels/deletes those temporary Stripe resources at the end.
 
-Cloud-service retries recover from a service that was created before the route credentials were persisted by resetting that service password through the ClickHouse Cloud API, then writing a ready tenant route. This handles browser/API request timeouts during first provisioning without requiring manual User Data edits.
+Legacy cloud-service retries recover from a provider-managed service that was created before the route credentials were persisted by resetting that service password through the ClickHouse Cloud API, then writing a ready tenant route. The current self-hosted GCP ClickHouse path does not use this flow for normal prod/staging tenant routes.
 
 Shared demo auth:
 
@@ -231,12 +239,15 @@ Root helper-only environment variables:
 - `INSTANTML_DEV_CH_TCP_PORT`, `INSTANTML_DEV_CH_INTERSERVER_PORT`, `INSTANTML_DEV_CH_MYSQL_PORT`: optional non-HTTP ports for avoiding local collisions.
 - `INSTANTML_CLOUD_RUN_TOPOLOGY`: `single` or `split` for `tools/deploy-cloud-run.mjs`. `deploy:cloud-run` and `deploy:cloud-run:multi` pass `split`.
 - `INSTANTML_DEPLOY_ENV`: `prod` or `staging`. Defaults to `prod`; staging changes default service/router names, secret names, and User Data database path.
-- `INSTANTML_CLOUD_RUN_SCALING`, `INSTANTML_CLOUD_RUN_INSTANCES`: combined-service scaling mode and manual instance count. The legacy single deploy defaults to manual `1`.
+- `INSTANTML_CLOUD_RUN_SCALING`, `INSTANTML_CLOUD_RUN_INSTANCES`: combined-service scaling mode and manual instance count. The legacy single deploy defaults to manual `1` in prod and auto min `0` max `1` in staging.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
-- `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Both default to `manual`.
+- `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Prod defaults to `manual`; staging defaults to `auto`.
 - `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual split instance counts. Values above `1` are blocked unless the matching unsafe control/data test flag is set.
+- `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for split services. Defaults are min `0`, max `1`.
 - `INSTANTML_CLOUD_RUN_STARTUP_PROBE`: optional raw Cloud Run startup probe override. Defaults to `httpGet.path=/readyz,httpGet.port=8000,initialDelaySeconds=0,timeoutSeconds=10,periodSeconds=10,failureThreshold=30`.
 - `INSTANTML_CLOUD_RUN_BACKEND_TIMEOUT_SECONDS`: public-router backend timeout. Defaults to Cloud Run/Rust timeout and then `900`.
+- `INSTANTML_CLOUD_RUN_VPC_EGRESS`: Cloud Run VPC egress mode when static egress is enabled. Default `all-traffic`; use `private-ranges-only` only when public BYOC/provider allowlists do not rely on the NAT IP.
+- `INSTANTML_CLOUD_RUN_NAT_LOGGING`: set `1` to enable Cloud NAT logging for newly created NATs. Default is off for cost.
 - `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE`: permits control scaling above one instance for controlled tests only.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: managed HTTPS public router controls.
 - `INSTANTML_CLOUD_RUN_SECRET_PREFIX`: Secret Manager prefix for non-prod deploys. Staging defaults to `instantml-staging-`.
@@ -341,7 +352,7 @@ Hosted demo seed/benchmark:
 INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
 ```
 
-This command reads the local `.env`, signs in as `hello@instantml.ai`, creates or reuses the `InstantML Demo` cloud-service tenant route, seeds the hosted 100,000-run benchmark only when that project is absent, restarts its temporary Rust API for tenant replay, and prints hosted ClickHouse latency timings. The explicit `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1` guard is required because the command can create/use paid ClickHouse Cloud services; do not run it from CI or against an account where that would be surprising.
+This command reads the local `.env`, signs in as `hello@instantml.ai`, creates or reuses the `InstantML Demo` hosted tenant route, seeds the hosted 100,000-run benchmark only when that project is absent, restarts its temporary Rust API for tenant replay, and prints hosted ClickHouse latency timings. Prefer the self-hosted GCP/database-mode path for current hosted tests. The explicit `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1` guard is required because legacy cloud-service mode can create/use paid provider services; do not run it from CI or against an account where that would be surprising.
 
 The hosted benchmark now validates and times the dashboard's critical 100,000-run query shapes: newest run pages, larger pages, name/tag/config/notes search, failed/running/finished filters, combined search+filter, selected-metric sort, project overview, and a bounded chart series. Set `INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-benchmark.json` to save the sanitized JSON result, and `INSTANTML_HOSTED_DEMO_ENFORCE=1` to fail if hosted p95 budgets are missed.
 
@@ -353,7 +364,7 @@ INSTANTML_API_KEY=instantml_... npm run benchmark:cloud-run
 
 Use this after `seed:hosted-scale` has created the large tenant dataset. It
 measures the deployed Cloud Run data service or HTTPS router with bearer auth,
-so the measured path is client -> Cloud Run -> ClickHouse Cloud. It covers org
+so the measured path is client -> Cloud Run -> self-hosted GCP ClickHouse. It covers org
 and project run summaries, searches, status filters, metric sort, overview,
 single-run chart series, selection-projection pages, and batched selected-run
 series calls against the 100,000+ run hosted-scale projects. The default
@@ -363,7 +374,7 @@ selection with adaptive metric-series point limits. Set
 `INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json`
 to save sanitized JSON output.
 
-In `cloud-service` hosted mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse service, not in the User Data database.
+In hosted split mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse database, not in the User Data database. In the current production/staging path those tenant databases live on self-hosted GCP ClickHouse; legacy `cloud-service` routes may still point at provider-managed services.
 
 Hosted tenant warehouse wakeups are reported as `503` errors with the stable
 JSON code `warehouse_unavailable`. Public error text stays sanitized, but the

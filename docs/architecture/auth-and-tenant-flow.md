@@ -54,8 +54,8 @@ flowchart TD
     H -- "Yes" --> I["Create new session for existing org"]
     H -- "No" --> J["Create org with tenant_routing_tier, owner membership, optional invite records"]
     J --> K{"account_type == business?"}
-    K -- "Yes" --> L["Provision dedicated ClickHouse Cloud service"]
-    K -- "No" --> M["Point at shared cell — no Cloud provisioning"]
+    K -- "Yes" --> L["Create dedicated tenant database route"]
+    K -- "No" --> M["Point at shared cell"]
     L --> N["Create browser session"]
     M --> N
 ```
@@ -76,12 +76,13 @@ Currently implemented plans:
 When `account_type=personal` (or absent, which defaults to personal), the signup
 path sets `tenant_routing_tier="shared"` on the new org and writes a
 `tenant_route` record pointing at the env-configured shared ClickHouse cell
-(`INSTANTML_SHARED_CELL_URL`). No ClickHouse Cloud provisioning call is made.
-When `account_type=business`, the existing per-org dedicated provisioning path
-is used unchanged.
+(`INSTANTML_SHARED_CELL_URL`). When `account_type=business`, the hosted default
+is now a database-mode tenant route on the InstantML-owned self-hosted GCP
+ClickHouse deployment.
 
-ClickHouse Cloud service-mode operator defaults still apply unless
-`INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`:
+Legacy provider-backed `cloud-service` mode still exists for explicit operator
+tests or future dedicated-provider deployments. Its operator defaults still
+apply unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`:
 
 | Field | Value |
 | --- | --- |
@@ -91,7 +92,10 @@ ClickHouse Cloud service-mode operator defaults still apply unless
 | Applied memory | `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB` and `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB` |
 | Applied replicas | `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS` |
 
-Cloud-service mode can create paid external services, so automated tests use local/database-mode provisioning. Operators must explicitly configure ClickHouse Cloud credentials and the stored-tenant-password guard until a secret manager replaces that temporary storage path.
+Cloud-service mode can create paid external services, so automated tests and the
+current hosted beta use local/database-mode provisioning. Operators must
+explicitly configure ClickHouse Cloud credentials and the stored-tenant-password
+guard before exercising that legacy path.
 
 Existing tenant routes and warehouses are preserved. The signup path creates a
 route only when an org has no route; it does not delete or recreate an existing

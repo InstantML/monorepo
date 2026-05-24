@@ -23,7 +23,9 @@ Data plane:
 
 Local mode may keep both planes in one ClickHouse database. Hosted mode stores
 global account/control records in User Data ClickHouse and tenant product rows
-in the org's routed ClickHouse database or service.
+in the org's routed ClickHouse database. InstantML-hosted production and
+staging currently use an InstantML-owned self-hosted ClickHouse deployment on
+Google Cloud for both planes.
 
 ## Append-only operational records
 
@@ -94,7 +96,7 @@ Artifact metadata lives in ClickHouse. Artifact bytes live in a byte backend:
 
 | Backend | Use |
 | --- | --- |
-| Private object storage | Hosted artifact uploads. |
+| Cloudflare R2 private per-org buckets | Hosted artifact uploads. |
 | External URI metadata | Records pointers to customer storage without uploading bytes. |
 
 Stored bytes use opaque `instantml://artifacts/<id>` URIs in public artifact

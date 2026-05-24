@@ -44,8 +44,21 @@ Target stack snapshot:
 - Analytical plane: ClickHouse `metric_points` (MergeTree) and `metric_series` (AggregatingMergeTree, populated by a materialized view) for high-volume metric time series and fast summary/chart queries.
 - Artifact plane: local filesystem storage for development and Cloudflare R2-backed private per-org buckets for hosted artifact bytes, with ClickHouse retaining artifact references, sizes, hashes, and MIME metadata.
 - Auth plane: managed Google login for humans plus database-owned memberships, service accounts, hashed API keys, scopes, project restrictions, and audit events.
-- Hosting preference: Google Cloud Run or equivalent container hosting for Rust services, managed ClickHouse-compatible storage for operational and analytical data, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity.
+- Hosting preference: Google Cloud Run or equivalent container hosting for Rust services, InstantML-owned ClickHouse on Google Cloud for the current hosted beta, Cloudflare R2 for object storage, and Clerk or an equivalent managed auth provider for organizations and identity. Managed ClickHouse-compatible and customer-owned ClickHouse remain future/Enterprise deployment options when their cost and isolation tradeoffs are justified.
 - Migration rule: Node is deprecated and retained as the compatibility oracle, JSON migration source, and legacy fallback. New backend work defaults to Rust/ClickHouse; route-shape changes should still run Node compatibility checks before breaking old clients.
+
+Current hosted performance signal:
+
+- On 2026-05-23, the self-hosted GCP ClickHouse path passed the hosted
+  read-path benchmark against the `normal-runs-50k` showcase project: 50,000
+  runs and 522,000,000 metric points.
+- Project read p95s were `236 ms` for newest-100, `307 ms` for metric-best
+  sort, `418 ms` for overview, and `224 ms` for a 1,000-point chart response
+  from a 20,000-step source series.
+- This makes self-hosted GCP ClickHouse the preferred beta path forward for
+  InstantML-owned hosted storage. The remaining product risk is operational,
+  not basic query viability: backups, monitoring, disk capacity, and HA need to
+  mature before broad paid launch.
 
 ## Product Positioning
 
@@ -206,7 +219,7 @@ Current implementation status:
 - Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes.
 - Signup accepts `plan_tier` for Free, Pro, and Premium. Legacy plan values `lab` and `startup` canonicalize to Pro; `growth` canonicalizes to Premium for migration compatibility.
 - Local InstantML and the shared `InstantML Demo` org now default to Premium so the seeded demo exercises the Premium-scale warehouse profile and does not trip Free limits.
-- Hosted tenant routes record both requested warehouse profile and applied warehouse profile. Real ClickHouse Cloud create bodies stay capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
+- Hosted tenant routes record both requested warehouse profile and applied warehouse profile. The current InstantML-owned hosted path uses database-mode tenant routing on self-hosted GCP ClickHouse; legacy provider-backed `cloud-service` create bodies remain capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.
 - The dashboard includes plan selection in signup, paid signup redirect/return handling, a compact plan usage badge in the topbar near account controls, full usage, billing, and seat controls in Settings, and API-key list/create/revoke controls in the API tab.
 - These values are for pricing validation and debugging, not final invoice truth. Rust now writes immutable `usage_daily` snapshots, Stripe billing control records, and storage meter-event reports, but billable storage still requires provider/object-store reconciliation before public overage invoices are treated as final.
 - Detailed pricing and margin assumptions live in `docs/product/pricing-and-margins.md`.
@@ -216,21 +229,21 @@ Current implementation status:
 Preferred first hosted stack:
 
 - Rust API: Google Cloud Run.
-- Operational and analytical storage: managed ClickHouse-compatible storage.
+- Operational and analytical storage: InstantML-owned self-hosted ClickHouse on Google Cloud for the beta hosted path.
 - Artifact storage: Cloudflare R2 private per-org buckets.
 - Auth: Clerk or equivalent managed auth provider.
 
 Why:
 
 - Cloud Run offers low-ops container hosting with request/resource billing.
-- Managed ClickHouse-compatible providers offer columnar storage and compute for both operational records and metric workloads.
+- Self-hosted ClickHouse on Google Cloud keeps the beta data path fast, private to the Cloud Run VPC, and materially cheaper while workload shape is still being validated.
 - Cloudflare R2 offers low-cost S3-compatible storage with free egress.
 - Clerk offers managed auth, Google login, B2B organizations, and machine/API-key primitives.
+- Managed ClickHouse-compatible providers can still be reconsidered for Enterprise/VPC or high-availability needs once real usage and cost data justify the extra operating expense.
 
 Sources:
 
 - [Google Cloud Run pricing](https://cloud.google.com/run/pricing)
-- [ClickHouse Cloud pricing](https://clickhouse.com/pricing)
 - [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/)
 - [Clerk pricing](https://clerk.com/pricing)
 - [Render pricing](https://render.com/pricing)

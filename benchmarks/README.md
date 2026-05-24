@@ -12,14 +12,14 @@ INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-clickhouse-query-benchma
 npm run benchmark:hosted-demo
 ```
 
-The script signs in as the shared `hello@instantml.ai` demo account, reuses the existing tenant route when present, verifies the 100,000-run project seed, warms each route, then measures the dashboard query shapes documented in `docs/design/2026-05-14-hosted-clickhouse-query-benchmarks.md`.
+The script signs in as the shared `hello@instantml.ai` demo account, reuses the existing tenant route when present, verifies the 100,000-run project seed, warms each route, then measures the dashboard query shapes documented in `docs/design/2026-05-14-hosted-clickhouse-query-benchmarks.md`. Current hosted benchmark routes should point at the self-hosted GCP ClickHouse deployment unless a legacy provider-backed route is being tested intentionally.
 
 The committed Markdown summaries should include:
 
 - commit and branch tested
 - project and dataset sizes
 - warmup/sample counts
-- ClickHouse provider/region and endpoint host only
+- ClickHouse deployment type/provider, region, and endpoint host only
 - p50/p95/min/max per endpoint
 - whether hosted budgets passed
 
@@ -38,13 +38,38 @@ npm run benchmark:cloud-run
 
 This is now the preferred hosted backend latency signal because it measures the
 actual deployed request path: benchmark client -> Cloud Run data service or
-HTTPS router -> ClickHouse Cloud tenant. It assumes `INSTANTML_DATA_API_BASE` or
+HTTPS router -> self-hosted GCP ClickHouse tenant database. It assumes `INSTANTML_DATA_API_BASE` or
 `INSTANTML_API_BASE` points at the hosted API and validates at least 100,000
 runs across the configured benchmark projects before timing requests.
 
 Committed summaries for this benchmark should include the same sanitized fields
 as the hosted ClickHouse benchmark plus the API host only, never full URLs or API
 keys.
+
+The latest current-path result is
+`benchmarks/2026-05-23-gcp-clickhouse-cloud-run-results.md`: Cloud Run direct to
+self-hosted GCP ClickHouse, reading the `normal-runs-50k` project with 50,000
+runs and 522,000,000 metric points. It passed the current read-path budgets.
+
+For the GCP self-hosted showcase workload, run the read-only direct benchmark
+with a short-lived API key:
+
+```bash
+INSTANTML_API_KEY=instantml_... \
+INSTANTML_API_BASE=https://instantml-data-us-central1-a-hfv667633q-uc.a.run.app \
+INSTANTML_CLOUD_RUN_BENCH_PROJECTS=normal-runs-50k \
+INSTANTML_CLOUD_RUN_BENCH_METRIC_KEY=train/loss \
+INSTANTML_CLOUD_RUN_BENCH_SYSTEM_METRIC_KEY=train/loss \
+python3 benchmarks/wandb_hosted_compare.py benchmark-instantml \
+  --direct \
+  --samples 8 \
+  --warmups 2 \
+  --output /tmp/instantml-gcp-clickhouse-result.json
+```
+
+Do not commit the API key or raw JSON unless it has been reviewed for
+sanitization. If a one-off benchmark key is inserted directly into User Data,
+append a revoked `api_key` control record immediately after the benchmark.
 
 ## W&B Hosted Comparison Benchmark
 
@@ -96,6 +121,11 @@ Run W&B read benchmarks:
 .venv/bin/python benchmarks/wandb_hosted_compare.py benchmark-wandb \
   --runs 100 --steps 20 --samples 3 --warmups 1
 ```
+
+As of the 2026-05-23 GCP ClickHouse benchmark rerun, this workspace did not
+have the W&B package installed and had no W&B API key or netrc auth, so W&B was
+not rerun. Keep that caveat in any report that compares the new GCP numbers to
+the historical W&B measurements in `benchmarks/RESULTS.md`.
 
 Run the InstantML read-only hosted benchmark when the hosted-scale dataset
 already exists:

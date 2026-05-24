@@ -29,18 +29,18 @@ flowchart LR
   edge["Public HTTPS API URL\n(global Application Load Balancer)"]
   control["Cloud Run: instantml-control\nINSTANTML_SERVICE_PLANE=control"]
   data["Cloud Run: instantml-data-<region>-a\nINSTANTML_SERVICE_PLANE=data"]
-  userdata[("ClickHouse User Data\nusers, orgs, sessions,\nAPI keys, tenant routes")]
-  tenant[("Tenant ClickHouse\nprojects, runs, metrics,\nlogs, imports, usage")]
-  nat["VPC egress + Cloud NAT\nstatic IP allowlisted in ClickHouse"]
+  userdata[("Self-hosted GCP ClickHouse User Data\nusers, orgs, sessions,\nAPI keys, tenant routes")]
+  tenant[("Tenant databases on self-hosted GCP ClickHouse\nprojects, runs, metrics,\nlogs, imports, usage")]
+  vpc["Google Cloud VPC/private ClickHouse endpoint"]
 
   browser --> edge
   sdk --> edge
   edge --> control
   edge --> data
-  control --> nat --> userdata
-  control --> nat --> tenant
-  data --> nat --> userdata
-  data --> nat --> tenant
+  control --> vpc --> userdata
+  control --> vpc --> tenant
+  data --> vpc --> userdata
+  data --> vpc --> tenant
 ```
 
 The current public API URL should be the managed HTTPS load balancer created by
@@ -51,13 +51,18 @@ the app authenticates. For a single data cell, path-based routing is enough. For
 many cells, use a discovery step or a thin app router with durable tenant-cell
 assignment.
 
+The current production and staging hosted data stores are InstantML-owned
+self-hosted ClickHouse databases on Google Cloud. The older provider-backed
+ClickHouse Cloud service provisioning path is legacy/optional and should not be
+treated as the default hosted deployment.
+
 ## Service Responsibilities
 
 | Service | Routes | Durable source | Default scale |
 | --- | --- | --- | --- |
-| `combined` | control and data | User Data plus tenant ClickHouse | manual 1 |
-| `control` | auth, sessions, users, orgs, seats, API keys, service accounts | User Data ClickHouse | manual 1 |
-| `data` | projects, runs, metrics, logs, artifacts, objects, imports, usage, export | tenant ClickHouse plus warmed User Data projection | manual 1 |
+| `combined` | control and data | User Data plus tenant ClickHouse | prod manual 1; staging auto min 0 max 1 |
+| `control` | auth, sessions, users, orgs, seats, API keys, service accounts | User Data ClickHouse | prod manual 1; staging auto min 0 max 1 |
+| `data` | projects, runs, metrics, logs, artifacts, objects, imports, usage, export | tenant ClickHouse plus warmed User Data projection | prod manual 1; staging auto min 0 max 1 |
 
 Platform routes exist on every service:
 
@@ -110,8 +115,8 @@ job.
 sequenceDiagram
   participant B as Browser
   participant C as Control service
-  participant U as User Data ClickHouse
-  participant CH as Tenant ClickHouse
+  participant U as User Data ClickHouse on GCP
+  participant CH as Tenant DB on GCP ClickHouse
 
   B->>C: POST /api/auth/clerk or /api/auth/dev/google
   C->>U: append user, identity, org, membership, session
@@ -126,8 +131,8 @@ sequenceDiagram
 sequenceDiagram
   participant S as Python SDK
   participant D as Data service
-  participant U as User Data ClickHouse
-  participant CH as Tenant ClickHouse
+  participant U as User Data ClickHouse on GCP
+  participant CH as Tenant DB on GCP ClickHouse
 
   S->>D: POST /runs/:id/metrics with bearer key
   D->>D: resolve API key, org, scopes, tenant route from warmed projection
@@ -204,6 +209,19 @@ uses separate Secret Manager names and rewrites the User Data ClickHouse
 database path to `instantml_user_data_staging` unless
 `INSTANTML_STAGING_USER_DATA_ENDPOINT` is provided.
 
+Default local frontend development should use the staging router instead of
+direct Cloud Run service URLs:
+
+```bash
+INSTANTML_WEB_API_ENV=staging npm run web:dev
+```
+
+This keeps the browser on `http://127.0.0.1:3000` while the Next rewrite proxy
+targets `https://staging.api.instantml.ai`. Use direct
+`INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` values only for
+router-bypass smoke tests, and set `INSTANTML_WEB_EXPLICIT_API_BASES=1` in
+those sessions so the staging-router default does not override them.
+
 The helper reserves a global IP, creates serverless NEGs, reconciles control and
 data backend services, imports a path-based URL map, creates a Google-managed
 SSL certificate, and exposes only port `443`. The first run can finish with
@@ -217,16 +235,19 @@ verify the public URL and write it into local frontend env.
 | --- | --- |
 | `INSTANTML_DEPLOY_ENV` | `prod` or `staging`; staging changes default service/router/secret names |
 | `INSTANTML_CLOUD_RUN_TOPOLOGY` | `single` or `split`; default `split` |
-| `INSTANTML_CLOUD_RUN_SCALING` | `auto` or `manual` for combined service; default `manual` |
+| `INSTANTML_CLOUD_RUN_SCALING` | `auto` or `manual` for combined service; default `manual` in prod and `auto` in staging |
 | `INSTANTML_CLOUD_RUN_INSTANCES` | Manual combined instances; default `1` |
+| `INSTANTML_CLOUD_RUN_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_MAX_INSTANCES` | Auto-scaling bounds for combined service; defaults `0` and `1` |
 | `INSTANTML_CLOUD_RUN_SERVICE_PREFIX` | Prefix for split service names |
 | `INSTANTML_CLOUD_RUN_CONTROL_SERVICE` | Override control service name |
 | `INSTANTML_CLOUD_RUN_DATA_SERVICE` | Override data service name |
 | `INSTANTML_CLOUD_RUN_DATA_CELL` | Operator label for the data cell |
-| `INSTANTML_CLOUD_RUN_CONTROL_SCALING` | `auto` or `manual` |
-| `INSTANTML_CLOUD_RUN_DATA_SCALING` | `auto` or `manual`; default `manual` |
+| `INSTANTML_CLOUD_RUN_CONTROL_SCALING` | `auto` or `manual`; default `manual` in prod and `auto` in staging |
+| `INSTANTML_CLOUD_RUN_DATA_SCALING` | `auto` or `manual`; default `manual` in prod and `auto` in staging |
 | `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES` | Manual control instances; default `1` |
 | `INSTANTML_CLOUD_RUN_DATA_INSTANCES` | Manual data instances; default `1` |
+| `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES` | Auto-scaling bounds for control; defaults `0` and `1` |
+| `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES` | Auto-scaling bounds for data; defaults `0` and `1` |
 | `INSTANTML_CLOUD_RUN_STARTUP_PROBE` | Raw Cloud Run startup probe override; defaults to HTTP `/readyz` |
 | `INSTANTML_CLOUD_RUN_BACKEND_TIMEOUT_SECONDS` | HTTPS router backend timeout; defaults to Cloud Run/Rust request timeout, then `900` |
 | `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE` | Set `1` only for controlled tests above one control instance |
@@ -239,6 +260,8 @@ verify the public URL and write it into local frontend env.
 | `INSTANTML_STAGING_USER_DATA_ENDPOINT` | Full staging User Data endpoint override |
 | `INSTANTML_PUBLIC_API_BASE` | Public LB/router URL for frontend env |
 | `INSTANTML_CLOUD_RUN_STATIC_EGRESS` | Set `0` to skip NAT/static egress setup |
+| `INSTANTML_CLOUD_RUN_VPC_EGRESS` | `all-traffic` or `private-ranges-only`; default `all-traffic` for static egress |
+| `INSTANTML_CLOUD_RUN_NAT_LOGGING` | Set `1` to enable Cloud NAT logging for newly created NATs; default off for cost |
 | `CLERK_SECRET_KEY` | Server-side Clerk key synced into Secret Manager when managed Clerk is enabled |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` or `CLERK_PUBLISHABLE_KEY` | Public Clerk key from the same application as `CLERK_SECRET_KEY`; required for managed Clerk deploys so the helper can derive `CLERK_JWT_ISSUER` |
 | `CLERK_JWT_ISSUER` | Optional explicit Clerk issuer; when set it must match the issuer decoded from the publishable key |
@@ -272,11 +295,14 @@ npm run test:hosted-clickhouse
 
 ## Scaling Rules
 
-Control and data cells stay manual single-instance by default. Control owns
-lower-volume account/auth routes, but it still depends on a process-local
-projection for logout, revocation, signup, org, and API-key state. The deploy
-helper refuses control or data scaling above one active instance unless the
-matching unsafe test flag is set.
+Control and data cells stay bounded to one active instance by default. Prod
+uses manual one-instance scaling so the API stays warm. Staging uses automatic
+scaling with min `0` and max `1` so local staging tests can scale to zero when
+idle without allowing multiple writers. Control owns lower-volume account/auth
+routes, but it still depends on a process-local projection for logout,
+revocation, signup, org, and API-key state. The deploy helper refuses control
+or data scaling above one active instance unless the matching unsafe test flag
+is set.
 
 Do not switch a shared data cell to automatic multi-instance writes until these
 gates are closed:
@@ -311,22 +337,24 @@ to User Data, route browser/API-key traffic to the assigned cell, and add
 multi-process integration tests for stale reads and duplicate writes. Until
 then, `--data-instances=3` is blocked by default.
 
-## ClickHouse Allowlisting
+## ClickHouse Network Access
 
-Both services use the same regional static egress path:
+InstantML-owned production and staging storage use private Google Cloud network
+access to the self-hosted ClickHouse VM:
 
 ```text
-Cloud Run service -> Direct VPC egress -> subnet -> Cloud NAT -> static IP -> ClickHouse Cloud
+Cloud Run service -> Direct VPC egress -> subnet -> self-hosted ClickHouse VM
 ```
 
-ClickHouse Cloud services and ClickHouse Cloud API keys should allowlist the
-Cloud NAT IP in CIDR form, for example `136.115.243.188/32`. New tenant
-ClickHouse services created by the Rust cloud-service provisioner receive
-`INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, which should contain the same NAT
-CIDR.
+The ClickHouse VM should not have a public address. Firewall rules should allow
+Cloud Run's VPC path to reach the ClickHouse HTTP/native ports and should avoid
+opening ClickHouse directly to the public internet.
 
-If we add more regions, each region needs its own NAT IP and every relevant
-ClickHouse allowlist must include those CIDRs.
+Customer-owned ClickHouse and any explicitly enabled legacy provider-backed
+`cloud-service` routes still use public HTTPS endpoints. Those paths should use
+the configured InstantML egress CIDRs shown in onboarding or operator config.
+If we add more regions, each region needs its own egress set for those public
+customer/provider endpoints.
 
 ## Launch Checklist
 
@@ -334,7 +362,8 @@ ClickHouse allowlist must include those CIDRs.
 2. Confirm Cloud Run secrets exist or are present in local `.env`.
 3. Run `npm run deploy:cloud-run` in the target GCP project.
 4. Confirm deploy output lists both services and the static egress IP.
-5. Confirm ClickHouse Cloud service and API-key access lists include the NAT IP.
+5. Confirm Cloud Run services can reach the self-hosted GCP ClickHouse endpoint
+   and that prod/staging User Data databases are separate.
 6. For one public API origin, set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and
    `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>`, then rerun deploy.
 7. Point the API domain DNS `A` record at the emitted global load-balancer IP.
@@ -345,7 +374,7 @@ ClickHouse allowlist must include those CIDRs.
    - router `https://<api-domain>/openapi.json` reports `data`
    - both `/readyz` endpoints are healthy
    - hosted login creates/reuses the expected org and tenant route
-   - SDK ingestion lands in the routed tenant ClickHouse service
+   - SDK ingestion lands in the routed tenant ClickHouse database
 
 ## Related Docs
 

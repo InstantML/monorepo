@@ -46,15 +46,23 @@ https://staging.api.instantml.ai
 ```
 
 The Next frontend uses same-origin rewrites, not direct browser calls to these
-hosts. In the absence of explicit API-base variables, frontend builds default
-to the production router `https://api.instantml.ai`. Set
-`INSTANTML_WEB_API_ENV=staging` on staging/preview frontend deployments to make
-all control and data rewrites target `https://staging.api.instantml.ai`;
-production builds should leave it unset or set it to `prod`.
+hosts. The default local frontend workflow is a localhost Next app with its
+rewrites pointed at the staging router:
 
-The local Next app should normally call the Rust API through same-origin Next
-rewrites. After a direct split `npm run deploy:cloud-run`,
-`apps/web/.env.local` receives:
+```bash
+INSTANTML_WEB_API_ENV=staging npm run web:dev
+```
+
+That sends all control and data rewrites to
+`https://staging.api.instantml.ai` and overrides stale local API-base values
+unless `INSTANTML_WEB_EXPLICIT_API_BASES=1` is set. Staging and preview
+frontend deployments should also set `INSTANTML_WEB_API_ENV=staging`.
+Production builds should leave it unset or set it to `prod`, so rewrites target
+`https://api.instantml.ai`.
+
+The local Next app should only use direct split Cloud Run service bases when
+you intentionally bypass the staging router. After a direct split
+`npm run deploy:cloud-run`, `apps/web/.env.local` can receive:
 
 ```text
 INSTANTML_CONTROL_API_BASE=https://instantml-control-<hash>-uc.a.run.app
@@ -302,8 +310,8 @@ Output when authenticated:
   "account_type": "customer",
   "provisioning": {
     "status": "ready",
-    "mode": "cloud-service",
-    "service_id": "clickhouse-service-id"
+    "mode": "database",
+    "service_id": null
   }
 }
 ```

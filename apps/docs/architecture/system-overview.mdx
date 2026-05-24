@@ -52,8 +52,8 @@ flowchart LR
   edge["Public HTTPS API"]
   control["Rust control service"]
   data["Rust data service"]
-  userdata[("User Data ClickHouse")]
-  tenant[("Tenant ClickHouse")]
+  userdata[("User Data ClickHouse on Google Cloud")]
+  tenant[("Tenant ClickHouse databases on Google Cloud")]
   r2[("Private artifact buckets")]
 
   browser --> edge
@@ -70,6 +70,9 @@ flowchart LR
 The control service handles auth, orgs, sessions, API keys, billing, seats, and
 tenant route metadata. The data service handles projects, runs, metrics, logs,
 attributes, rich objects, imports, export, usage, and artifact data paths.
+InstantML-hosted production and staging currently use InstantML-owned
+self-hosted ClickHouse on Google Cloud for these User Data and tenant
+databases.
 
 ## Design constraints users can rely on
 

@@ -45,6 +45,10 @@ Downloads go through:
 GET /api/artifacts/:artifact_id/download
 ```
 
+InstantML-hosted workspace data currently uses InstantML-owned ClickHouse on
+Google Cloud for User Data and tenant databases. Hosted artifact bytes use
+private Cloudflare R2 buckets and stay separate from metric ingestion.
+
 ## Customer-owned storage posture
 
 Teams that need stronger data-control boundaries can use customer-owned storage

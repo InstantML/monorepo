@@ -8,7 +8,7 @@ Status: Current architecture summary
 
 This document summarizes the implemented system so future agents do not need to reconstruct the architecture from older sprint docs. `PRODUCT_STRATEGY.md` remains the strategic source of truth; this file describes the current technical shape for InstantML.
 
-Strategy note: the product direction is now a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The current packaging model is Free, Pro, and Premium with usage guardrails: new project, run, metric-ingest, artifact, import, and demo-reset writes are blocked at plan limits until billing/provider reconciliation and paid overages are implemented. Metric-point limits use the current UTC calendar month and reset on the first day of the next month; storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts. The current primary backend is Rust plus ClickHouse-only storage: operational records for local/control-plane state and analytical metric tables for high-volume scalar metrics. Hosted multi-process routing now has launch wiring through split Cloud Run `control` and `data` services; deterministic full replay, role-specific HTTP surfaces, and data-plane control-record refresh exist, but shared-cell multi-writer freshness and write uniqueness are not complete.
+Strategy note: the product direction is now a hosted SaaS-first W&B-style competitor for smaller startups, research labs, and lean ML teams. The current packaging model is Free, Pro, and Premium with usage guardrails: new project, run, metric-ingest, artifact, import, and demo-reset writes are blocked at plan limits until billing/provider reconciliation and paid overages are implemented. Metric-point limits use the current UTC calendar month and reset on the first day of the next month; storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts. The current primary backend is Rust plus ClickHouse-only storage: operational records for local/control-plane state and analytical metric tables for high-volume scalar metrics. Hosted multi-process routing now has launch wiring through split Cloud Run `control` and `data` services; deterministic full replay, role-specific HTTP surfaces, and data-plane control-record refresh exist, but shared-cell multi-writer freshness and write uniqueness are not complete. Production and staging currently use InstantML-owned self-hosted ClickHouse on Google Cloud for User Data and tenant databases instead of ClickHouse Cloud.
 
 Architecture split:
 
@@ -65,7 +65,22 @@ console messages, and artifact filenames.
 
 ## Runtime Topology
 
-Local development:
+Default frontend development:
+
+```text
+Browser -> Next dev/server on :3000
+        -> same-origin rewrites
+        -> https://staging.api.instantml.ai
+
+Python SDK/uploader -> https://staging.api.instantml.ai when using a staging SDK key
+```
+
+Use `INSTANTML_WEB_API_ENV=staging npm run web:dev` for this localhost
+frontend flow. It is the normal setup for dashboard and browser work because
+it exercises the hosted staging Rust services and self-hosted GCP ClickHouse
+without requiring local ClickHouse.
+
+Local backend development:
 
 ```text
 Browser -> Next dev/server on :3000 -> Rust API on :8000
@@ -81,7 +96,8 @@ Docker Compose:
 ```text
 Rust API container -> clickhouse service
 Rust API container -> instantml-artifacts volume
-Next frontend runs separately with INSTANTML_API_BASE=http://127.0.0.1:8000
+Next frontend only points at the container API when explicitly started with
+INSTANTML_API_BASE=http://127.0.0.1:8000 or :8010
 ```
 
 Hosted direction:
@@ -89,8 +105,8 @@ Hosted direction:
 ```text
 Next/React frontend -> global Rust control plane
 Python SDK/uploader -> org/cell Rust data-plane service
-Control plane -> ClickHouse user/org/service-routing layer
-Data plane -> ClickHouse org operational layer + ClickHouse metric layer
+Control plane -> self-hosted GCP ClickHouse user/org/service-routing layer
+Data plane -> self-hosted GCP ClickHouse org operational layer + ClickHouse metric layer
 Rust API -> Cloudflare R2 private per-org buckets
 ```
 
@@ -102,12 +118,12 @@ Internal hosted first slice:
 Local Next frontend on :3000 -> Cloud Run Rust API, manual instance count 1
 Python SDK/uploader -----------> Cloud Run Rust API, manual instance count 1
 
-Cloud Run Rust API -> ClickHouse Cloud User Data control table
-Cloud Run Rust API -> ClickHouse Cloud tenant services
-Cloud Run Rust API -> static Cloud NAT egress IP for ClickHouse service and API-key allowlisting
+Cloud Run Rust API -> self-hosted GCP ClickHouse User Data control table
+Cloud Run Rust API -> self-hosted GCP ClickHouse tenant databases
+Cloud Run Rust API -> Google Cloud VPC/private ClickHouse endpoint
 ```
 
-This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, restricts ClickHouse Cloud services and API keys to the Cloud Run static egress IP plus explicit operator IPs, restricts hosted Clerk signup by allowlist, and enables hosted artifact byte uploads only when Cloudflare R2 credentials are configured.
+This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, routes User Data and tenant databases to the InstantML-owned self-hosted GCP ClickHouse deployment, restricts hosted Clerk signup by allowlist, and enables hosted artifact byte uploads only when Cloudflare R2 credentials are configured.
 
 Premium BYOC orgs keep the same control-plane/session/API-key path, but their
 tenant product route points at a customer-owned ClickHouse HTTPS endpoint after
@@ -125,9 +141,9 @@ Public HTTPS API URL / managed load balancer
   -> Cloud Run instantml-control, INSTANTML_SERVICE_PLANE=control
   -> Cloud Run instantml-data-<region>-a, INSTANTML_SERVICE_PLANE=data
 
-Both services -> same Cloud NAT static egress IP
+Both services -> Google Cloud VPC/private ClickHouse endpoint
 Both services -> ClickHouse User Data control table
-Data service  -> routed tenant ClickHouse service/database
+Data service  -> routed tenant ClickHouse database
 ```
 
 The default deploy command is now `npm run deploy:cloud-run`, which launches the production split control/data topology. `npm run deploy:cloud-run:multi` is the explicit split alias, `npm run deploy:cloud-run:single` is the legacy combined-service path, and `npm run deploy:cloud-run:staging` deploys isolated staging Cloud Run services behind `staging.api.instantml.ai`. Combined, control, and data targets default to manual scaling with one active instance until their multi-process freshness and uniqueness gates are complete. Managed Clerk deploys require a frontend publishable key from the same Clerk application as the backend secret; the helper derives `CLERK_JWT_ISSUER`, validates the secret against Clerk domain metadata, and Cloud Run exposes the issuer through `/api/auth/config` for frontend mismatch checks. Cloud Run startup probes use HTTP `/readyz`, which only passes after ClickHouse is reachable and the process-local control projection has loaded. Data-plane API-key/session auth misses force one control-record refresh and retry so fresh control-plane writes become visible without querying User Data on every successful hot-path request. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` to create the managed HTTPS public router; HTTP-only public IP routing is rejected.
@@ -164,8 +180,8 @@ Deprecated storage:
 
 Durable hosted direction:
 
-- Control-plane ClickHouse layer for user and account data: users, identities, organizations, memberships, service routing, tenant-route warehouse profile metadata, plans, seats, API keys, and account status.
-- Data-plane ClickHouse layer per shared cell, InstantML-hosted customer service, or customer-owned ClickHouse route for projects, runs, attributes, artifacts, imports, idempotency, operational records, usage snapshots, and metric tables.
+- Control-plane ClickHouse layer for user and account data: users, identities, organizations, memberships, service routing, tenant-route warehouse profile metadata, plans, seats, API keys, and account status. The current hosted control layer is a self-hosted GCP ClickHouse database.
+- Data-plane ClickHouse layer per shared cell, InstantML-hosted tenant database on the self-hosted GCP ClickHouse deployment, or customer-owned ClickHouse route for projects, runs, attributes, artifacts, imports, idempotency, operational records, usage snapshots, and metric tables.
 - Cloudflare R2 stores production artifact byte payloads in private deterministic per-org buckets. ClickHouse stores artifact catalog rows with `storage_backend`, `storage_key`, `storage_path`, exact `size_bytes`, `sha256`, and `mime_type`; downloads stream through the Rust API rather than exposing raw bucket URLs.
 - JSON state retained only for deprecated Node compatibility and migration tooling.
 
@@ -181,7 +197,7 @@ The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
 - `npm run dev:api`: starts or reuses local ClickHouse, applies the ClickHouse schema, then serves the Rust API.
 - `npm run deploy:cloud-run`: builds one Rust image and deploys production split control/data Cloud Run services with role-specific environment. Control and data remain manual single-instance by default; use this as launch wiring, not as permission to run shared cells with multiple active writers. With `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and a router domain, it can also create the managed HTTPS public router.
 - `npm run deploy:cloud-run:staging`: deploys `instantml-staging-control` and `instantml-staging-data-us-central1-a`, creates/reconciles the `staging.api.instantml.ai` HTTPS router, uses staging-scoped Secret Manager names, and defaults User Data to `instantml_user_data_staging`.
-- `npm run deploy:cloud-run:single`: deploys the Rust API to the internal manual single-instance combined Cloud Run service, syncs secrets, configures static egress, updates ClickHouse Cloud service and API-key allowlists when credentials are present, and writes the hosted API URL to local frontend env files.
+- `npm run deploy:cloud-run:single`: deploys the Rust API to the internal manual single-instance combined Cloud Run service, syncs secrets, configures VPC/static egress, and writes the hosted API URL to local frontend env files. The active hosted storage path is self-hosted GCP ClickHouse; legacy ClickHouse Cloud allowlist updates are only relevant when the optional provider-backed path is explicitly configured.
 - `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui`: run through `tools/rust-service-smoke.mjs`, which creates disposable ClickHouse state, starts Rust, runs the smoke, and cleans up.
 - `npm run test:hosted-clickhouse`: runs separate local Rust `control` and `data` service-plane processes against disposable ClickHouse User Data and tenant databases, then verifies control-only routes, data-only routes, plan-aware signup, tenant-route warehouse profile metadata, seat invites and invited-member activation, API-key/session auth refresh, SDK ingestion, usage/admin reads, and data-plane restart replay.
 - `npm run benchmark:large-runs`: seeds operational records and metric rows into disposable ClickHouse before measuring summary/search/sort/chart endpoints.
@@ -232,7 +248,8 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-up sele
 - `docs/design/2026-05-11-large-run-query-performance.md`: run-list/query performance expectations.
 - `docs/design/2026-05-11-rich-logged-objects.md`: rich object/table/histogram behavior.
 - `docs/design/2026-05-11-landing-auth-onboarding.md`: local auth/onboarding route shape.
-- `docs/design/2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, and ClickHouse Cloud warehouse defaults.
+- `docs/design/2026-05-16-clerk-hosted-auth.md`: Clerk hosted auth, org-name uniqueness, and historical ClickHouse Cloud warehouse defaults.
+- `docs/architecture/self-hosted-gcp-clickhouse.md`: current InstantML-owned GCP ClickHouse production/staging operating model.
 - `docs/design/2026-05-16-gcp-cloud-run-rust-api.md`: internal single-instance Cloud Run deployment, Secret Manager, static ClickHouse egress, and local frontend-to-hosted API workflow.
 - `docs/design/2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance architecture direction, central-proxy rejection, route/auth/storage gates, and deterministic replay first slice.
 - `docs/design/2026-05-16-cloud-run-multi-instance-launch.md`: Cloud Run split deploy helper, Docker Compose split profile, scaling defaults, and launch wiring.

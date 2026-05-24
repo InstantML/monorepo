@@ -35,8 +35,8 @@ function resolveApiBases() {
   }
   const webApiEnv = resolveWebApiEnv();
   const explicitHostedBases = isTruthy(process.env.INSTANTML_WEB_EXPLICIT_API_BASES);
-  // Frontend deployments intentionally default to prod. Set
-  // INSTANTML_WEB_API_ENV=staging only on staging/preview frontend builds.
+  // Frontend builds intentionally default to prod. Local frontend development
+  // and staging/preview builds set INSTANTML_WEB_API_ENV=staging.
   const hostedDefault = hostedApiBases[webApiEnv || "prod"];
   const useHostedDefault = webApiEnv && !explicitHostedBases;
   const rawDefault = useHostedDefault
