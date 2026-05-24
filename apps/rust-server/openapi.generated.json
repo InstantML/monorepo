@@ -9,6 +9,72 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/admin/overview": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_overview",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive search over users, orgs, API keys, and risk text",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows per list; default 100, max 200",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read-only operator overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOverviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
     "/api/artifacts/{artifact_id}/download": {
       "get": {
         "tags": [
@@ -4862,6 +4928,779 @@
   },
   "components": {
     "schemas": {
+      "AdminApiKeySummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "org_name",
+          "service_account_id",
+          "name",
+          "key_prefix",
+          "scopes",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key_prefix": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "service_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service_account_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminBillingSummary": {
+        "type": "object",
+        "required": [
+          "access_state",
+          "effective_plan_tier",
+          "paid_extra_seats",
+          "cancel_at_period_end",
+          "updated_at"
+        ],
+        "properties": {
+          "access_state": {
+            "type": "string"
+          },
+          "cancel_at_period_end": {
+            "type": "boolean"
+          },
+          "current_period_end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "effective_plan_tier": {
+            "type": "string"
+          },
+          "grace_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "paid_extra_seats": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requested_plan_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_subscription_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subscription_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AdminOrgCounts": {
+        "type": "object",
+        "required": [
+          "active_members",
+          "invited_members",
+          "pending_invitations",
+          "active_api_keys",
+          "revoked_api_keys",
+          "service_accounts",
+          "disabled_service_accounts"
+        ],
+        "properties": {
+          "active_api_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_members": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "artifacts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "disabled_service_accounts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "invited_members": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending_invitations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "projects": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "retained_artifact_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "revoked_api_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "runs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "service_accounts": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AdminOrganizationSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "plan_tier",
+          "account_type",
+          "seat_limit",
+          "created_at",
+          "counts",
+          "usage",
+          "storage",
+          "risk_level",
+          "risk_reasons"
+        ],
+        "properties": {
+          "account_type": {
+            "type": "string"
+          },
+          "billing": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminBillingSummary"
+              }
+            ]
+          },
+          "counts": {
+            "$ref": "#/components/schemas/AdminOrgCounts"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminUserIdentity"
+              }
+            ]
+          },
+          "plan_tier": {
+            "type": "string"
+          },
+          "risk_level": {
+            "type": "string"
+          },
+          "risk_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "seat_limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/AdminStorageSummary"
+          },
+          "usage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUsageGauge"
+            }
+          }
+        }
+      },
+      "AdminOverviewQuerySummary": {
+        "type": "object",
+        "required": [
+          "limit",
+          "matched_organizations",
+          "matched_users",
+          "matched_api_keys"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matched_api_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matched_organizations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matched_users": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "q": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdminOverviewResponse": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "generated_at",
+          "data_counts_available",
+          "query",
+          "totals",
+          "organizations",
+          "users",
+          "api_keys",
+          "risks"
+        ],
+        "properties": {
+          "api_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeySummary"
+            }
+          },
+          "data_counts_available": {
+            "type": "boolean"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "organizations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminOrganizationSummary"
+            }
+          },
+          "query": {
+            "$ref": "#/components/schemas/AdminOverviewQuerySummary"
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRiskItem"
+            }
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/AdminOverviewTotals"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUserSummary"
+            }
+          }
+        }
+      },
+      "AdminOverviewTotals": {
+        "type": "object",
+        "required": [
+          "users",
+          "organizations",
+          "active_memberships",
+          "invited_memberships",
+          "pending_invitations",
+          "active_api_keys",
+          "revoked_api_keys",
+          "expired_api_keys",
+          "disabled_service_accounts",
+          "storage_ready_orgs",
+          "storage_unconfigured_orgs",
+          "storage_locked_orgs",
+          "billing_read_only_orgs",
+          "risk_items"
+        ],
+        "properties": {
+          "active_api_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_memberships": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "billing_read_only_orgs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "disabled_service_accounts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expired_api_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "invited_memberships": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "organizations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending_invitations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revoked_api_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "risk_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "storage_locked_orgs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "storage_ready_orgs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "storage_unconfigured_orgs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "users": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AdminRiskItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "target_type",
+          "target_id",
+          "target_label",
+          "severity",
+          "category",
+          "message",
+          "observed_at"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "target_label": {
+            "type": "string"
+          },
+          "target_type": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminStorageSummary": {
+        "type": "object",
+        "required": [
+          "storage_choice",
+          "storage_state",
+          "tenant_routing_tier"
+        ],
+        "properties": {
+          "applied_max_replica_memory_gb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "applied_min_replica_memory_gb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "applied_num_replicas": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint_host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested_max_replica_memory_gb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "requested_min_replica_memory_gb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "requested_num_replicas": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "route_plan_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "route_provisioner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "route_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "service_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "storage_choice": {
+            "type": "string"
+          },
+          "storage_state": {
+            "type": "string"
+          },
+          "tenant_routing_tier": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "warehouse_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdminUsageGauge": {
+        "type": "object",
+        "required": [
+          "target",
+          "current",
+          "limit",
+          "percent",
+          "status"
+        ],
+        "properties": {
+          "current": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "status": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminUserIdentity": {
+        "type": "object",
+        "required": [
+          "id",
+          "primary_email"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "primary_email": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminUserOrgMembership": {
+        "type": "object",
+        "required": [
+          "org_id",
+          "org_name",
+          "role",
+          "status"
+        ],
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminUserSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "primary_email",
+          "created_at",
+          "status",
+          "active_memberships",
+          "invited_memberships",
+          "orgs"
+        ],
+        "properties": {
+          "active_memberships": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invited_memberships": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "orgs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUserOrgMembership"
+            }
+          },
+          "primary_email": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "ApiKeyCreatedEnvelope": {
         "type": "object",
         "required": [

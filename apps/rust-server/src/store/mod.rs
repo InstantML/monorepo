@@ -5,6 +5,7 @@ use std::{
 };
 
 mod access;
+mod admin;
 mod auth;
 mod billing;
 mod console_logs;
@@ -21,6 +22,7 @@ mod validation;
 mod workspace_views;
 
 use access::*;
+pub use admin::*;
 pub use auth::*;
 pub use billing::*;
 pub use console_logs::*;

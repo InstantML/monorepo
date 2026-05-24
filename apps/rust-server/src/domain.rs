@@ -641,6 +641,184 @@ pub struct PublicApiKeyRow {
     pub revoked_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminOverviewResponse {
+    pub schema_version: i32,
+    pub generated_at: DateTime<Utc>,
+    pub data_counts_available: bool,
+    pub query: AdminOverviewQuerySummary,
+    pub totals: AdminOverviewTotals,
+    pub organizations: Vec<AdminOrganizationSummary>,
+    pub users: Vec<AdminUserSummary>,
+    pub api_keys: Vec<AdminApiKeySummary>,
+    pub risks: Vec<AdminRiskItem>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminOverviewQuerySummary {
+    pub q: Option<String>,
+    pub limit: usize,
+    pub matched_organizations: usize,
+    pub matched_users: usize,
+    pub matched_api_keys: usize,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminOverviewTotals {
+    pub users: usize,
+    pub organizations: usize,
+    pub active_memberships: usize,
+    pub invited_memberships: usize,
+    pub pending_invitations: usize,
+    pub active_api_keys: usize,
+    pub revoked_api_keys: usize,
+    pub expired_api_keys: usize,
+    pub disabled_service_accounts: usize,
+    pub storage_ready_orgs: usize,
+    pub storage_unconfigured_orgs: usize,
+    pub storage_locked_orgs: usize,
+    pub billing_read_only_orgs: usize,
+    pub risk_items: usize,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminUserIdentity {
+    pub id: Uuid,
+    pub primary_email: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminUserOrgMembership {
+    pub org_id: Uuid,
+    pub org_name: String,
+    pub role: String,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminUserSummary {
+    pub id: Uuid,
+    pub primary_email: String,
+    pub display_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub status: String,
+    pub active_memberships: usize,
+    pub invited_memberships: usize,
+    pub orgs: Vec<AdminUserOrgMembership>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminOrgCounts {
+    pub active_members: usize,
+    pub invited_members: usize,
+    pub pending_invitations: usize,
+    pub active_api_keys: usize,
+    pub revoked_api_keys: usize,
+    pub service_accounts: usize,
+    pub disabled_service_accounts: usize,
+    pub projects: Option<usize>,
+    pub runs: Option<usize>,
+    pub artifacts: Option<usize>,
+    pub retained_artifact_bytes: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminUsageGauge {
+    pub target: String,
+    pub current: i64,
+    pub limit: i64,
+    pub percent: f64,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminStorageSummary {
+    pub storage_choice: String,
+    pub storage_state: String,
+    pub tenant_routing_tier: String,
+    pub route_status: Option<String>,
+    pub route_provisioner: Option<String>,
+    pub route_plan_tier: Option<String>,
+    pub warehouse_kind: Option<String>,
+    pub endpoint_host: Option<String>,
+    pub database: Option<String>,
+    pub service_id: Option<String>,
+    pub requested_min_replica_memory_gb: Option<u32>,
+    pub requested_max_replica_memory_gb: Option<u32>,
+    pub requested_num_replicas: Option<u32>,
+    pub applied_min_replica_memory_gb: Option<u32>,
+    pub applied_max_replica_memory_gb: Option<u32>,
+    pub applied_num_replicas: Option<u32>,
+    pub schema_version: Option<u32>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminBillingSummary {
+    pub access_state: String,
+    pub effective_plan_tier: String,
+    pub requested_plan_tier: Option<String>,
+    pub paid_extra_seats: i32,
+    pub subscription_status: Option<String>,
+    pub stripe_customer_id: Option<String>,
+    pub stripe_subscription_id: Option<String>,
+    pub current_period_end: Option<DateTime<Utc>>,
+    pub cancel_at_period_end: bool,
+    pub grace_until: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminOrganizationSummary {
+    pub id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub plan_tier: String,
+    pub account_type: String,
+    pub seat_limit: i32,
+    pub created_at: DateTime<Utc>,
+    pub owner: Option<AdminUserIdentity>,
+    pub counts: AdminOrgCounts,
+    pub usage: Vec<AdminUsageGauge>,
+    pub storage: AdminStorageSummary,
+    pub billing: Option<AdminBillingSummary>,
+    pub risk_level: String,
+    pub risk_reasons: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminApiKeySummary {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub org_name: String,
+    pub service_account_id: Uuid,
+    pub service_account_name: Option<String>,
+    pub name: String,
+    pub key_prefix: String,
+    pub scopes: Vec<String>,
+    pub project_id: Option<Uuid>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminRiskItem {
+    pub id: String,
+    pub target_type: String,
+    pub target_id: String,
+    pub target_label: String,
+    pub severity: String,
+    pub category: String,
+    pub message: String,
+    pub observed_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateProjectRequest {
     pub name: Option<String>,

@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod artifacts;
 pub mod auth;
 pub mod billing;
@@ -11,6 +12,7 @@ pub mod platform;
 pub mod runs;
 pub mod usage;
 
+pub(super) use admin::admin_overview;
 pub(super) use artifacts::{create_artifact, download_artifact, list_artifacts, upload_artifact};
 pub(super) use auth::{
     auth_clerk, auth_dev_google, auth_logout, auth_session, auth_switch_organization,
@@ -136,6 +138,14 @@ mod tests {
             ServicePlaneRole::Data
         ));
         assert!(openapi_path_available_for_plane(
+            "/api/admin/overview",
+            ServicePlaneRole::Control
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/admin/overview",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
             "/runs",
             ServicePlaneRole::Data
         ));
@@ -186,6 +196,7 @@ mod tests {
             "/api/auth/device-code/confirm",
             "/api/invitations/preview",
             "/api/invitations/accept",
+            "/api/admin/overview",
             // billing
             "/api/billing/status",
             "/api/billing/checkout",
@@ -265,6 +276,7 @@ mod tests {
             "AuthSessionPayload",
             "ClickHouseConnectionStatusEnvelope",
             "ClickHouseConnectionValidationEnvelope",
+            "AdminOverviewResponse",
             "ProjectEnvelope",
             "RunsEnvelope",
             "InsertedEnvelope",
@@ -385,6 +397,7 @@ mod tests {
         for path in [
             "/api/auth/switch-organization",
             "/api/orgs/memberships",
+            "/api/admin/overview",
             "/api/invitations/preview",
             "/api/invitations/accept",
             "/api/orgs/{org_id}/invitations",

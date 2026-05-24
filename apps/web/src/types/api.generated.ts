@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/api/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/artifacts/{artifact_id}/download": {
         parameters: {
             query?: never;
@@ -1060,6 +1076,193 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AdminApiKeySummary: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            key_prefix: string;
+            /** Format: date-time */
+            last_used_at?: string | null;
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            org_name: string;
+            /** Format: uuid */
+            project_id?: string | null;
+            /** Format: date-time */
+            revoked_at?: string | null;
+            scopes: string[];
+            /** Format: uuid */
+            service_account_id: string;
+            service_account_name?: string | null;
+            status: string;
+        };
+        AdminBillingSummary: {
+            access_state: string;
+            cancel_at_period_end: boolean;
+            /** Format: date-time */
+            current_period_end?: string | null;
+            effective_plan_tier: string;
+            /** Format: date-time */
+            grace_until?: string | null;
+            /** Format: int32 */
+            paid_extra_seats: number;
+            requested_plan_tier?: string | null;
+            stripe_customer_id?: string | null;
+            stripe_subscription_id?: string | null;
+            subscription_status?: string | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AdminOrgCounts: {
+            active_api_keys: number;
+            active_members: number;
+            artifacts?: number | null;
+            disabled_service_accounts: number;
+            invited_members: number;
+            pending_invitations: number;
+            projects?: number | null;
+            /** Format: int64 */
+            retained_artifact_bytes?: number | null;
+            revoked_api_keys: number;
+            runs?: number | null;
+            service_accounts: number;
+        };
+        AdminOrganizationSummary: {
+            account_type: string;
+            billing?: null | components["schemas"]["AdminBillingSummary"];
+            counts: components["schemas"]["AdminOrgCounts"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            owner?: null | components["schemas"]["AdminUserIdentity"];
+            plan_tier: string;
+            risk_level: string;
+            risk_reasons: string[];
+            /** Format: int32 */
+            seat_limit: number;
+            slug: string;
+            storage: components["schemas"]["AdminStorageSummary"];
+            usage: components["schemas"]["AdminUsageGauge"][];
+        };
+        AdminOverviewQuerySummary: {
+            limit: number;
+            matched_api_keys: number;
+            matched_organizations: number;
+            matched_users: number;
+            q?: string | null;
+        };
+        AdminOverviewResponse: {
+            api_keys: components["schemas"]["AdminApiKeySummary"][];
+            data_counts_available: boolean;
+            /** Format: date-time */
+            generated_at: string;
+            organizations: components["schemas"]["AdminOrganizationSummary"][];
+            query: components["schemas"]["AdminOverviewQuerySummary"];
+            risks: components["schemas"]["AdminRiskItem"][];
+            /** Format: int32 */
+            schema_version: number;
+            totals: components["schemas"]["AdminOverviewTotals"];
+            users: components["schemas"]["AdminUserSummary"][];
+        };
+        AdminOverviewTotals: {
+            active_api_keys: number;
+            active_memberships: number;
+            billing_read_only_orgs: number;
+            disabled_service_accounts: number;
+            expired_api_keys: number;
+            invited_memberships: number;
+            organizations: number;
+            pending_invitations: number;
+            revoked_api_keys: number;
+            risk_items: number;
+            storage_locked_orgs: number;
+            storage_ready_orgs: number;
+            storage_unconfigured_orgs: number;
+            users: number;
+        };
+        AdminRiskItem: {
+            category: string;
+            id: string;
+            message: string;
+            /** Format: date-time */
+            observed_at: string;
+            severity: string;
+            target_id: string;
+            target_label: string;
+            target_type: string;
+        };
+        AdminStorageSummary: {
+            /** Format: int32 */
+            applied_max_replica_memory_gb?: number | null;
+            /** Format: int32 */
+            applied_min_replica_memory_gb?: number | null;
+            /** Format: int32 */
+            applied_num_replicas?: number | null;
+            database?: string | null;
+            endpoint_host?: string | null;
+            error?: string | null;
+            /** Format: int32 */
+            requested_max_replica_memory_gb?: number | null;
+            /** Format: int32 */
+            requested_min_replica_memory_gb?: number | null;
+            /** Format: int32 */
+            requested_num_replicas?: number | null;
+            route_plan_tier?: string | null;
+            route_provisioner?: string | null;
+            route_status?: string | null;
+            /** Format: int32 */
+            schema_version?: number | null;
+            service_id?: string | null;
+            storage_choice: string;
+            storage_state: string;
+            tenant_routing_tier: string;
+            /** Format: date-time */
+            updated_at?: string | null;
+            warehouse_kind?: string | null;
+        };
+        AdminUsageGauge: {
+            /** Format: int64 */
+            current: number;
+            /** Format: int64 */
+            limit: number;
+            /** Format: double */
+            percent: number;
+            status: string;
+            target: string;
+        };
+        AdminUserIdentity: {
+            display_name?: string | null;
+            /** Format: uuid */
+            id: string;
+            primary_email: string;
+        };
+        AdminUserOrgMembership: {
+            /** Format: uuid */
+            org_id: string;
+            org_name: string;
+            role: string;
+            status: string;
+        };
+        AdminUserSummary: {
+            active_memberships: number;
+            /** Format: date-time */
+            created_at: string;
+            display_name?: string | null;
+            /** Format: uuid */
+            id: string;
+            invited_memberships: number;
+            /** Format: date-time */
+            last_seen_at?: string | null;
+            orgs: components["schemas"]["AdminUserOrgMembership"][];
+            primary_email: string;
+            status: string;
+        };
         ApiKeyCreatedEnvelope: {
             /** @description Plaintext key shown once on creation. */
             api_key: string;
@@ -2032,6 +2235,49 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    admin_overview: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive search over users, orgs, API keys, and risk text */
+                q?: string;
+                /** @description Maximum rows per list; default 100, max 200 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read-only operator overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverviewResponse"];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     download_artifact: {
         parameters: {
             query?: never;

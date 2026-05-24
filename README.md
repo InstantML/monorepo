@@ -28,6 +28,7 @@ Start with:
 ```text
 monorepo/
   apps/
+    admin/
     docs/
     api/
     rust-server/
@@ -192,6 +193,15 @@ Start the primary Rust API with local generated ClickHouse state:
 
 ```bash
 npm run dev:api
+```
+
+Start the separate internal admin app against a Rust API configured with a
+bootstrap token:
+
+```bash
+INSTANTML_ADMIN_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_ADMIN_BOOTSTRAP_TOKEN=local-admin-token \
+npm run admin:dev
 ```
 
 Start the Next UI in another terminal:

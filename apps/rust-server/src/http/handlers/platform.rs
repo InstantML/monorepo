@@ -120,6 +120,7 @@ pub fn openapi_path_available_for_plane(
     if path.starts_with("/api/auth/")
         || path == "/api/billing"
         || path.starts_with("/api/billing/")
+        || path == "/api/admin/overview"
         || path == "/api/users"
         || path.starts_with("/api/invitations/")
         || path == "/api/orgs"

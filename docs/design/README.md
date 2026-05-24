@@ -48,6 +48,9 @@ Current implemented design sequence:
   same-origin `/docs` rendering from `apps/web`, filtered public OpenAPI
   reference generation, validation scripts, and docs-site guardrails that keep
   internal planning docs unpublished.
+- `2026-05-24-admin-operator-app.md`: separate read-only Next admin app plus a
+  bootstrap-protected Rust operator overview for users, orgs, storage, API
+  keys, billing posture, and risk queues.
 
 Current draft/revised designs awaiting implementation approval:
 

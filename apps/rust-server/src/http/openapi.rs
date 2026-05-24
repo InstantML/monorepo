@@ -30,7 +30,10 @@ use utoipa::{
 use serde_json::Value;
 
 use crate::domain::{
-    AttributeInput, AttributeRow, AuthSessionPayload, BillingAccountProjection,
+    AdminApiKeySummary, AdminBillingSummary, AdminOrgCounts, AdminOrganizationSummary,
+    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem,
+    AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
+    AdminUserSummary, AttributeInput, AttributeRow, AuthSessionPayload, BillingAccountProjection,
     BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo, BillingCheckoutIntent,
     BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
     BillingPlanChangeRequest, BillingPortalRequest, BillingSeatChangeRequest,
@@ -376,6 +379,8 @@ impl Modify for SecurityAddon {
         crate::http::handlers::dashboard::create_workspace_view,
         crate::http::handlers::dashboard::get_workspace_view,
         crate::http::handlers::dashboard::update_workspace_view,
+        // admin
+        crate::http::handlers::admin::admin_overview,
         // orgs / users
         crate::http::handlers::orgs::create_user,
         crate::http::handlers::orgs::list_users,
@@ -479,6 +484,19 @@ impl Modify for SecurityAddon {
         ArtifactEnvelope,
         ArtifactsEnvelope,
         JsonObjectResponse,
+        AdminOverviewResponse,
+        AdminOverviewQuerySummary,
+        AdminOverviewTotals,
+        AdminOrganizationSummary,
+        AdminUserSummary,
+        AdminApiKeySummary,
+        AdminRiskItem,
+        AdminUserIdentity,
+        AdminUserOrgMembership,
+        AdminOrgCounts,
+        AdminUsageGauge,
+        AdminStorageSummary,
+        AdminBillingSummary,
         // domain
         PublicArtifactRow,
         AttributeInput,

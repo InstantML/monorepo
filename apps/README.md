@@ -7,6 +7,8 @@ Use the root `../SETUP.md` before running app commands from a fresh clone.
 Expected apps:
 
 - `api/`: Python bootstrap/reference API service.
+- `admin/`: separate internal Next/React operator console for read-only users,
+  orgs, storage, API-key, billing, and risk inspection.
 - `docs/`: public documentation source and filtered OpenAPI reference rendered
   by `web/` at `/docs`.
 - `rust-server/`: Primary Rust API and worker service home. It contains the accepted ClickHouse schema migration, ClickHouse metric-store integration, runnable service commands, and product API.
@@ -21,6 +23,7 @@ Primary local/hosted target:
 
 ```text
 apps/web -> apps/rust-server -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
+apps/admin -> apps/rust-server control plane -> projected users/orgs/API keys/storage/billing/risk
 packages/python-sdk/uploader -> apps/rust-server -> ClickHouse operational layer + ClickHouse metric layer -> artifact storage
 ```
 
