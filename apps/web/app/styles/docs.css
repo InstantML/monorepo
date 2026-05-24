@@ -69,15 +69,19 @@
   width: 32px;
   height: 32px;
   place-items: center;
+  /* The InstantML mark has 4 green diagonal dots; the other 12 are
+   * currentColor. Use a light surface + dark color so all 16 dots
+   * are visible (a green chip would swallow the diagonal). */
+  background: #ffffff;
+  border: 1px solid rgba(23, 33, 27, 0.08);
   border-radius: 8px;
-  background: #1fb877;
-  color: white;
-  font-weight: 800;
+  color: #17211b;
   overflow: hidden;
 }
 .docs-route-brand-mark svg {
-  width: 18px;
-  height: 18px;
+  display: block;
+  width: 22px;
+  height: 22px;
   color: currentColor;
 }
 .docs-route-brand-text {
@@ -104,23 +108,27 @@
 .docs-route-search input {
   flex: 1;
   min-width: 0;
-  /* Explicitly override base.css's global input rules (which set a dark
-   * dashboard-themed background + border via CSS variables). */
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #17211b;
-  font: inherit;
-  outline: none;
-  min-height: 0;
-  padding: 0;
-  box-shadow: none;
+  /* base.css applies a global `input { background, color, border, padding,
+   * min-height }` rule sourced from CSS variables that resolve to the dark
+   * dashboard theme on the docs route. Override decisively with !important
+   * so the docs search renders light regardless of which stylesheet loads
+   * last. */
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #17211b !important;
+  font: inherit !important;
+  outline: none !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
 }
 .docs-route-search input:focus,
 .docs-route-search input:focus-visible {
-  border: 0;
-  box-shadow: none;
-  outline: none;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .docs-route-search input::placeholder {
