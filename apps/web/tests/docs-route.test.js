@@ -32,10 +32,9 @@ test("docs app route renders docs source instead of redirecting to a docs host",
   assert.match(agentButton, /fetch\(href/);
   assert.match(agentButton, /Copy \.md for agent/);
   assert.match(codeBlock, /navigator\.clipboard\.writeText/);
-  // After the Stripe-style restructure (#92), the shell is a two-column grid
-  // sized via a CSS variable instead of an inline clamp(). Assert on the
-  // structural shape rather than literal values so future polish doesn't
-  // require a test change every time.
+  // Assert on structural shape (var(), clamp(), or numeric) so the test
+  // doesn't break every time the shell's grid values get polished. Both
+  // the PR #91 clamp version and #92's var version satisfy this.
   assert.match(styles, /grid-template-columns:\s*(?:var\(--docs-sidebar-width\)|\d|clamp)/);
   assert.doesNotMatch(styles, /max-width:\s*1240px/);
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
