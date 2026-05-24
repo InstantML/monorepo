@@ -430,12 +430,9 @@
 .docs-route-article {
   min-width: 0;
   width: 100%;
-  max-width: 880px;
-  /* Left-anchored within its column — matches Stripe's docs. The shell's
-   * grid gap already provides the gap from the sidebar; auto-centering
-   * here just pushes content unnecessarily far right on wide viewports. */
-  margin-inline-start: 0;
-  margin-inline-end: auto;
+  /* No max-width — fill the column. Avoids asymmetric whitespace on
+   * wide screens. Readable line-length is enforced where it actually
+   * matters: the description (max-width 720) and h1 (max-width 760). */
   padding-top: 56px;
 }
 
