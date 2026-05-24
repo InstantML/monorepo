@@ -135,19 +135,76 @@
   color: #97a59d;
 }
 
+/* The `/` shortcut chip. Light/bordered like Stripe — use !important to
+ * beat any browser-default or global kbd styling that wants to render it
+ * as a dark monospace tag. */
+.docs-route-search .docs-route-search-kbd,
 .docs-route-search kbd {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border: 1px solid rgba(23, 33, 27, 0.16);
-  border-radius: 4px;
-  background: #f7f8f5;
-  color: #65756d;
-  font: inherit;
-  font-size: 11px;
+  display: inline-grid !important;
+  place-items: center !important;
+  min-width: 18px !important;
+  height: 18px !important;
+  padding: 0 5px !important;
+  border: 1px solid rgba(23, 33, 27, 0.16) !important;
+  border-radius: 4px !important;
+  background: #ffffff !important;
+  color: #65756d !important;
+  font: inherit !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace) !important;
+}
+
+/* Search results dropdown. */
+.docs-route-search {
+  position: relative;
+}
+.docs-route-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid rgba(23, 33, 27, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(21, 32, 26, 0.12);
+  padding: 4px;
+}
+.docs-route-search-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #17211b;
+  text-decoration: none;
+}
+.docs-route-search-result-title {
+  font-size: 13.5px;
   font-weight: 600;
+  line-height: 1.3;
+}
+.docs-route-search-result-meta {
+  font-size: 11px;
+  color: #7a8a82;
+  line-height: 1.2;
+}
+.docs-route-search-result.is-active,
+.docs-route-search-result:hover {
+  background: #ecf3ee;
+}
+.docs-route-search-result.is-active .docs-route-search-result-title,
+.docs-route-search-result:hover .docs-route-search-result-title {
+  color: #08734b;
+}
+.docs-route-search-empty {
+  padding: 14px 12px;
+  color: #7a8a82;
+  font-size: 13px;
+  text-align: center;
 }
 
 .docs-route-topbar-actions {
@@ -374,6 +431,10 @@
   min-width: 0;
   width: 100%;
   max-width: 880px;
+  /* Center the article column horizontally within the available space
+   * to its right of the sidebar — keeps the content from hugging the
+   * left edge on wide screens. */
+  margin-inline: auto;
   padding-top: 56px;
 }
 

@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { ChevronRight, Globe, Search } from "lucide-react";
+import { ChevronRight, Globe } from "lucide-react";
 
 import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
 import { DocsCodeBlock } from "../docs-code-block";
+import { DocsSearch } from "../docs-search";
 import { InstantMlMark } from "../../instantml-mark";
 import {
   docsMarkdownUrl,
@@ -81,16 +82,8 @@ export default async function DocsPage({ params }: DocsParams) {
               <small>Docs</small>
             </span>
           </Link>
-          <div className="docs-route-search" role="search">
-            <Search aria-hidden size={14} />
-            <input
-              type="search"
-              placeholder="Search the docs"
-              aria-label="Search the docs"
-              readOnly
-            />
-            <kbd>/</kbd>
-          </div>
+          <DocsSearch navigation={navigation} />
+
           <nav className="docs-route-topbar-actions" aria-label="Docs account actions">
             <Link href="/dashboard">App</Link>
             <Link href="/docs/api-reference">API reference</Link>
