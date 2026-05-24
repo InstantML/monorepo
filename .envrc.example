@@ -1,0 +1,21 @@
+# direnv config — copy to `.envrc` and `direnv allow` once.
+#
+# This loads non-secret defaults from `.env` (kept gitignored) and then
+# pulls every secret defined in `tools/secrets-manifest.txt` from Google
+# Secret Manager into your shell. See docs/ops/secrets.md.
+#
+# Why direnv: with this file installed, `cd`ing into the repo re-exports
+# the freshest secrets every time. No `source` step to remember.
+
+# Load .env (non-secrets only — secrets are blank placeholders here).
+# direnv ships a `dotenv` helper that handles quoting safely.
+if [ -f .env ]; then
+  dotenv .env
+fi
+
+# Pull secrets from GCP Secret Manager.
+# Note: this calls `gcloud secrets versions access` per entry, which is a
+# round-trip per secret. If you find this slow, run with --check first to
+# confirm the manifest is valid, then comment out the line below for sessions
+# where you only need the .env-side config.
+source ./tools/load-secrets.sh
