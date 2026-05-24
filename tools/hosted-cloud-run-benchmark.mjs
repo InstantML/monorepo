@@ -20,7 +20,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`Usage: npm run benchmark:cloud-run
 
 Benchmarks the deployed hosted API path:
-  client -> Cloud Run data service or HTTPS router -> ClickHouse Cloud tenant
+  client -> Cloud Run data service or HTTPS router -> hosted ClickHouse tenant
 
 Required:
   INSTANTML_API_KEY or INSTANTML_CLOUD_RUN_BENCH_API_KEY

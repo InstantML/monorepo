@@ -135,6 +135,7 @@
             "pages": [
               "architecture/system-overview",
               "architecture/storage-model",
+              "architecture/google-clickhouse",
               "architecture/auth-tenancy",
               "architecture/service-planes",
               "architecture/schema-reference"

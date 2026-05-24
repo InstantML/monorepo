@@ -1,0 +1,249 @@
+name: Deploy Cloud Run
+
+# Replaces the laptop-only `npm run deploy:cloud-run` path. Deploys are
+# triggered by the Actions UI (manual) or by pushing a `deploy-*` / `release-*`
+# tag. The `prod` GitHub Environment must require reviewer approval — the
+# workflow trusts that gate for production rollouts.
+#
+# Auth: Workload Identity Federation. There is no service-account JSON stored
+# in GitHub Secrets. The runner exchanges its GitHub OIDC token for a short
+# lived GCP access token tied to the deploy service account.
+#
+# Secrets: every value the deploy needs (Clerk, ClickHouse, Cloudflare R2,
+# Stripe, Resend, bootstrap token) already lives in GCP Secret Manager. The
+# deploy script runs with --from-secret-manager so it reads the live values
+# from Secret Manager instead of from a developer .env.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deploy environment.
+        required: true
+        default: prod
+        type: choice
+        options:
+          - prod
+          - staging
+      topology:
+        description: Cloud Run topology. Use split for production.
+        required: true
+        default: split
+        type: choice
+        options:
+          - split
+          - single
+      public_router:
+        description: Provision / refresh the public HTTPS load balancer.
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "deploy-*"
+      - "release-*"
+
+permissions:
+  contents: read
+  # Required for the GitHub OIDC -> GCP WIF token exchange. We do NOT enable
+  # any write permissions on the repo from this workflow.
+  id-token: write
+
+concurrency:
+  # Serialize deploys to the same environment so a tag push cannot race a
+  # manual dispatch. Allow staging and prod to run in parallel.
+  group: deploy-cloud-run-${{ github.event.inputs.environment || 'prod' }}
+  cancel-in-progress: false
+
+jobs:
+  # Gate 1: refuse to deploy any SHA that has not turned the CI workflow
+  # green. We re-resolve the latest CI run for the deploy SHA and fail fast
+  # if it is not "success". Tag pushes share a SHA with the branch tip, so
+  # any tag pointing at a green commit passes; manual dispatches resolve
+  # github.sha to the ref that triggered the run.
+  gate:
+    name: Require Stable Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm CI passed for this SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "Looking for a successful CI run on ${DEPLOY_SHA}."
+          status=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${DEPLOY_SHA}&status=success&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "missing"')
+          if [ "${status}" != "success" ]; then
+            echo "::error::Stable Quality Gates (ci.yml) has not succeeded for ${DEPLOY_SHA}. Re-run CI and merge before deploying."
+            exit 1
+          fi
+          echo "CI is green for ${DEPLOY_SHA}."
+
+  build:
+    name: Build And Push Image
+    needs: gate
+    runs-on: ubuntu-latest
+    environment:
+      # Reuse the same approval surface as the deploy job so a reviewer
+      # touches the build/push step too. Production reviewers gate both
+      # the Cloud Build invocation and the Cloud Run update.
+      name: ${{ github.event.inputs.environment || 'prod' }}
+    timeout-minutes: 45
+    outputs:
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate To GCP Via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set Up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve Image Tag
+        id: resolve
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          short=$(echo "${DEPLOY_SHA}" | cut -c1-7)
+          echo "image_tag=${short}" >> "${GITHUB_OUTPUT}"
+
+      - name: Submit Cloud Build For Rust Server Image
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          image="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACT_REPOSITORY:-instantml}/instantml-rust-server:${IMAGE_TAG}"
+          echo "Building ${image} via Cloud Build."
+          # Mirror the exact command tools/deploy-cloud-run.mjs would run, so
+          # the deploy step in job 2 can re-use this image without rebuilding.
+          gcloud --quiet --project "${GCP_PROJECT}" builds submit \
+            --tag "${image}" .
+
+  deploy:
+    name: Deploy To Cloud Run
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      # Production environment must be configured with required reviewers in
+      # the repo settings — this is what enforces manual approval before any
+      # gcloud run deploy mutation. Staging may use a no-approval Environment.
+      name: ${{ github.event.inputs.environment || 'prod' }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Authenticate To GCP Via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set Up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve Deploy Inputs
+        id: inputs
+        env:
+          DEFAULT_ENV: ${{ github.event.inputs.environment }}
+          DEFAULT_TOPOLOGY: ${{ github.event.inputs.topology }}
+          PUBLIC_ROUTER: ${{ github.event.inputs.public_router }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # Tag pushes always go to production with the split topology, which
+          # is the only safe default for the public deploy. Manual dispatch
+          # passes the workflow inputs through verbatim.
+          if [ "${GH_EVENT_NAME}" = "push" ]; then
+            environment="prod"
+            topology="split"
+            public_router="false"
+            # release-* tags imply we want the public HTTPS router refreshed.
+            case "${GITHUB_REF}" in
+              refs/tags/release-*) public_router="true" ;;
+            esac
+          else
+            environment="${DEFAULT_ENV:-prod}"
+            topology="${DEFAULT_TOPOLOGY:-split}"
+            public_router="${PUBLIC_ROUTER:-false}"
+          fi
+          echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
+          echo "topology=${topology}" >> "${GITHUB_OUTPUT}"
+          echo "public_router=${public_router}" >> "${GITHUB_OUTPUT}"
+
+      - name: Reuse Pre-Built Image Tag
+        id: image
+        env:
+          BUILD_TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          echo "image_tag=${BUILD_TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run Cloud Run Deploy Helper
+        # We deliberately reuse tools/deploy-cloud-run.mjs in CI mode rather
+        # than reimplementing 1.7k lines of provisioning/validation YAML. The
+        # script auto-detects GITHUB_ACTIONS=true and pulls every deploy-time
+        # secret (Clerk, ClickHouse, R2, Stripe, Resend, bootstrap token, and
+        # the Clerk publishable key the validator needs) from GCP Secret
+        # Manager. The --from-secret-manager flag is set explicitly here so a
+        # future change to the auto-detection rule cannot silently regress
+        # this job back to .env reads.
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          INSTANTML_DEPLOY_ENV: ${{ steps.inputs.outputs.environment }}
+          INSTANTML_CLOUD_RUN_TOPOLOGY: ${{ steps.inputs.outputs.topology }}
+          INSTANTML_IMAGE_TAG: ${{ steps.image.outputs.image_tag }}
+          # Skip the local-env rewrite step entirely; CI has no apps/web/.env.local.
+          INSTANTML_WRITE_LOCAL_FRONTEND_ENV: "0"
+          # Allow downstream tools to recognize this code path.
+          INSTANTML_FROM_SECRET_MANAGER: "1"
+          CI: "true"
+          GITHUB_ACTIONS: "true"
+        run: |
+          set -euo pipefail
+          extra_args=""
+          if [ "${{ steps.inputs.outputs.public_router }}" = "true" ]; then
+            extra_args="--public-router"
+          fi
+          node tools/deploy-cloud-run.mjs \
+            --topology="${{ steps.inputs.outputs.topology }}" \
+            --environment="${{ steps.inputs.outputs.environment }}" \
+            --from-secret-manager \
+            ${extra_args}
+
+      - name: Annotate Deploy Summary
+        if: always()
+        env:
+          ENVIRONMENT: ${{ steps.inputs.outputs.environment }}
+          TOPOLOGY: ${{ steps.inputs.outputs.topology }}
+          IMAGE_TAG: ${{ steps.image.outputs.image_tag }}
+        run: |
+          {
+            echo "## Cloud Run Deploy"
+            echo ""
+            echo "- environment: \`${ENVIRONMENT}\`"
+            echo "- topology: \`${TOPOLOGY}\`"
+            echo "- image tag: \`${IMAGE_TAG}\`"
+            echo "- triggered by: \`${GITHUB_EVENT_NAME}\` (\`${GITHUB_REF}\`)"
+            echo "- actor: \`${GITHUB_ACTOR}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

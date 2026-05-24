@@ -69,7 +69,38 @@ npm run test:all
 
 ## Run The App Locally
 
-Terminal 1:
+Default frontend development runs the Next app locally and sends its
+same-origin rewrite proxy to the hosted staging API:
+
+```bash
+INSTANTML_WEB_API_ENV=staging npm run web:dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:3000
+```
+
+`INSTANTML_WEB_API_ENV=staging` routes control and data rewrites to
+`https://staging.api.instantml.ai` and intentionally overrides stale
+`INSTANTML_API_BASE`, `INSTANTML_CONTROL_API_BASE`, or
+`INSTANTML_DATA_API_BASE` values in repo-local env files. Restart `next dev`
+after changing rewrite env. Hosted sign-in requires a
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as staging.
+You can keep these values in `apps/web/.env.local`:
+
+```text
+INSTANTML_WEB_API_ENV=staging
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<staging Clerk publishable key>
+```
+
+The local dev Google-style auth flow is only for a local Rust API. For normal
+dashboard/frontend work against staging, no local Rust server or local
+ClickHouse process is required.
+
+When backend work needs disposable local API and ClickHouse state, start the
+primary Rust API from Terminal 1:
 
 ```bash
 npm run dev:api
@@ -87,16 +118,10 @@ INSTANTML_API_PORT=8010 \
 npm run dev:api
 ```
 
-Terminal 2:
+Then start the Next app from Terminal 2:
 
 ```bash
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
-```
-
-Open:
-
-```text
-http://127.0.0.1:3000
 ```
 
 Sign up with the labeled local dev Google-style flow, create a copy-once SDK key, then open the dashboard.
@@ -140,7 +165,10 @@ http://127.0.0.1:8010   # or http://127.0.0.1:8000 with the default port mapping
 ```
 
 Run the Next frontend separately with `INSTANTML_API_BASE=http://127.0.0.1:8010`
-(or `:8000` if you skipped the override).
+(or `:8000` if you skipped the override) only when you want the frontend to use
+the local containerized Rust API. The default localhost frontend workflow uses
+`INSTANTML_WEB_API_ENV=staging npm run web:dev` and does not depend on the
+Docker stack.
 
 The compose file also includes a split control/data profile for understanding
 the hosted service-plane layout:
@@ -187,6 +215,30 @@ npm run test:contract:direct
 With no `INSTANTML_CONTRACT_BASE_URL`, `npm run test:contract:direct` also starts the disposable Rust/ClickHouse harness by default. Use `npm run test:contract:node` or `INSTANTML_CONTRACT_BACKEND=node` for the deprecated Node compatibility contract smoke.
 
 Use `apps/rust-server/SETUP.md` for Rust-specific setup details.
+
+## Hosted GCP ClickHouse
+
+Production and staging Cloud Run services currently use InstantML-owned
+self-hosted ClickHouse on Google Cloud instead of ClickHouse Cloud for
+InstantML-hosted User Data and tenant databases. The active hosted path should
+use database-mode routing:
+
+```text
+INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true
+INSTANTML_CLICKHOUSE_PROVISIONER=database
+CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT=<self-hosted GCP ClickHouse endpoint>
+INSTANTML_TENANT_CLICKHOUSE_URL=<self-hosted GCP ClickHouse endpoint/base URL>
+```
+
+Staging should keep a separate User Data database, normally
+`instantml_user_data_staging`, even when it points at the same GCP ClickHouse
+instance as production. For operator-only local seeds or metadata checks, use a
+short-lived IAP tunnel and an endpoint override such as
+`http://127.0.0.1:18123`; do not change the tenant route's stored database or
+credentials just to run local tooling.
+
+The current production/staging operating model lives in
+`docs/architecture/self-hosted-gcp-clickhouse.md`.
 
 Run the deprecated Node compatibility server:
 

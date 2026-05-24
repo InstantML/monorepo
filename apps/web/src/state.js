@@ -154,6 +154,21 @@ export function groupKeyForRun(run, groupBy) {
   return "all";
 }
 
+// Resolve the label used to identify a run in chart legends, tooltips and the
+// hover readout. Falls back to the run name whenever the chosen field is empty.
+export function identifierForRun(run, mode) {
+  if (!run) return undefined;
+  if (mode === "notes") {
+    const notes = typeof run.metadata?.notes === "string" ? run.metadata.notes.trim() : "";
+    return notes || run.name;
+  }
+  if (mode === "tags") {
+    const tags = Array.isArray(run.tags) ? run.tags.filter(Boolean) : [];
+    return tags.length ? tags.join(", ") : run.name;
+  }
+  return run.name;
+}
+
 export function formatNumber(value, digits = 2) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: digits });

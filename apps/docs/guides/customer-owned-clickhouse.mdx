@@ -37,10 +37,12 @@ They do not count customer-owned ClickHouse warehouse bytes.
 
 ## Recommended setup
 
-1. Create or choose a read-write ClickHouse Cloud service near the InstantML
-   data-plane region.
+1. Create or choose a read-write ClickHouse service near the InstantML
+   data-plane region. ClickHouse Cloud and compatible self-hosted ClickHouse can
+   both work when they expose a public HTTPS endpoint.
 2. Add every InstantML egress CIDR shown in onboarding to the ClickHouse service
-   IP access list. This is the API/data-plane egress, not the browser IP.
+   IP access list or firewall. This is the API/data-plane egress, not the
+   browser IP.
 3. Create one dedicated database for the org, such as `instantml_acme`.
 4. Create one dedicated SQL user, such as `instantml_writer`.
 5. Grant schema migration, insert, and read permissions for initial setup.

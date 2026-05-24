@@ -94,7 +94,8 @@ Node tests.
   behavior.
 - `concepts/`: core product concepts.
 - `architecture/`: public system, storage, auth, service-plane, and schema
-  reference docs.
+  reference docs, including the current Google Cloud ClickHouse hosted storage
+  page.
 - `sdk/`: SDK usage docs.
 - `dashboard/`: dashboard workflow docs.
 - `guides/`: examples, imports, export, usage, auth, billing, storage, and

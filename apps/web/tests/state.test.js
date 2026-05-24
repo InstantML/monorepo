@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
+import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
 import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, chartPointCount, chunkRunIds, histogramBins, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
@@ -15,6 +15,7 @@ import {
   filterMetricKeys,
   formatNumber,
   groupKeyForRun,
+  identifierForRun,
   metricFilterIsRegex,
   metricAggregate,
   metricGoal,
@@ -314,6 +315,80 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.deepEqual(normalizeSeries([], 100, 80), []);
 });
 
+test("tiny-magnitude metrics fill the plot height instead of squishing to the floor", () => {
+  // Three runs, three points, all values < 0.01. The fix removes the
+  // Math.max(1, span) clamp that previously pinned these to the bottom.
+  const series = [
+    { id: "a", name: "a", points: [{ step: 0, value: 0.001 }, { step: 1, value: 0.005 }, { step: 2, value: 0.009 }] },
+  ];
+  const height = 80;
+  const padding = 28;
+  const normalized = normalizeSeries(series, 100, height, padding, "step", "train/loss");
+  const ys = normalized[0].normalizedPoints.map((point) => point.y);
+  // Min value maps to the bottom plot edge, max value to the top edge.
+  assert.ok(Math.abs(ys[0] - (height - padding)) < 0.001, `min should sit on the floor, got ${ys[0]}`);
+  assert.ok(Math.abs(ys[2] - padding) < 0.001, `max should reach the ceiling, got ${ys[2]}`);
+  // The window uses the real (tiny) data range, not a clamped span of 1.
+  assert.deepEqual(chartDomain(series, "step", "train/loss"), { minX: 0, maxX: 2, minY: 0.001, maxY: 0.009 });
+});
+
+test("a single / flat value opens a magnitude-relative window so the line is centered", () => {
+  const flat = [{ id: "f", name: "f", points: [{ step: 5, value: 0.00004 }] }];
+  const domain = chartDomain(flat, "step", "train/loss");
+  assert.ok(domain.minY < 0.00004 && domain.maxY > 0.00004, "degenerate value should be padded");
+  assert.equal(domain.minX < 5 && domain.maxX > 5, true, "single x value should be centered");
+});
+
+test("smoothSeries keeps raw values and attaches a smoothed value", () => {
+  const series = [{ id: "s", name: "s", points: [{ step: 0, value: 0 }, { step: 1, value: 10 }, { step: 2, value: 0 }] }];
+  const smoothed = smoothSeries(series, 50);
+  assert.equal(smoothed[0].smoothed, true);
+  // Raw values are preserved untouched.
+  assert.deepEqual(smoothed[0].points.map((point) => point.value), [0, 10, 0]);
+  // Smoothed values are a damped EMA that stays within the raw envelope.
+  const sv = smoothed[0].points.map((point) => point.smoothedValue);
+  assert.equal(sv[0], 0);
+  assert.ok(sv[1] > 0 && sv[1] < 10);
+  // factor 0 is a no-op (no smoothed flag).
+  assert.equal(smoothSeries(series, 0)[0].smoothed, undefined);
+  // Normalized output carries both raw and smoothed paths.
+  const normalized = normalizeSeries(smoothed, 100, 80, 28, "step", "train/loss");
+  assert.ok(normalized[0].smoothPath.length > 0);
+  assert.ok(Number.isFinite(normalized[0].normalizedPoints[1].ySmoothed));
+});
+
+test("formatMetricValue gives up to 5 significant figures across magnitudes", () => {
+  assert.equal(formatMetricValue(2.83702), "2.837");
+  assert.equal(formatMetricValue(0.0001), "0.0001");
+  assert.equal(formatMetricValue(0.00001234), "0.00001234");
+  assert.equal(formatMetricValue(0), "0");
+  assert.equal(formatMetricValue(12345.6), "12346");
+  assert.equal(formatMetricValue(null), "-");
+  assert.match(formatMetricValue(1.2e-9), /e-9$/);
+});
+
+test("formatAxisTick stays compact: scientific for tiny/huge, plain for mid-range", () => {
+  assert.equal(formatAxisTick(0), "0");
+  assert.equal(formatAxisTick(2.913), "2.913");
+  assert.equal(formatAxisTick(0.25), "0.25");
+  // below 1e-2 switches to trimmed scientific so labels clear the rotated axis
+  // title (the hover tooltip keeps full decimal precision separately).
+  assert.equal(formatAxisTick(0.005103), "5.1e-3");
+  assert.equal(formatAxisTick(0.00899), "8.99e-3");
+  assert.equal(formatAxisTick(0.0000366), "3.66e-5");
+  assert.equal(formatAxisTick(0.0000155), "1.55e-5");
+  assert.equal(formatAxisTick(150000), "1.5e5");
+});
+
+test("identifierForRun resolves name, notes and tags with fallbacks", () => {
+  const run = { name: "run-42", tags: ["baseline", "v2"], metadata: { notes: "best so far" } };
+  assert.equal(identifierForRun(run, "name"), "run-42");
+  assert.equal(identifierForRun(run, "notes"), "best so far");
+  assert.equal(identifierForRun(run, "tags"), "baseline, v2");
+  assert.equal(identifierForRun({ name: "x", tags: [], metadata: {} }, "notes"), "x");
+  assert.equal(identifierForRun({ name: "x", tags: [], metadata: {} }, "tags"), "x");
+});
+
 test("terminal helpers tokenize ansi safely and calculate virtual windows", () => {
   assert.deepEqual(ansiTokens("plain"), [{ text: "plain", className: "" }]);
   assert.deepEqual(ansiTokens("\u001b[31mred\u001b[0m ok"), [
@@ -461,7 +536,9 @@ test("comparison helpers sort, aggregate, group, smooth, and average runs", () =
     { id: "a", name: "run-a", group: "g", points: [{ step: 0, value: 0, created_at: "2026-01-01T00:00:00.000Z" }, { step: 1, value: 10, created_at: "2026-01-01T00:00:10.000Z" }] },
     { id: "b", name: "run-b", group: "g", points: [{ step: 0, value: 2, created_at: "2026-01-01T00:00:02.000Z" }, { step: 1, value: 12, created_at: "2026-01-01T00:00:12.000Z" }] },
   ];
-  assert.equal(smoothSeries(series, 50)[0].points[1].value, 5);
+  // Smoothing is non-destructive now: raw value stays, EMA lands on smoothedValue.
+  assert.equal(smoothSeries(series, 50)[0].points[1].value, 10);
+  assert.equal(smoothSeries(series, 50)[0].points[1].smoothedValue, 5);
   assert.equal(smoothSeries(series, 0), series);
   assert.deepEqual(averageGroupedSeries(series)[0].points.map((point) => point.value), [1, 11]);
   assert.deepEqual(averageGroupedSeries(series)[0].points.map((point) => point.created_at), ["2026-01-01T00:00:01.000Z", "2026-01-01T00:00:11.000Z"]);
