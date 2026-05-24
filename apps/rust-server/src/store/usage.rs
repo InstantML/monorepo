@@ -25,29 +25,138 @@ pub struct StorageOverageUsage {
     pub reported_gib: i64,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct BillingOverageUsage {
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub storage_bytes_for_warnings: i64,
+    pub billable_storage_bytes: i64,
+    pub reported_gib: i64,
+    pub billable_api_requests: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiRequestOverageMode {
+    Blocked,
+    Metered,
+    LegacyCompatibility,
+}
+
+#[derive(Clone, Debug)]
+pub struct ApiRequestMonthlyQuota {
+    pub allowed: bool,
+    pub current_requests: i64,
+    pub projected_requests: i64,
+    pub limit: i64,
+    pub remaining_after_request: i64,
+    pub period_start: DateTime<Utc>,
+    pub reset_at: DateTime<Utc>,
+    pub overage_mode: ApiRequestOverageMode,
+    pub plan_tier: String,
+}
+
 pub async fn usage_summary(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
     ensure_unrestricted_org_key(ctx)?;
     usage_summary_for_org(store, ctx.org_id).await
+}
+
+pub async fn plan_for_org(store: &Store, org_id: Uuid) -> AppResult<crate::domain::PlanTier> {
+    let data = store.data.lock().await;
+    let org = data
+        .organizations
+        .get(&org_id)
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    Ok(plan_tier(&org.plan_tier))
+}
+
+pub async fn record_api_request_usage(
+    store: &Store,
+    org_id: Uuid,
+    class: &str,
+    instance_id: &str,
+) -> AppResult<()> {
+    let now = Utc::now();
+    let (rollup, should_persist) = {
+        let mut data = store.data.lock().await;
+        data.increment_api_request_rollup(org_id, class, instance_id, now)
+    };
+    if should_persist {
+        store
+            .persist_locked("api_usage_monthly", org_id, &rollup.entity_id(), &rollup)
+            .await?;
+        let mut data = store.data.lock().await;
+        data.mark_api_request_rollup_persisted(&rollup);
+    }
+    Ok(())
+}
+
+pub async fn api_request_monthly_quota(
+    store: &Store,
+    org_id: Uuid,
+) -> AppResult<ApiRequestMonthlyQuota> {
+    let now = Utc::now();
+    let period = current_usage_period(now);
+    let period_key = api_request_usage_period_key(period.starts_at);
+    let metric_store = store.metric_store_for_org(org_id).await?;
+    refresh_api_request_rollups_for_period(store, org_id, &period, &metric_store).await?;
+    let data = store.data.lock().await;
+    let org = data
+        .organizations
+        .get(&org_id)
+        .cloned()
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    let plan = plan_tier(&org.plan_tier);
+    let current_requests = data.api_request_usage_for_org_period(org_id, &period_key);
+    let projected_requests = current_requests.saturating_add(1);
+    let overage_mode = api_request_overage_mode(&data, org_id, plan.id);
+    let allowed = plan.api_requests <= 0
+        || projected_requests <= plan.api_requests
+        || matches!(
+            overage_mode,
+            ApiRequestOverageMode::Metered | ApiRequestOverageMode::LegacyCompatibility
+        );
+    Ok(ApiRequestMonthlyQuota {
+        allowed,
+        current_requests,
+        projected_requests,
+        limit: plan.api_requests,
+        remaining_after_request: (plan.api_requests - projected_requests).max(0),
+        period_start: period.starts_at,
+        reset_at: period.ends_at,
+        overage_mode,
+        plan_tier: plan.id.to_string(),
+    })
 }
 
 pub async fn storage_overage_usage_for_org(
     store: &Store,
     org_id: Uuid,
 ) -> AppResult<StorageOverageUsage> {
-    let counts = usage_counts_for_org(store, org_id, UsageCountMode::Summary).await?;
-    let billable_storage_bytes =
-        (counts.storage_bytes_for_warnings - counts.plan.included_storage_bytes).max(0);
-    let reported_gib = if billable_storage_bytes == 0 {
-        0
-    } else {
-        (billable_storage_bytes + GIB_BYTES - 1) / GIB_BYTES
-    };
+    let usage = billing_overage_usage_for_org(store, org_id).await?;
     Ok(StorageOverageUsage {
+        period_start: usage.period_start,
+        period_end: usage.period_end,
+        storage_bytes_for_warnings: usage.storage_bytes_for_warnings,
+        billable_storage_bytes: usage.billable_storage_bytes,
+        reported_gib: usage.reported_gib,
+    })
+}
+
+pub async fn billing_overage_usage_for_org(
+    store: &Store,
+    org_id: Uuid,
+) -> AppResult<BillingOverageUsage> {
+    let counts = usage_counts_for_org(store, org_id, UsageCountMode::Summary).await?;
+    let billable_storage_bytes = billable_storage_bytes(&counts);
+    let reported_gib = ceil_div_i64(billable_storage_bytes, GIB_BYTES);
+    let billable_api_requests = billable_api_requests(&counts);
+    Ok(BillingOverageUsage {
         period_start: counts.period.starts_at,
         period_end: counts.period.ends_at,
         storage_bytes_for_warnings: counts.storage_bytes_for_warnings,
         billable_storage_bytes,
         reported_gib,
+        billable_api_requests,
     })
 }
 
@@ -101,6 +210,7 @@ async fn usage_counts_for_org(
 ) -> AppResult<UsageCounts> {
     let period = current_usage_period(Utc::now());
     let metric_store = store.metric_store_for_org(org_id).await?;
+    refresh_api_request_rollups_for_period(store, org_id, &period, &metric_store).await?;
     let scalar_points_retained_total = metric_store.count_points_for_org(org_id).await?;
     let rank_points_retained_total = match mode {
         UsageCountMode::Summary => metric_store.count_rank_points_for_org(org_id).await?,
@@ -145,7 +255,10 @@ async fn usage_counts_for_org(
         .values()
         .filter(|key| key.row.org_id == org_id && key.row.revoked_at.is_none())
         .count() as i64;
+    let api_requests = data
+        .api_request_usage_for_org_period(org_id, &api_request_usage_period_key(period.starts_at));
     let plan = plan_tier(&org.plan_tier);
+    let api_request_overage_mode = api_request_overage_mode(&data, org_id, plan.id);
     let estimated_metadata_bytes =
         estimated_metadata_bytes(projects, runs, metric_series, artifacts, api_keys, seats);
     let storage_bytes_for_warnings = storage_bytes_for_warnings(
@@ -165,6 +278,7 @@ async fn usage_counts_for_org(
         metric_series,
         artifacts,
         api_keys,
+        api_requests,
         artifact_bytes_exact: artifact_usage.artifact_bytes_exact,
         external_artifact_bytes_declared: artifact_usage.external_artifact_bytes_declared,
         artifact_bytes_unknown_count: artifact_usage.artifact_bytes_unknown_count,
@@ -172,6 +286,7 @@ async fn usage_counts_for_org(
         warehouse_storage_bytes_exact,
         storage_bytes_for_warnings,
         estimated_storage_bytes_for_warnings: storage_bytes_for_warnings,
+        api_request_overage_mode,
         period,
     })
 }
@@ -191,6 +306,8 @@ pub async fn usage_export(store: &Store, ctx: &RequestContext) -> AppResult<Valu
 }
 
 fn usage_org_value(counts: &UsageCounts) -> Value {
+    let billable_storage_bytes = billable_storage_bytes(counts);
+    let billable_api_requests = billable_api_requests(counts);
     json!({
         "org_id": counts.org.id,
         "org_slug": counts.org.slug,
@@ -208,6 +325,7 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "metric_series": counts.metric_series,
             "artifacts": counts.artifacts,
             "api_keys": counts.api_keys,
+            "api_requests": counts.api_requests,
             "artifact_bytes_exact": counts.artifact_bytes_exact,
             "external_artifact_bytes_declared": counts.external_artifact_bytes_declared,
             "artifact_bytes_unknown": 0,
@@ -216,7 +334,17 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "warehouse_storage_bytes_exact": counts.warehouse_storage_bytes_exact,
             "storage_bytes_for_warnings": counts.storage_bytes_for_warnings,
             "estimated_storage_bytes_for_warnings": counts.estimated_storage_bytes_for_warnings,
-            "billable_storage_bytes": Value::Null,
+            "billable_storage_bytes": billable_storage_bytes,
+            "billable": {
+                "storage_bytes": billable_storage_bytes,
+                "storage_gib": ceil_div_i64(billable_storage_bytes, GIB_BYTES),
+                "api_requests": billable_api_requests,
+                "api_request_overage_mode": counts.api_request_overage_mode.as_str(),
+                "api_request_overage_cents_decimal": api_request_overage_cents_decimal(
+                    billable_api_requests,
+                    counts.plan.api_request_overage_cents_per_million
+                )
+            },
             "billing_precision": "not_billable"
         },
         "limits": {
@@ -224,7 +352,18 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "included_storage_bytes": counts.plan.included_storage_bytes,
             "projects": counts.plan.projects,
             "runs": counts.plan.runs,
-            "metric_points": counts.plan.metric_points
+            "metric_points": counts.plan.metric_points,
+            "api_requests": counts.plan.api_requests
+        },
+        "rate_limits": {
+            "general": {
+                "requests_per_second": counts.plan.rate_limit_rps,
+                "burst": counts.plan.rate_limit_burst
+            },
+            "ingest": {
+                "requests_per_second": counts.plan.ingest_rate_limit_rps,
+                "burst": ingest_rate_limit_burst(counts.plan)
+            }
         },
         "warnings": usage_warnings(counts)
     })
@@ -238,6 +377,7 @@ fn overage_policy() -> Value {
         "runs": "blocked_at_limit",
         "storage": "blocked_at_limit",
         "metric_points": "blocked_at_limit",
+        "api_requests": "blocked_or_metered_overage",
         "artifacts": "visibility_only",
         "api_keys": "visibility_only"
     })
@@ -349,6 +489,16 @@ fn usage_warnings(counts: &UsageCounts) -> Vec<Value> {
             "blocked_at_limit",
             true,
         ),
+        usage_limit_warning(
+            "api_requests",
+            counts.api_requests,
+            counts.plan.api_requests,
+            "blocked_or_metered_overage",
+            matches!(
+                counts.api_request_overage_mode,
+                ApiRequestOverageMode::Blocked
+            ),
+        ),
     ]
     .into_iter()
     .flatten()
@@ -401,7 +551,77 @@ fn warning_message(target: &str, status: &str, blocking: bool) -> String {
         ("paid_extra_seats", false) => {
             "Seat count is above the included plan seats and is tracked for future billing.".to_string()
         }
+        ("approaching_limit", false) => format!(
+            "{label} usage is approaching the plan allowance. Paid overage is metered."
+        ),
+        ("over_limit", false) => format!(
+            "{label} usage is above the plan allowance. Paid overage is metered."
+        ),
         _ => format!("{label} usage is above the plan limit."),
+    }
+}
+
+fn billable_storage_bytes(counts: &UsageCounts) -> i64 {
+    (counts.storage_bytes_for_warnings - counts.plan.included_storage_bytes).max(0)
+}
+
+fn billable_api_requests(counts: &UsageCounts) -> i64 {
+    (counts.api_requests - counts.plan.api_requests).max(0)
+}
+
+fn api_request_overage_cents_decimal(
+    billable_api_requests: i64,
+    cents_per_million: Option<i64>,
+) -> f64 {
+    cents_per_million
+        .map(|cents| billable_api_requests as f64 * cents as f64 / 1_000_000.0)
+        .unwrap_or(0.0)
+}
+
+fn ceil_div_i64(value: i64, divisor: i64) -> i64 {
+    if value <= 0 || divisor <= 0 {
+        0
+    } else {
+        (value + divisor - 1) / divisor
+    }
+}
+
+fn ingest_rate_limit_burst(plan: crate::domain::PlanTier) -> u32 {
+    plan.ingest_rate_limit_rps
+        .saturating_mul(5)
+        .min(plan.rate_limit_burst)
+}
+
+impl ApiRequestOverageMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Blocked => "blocked",
+            Self::Metered => "metered",
+            Self::LegacyCompatibility => "legacy_compatibility",
+        }
+    }
+}
+
+fn api_request_overage_mode(
+    data: &StoreData,
+    org_id: Uuid,
+    plan_tier: &str,
+) -> ApiRequestOverageMode {
+    if plan_tier == "free" {
+        return ApiRequestOverageMode::Blocked;
+    }
+    let Some(account) = data.billing_accounts.get(&org_id) else {
+        return ApiRequestOverageMode::LegacyCompatibility;
+    };
+    if account.access_state != BILLING_PAID_ACTIVE {
+        return ApiRequestOverageMode::Blocked;
+    }
+    if account.stripe_customer_id.is_some() && account.stripe_subscription_id.is_some() {
+        ApiRequestOverageMode::Metered
+    } else if account.stripe_customer_id.is_none() && account.stripe_subscription_id.is_none() {
+        ApiRequestOverageMode::LegacyCompatibility
+    } else {
+        ApiRequestOverageMode::Blocked
     }
 }
 
@@ -499,6 +719,7 @@ struct UsageCounts {
     metric_series: i64,
     artifacts: i64,
     api_keys: i64,
+    api_requests: i64,
     artifact_bytes_exact: i64,
     external_artifact_bytes_declared: i64,
     artifact_bytes_unknown_count: i64,
@@ -506,7 +727,34 @@ struct UsageCounts {
     warehouse_storage_bytes_exact: Option<i64>,
     storage_bytes_for_warnings: i64,
     estimated_storage_bytes_for_warnings: i64,
+    api_request_overage_mode: ApiRequestOverageMode,
     period: UsagePeriod,
+}
+
+async fn refresh_api_request_rollups_for_period(
+    store: &Store,
+    org_id: Uuid,
+    period: &UsagePeriod,
+    metric_store: &MetricStore,
+) -> AppResult<()> {
+    let period_key = api_request_usage_period_key(period.starts_at);
+    let now = Utc::now();
+    {
+        let data = store.data.lock().await;
+        if !data.api_request_rollup_refresh_due(org_id, &period_key, now) {
+            return Ok(());
+        }
+    }
+    let prefix = format!("{org_id}:{period_key}:");
+    let records = metric_store
+        .load_operational_records_by_kind_entity_prefix("api_usage_monthly", org_id, &prefix)
+        .await?;
+    let mut data = store.data.lock().await;
+    for record in records {
+        data.apply_record(&record.kind, record.org_id, &record.payload)?;
+    }
+    data.mark_api_request_rollups_refreshed(org_id, &period_key, now);
+    Ok(())
 }
 
 struct PlanViolation {
@@ -585,6 +833,7 @@ mod tests {
         counts.seats = 3;
         counts.projects = PLAN_FREE.projects;
         counts.runs = (PLAN_FREE.runs as f64 * 0.85) as i64;
+        counts.api_requests = (PLAN_FREE.api_requests as f64 * 0.85) as i64;
 
         let warnings = usage_warnings(&counts);
 
@@ -610,6 +859,84 @@ mod tests {
             .expect("run warning");
         assert_eq!(runs["status"], "approaching_limit");
         assert_eq!(runs["blocking"], true);
+
+        let requests = warnings
+            .iter()
+            .find(|warning| warning["target"] == "api_requests")
+            .expect("api request warning");
+        assert_eq!(requests["status"], "approaching_limit");
+        assert_eq!(requests["policy"], "blocked_or_metered_overage");
+        assert_eq!(requests["blocking"], true);
+    }
+
+    #[test]
+    fn usage_org_value_exposes_billable_requests_and_rate_limits() {
+        let mut counts = test_counts("pro");
+        counts.api_requests = PLAN_PRO.api_requests + 1_500_000;
+        counts.storage_bytes_for_warnings = PLAN_PRO.included_storage_bytes + GIB_BYTES;
+        counts.api_request_overage_mode = ApiRequestOverageMode::Metered;
+
+        let value = usage_org_value(&counts);
+
+        assert_eq!(value["usage"]["billable"]["api_requests"], 1_500_000);
+        assert_eq!(value["usage"]["billable"]["storage_gib"], 1);
+        assert_eq!(
+            value["usage"]["billable"]["api_request_overage_mode"],
+            "metered"
+        );
+        assert_eq!(value["rate_limits"]["general"]["requests_per_second"], 50);
+        assert_eq!(value["rate_limits"]["ingest"]["burst"], 125);
+    }
+
+    #[test]
+    fn api_request_overage_mode_requires_paid_or_legacy_entitlement() {
+        let org_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+
+        assert_eq!(
+            api_request_overage_mode(&data, org_id, "pro"),
+            ApiRequestOverageMode::LegacyCompatibility
+        );
+
+        data.billing_accounts.insert(
+            org_id,
+            BillingAccountProjection {
+                schema_version: 1,
+                org_id,
+                access_state: BILLING_CHECKOUT_PENDING.to_string(),
+                plan_tier: "pro".to_string(),
+                effective_plan_tier: "free".to_string(),
+                requested_plan_tier: Some("pro".to_string()),
+                paid_extra_seats: 0,
+                stripe_customer_id: Some("cus_123".to_string()),
+                stripe_subscription_id: Some("sub_123".to_string()),
+                subscription_status: Some("incomplete".to_string()),
+                current_period_start: None,
+                current_period_end: None,
+                cancel_at_period_end: false,
+                grace_until: None,
+                pending_intent_id: None,
+                message: None,
+                updated_at: Utc::now(),
+            },
+        );
+        assert_eq!(
+            api_request_overage_mode(&data, org_id, "pro"),
+            ApiRequestOverageMode::Blocked
+        );
+
+        data.billing_accounts
+            .get_mut(&org_id)
+            .expect("account")
+            .access_state = BILLING_PAID_ACTIVE.to_string();
+        assert_eq!(
+            api_request_overage_mode(&data, org_id, "pro"),
+            ApiRequestOverageMode::Metered
+        );
+        assert_eq!(
+            api_request_overage_mode(&data, org_id, "free"),
+            ApiRequestOverageMode::Blocked
+        );
     }
 
     #[test]
@@ -761,6 +1088,7 @@ mod tests {
             metric_series: 1,
             artifacts: 0,
             api_keys: 0,
+            api_requests: 0,
             artifact_bytes_exact: 0,
             external_artifact_bytes_declared: 0,
             artifact_bytes_unknown_count: 0,
@@ -768,6 +1096,7 @@ mod tests {
             warehouse_storage_bytes_exact: None,
             storage_bytes_for_warnings: 0,
             estimated_storage_bytes_for_warnings: 0,
+            api_request_overage_mode: ApiRequestOverageMode::Blocked,
             period: current_usage_period(Utc::now()),
         }
     }

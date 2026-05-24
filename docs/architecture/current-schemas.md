@@ -128,7 +128,7 @@ cursor while `event_id` is random. Full replay is the current safe path.
 | `billing_change_intent` | `org` | `BillingChangeIntent.id` | Pending plan/seat/cancel change action. |
 | `billing_subscription` | `org` | `BillingSubscriptionRecord.stripe_subscription_id` | Last known Stripe subscription projection. |
 | `billing_event` | `org` | `BillingEventRecord.stripe_event_id` | Processed Stripe event idempotency record. |
-| `billing_usage_report` | `org` | `BillingUsageReportRecord.id` | Retained-storage overage report attempt. |
+| `billing_usage_report` | `org` | `BillingUsageReportRecord.id` | Storage/API request overage report attempt with cumulative usage and positive reported deltas. |
 | `dashboard_preference` | `org` | `dashboard-preference:<org_id>:<user_id>` | `DashboardPreferenceRow` |
 | `workspace_view` | `org` | `WorkspaceViewRow.id` | `WorkspaceViewRow` |
 
@@ -533,6 +533,7 @@ ids match the routed org before adding the record to the in-process projection.
 | `import` | `ImportRow.id` | `ImportRow` | Import job summary and produced run ids. |
 | `idempotency` | `IdempotencyRecord.key` | `IdempotencyRecord` | Request replay response for metric/log idempotency keys. |
 | `usage_daily` | `<org_id>-<YYYY-MM-DD>` | usage snapshot JSON | Immutable daily usage snapshot payload. |
+| `api_usage_monthly` | `<org_id>:<YYYY-MM>:<class>:<instance_id>:<minute>` | API request rollup JSON | Bounded monthly request-usage rollup with an absolute count for one org/class/instance/minute. Replay keeps the largest count for a matching entity. |
 
 In local/non-hosted mode, the control-plane record kinds can also appear in this
 table because the combined service has no separate User Data table.
@@ -730,6 +731,7 @@ writes horizontally.
     "projects": "blocked_at_limit",
     "runs": "blocked_at_limit",
     "metric_points": "blocked_at_limit",
+    "api_requests": "blocked_or_metered_overage",
     "storage": "blocked_at_limit",
     "artifacts": "visibility_only",
     "api_keys": "visibility_only"
@@ -758,7 +760,8 @@ writes horizontally.
         "included_storage_bytes": 1099511627776,
         "projects": 100,
         "runs": 100000,
-        "metric_points": 250000000
+        "metric_points": 250000000,
+        "api_requests": 25000000
       },
       "usage": {
         "seats": 2,
@@ -767,6 +770,7 @@ writes horizontally.
         "runs": 85000,
         "metric_points": 1000,
         "metric_points_current_period": 1000,
+        "api_requests": 42000,
         "metric_points_retained_total": 250000,
         "metric_series": 10,
         "artifacts": 3,
@@ -809,8 +813,12 @@ project, run, metric-ingest, artifact, import, and demo-reset writes return
 HTTP 402 with `code: "plan_limit_exceeded"` when current or projected usage
 crosses a blocked `projects`, `runs`, current-month `metric_points`, or
 retained `storage` limit. Seats remain tracked as `paid_extra_seats` until
-billing is implemented. Storage, projects, runs, seats, artifacts, metric
-series, and API keys are retained-resource counts and do not reset monthly.
+billing is implemented. API request usage is counted for the current UTC
+calendar month through bounded `api_usage_monthly` rollups. Free and
+non-billable orgs are blocked at the monthly API request allowance; paid
+Pro/Premium overage is reported to Stripe as exact request-unit deltas. Storage,
+projects, runs, seats, artifacts, metric series, and API keys are
+retained-resource counts and do not reset monthly.
 `warehouse_storage_bytes_exact` comes from ClickHouse table parts for dedicated
 tenant databases and is `null` for shared-cell orgs where exact per-org bytes
 are not available. It is also `null` for customer-owned ClickHouse orgs because

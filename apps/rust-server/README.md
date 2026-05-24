@@ -7,7 +7,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
-- Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready.
+- Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric and API-request usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, apply plan-aware short-window API rate limits, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready.
 - Support Premium customer-owned ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
 - Store artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, R2 references, exact byte counts, hashes, and MIME types.
@@ -120,6 +120,13 @@ Logical control/data-plane division is available before deployment:
 
 The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
 
+Data-plane routes also run through a per-process token-bucket limiter before
+tenant data is loaded. Current plan defaults are Free 5 req/sec general and 2
+req/sec ingest, Pro 50/25, and Premium 200/100, with burst capacity recorded in
+the plan catalog. Accepted authenticated product requests are tracked through
+bounded `api_usage_monthly` operational rollups for monthly usage visibility;
+these counters are not invoice truth.
+
 ## Config
 
 Environment variables:
@@ -179,9 +186,9 @@ Environment variables:
 - `STRIPE_SECRET_KEY`: Stripe secret key used for Checkout, price lookup/creation, subscription updates, storage meter events, and Customer Portal sessions.
 - `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret for `POST /api/billing/webhook`.
 - `STRIPE_API_VERSION`: Stripe API version sent on server-side requests. Default: `2026-04-22.dahlia`.
-- `STRIPE_PRO_PRICE_ID`, `STRIPE_PREMIUM_PRICE_ID`, `STRIPE_EXTRA_SEAT_PRICE_ID`, `STRIPE_STORAGE_OVERAGE_PRICE_ID`: optional Stripe price IDs. When omitted in sandbox, the server discovers or creates stable lookup-key prices for Pro, Premium, extra seats, and retained-storage overage.
-- `STRIPE_STORAGE_METER_ID`: optional Stripe Billing Meter id for retained-storage overage. When omitted in sandbox, the server discovers or creates an active meter with `INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME`.
-- `INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME`: Stripe meter event name used by `POST /api/billing/storage-overage/report`. Default: `instantml_storage_overage_gib_month`.
+- `STRIPE_PRO_PRICE_ID`, `STRIPE_PREMIUM_PRICE_ID`, `STRIPE_EXTRA_SEAT_PRICE_ID`, `STRIPE_STORAGE_OVERAGE_PRICE_ID`, `STRIPE_PRO_API_REQUEST_OVERAGE_PRICE_ID`, `STRIPE_PREMIUM_API_REQUEST_OVERAGE_PRICE_ID`: optional Stripe price IDs. When omitted in sandbox, the server discovers or creates stable lookup-key prices for Pro, Premium, extra seats, retained-storage overage, and exact API request-unit overage.
+- `STRIPE_STORAGE_METER_ID`, `STRIPE_API_REQUEST_METER_ID`: optional Stripe Billing Meter ids for retained-storage and API request overage. When omitted in sandbox, the server discovers or creates active meters with `INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME` and `INSTANTML_STRIPE_API_REQUEST_METER_EVENT_NAME`.
+- `INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME`, `INSTANTML_STRIPE_API_REQUEST_METER_EVENT_NAME`: Stripe meter event names used by `POST /api/billing/usage-overage/report` and the backward-compatible storage endpoint. Defaults: `instantml_storage_overage_gib_month` and `instantml_api_request_overage`.
 - `INSTANTML_BILLING_SUCCESS_URL`, `INSTANTML_BILLING_CANCEL_URL`, `INSTANTML_BILLING_PORTAL_RETURN_URL`: frontend URLs used by Checkout and Customer Portal. Defaults are built from `INSTANTML_FRONTEND_BASE_URL`.
 - `INSTANTML_BILLING_GRACE_DAYS`: payment-failure write grace window. Default: `7`.
 - `INSTANTML_EXTRA_SEAT_MONTHLY_USD`, `INSTANTML_STORAGE_OVERAGE_CENTS_PER_GIB_MONTH`: sandbox/default price creation amounts. Defaults: `$99/seat-month` and `$0.03/GiB-month`.

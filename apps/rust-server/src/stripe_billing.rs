@@ -18,6 +18,8 @@ const PRO_LOOKUP_KEY: &str = "instantml_pro_monthly";
 const PREMIUM_LOOKUP_KEY: &str = "instantml_premium_monthly";
 const EXTRA_SEAT_LOOKUP_KEY: &str = "instantml_extra_seat_monthly";
 const STORAGE_LOOKUP_KEY: &str = "instantml_storage_overage_gib_month";
+const PRO_API_REQUEST_LOOKUP_KEY: &str = "instantml_pro_api_request_overage";
+const PREMIUM_API_REQUEST_LOOKUP_KEY: &str = "instantml_premium_api_request_overage";
 
 #[derive(Clone, Debug)]
 pub struct StripeCheckoutSession {
@@ -76,6 +78,8 @@ pub async fn create_subscription_checkout(
 ) -> AppResult<StripeCheckoutSession> {
     let price_id = ensure_plan_price_id(config, &params.target_plan_tier).await?;
     let storage_price_id = ensure_storage_overage_price_id(config).await?;
+    let api_request_price_id =
+        ensure_api_request_overage_price_id(config, &params.target_plan_tier).await?;
     let mut form = vec![
         ("mode".to_string(), "subscription".to_string()),
         ("client_reference_id".to_string(), params.intent_id.clone()),
@@ -84,6 +88,7 @@ pub async fn create_subscription_checkout(
         ("line_items[0][price]".to_string(), price_id),
         ("line_items[0][quantity]".to_string(), "1".to_string()),
         ("line_items[1][price]".to_string(), storage_price_id),
+        ("line_items[2][price]".to_string(), api_request_price_id),
         ("metadata[org_id]".to_string(), params.org_id.clone()),
         ("metadata[user_id]".to_string(), params.user_id.clone()),
         ("metadata[intent_id]".to_string(), params.intent_id.clone()),
@@ -196,6 +201,16 @@ pub async fn update_subscription_plan(
         .ok_or_else(|| AppError::validation("Stripe subscription has no editable plan item"))?;
     let price_id = ensure_plan_price_id(config, target_plan_tier).await?;
     let storage_price_id = ensure_storage_overage_price_id(config).await?;
+    let api_request_price_id =
+        ensure_api_request_overage_price_id(config, target_plan_tier).await?;
+    let storage_item = subscription.items.iter().find(|item| {
+        item.price_id.as_deref() == Some(storage_price_id.as_str())
+            || item.lookup_key.as_deref() == Some(STORAGE_LOOKUP_KEY)
+    });
+    let api_request_item = subscription
+        .items
+        .iter()
+        .find(|item| is_api_request_overage_price(config, item));
     let mut form = vec![
         ("items[0][id]".to_string(), plan_item.id.clone()),
         ("items[0][price]".to_string(), price_id),
@@ -215,11 +230,16 @@ pub async fn update_subscription_plan(
             target_plan_tier.to_string(),
         ),
     ];
-    if !subscription.items.iter().any(|item| {
-        item.price_id.as_deref() == Some(storage_price_id.as_str())
-            || item.lookup_key.as_deref() == Some(STORAGE_LOOKUP_KEY)
-    }) {
-        form.push(("items[1][price]".to_string(), storage_price_id));
+    let mut item_index = 1;
+    if storage_item.is_none() {
+        form.push((format!("items[{item_index}][price]"), storage_price_id));
+        item_index += 1;
+    }
+    if let Some(item) = api_request_item {
+        form.push((format!("items[{item_index}][id]"), item.id.clone()));
+        form.push((format!("items[{item_index}][price]"), api_request_price_id));
+    } else {
+        form.push((format!("items[{item_index}][price]"), api_request_price_id));
     }
     let value = post_form(
         config,
@@ -320,31 +340,36 @@ pub async fn record_storage_meter_event(
     identifier: &str,
     timestamp: i64,
 ) -> AppResult<String> {
-    let response = post_form(
+    record_meter_event(
         config,
-        "/v1/billing/meter_events",
-        vec![
-            (
-                "event_name".to_string(),
-                config.storage_meter_event_name.clone(),
-            ),
-            ("identifier".to_string(), identifier.to_string()),
-            ("timestamp".to_string(), timestamp.to_string()),
-            (
-                "payload[stripe_customer_id]".to_string(),
-                customer_id.to_string(),
-            ),
-            ("payload[value]".to_string(), value.to_string()),
-            ("payload[org_id]".to_string(), org_id.to_string()),
-        ],
+        &config.storage_meter_event_name,
+        customer_id,
+        org_id,
+        value,
+        identifier,
+        timestamp,
     )
-    .await?;
-    response
-        .get("identifier")
-        .and_then(Value::as_str)
-        .or_else(|| response.get("id").and_then(Value::as_str))
-        .map(str::to_string)
-        .ok_or_else(|| AppError::internal("Stripe meter event did not include an identifier"))
+    .await
+}
+
+pub async fn record_api_request_meter_event(
+    config: &BillingConfig,
+    customer_id: &str,
+    org_id: &str,
+    value: i64,
+    identifier: &str,
+    timestamp: i64,
+) -> AppResult<String> {
+    record_meter_event(
+        config,
+        &config.api_request_meter_event_name,
+        customer_id,
+        org_id,
+        value,
+        identifier,
+        timestamp,
+    )
+    .await
 }
 
 pub async fn ensure_plan_price_id(config: &BillingConfig, plan_tier: &str) -> AppResult<String> {
@@ -357,8 +382,8 @@ pub async fn ensure_plan_price_id(config: &BillingConfig, plan_tier: &str) -> Ap
                 config,
                 PRO_LOOKUP_KEY,
                 PLAN_PRO.label,
-                PLAN_PRO.monthly_base_usd * 100,
-                false,
+                PriceAmount::Cents(PLAN_PRO.monthly_base_usd * 100),
+                None,
             )
             .await
         }
@@ -370,8 +395,8 @@ pub async fn ensure_plan_price_id(config: &BillingConfig, plan_tier: &str) -> Ap
                 config,
                 PREMIUM_LOOKUP_KEY,
                 PLAN_PREMIUM.label,
-                PLAN_PREMIUM.monthly_base_usd * 100,
-                false,
+                PriceAmount::Cents(PLAN_PREMIUM.monthly_base_usd * 100),
+                None,
             )
             .await
         }
@@ -389,8 +414,8 @@ pub async fn ensure_extra_seat_price_id(config: &BillingConfig) -> AppResult<Str
         config,
         EXTRA_SEAT_LOOKUP_KEY,
         "InstantML extra writer seat",
-        config.extra_seat_monthly_usd * 100,
-        false,
+        PriceAmount::Cents(config.extra_seat_monthly_usd * 100),
+        None,
     )
     .await
 }
@@ -403,18 +428,101 @@ pub async fn ensure_storage_overage_price_id(config: &BillingConfig) -> AppResul
         config,
         STORAGE_LOOKUP_KEY,
         "InstantML retained storage overage GiB-month",
-        config.storage_overage_cents_per_gib_month,
-        true,
+        PriceAmount::Cents(config.storage_overage_cents_per_gib_month),
+        Some(MeterKind::Storage),
     )
     .await
+}
+
+pub async fn ensure_api_request_overage_price_id(
+    config: &BillingConfig,
+    plan_tier: &str,
+) -> AppResult<String> {
+    let (configured, lookup_key, product_name, cents_per_million) = match plan_tier {
+        "pro" => (
+            &config.pro_api_request_overage_price_id,
+            PRO_API_REQUEST_LOOKUP_KEY,
+            "InstantML Pro API request overage",
+            PLAN_PRO.api_request_overage_cents_per_million,
+        ),
+        "premium" => (
+            &config.premium_api_request_overage_price_id,
+            PREMIUM_API_REQUEST_LOOKUP_KEY,
+            "InstantML Premium API request overage",
+            PLAN_PREMIUM.api_request_overage_cents_per_million,
+        ),
+        _ => {
+            return Err(AppError::validation(
+                "api request overage price requires pro or premium plan",
+            ))
+        }
+    };
+    if let Some(id) = configured {
+        return Ok(id.clone());
+    }
+    let cents_per_million = cents_per_million
+        .ok_or_else(|| AppError::validation("plan has no API request overage price"))?;
+    ensure_lookup_price(
+        config,
+        lookup_key,
+        product_name,
+        PriceAmount::DecimalCents(decimal_cents_per_request(cents_per_million)),
+        Some(MeterKind::ApiRequests),
+    )
+    .await
+}
+
+async fn record_meter_event(
+    config: &BillingConfig,
+    event_name: &str,
+    customer_id: &str,
+    org_id: &str,
+    value: i64,
+    identifier: &str,
+    timestamp: i64,
+) -> AppResult<String> {
+    let response = post_form_with_idempotency(
+        config,
+        "/v1/billing/meter_events",
+        vec![
+            ("event_name".to_string(), event_name.to_string()),
+            ("identifier".to_string(), identifier.to_string()),
+            ("timestamp".to_string(), timestamp.to_string()),
+            (
+                "payload[stripe_customer_id]".to_string(),
+                customer_id.to_string(),
+            ),
+            ("payload[value]".to_string(), value.to_string()),
+            ("payload[org_id]".to_string(), org_id.to_string()),
+        ],
+        Some(identifier.to_string()),
+    )
+    .await?;
+    response
+        .get("identifier")
+        .and_then(Value::as_str)
+        .or_else(|| response.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .ok_or_else(|| AppError::internal("Stripe meter event did not include an identifier"))
+}
+
+#[derive(Clone, Copy)]
+enum MeterKind {
+    Storage,
+    ApiRequests,
+}
+
+enum PriceAmount {
+    Cents(i64),
+    DecimalCents(String),
 }
 
 async fn ensure_lookup_price(
     config: &BillingConfig,
     lookup_key: &str,
     product_name: &str,
-    unit_amount_cents: i64,
-    metered: bool,
+    amount: PriceAmount,
+    meter: Option<MeterKind>,
 ) -> AppResult<String> {
     let existing = get_json(
         config,
@@ -437,13 +545,16 @@ async fn ensure_lookup_price(
     }
     let mut form = vec![
         ("currency".to_string(), "usd".to_string()),
-        ("unit_amount".to_string(), unit_amount_cents.to_string()),
         ("recurring[interval]".to_string(), "month".to_string()),
         ("product_data[name]".to_string(), product_name.to_string()),
         ("lookup_key".to_string(), lookup_key.to_string()),
     ];
-    if metered {
-        let meter_id = ensure_storage_meter_id(config).await?;
+    match amount {
+        PriceAmount::Cents(cents) => form.push(("unit_amount".to_string(), cents.to_string())),
+        PriceAmount::DecimalCents(cents) => form.push(("unit_amount_decimal".to_string(), cents)),
+    }
+    if let Some(kind) = meter {
+        let meter_id = ensure_meter_id(config, kind).await?;
         form.push(("recurring[meter]".to_string(), meter_id));
         form.push(("recurring[usage_type]".to_string(), "metered".to_string()));
     }
@@ -455,8 +566,20 @@ async fn ensure_lookup_price(
         .ok_or_else(|| AppError::internal("Stripe price creation did not include id"))
 }
 
-async fn ensure_storage_meter_id(config: &BillingConfig) -> AppResult<String> {
-    if let Some(id) = &config.storage_meter_id {
+async fn ensure_meter_id(config: &BillingConfig, kind: MeterKind) -> AppResult<String> {
+    let (configured_id, event_name, display_name) = match kind {
+        MeterKind::Storage => (
+            config.storage_meter_id.as_ref(),
+            config.storage_meter_event_name.as_str(),
+            "InstantML retained storage overage GiB-month",
+        ),
+        MeterKind::ApiRequests => (
+            config.api_request_meter_id.as_ref(),
+            config.api_request_meter_event_name.as_str(),
+            "InstantML API request overage",
+        ),
+    };
+    if let Some(id) = configured_id {
         return Ok(id.clone());
     }
     let meters = get_json(
@@ -470,8 +593,7 @@ async fn ensure_storage_meter_id(config: &BillingConfig) -> AppResult<String> {
         .and_then(Value::as_array)
         .and_then(|items| {
             items.iter().find(|item| {
-                item.get("event_name").and_then(Value::as_str)
-                    == Some(config.storage_meter_event_name.as_str())
+                item.get("event_name").and_then(Value::as_str) == Some(event_name)
                     && item.get("status").and_then(Value::as_str) == Some("active")
             })
         })
@@ -484,14 +606,8 @@ async fn ensure_storage_meter_id(config: &BillingConfig) -> AppResult<String> {
         config,
         "/v1/billing/meters",
         vec![
-            (
-                "display_name".to_string(),
-                "InstantML retained storage overage GiB-month".to_string(),
-            ),
-            (
-                "event_name".to_string(),
-                config.storage_meter_event_name.clone(),
-            ),
+            ("display_name".to_string(), display_name.to_string()),
+            ("event_name".to_string(), event_name.to_string()),
             (
                 "default_aggregation[formula]".to_string(),
                 "sum".to_string(),
@@ -651,6 +767,23 @@ fn is_plan_price(config: &BillingConfig, item: &StripeSubscriptionItem) -> bool 
         })
 }
 
+fn is_api_request_overage_price(config: &BillingConfig, item: &StripeSubscriptionItem) -> bool {
+    item.lookup_key.as_deref().is_some_and(|lookup_key| {
+        lookup_key == PRO_API_REQUEST_LOOKUP_KEY || lookup_key == PREMIUM_API_REQUEST_LOOKUP_KEY
+    }) || item.price_id.as_deref().is_some_and(|price_id| {
+        config.pro_api_request_overage_price_id.as_deref() == Some(price_id)
+            || config.premium_api_request_overage_price_id.as_deref() == Some(price_id)
+    })
+}
+
+fn decimal_cents_per_request(cents_per_million: i64) -> String {
+    let cents = cents_per_million as f64 / 1_000_000.0;
+    format!("{cents:.12}")
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
+}
+
 fn stripe_id_field(value: &Value, field: &str) -> Option<String> {
     match value.get(field) {
         Some(Value::String(id)) => Some(id.clone()),
@@ -667,18 +800,41 @@ async fn post_form(
     request_form(config, Method::POST, path, form).await
 }
 
+async fn post_form_with_idempotency(
+    config: &BillingConfig,
+    path: &str,
+    form: Vec<(String, String)>,
+    idempotency_key: Option<String>,
+) -> AppResult<Value> {
+    request_form_with_idempotency(config, Method::POST, path, form, idempotency_key).await
+}
+
 async fn request_form(
     config: &BillingConfig,
     method: Method,
     path: &str,
     form: Vec<(String, String)>,
 ) -> AppResult<Value> {
+    request_form_with_idempotency(config, method, path, form, None).await
+}
+
+async fn request_form_with_idempotency(
+    config: &BillingConfig,
+    method: Method,
+    path: &str,
+    form: Vec<(String, String)>,
+    idempotency_key: Option<String>,
+) -> AppResult<Value> {
     let secret = stripe_secret(config)?;
-    let response = reqwest::Client::new()
+    let mut builder = reqwest::Client::new()
         .request(method, format!("{STRIPE_API_BASE}{path}"))
         .bearer_auth(secret)
         .header("Stripe-Version", &config.stripe_api_version)
-        .form(&form)
+        .form(&form);
+    if let Some(idempotency_key) = idempotency_key {
+        builder = builder.header("Idempotency-Key", idempotency_key);
+    }
+    let response = builder
         .send()
         .await
         .map_err(|error| stripe_unavailable(format!("Stripe request failed: {error}")))?;
@@ -764,5 +920,11 @@ mod tests {
         let timestamp = Utc::now().timestamp();
         let header = format!("t={timestamp},v1=deadbeef");
         assert!(verify_webhook_signature(br#"{}"#, &header, secret, 300).is_err());
+    }
+
+    #[test]
+    fn api_request_decimal_price_uses_exact_request_units() {
+        assert_eq!(decimal_cents_per_request(200), "0.0002");
+        assert_eq!(decimal_cents_per_request(100), "0.0001");
     }
 }

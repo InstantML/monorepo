@@ -12,9 +12,9 @@ This document explains the Free, Pro, and Premium pricing model, the current cos
 
 | Tier | Price | Included seats | Included storage | Product limits | Warehouse profile intent |
 | --- | ---: | ---: | ---: | --- | --- |
-| Free | `$0/org/mo` | 2 | 2 GiB | 2 projects, 100 runs, 1M metric points/month | Shared, 8 GiB, 1 replica |
-| Pro | `$199/org/mo` | 3 | 1 TiB | 100 projects, 100k runs, 250M metric points/month | Standard, 12 GiB, 1 replica |
-| Premium | `$699/org/mo` | 10 | 5 TiB | 500 projects, 1M runs, 2B metric points/month | Dedicated, 16 GiB, 2 replicas |
+| Free | `$0/org/mo` | 2 | 2 GiB | 2 projects, 100 runs, 1M metric points/month, 500k API requests/month | Shared, 8 GiB, 1 replica |
+| Pro | `$199/org/mo` | 3 | 1 TiB | 100 projects, 100k runs, 250M metric points/month, 25M API requests/month | Standard, 12 GiB, 1 replica |
+| Premium | `$699/org/mo` | 10 | 5 TiB | 500 projects, 1M runs, 2B metric points/month, 150M API requests/month | Dedicated, 16 GiB, 2 replicas |
 
 Current overage policy:
 
@@ -23,13 +23,22 @@ Current overage policy:
   still treat the `$79-$99/seat/month` amount as a beta target until invoice
   smoke coverage is complete.
 - Projects, runs, and metric points are `blocked_at_limit` for new writes until paid overages or custom terms are implemented.
+- API request quotas are `blocked_or_metered_overage`: Free and non-billable
+  orgs are blocked at the monthly allowance, while paid Pro/Premium orgs
+  continue with Stripe-metered overage at `$2 / 1M` Pro requests and
+  `$1 / 1M` Premium requests. The meter reports exact request-unit deltas to
+  decimal-cent Stripe prices.
 - API-key count and artifact counts are visibility-only.
-- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The Stripe meter-backed price is attached to paid subscriptions and the meter-event path reports whole GiB-month storage overage at the `$0.03/GB-month` sandbox target, but public invoices still require provider/object-store reconciliation hardening.
+- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The Stripe meter-backed price is attached to paid subscriptions and the overage report path sends positive deltas of the current-month high-water retained GiB overage at the `$0.03/GB-month` target.
 
 Usage-period semantics:
 
 - Metric-point usage is counted only inside the current UTC calendar month, from the first day at 00:00 UTC to the first day of the next month at 00:00 UTC. The API returns this window as `usage_period` with `reset_at`.
 - `usage.metric_points` and `usage.metric_points_current_period` are the current monthly value used for warnings and blocking. `usage.metric_points_retained_total` is retained history for visibility and debugging.
+- `usage.api_requests` is counted inside the same current UTC calendar month
+  through bounded data-plane rollups. Free and non-billable orgs are blocked at
+  the monthly allowance; paid org overage is reportable to Stripe as exact
+  request-unit deltas.
 - Storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource posture. They do not reset monthly; usage drops only when data is deleted/expired, seats or keys are removed, or the org changes plan.
 
 ## Competitive Context
@@ -79,9 +88,15 @@ External pricing facts to re-check before launch:
 - Clerk lists a free Hobby plan, paid Pro/Business plans, B2B org features, and billing add-on charges if Clerk Billing is used.
 
 Current product copy should frame hosted artifact storage as included capacity
-with blocked-at-limit guardrails. Paid storage overage is planned around a
-`$0.03/GB-month` target plus provider operations, but should not be presented as
-billable truth until reconciliation is implemented.
+with paid overage on Pro/Premium at `$0.03/GB-month` after the included pool.
+The first billing slice uses current-month high-water retained GiB and positive
+delta reports; provider reconciliation remains launch hardening.
+
+Current product copy should frame API requests as included fair-use capacity:
+500k/month on Free, 25M/month on Pro, and 150M/month on Premium. Short-window
+rate limits protect Cloud Run and ClickHouse immediately. Monthly Free and
+non-billable overages are blocked; paid request overage is active at
+`$2 / 1M` on Pro and `$1 / 1M` on Premium.
 
 Sources:
 
@@ -146,7 +161,8 @@ Writes that would exceed project, run, metric-point, or estimated-storage
 limits are rejected with `plan_limit_exceeded`; reads and exports remain
 available so teams can inspect and reduce usage. Metric-point blocking uses the
 current UTC calendar-month counter, while storage/project/run blocking uses the
-current retained-resource counter.
+current retained-resource counter. API request counters share the monthly usage
+period and now drive Free/non-billable blocking plus paid Stripe overage reports.
 
 ## Launch Guardrails
 

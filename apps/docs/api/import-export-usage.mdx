@@ -56,13 +56,18 @@ Usage includes:
 - Plan catalog.
 - Current org plan.
 - Current UTC calendar-month metric usage.
+- Current UTC calendar-month API request usage.
 - Retained projects, runs, metric series, artifacts, API keys, and seats.
 - Exact artifact bytes when available.
 - Exact ClickHouse table bytes when available.
 - Blocked-at-limit storage estimates.
 - Billing precision metadata.
 
-Metric-point usage resets monthly. Most other counters are retained resources.
+Metric-point and API-request usage reset monthly. Most other counters are
+retained resources. Free and non-billable orgs are blocked at the monthly API
+request allowance, while paid Pro/Premium request overage is Stripe-metered.
+Short-window `429` rate limits protect the service independently from monthly
+request quotas.
 
 ## Usage export
 

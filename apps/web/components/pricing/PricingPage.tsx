@@ -95,6 +95,7 @@ type Tier = {
   extraWriter: string;
   viewers: string;
   storage: string;
+  apiRequests: string;
   features: string[];
   ctaLabel: string;
   ctaHref: string;
@@ -113,6 +114,7 @@ const TIERS: Tier[] = [
     extraWriter: "upgrade for more",
     viewers: "Read-only viewer role",
     storage: "2 GB hosted storage included",
+    apiRequests: "500k API requests / month",
     features: [
       "Full SDK · init / log / finish",
       "Run compare · charts · artifacts",
@@ -132,7 +134,8 @@ const TIERS: Tier[] = [
     writers: "3 writer seats included",
     extraWriter: "$50 / extra writer",
     viewers: "Read-only viewer role",
-    storage: "1 TB hosted storage included",
+    storage: "1 TB hosted storage included · $0.03 / GB-month overage",
+    apiRequests: "25M API requests / month · $2 / 1M overage",
     features: [
       "Everything in Free",
       "Project share links (read-only)",
@@ -153,7 +156,8 @@ const TIERS: Tier[] = [
     writers: "10 writer seats included",
     extraWriter: "$70 / extra writer",
     viewers: "Read-only viewer role",
-    storage: "5 TB hosted storage included",
+    storage: "5 TB hosted storage included · $0.03 / GB-month overage",
+    apiRequests: "150M API requests / month · $1 / 1M overage",
     features: [
       "Everything in Pro",
       "Priority ingest queue",
@@ -203,6 +207,10 @@ function TierCard({ tier }: { tier: Tier }) {
         <li>
           <span className="pricing-tier-card__line-key">Storage</span>
           <span className="pricing-tier-card__line-val">{tier.storage}</span>
+        </li>
+        <li>
+          <span className="pricing-tier-card__line-key">API requests</span>
+          <span className="pricing-tier-card__line-val">{tier.apiRequests}</span>
         </li>
       </ul>
 

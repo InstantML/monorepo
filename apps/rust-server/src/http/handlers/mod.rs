@@ -2,7 +2,7 @@ pub mod artifacts;
 pub mod auth;
 pub mod billing;
 pub mod dashboard;
-mod helpers;
+pub(crate) mod helpers;
 pub mod imports;
 pub mod invitations;
 pub mod metrics;
@@ -18,7 +18,8 @@ pub(super) use auth::{
 };
 pub(super) use billing::{
     billing_add_seat, billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync,
-    billing_portal, billing_report_storage_overage, billing_status, billing_webhook,
+    billing_portal, billing_report_storage_overage, billing_report_usage_overage, billing_status,
+    billing_webhook,
 };
 pub(super) use dashboard::{
     create_workspace_view, get_dashboard_preferences, get_workspace_view, list_workspace_views,

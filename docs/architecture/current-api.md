@@ -169,6 +169,7 @@ Validation limits that affect callers:
 | Artifact list limit | Max 1,000 |
 | Side-by-side comparison | Max 50 runs and 5,000 rows |
 | Export | Max 500 runs, 100,000 metric points, 25,000 attributes, 10,000 artifacts |
+| API requests | Free 5 req/sec general / 2 req/sec ingest; Pro 50 / 25; Premium 200 / 100 |
 
 Operational correlation:
 
@@ -543,7 +544,8 @@ Session/subscription.
 | `POST` | `/api/billing/change-plan` | `{ "plan_tier": "free" | "pro" | "premium" }` | `{ "checkout": ... }` for first paid subscription or `{ "billing": ... }` for existing subscription updates and scheduled Free downgrade |
 | `POST` | `/api/billing/add-seat` | `{ "email", "role"?: "admin" | "member" | "viewer" }` | `{ "seat": SeatRow, "billing"?: BillingAccountProjection }`; when the org is at its included seat limit, Stripe extra-seat subscription quantity is updated before the seat is reserved |
 | `POST` | `/api/billing/cancel` | `{ "at_period_end"?: true }` | `{ "billing": BillingAccountProjection }` |
-| `POST` | `/api/billing/storage-overage/report` | none | `{ "usage_report": BillingUsageReportRecord, "usage": ... }`; reports the current org's whole GiB retained-storage overage as a Stripe meter event |
+| `POST` | `/api/billing/storage-overage/report` | none | Backward-compatible alias for the combined overage report |
+| `POST` | `/api/billing/usage-overage/report` | none | `{ "usage_report": BillingUsageReportRecord, "usage": ... }`; reports positive storage and API request overage deltas as Stripe meter events |
 | `POST` | `/api/billing/webhook` | raw Stripe event JSON with `Stripe-Signature` | `{ "processed": true }` |
 
 Billing write gates return HTTP `402` with `code: "payment_required"` when an
@@ -1252,6 +1254,11 @@ Output:
       "projects": 2,
       "runs": 100,
       "metric_points": 1000000,
+      "api_requests": 500000,
+      "api_request_overage_cents_per_million": null,
+      "rate_limit_rps": 5,
+      "rate_limit_burst": 30,
+      "ingest_rate_limit_rps": 2,
       "warehouse_kind": "shared",
       "min_replica_memory_gb": 8,
       "max_replica_memory_gb": 8,
@@ -1266,6 +1273,7 @@ Output:
     "projects": "blocked_at_limit",
     "runs": "blocked_at_limit",
     "metric_points": "blocked_at_limit",
+    "api_requests": "blocked_or_metered_overage",
     "storage": "blocked_at_limit",
     "artifacts": "visibility_only",
     "api_keys": "visibility_only"
@@ -1294,7 +1302,8 @@ Output:
         "included_storage_bytes": 5497558138880,
         "projects": 500,
         "runs": 1000000,
-        "metric_points": 2000000000
+        "metric_points": 2000000000,
+        "api_requests": 150000000
       },
       "usage": {
         "seats": 2,
@@ -1303,6 +1312,7 @@ Output:
         "runs": 2,
         "metric_points": 6,
         "metric_points_current_period": 6,
+        "api_requests": 42,
         "metric_points_retained_total": 18,
         "metric_series": 4,
         "artifacts": 0,
@@ -1322,12 +1332,14 @@ Output:
 }
 ```
 
-The response is guardrail/debug telemetry only, not invoice truth.
-`billable_storage_bytes` remains `null` until provider/object-store
-reconciliation is implemented. Metric-point limits are evaluated against the
-current UTC calendar-month `usage_period`; `usage.metric_points` is the same
-value as `usage.metric_points_current_period`, while
-`usage.metric_points_retained_total` is retained history for debugging.
+The response is guardrail/debug telemetry and exposes reportable overage
+fields, but Stripe remains the payment source of truth. Metric-point limits are
+evaluated against the current UTC calendar-month `usage_period`;
+`usage.metric_points` is the same value as `usage.metric_points_current_period`,
+while `usage.metric_points_retained_total` is retained history for debugging.
+`usage.api_requests` is the current monthly data-plane request rollup. Free and
+non-billable orgs are blocked at the monthly API request allowance; paid
+Pro/Premium overage is reported to Stripe as exact request-unit deltas.
 Projects, runs, storage, seats, artifacts, metric series, and API keys are
 current retained-resource counts and do not reset monthly. Warning rows include
 `target`, `status`, `value`, `limit`, `ratio`, `policy`, `blocking`, `code`,
@@ -1353,6 +1365,18 @@ and demo-reset writes that exceed blocked limits fail with:
 
 Status: `402 Payment Required`. Reads, exports, and usage summaries remain
 available for over-limit orgs.
+
+Short-window rate limits fail with:
+
+```json
+{
+  "error": "rate limit exceeded for ingest API",
+  "code": "rate_limit_exceeded"
+}
+```
+
+Status: `429 Too Many Requests`. Responses include `Retry-After`,
+`RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset`.
 
 ### `GET /api/usage/export`
 
