@@ -32,7 +32,7 @@ test("docs app route renders docs source instead of redirecting to a docs host",
   assert.match(agentButton, /fetch\(href/);
   assert.match(agentButton, /Copy \.md for agent/);
   assert.match(codeBlock, /navigator\.clipboard\.writeText/);
-  assert.match(styles, /grid-template-columns: clamp\(248px, 18vw, 320px\) minmax\(0, 1fr\)/);
+  assert.match(styles, /grid-template-columns: clamp\(220px, 16vw, 264px\) minmax\(0, 1fr\)/);
   assert.doesNotMatch(styles, /max-width: 1240px/);
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
 });
