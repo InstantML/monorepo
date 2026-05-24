@@ -14,7 +14,10 @@
   gap: 24px;
   border-bottom: 1px solid rgba(23, 33, 27, 0.1);
   background: rgba(247, 248, 245, 0.94);
-  padding: 14px clamp(18px, 4vw, 48px);
+  /* Background + bottom border span edge-to-edge; content stays
+   * aligned with the 1240px .docs-route-shell column on wide
+   * viewports via the calculated padding below. */
+  padding: 14px max(clamp(18px, 4vw, 48px), calc((100vw - 1240px) / 2));
   backdrop-filter: blur(18px);
 }
 
@@ -79,6 +82,28 @@
   max-height: calc(100vh - 104px);
   overflow: auto;
   padding-right: 10px;
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(23, 33, 27, 0.18) transparent;
+}
+/* WebKit / Blink — subtle thumb against the warm-grey docs background. */
+.docs-route-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.docs-route-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.docs-route-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(23, 33, 27, 0.18);
+  border-radius: 3px;
+  transition: background 120ms ease;
+}
+.docs-route-sidebar:hover::-webkit-scrollbar-thumb,
+.docs-route-sidebar:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(23, 33, 27, 0.32);
+}
+.docs-route-sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(23, 33, 27, 0.48);
 }
 
 .docs-route-sidebar section + section {
