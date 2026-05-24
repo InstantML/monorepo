@@ -94,10 +94,22 @@
 .docs-route-search input {
   flex: 1;
   min-width: 0;
+  /* Explicitly override base.css's global input rules (which set a dark
+   * dashboard-themed background + border via CSS variables). */
   border: 0;
+  border-radius: 0;
   background: transparent;
+  color: #17211b;
   font: inherit;
-  color: inherit;
+  outline: none;
+  min-height: 0;
+  padding: 0;
+  box-shadow: none;
+}
+.docs-route-search input:focus,
+.docs-route-search input:focus-visible {
+  border: 0;
+  box-shadow: none;
   outline: none;
 }
 
@@ -231,27 +243,65 @@
   margin-top: 22px;
 }
 
-.docs-route-nav-group h3 {
+/* Collapsible group via native <details>. Default browser triangle marker
+ * is suppressed so we can use our own ChevronRight icon that rotates 90°
+ * when the section is open. */
+.docs-route-nav-group {
+  list-style: none;
+}
+.docs-route-nav-group > summary {
+  list-style: none;
+}
+.docs-route-nav-group > summary::-webkit-details-marker,
+.docs-route-nav-group > summary::marker {
+  display: none;
+}
+
+.docs-route-nav-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 6px;
-  padding: 0 8px;
+  padding: 2px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.docs-route-nav-group-summary:hover h3 {
+  color: #08734b;
+}
+.docs-route-nav-group-summary:hover .docs-route-nav-chevron {
+  color: #08734b;
+}
+
+.docs-route-nav-group h3 {
+  margin: 0;
   color: #7a8a82;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  transition: color 120ms ease;
+}
+
+.docs-route-nav-chevron {
+  color: #a3b1aa;
+  flex-shrink: 0;
+  transition: transform 140ms ease, color 120ms ease;
+}
+.docs-route-nav-group[open] .docs-route-nav-chevron {
+  transform: rotate(90deg);
 }
 
 .docs-route-nav-links {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* Indent leaf pages so the hierarchy reads visually. */
+  padding-left: 18px;
 }
 
 .docs-route-nav-link {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  align-items: center;
-  gap: 4px;
+  display: block;
   padding: 6px 8px;
   border-radius: 6px;
   color: #34433c;
@@ -260,21 +310,8 @@
   text-decoration: none;
 }
 
-.docs-route-nav-link span {
-  min-width: 0;
-}
-
-.docs-route-nav-chevron {
-  color: #a3b1aa;
-  flex-shrink: 0;
-}
-
 .docs-route-nav-link:hover {
   background: #ecf3ee;
-  color: #08734b;
-}
-
-.docs-route-nav-link:hover .docs-route-nav-chevron {
   color: #08734b;
 }
 
@@ -282,10 +319,6 @@
   background: #e6f2eb;
   color: #08734b;
   font-weight: 600;
-}
-
-.docs-route-nav-link.is-active .docs-route-nav-chevron {
-  color: #08734b;
 }
 
 .docs-route-sidebar-footer {

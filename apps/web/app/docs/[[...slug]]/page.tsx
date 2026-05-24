@@ -180,27 +180,36 @@ function DocsSidebar({
         </Link>
         {visibleTabs.map((tab) => (
           <section key={tab.tab}>
-            {tab.groups.map((group) => (
-              <div className="docs-route-nav-group" key={`${tab.tab}-${group.group}`}>
-                <h3>{group.group}</h3>
-                <div className="docs-route-nav-links">
-                  {group.pages.map((page) => (
-                    <Link
-                      className={
-                        page.path === currentPath
-                          ? "docs-route-nav-link is-active"
-                          : "docs-route-nav-link"
-                      }
-                      href={pageUrl(page.path)}
-                      key={page.path}
-                    >
-                      <ChevronRight aria-hidden size={12} className="docs-route-nav-chevron" />
-                      <span>{page.title}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ))}
+            {tab.groups.map((group) => {
+              const groupHasActive = group.pages.some((page) => page.path === currentPath);
+              return (
+                <details
+                  className="docs-route-nav-group"
+                  key={`${tab.tab}-${group.group}`}
+                  open={groupHasActive}
+                >
+                  <summary className="docs-route-nav-group-summary">
+                    <ChevronRight aria-hidden size={12} className="docs-route-nav-chevron" />
+                    <h3>{group.group}</h3>
+                  </summary>
+                  <div className="docs-route-nav-links">
+                    {group.pages.map((page) => (
+                      <Link
+                        className={
+                          page.path === currentPath
+                            ? "docs-route-nav-link is-active"
+                            : "docs-route-nav-link"
+                        }
+                        href={pageUrl(page.path)}
+                        key={page.path}
+                      >
+                        <span>{page.title}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
           </section>
         ))}
       </div>
