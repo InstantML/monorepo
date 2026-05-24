@@ -29,8 +29,8 @@ pub mod openapi;
 pub(crate) mod rate_limit;
 
 use handlers::{
-    accept_invitation, auth_clerk, auth_config, auth_dev_google, auth_logout, auth_session,
-    auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
+    accept_invitation, admin_overview, auth_clerk, auth_config, auth_dev_google, auth_logout,
+    auth_session, auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
     billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
     billing_report_usage_overage, billing_status, billing_webhook, create_api_key, create_artifact,
     create_attributes, create_customer_clickhouse_connection, create_invitation, create_object,
@@ -141,6 +141,7 @@ fn platform_routes() -> Router<Arc<AppState>> {
 
 fn control_routes() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/api/admin/overview", get(admin_overview))
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))

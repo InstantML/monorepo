@@ -52,6 +52,9 @@ Current implemented design sequence:
   Free/Pro/Premium API request allowances, per-process short-window rate
   limits, bounded request-usage rollups, SDK `429` retry/backoff, dashboard
   usage visibility, and pricing/docs updates.
+- `2026-05-24-admin-operator-app.md`: separate read-only Next admin app plus a
+  bootstrap-protected Rust operator overview for users, orgs, storage, API
+  keys, billing posture, and risk queues.
 
 Current draft/revised designs awaiting implementation approval:
 

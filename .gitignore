@@ -9,6 +9,8 @@ venv/
 apps/web/.env.local
 node_modules/
 .next/
+apps/admin/.next/
+apps/admin/next-env.d.ts
 apps/web/.next/
 apps/web/next-env.d.ts
 *.tsbuildinfo
