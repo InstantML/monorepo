@@ -40,12 +40,15 @@ export type MetricPoint = {
   step: number;
   value: number;
   created_at: string;
+  smoothedValue?: number;
 };
 
 export type MetricSeries = {
   id: string;
   name: string;
+  identifier?: string;
   group: string;
+  smoothed?: boolean;
   points: MetricPoint[];
 };
 
@@ -91,8 +94,16 @@ export type LoggedObjectRow = {
 export type HoverPoint = {
   runId: string;
   runName: string;
+  identifier?: string;
   group?: string;
-  point: MetricPoint & { x: number; y: number; xValue: number };
+  point: MetricPoint & {
+    x: number;
+    y: number;
+    xValue: number;
+    smoothedValue?: number;
+    ySmoothed?: number;
+    displayY?: number;
+  };
   distance: number;
 } | null;
 

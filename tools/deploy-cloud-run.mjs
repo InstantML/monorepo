@@ -13,13 +13,17 @@ if (cli.help) {
   npm run deploy:cloud-run:single
   npm run deploy:cloud-run:multi
   npm run deploy:cloud-run:staging
-  node tools/deploy-cloud-run.mjs --topology=single|split [--environment=prod|staging] [--public-router] [--data-instances=N]
+  node tools/deploy-cloud-run.mjs --topology=single|split [--environment=prod|staging] [--public-router] [--data-instances=N] [--from-secret-manager]
 
 Environment:
   GCP_PROJECT                         Google Cloud project id.
   GCP_REGION                          Deployment region. Default: us-central1.
   INSTANTML_DEPLOY_ENV                 prod or staging. Default: prod.
   INSTANTML_CLOUD_RUN_TOPOLOGY         single or split. Default: split.
+  INSTANTML_FROM_SECRET_MANAGER=1      Pull deploy-time secrets from GCP Secret Manager
+                                       instead of .env. Auto-enabled when CI=true and
+                                       GITHUB_ACTIONS=true. Use --from-secret-manager
+                                       on the CLI for the same effect locally.
   INSTANTML_CLOUD_RUN_SERVICE          Combined service name. Default: instantml-rust-api.
   INSTANTML_CLOUD_RUN_SCALING          auto or manual for combined service. Default: manual in prod, auto in staging.
   INSTANTML_CLOUD_RUN_INSTANCES        Manual combined service instances. Default: 1.
@@ -88,6 +92,7 @@ const webEnvFile = path.join(repo, "apps", "web", ".env.local");
 const fileEnv = loadDotenv(envFile);
 const webFileEnv = loadDotenv(webEnvFile);
 const env = { ...fileEnv, ...process.env };
+const fromSecretManager = resolveFromSecretManager();
 
 const configuredProject = spawnSync("gcloud", ["config", "get-value", "project"], {
   cwd: repo,
@@ -127,7 +132,7 @@ const updateClickHouseServiceAllowlist = clickhouseProvisioner === "cloud-servic
   && value("INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES") !== "none";
 const updateClickHouseKeyAllowlist = clickhouseProvisioner === "cloud-service"
   && value("INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS") !== "none";
-const writeLocalEnv = boolValue("INSTANTML_WRITE_LOCAL_FRONTEND_ENV", true);
+const writeLocalEnv = boolValue("INSTANTML_WRITE_LOCAL_FRONTEND_ENV", !fromSecretManager);
 const publicRouterEnabled = topology === "split"
   && (cli.publicRouter ?? boolValue("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER", false));
 const publicRouterName = slug(value("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_NAME") || `${servicePrefix}-public-api`);
@@ -135,6 +140,9 @@ const secretNamePrefix = value("INSTANTML_CLOUD_RUN_SECRET_PREFIX")
   || (deploymentEnv === "prod" ? "" : `${servicePrefix}-`);
 const allowUnsafeDataMultiWriter = boolValue("INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER", false);
 const allowUnsafeControlMultiInstance = boolValue("INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE", false);
+if (fromSecretManager) {
+  hydrateEnvFromSecretManager();
+}
 const deploymentPlan = deploymentTargets();
 validateDeploymentTargets(deploymentPlan);
 validatePublicRouterConfig();
@@ -231,7 +239,14 @@ console.log(JSON.stringify({
 }, null, 2));
 
 function parseArgs(args) {
-  const output = { help: false, topology: "", environment: "", publicRouter: undefined, dataInstances: "" };
+  const output = {
+    help: false,
+    topology: "",
+    environment: "",
+    publicRouter: undefined,
+    dataInstances: "",
+    fromSecretManager: undefined,
+  };
   for (const arg of args) {
     if (arg === "--help" || arg === "-h") output.help = true;
     if (arg.startsWith("--topology=")) output.topology = arg.slice("--topology=".length);
@@ -239,6 +254,8 @@ function parseArgs(args) {
     if (arg === "--public-router") output.publicRouter = true;
     if (arg === "--no-public-router") output.publicRouter = false;
     if (arg.startsWith("--data-instances=")) output.dataInstances = arg.slice("--data-instances=".length);
+    if (arg === "--from-secret-manager") output.fromSecretManager = true;
+    if (arg === "--no-from-secret-manager") output.fromSecretManager = false;
   }
   return output;
 }
@@ -714,8 +731,8 @@ function ensureStaticEgress() {
   return ip;
 }
 
-function syncSecrets(serviceAccountEmail) {
-  const specs = [
+function deploySecretSpecs() {
+  return [
     ["CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT", "instantml-clickhouse-user-data-endpoint", true],
     ["CLICKHOUSE_INSTANTML_USER_DATA_USERNAME", "instantml-clickhouse-user-data-username", true],
     ["CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD", "instantml-clickhouse-user-data-password", true],
@@ -731,6 +748,62 @@ function syncSecrets(serviceAccountEmail) {
     ["STRIPE_WEBHOOK_SECRET", "instantml-stripe-webhook-secret", false],
     ["RESEND_API_KEY", "instantml-resend-api-key", false],
   ];
+}
+
+function nonSecretValidationEnvSpecs() {
+  // Public/non-secret env that the deploy validators still need, but which the
+  // workflow stores in Secret Manager so CI does not require any `vars` context
+  // or .env. NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is included here so the Clerk
+  // consistency validator can run from a clean CI checkout.
+  return [
+    ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "instantml-clerk-publishable-key", false],
+  ];
+}
+
+function resolveFromSecretManager() {
+  if (typeof cli.fromSecretManager === "boolean") return cli.fromSecretManager;
+  if (boolValue("INSTANTML_FROM_SECRET_MANAGER", false)) return true;
+  if (boolValue("CI", false) && boolValue("GITHUB_ACTIONS", false)) return true;
+  return false;
+}
+
+function hydrateEnvFromSecretManager() {
+  console.log("Pulling deploy-time secrets from Google Secret Manager (CI mode).");
+  const specs = [...deploySecretSpecs(), ...nonSecretValidationEnvSpecs()];
+  const missingRequired = [];
+  for (const [envName, secretName, required] of specs) {
+    const scopedSecretName = scopedSecret(secretName);
+    // Process env wins so an operator can still override a single secret for a
+    // controlled rotation deploy without touching Secret Manager.
+    if (envSourceValue(process.env, envName)) continue;
+    const accessed = captureSecretManagerValue(scopedSecretName);
+    if (accessed === null) {
+      if (required) missingRequired.push(`${envName} (gcloud secret ${scopedSecretName})`);
+      continue;
+    }
+    env[envName] = accessed;
+    process.env[envName] = accessed;
+  }
+  if (missingRequired.length) {
+    fail(
+      `Missing required Secret Manager secrets in --from-secret-manager mode: ${missingRequired.join(", ")}. `
+      + "Populate them with `gcloud secrets versions add` before retrying the deploy.",
+    );
+  }
+}
+
+function captureSecretManagerValue(secretName) {
+  const result = spawnSync(
+    "gcloud",
+    ["--quiet", "--project", project, "secrets", "versions", "access", "latest", `--secret=${secretName}`],
+    { cwd: repo, encoding: "utf8" },
+  );
+  if (result.status !== 0) return null;
+  return result.stdout;
+}
+
+function syncSecrets(serviceAccountEmail) {
+  const specs = deploySecretSpecs();
   const mappings = [];
   for (const [envName, secretName, required] of specs) {
     const secretValue = secretRuntimeValue(envName);
@@ -742,7 +815,14 @@ function syncSecrets(serviceAccountEmail) {
     if (!quiet(["secrets", "describe", scopedSecretName])) {
       run(["secrets", "create", scopedSecretName, "--replication-policy", "automatic"]);
     }
-    run(["secrets", "versions", "add", scopedSecretName, "--data-file", "-"], { input: secretValue });
+    if (fromSecretManager) {
+      // CI hydrated this value from Secret Manager already, so the live value
+      // is authoritative. Avoid a no-op `versions add` that would create a
+      // duplicate enabled version every deploy and inflate the version count.
+      console.log(`Skipping versions add for ${scopedSecretName} (--from-secret-manager).`);
+    } else {
+      run(["secrets", "versions", "add", scopedSecretName, "--data-file", "-"], { input: secretValue });
+    }
     run([
       "secrets", "add-iam-policy-binding", scopedSecretName,
       "--member", `serviceAccount:${serviceAccountEmail}`,
