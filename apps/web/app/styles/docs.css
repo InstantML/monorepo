@@ -431,10 +431,11 @@
   min-width: 0;
   width: 100%;
   max-width: 880px;
-  /* Center the article column horizontally within the available space
-   * to its right of the sidebar — keeps the content from hugging the
-   * left edge on wide screens. */
-  margin-inline: auto;
+  /* Left-anchored within its column — matches Stripe's docs. The shell's
+   * grid gap already provides the gap from the sidebar; auto-centering
+   * here just pushes content unnecessarily far right on wide viewports. */
+  margin-inline-start: 0;
+  margin-inline-end: auto;
   padding-top: 56px;
 }
 
