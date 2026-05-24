@@ -14,10 +14,7 @@
   gap: 24px;
   border-bottom: 1px solid rgba(23, 33, 27, 0.1);
   background: rgba(247, 248, 245, 0.94);
-  /* Background + bottom border span edge-to-edge; content stays
-   * aligned with the 1240px .docs-route-shell column on wide
-   * viewports via the calculated padding below. */
-  padding: 14px max(clamp(18px, 4vw, 48px), calc((100vw - 1240px) / 2));
+  padding: 14px clamp(18px, 4vw, 48px);
   backdrop-filter: blur(18px);
 }
 
@@ -69,10 +66,12 @@
 
 .docs-route-shell {
   display: grid;
-  grid-template-columns: clamp(248px, 18vw, 320px) minmax(0, 1fr);
-  gap: clamp(28px, 3vw, 56px);
-  margin: 0;
-  padding: 32px clamp(20px, 3vw, 56px) 72px clamp(16px, 2vw, 28px);
+  grid-template-columns: clamp(220px, 16vw, 264px) minmax(0, 1fr);
+  gap: clamp(32px, 4vw, 72px);
+  margin: 0 auto;
+  /* More generous top breathing room around the H1 — Stripe-style. */
+  padding: 56px clamp(24px, 4vw, 64px) 96px clamp(20px, 3vw, 32px);
+  max-width: 1360px;
 }
 
 .docs-route-sidebar {
@@ -82,32 +81,10 @@
   max-height: calc(100vh - 104px);
   overflow: auto;
   padding-right: 10px;
-  /* Firefox */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(23, 33, 27, 0.18) transparent;
-}
-/* WebKit / Blink — subtle thumb against the warm-grey docs background. */
-.docs-route-sidebar::-webkit-scrollbar {
-  width: 6px;
-}
-.docs-route-sidebar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.docs-route-sidebar::-webkit-scrollbar-thumb {
-  background: rgba(23, 33, 27, 0.18);
-  border-radius: 3px;
-  transition: background 120ms ease;
-}
-.docs-route-sidebar:hover::-webkit-scrollbar-thumb,
-.docs-route-sidebar:focus-within::-webkit-scrollbar-thumb {
-  background: rgba(23, 33, 27, 0.32);
-}
-.docs-route-sidebar::-webkit-scrollbar-thumb:hover {
-  background: rgba(23, 33, 27, 0.48);
 }
 
 .docs-route-sidebar section + section {
-  margin-top: 26px;
+  margin-top: 36px;
 }
 
 .docs-route-sidebar h2,
@@ -206,17 +183,18 @@
   max-width: 760px;
   margin: 0;
   color: #111b16;
-  font-size: clamp(34px, 5vw, 58px);
-  line-height: 0.98;
-  letter-spacing: 0;
+  /* Restrained heading like Stripe — never balloons on wide screens. */
+  font-size: clamp(30px, 3.6vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
 }
 
 .docs-route-description {
   max-width: 720px;
-  margin: 18px 0 34px;
+  margin: 14px 0 48px;
   color: #53635c;
-  font-size: 18px;
-  line-height: 1.65;
+  font-size: 17px;
+  line-height: 1.6;
 }
 
 .docs-route-body {
@@ -227,14 +205,15 @@
 .docs-route-body h2,
 .docs-route-body h3,
 .docs-route-body h4 {
-  margin: 26px 0 0;
+  margin: 40px 0 0;
   scroll-margin-top: 92px;
 }
 
 .docs-route-body h2 {
   color: #15201a;
-  font-size: 28px;
-  line-height: 1.16;
+  font-size: 24px;
+  line-height: 1.2;
+  margin-top: 56px;
 }
 
 .docs-route-body h3 {
@@ -353,25 +332,30 @@
 
 .docs-route-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  /* Stripe-style 3-up on wide; gracefully collapses to 2/1 narrower. */
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
 }
 
 .docs-route-card {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
-  gap: 12px;
-  min-height: 104px;
-  border: 1px solid rgba(21, 32, 26, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.76);
-  padding: 16px;
+  gap: 14px;
+  align-content: start;
+  min-height: 112px;
+  border: 1px solid rgba(21, 32, 26, 0.1);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 18px 18px 20px;
   text-decoration: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 
 .docs-route-card:hover {
-  border-color: rgba(31, 184, 119, 0.34);
-  box-shadow: 0 16px 36px rgba(31, 184, 119, 0.1);
+  border-color: rgba(31, 184, 119, 0.42);
+  box-shadow: 0 12px 28px rgba(21, 32, 26, 0.06);
+  transform: translateY(-1px);
 }
 
 .docs-route-card-icon {
