@@ -34,8 +34,8 @@ flowchart LR
   edge["Public HTTPS API URL"]
   control["Cloud Run control service"]
   data["Cloud Run data service"]
-  userdata[("User Data ClickHouse")]
-  tenant[("Tenant ClickHouse")]
+  userdata[("User Data ClickHouse on Google Cloud")]
+  tenant[("Tenant databases on Google Cloud ClickHouse")]
 
   browser --> edge
   sdk --> edge
@@ -50,6 +50,11 @@ flowchart LR
 Path-based routing is enough for a single data cell. Many cells require a
 discovery step or app-level router because a plain load balancer cannot inspect
 an org hidden inside a bearer token before authentication.
+
+The current InstantML-hosted data store is self-hosted ClickHouse on Google
+Cloud. Control and data services use routed databases on that deployment for
+InstantML-owned workspaces, while Premium customer-owned ClickHouse remains a
+separate storage option.
 
 ## Readiness
 

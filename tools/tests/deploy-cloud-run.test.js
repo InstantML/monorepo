@@ -23,6 +23,7 @@ test("deploy helper rejects unsafe data replicas before cloud mutation", () => {
 test("deploy helper rejects unsafe control scaling before cloud mutation", () => {
   const result = runDeploy(["--topology=split"], {
     INSTANTML_CLOUD_RUN_CONTROL_SCALING: "auto",
+    INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES: "2",
   });
 
   assert.equal(result.status, 1);
@@ -219,15 +220,40 @@ test("deploy helper scopes provider secrets to the service planes that need them
   assert.match(source, /!mapping\.startsWith\("RESEND_API_KEY="/);
 });
 
-test("deploy helper defaults services to one warm manual instance and probes readiness", () => {
+test("deploy helper keeps prod warm and staging bounded to one auto instance", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
-  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN", "manual", "1"\)/);
-  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN_CONTROL", "manual", "1"\)/);
-  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN_DATA", "manual", "1"/);
+  assert.match(source, /const stagingScaleToZero = deploymentEnv === "staging"/);
+  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN", stagingScaleToZero \? "auto" : "manual", "1"\)/);
+  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN_CONTROL", stagingScaleToZero \? "auto" : "manual", "1"\)/);
+  assert.match(source, /scalingFor\("INSTANTML_CLOUD_RUN_DATA", stagingScaleToZero \? "auto" : "manual", "1"/);
+  assert.match(source, /function isSingleInstanceBounded/);
+  assert.match(source, /--max-instances/);
+  assert.match(source, /--min-instances/);
   assert.match(source, /function appendStartupProbeArgs/);
   assert.match(source, /httpGet\.path=\/readyz/);
   assert.match(source, /--startup-probe/);
+});
+
+test("deploy helper has cost-aware static egress knobs", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /INSTANTML_CLOUD_RUN_VPC_EGRESS/);
+  assert.match(source, /function normalizeVpcEgress/);
+  assert.match(source, /private-ranges-only/);
+  assert.match(source, /const enableNatLogging = boolValue\("INSTANTML_CLOUD_RUN_NAT_LOGGING", false\)/);
+  assert.match(source, /if \(enableNatLogging\) args\.push\("--enable-logging", "--log-filter", "ERRORS_ONLY"\)/);
+  assert.match(source, /"--vpc-egress", vpcEgress/);
+});
+
+test("deploy helper defaults hosted ClickHouse provisioning to database mode", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /function normalizeClickHouseProvisioner/);
+  assert.match(source, /value\("INSTANTML_CLICKHOUSE_PROVISIONER"\) \|\| "database"/);
+  assert.match(source, /INSTANTML_CLICKHOUSE_PROVISIONER: clickhouseProvisioner/);
+  assert.match(source, /clickhouseProvisioner === "cloud-service"/);
+  assert.doesNotMatch(source, /INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service"/);
 });
 
 test("deploy helper keeps public router control paths and backend timeout complete", () => {

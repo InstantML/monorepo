@@ -4,6 +4,11 @@ Date: 2026-05-16
 
 Result: Failed current budgets
 
+Historical note: this result was collected before the hosted migration to
+InstantML-owned self-hosted ClickHouse on Google Cloud. Current hosted
+benchmarks should describe the path as Cloud Run -> self-hosted GCP ClickHouse
+unless intentionally testing a legacy provider-backed route.
+
 ## Context
 
 - Branch: `codex/multi-instance-architecture`
@@ -14,7 +19,7 @@ Result: Failed current budgets
 - Node: `v21.7.1`
 - Client platform: `darwin arm64`
 
-This benchmark measures the deployed hosted request path: benchmark client -> Cloud Run data service -> ClickHouse Cloud tenant. It does not start a local Rust or ClickHouse service.
+This historical benchmark measured the deployed hosted request path at that time: benchmark client -> Cloud Run data service -> ClickHouse Cloud tenant. It did not start a local Rust or ClickHouse service.
 
 ## Dataset
 
@@ -92,4 +97,3 @@ All run summary, search, status filter, selected metric sort, org overview, sing
 - The InstantML org was recreated for `instantml.ai@gmail.com`, a new API key was minted, the accidentally printed key was revoked, and the replacement key was stored only in local ignored env/temp storage.
 - The 100,000-run hosted-scale seed used the new ClickHouse tenant service and verified 600,000,000 metric points before this benchmark ran.
 - The data-plane Cloud Run service was restarted after direct ClickHouse seeding so its in-memory tenant projection replayed the new operational records.
-

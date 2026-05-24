@@ -21,15 +21,21 @@ Environment:
   INSTANTML_DEPLOY_ENV                 prod or staging. Default: prod.
   INSTANTML_CLOUD_RUN_TOPOLOGY         single or split. Default: split.
   INSTANTML_CLOUD_RUN_SERVICE          Combined service name. Default: instantml-rust-api.
-  INSTANTML_CLOUD_RUN_SCALING          auto or manual for combined service. Default: manual.
+  INSTANTML_CLOUD_RUN_SCALING          auto or manual for combined service. Default: manual in prod, auto in staging.
   INSTANTML_CLOUD_RUN_INSTANCES        Manual combined service instances. Default: 1.
+  INSTANTML_CLOUD_RUN_MIN_INSTANCES    Auto-scaling combined service min instances. Default: 0.
+  INSTANTML_CLOUD_RUN_MAX_INSTANCES    Auto-scaling combined service max instances. Default: 1.
   INSTANTML_CLOUD_RUN_SERVICE_PREFIX   Split service name prefix. Default: instantml.
   INSTANTML_CLOUD_RUN_CONTROL_SERVICE  Split control service name. Default: instantml-control.
   INSTANTML_CLOUD_RUN_DATA_SERVICE     Split data service name. Default: instantml-data-<region>-a.
-  INSTANTML_CLOUD_RUN_CONTROL_SCALING  auto or manual. Default: manual.
-  INSTANTML_CLOUD_RUN_DATA_SCALING     auto or manual. Default: manual.
+  INSTANTML_CLOUD_RUN_CONTROL_SCALING  auto or manual. Default: manual in prod, auto in staging.
+  INSTANTML_CLOUD_RUN_DATA_SCALING     auto or manual. Default: manual in prod, auto in staging.
   INSTANTML_CLOUD_RUN_CONTROL_INSTANCES Manual control instances. Default: 1.
   INSTANTML_CLOUD_RUN_DATA_INSTANCES   Manual data instances. Default: 1.
+  INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES Auto-scaling control min instances. Default: 0.
+  INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES Auto-scaling control max instances. Default: 1.
+  INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES Auto-scaling data min instances. Default: 0.
+  INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES Auto-scaling data max instances. Default: 1.
   INSTANTML_CLOUD_RUN_STARTUP_PROBE    Cloud Run startup probe. Default: HTTP /readyz on port 8000.
   INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1  Permit data scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1  Permit control scaling above one instance for controlled tests only.
@@ -63,6 +69,9 @@ Environment:
   INSTANTML_EMAIL_FROM                   Verified invitation sender address. Required with Resend.
   INSTANTML_EMAIL_REPLY_TO               Optional invitation reply-to address.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
+  INSTANTML_CLOUD_RUN_VPC_EGRESS       all-traffic or private-ranges-only when static egress is enabled. Default: all-traffic.
+  INSTANTML_CLOUD_RUN_NAT_LOGGING=1    Enable Cloud NAT logging for newly created NATs. Default: disabled.
+  INSTANTML_CLICKHOUSE_PROVISIONER      database or cloud-service. Default: database.
   INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none  Skip service access-list updates.
   INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none      Skip Cloud API-key access-list updates.
 
@@ -109,8 +118,15 @@ const imageTag = value("INSTANTML_IMAGE_TAG") || gitShortSha() || timestampTag()
 const imageName = value("INSTANTML_IMAGE_NAME") || (topology === "split" ? "instantml-rust-server" : service);
 const image = `${region}-docker.pkg.dev/${project}/${repository}/${imageName}:${imageTag}`;
 const useStaticEgress = boolValue("INSTANTML_CLOUD_RUN_STATIC_EGRESS", true);
-const updateClickHouseServiceAllowlist = value("INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES") !== "none";
-const updateClickHouseKeyAllowlist = value("INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS") !== "none";
+const enableNatLogging = boolValue("INSTANTML_CLOUD_RUN_NAT_LOGGING", false);
+const vpcEgress = normalizeVpcEgress(value("INSTANTML_CLOUD_RUN_VPC_EGRESS") || "all-traffic");
+const clickhouseProvisioner = normalizeClickHouseProvisioner(
+  value("INSTANTML_CLICKHOUSE_PROVISIONER") || "database",
+);
+const updateClickHouseServiceAllowlist = clickhouseProvisioner === "cloud-service"
+  && value("INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES") !== "none";
+const updateClickHouseKeyAllowlist = clickhouseProvisioner === "cloud-service"
+  && value("INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS") !== "none";
 const writeLocalEnv = boolValue("INSTANTML_WRITE_LOCAL_FRONTEND_ENV", true);
 const publicRouterEnabled = topology === "split"
   && (cli.publicRouter ?? boolValue("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER", false));
@@ -198,6 +214,8 @@ console.log(JSON.stringify({
   image,
   service_account: serviceAccountEmail,
   static_egress_ip: staticEgressIp || null,
+  vpc_egress: staticEgressIp ? vpcEgress : null,
+  nat_logging_enabled: useStaticEgress ? enableNatLogging : false,
   deployments: deployments.map(({ service, servicePlane, scaling, url, cellId }) => ({
     service,
     service_plane: servicePlane,
@@ -230,6 +248,21 @@ function normalizeDeploymentEnv(raw) {
   if (["prod", "production"].includes(value)) return "prod";
   if (["stage", "staging"].includes(value)) return "staging";
   fail("INSTANTML_DEPLOY_ENV must be prod or staging.");
+}
+
+function normalizeClickHouseProvisioner(raw) {
+  const value = raw.trim().replaceAll("_", "-").toLowerCase();
+  if (value === "database" || value === "cloud-service") return value;
+  fail("INSTANTML_CLICKHOUSE_PROVISIONER must be database or cloud-service.");
+}
+
+function normalizeVpcEgress(raw) {
+  const value = raw.trim().replaceAll("_", "-").toLowerCase();
+  if (value === "all" || value === "all-traffic") return "all-traffic";
+  if (value === "private" || value === "private-ranges" || value === "private-ranges-only") {
+    return "private-ranges-only";
+  }
+  fail("INSTANTML_CLOUD_RUN_VPC_EGRESS must be all-traffic or private-ranges-only.");
 }
 
 function value(key) {
@@ -444,24 +477,25 @@ function normalizeTopology(raw) {
 }
 
 function deploymentTargets() {
+  const stagingScaleToZero = deploymentEnv === "staging";
   if (topology === "single") {
     return [{
       service,
       servicePlane: "combined",
-      scaling: scalingFor("INSTANTML_CLOUD_RUN", "manual", "1"),
+      scaling: scalingFor("INSTANTML_CLOUD_RUN", stagingScaleToZero ? "auto" : "manual", "1"),
     }];
   }
   return [
     {
       service: controlService,
       servicePlane: "control",
-      scaling: scalingFor("INSTANTML_CLOUD_RUN_CONTROL", "manual", "1"),
+      scaling: scalingFor("INSTANTML_CLOUD_RUN_CONTROL", stagingScaleToZero ? "auto" : "manual", "1"),
     },
     {
       service: dataService,
       servicePlane: "data",
       cellId: dataCellId,
-      scaling: scalingFor("INSTANTML_CLOUD_RUN_DATA", "manual", "1", { manualInstances: cli.dataInstances || "1" }),
+      scaling: scalingFor("INSTANTML_CLOUD_RUN_DATA", stagingScaleToZero ? "auto" : "manual", "1", { manualInstances: cli.dataInstances || "1" }),
     },
   ].map((target) => ({
     ...target,
@@ -477,17 +511,19 @@ function sessionAffinityFor(target) {
 
 function validateDeploymentTargets(targets) {
   for (const target of targets) {
-    if (target.servicePlane === "control" && !allowUnsafeControlMultiInstance && !isSingleManualInstance(target)) {
-      fail(`${target.service} requested control scaling ${JSON.stringify(target.scaling)}, but control-plane auth/org/API-key projections are single-writer until durable refresh/uniqueness gates land. Use INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1 only for controlled tests; do not deploy it for production traffic.`);
+    if (target.servicePlane === "control" && !allowUnsafeControlMultiInstance && !isSingleInstanceBounded(target)) {
+      fail(`${target.service} requested control scaling ${JSON.stringify(target.scaling)}, but control-plane auth/org/API-key projections are single-writer until durable refresh/uniqueness gates land. Keep scaling bounded to one instance, or use INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1 only for controlled tests; do not deploy it for production traffic.`);
     }
-    if (target.servicePlane === "data" && !allowUnsafeDataMultiWriter && !isSingleManualInstance(target)) {
-      fail(`${target.service} requested data scaling ${JSON.stringify(target.scaling)}, but shared data cells are single-writer until durable multi-writer gates land. Use INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1 only for controlled tests; do not deploy it for production traffic.`);
+    if (target.servicePlane === "data" && !allowUnsafeDataMultiWriter && !isSingleInstanceBounded(target)) {
+      fail(`${target.service} requested data scaling ${JSON.stringify(target.scaling)}, but shared data cells are single-writer until durable multi-writer gates land. Keep scaling bounded to one instance, or use INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1 only for controlled tests; do not deploy it for production traffic.`);
     }
   }
 }
 
-function isSingleManualInstance(target) {
-  return target.scaling.mode === "manual" && String(target.scaling.instances) === "1";
+function isSingleInstanceBounded(target) {
+  if (target.scaling.mode === "manual") return String(target.scaling.instances) === "1";
+  if (target.scaling.mode === "auto") return String(target.scaling.max) === "1";
+  return false;
 }
 
 function validatePublicRouterConfig() {
@@ -665,14 +701,15 @@ function ensureStaticEgress() {
     run(["compute", "routers", "create", routerName, "--network", network, "--region", region]);
   }
   if (!quiet(["compute", "routers", "nats", "describe", natName, "--router", routerName, "--region", region])) {
-    run([
+    const args = [
       "compute", "routers", "nats", "create", natName,
       "--router", routerName,
       "--region", region,
       "--nat-external-ip-pool", addressName,
       "--nat-custom-subnet-ip-ranges", subnet,
-      "--enable-logging",
-    ]);
+    ];
+    if (enableNatLogging) args.push("--enable-logging", "--log-filter", "ERRORS_ONLY");
+    run(args);
   }
   return ip;
 }
@@ -744,6 +781,7 @@ function userDataEndpointForDeployment(raw) {
 }
 
 function buildRuntimeEnv(staticEgressIp, activeAccount) {
+  const publicStaticEgressIp = staticEgressIp && vpcEgress === "all-traffic" ? staticEgressIp : "";
   const origins = value("INSTANTML_ALLOWED_FRONTEND_ORIGINS")
     || "http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai";
   const emailProvider = emailProviderForDeployment();
@@ -763,16 +801,9 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_DEV_AUTH_ENABLED: "false",
     INSTANTML_LOG_FORMAT: "json",
     INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
-    INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service",
-    INSTANTML_CLICKHOUSE_CLOUD_PROVIDER: value("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER") || "gcp",
-    INSTANTML_CLICKHOUSE_CLOUD_REGION: value("INSTANTML_CLICKHOUSE_CLOUD_REGION") || region,
-    INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB: value("INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB") || "12",
-    INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB: value("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB") || "12",
-    INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS: value("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS") || "1",
-    INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS: value("INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS") || "600",
-    INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS: "true",
-    INSTANTML_BYOC_EGRESS_CIDRS: staticEgressIp
-      ? `${staticEgressIp}/32`
+    INSTANTML_CLICKHOUSE_PROVISIONER: clickhouseProvisioner,
+    INSTANTML_BYOC_EGRESS_CIDRS: publicStaticEgressIp
+      ? `${publicStaticEgressIp}/32`
       : value("INSTANTML_BYOC_EGRESS_CIDRS") || value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST"),
     INSTANTML_BYOC_EGRESS_SET_VERSION: value("INSTANTML_BYOC_EGRESS_SET_VERSION") || `${deploymentEnv}-${region}-${imageTag}`,
     INSTANTML_BYOC_SECRET_BACKEND: byocSecretBackendForDeployment(),
@@ -807,11 +838,20 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_BILLING_GRACE_DAYS: value("INSTANTML_BILLING_GRACE_DAYS"),
     CLERK_API_BASE: clerkApiBase,
     CLERK_JWT_ISSUER: clerkJwtIssuer,
-    CLICKHOUSE_CLOUD_ENDPOINT: value("CLICKHOUSE_CLOUD_ENDPOINT") || "https://api.clickhouse.cloud",
   };
-  if (staticEgressIp) {
-    output.INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST = `${staticEgressIp}/32`;
-  } else if (value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST")) {
+  if (clickhouseProvisioner === "cloud-service") {
+    output.INSTANTML_CLICKHOUSE_CLOUD_PROVIDER = value("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER") || "gcp";
+    output.INSTANTML_CLICKHOUSE_CLOUD_REGION = value("INSTANTML_CLICKHOUSE_CLOUD_REGION") || region;
+    output.INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB = value("INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB") || "12";
+    output.INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB = value("INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB") || "12";
+    output.INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS = value("INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS") || "1";
+    output.INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS = value("INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS") || "600";
+    output.INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS = "true";
+    output.CLICKHOUSE_CLOUD_ENDPOINT = value("CLICKHOUSE_CLOUD_ENDPOINT") || "https://api.clickhouse.cloud";
+  }
+  if (clickhouseProvisioner === "cloud-service" && publicStaticEgressIp) {
+    output.INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST = `${publicStaticEgressIp}/32`;
+  } else if (clickhouseProvisioner === "cloud-service" && value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST")) {
     output.INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST = value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST");
   }
   return Object.fromEntries(Object.entries(output).filter(([, val]) => val !== ""));
@@ -897,7 +937,7 @@ function deployService(target, serviceAccountEmail, staticEgressIp, envVars, sec
     args.push("--set-secrets", secretEnv.join(","));
   }
   if (staticEgressIp) {
-    args.push("--network", network, "--subnet", subnet, "--vpc-egress", "all-traffic");
+    args.push("--network", network, "--subnet", subnet, "--vpc-egress", vpcEgress);
   }
   try {
     run(args, { timeout: 20 * 60 * 1000 });
@@ -944,6 +984,10 @@ function verifyCloudRunScaling(target, description) {
   if (String(scaling.maxInstances) !== String(target.scaling.max)) {
     fail(`${target.service} max instances verification failed; expected ${target.scaling.max}, got ${scaling.maxInstances ?? "unknown"}.`);
   }
+  const actualMinInstances = scaling.minInstances ?? "0";
+  if (String(actualMinInstances) !== String(target.scaling.min)) {
+    fail(`${target.service} min instances verification failed; expected ${target.scaling.min}, got ${actualMinInstances}.`);
+  }
 }
 
 function verifyCloudRunSessionAffinity(target, description) {
@@ -972,6 +1016,9 @@ function serviceScaling(description) {
     mode: String(mode).toLowerCase(),
     manualInstances: annotations["run.googleapis.com/manualInstanceCount"]
       || description?.scaling?.manualInstanceCount,
+    minInstances: annotations["autoscaling.knative.dev/minScale"]
+      ?? description?.template?.scaling?.minInstanceCount
+      ?? description?.scaling?.minInstanceCount,
     maxInstances: annotations["autoscaling.knative.dev/maxScale"]
       ?? description?.template?.scaling?.maxInstanceCount
       ?? description?.scaling?.maxInstanceCount,

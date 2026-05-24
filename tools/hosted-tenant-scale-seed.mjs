@@ -10,7 +10,7 @@ loadDotenv(path.join(repo, ".env"));
 const allow = process.env.INSTANTML_HOSTED_SCALE_SEED_ALLOW === "1";
 if (!allow) {
   throw new Error(
-    "Hosted scale seed writes to live ClickHouse Cloud. Set INSTANTML_HOSTED_SCALE_SEED_ALLOW=1 to continue.",
+    "Hosted scale seed writes to live hosted ClickHouse. Set INSTANTML_HOSTED_SCALE_SEED_ALLOW=1 to continue.",
   );
 }
 
@@ -322,7 +322,7 @@ async function queryJsonRows(sql, url = tenantUrl) {
 
 function tenantUrlFromRoute(route) {
   if (!route.endpoint) throw new Error("Tenant route is missing endpoint.");
-  const url = new URL(route.endpoint);
+  const url = new URL(process.env.INSTANTML_HOSTED_SCALE_CLICKHOUSE_ENDPOINT_OVERRIDE || route.endpoint);
   url.username = route.username || "default";
   url.password = route.password_ciphertext || tenantBasePassword(route);
   url.pathname = `/${route.database || "default"}`;

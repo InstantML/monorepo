@@ -108,20 +108,44 @@ npm ci
 npx playwright install chromium
 ```
 
-Start the primary Rust/ClickHouse API from the repo root:
+Default frontend development runs the Next app on localhost and points its
+server-side rewrite proxy at the hosted staging API:
+
+```bash
+INSTANTML_WEB_API_ENV=staging npm run web:dev
+```
+
+Then open `http://127.0.0.1:3000`. Hosted sign-in requires
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as the
+staging backend. Keep both values in `apps/web/.env.local` if you prefer not to
+pass the env var every time:
+
+```text
+INSTANTML_WEB_API_ENV=staging
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<staging Clerk publishable key>
+```
+
+`INSTANTML_WEB_API_ENV=staging` routes all same-origin API rewrites through
+`https://staging.api.instantml.ai` and intentionally overrides repo-local API
+base values unless `INSTANTML_WEB_EXPLICIT_API_BASES=1` is set. Do not set
+`INSTANTML_API_BASE` for this default staging-router workflow. Restart
+`next dev` after changing rewrite env.
+
+When backend work needs disposable local API and ClickHouse state, start the
+primary Rust/ClickHouse API from the repo root:
 
 ```bash
 npm run dev:api
 ```
 
-Start the Next app in another terminal:
+Start the Next app in another terminal against that local API:
 
 ```bash
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
 ```
 
-Then open `http://127.0.0.1:3000`, sign up with Clerk when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` are configured, or use the labeled local dev Google-style flow in local mode. Choose a Free/Pro/Premium plan, choose hosted storage or Premium BYOC ClickHouse, optionally invite included seats, create the copy-once SDK key, and enter the dashboard. BYOC signups must first validate the customer ClickHouse endpoint from onboarding; the API key button stays blocked until the Rust data-plane route is ready.
+Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create the copy-once SDK key, and enter the dashboard. Choose a Free/Pro/Premium plan, choose hosted storage or Premium BYOC ClickHouse, and optionally invite included seats. BYOC signups must first validate the customer ClickHouse endpoint from onboarding; the API key button stays blocked until the Rust data-plane route is ready.
 
 For paid signup and Settings billing controls, configure the Rust API with
 `STRIPE_SECRET_KEY` and optionally `STRIPE_WEBHOOK_SECRET` plus
@@ -137,19 +161,20 @@ Fast development server:
 INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:dev
 ```
 
-Run against the hosted Cloud Run Rust API:
+Use explicit split bases only when you intentionally want the local Next proxy
+to bypass the staging router and call direct Cloud Run services:
 
 ```bash
+INSTANTML_WEB_EXPLICIT_API_BASES=1 \
+INSTANTML_CONTROL_API_BASE=https://instantml-staging-control-<hash>-uc.a.run.app \
+INSTANTML_DATA_API_BASE=https://instantml-staging-data-us-central1-a-<hash>-uc.a.run.app \
+INSTANTML_API_ALLOWED_ORIGINS=https://instantml-staging-control-<hash>-uc.a.run.app,https://instantml-staging-data-us-central1-a-<hash>-uc.a.run.app \
 npm run web:dev
 ```
 
-When no explicit API base is set, the frontend rewrites default to the
-production router `https://api.instantml.ai`. Staging and preview frontend
-builds should set `INSTANTML_WEB_API_ENV=staging` to route all same-origin API
-rewrites through `https://staging.api.instantml.ai`; leave it unset, or set it
-to `prod`, for pushed production builds. This variable intentionally overrides
-repo-local deploy helper API-base values so staging builds do not accidentally
-inherit a prod `.env` target.
+Staging and preview frontend builds should set `INSTANTML_WEB_API_ENV=staging`.
+Production builds should leave it unset, or set it to `prod`, so same-origin
+rewrites target `https://api.instantml.ai`.
 
 The `/docs` route is served by the web app in development, staging, and
 production. It reads the public MDX/OpenAPI source from `apps/docs`, so run
@@ -183,18 +208,21 @@ origins in `INSTANTML_API_ALLOWED_ORIGINS`. This keeps browser calls
 same-origin while the Next proxy talks directly to the intended staging
 services.
 
-After `npm run deploy:cloud-run` succeeds, the deploy helper writes hosted API
-settings into `apps/web/.env.local`. Single-service deploys write
+After `npm run deploy:cloud-run` succeeds, the deploy helper may write hosted
+API settings into `apps/web/.env.local`. Single-service deploys write
 `INSTANTML_API_BASE`; split control/data deploys write
 `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE`. If the managed HTTPS
 public router is created, the helper writes `INSTANTML_API_BASE`,
 `INSTANTML_CONTROL_API_BASE`, and `INSTANTML_DATA_API_BASE` to the same router
-URL. Next loads that file automatically, so local frontend development no longer
-needs a local Rust server.
-If you point at a different hosted API manually, set `INSTANTML_API_BASE` for a
-combined service or set both split bases for control/data before running
+URL. The default local development command still sets
+`INSTANTML_WEB_API_ENV=staging`, which overrides those local API-base values and
+keeps localhost testing on `https://staging.api.instantml.ai`.
+If you intentionally point at a different hosted API manually, set
+`INSTANTML_WEB_EXPLICIT_API_BASES=1`, then set `INSTANTML_API_BASE` for a
+combined service or both split bases for control/data before running
 `web:dev`, `web:build`, or `web:start`. Non-loopback API origins must also be
-listed in `INSTANTML_API_ALLOWED_ORIGINS`.
+listed in `INSTANTML_API_ALLOWED_ORIGINS` unless they are first-party
+`api.instantml.ai` or `staging.api.instantml.ai` router origins.
 
 Invite links use `/invite#t=<token>` so the token is not sent to the server as a
 URL path or query string. The invite page reads the fragment once, removes it

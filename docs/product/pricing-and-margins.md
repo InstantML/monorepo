@@ -6,7 +6,7 @@ Status: Current pricing model and margin plan for the first hosted beta.
 
 ## Purpose
 
-This document explains the Free, Pro, and Premium pricing model, the current cost assumptions, and the operational guardrails needed to keep hosted ClickHouse costs sustainable. It is a planning and product-finance document, not an invoicing implementation.
+This document explains the Free, Pro, and Premium pricing model, the current cost assumptions, and the operational guardrails needed to keep hosted ClickHouse costs sustainable. It is a planning and product-finance document, not an invoicing implementation. The current beta hosted path uses InstantML-owned self-hosted ClickHouse on Google Cloud instead of ClickHouse Cloud for InstantML-owned control and tenant data.
 
 ## Implemented Tiers
 
@@ -54,14 +54,26 @@ Primary hosted costs:
 
 | Cost center | Billing driver | Margin implication |
 | --- | --- | --- |
-| ClickHouse Cloud/User Data and tenant services | Compute, storage, service sizing, uptime, provider region | Dominant COGS. Free must be pooled. Pro should not receive uncapped dedicated services by default. Premium can justify dedicated capacity after payment/review. |
+| Self-hosted GCP ClickHouse/User Data and tenant databases | VM, disk, backups, monitoring, operator time, and future HA capacity | Dominant COGS. Free and Pro should be pooled or database-routed by default. Premium can justify more isolated capacity after payment/review. |
 | Cloud Run API | vCPU-second, GiB-second, requests, min instances | Usually secondary; request-based billing and low min instances keep control/data API overhead small. |
 | Clerk | Plan, retained users, org features, billing add-on if used | Low at beta scale but can become per-MRU/org-admin overhead. |
 | Cloudflare R2 artifact storage | GB-month plus operation classes | Retained local/R2 artifact bytes are counted for usage guardrails now. R2 Standard storage is the cost basis, but invoice truth still needs provider reconciliation. |
 
+Current beta benchmark signal:
+
+- The 2026-05-23 self-hosted GCP ClickHouse benchmark passed the current
+  hosted read budgets on the `normal-runs-50k` showcase project: 50,000 runs
+  and 522,000,000 metric points.
+- Key p95s were `236 ms` for project newest-100, `307 ms` for project
+  metric-best sort, `418 ms` for project overview, and `224 ms` for a
+  single-run chart read.
+- This supports self-hosted GCP ClickHouse as the beta path forward for
+  InstantML-owned hosted storage. Margin planning should still reserve budget
+  for backups, monitoring, disk growth, operator time, and a later HA posture.
+
 External pricing facts to re-check before launch:
 
-- ClickHouse Cloud separates compute and storage, meters key usage drivers, supports autoscaling, and can scale unused services down to zero.
+- Self-hosted GCP ClickHouse trades provider autoscaling for a lower, more predictable beta cost basis. Re-check actual Google Cloud VM, disk, backup, and operations costs before launch.
 - Cloud Run request-based services in `us-central1` list active CPU and memory rates, request charges, and a monthly free tier.
 - Cloudflare R2 Standard lists `$0.015/GB-month`, Class A and B operation charges, and no egress bandwidth charges.
 - Clerk lists a free Hobby plan, paid Pro/Business plans, B2B org features, and billing add-on charges if Clerk Billing is used.
@@ -73,7 +85,6 @@ billable truth until reconciliation is implemented.
 
 Sources:
 
-- [ClickHouse Cloud pricing](https://clickhouse.com/pricing)
 - [Cloud Run pricing](https://cloud.google.com/run/pricing)
 - [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/)
 - [Clerk pricing](https://clerk.com/pricing)
@@ -91,8 +102,8 @@ These are operating targets until real provider bills and customer telemetry rep
 The key margin rule is simple: a plan card may record requested warehouse intent, but public signup must not unconditionally create the most expensive requested warehouse. The implementation now preserves that distinction:
 
 - `requested_*` tenant-route fields record the selected plan's desired profile.
-- `applied_*` tenant-route fields record the actual profile sent to ClickHouse Cloud.
-- `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=false` keeps real provisioning capped by operator defaults.
+- `applied_*` tenant-route fields record the actual hosted profile. In the current GCP self-hosted path, this is database-mode routing on the shared ClickHouse deployment rather than a new provider service.
+- `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=false` keeps legacy provider-backed provisioning capped by operator defaults when that optional path is exercised.
 - Existing tenant routes and warehouses are preserved; signups and tests do not delete or recreate them.
 
 ## Pricing Rationale
@@ -141,9 +152,9 @@ current retained-resource counter.
 
 Before public self-serve paid launch:
 
-- Require payment verification before enabling plan-sized cloud-service provisioning.
+- Require payment verification and an explicit operator review before enabling plan-sized dedicated capacity or legacy provider-backed `cloud-service` provisioning.
 - Keep hosted signup allowlists until public spend gates are implemented.
-- Reconcile `GET /api/usage` with provider storage and ClickHouse service usage before billing storage.
-- Add spend alerts and internal dashboards for per-org ClickHouse service cost.
+- Reconcile `GET /api/usage` with object storage, ClickHouse table bytes, and GCP VM/disk costs before billing storage.
+- Add spend, disk, backup, and capacity alerts for the self-hosted GCP ClickHouse deployment.
 - Validate Pro and Premium COGS on at least three real workloads before publishing stronger margin claims.
 - Decide whether extra seats are `$79`, `$99`, or bundled-only for beta.

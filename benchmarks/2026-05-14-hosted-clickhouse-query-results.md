@@ -4,6 +4,10 @@ Date: 2026-05-14
 
 Result: Passed
 
+Historical note: this result was collected against a ClickHouse Cloud tenant
+before the hosted migration to InstantML-owned self-hosted ClickHouse on Google
+Cloud. Keep it as dated evidence, not as the current hosted storage topology.
+
 ## Context
 
 - Branch: `codex/clickhouse-query-benchmarks`

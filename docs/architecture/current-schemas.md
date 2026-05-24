@@ -41,7 +41,9 @@ Data plane:
 In local/non-hosted mode, `operational_records` may contain both control and
 data record kinds. In hosted mode, control record kinds are written to
 `instantml_user_data`, and tenant product state is written to the org's routed
-tenant ClickHouse service or database.
+tenant ClickHouse database. The current InstantML-owned hosted path uses
+database-mode routing on self-hosted GCP ClickHouse; `cloud-service` remains a
+legacy/provider-backed route type.
 
 All durable low-volume records are append-only. A newer record for the same
 entity replaces the in-memory projection when replayed, but older records remain
@@ -374,7 +376,7 @@ clamped to read-only export behavior at authorization time.
 {
   "org_id": "uuid",
   "status": "ready",
-  "provisioner": "cloud-service",
+  "provisioner": "database",
   "plan_tier": "premium",
   "warehouse_kind": "dedicated",
   "requested_min_replica_memory_gb": 16,
@@ -383,12 +385,12 @@ clamped to read-only export behavior at authorization time.
   "applied_min_replica_memory_gb": 8,
   "applied_max_replica_memory_gb": 8,
   "applied_num_replicas": 1,
-  "endpoint": "https://example.clickhouse.cloud:8443",
-  "database": "default",
-  "username": "default",
-  "password_secret_ref": "clickhouse-cloud:service:abc",
-  "password_ciphertext": "plaintext-temporary-secret",
-  "service_id": "clickhouse-service-id",
+  "endpoint": "http://clickhouse.internal:8123",
+  "database": "instantml_org_<org_id_simple>",
+  "username": "instantml",
+  "password_secret_ref": "gcp-secret-manager:instantml-clickhouse-user-data-password",
+  "password_ciphertext": null,
+  "service_id": null,
   "created_at": "2026-05-16T00:00:00Z",
   "updated_at": "2026-05-16T00:00:00Z",
   "error": null
@@ -409,20 +411,21 @@ clamped to read-only export behavior at authorization time.
 | `applied_max_replica_memory_gb` | integer or null | Actual provisioner maximum replica memory. |
 | `applied_num_replicas` | integer or null | Actual provisioner replica count. |
 | `endpoint` | string | ClickHouse HTTP endpoint. |
-| `database` | string | Tenant database name, often `default` for cloud-service mode. |
+| `database` | string | Tenant database name. Current hosted database-mode routes use `instantml_org_<org_id.simple>`. |
 | `username` | string | ClickHouse username. |
 | `password_secret_ref` | string or null | Config/Secret Manager reference. BYOC hosted routes use `gcp-secret-manager:projects/.../versions/...`; local BYOC smoke tests may use `local-user-data-byoc:<org_id>`. |
-| `password_ciphertext` | string or null | Plaintext credential fallback for local smoke tests and the legacy hosted cloud-service provisioner only. Hosted BYOC must leave this null. |
+| `password_ciphertext` | string or null | Plaintext credential fallback for local smoke tests and the legacy hosted cloud-service provisioner only. Current self-hosted GCP and hosted BYOC routes should leave this null. |
 | `schema_version` | integer or null | Applied InstantML ClickHouse schema version. BYOC route loads skip DDL when this is at least the current metric schema version. The current version is 2. |
-| `service_id` | string or null | ClickHouse Cloud service id when known. |
+| `service_id` | string or null | Legacy ClickHouse Cloud service id when known. Current self-hosted GCP database-mode routes leave this null. |
 | `created_at` | datetime | Initial route creation time. |
 | `updated_at` | datetime | Last route state update time. |
 | `error` | string or null | Last provisioning error for failed routes. |
 
-By default, `applied_*` is capped by operator configuration so signup cannot
-create arbitrary paid warehouse sizes. Set
-`INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true` only after payment and
-spend gates are in place.
+By default, `applied_*` records the actual hosted storage profile rather than
+blindly applying a plan card's requested size. Current self-hosted GCP
+database-mode routes use the shared ClickHouse deployment. Set
+`INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true` only for the legacy
+provider-backed path after payment and spend gates are in place.
 
 ### `DashboardPreferenceRow`
 
@@ -1007,9 +1010,9 @@ GROUP BY org_id, run_id, key;
 | Mode | Control records | Data records | Metrics/logs |
 | --- | --- | --- | --- |
 | Local/default combined | `operational_records` | `operational_records` | local/default ClickHouse database |
-| Hosted combined | `instantml_user_data` | routed tenant `operational_records` | routed tenant ClickHouse service/database |
+| Hosted combined | `instantml_user_data` | routed tenant `operational_records` | routed tenant ClickHouse database |
 | Hosted split control | `instantml_user_data` | route/provisioning only, via tenant route creation | tenant schema migration/provisioning only |
-| Hosted split data | full User Data replay before auth | routed tenant `operational_records` | routed tenant ClickHouse service/database |
+| Hosted split data | full User Data replay before auth | routed tenant `operational_records` | routed tenant ClickHouse database |
 | Hosted BYOC data | User Data `organization` + `tenant_route` records | customer-owned `operational_records` | customer-owned ClickHouse database |
 
 ## Change Checklist
