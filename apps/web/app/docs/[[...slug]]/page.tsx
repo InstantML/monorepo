@@ -6,6 +6,7 @@ import { ChevronRight, Globe, Search } from "lucide-react";
 
 import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
 import { DocsCodeBlock } from "../docs-code-block";
+import { InstantMlMark } from "../../instantml-mark";
 import {
   docsMarkdownUrl,
   docsHref,
@@ -72,8 +73,10 @@ export default async function DocsPage({ params }: DocsParams) {
       <header className="docs-route-topbar">
         <div className="docs-route-topbar-row docs-route-topbar-row-primary">
           <Link className="docs-route-brand" href="/docs" aria-label="InstantML Docs home">
-            <span className="docs-route-brand-mark">I</span>
-            <span>
+            <span className="docs-route-brand-mark" aria-hidden>
+              <InstantMlMark />
+            </span>
+            <span className="docs-route-brand-text">
               <strong>InstantML</strong>
               <small>Docs</small>
             </span>

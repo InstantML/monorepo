@@ -73,6 +73,16 @@
   background: #1fb877;
   color: white;
   font-weight: 800;
+  overflow: hidden;
+}
+.docs-route-brand-mark svg {
+  width: 18px;
+  height: 18px;
+  color: currentColor;
+}
+.docs-route-brand-text {
+  display: grid;
+  gap: 1px;
 }
 
 .docs-route-search {
