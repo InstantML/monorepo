@@ -242,7 +242,8 @@ is signed in as the wrong account. Settings hides invitation and billing
 mutation controls from non-admin sessions, shows pending invitation delivery
 status plus resend/revoke controls for admins, and exposes ephemeral copy/open
 links for log-provider invites immediately after create/resend for deterministic
-local and staging checks.
+local and staging checks. Copied invite links remain same-origin but include the
+absolute origin so they can be pasted into chat or email.
 
 When the hosted API returns `code: "warehouse_unavailable"` with HTTP `503`, the
 dashboard treats the API as reachable and shows a "Starting data warehouse"

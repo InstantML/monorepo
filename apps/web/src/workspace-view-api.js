@@ -18,13 +18,13 @@ function isWorkspaceViewRow(value) {
 }
 
 export function workspaceViewSummariesFromPayload(payload) {
-  const maybeCurrent = payload?.views;
-  const maybeLegacy = payload?.workspace_views;
+  const maybeCurrent = payload?.workspace_views;
+  const maybeLegacy = payload?.views;
   const rows = Array.isArray(maybeCurrent) ? maybeCurrent : Array.isArray(maybeLegacy) ? maybeLegacy : [];
   return rows.filter(isWorkspaceViewSummary);
 }
 
 export function workspaceViewFromPayload(payload) {
-  const row = payload?.view ?? payload?.workspace_view;
+  const row = payload?.workspace_view ?? payload?.view;
   return isWorkspaceViewRow(row) ? row : null;
 }

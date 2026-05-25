@@ -94,7 +94,9 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /compareArtifactCacheRef/, "compare artifacts should reuse already-fetched run artifacts");
   assert.match(shell, /compareArtifactInflightRef/, "compare artifacts should dedupe concurrent per-run requests");
   assert.match(shell, /\}, \[activeTab, api, compareRunKey, runMetadataVersion\]\);/, "compare artifact cache invalidation should restart the compare artifact load");
-  assert.match(shell, /compareArtifactInflightRef\.current\.get\(runId\) === trackedRequest/, "settled older artifact requests must not delete newer in-flight promises");
+  assert.match(shell, /inFlight\.signal === controller\.signal && !inFlight\.signal\.aborted/, "compare artifact in-flight reuse should not reuse aborted requests from old selections");
+  assert.match(shell, /compareArtifactInflightRef\.current\.get\(runId\) === entry/, "settled older artifact requests must not delete newer in-flight promises");
+  assert.match(shell, /if \(queryInput !== query\) \{[\s\S]*setQuery\(queryInput\);[\s\S]*Select matching runs again[\s\S]*return;/, "select-all matching should not run against a stale debounced search query");
   const artifactLoadEffect = shell.match(/async function loadArtifacts\(\)[\s\S]*?\}, \[[^\]]+\]\);/)?.[0] ?? "";
   assert.doesNotMatch(artifactLoadEffect, /runWorkspaceTab/, "artifact loads should not refetch on summary/data/files subtab changes");
 
@@ -126,18 +128,18 @@ test("workspace view API normalizes generated and legacy envelopes", () => {
   const generated = readFileSync(`${root}src/types/api.generated.ts`, "utf8");
   const row = { id: "view-1", name: "Research", project: "demo", created_at: "now", updated_at: "now", payload: { metricKey: "loss" } };
 
-  assert.match(generated, /WorkspaceViewEnvelope: \{\s*view:/, "generated OpenAPI type exposes singular view envelope");
-  assert.match(generated, /WorkspaceViewSummariesEnvelope: \{\s*views:/, "generated OpenAPI type exposes plural views envelope");
+  assert.match(generated, /WorkspaceViewEnvelope: \{\s*workspace_view:/, "generated OpenAPI type exposes runtime singular workspace_view envelope");
+  assert.match(generated, /WorkspaceViewSummariesEnvelope: \{[\s\S]*next_cursor\?:[\s\S]*workspace_views:/, "generated OpenAPI type exposes runtime workspace_views envelope and cursor");
   assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewSummary"\]/, "typed wrapper should keep generated summary row linkage");
   assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewRow"\]/, "typed wrapper should keep generated row linkage");
-  assert.match(normalizer, /\.views/, "normalizer should accept generated list envelopes");
-  assert.match(normalizer, /workspace_views/, "normalizer should preserve compatibility with legacy list envelopes");
-  assert.match(normalizer, /\.view/, "normalizer should accept generated row envelopes");
-  assert.match(normalizer, /workspace_view/, "normalizer should preserve compatibility with legacy row envelopes");
-  assert.deepEqual(workspaceViewSummariesFromPayload({ views: [row, { id: 2, name: "bad" }] }), [row]);
-  assert.deepEqual(workspaceViewSummariesFromPayload({ workspace_views: [row] }), [row]);
-  assert.deepEqual(workspaceViewFromPayload({ view: row }), row);
+  assert.match(normalizer, /workspace_views/, "normalizer should accept runtime list envelopes");
+  assert.match(normalizer, /\.views/, "normalizer should preserve compatibility with generated legacy list envelopes");
+  assert.match(normalizer, /workspace_view/, "normalizer should accept runtime row envelopes");
+  assert.match(normalizer, /\.view/, "normalizer should preserve compatibility with generated legacy row envelopes");
+  assert.deepEqual(workspaceViewSummariesFromPayload({ workspace_views: [row, { id: 2, name: "bad" }] }), [row]);
+  assert.deepEqual(workspaceViewSummariesFromPayload({ views: [row] }), [row]);
   assert.deepEqual(workspaceViewFromPayload({ workspace_view: row }), row);
+  assert.deepEqual(workspaceViewFromPayload({ view: row }), row);
   assert.equal(workspaceViewFromPayload({ view: { id: "bad", name: "Bad", payload: [] } }), null);
 });
 

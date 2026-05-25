@@ -260,8 +260,8 @@ test("shortcut helpers detect platform commands and editable targets", () => {
 });
 
 test("redirect URL helpers allow only intended destinations", () => {
-  assert.equal(safeSameOriginInviteUrl("/invite#t=abc", "https://app.instantml.ai"), "/invite#t=abc");
-  assert.equal(safeSameOriginInviteUrl("https://app.instantml.ai/invite?x=1#t=abc", "https://app.instantml.ai"), "/invite?x=1#t=abc");
+  assert.equal(safeSameOriginInviteUrl("/invite#t=abc", "https://app.instantml.ai"), "https://app.instantml.ai/invite#t=abc");
+  assert.equal(safeSameOriginInviteUrl("https://app.instantml.ai/invite?x=1#t=abc", "https://app.instantml.ai"), "https://app.instantml.ai/invite?x=1#t=abc");
   assert.equal(safeSameOriginInviteUrl("https://evil.example/invite#t=abc", "https://app.instantml.ai"), "");
   assert.equal(safeSameOriginInviteUrl("/dashboard/runs#t=abc", "https://app.instantml.ai"), "");
   assert.equal(safeSameOriginInviteUrl("javascript:alert(1)", "https://app.instantml.ai"), "");
@@ -701,6 +701,7 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(sanitizeNextPath("/dashboard/runs\u0000"), "/dashboard/runs");
   assert.equal(normalizeDeviceUserCode("abcdefgh"), "ABCD-EFGH");
   assert.equal(normalizeDeviceUserCode("ABCD-EFGH"), "ABCD-EFGH");
+  assert.equal(normalizeDeviceUserCode("A-BCDEFGH"), "");
   assert.equal(normalizeDeviceUserCode("abc<script>"), "");
 });
 

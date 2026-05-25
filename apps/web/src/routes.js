@@ -26,10 +26,11 @@ const STRIPE_REDIRECT_ORIGINS = new Set(["https://checkout.stripe.com", "https:/
 export function normalizeDeviceUserCode(value) {
   const raw = String(value ?? "").trim();
   if (!raw || CONTROL_CHAR_PATTERN.test(raw)) return "";
-  if (!/^[a-z0-9-]{8,9}$/i.test(raw)) return "";
-  const normalized = raw.toUpperCase().replace(/-/g, "");
-  if (!/^[A-Z0-9]{8}$/.test(normalized)) return "";
-  return `${normalized.slice(0, 4)}-${normalized.slice(4)}`;
+  const normalized = raw.toUpperCase();
+  if (!/^(?:[A-Z0-9]{8}|[A-Z0-9]{4}-[A-Z0-9]{4})$/.test(normalized)) return "";
+  const compact = normalized.replace("-", "");
+  if (!/^[A-Z0-9]{8}$/.test(compact)) return "";
+  return `${compact.slice(0, 4)}-${compact.slice(4)}`;
 }
 
 export function isDashboardTab(value) {
@@ -89,7 +90,7 @@ export function safeSameOriginInviteUrl(value, baseOrigin = globalThis.location?
     if (url.origin !== baseOrigin) return "";
     if (url.pathname !== "/invite") return "";
     if (!url.hash.startsWith("#t=")) return "";
-    return `${url.pathname}${url.search}${url.hash}`;
+    return `${url.origin}${url.pathname}${url.search}${url.hash}`;
   } catch {
     return "";
   }

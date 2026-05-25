@@ -152,6 +152,10 @@ type BillingPayload = {
     message?: string | null;
   };
 };
+type CompareArtifactInflightRequest = {
+  promise: Promise<Artifact[]>;
+  signal: AbortSignal;
+};
 const SEARCH_DEBOUNCE_MS = 250;
 const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
@@ -334,7 +338,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const applySavedViewRequestRef = useRef(0);
   const projectPreferenceWriteTimerRef = useRef<number | null>(null);
   const compareArtifactCacheRef = useRef<Map<string, Artifact[]>>(new Map());
-  const compareArtifactInflightRef = useRef<Map<string, Promise<Artifact[]>>>(new Map());
+  const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
   const compareArtifactCacheVersionRef = useRef(0);
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
@@ -1519,19 +1523,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           next[runId] = cached;
           return;
         }
-        let request = compareArtifactInflightRef.current.get(runId);
+        const inFlight = compareArtifactInflightRef.current.get(runId);
+        let request = inFlight && inFlight.signal === controller.signal && !inFlight.signal.aborted
+          ? inFlight.promise
+          : null;
         if (!request) {
-          let trackedRequest: Promise<Artifact[]>;
-          trackedRequest = api
-            .get(`/api/runs/${runId}/artifacts${queryString({ limit: COMPARE_ARTIFACT_LIMIT })}`, { signal: controller.signal })
-            .then((artifactPayload) => (artifactPayload.artifacts ?? []).slice(0, COMPARE_ARTIFACT_LIMIT))
-            .finally(() => {
-              if (compareArtifactInflightRef.current.get(runId) === trackedRequest) {
-                compareArtifactInflightRef.current.delete(runId);
-              }
-            });
-          request = trackedRequest;
-          compareArtifactInflightRef.current.set(runId, request);
+          const entry: CompareArtifactInflightRequest = {
+            signal: controller.signal,
+            promise: api
+              .get(`/api/runs/${runId}/artifacts${queryString({ limit: COMPARE_ARTIFACT_LIMIT })}`, { signal: controller.signal })
+              .then((artifactPayload) => (artifactPayload.artifacts ?? []).slice(0, COMPARE_ARTIFACT_LIMIT)),
+          };
+          entry.promise = entry.promise.finally(() => {
+            if (compareArtifactInflightRef.current.get(runId) === entry) {
+              compareArtifactInflightRef.current.delete(runId);
+            }
+          });
+          request = entry.promise;
+          compareArtifactInflightRef.current.set(runId, entry);
         }
         try {
           const rows = await request;
@@ -2115,6 +2124,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function selectAllMatchingRuns() {
     if (selectAllMatchingBusy) return;
+    if (queryInput !== query) {
+      resetRunPagination();
+      setQuery(queryInput);
+      setMessage("Applying the latest search filter. Select matching runs again after the results refresh.");
+      return;
+    }
     selectAllMatchingControllerRef.current?.abort();
     const controller = new AbortController();
     selectAllMatchingControllerRef.current = controller;

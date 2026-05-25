@@ -216,7 +216,7 @@ Response:
 Query parameters:
 
 - `limit`, default 50 and maximum 100
-- `cursor`, opaque updated-at/id cursor
+- `cursor`, opaque pagination cursor returned by the previous response. The current Rust implementation returns a numeric offset string, but clients must treat it as opaque.
 
 Summary fields: `id`, `name`, `project`, `created_at`, `updated_at`. Full `payload` is not returned by list.
 
@@ -257,6 +257,8 @@ Response:
 ```
 
 All write endpoints require a non-read-only browser session in hosted mode. Local unauthenticated mode remains allowed for development. API keys are not part of this first slice.
+
+The Rust OpenAPI schema and generated frontend types use these runtime envelope names (`workspace_views` and `workspace_view`) so callers do not need frontend-only translation for the primary contract. The web normalizer still accepts the earlier generated `views` and `view` aliases for compatibility with already-built local clients.
 
 ## Performance Considerations
 
