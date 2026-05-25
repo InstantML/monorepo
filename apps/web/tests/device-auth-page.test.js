@@ -51,11 +51,22 @@ test("device page pre-fills user_code from ?code= query param", () => {
 
 test("device page formats user code input with auto-hyphen", () => {
   // The input auto-inserts a hyphen after 4 chars for UX.
+  assert.ok(src.includes("function formatDeviceCodeInput"), "typed input should keep the XXXX-XXXX editing affordance");
+  assert.ok(src.includes("normalizeDeviceUserCode"), "prefill, submit, and redirect paths should share strict device-code validation");
+  assert.ok(
+    src.includes("setUserCode(formattedPrefill)"),
+    "prefilled codes should be sanitized before rendering",
+  );
   assert.ok(
     src.includes("ABCD-EFGH") || src.includes("placeholder"),
     "must show placeholder with XXXX-XXXX format"
   );
   assert.ok(src.includes("maxLength={9}") || src.includes("maxLength="), "must cap input at 9 chars (XXXX-XXXX)");
+});
+
+test("device page sanitizes sign-in return path", () => {
+  assert.match(src, /const nextCode = normalizeDeviceUserCode/, "sign-in next path should use the same strict code normalizer");
+  assert.doesNotMatch(src, /encodeURIComponent\("\/auth\/device" \+ \(params\?\.get\("code"\)/, "sign-in next path should not embed the raw code query");
 });
 
 test("device page wraps with Suspense for useSearchParams", () => {

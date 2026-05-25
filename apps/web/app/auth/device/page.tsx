@@ -6,6 +6,7 @@ import { AlertCircle, ArrowRight, CheckCircle2, KeyRound, ShieldCheck } from "lu
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../../../src/api.js";
+import { normalizeDeviceUserCode } from "../../../src/routes.js";
 import { InstantMlMark } from "../../instantml-mark";
 
 type PageState =
@@ -15,6 +16,12 @@ type PageState =
   | { kind: "confirming" }
   | { kind: "success" }
   | { kind: "error"; message: string };
+
+function formatDeviceCodeInput(value: string) {
+  let normalized = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (normalized.length > 4) normalized = normalized.slice(0, 4) + "-" + normalized.slice(4, 8);
+  return normalized.slice(0, 9);
+}
 
 function Brand() {
   return (
@@ -74,15 +81,18 @@ function DeviceConfirmForm() {
       setState({ kind: "unauthenticated" });
       return;
     }
-    const prefill = params?.get("code") ?? "";
-    setState({ kind: "ready", prefillCode: prefill });
-    if (prefill) setUserCode(prefill);
+    const formattedPrefill = normalizeDeviceUserCode(params?.get("code") ?? "");
+    setState({ kind: "ready", prefillCode: formattedPrefill });
+    if (formattedPrefill) setUserCode(formattedPrefill);
   }, [isLoaded, isSignedIn, params]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const code = userCode.trim().toUpperCase();
-    if (!code) return;
+    const code = normalizeDeviceUserCode(userCode);
+    if (!code) {
+      setState({ kind: "error", message: "Enter the 8-character device code shown in your terminal." });
+      return;
+    }
     setState({ kind: "confirming" });
     try {
       await api.post("/api/auth/device-code/confirm", { user_code: code });
@@ -109,7 +119,8 @@ function DeviceConfirmForm() {
   }
 
   if (state.kind === "unauthenticated") {
-    const nextParam = encodeURIComponent("/auth/device" + (params?.get("code") ? "?code=" + params.get("code") : ""));
+    const nextCode = normalizeDeviceUserCode(params?.get("code") ?? "");
+    const nextParam = encodeURIComponent(`/auth/device${nextCode ? `?code=${nextCode}` : ""}`);
     return (
       <CardShell
         eyebrow="Sign in required"
@@ -160,9 +171,7 @@ function DeviceConfirmForm() {
             type="text"
             value={userCode}
             onChange={(e) => {
-              let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-              if (val.length > 4) val = val.slice(0, 4) + "-" + val.slice(4, 8);
-              setUserCode(val);
+              setUserCode(formatDeviceCodeInput(e.target.value));
             }}
             placeholder="ABCD-EFGH"
             maxLength={9}

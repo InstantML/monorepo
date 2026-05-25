@@ -34,7 +34,7 @@ import {
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { buildCheckpointResumeCode } from "../src/checkpoints.js";
-import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
+import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, normalizeDeviceUserCode, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -688,11 +688,20 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(pathFromLegacyHash("#/detail"), "");
   assert.equal(sanitizeNextPath("/dashboard/metrics"), "/dashboard/metrics");
   assert.equal(sanitizeNextPath("/onboarding"), "/onboarding");
+  assert.equal(sanitizeNextPath("/auth/device"), "/auth/device");
+  assert.equal(sanitizeNextPath("/auth/device?code=ABCDEFGH"), "/auth/device?code=ABCD-EFGH");
+  assert.equal(sanitizeNextPath("/auth/device?code=ABCD-EFGH"), "/auth/device?code=ABCD-EFGH");
   assert.equal(sanitizeNextPath("/"), "/");
   assert.equal(sanitizeNextPath("https://evil.example/dashboard"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("//evil.example/dashboard"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("/signin"), "/dashboard/runs");
+  assert.equal(sanitizeNextPath("/auth/logout"), "/dashboard/runs");
+  assert.equal(sanitizeNextPath("/auth/device?code=ABCD-EFGH&next=/dashboard"), "/dashboard/runs");
+  assert.equal(sanitizeNextPath("/auth/device?code=<script>"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("/dashboard/runs\u0000"), "/dashboard/runs");
+  assert.equal(normalizeDeviceUserCode("abcdefgh"), "ABCD-EFGH");
+  assert.equal(normalizeDeviceUserCode("ABCD-EFGH"), "ABCD-EFGH");
+  assert.equal(normalizeDeviceUserCode("abc<script>"), "");
 });
 
 test("deriveClerkSlug derives workspace slug from display name", () => {

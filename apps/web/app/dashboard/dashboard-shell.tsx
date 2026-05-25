@@ -2,7 +2,7 @@
 
 import { useClerk } from "@clerk/nextjs";
 import { Activity } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
 import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest } from "../../src/api.js";
@@ -66,6 +66,7 @@ import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoin
 import type { RunWorkspaceTabId } from "./components/run-workspace";
 import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
+import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "./state/workspace-view-api";
 import type { components } from "../../src/types/api.generated";
 
 // Bridge types from the utoipa-generated OpenAPI spec. All API request /
@@ -76,7 +77,6 @@ import type { components } from "../../src/types/api.generated";
 type GeneratedSeatRow = components["schemas"]["SeatRow"];
 type GeneratedApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 type GeneratedInvitationRow = components["schemas"]["PublicInvitationRow"];
-type GeneratedWorkspaceViewSummary = components["schemas"]["WorkspaceViewSummary"];
 type GeneratedOrgMembershipSummary = components["schemas"]["OrganizationMembershipSummary"];
 
 type ThemeMode = "light" | "dark";
@@ -101,13 +101,6 @@ type SavedViewOption = {
   source: "control" | "local" | "system";
   value: string;
 };
-// Sourced from the generated OpenAPI spec; the Rust handler that emits this
-// payload is `list_workspace_views` returning a `WorkspaceViewSummariesEnvelope`.
-// Note: the Rust type marks `created_at`/`updated_at` as required; existing
-// callsites here treat them as optional, so we keep the shape compatible by
-// widening the generated definition.
-type WorkspaceViewSummaryPayload = Partial<Pick<GeneratedWorkspaceViewSummary, "created_at" | "updated_at">> &
-  Pick<GeneratedWorkspaceViewSummary, "id" | "name" | "project">;
 type DashboardSessionPayload = {
   authenticated?: boolean;
   organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string };
@@ -331,6 +324,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const warehouseRetryTimerRef = useRef<number | null>(null);
   const globalKeyHandlerRef = useRef<((event: globalThis.KeyboardEvent) => void) | null>(null);
   const projectPreferenceLoadedRef = useRef(false);
+  const previousOrgIdRef = useRef("");
   const userTouchedDashboardFiltersRef = useRef(false);
   const defaultSelectionInitializedRef = useRef(false);
   const runDirectoryRef = useRef<Map<string, RunSummary>>(new Map());
@@ -339,10 +333,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const selectAllMatchingControllerRef = useRef<AbortController | null>(null);
   const applySavedViewRequestRef = useRef(0);
   const projectPreferenceWriteTimerRef = useRef<number | null>(null);
+  const compareArtifactCacheRef = useRef<Map<string, Artifact[]>>(new Map());
+  const compareArtifactInflightRef = useRef<Map<string, Promise<Artifact[]>>>(new Map());
+  const compareArtifactCacheVersionRef = useRef(0);
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
   const [sessionPayload, setSessionPayload] = useState<DashboardSessionPayload | null>(null);
+  const [projectPreferenceReady, setProjectPreferenceReady] = useState(false);
   const [orgMemberships, setOrgMemberships] = useState<OrgMembershipSummary[]>([]);
   const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
   const [orgSwitchError, setOrgSwitchError] = useState("");
@@ -460,22 +458,28 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   const sortedRuns = summary.runs;
   const selectedRuns = useMemo(() => {
-    // Remember every run we've ever seen so a selected run stays resolvable
-    // after it scrolls off the current page. Without this, paginating drops
-    // off-page selected runs from selectedRuns, which churns the workspace
-    // series fetch and makes the chart reload even though the selection is
-    // unchanged.
     const directory = runDirectoryRef.current;
-    for (const run of sortedRuns) directory.set(run.id, run);
-    for (const run of Object.values(selectedRunDetails)) directory.set(run.id, run);
     return selectedRunIds
       .map((id) => selectedRunDetails[id] ?? directory.get(id) ?? sortedRuns.find((run) => run.id === id))
       .filter(Boolean) as RunSummary[];
   }, [selectedRunDetails, selectedRunIds, sortedRuns]);
   const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
   const selectedFetchRunKey = selectedRuns.map((run) => run.id).join("\u0000");
-  selectedRunsRef.current = selectedRuns;
-  dashboardSelectionFilterKeyRef.current = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
+  const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
+  useEffect(() => {
+    // Remember runs after commit so interrupted renders do not mutate the
+    // directory. This keeps off-page selected runs resolvable without making
+    // render phase impure.
+    const directory = runDirectoryRef.current;
+    for (const run of sortedRuns) directory.set(run.id, run);
+    for (const run of Object.values(selectedRunDetails)) directory.set(run.id, run);
+  }, [selectedRunDetails, sortedRuns]);
+  useEffect(() => {
+    selectedRunsRef.current = selectedRuns;
+  }, [selectedRuns]);
+  useLayoutEffect(() => {
+    dashboardSelectionFilterKeyRef.current = dashboardSelectionFilterKey;
+  }, [dashboardSelectionFilterKey]);
   const handleRunWorkspaceTabChange = useCallback((nextTab: RunWorkspaceTabId) => {
     setRunWorkspaceTab(nextTab);
   }, []);
@@ -589,6 +593,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     () => storageScopeId([localSavedViewScope, project || "all"].filter(Boolean).join(":")),
     [localSavedViewScope, project],
   );
+  const scopedWorkspaceStorageKey = useMemo(
+    () => workspaceStorageKey(project, localSavedViewScope ? localSavedViewProjectScope : ""),
+    [localSavedViewProjectScope, localSavedViewScope, project],
+  );
   const activeMembershipRole = sessionPayload?.membership?.role ?? "";
   const canManageOrg = activeMembershipRole === "owner" || activeMembershipRole === "admin";
   const activeUsageOrg = useMemo(() => usagePayload?.organizations?.find((org) => org.org_id === activeOrgId) ?? usagePayload?.organizations?.[0] ?? null, [activeOrgId, usagePayload]);
@@ -656,9 +664,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [resetRunPagination]);
   const changeRunQueryInput = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
-    resetRunPagination();
     setQueryInput(value);
-  }, [resetRunPagination]);
+  }, []);
   const changeRunSort = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
@@ -669,6 +676,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     resetRunPagination();
     setMetricKey(value);
   }, [resetRunPagination]);
+  useEffect(() => {
+    if (previousOrgIdRef.current === activeOrgId) return;
+    previousOrgIdRef.current = activeOrgId;
+    projectPreferenceLoadedRef.current = false;
+    userTouchedDashboardFiltersRef.current = false;
+    setProjectPreferenceReady(false);
+    setProject("");
+    setSelectedRunIds([]);
+    setSelectedRunDetails({});
+    setPrimaryRunId("");
+    setReferenceRunId("");
+    resetRunPagination();
+  }, [activeOrgId, resetRunPagination]);
   const workspacePanelMetrics = useMemo(() => workspaceMetricKeys(workspaceView, panelSearch), [panelSearch, workspaceView]);
   const workspacePanelMetricKey = useMemo(() => workspacePanelMetrics.join("\u0000"), [workspacePanelMetrics]);
   const availableWorkspaceMetrics = useMemo(() => allMetricOptions.slice(0, MAX_METRIC_OPTIONS), [allMetricOptions]);
@@ -810,6 +830,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const projectPayload = await api.get("/projects", options);
       const names = (projectPayload.projects ?? []).map((item: { name: string }) => item.name);
       setProjects(names);
+      setProject((current) => current && !names.includes(current) ? "" : current);
       if (!projectPreferenceLoadedRef.current) {
         projectPreferenceLoadedRef.current = true;
         try {
@@ -819,28 +840,27 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             setProject((current) => current || selectedProject);
           }
         } catch (error) {
-          if (!isAbortError(error)) {
-            // Preferences are control-plane convenience state. Runs should still load if they fail.
-            setSavedViews((current) => current.length ? current : withSystemSavedViews(localSavedViewOptions(localSavedViewProjectScope)));
-          }
+          if (isAbortError(error)) return;
+          // Preferences are control-plane convenience state. Runs should still load if they fail.
         }
       }
     } catch (error) {
       if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load projects.");
+    } finally {
+      if (!options.signal?.aborted) setProjectPreferenceReady(true);
     }
-  }, [api, localSavedViewProjectScope]);
+  }, [api]);
 
   const loadSavedViews = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     const localOptions = localSavedViewOptions(localSavedViewProjectScope);
     try {
       const payload = await api.get("/api/workspace-views", options);
-      const controlOptions = Array.isArray(payload?.workspace_views)
-        ? (payload.workspace_views as WorkspaceViewSummaryPayload[]).map((view) => ({
+      const controlOptions = workspaceViewSummariesFromPayload(payload)
+        .map((view) => ({
           label: view.name,
           source: "control" as const,
           value: controlSavedViewKey(view.id),
-        }))
-        : [];
+        }));
       setSavedViews(withSystemSavedViews([...controlOptions, ...localOptions]));
     } catch (error) {
       if (!isAbortError(error)) setSavedViews(withSystemSavedViews(localOptions));
@@ -1016,17 +1036,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     if (!dashboardAuthorized) return;
     const controller = new AbortController();
+    if (!projectPreferenceLoadedRef.current) setProjectPreferenceReady(false);
     loadProjects({ signal: controller.signal });
-    loadSavedViews({ signal: controller.signal });
     return () => controller.abort();
-  }, [dashboardAuthorized, loadProjects, loadSavedViews]);
+  }, [activeOrgId, dashboardAuthorized, loadProjects]);
 
   useEffect(() => {
     if (!dashboardAuthorized) return;
     const controller = new AbortController();
+    loadSavedViews({ signal: controller.signal });
+    return () => controller.abort();
+  }, [dashboardAuthorized, loadSavedViews]);
+
+  useEffect(() => {
+    if (!dashboardAuthorized || !projectPreferenceReady) return;
+    const controller = new AbortController();
     loadDashboard({ signal: controller.signal });
     return () => controller.abort();
-  }, [dashboardAuthorized, loadDashboard]);
+  }, [dashboardAuthorized, loadDashboard, projectPreferenceReady]);
 
   useEffect(() => {
     if (!dashboardAuthorized || !initialLoadDone) return undefined;
@@ -1047,9 +1074,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [dashboardAuthorized, initialLoadDone, loadDashboard]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setQuery(queryInput), SEARCH_DEBOUNCE_MS);
+    if (queryInput === query) return undefined;
+    const timer = window.setTimeout(() => {
+      resetRunPagination();
+      setQuery(queryInput);
+    }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [queryInput]);
+  }, [query, queryInput, resetRunPagination]);
 
   useEffect(() => {
     setPageCursorStack([]);
@@ -1179,7 +1210,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setWorkspaceSeries({});
       return;
     }
-    const raw = safeSavedView(localStorage.getItem(workspaceStorageKey(project)));
+    const raw = safeSavedView(localStorage.getItem(scopedWorkspaceStorageKey))
+      ?? (localSavedViewScope ? null : safeSavedView(localStorage.getItem(workspaceStorageKey(project))));
     setWorkspaceView(sanitizeWorkspaceView(raw, actualMetricOptions, project));
     setWorkspaceReady(Boolean(raw) || actualMetricOptions.length > 0);
     setWorkspaceSeries({});
@@ -1188,7 +1220,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setFullscreenPanelRef(null);
     setWorkspaceUndoStack([]);
     setWorkspaceRedoStack([]);
-  }, [actualMetricOptions, actualMetricSignature, project, summaryMatchesProject]);
+  }, [actualMetricOptions, actualMetricSignature, localSavedViewScope, project, scopedWorkspaceStorageKey, summaryMatchesProject]);
 
   useEffect(() => {
     if (!summaryMatchesProject || !actualMetricOptions.length) return;
@@ -1206,8 +1238,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     if (!workspaceReady) return;
     if (workspaceView.project !== (project || null)) return;
-    localStorage.setItem(workspaceStorageKey(project), JSON.stringify({ ...workspaceView, updatedAt: new Date().toISOString() }));
-  }, [project, workspaceReady, workspaceView]);
+    localStorage.setItem(scopedWorkspaceStorageKey, JSON.stringify({ ...workspaceView, updatedAt: new Date().toISOString() }));
+  }, [project, scopedWorkspaceStorageKey, workspaceReady, workspaceView]);
 
   useEffect(() => {
     localStorage.setItem(NAV_PINNED_KEY, String(navPinned));
@@ -1238,6 +1270,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     const keepIds = [...new Set([...selectedRunIds, primaryRunId, referenceRunId].filter(Boolean))];
     const pageDetails = Object.fromEntries(sortedRuns.filter((run) => keepIds.includes(run.id)).map((run) => [run.id, run]));
     const missingIds = keepIds
@@ -1247,19 +1280,21 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setSelectedRunDetails((current) => pruneRunDetails(current, pageDetails, {}, keepIds));
       return () => {
         cancelled = true;
+        controller.abort();
       };
     };
-    Promise.all(
-      missingIds.map(async (id) => {
-        try {
-          const payload = await api.get(`/runs/${id}`);
-          return { id, run: payload.run as RunSummary, notFound: false };
-        } catch (error) {
-          return { id, run: null, notFound: isNotFoundError(error) };
-        }
-      }),
-    ).then((results) => {
-      if (cancelled) return;
+    const results: Array<{ id: string; run: RunSummary | null; notFound: boolean }> = [];
+    const tasks = missingIds.map((id) => async () => {
+      try {
+        const payload = await api.get(`/runs/${id}`, { signal: controller.signal });
+        results.push({ id, run: payload.run as RunSummary, notFound: false });
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        results.push({ id, run: null, notFound: isNotFoundError(error) });
+      }
+    });
+    runWithConcurrency(tasks, 6).then(() => {
+      if (cancelled || controller.signal.aborted) return;
       const found = results.map((result) => result.run).filter(Boolean) as RunSummary[];
       const fetchedDetails = Object.fromEntries(found.map((run) => [run.id, run]));
       const invalidIds = new Set(results.filter((result) => result.notFound).map((result) => result.id));
@@ -1275,15 +1310,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setPrimaryRunId((current) => current && !invalidIds.has(current) ? current : sortedRuns[0]?.id ?? "");
       setReferenceRunId((current) => current && !invalidIds.has(current) ? current : "");
       setSelectedRunDetails((current) => pruneRunDetails(current, pageDetails, fetchedDetails, keepValidatedIds));
+    }).catch((error) => {
+      if (!cancelled && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load selected runs.");
     });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [api, primaryRunId, referenceRunId, selectedRunDetails, selectedRunIds, sortedRuns]);
 
   useEffect(() => {
     setRunWorkspaceTab("summary");
   }, [primaryRun?.id]);
+
+  useEffect(() => {
+    compareArtifactCacheVersionRef.current += 1;
+    compareArtifactCacheRef.current.clear();
+    compareArtifactInflightRef.current.clear();
+  }, [runMetadataVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1369,7 +1413,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
       try {
         const artifactPayload = await api.get(`/api/runs/${primaryRun.id}/artifacts${queryString({ limit: ARTIFACT_PAGE_LIMIT })}`, { signal: controller.signal });
-        if (!cancelled) setArtifacts((artifactPayload.artifacts ?? []).slice(0, ARTIFACT_PAGE_LIMIT));
+        const rows = (artifactPayload.artifacts ?? []).slice(0, ARTIFACT_PAGE_LIMIT);
+        if (!cancelled) {
+          setArtifacts(rows);
+          compareArtifactCacheRef.current.set(primaryRun.id, rows.slice(0, COMPARE_ARTIFACT_LIMIT));
+        }
       } catch (error) {
         if (isAbortError(error)) return;
         if (isNotFoundError(error)) {
@@ -1386,7 +1434,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, primaryRun?.id, runWorkspaceTab]);
+  }, [activeTab, api, primaryRun?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1457,28 +1505,48 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     const runIds = compareRunKey ? compareRunKey.split(",").filter(Boolean) : [];
+    const cacheVersion = compareArtifactCacheVersionRef.current;
     async function loadCompareArtifacts() {
       if (activeTab !== "compare" || !runIds.length) {
         setCompareArtifactsByRun({});
         return;
       }
       const next: Record<string, Artifact[]> = {};
-      let cursor = 0;
-      async function worker() {
-        while (!cancelled && cursor < runIds.length) {
-          const runId = runIds[cursor];
-          cursor += 1;
-          try {
-            const artifactPayload = await api.get(`/api/runs/${runId}/artifacts${queryString({ limit: COMPARE_ARTIFACT_LIMIT })}`, { signal: controller.signal });
-            next[runId] = (artifactPayload.artifacts ?? []).slice(0, COMPARE_ARTIFACT_LIMIT);
-          } catch (error) {
-            if (isAbortError(error)) throw error;
-            next[runId] = [];
-          }
+      const tasks = runIds.map((runId) => async () => {
+        if (cancelled || controller.signal.aborted) return;
+        const cached = compareArtifactCacheRef.current.get(runId);
+        if (cached) {
+          next[runId] = cached;
+          return;
         }
+        let request = compareArtifactInflightRef.current.get(runId);
+        if (!request) {
+          let trackedRequest: Promise<Artifact[]>;
+          trackedRequest = api
+            .get(`/api/runs/${runId}/artifacts${queryString({ limit: COMPARE_ARTIFACT_LIMIT })}`, { signal: controller.signal })
+            .then((artifactPayload) => (artifactPayload.artifacts ?? []).slice(0, COMPARE_ARTIFACT_LIMIT))
+            .finally(() => {
+              if (compareArtifactInflightRef.current.get(runId) === trackedRequest) {
+                compareArtifactInflightRef.current.delete(runId);
+              }
+            });
+          request = trackedRequest;
+          compareArtifactInflightRef.current.set(runId, request);
+        }
+        try {
+          const rows = await request;
+          if (cancelled || controller.signal.aborted || cacheVersion !== compareArtifactCacheVersionRef.current) return;
+          compareArtifactCacheRef.current.set(runId, rows);
+          next[runId] = rows;
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          next[runId] = [];
+        }
+      });
+      await runWithConcurrency(tasks, 6);
+      if (!cancelled && runIds.join(",") === compareRunKey && cacheVersion === compareArtifactCacheVersionRef.current) {
+        setCompareArtifactsByRun(next);
       }
-      await Promise.all(Array.from({ length: Math.min(6, runIds.length) }, () => worker()));
-      if (!cancelled && runIds.join(",") === compareRunKey) setCompareArtifactsByRun(next);
     }
     loadCompareArtifacts().catch((error) => {
       if (!cancelled && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load compare artifacts.");
@@ -1487,7 +1555,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, compareRunKey]);
+  }, [activeTab, api, compareRunKey, runMetadataVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1608,14 +1676,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [activeOrgId, dashboardAuthorized, loadUsage]);
 
   const loadApiKeys = useCallback(async (options: { signal?: AbortSignal } = {}) => {
-    if (!activeOrgId) return;
+    if (!activeOrgId || !canManageOrg) {
+      setApiKeys([]);
+      setNewApiKey("");
+      return;
+    }
     try {
       const payload = await api.get(`/api/orgs/${activeOrgId}/api-keys`, options);
       setApiKeys(Array.isArray(payload.api_keys) ? payload.api_keys as ApiKeyRow[] : []);
     } catch (error) {
       if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load API keys.");
     }
-  }, [activeOrgId, api]);
+  }, [activeOrgId, api, canManageOrg]);
 
   useEffect(() => {
     if (!dashboardAuthorized || activeTab !== "settings" || !activeOrgId) return;
@@ -1625,11 +1697,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [activeOrgId, activeTab, dashboardAuthorized, loadOrgSettings]);
 
   useEffect(() => {
-    if (!dashboardAuthorized || activeTab !== "api" || !activeOrgId) return;
+    if (!dashboardAuthorized || activeTab !== "api" || !activeOrgId || !canManageOrg) {
+      if (!canManageOrg) {
+        setApiKeys([]);
+        setNewApiKey("");
+      }
+      return;
+    }
     const controller = new AbortController();
     void loadApiKeys({ signal: controller.signal });
     return () => controller.abort();
-  }, [activeOrgId, activeTab, dashboardAuthorized, loadApiKeys]);
+  }, [activeOrgId, activeTab, canManageOrg, dashboardAuthorized, loadApiKeys]);
 
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
@@ -1768,7 +1846,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function createDashboardApiKey() {
-    if (!activeOrgId) return;
+    if (!activeOrgId || !canManageOrg) return;
     setAdminBusy(true);
     setNewApiKey("");
     setMessage("Creating API key...");
@@ -1787,7 +1865,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function revokeDashboardApiKey(keyId: string) {
-    if (!activeOrgId || !keyId) return;
+    if (!activeOrgId || !keyId || !canManageOrg) return;
     setAdminBusy(true);
     setMessage("Revoking API key...");
     try {
@@ -1854,9 +1932,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const response = existingControlId
         ? await api.put(`/api/workspace-views/${existingControlId}`, { name, project: project || null, payload })
         : await api.post("/api/workspace-views", { name, project: project || null, payload });
-      const id = response?.workspace_view?.id;
-      if (typeof id === "string") {
-        upsertOption({ label: name, source: "control", value: controlSavedViewKey(id) });
+      const savedView = workspaceViewFromPayload(response);
+      if (savedView) {
+        upsertOption({ label: name, source: "control", value: controlSavedViewKey(savedView.id) });
         await loadSavedViews();
       }
     } catch (error) {
@@ -1898,10 +1976,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       try {
         const payload = await api.get(`/api/workspace-views/${controlId}`);
         if (requestId !== applySavedViewRequestRef.current) return;
-        view = payload?.workspace_view?.payload && typeof payload.workspace_view.payload === "object"
-          ? payload.workspace_view.payload
+        const savedView = workspaceViewFromPayload(payload);
+        view = savedView?.payload && typeof savedView.payload === "object"
+          ? savedView.payload as Record<string, any>
           : null;
-        resolvedName = payload?.workspace_view?.name ?? resolvedName;
+        resolvedName = savedView?.name ?? resolvedName;
       } catch {
         if (requestId !== applySavedViewRequestRef.current) return;
         view = null;
@@ -1948,8 +2027,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setPinnedMetrics(savedViewStringArray(view.pinnedMetrics, 4));
     if (view.workspaceView) {
       const nextWorkspace = sanitizeWorkspaceView(view.workspaceView, allMetricOptions, viewProject || project);
+      const workspaceProject = viewProject || project;
+      const workspaceScope = localSavedViewScope
+        ? storageScopeId([localSavedViewScope, workspaceProject || "all"].filter(Boolean).join(":"))
+        : "";
       workspaceViewRef.current = nextWorkspace;
-      localStorage.setItem(workspaceStorageKey(viewProject || project), JSON.stringify(nextWorkspace));
+      localStorage.setItem(workspaceStorageKey(workspaceProject, workspaceScope), JSON.stringify(nextWorkspace));
       setWorkspaceView(nextWorkspace);
     }
     const nextPageSize = savedViewNumber(view.pageSize, 25, 10, 100);
@@ -2927,6 +3010,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               apiKeyName={apiKeyName}
               apiKeys={apiKeys}
               apiRows={apiRows}
+              canManageOrg={canManageOrg}
               metricKey={metricKey}
               newApiKey={newApiKey}
               onApiKeyNameChange={setApiKeyName}

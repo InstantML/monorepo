@@ -39,3 +39,11 @@ test("artifact UI does not model or display raw storage internals", () => {
   assert.match(workspaceSrc, /safeArtifactUri\(item\.artifact\.uri\)/);
   assert.doesNotMatch(workspaceSrc, /<strong>\{item\.artifact\.uri\}<\/strong>/);
 });
+
+test("rich-object media previews preserve stored-byte artifact backends", () => {
+  const typesSrc = read("app/dashboard-types.ts");
+  const richObjectSrc = read("app/dashboard/detail/rich-object-panel.tsx");
+  assert.match(typesSrc, /storage_backend\?: string \| null/);
+  assert.match(richObjectSrc, /storage_backend: object\.artifact\.storage_backend/);
+  assert.match(richObjectSrc, /ArtifactMediaPreview artifact=\{artifact\}/);
+});

@@ -122,8 +122,8 @@ export function metricTitle(metricKey: string) {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-export function workspaceStorageKey(project: string) {
-  return `${WORKSPACE_VIEW_PREFIX}${project || "all"}`;
+export function workspaceStorageKey(project: string, scope = "") {
+  return `${WORKSPACE_VIEW_PREFIX}${scope || project || "all"}`;
 }
 
 function automaticWorkspaceMetricKeys(metricKeys: string[]) {

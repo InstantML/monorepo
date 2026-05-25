@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, CopyPlus, GripVertical, Maximize2, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { averageGroupedSeries, axisTicks, chartDomain, formatAxisValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../../src/charts.js";
@@ -215,6 +215,7 @@ export function WorkspacePanelCard({
   const [panelHover, setPanelHover] = useState<HoverPoint>(null);
   const [panelZoomRange, setPanelZoomRange] = useState<{ min: number; max: number } | null>(null);
   const [resizePreview, setResizePreview] = useState<WorkspacePanelLayout | null>(null);
+  const resizeCleanupRef = useRef<() => void>(() => {});
   const settings = useMemo(() => resolveWorkspaceSettings(view, section, panel), [panel, section, view]);
   const layout = useMemo(() => resizePreview ?? normalizedPanelLayout(panel.layout), [panel.layout, resizePreview]);
   const isFullscreenPanel = className.split(/\s+/).includes("fullscreen-panel-card");
@@ -277,6 +278,9 @@ export function WorkspacePanelCard({
     setPanelHover(null);
     setPanelZoomRange(null);
   }, [panel.metricKey, panel.type, settings.xMode, settings.groupBy, settings.groupAverage, settings.smoothing, settings.maxRuns, selectedRunKey]);
+  useEffect(() => () => {
+    resizeCleanupRef.current();
+  }, []);
   function handlePanelChartMove(event: MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const point = svgPointFromClient(rect, event.clientX, event.clientY, panelChartWidth, panelChartHeight);
@@ -290,6 +294,7 @@ export function WorkspacePanelCard({
     const card = event.currentTarget.closest<HTMLElement>(".workspace-panel-card");
     const grid = event.currentTarget.closest<HTMLElement>(".workspace-panel-grid");
     if (!card || !grid) return;
+    resizeCleanupRef.current();
     const startX = event.clientX;
     const startY = event.clientY;
     const startLayout = normalizedPanelLayout(panel.layout);
@@ -298,6 +303,17 @@ export function WorkspacePanelCard({
     const pointerId = event.pointerId;
     event.currentTarget.setPointerCapture(pointerId);
     const target = event.currentTarget;
+    function cleanupResizeListeners() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      try {
+        if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+      } catch {
+        // The target may be gone if React unmounted during a drag.
+      }
+      resizeCleanupRef.current = () => {};
+    }
     function handlePointerMove(pointerEvent: globalThis.PointerEvent) {
       const next = {
         w: Math.max(3, Math.min(12, Math.round(startLayout.w + (pointerEvent.clientX - startX) / columnUnit))),
@@ -312,12 +328,16 @@ export function WorkspacePanelCard({
       };
       setResizePreview(null);
       commitResize(next);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+      cleanupResizeListeners();
     }
+    function handlePointerCancel() {
+      setResizePreview(null);
+      cleanupResizeListeners();
+    }
+    resizeCleanupRef.current = cleanupResizeListeners;
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
   return (
     <article

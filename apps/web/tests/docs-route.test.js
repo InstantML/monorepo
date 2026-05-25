@@ -40,6 +40,13 @@ test("docs app route renders docs source instead of redirecting to a docs host",
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
 });
 
+test("docs loader caches static filesystem work for server renders", async () => {
+  const docs = await readFile(path.join(webRoot, "src", "docs.js"), "utf8");
+  assert.match(docs, /from "react"/, "docs loader should use React cache for request-level dedupe");
+  assert.match(docs, /loadDocsPageByPath\s*=\s*cache/, "metadata and page loads should dedupe by normalized docs path");
+  assert.match(docs, /loadApiReferenceEndpoints\s*=\s*cache/, "generated API reference parsing should be cached");
+});
+
 test("first-run onboarding links to human and agent quickstart docs", async () => {
   const authFlow = await readFile(path.join(webRoot, "app", "auth-flow.tsx"), "utf8");
   const emptyWorkspace = await readFile(
