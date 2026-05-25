@@ -157,7 +157,14 @@ Add `Client.attach_run(run_id)` and top-level `attach_run(run_id, ...)` to retur
 fork = api.fork_run("source-run-id", checkpoint_artifact_id="artifact-id")
 run = im.attach_run(fork["id"], base_url="http://127.0.0.1:8000")
 run.log({"train/loss": 0.1}, step=121)
+run.finish()
 ```
+
+`attach_run()` validates the target run by default so typos or insufficient
+read credentials fail before async logging starts. `validate=False` is available
+for intentionally write-only or offline attach flows. Because attach uses the
+SDK default async upload mode, short examples must call `finish()` or
+`wait_for_processing()` before process exit.
 
 Add `SourceTracking`:
 

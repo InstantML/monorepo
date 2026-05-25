@@ -21,6 +21,9 @@
 //!
 //! See `docs/design/2026-05-19-utoipa-migration.md` for context on why this
 //! pattern replaced the legacy hand-rolled `openapi_json` index.
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, SecurityScheme},
@@ -28,6 +31,7 @@ use utoipa::{
 };
 
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::domain::{
     AdminApiKeySummary, AdminBillingSummary, AdminOrgCounts, AdminOrganizationSummary,
@@ -96,6 +100,70 @@ pub struct RunEnvelope {
 #[derive(Serialize, ToSchema)]
 pub struct RunsEnvelope {
     pub runs: Vec<RunRow>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunMetricAggregate {
+    pub latest: Option<f64>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub mean: Option<f64>,
+    pub variance: Option<f64>,
+    pub count: i64,
+    pub best_step: Option<f64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunSummaryRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub name: String,
+    pub status: String,
+    #[schema(value_type = Object)]
+    pub config: Value,
+    pub tags: Vec<String>,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_run_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from_step: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from_artifact_id: Option<Uuid>,
+    pub latest_metrics: BTreeMap<String, Option<f64>>,
+    pub metric_aggregates: BTreeMap<String, RunMetricAggregate>,
+    pub metric_keys: Vec<String>,
+    pub artifact_counts: BTreeMap<String, i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunForkContext {
+    pub parent_run_id: Uuid,
+    pub forked_from_step: Option<f64>,
+    pub forked_from_artifact_id: Option<Uuid>,
+    pub message: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunForkEnvelope {
+    pub run: RunSummaryRow,
+    pub fork: RunForkContext,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunLineageEnvelope {
+    pub run: RunSummaryRow,
+    pub parent: Option<RunSummaryRow>,
+    pub children: Vec<RunSummaryRow>,
+    pub checkpoint_artifact: Option<PublicArtifactRow>,
+    pub children_total: usize,
+    pub has_more_children: bool,
+    pub limit: usize,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -461,6 +529,11 @@ impl Modify for SecurityAddon {
         ProjectsEnvelope,
         RunEnvelope,
         RunsEnvelope,
+        RunMetricAggregate,
+        RunSummaryRow,
+        RunForkContext,
+        RunForkEnvelope,
+        RunLineageEnvelope,
         InsertedEnvelope,
         SeatEnvelope,
         SeatsEnvelope,

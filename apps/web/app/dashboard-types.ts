@@ -57,6 +57,7 @@ export type MetricSeries = {
 
 export type Artifact = {
   id: string;
+  run_id?: string;
   type: string;
   name: string;
   uri: string;

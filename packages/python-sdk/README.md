@@ -77,6 +77,7 @@ checkpoint_path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
 child = api.fork_run("source-run-id", checkpoint_artifact_id="artifact-id")
 forked_run = ro.attach_run(child["id"], base_url="http://127.0.0.1:8000", api_key="instantml_...")
 forked_run.log({"train/loss": 0.1}, step=101)
+forked_run.finish()
 ```
 
 ## CLI: Login, logout, whoami
@@ -138,7 +139,7 @@ npm run test:hosted-clickhouse
 
 That smoke creates an API key through the onboarding route, passes it to `instantml.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
 
-Read-only run summary queries use the raw `Api` helper:
+Run summary, artifact download, and fork helpers use the raw `Api` helper:
 
 ```python
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
@@ -151,7 +152,7 @@ page = api.runs(
 )
 ```
 
-`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` returns a `Run` handle for logging into an existing child run.
+`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
 
 Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
 

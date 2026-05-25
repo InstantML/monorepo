@@ -6,7 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent } from "react";
 
 import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest } from "../../src/api.js";
-import { buildCheckpointForkBody } from "../../src/checkpoints.js";
+import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
@@ -388,6 +388,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [series, setSeries] = useState<MetricSeries[]>([]);
   const [panelSeries, setPanelSeries] = useState<Record<string, MetricSeries[]>>({});
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [artifactsRunId, setArtifactsRunId] = useState("");
   const [loggedObjects, setLoggedObjects] = useState<LoggedObject[]>([]);
   const [objectRowsById, setObjectRowsById] = useState<Record<number, LoggedObjectRow[]>>({});
   const [runWorkspaceTab, setRunWorkspaceTab] = useState<RunWorkspaceTabId>("summary");
@@ -521,7 +522,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const selectedMetrics = new Set(compareTableMetricKeys);
     return metricOptionsForControls.filter((metric) => !selectedMetrics.has(metric)).slice(0, MAX_METRIC_OPTIONS);
   }, [compareTableMetricKeys, metricOptionsForControls]);
-  const visibleArtifacts = useMemo(() => artifacts.slice(0, ARTIFACT_PAGE_LIMIT), [artifacts]);
+  const visibleArtifacts = useMemo(() => (
+    artifactsRunId === primaryRun?.id ? artifacts.slice(0, ARTIFACT_PAGE_LIMIT) : []
+  ), [artifacts, artifactsRunId, primaryRun?.id]);
   const currentMessageTone = messageTone(message);
   const seriesWithGroups = useMemo(() => series.map((item) => {
     const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
@@ -1419,19 +1422,27 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const shouldLoad = activeTab === "detail" || activeTab === "artifacts" || activeTab === "models";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
+        setArtifactsRunId("");
         return;
       }
+      const runId = primaryRun.id;
+      setArtifacts([]);
+      setArtifactsRunId(runId);
       try {
-        const artifactPayload = await api.get(`/api/runs/${primaryRun.id}/artifacts${queryString({ limit: ARTIFACT_PAGE_LIMIT })}`, { signal: controller.signal });
+        const artifactPayload = await api.get(`/api/runs/${runId}/artifacts${queryString({ limit: ARTIFACT_PAGE_LIMIT })}`, { signal: controller.signal });
         const rows = (artifactPayload.artifacts ?? []).slice(0, ARTIFACT_PAGE_LIMIT);
         if (!cancelled) {
           setArtifacts(rows);
-          compareArtifactCacheRef.current.set(primaryRun.id, rows.slice(0, COMPARE_ARTIFACT_LIMIT));
+          setArtifactsRunId(runId);
+          compareArtifactCacheRef.current.set(runId, rows.slice(0, COMPARE_ARTIFACT_LIMIT));
         }
       } catch (error) {
         if (isAbortError(error)) return;
         if (isNotFoundError(error)) {
-          if (!cancelled) setArtifacts([]);
+          if (!cancelled) {
+            setArtifacts([]);
+            setArtifactsRunId(runId);
+          }
           return;
         }
         throw error;
@@ -2241,20 +2252,23 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function forkCheckpointRun(artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) {
     if (!primaryRun) throw new Error("No source run is selected.");
+    if (artifact.run_id && artifact.run_id !== primaryRun.id) {
+      throw new Error("Checkpoint no longer belongs to the selected run. Reload artifacts and try again.");
+    }
     const body = buildCheckpointForkBody(artifact, primaryRun, {
       inheritConfig: options.inheritConfig,
       name: options.name.trim(),
       reason: options.reason,
       tags: ["retry", "checkpoint"],
     });
-    const idempotencyKey = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `fork-${primaryRun.id}-${artifact.id}-${Date.now()}`;
+    const idempotencyKey = checkpointForkIdempotencyKey(artifact, primaryRun, body);
     const payload = await api.post(`/api/runs/${primaryRun.id}/forks`, body, {
       headers: { "Idempotency-Key": idempotencyKey },
     });
     const child = payload.run as RunSummary | undefined;
     if (!child?.id) throw new Error("Server returned an invalid fork response.");
+    const childKnownBefore = runDirectoryRef.current.has(child.id);
+    runDirectoryRef.current.set(child.id, child);
     setSummary((current) => {
       const alreadyPresent = current.runs.some((run) => run.id === child.id);
       const sameProjectVisible = !project || project === child.project;
@@ -2269,11 +2283,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         total: alreadyPresent || !sameProjectVisible ? current.total : current.total + 1,
       };
     });
-    setOverview((current) => ({
-      ...current,
-      total_runs: current.total_runs + 1,
-      active_runs: current.active_runs + (child.status === "running" ? 1 : 0),
-    }));
+    if (!childKnownBefore) {
+      setOverview((current) => ({
+        ...current,
+        total_runs: current.total_runs + 1,
+        active_runs: current.active_runs + (child.status === "running" ? 1 : 0),
+      }));
+    }
     setSelectedRunDetails((current) => ({ ...current, [child.id]: child }));
     setSelectedRunIds((current) => [child.id, ...current.filter((id) => id !== child.id)].slice(0, MAX_SELECTED_RUNS));
     preserveRunWorkspaceTabOnceRef.current = true;

@@ -441,7 +441,7 @@ class Client:
         self,
         run_id: str,
         buffer_size: int = 0,
-        upload_mode: str = "sync",
+        upload_mode: str = "async",
         spool_dir: str | None = None,
         local_store: bool = False,
         local_store_dir: str | None = None,
@@ -449,11 +449,22 @@ class Client:
         system_metrics_interval: float = 15.0,
         capture_console: bool = False,
         queue_dir: str | None = None,
+        validate: bool = True,
     ) -> "Run":
         """Return a Run handle for an existing server-side run."""
 
         run_id = _validate_text(run_id, "run id")
         _validate_upload_mode(upload_mode)
+        if not isinstance(validate, bool):
+            raise TypeError("validate must be a bool")
+        if validate:
+            response = self._request(
+                "GET",
+                f"/runs/{urllib.parse.quote(run_id, safe='')}",
+            )
+            run_payload = response.get("run")
+            if not isinstance(run_payload, dict) or str(run_payload.get("id", "")) != run_id:
+                raise InstantMLError("server returned an invalid run response")
         run = Run(
             client=self,
             run_id=run_id,
@@ -546,7 +557,7 @@ def _async_request_supported(method: str, path: str, body: dict[str, Any]) -> bo
 
 @dataclass(frozen=True)
 class Api:
-    """Tiny raw read-only API helper for post-hoc queries."""
+    """Tiny raw API helper for post-hoc queries and run fork creation."""
 
     base_url: str = field(default_factory=_default_base_url)
     timeout: float = 10.0
@@ -1757,7 +1768,7 @@ def attach_run(
     buffer_size: int = 0,
     offline_dir: str | None = None,
     api_key: str | None = None,
-    upload_mode: str = "sync",
+    upload_mode: str = "async",
     spool_dir: str | None = None,
     local_store: bool = False,
     local_store_dir: str | None = None,
@@ -1765,6 +1776,7 @@ def attach_run(
     system_metrics_interval: float = 15.0,
     capture_console: bool = False,
     queue_dir: str | None = None,
+    validate: bool = True,
 ) -> Run:
     """Attach SDK logging to an existing run, such as a UI-created fork."""
 
@@ -1785,6 +1797,7 @@ def attach_run(
         system_metrics_interval=system_metrics_interval,
         capture_console=capture_console,
         queue_dir=queue_dir,
+        validate=validate,
     )
 
 

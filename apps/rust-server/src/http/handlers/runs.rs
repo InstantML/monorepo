@@ -158,7 +158,7 @@ pub async fn get_run(
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Bounded direct lineage graph for the selected run", body = crate::http::openapi::JsonObjectResponse),
+        (status = 200, description = "Bounded direct lineage graph for the selected run", body = crate::http::openapi::RunLineageEnvelope),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -183,7 +183,7 @@ pub async fn get_run_lineage(
     request_body = crate::domain::CreateRunForkRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Created forked run", body = crate::http::openapi::JsonObjectResponse),
+        (status = 200, description = "Created forked run", body = crate::http::openapi::RunForkEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
         (status = 402, description = "Plan or payment limit prevents creating another run", body = crate::http::openapi::ErrorResponse),

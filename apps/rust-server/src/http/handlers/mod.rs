@@ -229,6 +229,8 @@ mod tests {
             "/runs/{run_id}",
             "/runs/{run_id}/metrics",
             "/runs/{run_id}/rank-metrics",
+            "/api/runs/{run_id}/forks",
+            "/api/runs/{run_id}/lineage",
             "/api/runs/{run_id}/logs",
             "/api/metrics/series",
             // dashboard analytics

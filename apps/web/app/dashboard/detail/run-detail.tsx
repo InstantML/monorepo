@@ -273,16 +273,30 @@ export function RunDetail({
   selectedRuns?: RunSummary[];
   timelineRows: RunTimelineRow[];
   workspaceSummary?: boolean;
-}) {
+  }) {
   if (!run) return <div className="empty">No run selected.</div>;
   const chartRuns = selectedRuns?.length ? selectedRuns : [run];
+  const commit = metadataScalar(run.metadata, "git_commit")
+    ?? metadataScalar(run.metadata, "commit")
+    ?? nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "commit"]);
+  const gitAvailable = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "available"]);
+  const gitDirty = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "dirty"]);
+  const gitDirtyUnknown = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "dirty_unknown"]);
+  const entrypoint = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "entrypoint"]);
+  const dirtyLabel = gitDirty === true ? "yes" : gitDirty === false ? "no" : gitDirtyUnknown === true ? "unknown" : "-";
+  const gitLabel = gitAvailable === false ? "unavailable" : gitAvailable === true || commit ? "available" : "-";
   const sourceRows = [
     ["Start time", formatRunTime(run.started_at ?? run.created_at)],
     ["End time", run.finished_at ? formatRunTime(run.finished_at) : "-"],
     ["Duration", durationLabel(run)],
+    ["Entry point", compactValue(entrypoint ?? "-")],
+    ["Git", compactValue(gitLabel)],
     ["Host", compactValue(run.metadata.hostname ?? run.metadata.host ?? "-")],
     ["PID", compactValue(run.metadata.pid ?? "-")],
-    ["Commit", compactValue(run.metadata.git_commit ?? run.metadata.commit ?? "-")],
+    ["Commit", compactValue(commit ?? "-")],
+    ["Dirty", compactValue(dirtyLabel)],
+    ["Python", compactValue(metadataScalar(run.metadata, "python") ?? "-")],
+    ["Platform", compactValue(metadataScalar(run.metadata, "platform") ?? "-")],
   ];
   const artifactRows = artifacts.slice(0, 4);
   const artifactCount = artifactCountForRun(run, artifacts.length);
@@ -400,4 +414,18 @@ export function RunDetail({
       </div>
     </div>
   );
+}
+
+function metadataScalar(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value : null;
+}
+
+function nestedMetadataScalar(metadata: Record<string, unknown>, path: string[]) {
+  let current: unknown = metadata;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" || typeof current === "number" || typeof current === "boolean" ? current : null;
 }

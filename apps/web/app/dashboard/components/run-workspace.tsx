@@ -33,6 +33,7 @@ import type {
   LoggedObject,
   LoggedObjectRow,
   MetricSeries,
+  RunLineage,
   RunMetricRow,
   RunSummary,
   RunTimelineRow,
@@ -517,7 +518,7 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
 }
 
 function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
-  const [lineage, setLineage] = useState<any>(null);
+  const [lineage, setLineage] = useState<RunLineage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -529,10 +530,11 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
     requestKeyRef.current = requestKey;
     setLoading(true);
     setError("");
+    setLineage(null);
     api.get(`/api/runs/${run.id}/lineage`, { signal: controller.signal })
       .then((payload) => {
         if (requestKey !== requestKeyRef.current) return;
-        setLineage(payload);
+        setLineage(payload as RunLineage);
       })
       .catch((caught) => {
         if (isAbortError(caught) || requestKey !== requestKeyRef.current) return;
@@ -545,9 +547,10 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
     return () => controller.abort();
   }, [api, refreshKey, run.id]);
 
-  const parent = lineage?.parent as RunSummary | null | undefined;
-  const children = Array.isArray(lineage?.children) ? lineage.children as RunSummary[] : [];
-  const checkpoint = lineage?.checkpoint_artifact as Artifact | null | undefined;
+  const visibleLineage = lineage?.run?.id === run.id ? lineage : null;
+  const parent = visibleLineage?.parent;
+  const children = Array.isArray(visibleLineage?.children) ? visibleLineage.children : [];
+  const checkpoint = visibleLineage?.checkpoint_artifact;
   const hasGraph = Boolean(parent || children.length || checkpoint);
   return (
     <section className="run-workspace-panel graph-panel">
@@ -558,7 +561,7 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
         </button>
       </div>
       {error ? <div className="empty compact-empty" role="alert">{error}</div> : null}
-      {loading && !lineage ? <div className="empty compact-empty">Loading lineage...</div> : null}
+      {loading && !visibleLineage ? <div className="empty compact-empty">Loading lineage...</div> : null}
       {!loading && !error && !hasGraph ? (
         <div className="empty">
           <GitBranch size={18} />
@@ -569,7 +572,7 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
         <div className="lineage-layout" aria-live="polite">
           <div className="lineage-cards" role="list" aria-label="Lineage nodes">
             <LineageNode label="Parent" run={parent ?? null} empty="No parent run" />
-            <LineageNode label="Selected" run={lineage?.run ?? run} />
+            <LineageNode label="Selected" run={visibleLineage?.run ?? run} />
             <div className="lineage-node" role="listitem">
               <span>Checkpoint</span>
               {checkpoint ? (
@@ -583,7 +586,7 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
           <div className="lineage-children">
             <div className="lineage-children-head">
               <h3>Children</h3>
-              <span>{formatNumber(lineage?.children_total ?? children.length, 0)} direct forks</span>
+              <span>{formatNumber(visibleLineage?.children_total ?? children.length, 0)} direct forks</span>
             </div>
             {children.length ? (
               <table className="table lineage-table">
@@ -607,8 +610,8 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
                 </tbody>
               </table>
             ) : <div className="empty compact-empty">No direct children yet.</div>}
-            {lineage?.has_more_children ? (
-              <p className="lineage-truncated">Showing the latest {formatNumber(lineage.limit ?? children.length, 0)} children.</p>
+            {visibleLineage?.has_more_children ? (
+              <p className="lineage-truncated">Showing the latest {formatNumber(visibleLineage.limit ?? children.length, 0)} children.</p>
             ) : null}
           </div>
         </div>

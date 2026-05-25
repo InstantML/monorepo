@@ -33,7 +33,7 @@ import {
   visibleSelectionState,
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
-import { buildCheckpointForkBody, buildCheckpointResumeCode, defaultForkRunName } from "../src/checkpoints.js";
+import { buildCheckpointForkBody, buildCheckpointResumeCode, checkpointForkIdempotencyKey, defaultForkRunName } from "../src/checkpoints.js";
 import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, normalizeDeviceUserCode, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
@@ -553,6 +553,14 @@ test("checkpoint fork helper builds same-project fork payloads", () => {
     step: 12,
     tags: ["retry"],
   });
+  const body = buildCheckpointForkBody(artifact, run, { inheritConfig: true, reason: "retry after nan" });
+  const key = checkpointForkIdempotencyKey(artifact, run, body);
+  assert.match(key, /^instantml-fork-[0-9a-f]{32}$/);
+  assert.equal(key, checkpointForkIdempotencyKey(artifact, run, body));
+  assert.notEqual(
+    checkpointForkIdempotencyKey(artifact, run, body),
+    checkpointForkIdempotencyKey(artifact, run, { ...body, name: "different retry" }),
+  );
 });
 
 test("comparison helpers sort, aggregate, group, smooth, and average runs", () => {

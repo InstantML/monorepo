@@ -20,7 +20,7 @@ pub async fn fork_run(
 ) -> AppResult<Value> {
     let request_hash = hash_idempotency(source_run_id, &raw)?;
     if let Some(key) = idempotency_key {
-        let child_id = deterministic_fork_child_id(ctx.org_id, &key, &request_hash);
+        let child_id = deterministic_fork_child_id(ctx.org_id, &key);
         store.reserve_idempotency_key(ctx.org_id, &key).await?;
         let result = async {
             {
@@ -70,8 +70,21 @@ async fn fork_run_once(
             .as_ref()
             .map(|(_, _, child_id)| *child_id)
             .unwrap_or_else(Uuid::new_v4);
-        let prepared = prepare_fork(&data, ctx, source_run_id, input, child_id, max_body_bytes)?;
+        let prepared = prepare_fork(
+            &data,
+            ctx,
+            source_run_id,
+            input,
+            child_id,
+            idempotency
+                .as_ref()
+                .map(|(_, request_hash, _)| request_hash.as_slice()),
+            max_body_bytes,
+        )?;
         let existing_child = data.runs.get(&prepared.run.id).cloned();
+        if let (Some(existing), Some((_, request_hash, _))) = (&existing_child, &idempotency) {
+            validate_existing_fork_child_request_hash(existing, request_hash)?;
+        }
         (prepared, existing_child)
     };
     let response_run = existing_child
@@ -133,18 +146,40 @@ async fn fork_run_once(
     Ok(response)
 }
 
-fn deterministic_fork_child_id(org_id: Uuid, key: &str, request_hash: &[u8]) -> Uuid {
+fn deterministic_fork_child_id(org_id: Uuid, key: &str) -> Uuid {
     let mut hasher = Sha256::new();
     hasher.update(b"instantml:run-fork:v1");
     hasher.update(org_id.as_bytes());
     hasher.update(key.as_bytes());
-    hasher.update(request_hash);
     let digest = hasher.finalize();
     let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&digest[..16]);
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Uuid::from_bytes(bytes)
+}
+
+fn request_hash_hex(request_hash: &[u8]) -> String {
+    request_hash
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
+
+fn validate_existing_fork_child_request_hash(run: &RunRow, request_hash: &[u8]) -> AppResult<()> {
+    let expected = request_hash_hex(request_hash);
+    let actual = run
+        .metadata
+        .get("lineage")
+        .and_then(Value::as_object)
+        .and_then(|lineage| lineage.get("idempotency_request_hash"))
+        .and_then(Value::as_str);
+    if actual == Some(expected.as_str()) {
+        return Ok(());
+    }
+    Err(AppError::conflict(
+        "idempotency key was already used with a different request body",
+    ))
 }
 
 fn validate_cached_fork_response_access(
@@ -174,6 +209,7 @@ fn prepare_fork(
     source_run_id: Uuid,
     input: CreateRunForkRequest,
     child_id: Uuid,
+    idempotency_request_hash: Option<&[u8]>,
     max_body_bytes: usize,
 ) -> AppResult<PreparedFork> {
     let source = fetch_run_in_data(data, ctx, source_run_id)?;
@@ -225,6 +261,16 @@ fn prepare_fork(
         .as_object_mut()
         .expect("validated metadata is an object")
         .insert("lineage".to_string(), lineage.clone());
+    if let Some(request_hash) = idempotency_request_hash {
+        metadata
+            .get_mut("lineage")
+            .and_then(Value::as_object_mut)
+            .expect("lineage metadata is an object")
+            .insert(
+                "idempotency_request_hash".to_string(),
+                json!(request_hash_hex(request_hash)),
+            );
+    }
     let default_name = default_fork_name(&source, forked_from_step);
     let name = validate_name(
         input.name.as_deref().or(Some(default_name.as_str())),
@@ -412,10 +458,18 @@ pub async fn run_lineage(store: &Store, ctx: &RequestContext, run_id: Uuid) -> A
             .filter(|candidate| ensure_run_access_in_data(ctx, candidate).is_ok());
         let mut children = Vec::new();
         let mut children_total = 0_usize;
-        for ((org_id, parent_id, _, child_id), _) in data.runs_by_parent_created.iter().rev() {
-            if *org_id != ctx.org_id || *parent_id != run.id {
-                continue;
-            }
+        let range_start = (ctx.org_id, run.id, DateTime::<Utc>::MIN_UTC, Uuid::nil());
+        let range_end = (
+            ctx.org_id,
+            run.id,
+            DateTime::<Utc>::MAX_UTC,
+            Uuid::from_u128(u128::MAX),
+        );
+        for ((_, _, _, child_id), _) in data
+            .runs_by_parent_created
+            .range(range_start..=range_end)
+            .rev()
+        {
             let Some(child) = data.runs.get(child_id).cloned() else {
                 continue;
             };
@@ -532,6 +586,7 @@ mod tests {
                 metadata: Some(json!({"reason": "nan"})),
             },
             Uuid::from_u128(40),
+            None,
             1024 * 1024,
         )
         .unwrap();
@@ -549,6 +604,105 @@ mod tests {
             json!(source.id)
         );
         assert_eq!(fork.run.metadata["notes"], json!("Retry from checkpoint"));
+    }
+
+    #[test]
+    fn idempotent_fork_records_and_rechecks_request_hash() {
+        let ctx = RequestContext::local();
+        let source = test_run(10, 20, "source");
+        let mut data = StoreData::default();
+        data.insert_run(source.clone());
+        let request_hash = vec![1, 2, 3, 4];
+
+        let fork = prepare_fork(
+            &data,
+            &ctx,
+            source.id,
+            CreateRunForkRequest {
+                name: Some("retry".to_string()),
+                step: Some(12.0),
+                checkpoint_artifact_id: None,
+                inherit_config: Some(true),
+                config_overrides: None,
+                tags: None,
+                notes: None,
+                metadata: None,
+            },
+            deterministic_fork_child_id(ctx.org_id, "fork-key"),
+            Some(&request_hash),
+            1024 * 1024,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fork.run.metadata["lineage"]["idempotency_request_hash"],
+            json!("01020304")
+        );
+        assert!(validate_existing_fork_child_request_hash(&fork.run, &request_hash).is_ok());
+        let error =
+            validate_existing_fork_child_request_hash(&fork.run, &[4, 3, 2, 1]).unwrap_err();
+        assert_eq!(
+            error.message(),
+            "idempotency key was already used with a different request body"
+        );
+    }
+
+    #[test]
+    fn existing_idempotent_child_rejects_different_body_when_record_missing() {
+        let ctx = RequestContext::local();
+        let source = test_run(10, 20, "source");
+        let child_id = deterministic_fork_child_id(ctx.org_id, "fork-key");
+        let mut data = StoreData::default();
+        data.insert_run(source.clone());
+        let original_hash = vec![1, 2, 3, 4];
+        let retry_hash = vec![4, 3, 2, 1];
+        let original = prepare_fork(
+            &data,
+            &ctx,
+            source.id,
+            CreateRunForkRequest {
+                name: Some("retry".to_string()),
+                step: Some(12.0),
+                checkpoint_artifact_id: None,
+                inherit_config: Some(true),
+                config_overrides: None,
+                tags: None,
+                notes: None,
+                metadata: None,
+            },
+            child_id,
+            Some(&original_hash),
+            1024 * 1024,
+        )
+        .unwrap();
+        data.insert_run(original.run.clone());
+
+        let retry = prepare_fork(
+            &data,
+            &ctx,
+            source.id,
+            CreateRunForkRequest {
+                name: Some("retry-different-body".to_string()),
+                step: Some(13.0),
+                checkpoint_artifact_id: None,
+                inherit_config: Some(true),
+                config_overrides: None,
+                tags: None,
+                notes: None,
+                metadata: None,
+            },
+            child_id,
+            Some(&retry_hash),
+            1024 * 1024,
+        )
+        .unwrap();
+        let existing = data.runs.get(&retry.run.id).expect("existing child");
+        let error = validate_existing_fork_child_request_hash(existing, &retry_hash).unwrap_err();
+
+        assert_eq!(
+            error.message(),
+            "idempotency key was already used with a different request body"
+        );
     }
 
     #[test]
@@ -591,6 +745,7 @@ mod tests {
                 metadata: None,
             },
             Uuid::from_u128(40),
+            None,
             1024 * 1024,
         )
         .unwrap_err();

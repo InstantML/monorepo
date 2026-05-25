@@ -2145,6 +2145,44 @@ export interface components {
         RunEnvelope: {
             run: components["schemas"]["RunRow"];
         };
+        RunForkContext: {
+            /** Format: uuid */
+            forked_from_artifact_id?: string | null;
+            /** Format: double */
+            forked_from_step?: number | null;
+            message: string;
+            /** Format: uuid */
+            parent_run_id: string;
+        };
+        RunForkEnvelope: {
+            fork: components["schemas"]["RunForkContext"];
+            run: components["schemas"]["RunSummaryRow"];
+        };
+        RunLineageEnvelope: {
+            checkpoint_artifact?: null | components["schemas"]["PublicArtifactRow"];
+            children: components["schemas"]["RunSummaryRow"][];
+            children_total: number;
+            has_more_children: boolean;
+            limit: number;
+            parent?: null | components["schemas"]["RunSummaryRow"];
+            run: components["schemas"]["RunSummaryRow"];
+        };
+        RunMetricAggregate: {
+            /** Format: double */
+            best_step?: number | null;
+            /** Format: int64 */
+            count: number;
+            /** Format: double */
+            latest?: number | null;
+            /** Format: double */
+            max?: number | null;
+            /** Format: double */
+            mean?: number | null;
+            /** Format: double */
+            min?: number | null;
+            /** Format: double */
+            variance?: number | null;
+        };
         RunRow: {
             config: Record<string, never>;
             /** Format: date-time */
@@ -2158,6 +2196,42 @@ export interface components {
             /** Format: uuid */
             id: string;
             metadata: Record<string, never>;
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            parent_run_id?: string | null;
+            project: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: date-time */
+            started_at: string;
+            status: string;
+            tags: string[];
+        };
+        RunSummaryRow: {
+            artifact_counts: {
+                [key: string]: number;
+            };
+            config: Record<string, never>;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            finished_at?: string | null;
+            /** Format: uuid */
+            forked_from_artifact_id?: string | null;
+            /** Format: double */
+            forked_from_step?: number | null;
+            /** Format: uuid */
+            id: string;
+            latest_metrics: {
+                [key: string]: number | null;
+            };
+            metadata: Record<string, never>;
+            metric_aggregates: {
+                [key: string]: components["schemas"]["RunMetricAggregate"];
+            };
+            metric_keys: string[];
             name: string;
             /** Format: uuid */
             org_id: string;
@@ -4481,7 +4555,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JsonObjectResponse"];
+                    "application/json": components["schemas"]["RunForkEnvelope"];
                 };
             };
             /** @description Validation error */
@@ -4558,7 +4632,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JsonObjectResponse"];
+                    "application/json": components["schemas"]["RunLineageEnvelope"];
                 };
             };
             /** @description Run not found */

@@ -63,12 +63,16 @@ api = im.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 child = api.fork_run("source-run-id", checkpoint_artifact_id="artifact-id", step=500)
 run = im.attach_run(child["id"], base_url="http://127.0.0.1:8000", api_key="instantml_...")
 run.log({"loss": 0.12}, step=501)
+run.finish()
 ```
 
 Forking creates a same-project linked run record only; it does not start
 training or copy metrics/artifacts. The SDK derives a stable fork idempotency
 key from the request body by default so retrying the same fork call returns the
-same child run instead of creating duplicates.
+same child run instead of creating duplicates. `attach_run()` validates the
+target run by default and uses async uploads; use `validate=False` only for
+write-only credentials or intentionally offline attach flows, and call
+`finish()` or `wait_for_processing()` before short scripts exit.
 
 ## Running on a remote server or CI
 

@@ -2349,25 +2349,35 @@ def test_api_fork_run_validates_inputs_and_response(monkeypatch):
         ro.Api(base_url="http://example.test").fork_run("source-run", name="child")
 
 
-def test_attach_run_returns_existing_run_handle(monkeypatch):
+def test_attach_run_returns_existing_run_handle(monkeypatch, tmp_path):
     calls = []
 
-    def fail_request(*args, **kwargs):
-        calls.append((args, kwargs))
-        raise AssertionError("attach_run should not create a run")
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        calls.append((method, path, body, idempotency_key))
+        return {"run": {"id": "run-123"}}
 
-    monkeypatch.setattr(Client, "_request", fail_request)
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
 
-    run = Client(base_url="http://example.test", api_key="key").attach_run("run-123")
+    run = Client(base_url="http://example.test", api_key="key").attach_run(
+        "run-123",
+        queue_dir=str(tmp_path / "async"),
+    )
 
     assert run.run_id == "run-123"
     assert run.client.base_url == "http://example.test"
-    assert calls == []
+    assert run.upload_mode == "async"
+    assert (tmp_path / "async" / "run-123" / "queue.sqlite3").exists()
+    assert calls == [("GET", "/runs/run-123", None, None)]
 
 
 def test_attach_run_optional_local_features(monkeypatch):
     events = []
 
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        return {"run": {"id": "run-123"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
     monkeypatch.setattr(Run, "start_system_metrics", lambda self, interval=15.0: events.append(("system", interval)))
     monkeypatch.setattr(Run, "capture_console", lambda self: events.append(("console", self.run_id)))
 
@@ -2378,10 +2388,62 @@ def test_attach_run_optional_local_features(monkeypatch):
         system_metrics=True,
         system_metrics_interval=3.0,
         capture_console=True,
+        upload_mode="sync",
     )
 
     assert run.run_id == "run-123"
     assert events == [("system", 3.0), ("console", "run-123")]
+
+
+def test_top_level_attach_run_defaults_to_async(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        return {"run": {"id": "run-top-async"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+
+    run = ro.attach_run(
+        "run-top-async",
+        api_key="key",
+        base_url="http://example.test",
+        queue_dir=str(tmp_path / "async"),
+    )
+
+    assert run.run_id == "run-top-async"
+    assert run.upload_mode == "async"
+    assert (tmp_path / "async" / "run-top-async" / "queue.sqlite3").exists()
+
+
+def test_attach_run_can_skip_validation(monkeypatch):
+    calls = []
+
+    def fail_request(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("attach_run(validate=False) should not fetch the run")
+
+    monkeypatch.setattr(Client, "_request", fail_request)
+
+    run = Client(base_url="http://example.test", api_key="key").attach_run(
+        "run-123",
+        upload_mode="sync",
+        validate=False,
+    )
+
+    assert run.run_id == "run-123"
+    assert calls == []
+
+
+def test_attach_run_validation_rejects_missing_or_unexpected_run(monkeypatch):
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        return {"run": {"id": "other"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    with pytest.raises(InstantMLError, match="invalid run response"):
+        Client(base_url="http://example.test", api_key="key").attach_run("run-123", upload_mode="sync")
+
+    with pytest.raises(TypeError, match="validate"):
+        Client(base_url="http://example.test", api_key="key").attach_run("run-123", validate="no")
 
 
 def test_client_retries_429_with_retry_after(monkeypatch):
