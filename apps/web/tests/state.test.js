@@ -16,6 +16,7 @@ import {
   formatNumber,
   groupKeyForRun,
   identifierForRun,
+  isInternalInstantMlMetric,
   metricFilterIsRegex,
   metricAggregate,
   metricGoal,
@@ -28,6 +29,7 @@ import {
   sortRuns,
   statusTone,
   toggleSelection,
+  uploadHealthForRun,
   visibleSelectionState,
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
@@ -258,8 +260,10 @@ test("shortcut helpers detect platform commands and editable targets", () => {
 });
 
 test("summary helpers format stable UI values", () => {
-  assert.deepEqual(metricKeysFromSummary({ metric_keys: ["b", "a", "a"] }), ["a", "b"]);
-  assert.deepEqual(filterMetricKeys(["train/loss", "eval/return_mean", "train/reward"], "train/.*"), ["train/loss", "train/reward"]);
+  assert.deepEqual(metricKeysFromSummary({ metric_keys: ["b", "a", "a", "system/instantml/queued_events"] }), ["a", "b"]);
+  assert.equal(isInternalInstantMlMetric("system/instantml/queued_events"), true);
+  assert.equal(isInternalInstantMlMetric("train/system/instantml/queued_events"), false);
+  assert.deepEqual(filterMetricKeys(["train/loss", "eval/return_mean", "train/reward", "system/instantml/queued_events"], "train/.*"), ["train/loss", "train/reward"]);
   assert.deepEqual(filterMetricKeys(["train/loss", "eval/return_mean"], "[bad"), []);
   assert.equal(metricFilterIsRegex("train/.*"), true);
   assert.equal(metricFilterIsRegex("[bad"), false);
@@ -277,6 +281,28 @@ test("summary helpers format stable UI values", () => {
   assert.equal(statusTone("failed"), "bad");
   assert.equal(statusTone("running"), "live");
   assert.equal(durationLabel({ started_at: "2026-01-01T00:00:00.000Z", finished_at: "2026-01-01T00:00:02.000Z" }), "2s");
+});
+
+test("upload health derives compact state from SDK heartbeat metrics", () => {
+  const at = 1_000;
+  assert.deepEqual(uploadHealthForRun({ latest_metrics: {} }, at), { tone: "neutral", label: "upload unknown", state: "unknown" });
+  assert.deepEqual(uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990 } }, at), { tone: "good", label: "synced", state: "synced" });
+  assert.deepEqual(
+    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/queued_events": 12 } }, at),
+    { tone: "live", label: "syncing 12", state: "syncing" },
+  );
+  assert.deepEqual(
+    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/upload_lag_seconds": 9 } }, at),
+    { tone: "live", label: "syncing", state: "syncing" },
+  );
+  assert.deepEqual(
+    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 900 } }, at),
+    { tone: "neutral", label: "upload stale", state: "stale" },
+  );
+  assert.deepEqual(
+    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/failed_events": 1 } }, at),
+    { tone: "bad", label: "upload errors", state: "errors" },
+  );
 });
 
 test("chart helpers normalize series and summarize last values", () => {

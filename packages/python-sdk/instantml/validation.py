@@ -11,7 +11,7 @@ MAX_TEXT_BYTES = 512
 MAX_CONSOLE_LOG_MESSAGE_BYTES = 16 * 1024
 MAX_CONSOLE_LOG_LINES_PER_BATCH = 50
 CONSOLE_LOG_STREAMS = {"stdout", "stderr"}
-PROCESS_UPLOAD_MODES = {"sync", "spool"}
+PROCESS_UPLOAD_MODES = {"sync", "spool", "async"}
 
 
 def _validate_upload_mode(upload_mode: str) -> None:

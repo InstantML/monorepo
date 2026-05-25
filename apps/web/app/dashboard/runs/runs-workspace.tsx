@@ -4,7 +4,7 @@ import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plu
 import { useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 
-import { MAX_SELECTED_RUNS, visibleSelectionState } from "../../../src/state.js";
+import { MAX_SELECTED_RUNS, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
 import { metricTitle, runConfigSummary, runNoteText, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
@@ -291,6 +291,7 @@ export function RunsWorkspace({
             const note = runNoteText(run);
             const visibleTags = visibleTagsForSearch(run.tags, runSearch, 3);
             const hiddenTags = run.tags.filter((tag) => !visibleTags.includes(tag));
+            const uploadHealth = uploadHealthForRun(run);
             return (
               <div
                 className={`workspace-run-row ${selected ? "selected" : ""}`}
@@ -317,6 +318,9 @@ export function RunsWorkspace({
                   <span className="workspace-run-body">
                     <strong>{compactRailRunName(run.name)}</strong>
                     <small>{run.project} · {runConfigSummary(run)}</small>
+                    {uploadHealth.state !== "unknown" ? (
+                      <span className={`upload-health-chip ${uploadHealth.tone}`}>{uploadHealth.label}</span>
+                    ) : null}
                     <span className="workspace-run-tags" aria-label={`${run.name} tags`}>
                       {visibleTags.map((tag) => <b key={tag}>{tag}</b>)}
                       {hiddenTags.length ? <em title={hiddenTags.join(", ")}>+{hiddenTags.length}</em> : null}

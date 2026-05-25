@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -12,8 +13,10 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 import instantml as ro
+import instantml.async_queue as async_queue
 import instantml.client as client_module
 import instantml.uploader as uploader
+from instantml.async_queue import AsyncQueueRepository, DeliveryResult, drain_queue_once
 from instantml.client import (
     Client,
     InstantMLError,
@@ -715,6 +718,181 @@ def test_process_spool_mode_writes_events_without_network(tmp_path):
     assert first_event["requests"][0]["path"] == "/runs/run/1/metrics"
     assert first_event["requests"][0]["body"]["timestamp"]
     assert not list((tmp_path / "run_1").glob("*.tmp"))
+
+
+def test_async_upload_mode_queues_metric_hot_path_without_network(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FailingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            raise AssertionError("metric hot path should enqueue instead of using network")
+
+    run = Run(client=FailingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.log_metrics({"reward": 1.5}, step=1)
+    run.log_stdout("queued")
+
+    status = run.upload_status()
+    assert status["pending"] == 2
+    assert status["processed"] == 0
+    assert (tmp_path / "run-1" / "queue.sqlite3").exists()
+
+
+def test_async_upload_mode_keeps_metadata_updates_sync(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+    calls = []
+
+    class RecordingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    run = Run(client=RecordingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.set_tags(["baseline"])
+    run.set_notes("still sync")
+
+    assert calls == [
+        ("PATCH", "/runs/run-1", {"tags": ["baseline"]}),
+        ("PATCH", "/runs/run-1", {"notes": "still sync"}),
+    ]
+    assert run.upload_status()["pending"] == 0
+
+
+def test_async_uploader_uses_subprocess_without_importing_user_main(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeProcess:
+        def __init__(self, args, **kwargs):
+            calls.append((args, kwargs))
+
+        def poll(self):
+            return None
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    monkeypatch.setattr(client_module.subprocess, "Popen", FakeProcess)
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.log_metrics({"reward": 1.5}, step=1)
+
+    assert len(calls) == 1
+    assert calls[0][0][1] == "-c"
+    assert "run_async_uploader" in calls[0][0][2]
+    assert calls[0][1]["stdin"] == client_module.subprocess.DEVNULL
+    assert run.upload_status()["pending"] == 1
+
+
+def test_async_queue_drains_with_stable_idempotency(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1}, idempotency_key="event-1")
+    calls = []
+
+    def fake_send_request(**kwargs):
+        calls.append(kwargs)
+        return DeliveryResult(ok=True, retryable=False)
+
+    monkeypatch.setattr(async_queue, "_send_request", fake_send_request)
+
+    assert drain_queue_once(repository, base_url="http://example.test", api_key="secret") == 1
+    assert repository.status()["processed"] == 1
+    assert repository.status()["pending"] == 0
+    assert calls[0]["idempotency_key"] == "event-1"
+
+
+def test_async_queue_marks_oversized_first_event_failed(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3", max_event_bytes=1_024)
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"blob": "x" * 64}, "step": 1}, idempotency_key="event-1")
+    monkeypatch.setattr(async_queue, "_send_request", lambda **kwargs: pytest.fail("oversized event should not be sent"))
+
+    assert drain_queue_once(repository, base_url="http://example.test", max_event_bytes=16) == 0
+    assert repository.status()["failed"] == 1
+
+
+def test_async_queue_retry_and_failed_statuses(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1}, idempotency_key="event-1")
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"loss": 2.0}, "step": 1}, idempotency_key="event-2")
+    results = [
+        DeliveryResult(ok=False, retryable=True, message="try later", status=503, code="unavailable"),
+        DeliveryResult(ok=False, retryable=False, message="quota", status=429, code="api_request_monthly_limit_exceeded"),
+    ]
+
+    def fake_send_request(**kwargs):
+        return results.pop(0)
+
+    monkeypatch.setattr(async_queue, "_send_request", fake_send_request)
+
+    assert drain_queue_once(repository, base_url="http://example.test") == 0
+    status = repository.status()
+    assert status["pending"] == 1
+    assert status["failed"] == 1
+
+
+def test_async_wait_methods_and_finish_signature(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    assert run.wait_for_submission(timeout=0.01)
+    assert run.wait_for_processing(timeout=0.01)
+    run.log_metrics({"reward": 1}, step=1)
+    assert not run.wait_for_processing(timeout=0.01)
+    # Existing positional status remains valid and delivery errors do not raise.
+    run.finish("failed", timeout=0.01)
+
+
+def test_uploader_cli_drains_async_queue_dir(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_drain_async_queues(**kwargs):
+        captured.update(kwargs)
+        return 3
+
+    monkeypatch.setattr(uploader, "drain_async_queues", fake_drain_async_queues)
+
+    assert uploader.main(["--queue-dir", str(tmp_path), "--base-url", "http://example.test", "--timeout", "2", "--max-events", "5"]) == 0
+    assert captured == {
+        "queue_dir": str(tmp_path),
+        "base_url": "http://example.test",
+        "api_key": os.environ.get("INSTANTML_API_KEY"),
+        "timeout": 2.0,
+        "max_events": 5,
+    }
 
 
 def test_run_id_setter_marks_pending_spool_run_ready(tmp_path):

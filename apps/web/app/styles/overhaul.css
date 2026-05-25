@@ -2302,6 +2302,29 @@ button.compare-row-head.active {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.upload-health-chip {
+  justify-self: start;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  color: var(--faint);
+  font: 650 10px/1 var(--font-mono);
+  padding: 3px 5px;
+  white-space: nowrap;
+}
+.upload-health-chip.good {
+  border-color: rgba(31, 184, 119, 0.24);
+  color: var(--accent-strong);
+}
+.upload-health-chip.live {
+  border-color: rgba(38, 110, 246, 0.24);
+  color: var(--blue);
+}
+.upload-health-chip.bad {
+  border-color: rgba(219, 57, 57, 0.24);
+  color: var(--danger);
+}
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }
 

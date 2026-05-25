@@ -33,6 +33,7 @@ DEFAULT_CASES = [
     "noop",
     "instantml-sync-null",
     "instantml-log-null",
+    "instantml-async-queue",
     "instantml-spool-durable",
     "wandb-offline",
 ]
@@ -48,6 +49,7 @@ CASE_DESCRIPTIONS = {
     "noop": "Synthetic metric computation with no SDK logging.",
     "instantml-sync-null": "InstantML internal Run.log_metrics microbenchmark through a fake local transport that serializes bodies and does no network I/O.",
     "instantml-log-null": "InstantML internal ergonomic Run.log microbenchmark through the same fake local transport, including scalar classification.",
+    "instantml-async-queue": "InstantML async mode enqueueing one local SQLite WAL queue event per log call; the background uploader is disabled so the hot path isolates producer overhead.",
     "instantml-spool-durable": "InstantML process-spool mode writing one durable local event file per log call.",
     "wandb-offline": "W&B offline mode with quiet/no-git/no-code/no-console settings.",
 }
@@ -194,8 +196,14 @@ def tree_stats(root: Path) -> dict[str, int]:
 
 class FakeClient:
     def __init__(self) -> None:
+        self.base_url = "http://example.test"
+        self.timeout = 1.0
+        self.offline_dir = None
         self.requests = 0
         self.serialized_bytes = 0
+
+    def _resolve_api_key(self) -> str | None:
+        return None
 
     def _request(
         self,
@@ -219,13 +227,16 @@ def setup_instantml_run(config: WorkerConfig) -> tuple[Any, FakeClient]:
     from instantml.client import Run
 
     client = FakeClient()
-    upload_mode = "spool" if config.case == "instantml-spool-durable" else "sync"
+    if config.case == "instantml-async-queue":
+        Run._start_async_uploader = lambda self: None  # type: ignore[method-assign]
+    upload_mode = "spool" if config.case == "instantml-spool-durable" else "async" if config.case == "instantml-async-queue" else "sync"
     run = Run(
         client=client,
         run_id=f"bench-{config.case}-{config.sample_index}",
         buffer_size=0,
         upload_mode=upload_mode,
         spool_dir=str(config.tmp_root / "spool"),
+        queue_dir=str(config.tmp_root / "async"),
     )
     return run, client
 
@@ -303,7 +314,10 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
 
     def finish() -> None:
         if active_config.case.startswith("instantml-"):
-            target.finish("finished")
+            if active_config.case == "instantml-async-queue":
+                target.finish("finished", timeout=0.01)
+            else:
+                target.finish("finished")
         elif active_config.case == "wandb-offline":
             target.finish()
 
@@ -320,6 +334,25 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
         def drain() -> None:
             nonlocal drain_count, fake_client
             drain_count = drain_spool(str(active_config.tmp_root / "spool"), client=drain_client)
+            fake_client = drain_client
+
+        _, drain_delta = measure_phase(drain)
+    elif active_config.case == "instantml-async-queue":
+        sys.path.insert(0, str(SDK_ROOT))
+        import instantml.async_queue as async_queue
+        from instantml.async_queue import DeliveryResult, drain_async_queues
+
+        drain_client = FakeClient()
+
+        def fake_send_request(**kwargs: Any) -> DeliveryResult:
+            drain_client._request(kwargs["method"], kwargs["path"], kwargs["body"], idempotency_key=kwargs.get("idempotency_key"))
+            return DeliveryResult(ok=True, retryable=False)
+
+        async_queue._send_request = fake_send_request
+
+        def drain() -> None:
+            nonlocal drain_count, fake_client
+            drain_count = drain_async_queues(str(active_config.tmp_root / "async"), base_url=drain_client.base_url, timeout=drain_client.timeout)
             fake_client = drain_client
 
         _, drain_delta = measure_phase(drain)
@@ -659,6 +692,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             "notes": [
                 "Hot-loop timings exclude setup/init and finish/drain phases; those phases are reported separately.",
                 "InstantML sync-null/log-null are internal null-transport microbenchmarks and are not remote persistence benchmarks.",
+                "InstantML async-queue disables the uploader process during the hot loop to isolate SQLite producer cost, then drains the queue through a fake successful transport after finish.",
                 "InstantML spool-durable writes one local durable event file per log call; uploader drain CPU is reported separately.",
                 "W&B offline uses local/offline mode and may perform work in a service process; hot-loop tree CPU is phase-sampled, while total worker CPU is monitored from the parent process.",
                 "Finish and drain columns are case-specific lifecycle costs, not identical provider phases.",
