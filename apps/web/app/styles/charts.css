@@ -886,20 +886,17 @@ small {
   cursor: crosshair;
 }
 
-/* When smoothing is on, the raw line/markers fade back so the opaque smoothed
- * curve reads as the primary signal. */
+/* EMA smoothing: the smoothed curve renders at full opacity as the primary
+ * signal, with the raw series kept faintly visible ("slightly opaque") behind
+ * it for context. */
 .series.series-raw {
-  opacity: 0.22;
+  opacity: 0.3;
   stroke-width: 1;
 }
 
 .series.series-smooth {
   opacity: 1;
-  stroke-width: 1.9;
-}
-
-.series-point.series-point-raw {
-  opacity: 0.28;
+  stroke-width: 1.65;
 }
 
 .tooltip-smoothed {
@@ -908,10 +905,17 @@ small {
   font-weight: 600;
 }
 
+/* Filled marker shown at the hovered sample (markers are otherwise omitted on
+ * continuous lines). */
+.hover-point {
+  stroke-width: 1.5;
+}
+
 .hover-ring {
   fill: none;
-  stroke: #1e2a36;
+  stroke: var(--chart-tick, #94a3b8);
   stroke-width: 1.5;
+  opacity: 0.65;
 }
 
 .hover-guide {
