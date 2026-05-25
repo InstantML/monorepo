@@ -787,17 +787,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
   }, [api]);
 
-  const loadDashboard = useCallback(async (options: { signal?: AbortSignal } = {}) => {
-    const requestOptions = options && "signal" in options ? options : {};
+  const loadDashboard = useCallback(async (options: { signal?: AbortSignal; silent?: boolean } = {}) => {
+    const silent = Boolean(options.silent);
+    const requestOptions = options.signal ? { signal: options.signal } : {};
     const requestId = dashboardRequestRef.current + 1;
     if (warehouseRetryTimerRef.current) {
       window.clearTimeout(warehouseRetryTimerRef.current);
       warehouseRetryTimerRef.current = null;
     }
     dashboardRequestRef.current = requestId;
-    setDashboardLoading(true);
-    setLoadingDetail("Loading runs");
-    setMessage("Loading runs...");
+    if (!silent) {
+      setDashboardLoading(true);
+      setLoadingDetail("Loading runs");
+      setMessage("Loading runs...");
+    }
     let keepLoadingScreen = false;
     try {
       const params = currentPageCursor
@@ -826,7 +829,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return next.ids;
       });
       setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
-      if (overviewResult.status === "rejected" && !isWarehouseStartingError(overviewResult.reason)) {
+      if (silent) {
+        // Keep the user's current status message stable during background polls.
+      } else if (overviewResult.status === "rejected" && !isWarehouseStartingError(overviewResult.reason)) {
         setMessage("Runs loaded. Overview is still syncing.");
       } else {
         setMessage(runsPageMessage(nextSummary.total, pageOffset, nextSummary.runs.length));
@@ -834,7 +839,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } catch (error) {
       if (requestId === dashboardRequestRef.current && !isAbortError(error)) {
         const detail = error instanceof Error ? error.message : "Unable to load runs.";
-        setMessage(detail);
+        if (!silent) setMessage(detail);
         if (isWarehouseStartingError(error) && !options.signal?.aborted) {
           setLoadingDetail("Starting data warehouse");
           keepLoadingScreen = !initialLoadDone;
@@ -846,7 +851,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
     } finally {
       if (requestId === dashboardRequestRef.current) {
-        setDashboardLoading(keepLoadingScreen);
+        if (!silent) setDashboardLoading(keepLoadingScreen);
         pageNavigationPendingRef.current = false;
         setPageNavigationPending(false);
         if (!keepLoadingScreen && !options.signal?.aborted) setInitialLoadDone(true);
@@ -962,6 +967,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     loadDashboard({ signal: controller.signal });
     return () => controller.abort();
   }, [dashboardAuthorized, loadDashboard]);
+
+  useEffect(() => {
+    if (!dashboardAuthorized || !initialLoadDone) return undefined;
+    let controller: AbortController | null = null;
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
+      controller?.abort();
+      controller = new AbortController();
+      void loadDashboard({ signal: controller.signal, silent: true });
+    };
+    const interval = window.setInterval(poll, 5_000);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", poll);
+      controller?.abort();
+    };
+  }, [dashboardAuthorized, initialLoadDone, loadDashboard]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(queryInput), SEARCH_DEBOUNCE_MS);

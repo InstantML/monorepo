@@ -1,5 +1,13 @@
 export const MAX_SELECTED_RUNS = 2000;
 export const DEFAULT_SELECTED_RUNS = 100;
+export const INTERNAL_INSTANTML_METRIC_PREFIX = "system/instantml/";
+const UPLOAD_HEALTH_HEARTBEAT_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}upload_health_unix_seconds`;
+const UPLOAD_HEALTH_LAG_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}upload_lag_seconds`;
+const UPLOAD_HEALTH_QUEUED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}queued_events`;
+const UPLOAD_HEALTH_FAILED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}failed_events`;
+const UPLOAD_HEALTH_DROPPED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}dropped_events`;
+const UPLOAD_HEALTH_STALE_SECONDS = 30;
+const UPLOAD_HEALTH_LAG_SECONDS = 5;
 
 export function toggleSelection(selected, runId) {
   if (selected.includes(runId)) return selected.filter((id) => id !== runId);
@@ -61,7 +69,11 @@ export function defaultRunSelection(currentIds, runs, defaultInitialized) {
 }
 
 export function metricKeysFromSummary(summary) {
-  return [...new Set((summary?.metric_keys ?? []).filter(Boolean))].sort();
+  return [...new Set((summary?.metric_keys ?? []).filter((key) => key && !isInternalInstantMlMetric(key)))].sort();
+}
+
+export function isInternalInstantMlMetric(key) {
+  return String(key ?? "").startsWith(INTERNAL_INSTANTML_METRIC_PREFIX);
 }
 
 const PREFERRED_METRIC_PATTERNS = [
@@ -100,7 +112,7 @@ export function metricFilterIsRegex(pattern) {
 }
 
 export function filterMetricKeys(keys, pattern) {
-  const uniqueKeys = [...new Set((keys ?? []).filter(Boolean))].sort();
+  const uniqueKeys = [...new Set((keys ?? []).filter((key) => key && !isInternalInstantMlMetric(key)))].sort();
   const trimmed = String(pattern ?? "").trim();
   if (!trimmed) return uniqueKeys;
   try {
@@ -110,6 +122,23 @@ export function filterMetricKeys(keys, pattern) {
     const lowered = trimmed.toLowerCase();
     return uniqueKeys.filter((key) => key.toLowerCase().includes(lowered));
   }
+}
+
+export function uploadHealthForRun(run, nowSeconds = Date.now() / 1000) {
+  const metrics = run?.latest_metrics ?? {};
+  const heartbeat = numericMetric(metrics[UPLOAD_HEALTH_HEARTBEAT_KEY]);
+  if (heartbeat === null) return { tone: "neutral", label: "upload unknown", state: "unknown" };
+  const failed = numericMetric(metrics[UPLOAD_HEALTH_FAILED_KEY]) ?? 0;
+  const dropped = numericMetric(metrics[UPLOAD_HEALTH_DROPPED_KEY]) ?? 0;
+  const queued = numericMetric(metrics[UPLOAD_HEALTH_QUEUED_KEY]) ?? 0;
+  const lag = numericMetric(metrics[UPLOAD_HEALTH_LAG_KEY]) ?? 0;
+  const stale = nowSeconds - heartbeat > UPLOAD_HEALTH_STALE_SECONDS;
+  if (failed > 0 || dropped > 0) return { tone: "bad", label: "upload errors", state: "errors" };
+  if (stale) return { tone: "neutral", label: "upload stale", state: "stale" };
+  if (queued > 0 || lag > UPLOAD_HEALTH_LAG_SECONDS) {
+    return { tone: "live", label: queued > 0 ? `syncing ${formatNumber(queued, 0)}` : "syncing", state: "syncing" };
+  }
+  return { tone: "good", label: "synced", state: "synced" };
 }
 
 export function bestMetric(run, key = "eval/return_mean") {
@@ -178,6 +207,10 @@ function numericDesc(left, right) {
   const leftValue = left ?? Number.NEGATIVE_INFINITY;
   const rightValue = right ?? Number.NEGATIVE_INFINITY;
   return rightValue - leftValue;
+}
+
+function numericMetric(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function numericAsc(left, right) {

@@ -55,6 +55,9 @@ Current implemented design sequence:
 - `2026-05-24-admin-operator-app.md`: separate read-only Next admin app plus a
   bootstrap-protected Rust operator overview for users, orgs, storage, API
   keys, billing posture, and risk queues.
+- `2026-05-25-durable-async-sdk-logging.md`: Neptune-inspired durable async SDK
+  logging slice with per-run SQLite WAL queues, a process uploader, recovery
+  CLI, SDK waits/status, upload-health metrics, and silent dashboard polling.
 
 Current draft/revised designs awaiting implementation approval:
 

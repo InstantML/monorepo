@@ -20,6 +20,7 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Buffer training-loop events and flush explicitly.
 - Spool failed post-init events to local JSONL and replay them.
 - Write post-init events to a process-isolated local spool for a separate uploader process.
+- Optionally write metric/log hot-path events to a per-run SQLite WAL queue and drain them with an SDK-managed background uploader process.
 - Capture metrics-focused timestamp snapshots with a defined dictionary shape.
 - Optionally keep a local SQLite audit store for attempted SDK events.
 - Optionally sample psutil/NVML system metrics during a run.
@@ -174,6 +175,48 @@ run.log_snapshot(
 run.finish()
 ```
 
+Durable async metric/log mode for long-running jobs:
+
+```python
+run = ro.init(
+    project="cartpole",
+    upload_mode="async",
+    queue_dir=".instantml/async",
+)
+run.log_metrics({"train/reward": 100.0}, step=1)
+run.log_stdout("step=1 reward=100.0")
+status = run.upload_status()
+run.wait_for_submission(timeout=30)
+run.finish(timeout=30)
+```
+
+`upload_mode="async"` is opt-in. It is inspired by Neptune-style local-first
+logging: scalar metrics, rank metrics, console logs, and final run status are
+validated, stored locally in a per-run SQLite WAL queue, and drained by a
+separate uploader process. Delivery, network, and API errors on those queued
+hot paths are reflected in `Run.upload_status()` and dashboard upload-health
+metrics instead of raising from `log_metrics()`, `log_rank_metrics()`,
+`log_console()`, or `finish()`.
+
+Async v1 intentionally keeps response-returning helpers synchronous: configs,
+attributes, tags, notes, rich objects, media, and artifact uploads stay on the
+existing sync/process-spool paths until their replay contracts are idempotent.
+If the managed uploader cannot start or a Python process exits early, drain
+orphaned queues later with the same `INSTANTML_API_KEY` or `instantml login`
+credentials used by normal SDK calls:
+
+```bash
+instantml-uploader --queue-dir .instantml/async --base-url http://127.0.0.1:8000
+```
+
+`Run.wait_for_submission(timeout=...)` returns when pending rows have been
+claimed or processed. `Run.wait_for_processing(timeout=...)` returns when queued
+rows have either processed or failed. Both return `False` on timeout or terminal
+queue failures. `Run.finish(timeout=None)` uses the client's HTTP timeout as a
+bounded default; pass an explicit timeout or call `wait_for_processing()` first
+when you want a longer wait. See
+`docs/design/2026-05-25-durable-async-sdk-logging.md`.
+
 ## Design Requirement
 
 Before implementation, create or update design docs for:
@@ -196,6 +239,7 @@ Expected tests:
 - Tests for failed network calls.
 - Tests for buffering/retry behavior if implemented.
 - Tests for process spool and uploader behavior.
+- Tests for async SQLite queue enqueue, retry/failure state, waits, recovery CLI, and no foreground HTTP on queued metric/log hot paths.
 - Integration tests against a local API test server when applicable.
 
 ## Setup

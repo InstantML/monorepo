@@ -40,6 +40,14 @@ Primary W&B references reviewed:
   - Implemented: implicit steps start at `1`; explicit steps are used as provided and advance the implicit counter.
 - [ ] Add `define_metric` or an equivalent API for summary policy (`last`, `min`, `max`, `best`) and custom x-axis fields once the server supports it.
 - [ ] Add fast batching benchmarks for sync, buffered, process-spool, and offline modes.
+- [x] Add opt-in durable async logging for metric/log hot paths with local
+  SQLite WAL queueing, a process uploader, status/wait helpers, and recovery
+  CLI.
+  - Design: `docs/design/2026-05-25-durable-async-sdk-logging.md`
+  - Implemented first slice: metrics, rank metrics, console logs, and finish
+    status are queued under `upload_mode="async"`.
+  - Remaining: broaden only after idempotent contracts exist for config,
+    attributes, rich objects, media response chaining, and artifact uploads.
 - [x] Add optional system metric capture for CPU, memory, GPU, network, process info, and environment metadata without slowing scalar metric calls.
   - Implemented: `system_metrics=True` samples psutil/NVML metrics on a small data-sampler thread and logs at the current step.
 - [ ] Add optional console stdout/stderr capture and code/dependency snapshot capture behind explicit settings.

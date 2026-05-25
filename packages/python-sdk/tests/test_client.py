@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -12,8 +13,10 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 import instantml as ro
+import instantml.async_queue as async_queue
 import instantml.client as client_module
 import instantml.uploader as uploader
+from instantml.async_queue import AsyncQueueRepository, DeliveryResult, drain_queue_once
 from instantml.client import (
     Client,
     InstantMLError,
@@ -715,6 +718,712 @@ def test_process_spool_mode_writes_events_without_network(tmp_path):
     assert first_event["requests"][0]["path"] == "/runs/run/1/metrics"
     assert first_event["requests"][0]["body"]["timestamp"]
     assert not list((tmp_path / "run_1").glob("*.tmp"))
+
+
+def test_async_upload_mode_queues_metric_hot_path_without_network(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FailingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            raise AssertionError("metric hot path should enqueue instead of using network")
+
+    run = Run(client=FailingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.log_metrics({"reward": 1.5}, step=1)
+    run.log_rank_metrics({"candidate": 2}, step=1, rank=0, world_size=1)
+    run.log_stdout("queued")
+
+    status = run.upload_status()
+    assert status["pending"] == 3
+    assert status["processed"] == 0
+    assert (tmp_path / "run-1" / "queue.sqlite3").exists()
+    with pytest.warns(RuntimeWarning, match="async upload did not finish"):
+        run.finish("failed", timeout=0)
+    assert run.upload_status()["pending"] == 4
+
+
+def test_async_upload_mode_keeps_metadata_updates_sync(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+    calls = []
+
+    class RecordingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    run = Run(client=RecordingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.set_tags(["baseline"])
+    run.set_notes("still sync")
+
+    assert calls == [
+        ("PATCH", "/runs/run-1", {"tags": ["baseline"]}),
+        ("PATCH", "/runs/run-1", {"notes": "still sync"}),
+    ]
+    assert run.upload_status()["pending"] == 0
+
+
+def test_async_uploader_uses_subprocess_without_importing_user_main(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeProcess:
+        def __init__(self, args, **kwargs):
+            calls.append((args, kwargs))
+
+        def poll(self):
+            return None
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return "secret-key"
+
+        def _request(self, method, path, body):
+            return {}
+
+    monkeypatch.setattr(client_module.subprocess, "Popen", FakeProcess)
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.log_metrics({"reward": 1.5}, step=1)
+
+    assert len(calls) == 1
+    assert calls[0][0][1] == "-c"
+    assert "run_async_uploader" in calls[0][0][2]
+    assert "secret-key" not in " ".join(calls[0][0])
+    assert json.loads(calls[0][0][3])["api_key"] is None
+    assert calls[0][1]["env"]["INSTANTML_API_KEY"] == "secret-key"
+    assert calls[0][1]["stdin"] == client_module.subprocess.DEVNULL
+    assert calls[0][1]["stderr"] != client_module.subprocess.DEVNULL
+    assert run.upload_status()["pending"] == 1
+
+
+def test_async_queue_drains_with_stable_idempotency(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1}, idempotency_key="event-1")
+    calls = []
+
+    def fake_send_request(**kwargs):
+        calls.append(kwargs)
+        return DeliveryResult(ok=True, retryable=False)
+
+    monkeypatch.setattr(async_queue, "_send_request", fake_send_request)
+
+    assert drain_queue_once(repository, base_url="http://example.test", api_key="secret") == 1
+    assert repository.status()["processed"] == 1
+    assert repository.status()["pending"] == 0
+    assert calls[0]["idempotency_key"] == "event-1"
+
+
+def test_async_queue_marks_oversized_first_event_failed(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3", max_event_bytes=1_024)
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"blob": "x" * 64}, "step": 1}, idempotency_key="event-1")
+    monkeypatch.setattr(async_queue, "_send_request", lambda **kwargs: pytest.fail("oversized event should not be sent"))
+
+    assert drain_queue_once(repository, base_url="http://example.test", max_event_bytes=16) == 0
+    assert repository.status()["failed"] == 1
+
+
+def test_async_queue_retry_and_failed_statuses(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1}, idempotency_key="event-1")
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"loss": 2.0}, "step": 1}, idempotency_key="event-2")
+    results = [
+        DeliveryResult(ok=False, retryable=False, message="quota", status=429, code="api_request_monthly_limit_exceeded"),
+        DeliveryResult(ok=False, retryable=True, message="try later", status=503, code="unavailable"),
+    ]
+
+    def fake_send_request(**kwargs):
+        return results.pop(0)
+
+    monkeypatch.setattr(async_queue, "_send_request", fake_send_request)
+
+    assert drain_queue_once(repository, base_url="http://example.test") == 0
+    status = repository.status()
+    assert status["pending"] == 1
+    assert status["failed"] == 1
+
+
+def test_async_queue_retry_blocks_later_delivery_until_backoff(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    for index in range(3):
+        repository.enqueue(
+            "POST",
+            "/runs/run-1/metrics",
+            {"metrics": {f"m{index}": index}, "step": index},
+            idempotency_key=f"event-{index}",
+        )
+    sent = []
+
+    def fake_send_request(**kwargs):
+        sent.append(kwargs["idempotency_key"])
+        if kwargs["idempotency_key"] == "event-1":
+            return DeliveryResult(ok=False, retryable=True, message="try later", status=503)
+        return DeliveryResult(ok=True, retryable=False)
+
+    monkeypatch.setattr(async_queue, "_retry_delay", lambda attempts, retry_after=None: 60.0)
+    monkeypatch.setattr(async_queue, "_send_request", fake_send_request)
+
+    assert drain_queue_once(repository, base_url="http://example.test") == 1
+    assert sent == ["event-0", "event-1"]
+    assert repository.status()["pending"] == 2
+
+    sent.clear()
+    assert drain_queue_once(repository, base_url="http://example.test") == 0
+    assert sent == []
+
+
+def test_async_queue_directory_drain_continues_after_terminal_failure(monkeypatch, tmp_path):
+    path = tmp_path / "run" / "queue.sqlite3"
+    repository = AsyncQueueRepository(path)
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"bad": 1}}, idempotency_key="event-1")
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"ok": 2}}, idempotency_key="event-2")
+    repository.close()
+    results = [
+        DeliveryResult(ok=False, retryable=False, message="bad payload", status=400),
+        DeliveryResult(ok=True, retryable=False),
+    ]
+    monkeypatch.setattr(async_queue, "_send_request", lambda **kwargs: results.pop(0))
+
+    assert async_queue.drain_queue(path, base_url="http://example.test") == 1
+    reopened = AsyncQueueRepository(path)
+    reopened.init_db()
+    assert reopened.status()["failed"] == 1
+    assert reopened.status()["processed"] == 1
+
+
+def test_async_queue_directory_drain_retries_same_pass_when_head_can_advance(monkeypatch, tmp_path):
+    path = tmp_path / "run" / "queue.sqlite3"
+    repository = AsyncQueueRepository(path)
+    repository.init_db()
+    repository.close()
+    calls = {"drain": 0, "claimable": 0}
+
+    def fake_drain_queue_once(*args, **kwargs):
+        calls["drain"] += 1
+        return 0 if calls["drain"] == 1 else 1
+
+    def fake_has_claimable(self):
+        calls["claimable"] += 1
+        return True
+
+    monkeypatch.setattr(async_queue, "drain_queue_once", fake_drain_queue_once)
+    monkeypatch.setattr(AsyncQueueRepository, "has_claimable", fake_has_claimable)
+
+    assert async_queue.drain_queue(path, base_url="http://example.test", max_events=1) == 1
+    assert calls == {"drain": 2, "claimable": 1}
+
+
+def test_async_wait_methods_and_finish_signature(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    assert run.wait_for_submission(timeout=0.01)
+    assert run.wait_for_processing(timeout=0.01)
+    run.log_metrics({"reward": 1}, step=1)
+    assert not run.wait_for_processing(timeout=0.01)
+    # Existing positional status remains valid and delivery errors do not raise.
+    with pytest.warns(RuntimeWarning, match="async upload did not finish"):
+        run.finish("failed", timeout=0.01)
+
+
+def test_async_finish_default_timeout_is_bounded(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 0.01
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            raise AssertionError("async finish status should enqueue instead of using network")
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.log_metrics({"reward": 1}, step=1)
+    started = time.monotonic()
+    with pytest.warns(RuntimeWarning, match="async upload did not finish"):
+        run.finish("failed")
+    assert time.monotonic() - started < 1.0
+
+
+def test_async_finish_stops_uploader_after_successful_wait(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    stopped = []
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    monkeypatch.setattr(run, "wait_for_processing", lambda timeout=None: True)
+    monkeypatch.setattr(run, "_stop_async_uploader", lambda timeout=None: stopped.append(timeout))
+
+    run.finish("finished", timeout=0.5)
+
+    assert stopped == [0.5]
+
+
+def test_uploader_cli_drains_async_queue_dir(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_drain_async_queues(**kwargs):
+        captured.update(kwargs)
+        return 3
+
+    monkeypatch.setattr(uploader, "_resolve_api_key", lambda api_key: "login-key")
+    monkeypatch.setattr(uploader, "drain_async_queues", fake_drain_async_queues)
+
+    assert uploader.main(["--queue-dir", str(tmp_path), "--base-url", "http://example.test", "--timeout", "2", "--max-events", "5"]) == 0
+    assert captured == {
+        "queue_dir": str(tmp_path),
+        "base_url": "http://example.test",
+        "api_key": "login-key",
+        "timeout": 2.0,
+        "max_events": 5,
+    }
+
+
+def test_async_queue_directory_drain_and_lock_paths(monkeypatch, tmp_path):
+    missing = tmp_path / "missing"
+    assert async_queue.drain_async_queues(str(missing), base_url="http://example.test") == 0
+
+    queue_root = tmp_path / "queues"
+    for run_id in ("run/a", "run/b"):
+        path = async_queue.queue_path_for_run(str(queue_root), run_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+
+    calls = []
+
+    def fake_drain_queue(queue_path, **kwargs):
+        calls.append((queue_path, kwargs))
+        return 1
+
+    monkeypatch.setattr(async_queue, "drain_queue", fake_drain_queue)
+    assert async_queue.drain_async_queues(str(queue_root), base_url="http://example.test", max_events=1) == 1
+    assert len(calls) == 1
+
+    lock = async_queue.QueueLock(tmp_path / "queue.sqlite3")
+    with lock:
+        assert lock.path.exists()
+        lock.path.unlink()
+
+    stale_lock = async_queue.QueueLock(tmp_path / "stale.sqlite3")
+    stale_lock.path.parent.mkdir(parents=True, exist_ok=True)
+    stale_lock.path.write_text("0", encoding="ascii")
+    with stale_lock:
+        assert stale_lock.path.exists()
+
+    invalid_lock = async_queue.QueueLock(tmp_path / "invalid.sqlite3")
+    invalid_lock.path.write_text("not-a-pid", encoding="ascii")
+    assert not invalid_lock._remove_stale_lock()
+
+    old_invalid_lock = async_queue.QueueLock(tmp_path / "old-invalid.sqlite3")
+    old_invalid_lock.path.write_text("", encoding="ascii")
+    stale_time = time.time() - async_queue.DEFAULT_LOCK_STALE_SECONDS - 1
+    os.utime(old_invalid_lock.path, (stale_time, stale_time))
+    assert old_invalid_lock._remove_stale_lock()
+
+    stat_error_lock = async_queue.QueueLock(tmp_path / "stat-error.sqlite3")
+    stat_error_lock.path.write_text("", encoding="ascii")
+    original_stat = async_queue.Path.stat
+
+    def broken_stat(path, *args, **kwargs):
+        if path == stat_error_lock.path:
+            raise OSError("missing")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(async_queue.Path, "stat", broken_stat)
+    assert not stat_error_lock._remove_stale_lock()
+
+    live_lock = async_queue.QueueLock(tmp_path / "live.sqlite3")
+    live_lock.path.write_text(str(os.getpid()), encoding="ascii")
+    monkeypatch.setattr(async_queue, "_pid_is_running", lambda pid: True)
+    assert not live_lock._remove_stale_lock()
+    with pytest.raises(InstantMLError, match="already running"):
+        with live_lock:
+            pass
+
+    flaky_lock = async_queue.QueueLock(tmp_path / "flaky.sqlite3")
+    flaky_lock.path.write_text("0", encoding="ascii")
+    original_unlink = async_queue.Path.unlink
+
+    def flaky_unlink(path, *args, **kwargs):
+        if path == flaky_lock.path:
+            raise OSError("stuck")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(async_queue.Path, "unlink", flaky_unlink)
+    monkeypatch.setattr(async_queue, "_pid_is_running", lambda pid: False)
+    assert not flaky_lock._remove_stale_lock()
+
+
+def test_async_queue_repository_edge_cases(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3", max_event_bytes=16, max_queue_bytes=256 * 1024)
+    repository.init_db()
+
+    assert repository.enqueue("POST", "/runs/run-1/metrics", {"blob": "x" * 64}) is None
+    assert repository.counter("dropped") == 1
+    assert not repository.has_pending()
+    assert not repository.has_failed()
+
+    assert repository.enqueue("POST", "/runs/run-1/metrics", {"m": 1}, idempotency_key="a") is not None
+    assert repository.has_pending()
+    assert repository.has_claimable()
+    repository.release_events([])
+    assert repository.enqueue("POST", "/runs/run-1/metrics", {"m": 2}, idempotency_key="b") is not None
+    first = repository.claim_batch("lease", max_batch_bytes=1, max_event_bytes=128, lease_seconds=-1)
+    assert len(first) == 1
+    assert repository.recover_stale_leases() == 1
+    assert repository.claim_batch("lease", max_batch_bytes=128, max_event_bytes=128, lease_seconds=1)
+    assert repository.claim_batch("lease", max_batch_bytes=128, max_event_bytes=128, lease_seconds=1) == []
+    repository.mark_failed(first[0].sequence_id, "failed")
+    assert repository.has_failed()
+
+    repository.increment_counter("custom", amount=4)
+    assert repository.counter("custom") == 4
+    repository.prune_processed()
+
+    monkeypatch.setattr(async_queue.os, "statvfs", lambda path: (_ for _ in ()).throw(OSError("missing")))
+    assert repository._has_disk_space()
+    monkeypatch.delattr(async_queue.os, "statvfs", raising=False)
+    monkeypatch.setattr(async_queue.shutil, "disk_usage", lambda path: SimpleNamespace(free=repository.min_free_disk_bytes))
+    assert repository._has_disk_space()
+
+    missing_repository = AsyncQueueRepository(tmp_path / "missing" / "queue.sqlite3")
+    assert missing_repository._queue_file_size_bytes() == 0
+    missing_repository._checkpoint_wal()
+
+    monkeypatch.setattr(repository, "_queue_file_size_bytes", lambda: repository.max_queue_bytes)
+    assert repository.enqueue("POST", "/runs/run-1/metrics", {"m": 3}, idempotency_key="c") is None
+
+    class BrokenRepository(AsyncQueueRepository):
+        def _connect(self):
+            raise sqlite3.Error("nope")
+
+    assert not BrokenRepository(tmp_path / "broken.sqlite3")._queue_is_full(1)
+
+    class BadRollback:
+        def rollback(self):
+            raise sqlite3.Error("rollback failed")
+
+        def close(self):
+            pass
+
+    repository._connection = BadRollback()  # type: ignore[assignment]
+    repository._rollback_quietly()
+    repository.close()
+
+
+def test_async_queue_enqueue_error_records_drop(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+
+    class BadConnection:
+        def execute(self, *args, **kwargs):
+            raise sqlite3.Error("write failed")
+
+        def commit(self):
+            raise AssertionError("commit should not run")
+
+    monkeypatch.setattr(repository, "_connect", lambda: BadConnection())
+    monkeypatch.setattr(repository, "increment_counter", lambda key: (_ for _ in ()).throw(sqlite3.Error("counter failed")))
+
+    with pytest.raises(InstantMLError, match="async queue enqueue failed"):
+        repository.enqueue("POST", "/runs/run-1/metrics", {"m": 1})
+
+
+def test_async_queue_real_drain_and_uploader_loop(monkeypatch, tmp_path):
+    path = tmp_path / "run" / "queue.sqlite3"
+    repository = AsyncQueueRepository(path)
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1}, idempotency_key="event-1")
+    sent = []
+    monkeypatch.setattr(async_queue, "_send_request", lambda **kwargs: sent.append(kwargs) or DeliveryResult(ok=True, retryable=False))
+
+    assert async_queue.drain_queue(path, base_url="http://example.test", max_events=2) == 1
+    assert sent[0]["idempotency_key"] == "event-1"
+
+    loop_calls = {"parent": 0, "drain": 0, "health": 0}
+
+    def fake_parent_is_running(parent_pid):
+        loop_calls["parent"] += 1
+        return loop_calls["parent"] == 1
+
+    def fake_drain_queue_once(*args, **kwargs):
+        loop_calls["drain"] += 1
+        return 1
+
+    monkeypatch.setattr(async_queue, "_parent_is_running", fake_parent_is_running)
+    monkeypatch.setattr(async_queue, "drain_queue_once", fake_drain_queue_once)
+    monkeypatch.setattr(async_queue, "_send_health", lambda *args, **kwargs: loop_calls.__setitem__("health", loop_calls["health"] + 1))
+    monkeypatch.setattr(async_queue.time, "sleep", lambda seconds: None)
+
+    async_queue.run_async_uploader(
+        queue_path=str(path),
+        base_url="http://example.test",
+        api_key=None,
+        timeout=1,
+        run_id="run-1",
+        parent_pid=123,
+    )
+    assert loop_calls == {"parent": 2, "drain": 1, "health": 1}
+
+
+def test_async_queue_http_helpers(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def read(self):
+            return b"ok"
+
+    opened = []
+    monkeypatch.setattr(async_queue.urllib.request, "urlopen", lambda request, timeout: opened.append((request, timeout)) or FakeResponse())
+    assert async_queue._send_request(
+        base_url="http://example.test/",
+        api_key="secret",
+        timeout=3,
+        method="POST",
+        path="/runs/run-1/metrics",
+        body={"metrics": {"reward": 1}},
+        idempotency_key="event-1",
+    ).ok
+    assert opened[0][0].get_header("Idempotency-key") == "event-1"
+
+    error = urllib.error.HTTPError(
+        "http://example.test",
+        429,
+        "rate limited",
+        {"Retry-After": "2"},
+        BytesIO(b'{"error":"slow down","code":"rate_limit_exceeded"}'),
+    )
+    monkeypatch.setattr(async_queue.urllib.request, "urlopen", lambda request, timeout: (_ for _ in ()).throw(error))
+    result = async_queue._send_request("http://example.test", None, 1, "POST", "/x", {})
+    assert result.retryable
+    assert result.retry_after == 2
+    assert result.message == "slow down"
+
+    malformed = urllib.error.HTTPError("http://example.test", 400, "bad", {}, BytesIO(b"{"))
+    assert async_queue._decode_http_error(malformed) == ("HTTP Error 400: bad", None)
+    non_object = urllib.error.HTTPError("http://example.test", 400, "bad", {}, BytesIO(b"[]"))
+    assert async_queue._decode_http_error(non_object) == ("HTTP Error 400: bad", None)
+
+    monkeypatch.setattr(
+        async_queue.urllib.request,
+        "urlopen",
+        lambda request, timeout: (_ for _ in ()).throw(urllib.error.URLError("offline")),
+    )
+    assert async_queue._send_request("http://example.test", None, 1, "POST", "/x", {}).retryable
+
+    assert not async_queue._is_retryable_response(403, None)
+    assert not async_queue._is_retryable_response(429, "api_request_monthly_limit_exceeded")
+    assert async_queue._is_retryable_response(503, None)
+    assert async_queue._retry_after(urllib.error.HTTPError("u", 503, "x", {}, BytesIO())) is None
+    assert async_queue._retry_after(urllib.error.HTTPError("u", 503, "x", {"Retry-After": "later"}, BytesIO())) is None
+    assert async_queue._retry_after(urllib.error.HTTPError("u", 503, "x", {"Retry-After": "-1"}, BytesIO())) is None
+    assert async_queue._retry_delay(1, retry_after=120) == 60
+    assert async_queue._parent_is_running(0)
+    monkeypatch.setattr(async_queue.os, "getppid", lambda: 99)
+    assert async_queue._parent_is_running(99)
+    assert not async_queue._parent_is_running(100)
+
+    assert not async_queue._pid_is_running(0)
+    monkeypatch.setattr(async_queue.os, "kill", lambda pid, sig: None)
+    assert async_queue._pid_is_running(123)
+    monkeypatch.setattr(async_queue.os, "kill", lambda pid, sig: (_ for _ in ()).throw(ProcessLookupError()))
+    assert not async_queue._pid_is_running(123)
+    monkeypatch.setattr(async_queue.os, "kill", lambda pid, sig: (_ for _ in ()).throw(PermissionError()))
+    assert async_queue._pid_is_running(123)
+    assert "T" in async_queue._utc_timestamp()
+
+
+def test_async_health_heartbeat_payload(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1})
+    sent = {}
+    monkeypatch.setattr(async_queue, "_utc_timestamp", lambda: "2026-05-25T00:00:00+00:00")
+    monkeypatch.setattr(async_queue, "_send_request", lambda **kwargs: sent.update(kwargs) or DeliveryResult(ok=True, retryable=False))
+
+    async_queue._send_health(repository, "http://example.test", "secret", 1.0, "run-1")
+
+    assert sent["path"] == "/runs/run-1/metrics"
+    metrics = sent["body"]["metrics"]
+    assert metrics["system/instantml/queued_events"] == 1.0
+    assert metrics["system/instantml/failed_events"] == 0.0
+    assert sent["idempotency_key"].startswith("instantml-health-run-1-")
+
+
+def test_async_run_non_async_status_and_open_paths(tmp_path):
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    sync_run = Run(client=FakeClient(), run_id="run-1", upload_mode="sync")
+    assert sync_run.upload_status()["mode"] == "sync"
+    assert sync_run.wait_for_submission(timeout=0.01)
+
+    async_run = Run(client=FakeClient(), run_id=client_module._PENDING_RUN_ID, upload_mode="async", queue_dir=str(tmp_path))
+    async_run._start_async_uploader()
+    async_run.run_id = "run-2"
+    first_queue = async_run._require_async_queue()
+    async_run._open_async_queue("run-2")
+    assert async_run._require_async_queue() is first_queue
+    async_run._async_queue = None
+    assert async_run._require_async_queue().path.name == "queue.sqlite3"
+    async_run._stop_async_uploader(timeout=0)
+
+    sync_run = Run(client=FakeClient(), run_id="run-3", upload_mode="sync")
+    sync_run._stop_async_uploader(timeout=0)
+
+
+def test_async_run_wait_failure_and_dead_process(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run.log_metrics({"reward": 1}, step=1)
+
+    class DeadProcess:
+        def poll(self):
+            return 1
+
+    run._async_process = DeadProcess()  # type: ignore[assignment]
+    assert not run.wait_for_submission(timeout=1)
+
+    failed_run = Run(client=FakeClient(), run_id="run-2", upload_mode="async", queue_dir=str(tmp_path))
+    failed_run.log_metrics({"reward": 1}, step=1)
+    failed_run._require_async_queue().mark_failed(1, "bad")
+    assert not failed_run.wait_for_processing(timeout=1)
+
+
+def test_async_start_and_stop_error_paths(monkeypatch, tmp_path):
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    monkeypatch.setattr(client_module.subprocess, "Popen", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("no fork")))
+    with pytest.warns(RuntimeWarning, match="could not start"):
+        run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._start_async_uploader()
+
+    class SlowProcess:
+        def __init__(self):
+            self.terminated = False
+            self.killed = False
+
+        def wait(self, timeout=None):
+            if not self.terminated:
+                raise subprocess.TimeoutExpired("cmd", timeout)
+            if not self.killed:
+                raise subprocess.TimeoutExpired("cmd", timeout)
+            return 0
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.killed = True
+
+    run._async_process = SlowProcess()  # type: ignore[assignment]
+    run._stop_async_uploader(timeout=10)
+    assert run._async_process is None
+
+
+def test_async_submit_drop_and_warning_rate_limit(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    monkeypatch.setattr(run._require_async_queue(), "enqueue", lambda *args, **kwargs: None)
+    with pytest.warns(RuntimeWarning, match="dropped an event"):
+        run.log_metrics({"reward": 1}, step=1)
+    with pytest.warns(RuntimeWarning, match="manual warning"):
+        run._last_async_warning_at = 0
+        run._warn_async_drop("manual warning")
+    run._warn_async_drop("manual warning")
+
+    monkeypatch.setattr(run._require_async_queue(), "enqueue", lambda *args, **kwargs: (_ for _ in ()).throw(sqlite3.Error("broken")))
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="could not record"):
+        run.log_metrics({"reward": 2}, step=2)
 
 
 def test_run_id_setter_marks_pending_spool_run_ready(tmp_path):

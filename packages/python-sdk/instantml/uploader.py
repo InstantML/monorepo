@@ -10,7 +10,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .async_queue import drain_async_queues
 from .client import Client, DEFAULT_PROCESS_SPOOL_DIR, InstantMLError, _default_base_url
+from .credentials import _resolve_api_key
 
 
 LOCK_FILE = ".uploader.lock"
@@ -43,12 +45,27 @@ def drain_spool(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Drain Training Observability SDK spool events.")
     parser.add_argument("--spool-dir", default=DEFAULT_PROCESS_SPOOL_DIR)
+    parser.add_argument("--queue-dir", default=None)
     parser.add_argument("--base-url", default=_default_base_url())
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--max-events", type=int, default=None)
     parser.add_argument("--follow", action="store_true")
     parser.add_argument("--poll-interval", type=float, default=1.0)
     args = parser.parse_args(argv)
+    if args.queue_dir:
+        kwargs = {
+            "queue_dir": args.queue_dir,
+            "base_url": args.base_url,
+            "api_key": _resolve_api_key(None),
+            "timeout": args.timeout,
+            "max_events": args.max_events,
+        }
+        if args.follow:  # pragma: no cover
+            while True:
+                drain_async_queues(**kwargs)
+                time.sleep(args.poll_interval)
+        drain_async_queues(**kwargs)
+        return 0
     if args.follow:  # pragma: no cover
         while True:
             drain_spool(args.spool_dir, base_url=args.base_url, timeout=args.timeout, max_events=args.max_events)

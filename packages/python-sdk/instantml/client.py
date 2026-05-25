@@ -10,6 +10,7 @@ import mimetypes
 import os
 import sqlite3
 import sys
+import subprocess
 import tempfile
 import threading
 import time
@@ -23,6 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .async_queue import (
+    AsyncQueueRepository,
+    queue_path_for_run,
+)
 from .errors import InstantMLError
 from .serialization import (
     _flatten,
@@ -333,6 +338,7 @@ class Client:
         capture_console: bool = False,
         async_init: bool = True,
         shadow_wandb: Any = False,
+        queue_dir: str | None = None,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
@@ -374,6 +380,7 @@ class Client:
                 buffer_size=buffer_size,
                 upload_mode=upload_mode,
                 spool_dir=spool_dir,
+                queue_dir=queue_dir,
                 _local_store=_LocalStore(local_store_dir, response["run"]["id"]) if local_store else None,
                 shadow=shadow,
             )
@@ -389,6 +396,7 @@ class Client:
             buffer_size=buffer_size,
             upload_mode=upload_mode,
             spool_dir=spool_dir,
+            queue_dir=queue_dir,
             shadow=shadow,
         )
 
@@ -489,6 +497,14 @@ def _is_retryable_rate_limit(exc: urllib.error.HTTPError) -> bool:
     return str(scope or "second").strip().lower() != "monthly"
 
 
+def _async_request_supported(method: str, path: str, body: dict[str, Any]) -> bool:
+    if method == "POST" and (path.endswith("/metrics") or path.endswith("/rank-metrics") or path.endswith("/logs")):
+        return True
+    if method == "PATCH" and path.startswith("/runs/") and set(body) == {"status"}:
+        return True
+    return False
+
+
 @dataclass(frozen=True)
 class Api:
     """Tiny raw read-only API helper for post-hoc queries."""
@@ -572,6 +588,7 @@ class Run:
         buffer_size: int = 0,
         upload_mode: str = "sync",
         spool_dir: str | None = None,
+        queue_dir: str | None = None,
         media_dir: str | None = None,
         _local_store: "_LocalStore | None" = None,
         shadow: "ShadowWandb | None" = None,
@@ -582,10 +599,18 @@ class Run:
         self.buffer_size = buffer_size
         self.upload_mode = upload_mode
         self.spool_dir = spool_dir
+        self.queue_dir = queue_dir
         self.media_dir = media_dir
         self._process_spool_run_dir = _process_spool_run_dir(spool_dir, run_id) if upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID else None
         if self._process_spool_run_dir is not None:
             self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
+        self._async_queue: AsyncQueueRepository | None = None
+        self._async_process: subprocess.Popen[Any] | None = None
+        self._async_start_warning_emitted = False
+        self._last_async_warning_at = 0.0
+        if upload_mode == "async" and run_id and run_id != _PENDING_RUN_ID:
+            self._open_async_queue(run_id)
+            self._start_async_uploader()
         self._queue: list[dict[str, Any]] = []
         self._last_steps: dict[str, float] = {}
         self._console_line_numbers: dict[str, int] = {}
@@ -622,6 +647,9 @@ class Run:
             if self.upload_mode == "spool":
                 self._process_spool_run_dir = _process_spool_run_dir(self.spool_dir, value)
                 self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
+            elif self.upload_mode == "async":
+                self._open_async_queue(value)
+                self._start_async_uploader()
 
     def wait_for_init(self, timeout: float | None = None) -> str:
         """Block until init resolves and return the real run_id.
@@ -635,6 +663,130 @@ class Run:
         if self._init_error is not None:
             raise self._init_error
         return self._run_id
+
+    def upload_status(self) -> dict[str, Any]:
+        if self.upload_mode != "async":
+            return {
+                "mode": self.upload_mode,
+                "pending": 0,
+                "in_flight": 0,
+                "processed": 0,
+                "failed": 0,
+                "dropped": 0,
+                "oldest_pending_age_seconds": None,
+                "last_error": None,
+            }
+        queue = self._require_async_queue()
+        return {"mode": "async", **queue.status()}
+
+    def wait_for_submission(self, timeout: float | None = None) -> bool:
+        """Wait until async queued events have been claimed or completed."""
+        return self._wait_for_async_queue(timeout=timeout, include_in_flight=False)
+
+    def wait_for_processing(self, timeout: float | None = None) -> bool:
+        """Wait until async queued events have finished or failed."""
+        return self._wait_for_async_queue(timeout=timeout, include_in_flight=True)
+
+    def _wait_for_async_queue(self, timeout: float | None, include_in_flight: bool) -> bool:
+        if self.upload_mode != "async":
+            return True
+        queue = self._require_async_queue()
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        while True:
+            status = queue.status()
+            if status["failed"]:
+                return False
+            pending = status["pending"] + (status["in_flight"] if include_in_flight else 0)
+            if pending == 0:
+                return True
+            if self._async_process is not None and self._async_process.poll() is not None:
+                return False
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+
+    def _open_async_queue(self, run_id: str) -> None:
+        if self._async_queue is not None:
+            return
+        path = queue_path_for_run(self.queue_dir, run_id)
+        queue = AsyncQueueRepository(path)
+        queue.init_db()
+        self._async_queue = queue
+
+    def _require_async_queue(self) -> AsyncQueueRepository:
+        if self._async_queue is None:
+            self._open_async_queue(self.run_id)
+        assert self._async_queue is not None
+        return self._async_queue
+
+    def _start_async_uploader(self) -> None:
+        run_id = self._run_id
+        if self.upload_mode != "async" or not run_id or run_id == _PENDING_RUN_ID:
+            return
+        if self._async_process is not None and self._async_process.poll() is None:
+            return
+        queue = self._require_async_queue()
+        stderr_file = None
+        try:
+            resolved_api_key = self.client._resolve_api_key()
+            args = {
+                "queue_path": str(queue.path),
+                "base_url": self.client.base_url,
+                "api_key": None,
+                "timeout": self.client.timeout,
+                "run_id": run_id,
+                "parent_pid": os.getpid(),
+            }
+            env = os.environ.copy()
+            if resolved_api_key:
+                env["INSTANTML_API_KEY"] = resolved_api_key
+            stderr_path = queue.path.with_name("uploader.stderr.log")
+            stderr_file = stderr_path.open("ab")
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import json, sys; "
+                        "from instantml.async_queue import run_async_uploader; "
+                        "from instantml.credentials import _resolve_api_key; "
+                        "args = json.loads(sys.argv[1]); "
+                        "args['api_key'] = _resolve_api_key(None); "
+                        "run_async_uploader(**args)"
+                    ),
+                    json.dumps(args, separators=(",", ":")),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+                close_fds=True,
+                env=env,
+            )
+            stderr_file.close()
+            stderr_file = None
+            self._async_process = process
+        except Exception as exc:  # noqa: BLE001 - queue remains durable for CLI recovery
+            if stderr_file is not None:
+                stderr_file.close()
+            if not self._async_start_warning_emitted:
+                warnings.warn(f"async uploader process could not start: {exc}", RuntimeWarning, stacklevel=2)
+                self._async_start_warning_emitted = True
+
+    def _stop_async_uploader(self, timeout: float | None = None) -> None:
+        process = self._async_process
+        if process is None:
+            return
+        wait_timeout = max(0.0, min(timeout if timeout is not None else 0.2, 2.0))
+        try:
+            process.wait(timeout=wait_timeout)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1.0)
+        self._async_process = None
 
     def __enter__(self) -> "Run":
         return self
@@ -737,7 +889,7 @@ class Run:
         step = _validate_step(step)
         metrics = _validate_metrics(data)
         metric_timestamp = timestamp
-        if self.upload_mode == "spool" and metric_timestamp is None:
+        if self.upload_mode in {"spool", "async"} and metric_timestamp is None:
             metric_timestamp = _utc_timestamp()
         with self._lock:
             for key in metrics:
@@ -781,7 +933,7 @@ class Run:
         rank, world_size, local_rank = _validate_rank_context(rank, world_size, local_rank)
         rank_weight = _validate_rank_weight(weight)
         metric_timestamp = timestamp
-        if self.upload_mode == "spool" and metric_timestamp is None:
+        if self.upload_mode in {"spool", "async"} and metric_timestamp is None:
             metric_timestamp = _utc_timestamp()
         self._submit(
             "POST",
@@ -821,7 +973,7 @@ class Run:
         start = self._console_line_numbers.get(stream, 0) + 1
         self._console_line_numbers[stream] = start + len(messages) - 1
         event_timestamp = timestamp
-        if self.upload_mode == "spool" and event_timestamp is None:
+        if self.upload_mode in {"spool", "async"} and event_timestamp is None:
             event_timestamp = _utc_timestamp()
         payload = {
             "stream": stream,
@@ -1295,7 +1447,9 @@ class Run:
         path.unlink()
         return replayed
 
-    def finish(self, status: str = "finished") -> None:
+    def finish(self, status: str = "finished", timeout: float | None = None) -> None:
+        async_processed = True
+        async_finish_timeout = max(0.0, getattr(self.client, "timeout", 10.0) if timeout is None else timeout)
         sampler = self._system_sampler
         if sampler is not None:
             sampler.stop()
@@ -1307,6 +1461,17 @@ class Run:
             if self.upload_mode == "spool":
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
                 return
+            if self.upload_mode == "async":
+                self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
+                async_processed = self.wait_for_processing(timeout=async_finish_timeout)
+                if not async_processed:
+                    warnings.warn(
+                        "async upload did not finish before finish() timeout; queued data remains on disk for the "
+                        "background uploader or instantml-uploader recovery",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                return
             self._request_or_spool("PATCH", f"/runs/{self.run_id}", {"status": status})
         finally:
             with self._lock:
@@ -1315,6 +1480,14 @@ class Run:
                 self._console_capture = None
             if self._local_store is not None:
                 self._local_store.close()
+            if self.upload_mode == "async":
+                if self._async_queue is not None:
+                    if not async_processed:
+                        status_snapshot = self._async_queue.status()
+                        async_processed = status_snapshot["pending"] + status_snapshot["in_flight"] == 0
+                    self._async_queue.close()
+                if async_processed:
+                    self._stop_async_uploader(timeout=async_finish_timeout)
             if self._shadow is not None:
                 self._shadow.finish(status)
 
@@ -1328,6 +1501,22 @@ class Run:
         event_timestamp: str | None = None,
     ) -> None:
         with self._lock:
+            if self.upload_mode == "async" and _async_request_supported(method, path, body):
+                try:
+                    queue = self._require_async_queue()
+                    sequence_id = queue.enqueue(
+                        method,
+                        path,
+                        body,
+                        idempotency_key=f"instantml-{self.run_id}-{uuid.uuid4().hex}",
+                    )
+                    if sequence_id is not None:
+                        self._start_async_uploader()
+                    else:
+                        self._warn_async_drop("async queue dropped an event because local queue limits were reached")
+                except Exception as exc:  # noqa: BLE001 - async delivery must not stop training
+                    self._warn_async_drop(f"async queue could not record event: {exc}")
+                return
             if self.upload_mode == "spool":
                 self._process_sequence += 1
                 event = _process_event(
@@ -1351,6 +1540,12 @@ class Run:
                 self.flush()
             return
         self._request_or_spool(method, path, body)
+
+    def _warn_async_drop(self, message: str) -> None:
+        now = time.time()
+        if now - self._last_async_warning_at > 5:
+            warnings.warn(message, RuntimeWarning, stacklevel=2)
+            self._last_async_warning_at = now
 
     def _request_or_spool(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -1384,6 +1579,7 @@ def init(
     capture_console: bool = False,
     async_init: bool = True,
     shadow_wandb: Any = False,
+    queue_dir: str | None = None,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 
@@ -1407,6 +1603,7 @@ def init(
         source_tracking=source_tracking,
         upload_mode=upload_mode,
         spool_dir=spool_dir,
+        queue_dir=queue_dir,
         local_store=local_store,
         local_store_dir=local_store_dir,
         system_metrics=system_metrics,

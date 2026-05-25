@@ -126,6 +126,26 @@ The SDK also ships a process-isolated spool uploader for high-throughput offline
 instantml-uploader --spool-dir .instantml/spool
 ```
 
+For long-running jobs, opt into durable async metric/log uploads:
+
+```python
+run = instantml.init(project="cartpole", upload_mode="async")
+run.log_metrics({"train/reward": 100.0}, step=1)
+run.log_stdout("step=1 reward=100.0")
+run.wait_for_submission(timeout=30)
+run.finish(timeout=30)
+```
+
+Async mode stores scalar metrics, rank metrics, console logs, and final status in
+a per-run SQLite WAL queue, then drains that queue in a background uploader
+process. Network and delivery errors are surfaced through `run.upload_status()`
+and warnings instead of raising from the hot logging path. Orphaned queues can be
+recovered with the same environment or `instantml login` credentials:
+
+```bash
+instantml-uploader --queue-dir .instantml/async
+```
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE). The InstantML hosted backend (dashboard, API, storage) is a separate commercial offering; the SDK in this package is open source.

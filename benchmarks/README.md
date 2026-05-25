@@ -153,7 +153,10 @@ runs with `--history-mode newest` or `--history-mode dashboard`.
 `sdk_logging_overhead.py` measures foreground scalar logging overhead, not hosted
 read/query latency. It runs each case in a fresh Python process, compares
 against a no-op training-loop baseline, and reports hot-loop CPU/wall time
-separately from setup, finish, and InstantML uploader-drain work.
+separately from setup, finish, and InstantML uploader-drain work. The current
+matrix includes `instantml-async-queue`, which disables the managed uploader
+during the hot loop so the result isolates SQLite WAL producer overhead, then
+drains the queue through a fake successful transport after finish.
 
 Install the benchmark dependencies into the repo virtualenv:
 
@@ -178,6 +181,11 @@ For a quick stdout-only run with the default system Python, use:
 ```bash
 npm run benchmark:sdk-overhead
 ```
+
+The durable async queue implementation is tracked by
+`docs/design/2026-05-25-durable-async-sdk-logging.md`. Commit dated benchmark
+Markdown when using results to decide whether async should become the default
+upload mode.
 
 The default matrix is:
 

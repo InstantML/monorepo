@@ -59,6 +59,10 @@ Current navigation and comparison controls:
 - Agent-review hardening: run names inspect a primary run, checkboxes are reserved for compare selection, visible table-column preferences remain available through the `Columns` menu, and empty filters render a clear action in the run rail.
 - Tags and notes are first-class run identification fields in the current UI: the Runs table has a default `Notes` column, the workspace selector shows compact tag chips plus a one-line note preview, and server-backed search matches tag/note text through the Rust `q` route. Run Detail and Compare share a small editor that saves `runs.tags` and `metadata.notes` through `PATCH /runs/:id`; Compare has its own edit-run picker so annotation does not change the reference run.
 - Large-run browsing is server-backed: the Runs workspace uses Rust `next_cursor` values for Next/Previous pagination, falls back to offset pagination for the deprecated Node compatibility server, clears cursors when filters/sorts/page size change, and disables pagination while a page request is in flight. The benchmark target is now 100,000 run records with a 20,000-step long-run series; the earlier 90,000-run benchmark slice measured production first useful render at 387 ms locally on 2026-05-11.
+- Durable async SDK logging surfaces as a compact upload-health chip in the
+  Runs rail when runs emit `system/instantml/*` heartbeat metrics. The
+  dashboard silently polls the current summary page every 5 seconds while
+  visible, and normal metric selectors hide those internal SDK health keys.
 - Sort runs by newest, selected metric latest/best, name, status, or duration.
 - Group chart series by seed, first tag, or selected config keys.
 - Switch chart x-axis between step and logged time.
