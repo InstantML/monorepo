@@ -202,7 +202,8 @@ Async v1 intentionally keeps response-returning helpers synchronous: configs,
 attributes, tags, notes, rich objects, media, and artifact uploads stay on the
 existing sync/process-spool paths until their replay contracts are idempotent.
 If the managed uploader cannot start or a Python process exits early, drain
-orphaned queues later with:
+orphaned queues later with the same `INSTANTML_API_KEY` or `instantml login`
+credentials used by normal SDK calls:
 
 ```bash
 instantml-uploader --queue-dir .instantml/async --base-url http://127.0.0.1:8000
@@ -211,7 +212,10 @@ instantml-uploader --queue-dir .instantml/async --base-url http://127.0.0.1:8000
 `Run.wait_for_submission(timeout=...)` returns when pending rows have been
 claimed or processed. `Run.wait_for_processing(timeout=...)` returns when queued
 rows have either processed or failed. Both return `False` on timeout or terminal
-queue failures. See `docs/design/2026-05-25-durable-async-sdk-logging.md`.
+queue failures. `Run.finish(timeout=None)` uses the client's HTTP timeout as a
+bounded default; pass an explicit timeout or call `wait_for_processing()` first
+when you want a longer wait. See
+`docs/design/2026-05-25-durable-async-sdk-logging.md`.
 
 ## Design Requirement
 

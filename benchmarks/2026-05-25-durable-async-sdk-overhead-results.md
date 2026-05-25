@@ -1,11 +1,11 @@
 # SDK Logging Overhead Benchmark
 
-Date: 2026-05-25T03:09:47.215350Z
+Date: 2026-05-25T03:56:16.349882Z
 
 ## Context
 
 - Branch: `codex/durable-async-logging`
-- Benchmark subject commit: `c419c8593450ef13ae9a8ad27c97c1513fef2c53`
+- Benchmark subject commit: `8fbb118af48eb90063918f8ee42614ca671f9418`
 - Working tree dirty at run time: `true`
 - Python: `3.11.5`
 - Platform: `macOS-15.6.1-arm64-arm-64bit`
@@ -33,11 +33,11 @@ Date: 2026-05-25T03:09:47.215350Z
 
 | Case | Samples | Median wall us/log | Median tree CPU us/log | p95 tree CPU us/log | Tree CPU overhead vs noop | Median total worker CPU s | Median finish CPU s | Median drain CPU s | Median disk bytes after finish |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `noop` | 5 | 4.932 | 4.843 | 5.157 | baseline | 0.112000 | 0.003000 | 0.000000 | 0 |
-| `instantml-sync-null` | 5 | 13.799 | 13.570 | 14.345 | 8.727 us/log | 0.131000 | 0.003000 | 0.000000 | 0 |
-| `instantml-log-null` | 5 | 15.984 | 15.760 | 15.920 | 10.917 us/log | 0.138000 | 0.004000 | 0.000000 | 0 |
-| `instantml-async-queue` | 5 | 122.149 | 115.329 | 116.594 | 110.486 us/log | 0.441000 | 0.006000 | 0.090000 | 1179648 |
-| `instantml-spool-durable` | 5 | 257.110 | 234.652 | 238.344 | 229.809 us/log | 0.816000 | 0.004000 | 0.192000 | 1584087 |
+| `noop` | 5 | 5.631 | 5.490 | 5.668 | baseline | 0.119000 | 0.005000 | 0.000000 | 0 |
+| `instantml-sync-null` | 5 | 13.726 | 13.469 | 14.165 | 7.979 us/log | 0.135000 | 0.005000 | 0.000000 | 0 |
+| `instantml-log-null` | 5 | 16.356 | 16.136 | 16.966 | 10.646 us/log | 0.146000 | 0.005000 | 0.000000 | 0 |
+| `instantml-async-queue` | 5 | 134.724 | 126.173 | 126.921 | 120.683 us/log | 0.484000 | 0.008000 | 0.112000 | 1179648 |
+| `instantml-spool-durable` | 5 | 250.042 | 232.962 | 238.819 | 227.472 us/log | 0.814000 | 0.005000 | 0.191000 | 1584087 |
 
 ## Case Notes
 

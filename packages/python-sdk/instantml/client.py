@@ -331,7 +331,6 @@ class Client:
         source_tracking: bool = True,
         upload_mode: str = "sync",
         spool_dir: str | None = None,
-        queue_dir: str | None = None,
         local_store: bool = False,
         local_store_dir: str | None = None,
         system_metrics: bool = False,
@@ -339,6 +338,7 @@ class Client:
         capture_console: bool = False,
         async_init: bool = True,
         shadow_wandb: Any = False,
+        queue_dir: str | None = None,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
@@ -726,15 +726,22 @@ class Run:
         if self._async_process is not None and self._async_process.poll() is None:
             return
         queue = self._require_async_queue()
+        stderr_file = None
         try:
+            resolved_api_key = self.client._resolve_api_key()
             args = {
                 "queue_path": str(queue.path),
                 "base_url": self.client.base_url,
-                "api_key": self.client._resolve_api_key(),
+                "api_key": None,
                 "timeout": self.client.timeout,
                 "run_id": run_id,
                 "parent_pid": os.getpid(),
             }
+            env = os.environ.copy()
+            if resolved_api_key:
+                env["INSTANTML_API_KEY"] = resolved_api_key
+            stderr_path = queue.path.with_name("uploader.stderr.log")
+            stderr_file = stderr_path.open("ab")
             process = subprocess.Popen(
                 [
                     sys.executable,
@@ -742,17 +749,25 @@ class Run:
                     (
                         "import json, sys; "
                         "from instantml.async_queue import run_async_uploader; "
-                        "run_async_uploader(**json.loads(sys.argv[1]))"
+                        "from instantml.credentials import _resolve_api_key; "
+                        "args = json.loads(sys.argv[1]); "
+                        "args['api_key'] = _resolve_api_key(None); "
+                        "run_async_uploader(**args)"
                     ),
                     json.dumps(args, separators=(",", ":")),
                 ],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=stderr_file,
                 close_fds=True,
+                env=env,
             )
+            stderr_file.close()
+            stderr_file = None
             self._async_process = process
         except Exception as exc:  # noqa: BLE001 - queue remains durable for CLI recovery
+            if stderr_file is not None:
+                stderr_file.close()
             if not self._async_start_warning_emitted:
                 warnings.warn(f"async uploader process could not start: {exc}", RuntimeWarning, stacklevel=2)
                 self._async_start_warning_emitted = True
@@ -1433,6 +1448,8 @@ class Run:
         return replayed
 
     def finish(self, status: str = "finished", timeout: float | None = None) -> None:
+        async_processed = True
+        async_finish_timeout = max(0.0, getattr(self.client, "timeout", 10.0) if timeout is None else timeout)
         sampler = self._system_sampler
         if sampler is not None:
             sampler.stop()
@@ -1446,7 +1463,14 @@ class Run:
                 return
             if self.upload_mode == "async":
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
-                self.wait_for_processing(timeout=timeout)
+                async_processed = self.wait_for_processing(timeout=async_finish_timeout)
+                if not async_processed:
+                    warnings.warn(
+                        "async upload did not finish before finish() timeout; queued data remains on disk for the "
+                        "background uploader or instantml-uploader recovery",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
                 return
             self._request_or_spool("PATCH", f"/runs/{self.run_id}", {"status": status})
         finally:
@@ -1458,8 +1482,12 @@ class Run:
                 self._local_store.close()
             if self.upload_mode == "async":
                 if self._async_queue is not None:
+                    if not async_processed:
+                        status_snapshot = self._async_queue.status()
+                        async_processed = status_snapshot["pending"] + status_snapshot["in_flight"] == 0
                     self._async_queue.close()
-                self._stop_async_uploader(timeout=timeout)
+                if async_processed:
+                    self._stop_async_uploader(timeout=async_finish_timeout)
             if self._shadow is not None:
                 self._shadow.finish(status)
 
@@ -1544,7 +1572,6 @@ def init(
     source_tracking: bool = True,
     upload_mode: str = "sync",
     spool_dir: str | None = None,
-    queue_dir: str | None = None,
     local_store: bool = False,
     local_store_dir: str | None = None,
     system_metrics: bool = False,
@@ -1552,6 +1579,7 @@ def init(
     capture_console: bool = False,
     async_init: bool = True,
     shadow_wandb: Any = False,
+    queue_dir: str | None = None,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 

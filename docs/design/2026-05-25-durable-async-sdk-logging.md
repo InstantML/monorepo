@@ -357,6 +357,7 @@ run.finish(status="failed", timeout=10)
     "dropped": 0,
     "oldest_pending_age_seconds": 1.25,
     "last_error": None,
+    "disk_usage_bytes": 49152,
 }
 ```
 
@@ -371,6 +372,9 @@ run.finish(status="failed", timeout=10)
 - Failure-state CPU: API-down uploader should sleep/back off, not spin.
 - WAL growth: tests or benchmark notes should record WAL size and checkpoint
   behavior after draining.
+- Queue byte budget includes SQLite, WAL, and SHM files, not just serialized
+  event payloads. Processed rows and error history are retained only within
+  bounded limits, with WAL checkpointing after pruning/close.
 
 ## Simplicity Review
 
@@ -385,6 +389,9 @@ CLI.
 - API down: events remain pending with backoff; training continues.
 - API auth/quota/payment failure: events become failed; waits return `False`;
   training still continues.
+- Async `finish(timeout=None)` uses the client's HTTP timeout as a bounded
+  default. If the queue is not done by that deadline, it warns, leaves data on
+  disk, and lets the background uploader or recovery CLI continue.
 - Queue DB locked: producer waits only briefly, then drops with a rate-limited
   warning and counter.
 - Disk nearly full or queue over max bytes: new events are dropped with counter.
@@ -503,6 +510,36 @@ Fresh performance reviewer:
 - Recommended edit: Use a short producer timeout, queue/disk bounds, retry
   fields, oversized-first-row handling, recovery CLI, and benchmark gates.
 - Decision: Accepted. The design now captures those constraints.
+
+No-context senior Python SDK reviewers after implementation:
+
+- Finding: Async `finish()` could wait forever under retryable API failures and
+  ignored timeout failures.
+- Risk: A process could hang during shutdown, undermining the non-blocking
+  logging promise.
+- Decision: Accepted. `finish()` now uses a bounded default, warns on incomplete
+  drains, and leaves queued data recoverable instead of raising.
+
+- Finding: The async recovery CLI and child uploader did not reuse login
+  credentials cleanly, and the child command line exposed API keys.
+- Risk: Recovery could fail authenticated queues or leak credentials through
+  process inspection.
+- Decision: Accepted. The CLI resolves standard SDK credentials and the child
+  receives credentials through its environment, with no API key serialized in
+  argv.
+
+- Finding: Retry backoff allowed later rows, including final status, to upload
+  before an earlier retryable row.
+- Risk: Per-run ordering could be violated after transient failures.
+- Decision: Accepted. The uploader now claims only the earliest active prefix
+  and releases later claimed rows after the first retryable failure.
+
+- Finding: Queue byte limits only counted payload bytes and ignored SQLite/WAL
+  growth and unbounded error history.
+- Risk: Local durable logging could consume more disk than the configured budget.
+- Decision: Accepted. Queue status and admission now account for DB/WAL/SHM file
+  size, error rows are retained within a cap, and WAL is checkpointed after prune
+  and close.
 
 ## Coverage Exceptions
 

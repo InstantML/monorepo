@@ -6,7 +6,9 @@ import json
 import math
 import os
 import random
+import shutil
 import sqlite3
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -28,6 +30,9 @@ DEFAULT_LEASE_SECONDS = 30.0
 DEFAULT_BUSY_POLL_SECONDS = 0.25
 DEFAULT_IDLE_POLL_SECONDS = 1.0
 DEFAULT_HEALTH_INTERVAL_SECONDS = 5.0
+DEFAULT_ERROR_RETENTION = 1_000
+DEFAULT_SQLITE_JOURNAL_SIZE_LIMIT = 16 * 1024 * 1024
+DEFAULT_LOCK_STALE_SECONDS = 24 * 60 * 60
 ASYNC_HEALTH_PREFIX = "system/instantml/"
 _RETRYABLE_HTTP_STATUSES = {408, 409, 500, 502, 503, 504}
 _TERMINAL_CODES = {
@@ -108,7 +113,9 @@ def drain_queue(
         while max_events is None or uploaded < max_events:
             processed = drain_queue_once(repository, base_url=base_url, api_key=api_key, timeout=timeout)
             if processed == 0:
-                break
+                if not repository.has_claimable():
+                    break
+                continue
             uploaded += processed
     repository.close()
     return uploaded
@@ -166,7 +173,8 @@ def drain_queue_once(
         lease_seconds=DEFAULT_LEASE_SECONDS,
     )
     processed = 0
-    for event in events:
+    release_after_retry: list[int] = []
+    for index, event in enumerate(events):
         if event.body_size_bytes > max_event_bytes:
             repository.mark_failed(event.sequence_id, "event exceeds async queue max_event_bytes", code="event_too_large")
             continue
@@ -190,8 +198,12 @@ def drain_queue_once(
                 http_status=result.status,
                 retry_after=result.retry_after,
             )
+            release_after_retry = [remaining.sequence_id for remaining in events[index + 1 :]]
+            break
         else:
             repository.mark_failed(event.sequence_id, result.message, code=result.code, http_status=result.status)
+    if release_after_retry:
+        repository.release_events(release_after_retry)
     if processed:
         repository.prune_processed()
     return processed
@@ -207,89 +219,94 @@ class AsyncQueueRepository:
         min_free_disk_bytes: int = DEFAULT_MIN_FREE_DISK_BYTES,
         max_event_bytes: int = DEFAULT_MAX_EVENT_BYTES,
         processed_retention: int = DEFAULT_PROCESSED_RETENTION,
+        error_retention: int = DEFAULT_ERROR_RETENTION,
     ) -> None:
         self.path = path.expanduser().resolve()
         self.max_queue_bytes = max_queue_bytes
         self.min_free_disk_bytes = min_free_disk_bytes
         self.max_event_bytes = max_event_bytes
         self.processed_retention = processed_retention
+        self.error_retention = error_retention
         self._connection: sqlite3.Connection | None = None
         self._timeout = 0.1 if producer else 1.0
+        self._lock = threading.RLock()
 
     def init_db(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = self._connect()
-        conn.executescript(
-            """
-            create table if not exists queue_meta (
-              key text primary key,
-              value text not null
-            );
-            create table if not exists events (
-              sequence_id integer primary key autoincrement,
-              created_at real not null,
-              updated_at real not null,
-              method text not null,
-              path text not null,
-              body_json text not null,
-              body_size_bytes integer not null,
-              idempotency_key text,
-              status text not null,
-              attempts integer not null default 0,
-              last_attempt_at real,
-              next_attempt_at real not null default 0,
-              lease_token text,
-              leased_until real,
-              last_error text,
-              last_error_code text,
-              last_http_status integer
-            );
-            create index if not exists events_status_attempt_sequence_idx
-              on events (status, next_attempt_at, sequence_id);
-            create table if not exists errors (
-              id integer primary key autoincrement,
-              sequence_id integer,
-              created_at real not null,
-              error_type text not null,
-              message text not null
-            );
-            create table if not exists counters (
-              key text primary key,
-              value integer not null
-            );
-            """
-        )
-        conn.execute("insert or ignore into queue_meta (key, value) values (?, ?)", ("version", "1"))
-        conn.commit()
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            conn = self._connect()
+            conn.executescript(
+                """
+                create table if not exists queue_meta (
+                  key text primary key,
+                  value text not null
+                );
+                create table if not exists events (
+                  sequence_id integer primary key autoincrement,
+                  created_at real not null,
+                  updated_at real not null,
+                  method text not null,
+                  path text not null,
+                  body_json text not null,
+                  body_size_bytes integer not null,
+                  idempotency_key text,
+                  status text not null,
+                  attempts integer not null default 0,
+                  last_attempt_at real,
+                  next_attempt_at real not null default 0,
+                  lease_token text,
+                  leased_until real,
+                  last_error text,
+                  last_error_code text,
+                  last_http_status integer
+                );
+                create index if not exists events_status_attempt_sequence_idx
+                  on events (status, next_attempt_at, sequence_id);
+                create table if not exists errors (
+                  id integer primary key autoincrement,
+                  sequence_id integer,
+                  created_at real not null,
+                  error_type text not null,
+                  message text not null
+                );
+                create table if not exists counters (
+                  key text primary key,
+                  value integer not null
+                );
+                """
+            )
+            conn.execute("insert or ignore into queue_meta (key, value) values (?, ?)", ("version", "1"))
+            conn.commit()
 
     def enqueue(self, method: str, path: str, body: dict[str, Any], idempotency_key: str | None = None) -> int | None:
-        payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
-        size_bytes = len(payload.encode("utf-8"))
-        if size_bytes > self.max_event_bytes or self._queue_is_full(size_bytes) or not self._has_disk_space():
-            self.increment_counter("dropped")
-            return None
-        now = time.time()
-        key = idempotency_key or f"instantml-{uuid.uuid4().hex}"
-        try:
-            conn = self._connect()
-            cursor = conn.execute(
-                """
-                insert into events (
-                  created_at, updated_at, method, path, body_json, body_size_bytes,
-                  idempotency_key, status, next_attempt_at
-                ) values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-                """,
-                (now, now, method, path, payload, size_bytes, key, now),
-            )
-            conn.commit()
-            return int(cursor.lastrowid)
-        except sqlite3.Error as exc:
-            self._rollback_quietly()
-            try:
+        with self._lock:
+            payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
+            size_bytes = len(payload.encode("utf-8"))
+            if size_bytes > self.max_event_bytes or self._queue_is_full(size_bytes) or not self._has_disk_space():
                 self.increment_counter("dropped")
-            except sqlite3.Error:
-                pass
-            raise InstantMLError(f"async queue enqueue failed: {exc}") from exc
+                return None
+            now = time.time()
+            key = idempotency_key or f"instantml-{uuid.uuid4().hex}"
+            try:
+                conn = self._connect()
+                cursor = conn.execute(
+                    """
+                    insert into events (
+                      created_at, updated_at, method, path, body_json, body_size_bytes,
+                      idempotency_key, status, next_attempt_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (now, now, method, path, payload, size_bytes, key, now),
+                )
+                conn.commit()
+                return int(cursor.lastrowid)
+            except sqlite3.Error as exc:
+                self._rollback_quietly()
+                try:
+                    self.increment_counter("dropped")
+                except sqlite3.Error:
+                    pass
+                raise InstantMLError(f"async queue enqueue failed: {exc}") from exc
 
     def claim_batch(
         self,
@@ -298,94 +315,118 @@ class AsyncQueueRepository:
         max_event_bytes: int,
         lease_seconds: float,
     ) -> list[QueuedEvent]:
-        now = time.time()
-        conn = self._connect()
-        rows = conn.execute(
-            """
-            select sequence_id, method, path, body_json, body_size_bytes, idempotency_key
-            from events
-            where status = 'pending' and next_attempt_at <= ?
-            order by sequence_id asc
-            limit 256
-            """,
-            (now,),
-        ).fetchall()
-        selected = []
-        total = 0
-        for row in rows:
-            size = int(row["body_size_bytes"])
+        with self._lock:
+            now = time.time()
+            conn = self._connect()
+            rows = conn.execute(
+                """
+                select sequence_id, method, path, body_json, body_size_bytes, idempotency_key, status, next_attempt_at
+                from events
+                where status in ('pending', 'in_flight')
+                order by sequence_id asc
+                limit 256
+                """
+            ).fetchall()
+            selected = []
+            total = 0
+            for row in rows:
+                if str(row["status"]) != "pending" or float(row["next_attempt_at"]) > now:
+                    break
+                size = int(row["body_size_bytes"])
+                if not selected:
+                    selected.append(row)
+                    total += size
+                    continue
+                if total + size <= max_batch_bytes:
+                    selected.append(row)
+                    total += size
+                    continue
+                break
             if not selected:
-                selected.append(row)
-                total += size
-                continue
-            if selected and total + size <= max_batch_bytes:
-                selected.append(row)
-                total += size
-                continue
-            break
-        if not selected:
-            return []
-        sequence_ids = [int(row["sequence_id"]) for row in selected]
-        placeholders = ",".join("?" for _ in sequence_ids)
-        conn.execute(
-            f"""
-            update events
-            set status = 'in_flight',
-                lease_token = ?,
-                leased_until = ?,
-                updated_at = ?
-            where sequence_id in ({placeholders})
-            """,
-            (lease_token, now + lease_seconds, now, *sequence_ids),
-        )
-        conn.commit()
-        return [
-            QueuedEvent(
-                sequence_id=int(row["sequence_id"]),
-                method=str(row["method"]),
-                path=str(row["path"]),
-                body=json.loads(str(row["body_json"])),
-                body_size_bytes=int(row["body_size_bytes"]),
-                idempotency_key=str(row["idempotency_key"] or ""),
+                return []
+            sequence_ids = [int(row["sequence_id"]) for row in selected]
+            placeholders = ",".join("?" for _ in sequence_ids)
+            conn.execute(
+                f"""
+                update events
+                set status = 'in_flight',
+                    lease_token = ?,
+                    leased_until = ?,
+                    updated_at = ?
+                where sequence_id in ({placeholders})
+                """,
+                (lease_token, now + lease_seconds, now, *sequence_ids),
             )
-            for row in selected
-        ]
+            conn.commit()
+            return [
+                QueuedEvent(
+                    sequence_id=int(row["sequence_id"]),
+                    method=str(row["method"]),
+                    path=str(row["path"]),
+                    body=json.loads(str(row["body_json"])),
+                    body_size_bytes=int(row["body_size_bytes"]),
+                    idempotency_key=str(row["idempotency_key"] or ""),
+                )
+                for row in selected
+            ]
 
     def recover_stale_leases(self) -> int:
-        now = time.time()
-        conn = self._connect()
-        cursor = conn.execute(
-            """
-            update events
-            set status = 'pending',
-                lease_token = null,
-                leased_until = null,
-                updated_at = ?
-            where status = 'in_flight' and leased_until is not null and leased_until < ?
-            """,
-            (now, now),
-        )
-        conn.commit()
-        return int(cursor.rowcount or 0)
+        with self._lock:
+            now = time.time()
+            conn = self._connect()
+            cursor = conn.execute(
+                """
+                update events
+                set status = 'pending',
+                    lease_token = null,
+                    leased_until = null,
+                    updated_at = ?
+                where status = 'in_flight' and leased_until is not null and leased_until < ?
+                """,
+                (now, now),
+            )
+            conn.commit()
+            return int(cursor.rowcount or 0)
 
     def mark_processed(self, sequence_id: int) -> None:
-        now = time.time()
-        conn = self._connect()
-        conn.execute(
-            """
-            update events
-            set status = 'processed',
-                updated_at = ?,
-                lease_token = null,
-                leased_until = null,
-                last_error = null,
-                last_error_code = null,
-                last_http_status = null
-            where sequence_id = ?
-            """,
-            (now, sequence_id),
-        )
-        conn.commit()
+        with self._lock:
+            now = time.time()
+            conn = self._connect()
+            conn.execute(
+                """
+                update events
+                set status = 'processed',
+                    updated_at = ?,
+                    lease_token = null,
+                    leased_until = null,
+                    last_error = null,
+                    last_error_code = null,
+                    last_http_status = null
+                where sequence_id = ?
+                """,
+                (now, sequence_id),
+            )
+            conn.commit()
+
+    def release_events(self, sequence_ids: list[int]) -> None:
+        if not sequence_ids:
+            return
+        with self._lock:
+            now = time.time()
+            placeholders = ",".join("?" for _ in sequence_ids)
+            conn = self._connect()
+            conn.execute(
+                f"""
+                update events
+                set status = 'pending',
+                    lease_token = null,
+                    leased_until = null,
+                    updated_at = ?
+                where sequence_id in ({placeholders}) and status = 'in_flight'
+                """,
+                (now, *sequence_ids),
+            )
+            conn.commit()
 
     def mark_retry(
         self,
@@ -395,148 +436,183 @@ class AsyncQueueRepository:
         http_status: int | None = None,
         retry_after: float | None = None,
     ) -> None:
-        row = self._connect().execute("select attempts from events where sequence_id = ?", (sequence_id,)).fetchone()
-        attempts = int(row["attempts"] if row else 0) + 1
-        delay = _retry_delay(attempts, retry_after=retry_after)
-        now = time.time()
-        conn = self._connect()
-        conn.execute(
-            """
-            update events
-            set status = 'pending',
-                attempts = ?,
-                last_attempt_at = ?,
-                next_attempt_at = ?,
-                lease_token = null,
-                leased_until = null,
-                updated_at = ?,
-                last_error = ?,
-                last_error_code = ?,
-                last_http_status = ?
-            where sequence_id = ?
-            """,
-            (attempts, now, now + delay, now, message, code, http_status, sequence_id),
-        )
-        self._save_error(conn, sequence_id, "retryable", message)
-        conn.commit()
+        with self._lock:
+            row = self._connect().execute("select attempts from events where sequence_id = ?", (sequence_id,)).fetchone()
+            attempts = int(row["attempts"] if row else 0) + 1
+            delay = _retry_delay(attempts, retry_after=retry_after)
+            now = time.time()
+            conn = self._connect()
+            conn.execute(
+                """
+                update events
+                set status = 'pending',
+                    attempts = ?,
+                    last_attempt_at = ?,
+                    next_attempt_at = ?,
+                    lease_token = null,
+                    leased_until = null,
+                    updated_at = ?,
+                    last_error = ?,
+                    last_error_code = ?,
+                    last_http_status = ?
+                where sequence_id = ?
+                """,
+                (attempts, now, now + delay, now, message, code, http_status, sequence_id),
+            )
+            self._save_error(conn, sequence_id, "retryable", message)
+            conn.commit()
 
     def mark_failed(self, sequence_id: int, message: str, code: str | None = None, http_status: int | None = None) -> None:
-        now = time.time()
-        conn = self._connect()
-        conn.execute(
-            """
-            update events
-            set status = 'failed',
-                last_attempt_at = ?,
-                lease_token = null,
-                leased_until = null,
-                updated_at = ?,
-                last_error = ?,
-                last_error_code = ?,
-                last_http_status = ?
-            where sequence_id = ?
-            """,
-            (now, now, message, code, http_status, sequence_id),
-        )
-        self._save_error(conn, sequence_id, "failed", message)
-        conn.commit()
+        with self._lock:
+            now = time.time()
+            conn = self._connect()
+            conn.execute(
+                """
+                update events
+                set status = 'failed',
+                    last_attempt_at = ?,
+                    lease_token = null,
+                    leased_until = null,
+                    updated_at = ?,
+                    last_error = ?,
+                    last_error_code = ?,
+                    last_http_status = ?
+                where sequence_id = ?
+                """,
+                (now, now, message, code, http_status, sequence_id),
+            )
+            self._save_error(conn, sequence_id, "failed", message)
+            conn.commit()
 
     def status(self) -> dict[str, Any]:
-        conn = self._connect()
-        rows = conn.execute("select status, count(*) as count from events group by status").fetchall()
-        counts = {str(row["status"]): int(row["count"]) for row in rows}
-        oldest = conn.execute(
-            "select created_at from events where status in ('pending', 'in_flight') order by sequence_id asc limit 1"
-        ).fetchone()
-        last_error = conn.execute(
-            "select message from errors order by id desc limit 1"
-        ).fetchone()
-        dropped = self.counter("dropped")
-        age = None
-        if oldest:
-            age = max(0.0, time.time() - float(oldest["created_at"]))
-        return {
-            "pending": counts.get("pending", 0),
-            "in_flight": counts.get("in_flight", 0),
-            "processed": counts.get("processed", 0),
-            "failed": counts.get("failed", 0),
-            "dropped": dropped,
-            "oldest_pending_age_seconds": age,
-            "last_error": str(last_error["message"]) if last_error else None,
-        }
+        with self._lock:
+            conn = self._connect()
+            rows = conn.execute("select status, count(*) as count from events group by status").fetchall()
+            counts = {str(row["status"]): int(row["count"]) for row in rows}
+            oldest = conn.execute(
+                "select created_at from events where status in ('pending', 'in_flight') order by sequence_id asc limit 1"
+            ).fetchone()
+            last_error = conn.execute("select message from errors order by id desc limit 1").fetchone()
+            dropped = self.counter("dropped")
+            age = None
+            if oldest:
+                age = max(0.0, time.time() - float(oldest["created_at"]))
+            return {
+                "pending": counts.get("pending", 0),
+                "in_flight": counts.get("in_flight", 0),
+                "processed": counts.get("processed", 0),
+                "failed": counts.get("failed", 0),
+                "dropped": dropped,
+                "oldest_pending_age_seconds": age,
+                "last_error": str(last_error["message"]) if last_error else None,
+                "disk_usage_bytes": self._queue_file_size_bytes(),
+            }
 
     def has_pending(self) -> bool:
-        row = self._connect().execute(
-            "select 1 from events where status in ('pending', 'in_flight') limit 1"
-        ).fetchone()
-        return row is not None
+        with self._lock:
+            row = self._connect().execute(
+                "select 1 from events where status in ('pending', 'in_flight') limit 1"
+            ).fetchone()
+            return row is not None
 
     def has_failed(self) -> bool:
-        row = self._connect().execute("select 1 from events where status = 'failed' limit 1").fetchone()
-        return row is not None
+        with self._lock:
+            row = self._connect().execute("select 1 from events where status = 'failed' limit 1").fetchone()
+            return row is not None
+
+    def has_claimable(self) -> bool:
+        with self._lock:
+            now = time.time()
+            row = self._connect().execute(
+                """
+                select status, next_attempt_at
+                from events
+                where status in ('pending', 'in_flight')
+                order by sequence_id asc
+                limit 1
+                """
+            ).fetchone()
+            if row is None:
+                return False
+            return str(row["status"]) == "pending" and float(row["next_attempt_at"]) <= now
 
     def increment_counter(self, key: str, amount: int = 1) -> None:
-        conn = self._connect()
-        conn.execute(
-            """
-            insert into counters (key, value) values (?, ?)
-            on conflict(key) do update set value = value + excluded.value
-            """,
-            (key, amount),
-        )
-        conn.commit()
+        with self._lock:
+            conn = self._connect()
+            conn.execute(
+                """
+                insert into counters (key, value) values (?, ?)
+                on conflict(key) do update set value = value + excluded.value
+                """,
+                (key, amount),
+            )
+            conn.commit()
 
     def counter(self, key: str) -> int:
-        row = self._connect().execute("select value from counters where key = ?", (key,)).fetchone()
-        return int(row["value"]) if row else 0
+        with self._lock:
+            row = self._connect().execute("select value from counters where key = ?", (key,)).fetchone()
+            return int(row["value"]) if row else 0
 
     def prune_processed(self) -> None:
-        conn = self._connect()
-        conn.execute(
-            """
-            delete from events
-            where status = 'processed'
-              and sequence_id not in (
-                select sequence_id from events
+        with self._lock:
+            conn = self._connect()
+            conn.execute(
+                """
+                delete from events
                 where status = 'processed'
-                order by sequence_id desc
-                limit ?
-              )
-            """,
-            (self.processed_retention,),
-        )
-        conn.commit()
+                  and sequence_id not in (
+                    select sequence_id from events
+                    where status = 'processed'
+                    order by sequence_id desc
+                    limit ?
+                  )
+                """,
+                (self.processed_retention,),
+            )
+            self._prune_errors(conn)
+            conn.commit()
+            self._checkpoint_wal()
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection is not None:
+                self._checkpoint_wal()
+                self._connection.close()
+                self._connection = None
 
     def _connect(self) -> sqlite3.Connection:
-        if self._connection is None:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = sqlite3.connect(self.path, timeout=self._timeout, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("pragma journal_mode=wal")
-            self._connection.execute("pragma synchronous=normal")
-            self._connection.execute(f"pragma busy_timeout={int(self._timeout * 1000)}")
-        return self._connection
+        with self._lock:
+            if self._connection is None:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self._connection = sqlite3.connect(self.path, timeout=self._timeout, check_same_thread=False)
+                self._connection.row_factory = sqlite3.Row
+                self._connection.execute("pragma journal_mode=wal")
+                self._connection.execute("pragma synchronous=normal")
+                self._connection.execute(f"pragma busy_timeout={int(self._timeout * 1000)}")
+                self._connection.execute(f"pragma journal_size_limit={DEFAULT_SQLITE_JOURNAL_SIZE_LIMIT}")
+            return self._connection
 
     def _queue_is_full(self, next_bytes: int) -> bool:
-        try:
-            row = self._connect().execute(
-                "select coalesce(sum(body_size_bytes), 0) as bytes from events where status != 'processed'"
-            ).fetchone()
-            queued = int(row["bytes"] if row else 0)
-            return queued + next_bytes > self.max_queue_bytes
-        except sqlite3.Error:
-            return False
+        with self._lock:
+            try:
+                row = self._connect().execute(
+                    "select coalesce(sum(body_size_bytes), 0) as bytes from events where status != 'processed'"
+                ).fetchone()
+                queued = int(row["bytes"] if row else 0)
+                logical_full = queued + next_bytes > self.max_queue_bytes
+                physical_full = self._queue_file_size_bytes() + next_bytes > self.max_queue_bytes
+                return logical_full or physical_full
+            except sqlite3.Error:
+                return False
 
     def _has_disk_space(self) -> bool:
         try:
-            usage = os.statvfs(self.path.parent)
-            return usage.f_bavail * usage.f_frsize >= self.min_free_disk_bytes
-        except OSError:
+            if hasattr(os, "statvfs"):
+                usage = os.statvfs(self.path.parent)
+                return usage.f_bavail * usage.f_frsize >= self.min_free_disk_bytes
+            usage = shutil.disk_usage(self.path.parent)
+            return usage.free >= self.min_free_disk_bytes
+        except (AttributeError, OSError):
             return True
 
     def _save_error(self, conn: sqlite3.Connection, sequence_id: int, error_type: str, message: str) -> None:
@@ -544,13 +620,45 @@ class AsyncQueueRepository:
             "insert into errors (sequence_id, created_at, error_type, message) values (?, ?, ?, ?)",
             (sequence_id, time.time(), error_type, message[:1000]),
         )
+        self._prune_errors(conn)
+
+    def _prune_errors(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            delete from errors
+            where id not in (
+              select id from errors
+              order by id desc
+              limit ?
+            )
+            """,
+            (self.error_retention,),
+        )
+
+    def _queue_file_size_bytes(self) -> int:
+        total = 0
+        for path in (self.path, self.path.with_name(self.path.name + "-wal"), self.path.with_name(self.path.name + "-shm")):
+            try:
+                total += path.stat().st_size
+            except OSError:
+                pass
+        return total
+
+    def _checkpoint_wal(self) -> None:
+        if self._connection is None:
+            return
+        try:
+            self._connection.execute("pragma wal_checkpoint(truncate)")
+        except (AttributeError, sqlite3.Error):
+            pass
 
     def _rollback_quietly(self) -> None:
-        try:
-            if self._connection is not None:
-                self._connection.rollback()
-        except sqlite3.Error:
-            pass
+        with self._lock:
+            try:
+                if self._connection is not None:
+                    self._connection.rollback()
+            except sqlite3.Error:
+                pass
 
 
 class QueueLock:
@@ -584,9 +692,21 @@ class QueueLock:
             raw = self.path.read_text(encoding="ascii").strip()
             pid = int(raw)
         except (OSError, ValueError):
-            return False
+            return self._remove_invalid_stale_lock()
         if _pid_is_running(pid):
             return False
+        return self._unlink_lock()
+
+    def _remove_invalid_stale_lock(self) -> bool:
+        try:
+            age_seconds = time.time() - self.path.stat().st_mtime
+        except OSError:
+            return False
+        if age_seconds < DEFAULT_LOCK_STALE_SECONDS:
+            return False
+        return self._unlink_lock()
+
+    def _unlink_lock(self) -> bool:
         try:
             self.path.unlink()
             return True

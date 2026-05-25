@@ -12,6 +12,7 @@ from typing import Any
 
 from .async_queue import drain_async_queues
 from .client import Client, DEFAULT_PROCESS_SPOOL_DIR, InstantMLError, _default_base_url
+from .credentials import _resolve_api_key
 
 
 LOCK_FILE = ".uploader.lock"
@@ -55,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         kwargs = {
             "queue_dir": args.queue_dir,
             "base_url": args.base_url,
-            "api_key": os.environ.get("INSTANTML_API_KEY"),
+            "api_key": _resolve_api_key(None),
             "timeout": args.timeout,
             "max_events": args.max_events,
         }
