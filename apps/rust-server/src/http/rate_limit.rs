@@ -255,6 +255,7 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
                 "/api/storage/clickhouse-connections/rotate-credentials"
             )
     ) || (*method == Method::PATCH && path.starts_with("/runs/"))
+        || (*method == Method::POST && path.starts_with("/api/runs/") && path.ends_with("/forks"))
         || (*method == Method::POST
             && (path.ends_with("/metrics")
                 || path.ends_with("/rank-metrics")
@@ -446,6 +447,12 @@ mod tests {
         );
         assert_eq!(
             classify_route(&Method::POST, "/api/imports/wandb")
+                .expect("policy")
+                .class,
+            RequestClass::Ingest
+        );
+        assert_eq!(
+            classify_route(&Method::POST, "/api/runs/run-1/forks")
                 .expect("policy")
                 .class,
             RequestClass::Ingest

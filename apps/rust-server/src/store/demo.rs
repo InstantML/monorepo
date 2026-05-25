@@ -52,6 +52,9 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
             created_at: Utc::now() - ChronoDuration::seconds((DEMO_RUN_COUNT - index) as i64),
             started_at: Utc::now() - ChronoDuration::minutes(20),
             finished_at: (status != "running").then(Utc::now),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         };
         store
             .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)

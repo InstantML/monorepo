@@ -20,6 +20,8 @@ export const publicOpenApiPaths = [
   "/api/runs/side-by-side",
   "/api/metrics/series",
   "/api/runs/{run_id}/rank-metrics/summary",
+  "/api/runs/{run_id}/lineage",
+  "/api/runs/{run_id}/forks",
   "/api/runs/{run_id}/attributes",
   "/api/runs/{run_id}/objects",
   "/api/runs/{run_id}/artifacts",

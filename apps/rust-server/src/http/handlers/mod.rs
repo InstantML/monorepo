@@ -44,10 +44,10 @@ pub(super) use platform::{
     auth_config, health, metrics as metrics_handler, not_found, openapi_json, readyz,
 };
 pub(super) use runs::{
-    create_attributes, create_object, create_project, create_run, get_metrics, get_run,
-    list_attributes, list_console_logs, list_object_rows, list_objects, list_projects, list_runs,
-    log_console_logs, log_metrics, log_rank_metrics, overview, rank_metrics_summary, runs_summary,
-    side_by_side, update_run,
+    create_attributes, create_object, create_project, create_run, fork_run, get_metrics, get_run,
+    get_run_lineage, list_attributes, list_console_logs, list_object_rows, list_objects,
+    list_projects, list_runs, log_console_logs, log_metrics, log_rank_metrics, overview,
+    rank_metrics_summary, runs_summary, side_by_side, update_run,
 };
 pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
@@ -229,6 +229,8 @@ mod tests {
             "/runs/{run_id}",
             "/runs/{run_id}/metrics",
             "/runs/{run_id}/rank-metrics",
+            "/api/runs/{run_id}/forks",
+            "/api/runs/{run_id}/lineage",
             "/api/runs/{run_id}/logs",
             "/api/metrics/series",
             // dashboard analytics

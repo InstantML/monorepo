@@ -1681,6 +1681,9 @@ mod tests {
             created_at: Utc::now(),
             started_at: Utc::now(),
             finished_at: Some(Utc::now()),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 

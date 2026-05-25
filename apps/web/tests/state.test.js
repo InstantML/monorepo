@@ -33,7 +33,7 @@ import {
   visibleSelectionState,
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
-import { buildCheckpointResumeCode } from "../src/checkpoints.js";
+import { buildCheckpointForkBody, buildCheckpointResumeCode, checkpointForkIdempotencyKey, defaultForkRunName } from "../src/checkpoints.js";
 import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, normalizeDeviceUserCode, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
@@ -528,6 +528,39 @@ test("checkpoint resume helper handles fallback metadata and python literals", (
   assert.match(invalidMetadataCode, /name="resume-from-no-step"/);
   assert.match(invalidMetadataCode, /checkpoints\/artifact-3\.ckpt/);
   assert.match(invalidMetadataCode, /"checkpoint_step": None/);
+});
+
+test("checkpoint fork helper builds same-project fork payloads", () => {
+  const artifact = {
+    id: "artifact-1",
+    type: "checkpoint",
+    name: "checkpoint step 12.json",
+    step: null,
+    metadata: { checkpoint: { step: 12 } },
+  };
+  const run = { id: "run-1", project: "demo", name: "seed-44" };
+
+  assert.equal(defaultForkRunName(artifact, run), "fork-of-seed-44-step-12");
+  assert.deepEqual(buildCheckpointForkBody(artifact, run, {
+    inheritConfig: false,
+    reason: "retry after nan",
+    tags: ["retry"],
+  }), {
+    name: "fork-of-seed-44-step-12",
+    checkpoint_artifact_id: "artifact-1",
+    inherit_config: false,
+    metadata: { reason: "retry after nan" },
+    step: 12,
+    tags: ["retry"],
+  });
+  const body = buildCheckpointForkBody(artifact, run, { inheritConfig: true, reason: "retry after nan" });
+  const key = checkpointForkIdempotencyKey(artifact, run, body);
+  assert.match(key, /^instantml-fork-[0-9a-f]{32}$/);
+  assert.equal(key, checkpointForkIdempotencyKey(artifact, run, body));
+  assert.notEqual(
+    checkpointForkIdempotencyKey(artifact, run, body),
+    checkpointForkIdempotencyKey(artifact, run, { ...body, name: "different retry" }),
+  );
 });
 
 test("comparison helpers sort, aggregate, group, smooth, and average runs", () => {

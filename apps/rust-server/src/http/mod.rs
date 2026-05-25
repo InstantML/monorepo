@@ -36,9 +36,9 @@ use handlers::{
     create_attributes, create_customer_clickhouse_connection, create_invitation, create_object,
     create_org, create_project, create_run, create_user, create_workspace_view,
     customer_clickhouse_connection_status, device_code_confirm, device_code_poll,
-    device_code_start, disable_service_account, download_artifact, export_data,
-    get_dashboard_preferences, get_metrics, get_run, get_workspace_view, health, import_mlflow,
-    import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
+    device_code_start, disable_service_account, download_artifact, export_data, fork_run,
+    get_dashboard_preferences, get_metrics, get_run, get_run_lineage, get_workspace_view, health,
+    import_mlflow, import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
     list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
     list_org_memberships, list_orgs, list_projects, list_runs, list_seats, list_users,
     list_workspace_views, log_console_logs, log_metrics, log_rank_metrics, metrics_handler,
@@ -222,6 +222,8 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/projects", post(create_project).get(list_projects))
         .route("/runs", post(create_run).get(list_runs))
         .route("/runs/:run_id", get(get_run).patch(update_run))
+        .route("/api/runs/:run_id/forks", post(fork_run))
+        .route("/api/runs/:run_id/lineage", get(get_run_lineage))
         .route("/runs/:run_id/metrics", post(log_metrics).get(get_metrics))
         .route("/runs/:run_id/rank-metrics", post(log_rank_metrics))
         .route(

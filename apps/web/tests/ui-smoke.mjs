@@ -67,11 +67,15 @@ try {
   const summaryUrls = [];
   const objectUrls = [];
   const logUrls = [];
+  const forkRequests = [];
   const objectNotFoundUrls = [];
   page.on("request", (request) => {
     if (request.url().includes("/api/runs/summary")) summaryUrls.push(request.url());
     if (request.url().includes("/objects")) objectUrls.push(request.url());
     if (request.url().includes("/logs")) logUrls.push(request.url());
+    if (request.method() === "POST" && request.url().includes("/api/runs/") && request.url().endsWith("/forks")) {
+      forkRequests.push({ headers: request.headers(), url: request.url() });
+    }
   });
   page.on("response", (response) => {
     if (response.url().includes("/objects") && response.status() === 404) objectNotFoundUrls.push(response.url());
@@ -447,6 +451,35 @@ try {
     }));
     assert.ok(tablePreviewSize.headers <= 8, `table preview should cap columns, got ${tablePreviewSize.headers}`);
     assert.ok(tablePreviewSize.cells <= 160, `table preview should cap cells, got ${tablePreviewSize.cells}`);
+    await page.locator(".run-workspace-tabs").getByRole("button", { name: "Summary" }).click();
+    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa-checkpoint.json"));
+    const forkName = `ui-smoke-fork-${Date.now()}`;
+    const forkRequestsBefore = forkRequests.length;
+    await page.getByRole("button", { name: /^Fork qa-checkpoint\.json$/ }).click();
+    await page.waitForSelector(".checkpoint-fork-modal", { timeout: 10000 });
+    assert.match(await page.locator(".checkpoint-fork-modal").innerText(), /does not start training/);
+    await page.fill("#fork-run-name", forkName);
+    await page.locator(".checkpoint-fork-modal textarea").fill("UI smoke retry");
+    await Promise.all([
+      page.waitForResponse((response) => (
+        response.request().method() === "POST"
+          && response.url().includes("/api/runs/")
+          && response.url().endsWith("/forks")
+          && response.status() === 200
+      )),
+      page.locator(".checkpoint-fork-modal").getByRole("button", { name: /Create Fork/ }).click(),
+    ]);
+    await page.waitForFunction(
+      (name) => document.querySelector(".run-workspace-name")?.textContent?.includes(name),
+      forkName,
+    );
+    await page.waitForFunction(() => document.querySelector(".run-workspace-tab.active")?.textContent?.includes("Graph"));
+    await page.waitForFunction(() => {
+      const text = document.querySelector(".graph-panel")?.textContent ?? "";
+      return text.includes("Parent") && text.includes("qa-checkpoint.json") && text.includes("No direct children yet.");
+    });
+    assert.equal(forkRequests.length, forkRequestsBefore + 1, "checkpoint fork should submit exactly one request");
+    assert.match(forkRequests.at(-1).headers["idempotency-key"], /^instantml-fork-[0-9a-f]{32}$/);
   } else {
     await page.getByRole("button", { name: "Files" }).click();
     await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("No evidence logged"));

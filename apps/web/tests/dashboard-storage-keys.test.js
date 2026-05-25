@@ -99,6 +99,16 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /if \(queryInput !== query\) \{[\s\S]*setQuery\(queryInput\);[\s\S]*Select matching runs again[\s\S]*return;/, "select-all matching should not run against a stale debounced search query");
   const artifactLoadEffect = shell.match(/async function loadArtifacts\(\)[\s\S]*?\}, \[[^\]]+\]\);/)?.[0] ?? "";
   assert.doesNotMatch(artifactLoadEffect, /runWorkspaceTab/, "artifact loads should not refetch on summary/data/files subtab changes");
+  assert.match(shell, /artifactsRunId === primaryRun\?\.id/, "artifact rows should be keyed to the selected run before rendering checkpoint fork actions");
+  assert.match(shell, /checkpointForkIdempotencyKey\(artifact, primaryRun, body\)/, "checkpoint fork retries should reuse a stable idempotency key for the same body");
+  assert.match(shell, /artifact\.run_id && artifact\.run_id !== primaryRun\.id/, "checkpoint fork actions should reject stale artifact/run pairings");
+
+  const runWorkspace = readFileSync(`${root}app/dashboard/components/run-workspace.tsx`, "utf8");
+  assert.match(runWorkspace, /const visibleLineage = lineage\?\.run\?\.id === run\.id \? lineage : null;/, "lineage UI should not render stale graph payloads after switching runs");
+  assert.match(runWorkspace, /setLineage\(null\);[\s\S]*api\.get\(`\/api\/runs\/\$\{run\.id\}\/lineage`/, "lineage fetches should clear prior graph state before loading a new run");
+
+  const runDetail = readFileSync(`${root}app/dashboard/detail/run-detail.tsx`, "utf8");
+  assert.match(runDetail, /\["_rlobs", "source", "git", "commit"\]/, "run detail source panel should read SDK privacy-safe git metadata");
 
   const quickSearch = readFileSync(`${root}app/dashboard/chrome/quick-search.tsx`, "utf8");
   assert.match(quickSearch, /className="workspace-modal command-modal"/, "quick search should keep a full-screen backdrop");

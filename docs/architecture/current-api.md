@@ -1,6 +1,6 @@
 # Current Rust API Reference
 
-Date: 2026-05-17
+Date: 2026-05-25
 
 Status: Current implemented API surface for `apps/rust-server`
 
@@ -137,7 +137,10 @@ Important row shapes:
     "metadata": {},
     "created_at": "2026-05-16T00:00:00Z",
     "started_at": "2026-05-16T00:00:00Z",
-    "finished_at": null
+    "finished_at": null,
+    "parent_run_id": null,
+    "forked_from_step": null,
+    "forked_from_artifact_id": null
   },
   "metric": {
     "key": "eval/accuracy",
@@ -683,6 +686,67 @@ Output:
 
 The returned run is a summary value that includes metric aggregates and artifact
 counts used by the dashboard.
+
+### `POST /api/runs/:run_id/forks`
+
+Auth: source read plus run creation rights: `export:read` and `sdk:ingest`
+API-key scopes, or an owner/admin/member browser session.
+
+Headers:
+
+- `Idempotency-Key`: optional but recommended. Reusing the same key/body returns
+  the same child run; reusing the key with a different body returns `409`.
+
+Body:
+
+```json
+{
+  "name": "retry-seed-7",
+  "step": 120,
+  "checkpoint_artifact_id": "uuid",
+  "inherit_config": true,
+  "config_overrides": { "lr": 0.0001 },
+  "tags": ["retry", "checkpoint"],
+  "notes": "Retry from stable checkpoint.",
+  "metadata": { "reason": "nan loss" }
+}
+```
+
+Forks are same-project only. `checkpoint_artifact_id`, when present, must be a
+checkpoint artifact on the source run. If the checkpoint has a known step, the
+request step must match; if the request omits `step`, the server derives it
+from the artifact. The child run stores authoritative `parent_run_id`,
+`forked_from_step`, and `forked_from_artifact_id` fields. `metadata.lineage` is
+a convenience snapshot, not the source of truth. The endpoint creates only a
+linked run record; it does not start training, copy metrics, or copy artifact
+bytes.
+
+Output:
+
+```json
+{ "run": {}, "fork": {} }
+```
+
+### `GET /api/runs/:run_id/lineage`
+
+Auth: tenant read access.
+
+Returns the selected run summary, optional parent, latest 100 direct children,
+the checkpoint artifact for a forked child when present, and truncation fields.
+
+Output:
+
+```json
+{
+  "run": {},
+  "parent": null,
+  "children": [],
+  "checkpoint_artifact": null,
+  "children_total": 0,
+  "has_more_children": false,
+  "limit": 100
+}
+```
 
 ### `PATCH /runs/:run_id`
 
