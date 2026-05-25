@@ -2,7 +2,7 @@
 
 Date: 2026-05-25
 
-Status: Revised after fresh review
+Status: Implemented; default policy superseded by `2026-05-25-async-upload-default.md`
 
 Owner: Codex
 
@@ -26,7 +26,7 @@ REST reads remain the UI source of truth.
 
 ## Goals
 
-- Add opt-in `upload_mode="async"` for metric/log hot paths.
+- Add initially opt-in `upload_mode="async"` for metric/log hot paths.
 - Store async events in a per-run SQLite WAL queue with sequence IDs, byte
   sizes, idempotency keys, retry state, leases, and local status.
 - Start a separate SDK-managed uploader process after run creation succeeds.
@@ -48,7 +48,9 @@ REST reads remain the UI source of truth.
 - Do not make run creation offline-capable; `init()` still needs the API.
 - Do not make artifact uploads direct-to-object-storage.
 - Do not support async rich media response chaining.
-- Do not flip the default from `sync` to `async` in this PR.
+- Do not flip the default from `sync` to `async` in the initial durable async
+  PR. The later accepted default flip is documented in
+  `2026-05-25-async-upload-default.md`.
 - Do not add one-click cluster/job restart.
 - Do not make SDK upload-health metrics non-billable or server-reserved.
 
@@ -75,8 +77,9 @@ Add:
 
 - `async`: SQLite queue plus SDK-managed background uploader process.
 
-`async` remains opt-in until benchmarks and UI verification establish overhead
-and failure behavior.
+`async` remained opt-in until benchmarks and UI verification established the
+initial overhead and failure behavior. The accepted follow-up
+`2026-05-25-async-upload-default.md` makes it the `init()` default.
 
 ### Allowed Route Matrix
 
@@ -241,7 +244,10 @@ Add a shared frontend helper that derives upload health from summary metrics:
 - `unknown`: no health metrics exist.
 
 Add a compact chip only to visible run rail rows in this slice. Run Detail/System
-can use the same helper if it is already rendering current summary data.
+can use the same helper if it is already rendering current summary data. After
+the default flip, uploader health is emitted only when queue work is processed,
+while queue/error state is outstanding, or once when a previously outstanding
+queue becomes idle; idle runs should not emit health metrics forever.
 
 Add silent, visibility-gated summary polling for the current dashboard page:
 

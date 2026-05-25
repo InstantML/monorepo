@@ -62,6 +62,9 @@ Current implemented design sequence:
   lineage, same-project checkpoint fork creation, bounded lineage reads,
   dashboard checkpoint forking, SDK `fork_run`/`attach_run`, and privacy-safe
   source-capture knobs.
+- `2026-05-25-async-upload-default.md`: accepted follow-up that makes durable
+  async the SDK `init()` default, keeps `Run(...)` sync by default, bounds idle
+  health traffic, and documents the `upload_mode="sync"` escape hatch.
 
 Current draft/revised designs awaiting implementation approval:
 
