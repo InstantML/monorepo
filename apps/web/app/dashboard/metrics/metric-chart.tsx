@@ -263,12 +263,12 @@ export function MetricChart({
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     return <div className="chart-area"><div className="empty">{emptyMessage}</div></div>;
   }
-  const pointCount = normalizedSeries.reduce((sum, item) => sum + (item.normalizedPoints?.length ?? 0), 0);
-  // Per-point <circle> markers are the dominant SVG paint cost on the
-  // canvas (one node per data point per series). The polyline already
-  // conveys the curve and hover is resolved geometrically by the svg-level
-  // onMove handler, so markers only earn their keep on sparse charts.
-  const showPointNodes = pointCount <= 240;
+  // Lines render solid. Per-point markers are only drawn for genuinely sparse
+  // series (1–2 samples) where a bare polyline would be invisible/ambiguous;
+  // multi-point series read as a clean continuous line. Hovering still surfaces
+  // a marker (the hover ring + dot below), and hit-testing is geometric via the
+  // svg-level onMove handler, so markers aren't needed for interactivity.
+  const sparsePointThreshold = 2;
   const xTicks = axisTicks(domain.minX, domain.maxX, 5);
   const yTicks = axisTicks(domain.minY, domain.maxY, 5);
   // Use the real domain span (never clamp to 1) so gridlines + tick labels line
@@ -281,6 +281,7 @@ export function MetricChart({
   const hoverRows = hover ? tooltipRows(normalizedSeries, hover.point.xValue, xMode, hover.runId) : [];
   const hoverEdge = hover ? (hover.point.x < width * 0.3 ? "edge-left" : hover.point.x > width * 0.62 ? "edge-right" : "") : "";
   const hoverLeft = hover ? (hoverEdge === "edge-left" ? "16px" : `${Math.min(82, Math.max(18, (hover.point.x / width) * 100))}%`) : "0px";
+  const hoverIndex = hover ? normalizedSeries.findIndex((item) => item.id === hover.runId) : -1;
   const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
   const legendSeries = normalizedSeries.slice(0, legendLimit);
 
@@ -322,20 +323,31 @@ export function MetricChart({
               {item.smoothed && item.smoothPath ? (
                 <polyline className={`series series-${index % 5} series-smooth`} points={item.smoothPath} style={{ stroke: chartColor(index) }} />
               ) : null}
-              {showPointNodes ? (item.normalizedPoints ?? []).map((point: any) => (
+              {(item.normalizedPoints?.length ?? 0) <= sparsePointThreshold ? (item.normalizedPoints ?? []).map((point: any) => (
                 <circle
                   key={`${item.id}-${point.step}-${point.created_at}`}
-                  className={`series-point point-${index % 5}${item.smoothed ? " series-point-raw" : ""}`}
+                  className={`series-point point-${index % 5}`}
                   cx={point.x}
                   cy={point.displayY ?? point.y}
                   style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
                   onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance: 0 })}
-                  r={2.4}
+                  r={2.6}
                 />
               )) : null}
             </g>
           )) : null}
-          {hover ? <circle className="hover-ring" cx={hover.point.x} cy={hover.point.displayY ?? hover.point.y} r={8} /> : null}
+          {hover ? (
+            <>
+              <circle
+                className="hover-point"
+                cx={hover.point.x}
+                cy={hover.point.displayY ?? hover.point.y}
+                r={3.2}
+                style={{ fill: hoverIndex >= 0 ? chartColor(hoverIndex) : "var(--accent)", stroke: "var(--chart-card-bg, var(--surface))" }}
+              />
+              <circle className="hover-ring" cx={hover.point.x} cy={hover.point.displayY ?? hover.point.y} r={8} />
+            </>
+          ) : null}
         </svg>
       </div>
       {hover ? (
