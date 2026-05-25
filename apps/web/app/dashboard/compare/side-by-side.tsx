@@ -14,6 +14,7 @@ import {
   metricNamespace,
   metricTitle,
   runNoteText,
+  safeArtifactMediaKind,
   safeArtifactUri,
   shortValue,
 } from "../../dashboard-models";
@@ -250,15 +251,6 @@ function buildCompareRows(rawRows: any[], runs: RunSummary[], artifactsByRun: Re
     });
 }
 
-function artifactMediaKind(artifact: Artifact) {
-  const mime = String(artifact.mime_type ?? artifact.metadata?.mime_type ?? artifact.metadata?.mimeType ?? artifact.metadata?.content_type ?? artifact.metadata?.contentType ?? "").toLowerCase();
-  const name = `${artifact.name} ${artifact.uri}`.toLowerCase();
-  if (mime.includes("image") || /\.(png|jpe?g|webp|gif)(?:$|[?#])/.test(name)) return "image";
-  if (mime.includes("audio") || /\.(mp3|m4a|wav|aac)(?:$|[?#])/.test(name)) return "audio";
-  if (mime.includes("video") || /\.(mp4|mov|webm)(?:$|[?#])/.test(name)) return "video";
-  return "";
-}
-
 function artifactCanUseDownloadRoute(artifact: Artifact) {
   return artifactHasStoredBytes(artifact);
 }
@@ -268,7 +260,7 @@ function artifactDownloadUrl(artifact: Artifact) {
 }
 
 function ArtifactMediaPreview({ artifact, compact = false, fallback = false }: { artifact: Artifact; compact?: boolean; fallback?: boolean }) {
-  const kind = artifactMediaKind(artifact);
+  const kind = safeArtifactMediaKind(artifact);
   if (!kind) return fallback ? <small className="artifact-media-fallback">Preview unavailable.</small> : null;
   const canPlay = artifactCanUseDownloadRoute(artifact);
   if (!canPlay) return <small className="artifact-media-fallback">{compact ? "Preview unavailable" : "Media preview unavailable; download or copy ID."}</small>;

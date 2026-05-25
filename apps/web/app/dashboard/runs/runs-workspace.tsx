@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { MAX_SELECTED_RUNS, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
@@ -158,7 +158,11 @@ export function RunsWorkspace({
   const [draggedPanel, setDraggedPanel] = useState<DraggedWorkspacePanel | null>(null);
   const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
   const draggedPanelRef = useRef<DraggedWorkspacePanel | null>(null);
+  const pointerDragCleanupRef = useRef<() => void>(() => {});
   const activeAddSectionId = addPanelSectionId || view.sections[0]?.id || "";
+  useEffect(() => () => {
+    pointerDragCleanupRef.current();
+  }, []);
   function handlePanelDragStart(event: DragEvent<HTMLElement>, sectionId: string, panelId: string) {
     const payload = { sectionId, panelId };
     draggedPanelRef.current = payload;
@@ -181,10 +185,15 @@ export function RunsWorkspace({
     setDraggedPanel(payload);
     event.preventDefault();
     event.stopPropagation();
+    pointerDragCleanupRef.current();
 
-    function finish() {
+    function cleanupPointerDrag() {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
+      pointerDragCleanupRef.current = () => {};
+    }
+    function finish() {
+      cleanupPointerDrag();
       clearDraggedPanel();
     }
     function handlePointerCancel() {
@@ -216,6 +225,7 @@ export function RunsWorkspace({
       finish();
     }
 
+    pointerDragCleanupRef.current = cleanupPointerDrag;
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
   }

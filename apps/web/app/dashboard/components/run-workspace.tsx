@@ -215,6 +215,7 @@ export function RunWorkspace({
 
 function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [stream, setStream] = useState<"stdout" | "stderr">("stdout");
+  const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<ConsoleLogLine[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -223,8 +224,31 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const requestKeyRef = useRef(0);
+  const scrollFrameRef = useRef<number | null>(null);
+  const pendingScrollTopRef = useRef(0);
   const windowRows = terminalWindow(lines.length, scrollTop, TERMINAL_ROW_HEIGHT, TERMINAL_VIEWPORT_HEIGHT);
-  const visibleLines = lines.slice(windowRows.start, windowRows.end);
+  const tokenizedLines = useMemo(() => (
+    lines.map((line) => ({ ...line, tokens: ansiTokens(line.message) }))
+  ), [lines]);
+  const visibleLines = tokenizedLines.slice(windowRows.start, windowRows.end);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput), 250);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
+
+  function updateScrollTop(nextScrollTop: number) {
+    pendingScrollTopRef.current = nextScrollTop;
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      setScrollTop(pendingScrollTopRef.current);
+    });
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -282,7 +306,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
         </div>
         <label className="logs-search">
           <Search size={14} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter logs" />
+          <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Filter logs" />
         </label>
         <button className="icon-button framed" aria-label="Refresh logs" onClick={() => setRefreshKey((current) => current + 1)} type="button">
           <RefreshCw size={15} />
@@ -295,7 +319,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
           <span>Line</span>
           <span>Message</span>
         </div>
-        <div className="terminal-scroll" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+        <div className="terminal-scroll" onScroll={(event) => updateScrollTop(event.currentTarget.scrollTop)}>
           <div className="terminal-spacer" style={{ height: windowRows.totalHeight }}>
             <div className="terminal-window" style={{ transform: `translateY(${windowRows.offsetTop}px)` }}>
               {visibleLines.map((line) => (
@@ -303,7 +327,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
                   <span className="terminal-ts">{formatTimestamp(line.timestamp)}</span>
                   <span className="terminal-line">{line.line_number}</span>
                   <span className="terminal-message">
-                    {ansiTokens(line.message).map((token, index) => (
+                    {line.tokens.map((token, index) => (
                       <span className={token.className || undefined} key={index}>{token.text}</span>
                     ))}
                   </span>

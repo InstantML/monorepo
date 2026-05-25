@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "../src/workspace-view-api.js";
+
 // The UI overhaul centralised browser-persistence keys into
 // app/dashboard/state/storage-keys.ts. These literals are a stable contract:
 // users' saved views / workspace layouts / theme are addressed by these exact
@@ -66,11 +68,37 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
     /names\.includes\(selectedProject\) && !userTouchedDashboardFiltersRef\.current/,
     "stale saved project preferences must not overwrite a project the user just picked",
   );
+  assert.match(shell, /projectPreferenceReady/, "dashboard runs should wait for project preferences before initial load");
+  assert.match(shell, /if \(!dashboardAuthorized \|\| !projectPreferenceReady\) return;/, "initial dashboard load should not race the persisted project preference");
+  assert.match(shell, /previousOrgIdRef/, "org switches should invalidate cached project preferences");
+  assert.match(shell, /\}, \[activeOrgId, dashboardAuthorized, loadProjects\]\);/, "project preference loading should be keyed by org, not saved-view scope changes");
+  assert.match(shell, /if \(queryInput === query\) return undefined;/, "search debounce should avoid duplicate stale loads for unchanged queries");
+  assert.match(shell, /resetRunPagination\(\);\s*setQuery\(queryInput\);/s, "pagination should reset once when debounced search commits");
+  const queryInputHandler = shell.match(/const changeRunQueryInput = useCallback\([\s\S]*?\}, \[\]\);/)?.[0] ?? "";
+  assert.doesNotMatch(queryInputHandler, /resetRunPagination\(\);/, "typing in the search box should not reset pagination before the debounced query exists");
   assert.match(shell, /setSavedViewKey\(option\.value\)/, "saving a view should optimistically select the saved option");
+  assert.match(shell, /localSavedViewProjectScope/, "local fallback view keys should include the active project scope");
+  assert.match(shell, /project \|\| "all"/, "all-project local fallback views should get an explicit project scope");
+  assert.match(shell, /localSavedViewKey\(name, localSavedViewProjectScope\)/, "local fallback view saves should use scoped keys");
+  assert.match(shell, /scopedWorkspaceStorageKey/, "workspace layout storage should be scoped by active org/user/project");
+  assert.match(shell, /workspaceStorageKey\(project, localSavedViewScope \? localSavedViewProjectScope : ""\)/, "workspace layouts should not share one project-only key across users");
+  assert.match(shell, /localSavedViewScope \? null : safeSavedView\(localStorage\.getItem\(workspaceStorageKey\(project\)\)\)/, "authenticated workspace layout loads should not auto-migrate ambiguous legacy project-only keys");
   assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
   assert.match(shell, /ADVANCED_REDUCERS_VIEW_KEY\s*=\s*"system:advanced-reducers"/, "advanced reducer preset should be a built-in view, not the default route");
   assert.match(shell, /selectTab\("advanced"\)/, "advanced reducer preset should open the advanced route");
+  assert.match(shell, /selectedFetchRunKey/, "metric-series fetches should wait for selected run details to resolve");
+  assert.match(shell, /useLayoutEffect\(\(\) => \{[\s\S]*dashboardSelectionFilterKeyRef\.current = dashboardSelectionFilterKey/, "selection filter guard should update before synchronous select-all interactions");
+  assert.match(shell, /api\.get\(`\/runs\/\$\{id\}`, \{ signal: controller\.signal \}\)/, "off-page selected run hydration should be abortable");
+  assert.match(shell, /runWithConcurrency\(tasks, 6\)/, "off-page selected run hydration should cap API fanout");
+  assert.match(shell, /compareArtifactCacheRef/, "compare artifacts should reuse already-fetched run artifacts");
+  assert.match(shell, /compareArtifactInflightRef/, "compare artifacts should dedupe concurrent per-run requests");
+  assert.match(shell, /\}, \[activeTab, api, compareRunKey, runMetadataVersion\]\);/, "compare artifact cache invalidation should restart the compare artifact load");
+  assert.match(shell, /inFlight\.signal === controller\.signal && !inFlight\.signal\.aborted/, "compare artifact in-flight reuse should not reuse aborted requests from old selections");
+  assert.match(shell, /compareArtifactInflightRef\.current\.get\(runId\) === entry/, "settled older artifact requests must not delete newer in-flight promises");
+  assert.match(shell, /if \(queryInput !== query\) \{[\s\S]*setQuery\(queryInput\);[\s\S]*Select matching runs again[\s\S]*return;/, "select-all matching should not run against a stale debounced search query");
+  const artifactLoadEffect = shell.match(/async function loadArtifacts\(\)[\s\S]*?\}, \[[^\]]+\]\);/)?.[0] ?? "";
+  assert.doesNotMatch(artifactLoadEffect, /runWorkspaceTab/, "artifact loads should not refetch on summary/data/files subtab changes");
 
   const quickSearch = readFileSync(`${root}app/dashboard/chrome/quick-search.tsx`, "utf8");
   assert.match(quickSearch, /className="workspace-modal command-modal"/, "quick search should keep a full-screen backdrop");
@@ -80,8 +108,55 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
 
   const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
   assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
+  assert.match(runsWorkspace, /pointerDragCleanupRef/, "pointer drag listeners should be cleaned up on unmount or interrupted drag");
+  assert.match(runsWorkspace, /removeEventListener\("pointercancel"/, "pointer drag cleanup should remove cancellation listeners");
+
+  const workspacePanelCard = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
+  assert.match(workspacePanelCard, /resizeCleanupRef/, "panel resize listeners should be cleaned up on unmount or interrupted resize");
+  assert.match(workspacePanelCard, /addEventListener\("pointercancel"/, "panel resize should handle pointer cancellation");
+
+  const distributedPane = readFileSync(`${root}app/dashboard/distributed/tab-pane.tsx`, "utf8");
+  assert.doesNotMatch(distributedPane, /if \(!rankKey && next\.key\) setRankKey\(next\.key\)/, "rank metrics should not double-fetch the server default key");
+  assert.match(distributedPane, /function changeRankKey[\s\S]*setSummary\(null\)/, "rank-key changes should clear old reducer data before relabeling charts");
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
+});
+
+test("workspace view API normalizes generated and legacy envelopes", () => {
+  const normalizer = readFileSync(`${root}src/workspace-view-api.js`, "utf8");
+  const typedWrapper = readFileSync(`${root}app/dashboard/state/workspace-view-api.ts`, "utf8");
+  const generated = readFileSync(`${root}src/types/api.generated.ts`, "utf8");
+  const row = { id: "view-1", name: "Research", project: "demo", created_at: "now", updated_at: "now", payload: { metricKey: "loss" } };
+
+  assert.match(generated, /WorkspaceViewEnvelope: \{\s*workspace_view:/, "generated OpenAPI type exposes runtime singular workspace_view envelope");
+  assert.match(generated, /WorkspaceViewSummariesEnvelope: \{[\s\S]*next_cursor\?:[\s\S]*workspace_views:/, "generated OpenAPI type exposes runtime workspace_views envelope and cursor");
+  assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewSummary"\]/, "typed wrapper should keep generated summary row linkage");
+  assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewRow"\]/, "typed wrapper should keep generated row linkage");
+  assert.match(normalizer, /workspace_views/, "normalizer should accept runtime list envelopes");
+  assert.match(normalizer, /\.views/, "normalizer should preserve compatibility with generated legacy list envelopes");
+  assert.match(normalizer, /workspace_view/, "normalizer should accept runtime row envelopes");
+  assert.match(normalizer, /\.view/, "normalizer should preserve compatibility with generated legacy row envelopes");
+  assert.deepEqual(workspaceViewSummariesFromPayload({ workspace_views: [row, { id: 2, name: "bad" }] }), [row]);
+  assert.deepEqual(workspaceViewSummariesFromPayload({ views: [row] }), [row]);
+  assert.deepEqual(workspaceViewFromPayload({ workspace_view: row }), row);
+  assert.deepEqual(workspaceViewFromPayload({ view: row }), row);
+  assert.equal(workspaceViewFromPayload({ view: { id: "bad", name: "Bad", payload: [] } }), null);
+});
+
+test("API key UI does not expose admin controls to read-only members", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+  const apiPane = readFileSync(`${root}app/dashboard/api/tab-pane.tsx`, "utf8");
+
+  assert.match(shell, /!activeOrgId \|\| !canManageOrg/, "dashboard should skip API-key loads for non-admin members");
+  assert.match(shell, /if \(!activeOrgId \|\| !canManageOrg\) return;[\s\S]*setAdminBusy\(true\);[\s\S]*Creating API key/, "API-key create handler should reject non-admin invocation");
+  assert.match(shell, /if \(!activeOrgId \|\| !keyId \|\| !canManageOrg\) return;[\s\S]*setAdminBusy\(true\);[\s\S]*Revoking API key/, "API-key revoke handler should reject non-admin invocation");
+  assert.match(shell, /canManageOrg=\{canManageOrg\}/, "API tab should receive membership capabilities");
+  assert.match(apiPane, /PageHead eyebrow=\{canManageOrg \? "Admin" : "Read-only"\}/, "API tab should label read-only access");
+  assert.match(apiPane, /const visibleApiKeys = canManageOrg \? apiKeys : \[\];/, "API tab should hide stale key rows from read-only members");
+  assert.match(apiPane, /const visibleNewApiKey = canManageOrg \? newApiKey : "";/, "API tab should hide stale copy-once keys from read-only members");
+  assert.match(apiPane, /\{canManageOrg \? \(/, "API-key creation controls should be gated");
+  assert.match(apiPane, /disabled=\{adminBusy \|\| !canManageOrg\}/, "manual API-key refresh should be disabled for read-only members");
+  assert.match(apiPane, /\{canManageOrg \? \([\s\S]*?onRevokeApiKey/, "API-key revoke controls should be gated");
 });
 
 test("dashboard plan usage surfaces API request usage", () => {

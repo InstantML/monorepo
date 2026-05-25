@@ -348,7 +348,8 @@ pub(super) fn object_value(data: &StoreData, row: &AttributeRow) -> Value {
                 "name": artifact.name,
                 "uri": artifact.uri,
                 "mime_type": artifact.mime_type,
-                "size_bytes": artifact.size_bytes
+                "size_bytes": artifact.size_bytes,
+                "storage_backend": artifact.storage_backend
             })
         });
     json!({
@@ -717,6 +718,51 @@ mod tests {
         };
 
         assert!(attribute_from_input(&mut data, org_id, run_id, input).is_err());
+    }
+
+    #[test]
+    fn object_value_preserves_artifact_storage_backend_for_media_previews() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let artifact_id = Uuid::from_u128(3);
+        let mut data = StoreData::default();
+        data.insert_artifact(ArtifactRow {
+            id: artifact_id,
+            org_id,
+            run_id,
+            kind: "file".to_string(),
+            name: "sample.png".to_string(),
+            uri: "instantml://artifacts/sample.png".to_string(),
+            step: Some(1.0),
+            size_bytes: Some(512),
+            sha256: None,
+            mime_type: Some("image/png".to_string()),
+            storage_backend: "local".to_string(),
+            storage_key: None,
+            storage_path: None,
+            metadata: json!({}),
+            created_at: epoch(),
+        });
+
+        let value = object_value(
+            &data,
+            &AttributeRow {
+                id: 9,
+                org_id,
+                run_id,
+                path: "samples/image".to_string(),
+                kind: "image".to_string(),
+                step: Some(1.0),
+                logged_at: Some(epoch()),
+                value: json!({"metadata": {"caption": "preview"}}),
+                summary: json!({}),
+                artifact_id: Some(artifact_id),
+                created_at: epoch(),
+            },
+        );
+
+        assert_eq!(value["artifact"]["storage_backend"], "local");
+        assert_eq!(value["artifact"]["mime_type"], "image/png");
     }
 
     #[test]

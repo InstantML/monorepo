@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { cache } from "react";
 import { fileURLToPath } from "node:url";
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"];
@@ -50,12 +51,16 @@ export function mapDocsAssetSrc(src = "") {
   return src;
 }
 
-export async function loadDocsConfig() {
+export const loadDocsConfig = cache(async function loadDocsConfig() {
   return JSON.parse(await readFile(path.join(docsRoot, "docs.json"), "utf8"));
-}
+});
 
 export async function loadDocsPage(slug = []) {
   const pagePath = docsPathForSlug(slug);
+  return loadDocsPageByPath(pagePath);
+}
+
+const loadDocsPageByPath = cache(async function loadDocsPageByPath(pagePath) {
   const config = await loadDocsConfig();
   const navigation = flattenDocsNavigation(config);
   if (pagePath === "api-reference") {
@@ -80,11 +85,15 @@ export async function loadDocsPage(slug = []) {
     navigation,
     ...parsed,
   };
-}
+});
 
 export async function loadDocsMarkdown(slug = [], options = {}) {
   const includeNavigation = options.includeNavigation ?? true;
   const pagePath = docsMarkdownPathForSlug(slug);
+  return loadDocsMarkdownByPath(pagePath, includeNavigation);
+}
+
+const loadDocsMarkdownByPath = cache(async function loadDocsMarkdownByPath(pagePath, includeNavigation) {
   if (pagePath === "api-reference") {
     const markdown = await apiReferenceMarkdown();
     return {
@@ -102,7 +111,7 @@ export async function loadDocsMarkdown(slug = [], options = {}) {
     title: parsed.frontmatter.title || pagePathToTitle(pagePath),
     markdown: includeNavigation ? await appendMarkdownNavigation(mdxToMarkdown(raw), pagePath) : mdxToMarkdown(raw),
   };
-}
+});
 
 export async function loadDocsMarkdownIndex() {
   const pages = await markdownPagesFromConfig();
@@ -313,7 +322,7 @@ export function pagePathToTitle(pagePath) {
     .join(" ");
 }
 
-async function loadApiReferenceEndpoints() {
+const loadApiReferenceEndpoints = cache(async function loadApiReferenceEndpoints() {
   const spec = JSON.parse(await readFile(path.join(docsRoot, "openapi.json"), "utf8"));
   const endpoints = [];
   for (const [route, pathItem] of Object.entries(spec.paths ?? {})) {
@@ -338,7 +347,7 @@ async function loadApiReferenceEndpoints() {
     }
   }
   return endpoints.sort((left, right) => `${left.path} ${left.method}`.localeCompare(`${right.path} ${right.method}`));
-}
+});
 
 async function apiReferenceMarkdown() {
   const endpoints = await loadApiReferenceEndpoints();
@@ -364,7 +373,7 @@ async function apiReferenceMarkdown() {
   ].filter((line, index, lines) => line || lines[index - 1] !== "").join("\n").trimEnd() + "\n";
 }
 
-async function markdownPagesFromConfig() {
+const markdownPagesFromConfig = cache(async function markdownPagesFromConfig() {
   const config = await loadDocsConfig();
   const navigation = flattenDocsNavigation(config);
   const pages = [];
@@ -379,7 +388,7 @@ async function markdownPagesFromConfig() {
     }
   }
   return pages;
-}
+});
 
 export function docsMarkdownUrl(pagePath) {
   if (pagePath === "index") return "/docs/index.md";

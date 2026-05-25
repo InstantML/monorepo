@@ -72,6 +72,17 @@ export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }
   const [loading, setLoading] = useState(false);
   const onMetaRef = useRef(onMeta);
   onMetaRef.current = onMeta;
+  function changeRankKey(nextKey: string) {
+    setRankKey(nextKey);
+    setSummary(null);
+    setError("");
+  }
+
+  useEffect(() => {
+    setRankKey("");
+    setSummary(null);
+    setError("");
+  }, [primaryRun?.id]);
 
   useEffect(() => {
     if (!primaryRun?.id) {
@@ -88,7 +99,6 @@ export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }
     ).then((payload) => {
       const next = payload as RankSummary;
       setSummary(next);
-      if (!rankKey && next.key) setRankKey(next.key);
       onMetaRef.current?.({ worldSize: next.reducers.at(-1)?.expected_world_size ?? 0, rankKeys: next.keys.length });
     }).catch((err) => {
       if (!isAbortError(err)) setError(err instanceof Error ? err.message : "Unable to load rank metrics.");
@@ -100,16 +110,16 @@ export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }
 
   const keyOptions = (summary?.keys ?? []).map((key) => ({ value: key, label: key }));
   const latestReducer = summary?.reducers.at(-1) ?? null;
-  const activeKey = summary?.key ?? rankKey;
+  const activeKey = rankKey || summary?.key || "";
   const hasData = Boolean(summary && summary.keys.length);
 
   const keySelect = (
     <CustomSelect
       id="rank-key"
       label="Rank key"
-      onChange={setRankKey}
+      onChange={changeRankKey}
       options={keyOptions.length ? keyOptions : [{ value: "", label: "No rank keys", disabled: true }]}
-      value={rankKey}
+      value={activeKey}
     />
   );
 

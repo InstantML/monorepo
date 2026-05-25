@@ -2,7 +2,7 @@
 
 import { Copy, Download } from "lucide-react";
 
-import { artifactHasStoredBytes, formatBytes, safeArtifactUri } from "../../dashboard-models";
+import { artifactHasStoredBytes, formatBytes, safeArtifactMediaKind, safeArtifactUri } from "../../dashboard-models";
 import type { Artifact } from "../../dashboard-types";
 
 function artifactCanUseDownloadRoute(artifact: Artifact) {
@@ -13,22 +13,13 @@ function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
 }
 
-function artifactMediaKind(artifact: Artifact) {
-  const mime = String(artifact.mime_type ?? artifact.metadata?.mime_type ?? artifact.metadata?.mimeType ?? artifact.metadata?.content_type ?? artifact.metadata?.contentType ?? "").toLowerCase();
-  const name = `${artifact.name} ${artifact.uri}`.toLowerCase();
-  if (mime.includes("image") || /\.(png|jpe?g|webp|gif)(?:$|[?#])/.test(name)) return "image";
-  if (mime.includes("audio") || /\.(mp3|m4a|wav|aac)(?:$|[?#])/.test(name)) return "audio";
-  if (mime.includes("video") || /\.(mp4|mov|webm)(?:$|[?#])/.test(name)) return "video";
-  return "";
-}
-
 function copyText(value: string) {
   if (!value) return;
   void navigator.clipboard?.writeText(value);
 }
 
 export function ArtifactMediaPreview({ artifact, compact = false, fallback = false }: { artifact: Artifact; compact?: boolean; fallback?: boolean }) {
-  const kind = artifactMediaKind(artifact);
+  const kind = safeArtifactMediaKind(artifact);
   if (!kind) return fallback ? <small className="artifact-media-fallback">Preview unavailable.</small> : null;
   const canPlay = artifactCanUseDownloadRoute(artifact);
   if (!canPlay) {

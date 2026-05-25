@@ -60,6 +60,18 @@ test("Next docs route is owned by the app router, not config redirects", () => {
   assert.deepEqual(redirects.filter((redirect) => redirect.source.startsWith("/docs")), []);
 });
 
+test("production security headers do not allow eval", () => {
+  const headers = loadConfigList("headers", {
+    INSTANTML_WEB_API_ENV: "prod",
+    INSTANTML_API_BASE: "https://api.instantml.ai",
+  });
+  const csp = headers
+    .flatMap((entry) => entry.headers ?? [])
+    .find((header) => header.key === "Content-Security-Policy")?.value ?? "";
+  assert.match(csp, /script-src/);
+  assert.doesNotMatch(csp, /'unsafe-eval'/);
+});
+
 function loadConfigList(method, extraEnv) {
   const result = importConfig(method, extraEnv);
   assert.equal(result.status, 0, result.stderr || result.stdout);

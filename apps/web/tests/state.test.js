@@ -34,7 +34,7 @@ import {
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { buildCheckpointResumeCode } from "../src/checkpoints.js";
-import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
+import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, normalizeDeviceUserCode, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -257,6 +257,20 @@ test("shortcut helpers detect platform commands and editable targets", () => {
   assert.equal(isEditableElement(textInput), true);
   assert.equal(isEditableElement(checkbox), false);
   assert.equal(isEditableElement(contentEditable), true);
+});
+
+test("redirect URL helpers allow only intended destinations", () => {
+  assert.equal(safeSameOriginInviteUrl("/invite#t=abc", "https://app.instantml.ai"), "https://app.instantml.ai/invite#t=abc");
+  assert.equal(safeSameOriginInviteUrl("https://app.instantml.ai/invite?x=1#t=abc", "https://app.instantml.ai"), "https://app.instantml.ai/invite?x=1#t=abc");
+  assert.equal(safeSameOriginInviteUrl("https://evil.example/invite#t=abc", "https://app.instantml.ai"), "");
+  assert.equal(safeSameOriginInviteUrl("/dashboard/runs#t=abc", "https://app.instantml.ai"), "");
+  assert.equal(safeSameOriginInviteUrl("javascript:alert(1)", "https://app.instantml.ai"), "");
+
+  assert.equal(safeStripeRedirectUrl("https://checkout.stripe.com/c/pay/cs_test"), "https://checkout.stripe.com/c/pay/cs_test");
+  assert.equal(safeStripeRedirectUrl("https://billing.stripe.com/p/session/test"), "https://billing.stripe.com/p/session/test");
+  assert.equal(safeStripeRedirectUrl("http://checkout.stripe.com/c/pay/cs_test"), "");
+  assert.equal(safeStripeRedirectUrl("https://checkout.stripe.evil.example/c/pay/cs_test"), "");
+  assert.equal(safeStripeRedirectUrl("javascript:alert(1)"), "");
 });
 
 test("summary helpers format stable UI values", () => {
@@ -674,11 +688,21 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(pathFromLegacyHash("#/detail"), "");
   assert.equal(sanitizeNextPath("/dashboard/metrics"), "/dashboard/metrics");
   assert.equal(sanitizeNextPath("/onboarding"), "/onboarding");
+  assert.equal(sanitizeNextPath("/auth/device"), "/auth/device");
+  assert.equal(sanitizeNextPath("/auth/device?code=ABCDEFGH"), "/auth/device?code=ABCD-EFGH");
+  assert.equal(sanitizeNextPath("/auth/device?code=ABCD-EFGH"), "/auth/device?code=ABCD-EFGH");
   assert.equal(sanitizeNextPath("/"), "/");
   assert.equal(sanitizeNextPath("https://evil.example/dashboard"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("//evil.example/dashboard"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("/signin"), "/dashboard/runs");
+  assert.equal(sanitizeNextPath("/auth/logout"), "/dashboard/runs");
+  assert.equal(sanitizeNextPath("/auth/device?code=ABCD-EFGH&next=/dashboard"), "/dashboard/runs");
+  assert.equal(sanitizeNextPath("/auth/device?code=<script>"), "/dashboard/runs");
   assert.equal(sanitizeNextPath("/dashboard/runs\u0000"), "/dashboard/runs");
+  assert.equal(normalizeDeviceUserCode("abcdefgh"), "ABCD-EFGH");
+  assert.equal(normalizeDeviceUserCode("ABCD-EFGH"), "ABCD-EFGH");
+  assert.equal(normalizeDeviceUserCode("A-BCDEFGH"), "");
+  assert.equal(normalizeDeviceUserCode("abc<script>"), "");
 });
 
 test("deriveClerkSlug derives workspace slug from display name", () => {
