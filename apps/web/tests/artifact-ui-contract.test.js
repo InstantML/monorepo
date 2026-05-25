@@ -23,8 +23,10 @@ test("artifact UI gates downloads on stored-byte backends", () => {
   ]) {
     const src = read(relPath);
     assert.match(src, /artifactHasStoredBytes/);
+    assert.match(src, /safeArtifactMediaKind/);
     assert.doesNotMatch(src, /startsWith\("demo:\/\/"\)/);
     assert.doesNotMatch(src, /\^https\?:/);
+    assert.doesNotMatch(src, /mime\.includes\("image"\)/);
   }
 });
 

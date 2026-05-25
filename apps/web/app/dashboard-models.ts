@@ -529,6 +529,15 @@ export function safeArtifactUri(value: unknown) {
   }
 }
 
+export function safeArtifactMediaKind(artifact: Artifact) {
+  const mime = String(artifact.mime_type ?? artifact.metadata?.mime_type ?? artifact.metadata?.mimeType ?? artifact.metadata?.content_type ?? artifact.metadata?.contentType ?? "").toLowerCase();
+  const name = `${artifact.name} ${artifact.uri}`.toLowerCase();
+  if (["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"].includes(mime) || /\.(png|jpe?g|webp|gif)(?:$|[?#])/.test(name)) return "image";
+  if (["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/aac", "audio/mp4"].includes(mime) || /\.(mp3|m4a|wav|aac)(?:$|[?#])/.test(name)) return "audio";
+  if (["video/mp4", "video/webm", "video/quicktime"].includes(mime) || /\.(mp4|mov|webm)(?:$|[?#])/.test(name)) return "video";
+  return "";
+}
+
 export function artifactHasStoredBytes(artifact: Pick<Artifact, "id" | "storage_backend">) {
   return Boolean(artifact.id) && (artifact.storage_backend === "local" || artifact.storage_backend === "r2");
 }

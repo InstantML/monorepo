@@ -65,6 +65,12 @@ test("docs asset route serves images from the docs source tree", async () => {
   const route = await readFile(path.join(webRoot, "app", "docs", "assets", "[...path]", "route.ts"), "utf8");
   assert.match(route, /docsImagesRoot/);
   assert.match(route, /Content-Type/);
+  assert.match(route, /Content-Disposition/);
+  assert.match(route, /Content-Security-Policy/);
+  assert.match(route, /X-Content-Type-Options/);
+  assert.match(route, /\.svg/);
+  assert.match(route, /sandbox/);
+  assert.match(route, /nosniff/);
 });
 
 test("docs markdown mirrors are routed from /docs/*.md", async () => {

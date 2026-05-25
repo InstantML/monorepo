@@ -67,10 +67,14 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
     "stale saved project preferences must not overwrite a project the user just picked",
   );
   assert.match(shell, /setSavedViewKey\(option\.value\)/, "saving a view should optimistically select the saved option");
+  assert.match(shell, /localSavedViewProjectScope/, "local fallback view keys should include the active project scope");
+  assert.match(shell, /project \|\| "all"/, "all-project local fallback views should get an explicit project scope");
+  assert.match(shell, /localSavedViewKey\(name, localSavedViewProjectScope\)/, "local fallback view saves should use scoped keys");
   assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
   assert.match(shell, /ADVANCED_REDUCERS_VIEW_KEY\s*=\s*"system:advanced-reducers"/, "advanced reducer preset should be a built-in view, not the default route");
   assert.match(shell, /selectTab\("advanced"\)/, "advanced reducer preset should open the advanced route");
+  assert.match(shell, /selectedFetchRunKey/, "metric-series fetches should wait for selected run details to resolve");
 
   const quickSearch = readFileSync(`${root}app/dashboard/chrome/quick-search.tsx`, "utf8");
   assert.match(quickSearch, /className="workspace-modal command-modal"/, "quick search should keep a full-screen backdrop");

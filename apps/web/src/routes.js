@@ -21,6 +21,7 @@ export const DASHBOARD_TAB_IDS = [
 const DASHBOARD_TABS = new Set(DASHBOARD_TAB_IDS);
 const SAFE_NEXT_PREFIXES = ["/dashboard", "/onboarding"];
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
+const STRIPE_REDIRECT_ORIGINS = new Set(["https://checkout.stripe.com", "https://billing.stripe.com"]);
 
 export function isDashboardTab(value) {
   return DASHBOARD_TABS.has(String(value ?? ""));
@@ -53,4 +54,31 @@ export function sanitizeNextPath(value, fallback = "/dashboard/runs") {
   if (raw === "/") return raw;
   if (SAFE_NEXT_PREFIXES.some((prefix) => raw === prefix || raw.startsWith(`${prefix}/`))) return raw;
   return fallback;
+}
+
+export function safeSameOriginInviteUrl(value, baseOrigin = globalThis.location?.origin ?? "http://localhost") {
+  const raw = String(value ?? "").trim();
+  if (!raw || CONTROL_CHAR_PATTERN.test(raw)) return "";
+  try {
+    const url = new URL(raw, baseOrigin);
+    if (url.origin !== baseOrigin) return "";
+    if (url.pathname !== "/invite") return "";
+    if (!url.hash.startsWith("#t=")) return "";
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return "";
+  }
+}
+
+export function safeStripeRedirectUrl(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw || CONTROL_CHAR_PATTERN.test(raw)) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return "";
+    if (!STRIPE_REDIRECT_ORIGINS.has(url.origin)) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
 }

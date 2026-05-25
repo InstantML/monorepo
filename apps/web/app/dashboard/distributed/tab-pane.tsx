@@ -74,6 +74,12 @@ export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }
   onMetaRef.current = onMeta;
 
   useEffect(() => {
+    setRankKey("");
+    setSummary(null);
+    setError("");
+  }, [primaryRun?.id]);
+
+  useEffect(() => {
     if (!primaryRun?.id) {
       setSummary(null);
       onMetaRef.current?.({ worldSize: 0, rankKeys: 0 });
