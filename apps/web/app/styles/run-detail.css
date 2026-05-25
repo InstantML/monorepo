@@ -519,8 +519,173 @@ pre {
 .checkpoint-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  grid-column: 1 / -1;
+  justify-content: flex-start;
   gap: 6px;
+}
+
+.checkpoint-fork-modal {
+  z-index: 60;
+}
+
+.checkpoint-fork-card {
+  width: min(560px, 94vw);
+}
+
+.checkpoint-fork-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.checkpoint-fork-notice {
+  margin: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: #f7fbff;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.checkpoint-fork-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.checkpoint-fork-grid > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  padding: 8px;
+}
+
+.checkpoint-fork-grid span,
+.checkpoint-fork-field span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.checkpoint-fork-grid strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.checkpoint-fork-field {
+  display: grid;
+  gap: 6px;
+}
+
+.checkpoint-fork-field input,
+.checkpoint-fork-field textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  padding: 9px 10px;
+}
+
+.checkpoint-fork-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.checkpoint-fork-error {
+  border: 1px solid #fecaca;
+  border-radius: var(--control-radius);
+  background: #fff7f7;
+  color: #b42318;
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.checkpoint-fork-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding: 12px 18px 16px;
+}
+
+.lineage-layout {
+  display: grid;
+  gap: 14px;
+  padding: 12px;
+}
+
+.lineage-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lineage-node {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  padding: 10px;
+}
+
+.lineage-node span,
+.lineage-children-head span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lineage-node strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.lineage-node small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.lineage-children {
+  display: grid;
+  gap: 8px;
+}
+
+.lineage-children-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lineage-children-head h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.lineage-table td,
+.lineage-table th {
+  padding-block: 8px;
+}
+
+.lineage-truncated {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .empty {

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
 import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest } from "../../src/api.js";
+import { buildCheckpointForkBody } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
@@ -296,6 +297,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const userTouchedDashboardFiltersRef = useRef(false);
   const defaultSelectionInitializedRef = useRef(false);
   const runDirectoryRef = useRef<Map<string, RunSummary>>(new Map());
+  const preserveRunWorkspaceTabOnceRef = useRef(false);
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
@@ -1219,6 +1221,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [api, primaryRunId, referenceRunId, selectedRunDetails, selectedRunIds, sortedRuns]);
 
   useEffect(() => {
+    if (preserveRunWorkspaceTabOnceRef.current) {
+      preserveRunWorkspaceTabOnceRef.current = false;
+      return;
+    }
     setRunWorkspaceTab("summary");
   }, [primaryRun?.id]);
 
@@ -2019,6 +2025,49 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setMessage("Run tags and notes saved.");
   }
 
+  async function forkCheckpointRun(artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) {
+    if (!primaryRun) throw new Error("No source run is selected.");
+    const body = buildCheckpointForkBody(artifact, primaryRun, {
+      inheritConfig: options.inheritConfig,
+      name: options.name.trim(),
+      reason: options.reason,
+      tags: ["retry", "checkpoint"],
+    });
+    const idempotencyKey = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `fork-${primaryRun.id}-${artifact.id}-${Date.now()}`;
+    const payload = await api.post(`/api/runs/${primaryRun.id}/forks`, body, {
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
+    const child = payload.run as RunSummary | undefined;
+    if (!child?.id) throw new Error("Server returned an invalid fork response.");
+    setSummary((current) => {
+      const alreadyPresent = current.runs.some((run) => run.id === child.id);
+      const sameProjectVisible = !project || project === child.project;
+      const runs = alreadyPresent
+        ? current.runs.map((run) => (run.id === child.id ? child : run))
+        : sameProjectVisible
+          ? [child, ...current.runs]
+          : current.runs;
+      return {
+        ...current,
+        runs,
+        total: alreadyPresent || !sameProjectVisible ? current.total : current.total + 1,
+      };
+    });
+    setOverview((current) => ({
+      ...current,
+      total_runs: current.total_runs + 1,
+      active_runs: current.active_runs + (child.status === "running" ? 1 : 0),
+    }));
+    setSelectedRunDetails((current) => ({ ...current, [child.id]: child }));
+    setSelectedRunIds((current) => [child.id, ...current.filter((id) => id !== child.id)].slice(0, MAX_SELECTED_RUNS));
+    preserveRunWorkspaceTabOnceRef.current = true;
+    setPrimaryRunId(child.id);
+    setRunWorkspaceTab("graph");
+    setMessage("Forked run created. InstantML did not start training.");
+  }
+
   function clearFilters() {
     setProject("");
     setStatus("");
@@ -2623,6 +2672,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
+              onForkCheckpoint={forkCheckpointRun}
               onRunMetadataSave={updateRunTagsAndNotes}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primaryDomain={primaryDomain}

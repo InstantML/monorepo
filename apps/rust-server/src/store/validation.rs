@@ -506,6 +506,9 @@ mod tests {
             created_at: epoch(),
             started_at: epoch(),
             finished_at: Some(epoch() + ChronoDuration::seconds(5)),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 

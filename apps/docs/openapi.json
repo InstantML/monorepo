@@ -1054,6 +1054,164 @@
         ]
       }
     },
+    "/api/runs/{run_id}/lineage": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "get_run_lineage",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded direct lineage graph for the selected run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/forks": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "fork_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Source run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRunForkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created forked run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Plan or payment limit prevents creating another run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope or project access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source run or checkpoint not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/runs/{run_id}/attributes": {
       "get": {
         "tags": [
@@ -3154,6 +3312,64 @@
           }
         }
       },
+      "CreateRunForkRequest": {
+        "type": "object",
+        "properties": {
+          "checkpoint_artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "config_overrides": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "inherit_config": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "AttributesEnvelope": {
         "type": "object",
         "required": [
@@ -3581,6 +3797,20 @@
             ],
             "format": "date-time"
           },
+          "forked_from_artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "forked_from_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -3593,6 +3823,13 @@
           },
           "org_id": {
             "type": "string",
+            "format": "uuid"
+          },
+          "parent_run_id": {
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid"
           },
           "project": {

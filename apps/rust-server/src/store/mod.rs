@@ -65,10 +65,10 @@ use crate::{
         ClickHouseConnectionValidateRequest, ClickHouseConnectionValidationResponse,
         ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
         CreateConsoleLogsRequest, CreateInvitationRequest, CreateObjectRequest,
-        CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-        CreatedAuthSession, DashboardPreferenceRow, DevGoogleAuthRequest, EmailDeliveryRow,
-        InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
-        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
+        CreateOrganizationRequest, CreateProjectRequest, CreateRunForkRequest, CreateRunRequest,
+        CreateUserRequest, CreatedAuthSession, DashboardPreferenceRow, DevGoogleAuthRequest,
+        EmailDeliveryRow, InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest,
+        LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
         OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
         PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
         RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
@@ -501,6 +501,7 @@ struct StoreData {
     runs: BTreeMap<Uuid, RunRow>,
     runs_by_org_created: BTreeMap<(Uuid, DateTime<Utc>, Uuid), Uuid>,
     runs_by_org_project_created: BTreeMap<(Uuid, String, DateTime<Utc>, Uuid), Uuid>,
+    runs_by_parent_created: BTreeMap<(Uuid, Uuid, DateTime<Utc>, Uuid), Uuid>,
     run_search_texts: HashMap<Uuid, String>,
     attributes: BTreeMap<(Uuid, i64), AttributeRow>,
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
@@ -715,6 +716,14 @@ impl StoreData {
                 existing.created_at,
                 existing.id,
             ));
+            if let Some(parent_run_id) = existing.parent_run_id {
+                self.runs_by_parent_created.remove(&(
+                    existing.org_id,
+                    parent_run_id,
+                    existing.created_at,
+                    existing.id,
+                ));
+            }
         }
         self.runs_by_org_created
             .insert((run.org_id, run.created_at, run.id), run.id);
@@ -722,6 +731,10 @@ impl StoreData {
             (run.org_id, run.project.clone(), run.created_at, run.id),
             run.id,
         );
+        if let Some(parent_run_id) = run.parent_run_id {
+            self.runs_by_parent_created
+                .insert((run.org_id, parent_run_id, run.created_at, run.id), run.id);
+        }
         self.run_search_texts.insert(run.id, run_search_text(&run));
         self.runs.insert(run.id, run);
     }
@@ -835,6 +848,14 @@ impl StoreData {
                 run.created_at,
                 run.id,
             ));
+            if let Some(parent_run_id) = run.parent_run_id {
+                self.runs_by_parent_created.remove(&(
+                    run.org_id,
+                    parent_run_id,
+                    run.created_at,
+                    run.id,
+                ));
+            }
             self.run_search_texts.remove(&run.id);
         }
     }
@@ -1334,6 +1355,9 @@ mod tests {
             created_at: epoch(),
             started_at: epoch(),
             finished_at: None,
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 

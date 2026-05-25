@@ -787,6 +787,9 @@
   .checkpoint-row { grid-template-columns: 1fr; }
   .checkpoint-actions { justify-content: flex-start; }
   .checkpoint-actions > * { flex: 1 1 auto; }
+  .checkpoint-fork-grid { grid-template-columns: 1fr; }
+  .checkpoint-fork-actions { flex-direction: column-reverse; }
+  .lineage-cards { grid-template-columns: 1fr; }
 
   /* ── LOW ────────────────────────────────────────────────────────────── */
 

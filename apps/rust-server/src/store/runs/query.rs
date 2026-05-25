@@ -607,6 +607,9 @@ mod tests {
             created_at,
             started_at: created_at,
             finished_at: Some(created_at + ChronoDuration::seconds(30)),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 

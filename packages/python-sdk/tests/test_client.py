@@ -15,12 +15,14 @@ import pytest
 import instantml as ro
 import instantml.async_queue as async_queue
 import instantml.client as client_module
+import instantml.source as source_module
 import instantml.uploader as uploader
 from instantml.async_queue import AsyncQueueRepository, DeliveryResult, drain_queue_once
 from instantml.client import (
     Client,
     InstantMLError,
     Run,
+    SourceTracking,
     _ConsoleStream,
     _LocalStore,
     _check_credentials_or_raise,
@@ -29,6 +31,7 @@ from instantml.client import (
     _collect_system_metrics,
     _environment_metadata,
     _git_metadata,
+    _normalize_source_tracking,
     _source_metadata,
     _write_audio_data,
     _write_image_data,
@@ -1963,6 +1966,13 @@ def test_client_init_reserves_sdk_source_metadata(monkeypatch):
     assert run.client.offline_dir == "/run-offline"
     assert calls[0][2]["metadata"]["source"] == {"user": "owned"}
     assert "source" in calls[0][2]["metadata"]["_rlobs"]
+    source_metadata = calls[0][2]["metadata"]["_rlobs"]["source"]
+    assert "argv" not in source_metadata
+    assert "cwd" not in source_metadata
+    assert "root" not in source_metadata.get("git", {})
+    assert "branch" not in source_metadata.get("git", {})
+    assert "hostname" not in calls[0][2]["metadata"]
+    assert "pid" not in calls[0][2]["metadata"]
     with pytest.raises(ValueError, match="reserved"):
         Client(base_url="http://example.test").init(project="demo", metadata={"_rlobs": {"source": "nope"}})
 
@@ -1978,6 +1988,47 @@ def test_client_init_can_disable_source_tracking(monkeypatch):
     Client(base_url="http://example.test").init(project="demo", source_tracking=False)
 
     assert "_rlobs" not in calls[0][2]["metadata"]
+
+
+def test_client_init_applies_opt_in_source_tracking_at_payload_boundary(monkeypatch):
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path, body))
+        return {"run": {"id": "run-123"}}
+
+    def fake_check_output(args, **kwargs):
+        command = tuple(args[1:])
+        if command == ("rev-parse", "--show-toplevel"):
+            return "/workspace/project\n"
+        if command == ("rev-parse", "HEAD"):
+            return "abc123\n"
+        if command == ("status", "--porcelain"):
+            return ""
+        if command == ("branch", "--show-current"):
+            return "main\n"
+        raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr("subprocess.check_output", fake_check_output)
+    monkeypatch.setattr(os, "getcwd", lambda: "/workspace/project")
+    monkeypatch.setattr(os, "getpid", lambda: 12345)
+    monkeypatch.setattr("socket.gethostname", lambda: "trainer-host")
+    monkeypatch.setattr(sys, "argv", ["/workspace/project/train.py", "--epochs", "2"])
+
+    Client(base_url="http://example.test").init(
+        project="demo",
+        source_tracking=SourceTracking(command=True, paths=True, branch=True, hostname=True, pid=True),
+    )
+
+    metadata = calls[0][2]["metadata"]
+    source_metadata = metadata["_rlobs"]["source"]
+    assert metadata["hostname"] == "trainer-host"
+    assert metadata["pid"] == 12345
+    assert source_metadata["argv"] == ["/workspace/project/train.py", "--epochs", "2"]
+    assert source_metadata["cwd"] == "/workspace/project"
+    assert source_metadata["git"]["root"] == "/workspace/project"
+    assert source_metadata["git"]["branch"] == "main"
 
 
 def test_client_sends_api_key_and_idempotency_headers(monkeypatch):
@@ -2008,6 +2059,114 @@ def test_client_sends_api_key_and_idempotency_headers(monkeypatch):
         idempotency_key="event-1",
     ) == {"ok": True}
     assert captured == {"authorization": "Bearer secret", "idempotency": "event-1", "timeout": 3}
+
+
+def test_api_fork_run_returns_child_and_sends_idempotency(monkeypatch):
+    calls = []
+
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        calls.append((method, path, body, idempotency_key))
+        return {"run": {"id": "child-run"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+
+    child = ro.Api(base_url="http://example.test").fork_run(
+        "source-run",
+        step=120,
+        checkpoint_artifact_id="artifact-1",
+        inherit_config=True,
+        config_overrides={"lr": 0.001},
+        tags=["retry"],
+        notes="try again",
+        metadata={"reason": "nan"},
+        idempotency_key="fork-1",
+    )
+
+    assert child == {"id": "child-run"}
+    assert calls == [
+        (
+            "POST",
+            "/api/runs/source-run/forks",
+            {
+                "inherit_config": True,
+                "step": 120,
+                "checkpoint_artifact_id": "artifact-1",
+                "config_overrides": {"lr": 0.001},
+                "tags": ["retry"],
+                "notes": "try again",
+                "metadata": {"reason": "nan"},
+            },
+            "fork-1",
+        )
+    ]
+
+
+def test_api_fork_run_uses_stable_default_idempotency(monkeypatch):
+    calls = []
+
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        calls.append((method, path, body, idempotency_key))
+        return {"run": {"id": f"child-{len(calls)}"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+
+    api = ro.Api(base_url="http://example.test")
+    assert api.fork_run("source-run", step=120, tags=["retry"]) == {"id": "child-1"}
+    assert api.fork_run("source-run", step=120, tags=["retry"]) == {"id": "child-2"}
+
+    assert calls[0][3] == calls[1][3]
+    assert calls[0][3].startswith("instantml-fork-")
+
+
+def test_api_fork_run_validates_inputs_and_response(monkeypatch):
+    with pytest.raises(TypeError, match="inherit_config"):
+        ro.Api(base_url="http://example.test").fork_run("source-run", inherit_config="yes")
+    with pytest.raises(TypeError, match="tags"):
+        ro.Api(base_url="http://example.test").fork_run("source-run", tags="retry")
+    with pytest.raises(ValueError, match="notes"):
+        ro.Api(base_url="http://example.test").fork_run("source-run", notes="")
+
+    def invalid_response(self, method, path, body=None, idempotency_key=None):
+        return {"run": "not-a-dict"}
+
+    monkeypatch.setattr(Client, "_request", invalid_response)
+    with pytest.raises(InstantMLError, match="invalid fork response"):
+        ro.Api(base_url="http://example.test").fork_run("source-run", name="child")
+
+
+def test_attach_run_returns_existing_run_handle(monkeypatch):
+    calls = []
+
+    def fail_request(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("attach_run should not create a run")
+
+    monkeypatch.setattr(Client, "_request", fail_request)
+
+    run = Client(base_url="http://example.test", api_key="key").attach_run("run-123")
+
+    assert run.run_id == "run-123"
+    assert run.client.base_url == "http://example.test"
+    assert calls == []
+
+
+def test_attach_run_optional_local_features(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(Run, "start_system_metrics", lambda self, interval=15.0: events.append(("system", interval)))
+    monkeypatch.setattr(Run, "capture_console", lambda self: events.append(("console", self.run_id)))
+
+    run = ro.attach_run(
+        "run-123",
+        api_key="key",
+        base_url="http://example.test",
+        system_metrics=True,
+        system_metrics_interval=3.0,
+        capture_console=True,
+    )
+
+    assert run.run_id == "run-123"
+    assert events == [("system", 3.0), ("console", "run-123")]
 
 
 def test_client_retries_429_with_retry_after(monkeypatch):
@@ -2082,7 +2241,12 @@ def test_client_does_not_retry_monthly_429(monkeypatch):
 
 def test_environment_metadata_contains_expected_keys():
     metadata = _environment_metadata()
-    assert {"python", "platform", "hostname", "pid"} <= set(metadata)
+    assert {"python", "platform"} <= set(metadata)
+    assert "hostname" not in metadata
+    assert "pid" not in metadata
+
+    expanded = _environment_metadata(SourceTracking(hostname=True, pid=True))
+    assert {"python", "platform", "hostname", "pid"} <= set(expanded)
 
 
 def test_source_metadata_handles_missing_git(monkeypatch):
@@ -2093,6 +2257,257 @@ def test_source_metadata_handles_missing_git(monkeypatch):
 
     assert _git_metadata() == {"available": False}
     assert _source_metadata()["git"] == {"available": False}
+
+
+def test_source_tracking_normalization_and_empty_entrypoint(monkeypatch):
+    settings = SourceTracking(branch=True)
+    assert _normalize_source_tracking(settings) is settings
+    assert _normalize_source_tracking(True) == SourceTracking.privacy_safe()
+    assert _normalize_source_tracking(False) is None
+    with pytest.raises(TypeError, match="source_tracking"):
+        _normalize_source_tracking("yes")
+    with pytest.raises(TypeError, match="command"):
+        SourceTracking(command="false")
+    with pytest.raises(TypeError, match="git_timeout"):
+        SourceTracking(git_timeout=True)
+    with pytest.raises(ValueError, match="git_timeout"):
+        SourceTracking(git_timeout=float("inf"))
+    with pytest.raises(TypeError, match="diff_bytes"):
+        SourceTracking(diff_bytes=False)
+    with pytest.raises(ValueError, match="diff_bytes"):
+        SourceTracking(diff_bytes=-1)
+
+    monkeypatch.setattr("subprocess.check_output", lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "git")))
+    monkeypatch.setattr(sys, "argv", [])
+    assert "entrypoint" not in _source_metadata(SourceTracking.privacy_safe())
+    monkeypatch.setattr(sys, "argv", [""])
+    assert "entrypoint" not in _source_metadata(SourceTracking.privacy_safe())
+
+
+def test_git_diff_metadata_tolerates_diff_command_failures(monkeypatch):
+    def fake_check_output(args, **kwargs):
+        command = tuple(args[1:])
+        if command == ("rev-parse", "--show-toplevel"):
+            return "/repo\n"
+        if command == ("rev-parse", "HEAD"):
+            return "abc123\n"
+        if command == ("status", "--porcelain"):
+            return " M train.py\n"
+        raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr("subprocess.check_output", fake_check_output)
+    monkeypatch.setattr(
+        source_module,
+        "_git_patch_prefix",
+        lambda args, timeout, max_bytes: (None, False),
+    )
+    monkeypatch.setattr(
+        source_module,
+        "_git_bounded_text",
+        lambda args, timeout, max_bytes: (None, False),
+    )
+
+    metadata = _git_metadata(SourceTracking(git_diff=True))
+
+    assert metadata["available"] is True
+    assert metadata["dirty"] is True
+    assert metadata["diff"]["patch_sha256"] is None
+
+
+def test_git_metadata_marks_dirty_status_unknown(monkeypatch):
+    def fake_check_output(args, **kwargs):
+        command = tuple(args[1:])
+        if command == ("rev-parse", "--show-toplevel"):
+            return "/repo\n"
+        if command == ("rev-parse", "HEAD"):
+            return "abc123\n"
+        if command == ("status", "--porcelain"):
+            raise subprocess.TimeoutExpired(args, 0.1)
+        raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr("subprocess.check_output", fake_check_output)
+
+    metadata = _git_metadata(SourceTracking())
+
+    assert metadata["available"] is True
+    assert metadata["dirty"] is None
+    assert metadata["dirty_unknown"] is True
+
+
+def test_git_patch_prefix_caps_output_and_handles_failures(tmp_path, monkeypatch):
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    (tmp_path / "train.py").write_text("print('hello')\n", encoding="utf-8")
+    subprocess.run(["git", "add", "train.py"], cwd=tmp_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    monkeypatch.chdir(tmp_path)
+
+    assert source_module._git_patch_prefix(("diff", "--cached"), 1.0, 0) == (b"", True)
+    data, truncated = source_module._git_patch_prefix(("diff", "--cached"), 1.0, 3)
+    assert data == b"dif"
+    assert truncated is True
+    full_data, full_truncated = source_module._git_patch_prefix(("diff", "--cached"), 1.0, 10000)
+    assert b"train.py" in full_data
+    assert full_truncated is False
+    stat_text, stat_truncated = source_module._git_bounded_text(("diff", "--cached", "--stat"), 1.0, 10000)
+    assert "train.py" in stat_text
+    assert stat_truncated is False
+    assert source_module._git_patch_prefix(("not-a-real-command",), 1.0, 3) == (None, False)
+    assert source_module._git_bounded_text(("not-a-real-command",), 1.0, 3) == (None, False)
+
+    monkeypatch.setattr(
+        source_module.subprocess,
+        "Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("no git")),
+    )
+    assert source_module._git_patch_prefix(("diff",), 1.0, 3) == (None, False)
+
+
+def test_git_output_prefix_handles_timeout_and_process_edge_cases(monkeypatch):
+    class FakeStdout:
+        def fileno(self):
+            return 0
+
+        def close(self):
+            return None
+
+    class HangingProcess:
+        stdout = FakeStdout()
+        killed = False
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            self.killed = True
+
+        def wait(self, timeout=None):
+            return 0
+
+    class EmptySelector:
+        def register(self, *args, **kwargs):
+            return None
+
+        def select(self, timeout=None):
+            return []
+
+        def close(self):
+            return None
+
+    process = HangingProcess()
+    monkeypatch.setattr(source_module.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(source_module.selectors, "DefaultSelector", EmptySelector)
+
+    assert source_module._git_patch_prefix(("diff",), 1.0, 3) == (None, False)
+    assert process.killed is True
+    process = HangingProcess()
+    monkeypatch.setattr(source_module.subprocess, "Popen", lambda *args, **kwargs: process)
+    assert source_module._git_patch_prefix(("diff",), -1.0, 3) == (None, False)
+    assert process.killed is True
+
+    class FinishedNoEventsProcess:
+        stdout = FakeStdout()
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(source_module.subprocess, "Popen", lambda *args, **kwargs: FinishedNoEventsProcess())
+    assert source_module._git_patch_prefix(("diff",), 1.0, 3) == (b"", False)
+
+    class TimeoutWaitProcess:
+        stdout = FakeStdout()
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            return None
+
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired("git diff", timeout)
+
+    class ReadySelector:
+        def register(self, *args, **kwargs):
+            return None
+
+        def select(self, timeout=None):
+            return [object()]
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(source_module.subprocess, "Popen", lambda *args, **kwargs: TimeoutWaitProcess())
+    monkeypatch.setattr(source_module.selectors, "DefaultSelector", ReadySelector)
+    monkeypatch.setattr(source_module.os, "read", lambda fd, size: b"")
+    assert source_module._git_patch_prefix(("diff",), 1.0, 3) == (None, False)
+
+    class NoStdoutProcess:
+        stdout = None
+
+    monkeypatch.setattr(source_module.subprocess, "Popen", lambda *args, **kwargs: NoStdoutProcess())
+    assert source_module._git_patch_prefix(("diff",), 1.0, 3) == (None, False)
+
+    class FinishedProcess:
+        def poll(self):
+            return 0
+
+        def kill(self):
+            raise AssertionError("finished processes should not be killed")
+
+    source_module._kill_process(FinishedProcess())
+
+
+def test_source_tracking_knobs_are_explicit(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["/tmp/train.py", "--lr", "0.1"])
+    monkeypatch.setattr(os, "getcwd", lambda: "/workspace/project")
+
+    def fake_check_output(args, **kwargs):
+        command = tuple(args[1:])
+        if command == ("rev-parse", "--show-toplevel"):
+            return "/workspace/project\n"
+        if command == ("rev-parse", "HEAD"):
+            return "abc123\n"
+        if command == ("status", "--porcelain"):
+            return ""
+        if command == ("branch", "--show-current"):
+            return "main\n"
+        if command[:2] == ("diff", "--cached") and "--stat" in command:
+            return " staged.py | 1 +\n"
+        if command[0] == "diff" and "--stat" in command:
+            return " train.py | 2 +-\n"
+        raise AssertionError(command)
+
+    monkeypatch.setattr("subprocess.check_output", fake_check_output)
+    monkeypatch.setattr(
+        source_module,
+        "_git_patch_prefix",
+        lambda args, timeout, max_bytes: (b"diff --git a/train.py b/train.py\n", False),
+    )
+    monkeypatch.setattr(
+        source_module,
+        "_git_bounded_text",
+        lambda args, timeout, max_bytes: (" staged.py | 1 +", False)
+        if args[:2] == ("diff", "--cached")
+        else (" train.py | 2 +-", False),
+    )
+
+    default = _source_metadata(SourceTracking.privacy_safe())
+    assert default["entrypoint"] == "train.py"
+    assert "argv" not in default
+    assert "cwd" not in default
+    assert "branch" not in default["git"]
+    assert "root" not in default["git"]
+    assert "diff" not in default["git"]
+
+    expanded = _source_metadata(SourceTracking(command=True, paths=True, branch=True, git_diff=True))
+    assert expanded["argv"] == ["/tmp/train.py", "--lr", "0.1"]
+    assert expanded["cwd"] == "/workspace/project"
+    assert expanded["git"]["root"] == "/workspace/project"
+    assert expanded["git"]["branch"] == "main"
+    assert expanded["git"]["diff"]["patch_sha256"]
+    assert expanded["git"]["diff"]["patch_digest_scope"] == "full"
+    assert "diff --git" not in json.dumps(expanded)
 
 
 def test_sdk_raises_clear_error_for_http_error(api_server):

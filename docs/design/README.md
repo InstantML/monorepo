@@ -58,6 +58,10 @@ Current implemented design sequence:
 - `2026-05-25-durable-async-sdk-logging.md`: Neptune-inspired durable async SDK
   logging slice with per-run SQLite WAL queues, a process uploader, recovery
   CLI, SDK waits/status, upload-health metrics, and silent dashboard polling.
+- `2026-05-25-run-fork-lineage-source-capture.md`: Neptune-inspired run fork
+  lineage, same-project checkpoint fork creation, bounded lineage reads,
+  dashboard checkpoint forking, SDK `fork_run`/`attach_run`, and privacy-safe
+  source-capture knobs.
 
 Current draft/revised designs awaiting implementation approval:
 

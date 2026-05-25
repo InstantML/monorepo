@@ -11,6 +11,9 @@ export type RunSummary = {
   created_at: string;
   started_at: string;
   finished_at: string | null;
+  parent_run_id?: string | null;
+  forked_from_step?: number | null;
+  forked_from_artifact_id?: string | null;
   latest_metrics: Record<string, number>;
   metric_aggregates: Record<string, Record<string, number>>;
   artifact_counts: { checkpoint: number; rollout: number; file: number };
@@ -63,6 +66,16 @@ export type Artifact = {
   mime_type?: string | null;
   storage_backend?: string | null;
   metadata: Record<string, unknown>;
+};
+
+export type RunLineage = {
+  run: RunSummary;
+  parent: RunSummary | null;
+  children: RunSummary[];
+  checkpoint_artifact?: Artifact | null;
+  children_total: number;
+  has_more_children: boolean;
+  limit: number;
 };
 
 export type LoggedObject = {
