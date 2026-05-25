@@ -58,6 +58,9 @@ Current implemented design sequence:
 - `2026-05-25-durable-async-sdk-logging.md`: Neptune-inspired durable async SDK
   logging slice with per-run SQLite WAL queues, a process uploader, recovery
   CLI, SDK waits/status, upload-health metrics, and silent dashboard polling.
+- `2026-05-25-async-upload-default.md`: accepted follow-up that makes durable
+  async the SDK `init()` default, keeps `Run(...)` sync by default, bounds idle
+  health traffic, and documents the `upload_mode="sync"` escape hatch.
 
 Current draft/revised designs awaiting implementation approval:
 

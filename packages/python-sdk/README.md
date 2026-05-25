@@ -175,13 +175,17 @@ run.log_snapshot(
 run.finish()
 ```
 
-Durable async metric/log mode for long-running jobs:
+Durable async metric/log mode is the default for `init()` and `Client.init()`.
+It is inspired by Neptune-style local-first logging: scalar metrics, rank
+metrics, console logs, and final run status are validated, stored locally in a
+per-run SQLite WAL queue, and drained by a separate uploader process. Delivery,
+network, and API errors on those queued hot paths are reflected in
+`Run.upload_status()` and dashboard upload-health metrics instead of raising
+from `log_metrics()`, `log_rank_metrics()`, `log_console()`, or `finish()`.
 
 ```python
 run = ro.init(
     project="cartpole",
-    upload_mode="async",
-    queue_dir=".instantml/async",
 )
 run.log_metrics({"train/reward": 100.0}, step=1)
 run.log_stdout("step=1 reward=100.0")
@@ -190,13 +194,12 @@ run.wait_for_submission(timeout=30)
 run.finish(timeout=30)
 ```
 
-`upload_mode="async"` is opt-in. It is inspired by Neptune-style local-first
-logging: scalar metrics, rank metrics, console logs, and final run status are
-validated, stored locally in a per-run SQLite WAL queue, and drained by a
-separate uploader process. Delivery, network, and API errors on those queued
-hot paths are reflected in `Run.upload_status()` and dashboard upload-health
-metrics instead of raising from `log_metrics()`, `log_rank_metrics()`,
-`log_console()`, or `finish()`.
+Pass `queue_dir="..."` to move the default `.instantml/async` queue. The queue
+stores metric and console payloads locally in SQLite WAL files; add
+`.instantml/` to `.gitignore` for projects that do not already ignore local SDK
+state. If the queue cannot open or local queue limits are reached, the SDK warns
+and continues the training loop. Use `upload_mode="sync"` for scripts and CI
+checks that need metric/log API errors to raise in the foreground.
 
 Async v1 intentionally keeps response-returning helpers synchronous: configs,
 attributes, tags, notes, rich objects, media, and artifact uploads stay on the
@@ -447,7 +450,7 @@ PYTHONPATH=packages/python-sdk python3 -c "import instantml as ro; print(ro.Clie
 python3 -m pytest
 ```
 
-The SDK uses synchronous HTTP calls by default with a 2 second timeout and raises `InstantMLError` for network or non-2xx API failures. Short-window HTTP `429` rate-limit responses are retried a small bounded number of times, honoring `Retry-After` when the server sends it, before surfacing `InstantMLError`; monthly quota `429` responses are not retried. Set `buffer_size` to batch post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
+The SDK defaults to durable async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 
