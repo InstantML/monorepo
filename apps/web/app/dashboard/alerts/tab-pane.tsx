@@ -3,8 +3,9 @@ import { AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
 import { MetricCard } from "../ui/metric-card";
 import { AlertList } from "./alert-list";
 import { PageHead } from "../ui/page-head";
+import { formatMetricValue } from "../../../src/charts.js";
 import { formatNumber, metricGoalLabel } from "../../../src/state.js";
-import { shortMetricName } from "../../dashboard-models";
+import { metricTitle } from "../../dashboard-models";
 import type { AlertRow, Overview } from "../../dashboard-types";
 
 type Props = {
@@ -34,7 +35,7 @@ export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Pro
             <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
             <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
             <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
-            <MetricCard label={`${metricGoalLabel(metricKey)} ${shortMetricName(metricKey)}`} value={formatNumber(overview.best_eval_return, 2)} tone="good" />
+            <MetricCard label={`${metricGoalLabel(metricKey)} ${metricTitle(metricKey)}`} value={formatMetricValue(overview.best_eval_return)} tone="good" />
           </div>
         </section>
       </div>

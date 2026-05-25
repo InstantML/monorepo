@@ -1,6 +1,7 @@
 "use client";
 
-import { formatNumber, metricGoal, metricGoalLabel, metricGoalValue } from "../../../src/state.js";
+import { formatMetricValue } from "../../../src/charts.js";
+import { metricGoal, metricGoalLabel, metricGoalValue } from "../../../src/state.js";
 import { compactValue } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
 
@@ -21,10 +22,10 @@ export function MetricLeaderboard({ metricKey, runs }: { metricKey: string; runs
         <article className="leaderboard-row" key={run.id}>
           <span className="rank">{index + 1}</span>
           <span>
-            <strong>{run.name}</strong>
+            <strong title={run.name}>{run.name}</strong>
             <small>{goal === "minimize" ? "minimum value" : `best step ${compactValue(aggregate?.best_step ?? "-")}`}</small>
           </span>
-          <b>{formatNumber(value, 3)}</b>
+          <b>{formatMetricValue(value)}</b>
         </article>
       ))}
     </div>
