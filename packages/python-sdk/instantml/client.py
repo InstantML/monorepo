@@ -329,7 +329,7 @@ class Client:
         buffer_size: int = 0,
         offline_dir: str | None = None,
         source_tracking: bool = True,
-        upload_mode: str = "sync",
+        upload_mode: str = "async",
         spool_dir: str | None = None,
         local_store: bool = False,
         local_store_dir: str | None = None,
@@ -608,9 +608,11 @@ class Run:
         self._async_process: subprocess.Popen[Any] | None = None
         self._async_start_warning_emitted = False
         self._last_async_warning_at = 0.0
+        self._async_disabled_reason: str | None = None
+        self._async_local_dropped = 0
         if upload_mode == "async" and run_id and run_id != _PENDING_RUN_ID:
-            self._open_async_queue(run_id)
-            self._start_async_uploader()
+            if self._open_async_queue_or_warn(run_id):
+                self._start_async_uploader()
         self._queue: list[dict[str, Any]] = []
         self._last_steps: dict[str, float] = {}
         self._console_line_numbers: dict[str, int] = {}
@@ -648,8 +650,8 @@ class Run:
                 self._process_spool_run_dir = _process_spool_run_dir(self.spool_dir, value)
                 self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
             elif self.upload_mode == "async":
-                self._open_async_queue(value)
-                self._start_async_uploader()
+                if self._open_async_queue_or_warn(value):
+                    self._start_async_uploader()
 
     def wait_for_init(self, timeout: float | None = None) -> str:
         """Block until init resolves and return the real run_id.
@@ -676,6 +678,18 @@ class Run:
                 "oldest_pending_age_seconds": None,
                 "last_error": None,
             }
+        if self._async_disabled_reason is not None:
+            return {
+                "mode": "async",
+                "pending": 0,
+                "in_flight": 0,
+                "processed": 0,
+                "failed": 0,
+                "dropped": self._async_local_dropped,
+                "oldest_pending_age_seconds": None,
+                "last_error": f"async queue unavailable: {self._async_disabled_reason}",
+                "queue_available": False,
+            }
         queue = self._require_async_queue()
         return {"mode": "async", **queue.status()}
 
@@ -690,6 +704,8 @@ class Run:
     def _wait_for_async_queue(self, timeout: float | None, include_in_flight: bool) -> bool:
         if self.upload_mode != "async":
             return True
+        if self._async_disabled_reason is not None:
+            return False
         queue = self._require_async_queue()
         deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
         while True:
@@ -713,6 +729,21 @@ class Run:
         queue.init_db()
         self._async_queue = queue
 
+    def _open_async_queue_or_warn(self, run_id: str) -> bool:
+        if self._async_disabled_reason is not None:
+            return False
+        try:
+            self._open_async_queue(run_id)
+            return True
+        except Exception as exc:  # noqa: BLE001 - default async must not stop training
+            self._async_disabled_reason = str(exc)
+            warnings.warn(
+                f"async upload disabled because the local queue could not start: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return False
+
     def _require_async_queue(self) -> AsyncQueueRepository:
         if self._async_queue is None:
             self._open_async_queue(self.run_id)
@@ -722,6 +753,8 @@ class Run:
     def _start_async_uploader(self) -> None:
         run_id = self._run_id
         if self.upload_mode != "async" or not run_id or run_id == _PENDING_RUN_ID:
+            return
+        if self._async_disabled_reason is not None:
             return
         if self._async_process is not None and self._async_process.poll() is None:
             return
@@ -1465,12 +1498,14 @@ class Run:
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
                 async_processed = self.wait_for_processing(timeout=async_finish_timeout)
                 if not async_processed:
-                    warnings.warn(
-                        "async upload did not finish before finish() timeout; queued data remains on disk for the "
-                        "background uploader or instantml-uploader recovery",
-                        RuntimeWarning,
-                        stacklevel=2,
-                    )
+                    if self._async_disabled_reason is not None:
+                        message = f"async upload unavailable; finish status was not delivered: {self._async_disabled_reason}"
+                    else:
+                        message = (
+                            "async upload did not finish before finish() timeout; queued data remains on disk for the "
+                            "background uploader or instantml-uploader recovery"
+                        )
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
                 return
             self._request_or_spool("PATCH", f"/runs/{self.run_id}", {"status": status})
         finally:
@@ -1502,6 +1537,12 @@ class Run:
     ) -> None:
         with self._lock:
             if self.upload_mode == "async" and _async_request_supported(method, path, body):
+                if self._async_disabled_reason is not None:
+                    self._warn_async_drop(
+                        f"async queue unavailable; dropped event: {self._async_disabled_reason}",
+                        count_local=True,
+                    )
+                    return
                 try:
                     queue = self._require_async_queue()
                     sequence_id = queue.enqueue(
@@ -1515,7 +1556,7 @@ class Run:
                     else:
                         self._warn_async_drop("async queue dropped an event because local queue limits were reached")
                 except Exception as exc:  # noqa: BLE001 - async delivery must not stop training
-                    self._warn_async_drop(f"async queue could not record event: {exc}")
+                    self._warn_async_drop(f"async queue could not record event: {exc}", count_local=True)
                 return
             if self.upload_mode == "spool":
                 self._process_sequence += 1
@@ -1541,7 +1582,9 @@ class Run:
             return
         self._request_or_spool(method, path, body)
 
-    def _warn_async_drop(self, message: str) -> None:
+    def _warn_async_drop(self, message: str, *, count_local: bool = False) -> None:
+        if count_local:
+            self._async_local_dropped += 1
         now = time.time()
         if now - self._last_async_warning_at > 5:
             warnings.warn(message, RuntimeWarning, stacklevel=2)
@@ -1570,7 +1613,7 @@ def init(
     offline_dir: str | None = None,
     api_key: str | None = None,
     source_tracking: bool = True,
-    upload_mode: str = "sync",
+    upload_mode: str = "async",
     spool_dir: str | None = None,
     local_store: bool = False,
     local_store_dir: str | None = None,

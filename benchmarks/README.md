@@ -187,6 +187,12 @@ The durable async queue implementation is tracked by
 Markdown when using results to decide whether async should become the default
 upload mode.
 
+The 2026-05-25 async producer benchmark was used to accept
+`docs/design/2026-05-25-async-upload-default.md`. That default flip also bounds
+idle upload-health emission before enabling async by default, so the benchmark
+remains a hot-path producer-cost signal rather than a full quota model for
+background health traffic.
+
 The default matrix is:
 
 - `noop`: metric computation with no SDK logging.

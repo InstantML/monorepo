@@ -138,6 +138,7 @@ def run_async_uploader(
     repository.init_db()
     lock = QueueLock(repository.path)
     last_health_at = 0.0
+    had_outstanding_health = False
     with lock:
         while _parent_is_running(parent_pid):
             processed = drain_queue_once(
@@ -149,9 +150,19 @@ def run_async_uploader(
                 max_event_bytes=max_event_bytes,
             )
             now = time.time()
-            if processed or now - last_health_at >= health_interval_seconds:
+            status = repository.status()
+            outstanding = status["pending"] + status["in_flight"] + status["failed"] + status["dropped"]
+            should_emit_health = False
+            if outstanding and now - last_health_at >= health_interval_seconds:
+                should_emit_health = True
+            elif processed and now - last_health_at >= health_interval_seconds:
+                should_emit_health = True
+            elif had_outstanding_health and outstanding == 0:
+                should_emit_health = True
+            if should_emit_health:
                 _send_health(repository, base_url, api_key, timeout, run_id)
                 last_health_at = now
+            had_outstanding_health = outstanding > 0
             time.sleep(busy_poll_seconds if processed else idle_poll_seconds)
     repository.close()
 

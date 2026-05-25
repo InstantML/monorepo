@@ -256,7 +256,7 @@ def test_api_runs_raises_instantml_error_for_invalid_json(monkeypatch):
         ro.Api(base_url="http://example.test").runs(limit=1)
 
 
-def test_sdk_integration_creates_logs_and_finishes_run(api_server):
+def test_sdk_integration_creates_logs_and_finishes_run(api_server, tmp_path):
     run = ro.init(
         project="cartpole",
         name="seed-42",
@@ -265,6 +265,8 @@ def test_sdk_integration_creates_logs_and_finishes_run(api_server):
         notes="initial policy note",
         metadata={"custom": "value"},
         base_url=api_server,
+        upload_mode="sync",
+        queue_dir=str(tmp_path / "async"),
     )
     run.log({"reward": 10.0}, step=1)
     run.finish()
@@ -621,6 +623,25 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
         Client(base_url="http://example.test").init(project="demo", upload_mode="background")
 
 
+def test_client_init_defaults_to_async_upload_mode(monkeypatch, tmp_path):
+    def fake_request(self, method, path, body=None):
+        return {"run": {"id": "run-default-async"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        source_tracking=False,
+        queue_dir=str(tmp_path / "async"),
+    )
+
+    assert run.wait_for_init(timeout=2.0) == "run-default-async"
+    assert run.upload_mode == "async"
+    assert run.upload_status()["mode"] == "async"
+    assert (tmp_path / "async" / "run-default-async" / "queue.sqlite3").exists()
+
+
 def test_async_init_returns_run_before_post_completes(monkeypatch):
     gate = threading.Event()
     request_started = threading.Event()
@@ -638,6 +659,7 @@ def test_async_init_returns_run_before_post_completes(monkeypatch):
     run = Client(base_url="http://example.test").init(
         project="demo",
         source_tracking=False,
+        upload_mode="sync",
     )
     elapsed = time.monotonic() - started_at
 
@@ -663,6 +685,7 @@ def test_async_init_surfaces_server_error_on_run_id_access(monkeypatch):
     run = Client(base_url="http://example.test").init(
         project="demo",
         source_tracking=False,
+        upload_mode="sync",
     )
 
     with pytest.raises(InstantMLError, match="boom"):
@@ -683,6 +706,7 @@ def test_sync_init_still_blocks_when_async_init_disabled(monkeypatch):
     run = Client(base_url="http://example.test").init(
         project="demo",
         source_tracking=False,
+        upload_mode="sync",
         async_init=False,
     )
 
@@ -746,6 +770,42 @@ def test_async_upload_mode_queues_metric_hot_path_without_network(monkeypatch, t
     with pytest.warns(RuntimeWarning, match="async upload did not finish"):
         run.finish("failed", timeout=0)
     assert run.upload_status()["pending"] == 4
+
+
+def test_async_queue_open_failure_warns_and_drops_hot_path(monkeypatch, tmp_path):
+    class FailingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            raise AssertionError("failed async queue should not fall back to network")
+
+    def fail_init_db(self):
+        raise sqlite3.OperationalError("readonly database")
+
+    monkeypatch.setattr(AsyncQueueRepository, "init_db", fail_init_db)
+
+    with pytest.warns(RuntimeWarning, match="local queue could not start"):
+        run = Run(client=FailingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+
+    status = run.upload_status()
+    assert status["queue_available"] is False
+    assert "readonly database" in status["last_error"]
+    assert not run.wait_for_processing(timeout=0)
+
+    with pytest.warns(RuntimeWarning, match="async queue unavailable"):
+        run.log_metrics({"reward": 1.5}, step=1)
+    assert run.upload_status()["dropped"] == 1
+
+    with pytest.warns(RuntimeWarning, match="finish status was not delivered"):
+        run.finish(timeout=0)
+    assert run.upload_status()["dropped"] == 2
+    assert run._open_async_queue_or_warn("run-2") is False
+    run._start_async_uploader()
 
 
 def test_async_upload_mode_keeps_metadata_updates_sync(monkeypatch, tmp_path):
@@ -1209,6 +1269,159 @@ def test_async_queue_real_drain_and_uploader_loop(monkeypatch, tmp_path):
     assert loop_calls == {"parent": 2, "drain": 1, "health": 1}
 
 
+def test_async_uploader_does_not_emit_idle_health(monkeypatch, tmp_path):
+    path = tmp_path / "run" / "queue.sqlite3"
+    repository = AsyncQueueRepository(path)
+    repository.init_db()
+    repository.close()
+    loop_calls = {"parent": 0, "drain": 0, "health": 0}
+
+    def fake_parent_is_running(parent_pid):
+        loop_calls["parent"] += 1
+        return loop_calls["parent"] == 1
+
+    def fake_drain_queue_once(*args, **kwargs):
+        loop_calls["drain"] += 1
+        return 0
+
+    monkeypatch.setattr(async_queue, "_parent_is_running", fake_parent_is_running)
+    monkeypatch.setattr(async_queue, "drain_queue_once", fake_drain_queue_once)
+    monkeypatch.setattr(async_queue, "_send_health", lambda *args, **kwargs: loop_calls.__setitem__("health", loop_calls["health"] + 1))
+    monkeypatch.setattr(async_queue.time, "sleep", lambda seconds: None)
+
+    async_queue.run_async_uploader(
+        queue_path=str(path),
+        base_url="http://example.test",
+        api_key=None,
+        timeout=1,
+        run_id="run-1",
+        parent_pid=123,
+    )
+
+    assert loop_calls == {"parent": 2, "drain": 1, "health": 0}
+
+
+def test_async_uploader_emits_health_for_outstanding_queue(monkeypatch, tmp_path):
+    path = tmp_path / "run" / "queue.sqlite3"
+    repository = AsyncQueueRepository(path)
+    repository.init_db()
+    repository.close()
+    loop_calls = {"parent": 0, "drain": 0, "health": 0}
+
+    status = {
+        "pending": 1,
+        "in_flight": 0,
+        "failed": 0,
+        "dropped": 0,
+        "processed": 0,
+        "oldest_pending_age_seconds": 0,
+        "last_error": None,
+        "disk_usage_bytes": 0,
+    }
+
+    def fake_parent_is_running(parent_pid):
+        loop_calls["parent"] += 1
+        return loop_calls["parent"] == 1
+
+    def fake_drain_queue_once(*args, **kwargs):
+        loop_calls["drain"] += 1
+        return 0
+
+    monkeypatch.setattr(async_queue, "_parent_is_running", fake_parent_is_running)
+    monkeypatch.setattr(async_queue, "drain_queue_once", fake_drain_queue_once)
+    monkeypatch.setattr(AsyncQueueRepository, "status", lambda self: status)
+    monkeypatch.setattr(
+        async_queue,
+        "_send_health",
+        lambda *args, **kwargs: loop_calls.__setitem__("health", loop_calls["health"] + 1),
+    )
+    monkeypatch.setattr(async_queue.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(async_queue.time, "time", lambda: 10.0)
+
+    async_queue.run_async_uploader(
+        queue_path=str(path),
+        base_url="http://example.test",
+        api_key=None,
+        timeout=1,
+        run_id="run-1",
+        parent_pid=123,
+        health_interval_seconds=5,
+    )
+
+    assert loop_calls == {"parent": 2, "drain": 1, "health": 1}
+
+
+def test_async_uploader_emits_final_health_when_queue_becomes_idle(monkeypatch, tmp_path):
+    path = tmp_path / "run" / "queue.sqlite3"
+    repository = AsyncQueueRepository(path)
+    repository.init_db()
+    repository.close()
+    loop_calls = {"parent": 0, "drain": 0, "health": 0, "status": 0, "time": 0}
+
+    statuses = [
+        {
+            "pending": 1,
+            "in_flight": 0,
+            "failed": 0,
+            "dropped": 0,
+            "processed": 0,
+            "oldest_pending_age_seconds": 0,
+            "last_error": None,
+            "disk_usage_bytes": 0,
+        },
+        {
+            "pending": 0,
+            "in_flight": 0,
+            "failed": 0,
+            "dropped": 0,
+            "processed": 1,
+            "oldest_pending_age_seconds": None,
+            "last_error": None,
+            "disk_usage_bytes": 0,
+        },
+    ]
+
+    def fake_parent_is_running(parent_pid):
+        loop_calls["parent"] += 1
+        return loop_calls["parent"] <= 2
+
+    def fake_drain_queue_once(*args, **kwargs):
+        loop_calls["drain"] += 1
+        return 0
+
+    def fake_status(self):
+        index = min(loop_calls["status"], len(statuses) - 1)
+        loop_calls["status"] += 1
+        return statuses[index]
+
+    def fake_time():
+        loop_calls["time"] += 1
+        return float(loop_calls["time"])
+
+    monkeypatch.setattr(async_queue, "_parent_is_running", fake_parent_is_running)
+    monkeypatch.setattr(async_queue, "drain_queue_once", fake_drain_queue_once)
+    monkeypatch.setattr(AsyncQueueRepository, "status", fake_status)
+    monkeypatch.setattr(
+        async_queue,
+        "_send_health",
+        lambda *args, **kwargs: loop_calls.__setitem__("health", loop_calls["health"] + 1),
+    )
+    monkeypatch.setattr(async_queue.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(async_queue.time, "time", fake_time)
+
+    async_queue.run_async_uploader(
+        queue_path=str(path),
+        base_url="http://example.test",
+        api_key=None,
+        timeout=1,
+        run_id="run-1",
+        parent_pid=123,
+        health_interval_seconds=5,
+    )
+
+    assert loop_calls == {"parent": 3, "drain": 2, "health": 1, "status": 2, "time": 2}
+
+
 def test_async_queue_http_helpers(monkeypatch):
     class FakeResponse:
         def __enter__(self):
@@ -1662,7 +1875,7 @@ def test_file_aliases_and_replay_without_offline_dir():
 
 
 def test_offline_spool_and_replay(api_server, tmp_path):
-    online = ro.init(project="offline", name="replay-me", base_url=api_server, source_tracking=False)
+    online = ro.init(project="offline", name="replay-me", base_url=api_server, source_tracking=False, upload_mode="sync")
     offline = Run(
         client=Client(base_url="http://127.0.0.1:9", timeout=0.01, offline_dir=str(tmp_path)),
         run_id=online.run_id,
@@ -1956,6 +2169,7 @@ def test_client_init_reserves_sdk_source_metadata(monkeypatch):
         buffer_size=3,
         offline_dir="/run-offline",
         metadata={"source": {"user": "owned"}},
+        upload_mode="sync",
     )
 
     assert run.run_id == "run-123"
@@ -1975,7 +2189,7 @@ def test_client_init_can_disable_source_tracking(monkeypatch):
         return {"run": {"id": "run-123"}}
 
     monkeypatch.setattr(Client, "_request", fake_request)
-    Client(base_url="http://example.test").init(project="demo", source_tracking=False)
+    Client(base_url="http://example.test").init(project="demo", source_tracking=False, upload_mode="sync")
 
     assert "_rlobs" not in calls[0][2]["metadata"]
 
@@ -2571,6 +2785,7 @@ def test_wrapper_constructor_edge_cases_and_client_init_options(monkeypatch, tmp
         system_metrics=True,
         system_metrics_interval=3.0,
         capture_console=True,
+        upload_mode="sync",
         async_init=False,
     )
     run.wait_for_init(timeout=2.0)
@@ -2633,6 +2848,7 @@ def test_async_init_ignores_optional_system_and_console_failures(monkeypatch, tm
         system_metrics=True,
         system_metrics_interval=4.0,
         capture_console=True,
+        upload_mode="sync",
     )
 
     assert run.wait_for_init(timeout=2.0) == "run-optional"
@@ -3078,6 +3294,21 @@ def test_init_raises_when_no_credentials(monkeypatch, tmp_path):
         ro.init(project="test")
 
 
+def test_top_level_init_defaults_to_async_upload_mode(monkeypatch, tmp_path):
+    def fake_request(self, method, path, body=None):
+        return {"run": {"id": "run-top-default-async"}}
+
+    monkeypatch.setenv("INSTANTML_API_KEY", "env-key")
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    run = ro.init(project="test", base_url="http://example.test", queue_dir=str(tmp_path / "async"))
+
+    assert run.wait_for_init(timeout=2.0) == "run-top-default-async"
+    assert run.upload_mode == "async"
+    assert (tmp_path / "async" / "run-top-default-async" / "queue.sqlite3").exists()
+
+
 def test_init_succeeds_with_explicit_api_key(monkeypatch):
     calls = []
 
@@ -3086,7 +3317,7 @@ def test_init_succeeds_with_explicit_api_key(monkeypatch):
         return {"run": {"id": "run-1"}}
 
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", api_key="my-key", base_url="http://example.test")
+    run = ro.init(project="test", api_key="my-key", base_url="http://example.test", upload_mode="sync")
     assert run.run_id == "run-1"
 
 
@@ -3099,7 +3330,7 @@ def test_init_succeeds_with_env_var(monkeypatch):
 
     monkeypatch.setenv("INSTANTML_API_KEY", "env-key")
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", base_url="http://example.test")
+    run = ro.init(project="test", base_url="http://example.test", upload_mode="sync")
     assert run.run_id == "run-2"
 
 
@@ -3115,5 +3346,5 @@ def test_init_succeeds_with_credentials_file(monkeypatch, tmp_path):
     creds.write_text('api_key = "file-key"\n')
     monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", creds)
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", base_url="http://example.test")
+    run = ro.init(project="test", base_url="http://example.test", upload_mode="sync")
     assert run.run_id == "run-3"
