@@ -21,6 +21,7 @@ function artifactFromLoggedObject(object: LoggedObject): Artifact | null {
     step: object.step,
     size_bytes: object.artifact.size_bytes,
     mime_type: object.artifact.mime_type,
+    storage_backend: object.artifact.storage_backend,
     metadata: {
       kind: object.kind,
       mime_type: object.artifact.mime_type,

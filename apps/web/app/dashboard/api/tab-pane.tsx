@@ -15,6 +15,7 @@ type Props = {
   apiKeyName: string;
   apiKeys: ApiKeyRow[];
   apiRows: ApiRow[];
+  canManageOrg: boolean;
   metricKey: string;
   newApiKey: string;
   onApiKeyNameChange: (name: string) => void;
@@ -34,6 +35,7 @@ export function ApiTabPane({
   apiKeyName,
   apiKeys,
   apiRows,
+  canManageOrg,
   metricKey,
   newApiKey,
   onApiKeyNameChange,
@@ -46,40 +48,48 @@ export function ApiTabPane({
   selectedRunIds,
   status,
 }: Props) {
-  const activeKeyCount = apiKeys.filter((key) => !key.revoked_at).length;
+  const visibleApiKeys = canManageOrg ? apiKeys : [];
+  const visibleNewApiKey = canManageOrg ? newApiKey : "";
+  const activeKeyCount = visibleApiKeys.filter((key) => !key.revoked_at).length;
   return (
     <>
-      <PageHead eyebrow="Admin" title="API" emphasis="keys" lede={`${activeKeyCount} active · documented REST routes`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API" emphasis="keys" lede={`${activeKeyCount} active · documented REST routes`} />
       <div className="tab-grid two-col">
         <section className="panel">
           <div className="panel-head">
             <h2><KeyRound size={15} /> API Keys</h2>
-            <button className="ghost" disabled={adminBusy} onClick={onLoadApiKeys} type="button"><RefreshCw size={14} /> Refresh</button>
+            <button className="ghost" disabled={adminBusy || !canManageOrg} onClick={onLoadApiKeys} type="button"><RefreshCw size={14} /> Refresh</button>
           </div>
           <div className="panel-body admin-stack">
-            <div className="admin-form-row">
-              <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} value={apiKeyName} />
-              <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
-            </div>
-            {newApiKey ? (
+            {canManageOrg ? (
+              <div className="admin-form-row">
+                <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} value={apiKeyName} />
+                <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
+              </div>
+            ) : (
+              <p className="empty">API-key management is available to workspace owners and admins.</p>
+            )}
+            {visibleNewApiKey ? (
               <div className="api-key-reveal" role="status" aria-live="polite">
                 <strong>Copy-once API key</strong>
-                <code>{newApiKey}</code>
+                <code>{visibleNewApiKey}</code>
                 <button className="secondary" onClick={onCopyNewApiKey} type="button"><Copy size={14} /> Copy</button>
               </div>
             ) : null}
             <div className="admin-list">
-              {apiKeys.map((key) => (
+              {visibleApiKeys.map((key) => (
                 <div className={`api-row ${key.revoked_at ? "muted" : ""}`} key={key.id}>
                   <span>{key.revoked_at ? "Revoked" : "Active"}</span>
                   <strong>{key.name}</strong>
                   <code>{key.key_prefix}</code>
-                  <button className="ghost" disabled={adminBusy || Boolean(key.revoked_at)} onClick={() => onRevokeApiKey(key.id)} type="button" aria-label={`Revoke ${key.name}`}>
-                    <X size={14} />
-                  </button>
+                  {canManageOrg ? (
+                    <button className="ghost" disabled={adminBusy || Boolean(key.revoked_at)} onClick={() => onRevokeApiKey(key.id)} type="button" aria-label={`Revoke ${key.name}`}>
+                      <X size={14} />
+                    </button>
+                  ) : null}
                 </div>
               ))}
-              {!apiKeys.length ? <p className="empty">No API keys loaded.</p> : null}
+              {canManageOrg && !visibleApiKeys.length ? <p className="empty">No API keys loaded.</p> : null}
             </div>
           </div>
         </section>

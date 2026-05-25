@@ -262,6 +262,13 @@ describe("AuditFeed — timestamp helper logic", () => {
 
 // ── TtlRing: circumference calculation ────────────────────────────────────────
 describe("TtlRing — circumference calculation", () => {
+  test("animation updates DOM refs instead of re-rendering React every frame", () => {
+    const src = fs.readFileSync(path.join(componentsDir, "TtlRing.tsx"), "utf8");
+    assert.doesNotMatch(src, /useState/, "decorative rAF animation should not call setState on every frame");
+    assert.match(src, /progressRef/, "dial progress should update via a DOM ref");
+    assert.match(src, /valueRef/, "dial label should update via a DOM ref");
+  });
+
   test("circumference formula is correct for size=168, stroke=6", () => {
     const size = 168;
     const stroke = 6;

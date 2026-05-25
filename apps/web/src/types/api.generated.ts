@@ -2268,7 +2268,7 @@ export interface components {
             users: components["schemas"]["UserRow"][];
         };
         WorkspaceViewEnvelope: {
-            view: components["schemas"]["WorkspaceViewRow"];
+            workspace_view: components["schemas"]["WorkspaceViewRow"];
         };
         WorkspaceViewRow: {
             /** Format: date-time */
@@ -2290,7 +2290,8 @@ export interface components {
             updated_at: string;
         };
         WorkspaceViewSummariesEnvelope: {
-            views: components["schemas"]["WorkspaceViewSummary"][];
+            next_cursor?: string | null;
+            workspace_views: components["schemas"]["WorkspaceViewSummary"][];
         };
         WorkspaceViewSummary: {
             /** Format: date-time */

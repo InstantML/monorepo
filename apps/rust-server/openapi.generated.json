@@ -9488,10 +9488,10 @@
       "WorkspaceViewEnvelope": {
         "type": "object",
         "required": [
-          "view"
+          "workspace_view"
         ],
         "properties": {
-          "view": {
+          "workspace_view": {
             "$ref": "#/components/schemas/WorkspaceViewRow"
           }
         }
@@ -9559,10 +9559,16 @@
       "WorkspaceViewSummariesEnvelope": {
         "type": "object",
         "required": [
-          "views"
+          "workspace_views"
         ],
         "properties": {
-          "views": {
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_views": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/WorkspaceViewSummary"

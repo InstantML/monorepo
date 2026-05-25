@@ -94,7 +94,7 @@ Add a `workspace_view` control record keyed by UUID:
 
 The control record `entity_id` is the view UUID. Updates write a complete replacement row with the same `id`, original `created_at`, and a new `updated_at`; replay keeps the last row for each id using the existing deterministic control-store order: `(created_at, event_id)`. The payload is capped at 64 KiB and must be a JSON object. Names are validated with the existing name validator. Views are scoped to the owning user when a browser session exists and to the local org in unauthenticated local mode. A user can only update their own view. Demo sessions can read but cannot write. The first slice implements list summaries, create, read detail, and update. Delete can follow later.
 
-Frontend saved views use the control API first and preserve localStorage as fallback. Existing localStorage views are still readable and can be saved back to the control plane by pressing Save view. List calls are summary-only and capped; detail calls load full payloads only when the user applies a view.
+Frontend saved views use the control API first and preserve localStorage as fallback. After the 2026-05-25 frontend audit hardening, authenticated localStorage fallback views are listed only from org/user/project-scoped keys so a shared browser cannot leak another workspace's run IDs, metric keys, or saved queries. Older unscoped local views are not auto-listed in authenticated sessions; users can recreate them by saving the view again. List calls are summary-only and capped; detail calls load full payloads only when the user applies a view.
 
 ### Search and live run counts
 
@@ -216,7 +216,7 @@ Response:
 Query parameters:
 
 - `limit`, default 50 and maximum 100
-- `cursor`, opaque updated-at/id cursor
+- `cursor`, opaque pagination cursor returned by the previous response. The current Rust implementation returns a numeric offset string, but clients must treat it as opaque.
 
 Summary fields: `id`, `name`, `project`, `created_at`, `updated_at`. Full `payload` is not returned by list.
 
@@ -257,6 +257,8 @@ Response:
 ```
 
 All write endpoints require a non-read-only browser session in hosted mode. Local unauthenticated mode remains allowed for development. API keys are not part of this first slice.
+
+The Rust OpenAPI schema and generated frontend types use these runtime envelope names (`workspace_views` and `workspace_view`) so callers do not need frontend-only translation for the primary contract. The web normalizer still accepts the earlier generated `views` and `view` aliases for compatibility with already-built local clients.
 
 ## Performance Considerations
 

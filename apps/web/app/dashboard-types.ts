@@ -94,6 +94,7 @@ export type LoggedObject = {
     uri?: string | null;
     mime_type?: string | null;
     size_bytes?: number | null;
+    storage_backend?: string | null;
   } | null;
   created_at: string;
 };

@@ -2,7 +2,7 @@
 
 import { Activity, Box, Copy, Download, FileText } from "lucide-react";
 
-import { artifactHasStoredBytes, formatBytes, safeArtifactUri } from "../../dashboard-models";
+import { artifactHasStoredBytes, formatBytes, safeArtifactMediaKind, safeArtifactUri } from "../../dashboard-models";
 import type { Artifact } from "../../dashboard-types";
 
 function artifactCanUseDownloadRoute(artifact: Artifact) {
@@ -11,15 +11,6 @@ function artifactCanUseDownloadRoute(artifact: Artifact) {
 
 function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
-}
-
-function artifactMediaKind(artifact: Artifact) {
-  const mime = String(artifact.mime_type ?? artifact.metadata?.mime_type ?? artifact.metadata?.mimeType ?? artifact.metadata?.content_type ?? artifact.metadata?.contentType ?? "").toLowerCase();
-  const name = `${artifact.name} ${artifact.uri}`.toLowerCase();
-  if (mime.includes("image") || /\.(png|jpe?g|webp|gif)(?:$|[?#])/.test(name)) return "image";
-  if (mime.includes("audio") || /\.(mp3|m4a|wav|aac)(?:$|[?#])/.test(name)) return "audio";
-  if (mime.includes("video") || /\.(mp4|mov|webm)(?:$|[?#])/.test(name)) return "video";
-  return "";
 }
 
 function copyText(value: string) {
@@ -34,7 +25,7 @@ function ArtifactIcon({ type }: { type: string }) {
 }
 
 function ArtifactBrowserPreview({ artifact }: { artifact: Artifact }) {
-  const kind = artifactMediaKind(artifact);
+  const kind = safeArtifactMediaKind(artifact);
   if (!kind || !artifactCanUseDownloadRoute(artifact)) return null;
   const src = artifactDownloadUrl(artifact);
   if (kind === "image") {

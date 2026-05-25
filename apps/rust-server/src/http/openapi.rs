@@ -182,12 +182,15 @@ pub struct DashboardPreferencesEnvelope {
 
 #[derive(Serialize, ToSchema)]
 pub struct WorkspaceViewEnvelope {
+    #[serde(rename = "workspace_view")]
     pub view: WorkspaceViewRow,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct WorkspaceViewSummariesEnvelope {
+    #[serde(rename = "workspace_views")]
     pub views: Vec<WorkspaceViewSummary>,
+    pub next_cursor: Option<String>,
 }
 
 /// Wrapper for `auth_dev_google` / `auth_clerk` responses, which serialize

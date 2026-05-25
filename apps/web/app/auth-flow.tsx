@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../src/api.js";
 import { clerkIssuerConfigError } from "../src/clerk-config.js";
-import { sanitizeNextPath } from "../src/routes.js";
+import { safeStripeRedirectUrl, sanitizeNextPath } from "../src/routes.js";
 import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
 
@@ -117,7 +117,10 @@ const ONBOARDING_KEY_STORAGE = "instantml_onboarding_key";
 function stashOnboardingKey(plaintext: string) {
   if (typeof window === "undefined" || !plaintext) return;
   try {
-    window.sessionStorage.setItem(ONBOARDING_KEY_STORAGE, plaintext);
+    window.sessionStorage.setItem(ONBOARDING_KEY_STORAGE, JSON.stringify({
+      createdAt: Date.now(),
+      plaintext,
+    }));
   } catch {
     // sessionStorage can throw in private-mode / quota-exceeded; ignore.
   }
@@ -143,6 +146,7 @@ function Brand() {
 export function AuthFlow({ mode }: { mode: AuthMode }) {
   const api = useMemo(() => new ApiClient(), []);
   const clerkExchangeAttemptedRef = useRef(false);
+  const byocValidationRequestRef = useRef(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { getToken, isLoaded: clerkLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
@@ -388,12 +392,13 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     try {
       const sessionPayload = await api.post("/api/auth/dev/google", payload);
       setSession(sessionPayload as SessionPayload);
-      const checkoutUrl = (sessionPayload as SessionPayload).billing_checkout?.url;
+      const checkoutUrl = safeStripeRedirectUrl((sessionPayload as SessionPayload).billing_checkout?.url);
       if (checkoutUrl) {
         note("Workspace created. Opening Stripe Checkout...");
         window.location.assign(checkoutUrl);
         return;
       }
+      if ((sessionPayload as SessionPayload).billing_checkout?.url) throw new Error("Billing checkout URL was not trusted.");
       if (isSharedDemoSession(sessionPayload as SessionPayload)) {
         note("Signed in to the read-only demo. Opening the dashboard...");
         window.location.assign("/dashboard/runs");
@@ -453,11 +458,13 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         payload = await exchangeManagedClerkSession(true);
       }
       setSession(payload);
-      if (payload.billing_checkout?.url) {
+      const checkoutUrl = safeStripeRedirectUrl(payload.billing_checkout?.url);
+      if (checkoutUrl) {
         note("Workspace created. Opening Stripe Checkout...");
-        window.location.assign(payload.billing_checkout.url);
+        window.location.assign(checkoutUrl);
         return;
       }
+      if (payload.billing_checkout?.url) throw new Error("Billing checkout URL was not trusted.");
       // If the server auto-issued an onboarding key, reveal it immediately
       // in-place (no reload — keeps the copy-once plaintext in memory).
       const onboardingKey = payload.onboarding_api_key?.plaintext;
@@ -570,13 +577,29 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     };
   }
 
+  function byocPayloadSignature(payload: ReturnType<typeof byocPayload>) {
+    if (!payload) return "";
+    return JSON.stringify([
+      payload.org_id,
+      payload.endpoint,
+      payload.database,
+      payload.username,
+      payload.password,
+      payload.storage_choice,
+    ]);
+  }
+
   async function validateByocConnection() {
     const payload = byocPayload();
     if (!payload) return;
+    const requestId = byocValidationRequestRef.current + 1;
+    byocValidationRequestRef.current = requestId;
+    const requestSignature = byocPayloadSignature(payload);
     setBusy(true);
     note("Validating ClickHouse from the data plane...");
     try {
       const response = await api.post("/api/storage/clickhouse-connections/validate", payload);
+      if (requestId !== byocValidationRequestRef.current || requestSignature !== byocPayloadSignature(byocPayload())) return;
       const validation = (response as { validation?: ClickHouseConnectionValidation }).validation ?? null;
       setByocValidation(validation);
       if (validation) {
@@ -585,10 +608,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         fail("ClickHouse validation returned an unexpected response.");
       }
     } catch (error) {
-      setByocValidation(null);
-      fail(error instanceof Error ? error.message : "Unable to validate ClickHouse.");
+      if (requestId === byocValidationRequestRef.current) {
+        setByocValidation(null);
+        fail(error instanceof Error ? error.message : "Unable to validate ClickHouse.");
+      }
     } finally {
-      setBusy(false);
+      if (requestId === byocValidationRequestRef.current) setBusy(false);
     }
   }
 

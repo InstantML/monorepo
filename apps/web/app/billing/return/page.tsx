@@ -12,6 +12,7 @@ export default function BillingReturnPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    let redirectTimer: number | null = null;
     const sessionId = new URLSearchParams(window.location.search).get("session_id") ?? "";
     if (!sessionId) {
       setState("error");
@@ -23,7 +24,9 @@ export default function BillingReturnPage() {
         await api.post("/api/billing/checkout/sync", { session_id: sessionId }, { signal: controller.signal });
         setState("ok");
         setMessage("Payment verified. Opening onboarding...");
-        window.setTimeout(() => window.location.assign("/onboarding"), 800);
+        redirectTimer = window.setTimeout(() => {
+          if (!controller.signal.aborted) window.location.assign("/onboarding");
+        }, 800);
       } catch (error) {
         if ((error as { name?: string })?.name === "AbortError") return;
         setState("error");
@@ -31,7 +34,10 @@ export default function BillingReturnPage() {
       }
     }
     void syncCheckout();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (redirectTimer) window.clearTimeout(redirectTimer);
+    };
   }, [api]);
 
   const Icon = state === "ok" ? CheckCircle2 : state === "error" ? TriangleAlert : Loader2;

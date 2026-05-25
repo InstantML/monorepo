@@ -5,7 +5,7 @@ use axum::{
     body::{Body, Bytes},
     extract::{Path, Query, State},
     http::header,
-    http::HeaderMap,
+    http::{HeaderMap, HeaderName},
     response::Response,
     Json,
 };
@@ -188,9 +188,7 @@ pub async fn download_artifact(
     match bytes {
         ArtifactBytes::File(file) => {
             let mut response = Response::new(Body::from_stream(ReaderStream::new(file)));
-            response
-                .headers_mut()
-                .insert(header::CONTENT_TYPE, header_value(&content_type)?);
+            add_artifact_download_headers(response.headers_mut(), &content_type, &artifact.name)?;
             if let Some(size_bytes) = artifact.size_bytes {
                 response.headers_mut().insert(
                     header::CONTENT_LENGTH,
@@ -209,7 +207,7 @@ pub async fn download_artifact(
                 .get(header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or(&content_type);
-            headers.insert(header::CONTENT_TYPE, header_value(content_type)?);
+            add_artifact_download_headers(headers, content_type, &artifact.name)?;
             for name in [
                 header::CONTENT_LENGTH,
                 header::CONTENT_RANGE,
@@ -223,5 +221,94 @@ pub async fn download_artifact(
             }
             Ok(response)
         }
+    }
+}
+
+fn add_artifact_download_headers(
+    headers: &mut HeaderMap,
+    content_type: &str,
+    artifact_name: &str,
+) -> AppResult<()> {
+    headers.insert(header::CONTENT_TYPE, header_value(content_type)?);
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        header_value("nosniff")?,
+    );
+    headers.insert(
+        HeaderName::from_static("content-security-policy"),
+        header_value("sandbox")?,
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        header_value(&format!(
+            "attachment; filename=\"{}\"",
+            safe_attachment_filename(artifact_name)
+        ))?,
+    );
+    Ok(())
+}
+
+fn safe_attachment_filename(value: &str) -> String {
+    let basename = value
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("artifact")
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let trimmed = basename.trim_matches('.');
+    if trimmed.is_empty() {
+        "artifact".to_string()
+    } else {
+        trimmed.chars().take(120).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attachment_filename_is_header_safe() {
+        assert_eq!(safe_attachment_filename("../bad\"\r\n.svg"), "bad___.svg");
+        assert_eq!(safe_attachment_filename(".."), "artifact");
+        assert_eq!(
+            safe_attachment_filename("metric plot.png"),
+            "metric_plot.png"
+        );
+        assert_eq!(
+            safe_attachment_filename("nested\\checkpoint.pt"),
+            "checkpoint.pt"
+        );
+    }
+
+    #[test]
+    fn artifact_download_headers_force_attachment_and_sandbox() {
+        let mut headers = HeaderMap::new();
+        add_artifact_download_headers(&mut headers, "text/html", "../bad\"\r\n.svg").unwrap();
+
+        assert_eq!(headers.get(header::CONTENT_TYPE).unwrap(), "text/html");
+        assert_eq!(
+            headers
+                .get(HeaderName::from_static("x-content-type-options"))
+                .unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            headers
+                .get(HeaderName::from_static("content-security-policy"))
+                .unwrap(),
+            "sandbox"
+        );
+        assert_eq!(
+            headers.get(header::CONTENT_DISPOSITION).unwrap(),
+            "attachment; filename=\"bad___.svg\""
+        );
     }
 }
