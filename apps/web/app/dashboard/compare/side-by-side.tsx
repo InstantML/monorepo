@@ -89,6 +89,18 @@ function compareNumbersAsc(left: unknown, right: unknown) {
   return -compareNumbersDesc(left, right);
 }
 
+// Numeric column sort that always pushes missing values (null/NaN) to the bottom,
+// regardless of ascending/descending direction — a run with no value for the sorted
+// metric should never jump to the top of an ascending sort.
+function numericNullsLast(left: number | null, right: number | null, dir: number) {
+  const l = typeof left === "number" && Number.isFinite(left) ? left : null;
+  const r = typeof right === "number" && Number.isFinite(right) ? right : null;
+  if (l === null && r === null) return 0;
+  if (l === null) return 1;
+  if (r === null) return -1;
+  return (l - r) * dir;
+}
+
 function compareConfigValues(left: unknown, right: unknown) {
   const leftMissing = left === undefined || left === null || left === "";
   const rightMissing = right === undefined || right === null || right === "";
@@ -363,12 +375,15 @@ function CompareMatrix({ referenceRunId, rows, runs, colorByRunId }: { reference
             <strong title={row.path}>{row.label}</strong>
           </div>
           {runs.map((run) => {
-            const value = compactValue(row.values?.[run.id]);
+            const raw = row.values?.[run.id];
+            const value = compactValue(raw);
             const referenceValue = row.values?.[referenceRunId];
             const changed = run.id !== referenceRunId && value !== compactValue(referenceValue);
+            // Numbers use the shared metric formatter so precision matches the rows view.
+            const display = typeof raw === "number" && Number.isFinite(raw) ? formatMetricValue(raw) : shortValue(value);
             return (
               <div className={`compare-cell ${run.id === referenceRunId ? "reference" : ""} ${changed ? "changed" : ""}`} key={`${row.key}-${run.id}`} title={value}>
-                <span>{shortValue(value)}</span>
+                <span>{display}</span>
               </div>
             );
           })}
@@ -647,15 +662,22 @@ export function SideBySide({
   const configKeys = deriveConfigKeys(visibleRuns);
   const orderedConfigKeys = configSortKey ? [configSortKey, ...configKeys.filter((key) => key !== configSortKey)] : configKeys;
   const visibleConfigKeys = (diffOnly ? orderedConfigKeys.filter((key) => configValuesDiffer(visibleRuns, key)) : orderedConfigKeys).slice(0, 5);
+  // Drop the Artifacts column entirely when no compared run has any — an all-"—"
+  // column is dead weight that just pushes config columns off-screen.
+  const anyArtifacts = visibleRuns.some((run) => artifactTotalForRun(run) > 0 || (artifactsByRun[run.id]?.length ?? 0) > 0);
   const columns: CompareColumn[] = [
     ...metricTableKeys.map((key): MetricColumn => ({ kind: "metric", key: `metric:${key}`, metricKey: key, goal: metricGoal(key) })),
     { kind: "status", key: "status" },
     { kind: "duration", key: "duration" },
-    { kind: "artifacts", key: "artifacts" },
+    ...(anyArtifacts ? [{ kind: "artifacts", key: "artifacts" } as AttrColumn] : []),
     ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),
   ];
 
-  const sortedRuns = sortRunsForTable(visibleRuns, sort, referenceRunId, lookup);
+  // If the actively-sorted column was removed (e.g. a metric column deleted), fall
+  // back to the default sort so the row order is never silently ambiguous.
+  const sortColValid = sort.col === "identity" || columns.some((column) => column.key === sort.col);
+  const effectiveSort: SortState = sortColValid ? sort : { col: defaultSortCol, dir: metricGoal(metricKey) === "minimize" ? "asc" : "desc" };
+  const sortedRuns = sortRunsForTable(visibleRuns, effectiveSort, referenceRunId, lookup);
 
   const onSortColumn = (col: string, preferAsc: boolean) => {
     setSort((current) => current.col === col ? { col, dir: current.dir === "asc" ? "desc" : "asc" } : { col, dir: preferAsc ? "asc" : "desc" });
@@ -700,7 +722,7 @@ export function SideBySide({
               onReference={handleReference}
               referenceRunId={referenceRunId}
               runs={sortedRuns}
-              sort={sort}
+              sort={effectiveSort}
               onSort={onSortColumn}
             />
           ) : (
@@ -726,13 +748,13 @@ function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: s
     if (sort.col === "identity") result = left.name.localeCompare(right.name) * dir;
     else if (sort.col.startsWith("metric:")) {
       const key = sort.col.slice("metric:".length);
-      result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(lookup.best(left.id, key), lookup.best(right.id, key));
+      result = numericNullsLast(lookup.best(left.id, key), lookup.best(right.id, key), dir);
     } else if (sort.col.startsWith("config:")) {
       const key = sort.col.slice("config:".length);
       result = compareConfigValues(left.config?.[key], right.config?.[key]) * dir;
     } else if (sort.col === "status") result = left.status.localeCompare(right.status) * dir;
-    else if (sort.col === "duration") result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(runDurationMs(left), runDurationMs(right));
-    else if (sort.col === "artifacts") result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(artifactTotalForRun(left), artifactTotalForRun(right));
+    else if (sort.col === "duration") result = numericNullsLast(runDurationMs(left), runDurationMs(right), dir);
+    else if (sort.col === "artifacts") result = numericNullsLast(artifactTotalForRun(left), artifactTotalForRun(right), dir);
     return result || tie(left, right);
   });
   const reference = sorted.find((run) => run.id === referenceRunId);
