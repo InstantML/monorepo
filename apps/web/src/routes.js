@@ -1,4 +1,6 @@
 export const DEFAULT_DASHBOARD_TAB = "runs";
+export const ONBOARDING_PATH = "/onboarding";
+export const STORAGE_READY_STATES = new Set(["storage_ready", "storage_locked"]);
 
 export const DASHBOARD_TAB_IDS = [
   "runs",
@@ -66,6 +68,34 @@ export function sanitizeNextPath(value, fallback = "/dashboard/runs") {
   if (devicePath) return devicePath;
   if (SAFE_NEXT_PREFIXES.some((prefix) => raw === prefix || raw.startsWith(`${prefix}/`))) return raw;
   return fallback;
+}
+
+export function isStorageReadyState(value) {
+  return STORAGE_READY_STATES.has(String(value ?? ""));
+}
+
+export function organizationRequiresStorageOnboarding(organization) {
+  if (!organization?.id) return false;
+  if (isStorageReadyState(organization.storage_state)) return false;
+  if (Object.prototype.hasOwnProperty.call(organization, "storage_state")) return true;
+  return organization.storage_choice === "customer-clickhouse";
+}
+
+export function sessionRequiresStorageOnboarding(session) {
+  if (!session?.authenticated) return false;
+  return organizationRequiresStorageOnboarding(session.organization);
+}
+
+export function onboardingRedirectPath(requestedPath = "/dashboard/runs") {
+  const nextPath = sanitizeNextPath(requestedPath);
+  if (nextPath === ONBOARDING_PATH || nextPath.startsWith(`${ONBOARDING_PATH}/`)) return ONBOARDING_PATH;
+  return `${ONBOARDING_PATH}?next=${encodeURIComponent(nextPath)}`;
+}
+
+export function postAuthRedirectPath(session, requestedPath = "/dashboard/runs") {
+  return sessionRequiresStorageOnboarding(session)
+    ? onboardingRedirectPath(requestedPath)
+    : sanitizeNextPath(requestedPath);
 }
 
 function sanitizeDeviceAuthPath(raw) {

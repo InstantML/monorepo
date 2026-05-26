@@ -53,14 +53,20 @@ test("workspace model accepts the revised panel schema and non-line types", () =
 
 test("dashboard shell protects control-plane state from stale UI interactions", () => {
   const authFlow = readFileSync(`${root}app/auth-flow.tsx`, "utf8");
+  const invite = readFileSync(`${root}app/invite/page.tsx`, "utf8");
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
   // globals.css is now a thin @import chain; rules live in styles/*.css.
   // The nav-label rule was moved to styles/overhaul.css during the 2026-05-18
   // globals-css-audit refactor. See docs/design/2026-05-18-globals-css-audit.md.
   const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
 
-  assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route");
-  assert.match(authFlow, /window\.location\.(?:assign|replace)\(nextPath\)/, "dev sign-in must not bounce returning users through onboarding");
+  assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route when storage is ready");
+  assert.match(authFlow, /postAuthRedirectPath\(sessionPayload, nextPath\)/, "dev sign-in should send unready storage sessions back to onboarding before dashboard");
+  assert.match(shell, /postAuthRedirectPath\(session, window\.location\.pathname \|\| "\/dashboard\/runs"\)/, "direct dashboard loads should redirect unready storage sessions to onboarding");
+  assert.match(invite, /postAuthRedirectPath\(payload, "\/dashboard\/runs"\)/, "accepted invitations should not bypass storage onboarding");
+  assert.match(authFlow, /StorageSetupPending/, "onboarding should block SDK-key creation while hosted storage is still provisioning");
+  assert.match(authFlow, /StorageSetupBlocked/, "unready BYOC member sessions should not render the owner/admin ClickHouse form");
+  assert.match(authFlow, /role === "owner" \|\| role === "admin"/, "only owners/admins should manage workspace storage from onboarding");
 
   assert.match(shell, /userTouchedDashboardFiltersRef/, "dashboard should track local filter edits while preferences load");
   assert.match(

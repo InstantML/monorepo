@@ -14,7 +14,8 @@ future cleanup work do not accidentally reintroduce ClickHouse Cloud for the
 default hosted path.
 
 This is not a replacement for customer-owned ClickHouse documentation. Premium
-BYOC customers can still point an org at their own HTTPS ClickHouse endpoint.
+BYOC customers should follow the separate customer-owned GCP ClickHouse guide
+and point an org at their own public HTTPS ClickHouse endpoint.
 
 ## Current Hosted Shape
 

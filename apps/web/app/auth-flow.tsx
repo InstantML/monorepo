@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../src/api.js";
 import { clerkIssuerConfigError } from "../src/clerk-config.js";
-import { safeStripeRedirectUrl, sanitizeNextPath } from "../src/routes.js";
+import { organizationRequiresStorageOnboarding, postAuthRedirectPath, safeStripeRedirectUrl, sanitizeNextPath } from "../src/routes.js";
 import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
 
@@ -94,7 +94,6 @@ const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
 const STORAGE_HOSTED: StorageChoice = "instantml-hosted";
 const STORAGE_BYOC: StorageChoice = "customer-clickhouse";
-const STORAGE_READY_STATES = new Set(["storage_ready", "storage_locked"]);
 const CLERK_SESSION_RECOVERY_MESSAGE =
   "InstantML could not refresh your workspace session from this browser sign-in. Try a fresh token, or sign out and sign back in.";
 const PLAN_OPTIONS: Array<{
@@ -176,7 +175,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [byocForm, setByocForm] = useState<ByocForm>({
     endpoint: "",
     database: "instantml",
-    username: "default",
+    username: "instantml_writer",
     password: "",
   });
   const nextPath = typeof window === "undefined" ? "/dashboard/runs" : sanitizeNextPath(new URLSearchParams(window.location.search).get("next"));
@@ -268,12 +267,14 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
           // instead of stranding them on the sign-in/up screen. Guarded so it
           // can never race / pre-empt an in-flight Clerk exchange (which owns
           // its own redirect, e.g. sign-up -> /onboarding).
-          window.location.replace(nextPath);
+          window.location.replace(postAuthRedirectPath(sessionPayload, nextPath));
           return;
         }
         if (authed) {
           setSession(sessionPayload as SessionPayload);
-          note("Workspace ready. Create your SDK key to finish onboarding.");
+          note(workspaceStorageReady(sessionPayload as SessionPayload)
+            ? "Workspace ready. Create your SDK key to finish onboarding."
+            : "Finish storage setup to unlock SDK key creation.");
         } else if (clerkConfig.message) {
           note("Sign-in configuration needs attention.");
         } else {
@@ -310,7 +311,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
           setByocForm((current) => ({
             endpoint: current.endpoint || connection.endpoint || "",
             database: current.database || connection.database || "instantml",
-            username: current.username || connection.username || "default",
+            username: current.username || connection.username || "instantml_writer",
             password: current.password,
           }));
         }
@@ -405,8 +406,9 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         return;
       }
       if (payload.mode === "signin") {
-        note("Signed in. Opening your dashboard...");
-        window.location.replace(nextPath);
+        const destination = postAuthRedirectPath(sessionPayload, nextPath);
+        note(destination.startsWith("/onboarding") ? "Signed in. Opening storage setup..." : "Signed in. Opening your dashboard...");
+        window.location.replace(destination);
       } else {
         note("Workspace created. Opening onboarding...");
         window.location.replace("/onboarding");
@@ -474,8 +476,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         note("Workspace created. Save your API key before opening the dashboard.");
         window.history.replaceState(null, "", "/onboarding");
       } else {
-        note(signupMode ? "Workspace created. Opening onboarding..." : "Signed in. Opening your dashboard...");
-        window.location.replace(signupMode ? "/onboarding" : nextPath);
+        const destination = signupMode ? "/onboarding" : postAuthRedirectPath(payload, nextPath);
+        note(destination.startsWith("/onboarding")
+          ? "Workspace ready for onboarding. Opening setup..."
+          : "Signed in. Opening your dashboard...");
+        window.location.replace(destination);
       }
     } catch (error) {
       clerkExchangeAttemptedRef.current = false;
@@ -662,11 +667,14 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const eyebrow = config.loaded ? providerLabel(config) : "Checking provider";
   const seatCount = seatEmails.split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length;
   const seatLimit = session?.organization?.seat_limit ?? (accountType === "business" ? 3 : 1);
-  const byocSetupRequired = isOnboarding && !demoSession && workspaceUsesByoc(session) && !workspaceStorageReady(session);
+  const storageSetupRequired = isOnboarding && !demoSession && !workspaceStorageReady(session);
+  const byocSetupRequired = storageSetupRequired && workspaceUsesByoc(session);
 
   const headline = isOnboarding
-    ? (byocSetupRequired
-      ? <>Connect your <span className="iml-em">ClickHouse</span></>
+    ? (storageSetupRequired
+      ? (byocSetupRequired
+        ? <>Connect your <span className="iml-em">ClickHouse</span></>
+        : <>Finish <span className="iml-em">storage setup</span></>)
       : apiKey ? <>Save it, then <span className="iml-em">go.</span></> : <>Create your <span className="iml-em">SDK key</span></>)
     : signupMode
       ? <>Set up your <span className="iml-em">{accountType === "business" ? "team org" : "org"}</span></>
@@ -707,6 +715,8 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                     ? "The shared demo signs you into sample data — read-only, no SDK key. Look around, then sign up for a real workspace."
                     : byocSetupRequired
                       ? "Allowlist the InstantML data-plane egress IPs, connect a pre-created ClickHouse database, then create your SDK key."
+                    : storageSetupRequired
+                      ? "InstantML is still provisioning your workspace storage. Keep this step open until it is ready, then create your SDK key."
                     : apiKey
                       ? "This is the only time the plaintext key is shown. Put it in your environment and you’re logging."
                       : <>A scoped, copy-once key for <code>sdk:ingest</code>, <code>artifacts:write</code>, and <code>export:read</code>. We never store the plaintext.</>)
@@ -947,6 +957,7 @@ function SigninAside() {
 function OnboardingAside({ session, keyDone, demo }: { session: SessionPayload | null; keyDone: boolean; demo: boolean }) {
   const byoc = workspaceUsesByoc(session);
   const storageReady = workspaceStorageReady(session);
+  const hostedStoragePending = !byoc && !storageReady;
   if (demo) {
     return (
       <aside className="iml-aside">
@@ -977,7 +988,10 @@ function OnboardingAside({ session, keyDone, demo }: { session: SessionPayload |
         {byoc ? (
           <li className={`iml-step ${storageReady ? "is-done" : "is-active"}`}><span className="idx" aria-hidden="true">{storageReady ? "✓" : "03"}</span><div><div className="st-t">{storageReady ? "ClickHouse connected" : "Connect ClickHouse"}</div><div className="st-s">{storageReady ? "Customer database ready" : "Validate from data plane"}</div></div></li>
         ) : null}
-        <li className={`iml-step ${keyDone ? "is-done" : storageReady ? "is-active" : ""}`}><span className="idx" aria-hidden="true">{keyDone ? "✓" : byoc ? "04" : "03"}</span><div><div className="st-t">{keyDone ? "SDK key created" : "Create an SDK key"}</div><div className="st-s">{keyDone ? "Copy it now" : "Then open the dashboard"}</div></div></li>
+        {hostedStoragePending ? (
+          <li className="iml-step is-active"><span className="idx" aria-hidden="true">03</span><div><div className="st-t">Provision storage</div><div className="st-s">Waiting for tenant route</div></div></li>
+        ) : null}
+        <li className={`iml-step ${keyDone ? "is-done" : storageReady ? "is-active" : ""}`}><span className="idx" aria-hidden="true">{keyDone ? "✓" : byoc || hostedStoragePending ? "04" : "03"}</span><div><div className="st-t">{keyDone ? "SDK key created" : "Create an SDK key"}</div><div className="st-s">{keyDone ? "Copy it now" : "Then open the dashboard"}</div></div></li>
       </ol>
     </aside>
   );
@@ -1002,7 +1016,9 @@ function OnboardingBody({
   onCreateKey: () => void;
   onCopy: () => void;
 }) {
-  const byocRequired = workspaceUsesByoc(session) && !workspaceStorageReady(session);
+  const storageSetupRequired = !workspaceStorageReady(session);
+  const byocRequired = workspaceUsesByoc(session) && storageSetupRequired;
+  const canManageStorage = canManageWorkspaceStorage(session);
   return (
     <>
       <div className="iml-org">
@@ -1022,6 +1038,8 @@ function OnboardingBody({
           </a>
           <a className="iml-btn iml-btn--ghost iml-btn--block" href="/signup">Create a real workspace instead</a>
         </div>
+      ) : byocRequired && !canManageStorage ? (
+        <StorageSetupBlocked />
       ) : byocRequired ? (
         <ByocSetup
           busy={busy}
@@ -1032,6 +1050,8 @@ function OnboardingBody({
           onValidate={onValidateByoc}
           onSave={onSaveByoc}
         />
+      ) : storageSetupRequired ? (
+        <StorageSetupPending busy={busy} />
       ) : !apiKey ? (
         <div className="iml-actions">
           <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy || !session?.organization?.id} onClick={onCreateKey} type="button">
@@ -1079,6 +1099,32 @@ function OnboardingBody({
   );
 }
 
+function StorageSetupPending({ busy }: { busy: boolean }) {
+  return (
+    <div className="iml-actions">
+      <div className="iml-status is-busy" role="status">
+        <span className="iml-spin" aria-hidden="true" /> Workspace storage is not ready yet. SDK keys and dashboard access stay locked until provisioning finishes.
+      </div>
+      <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={() => window.location.reload()} type="button">
+        <RefreshCw size={15} /> Check again
+      </button>
+    </div>
+  );
+}
+
+function StorageSetupBlocked() {
+  return (
+    <div className="iml-actions">
+      <div className="iml-status is-busy" role="status">
+        <AlertCircle size={14} aria-hidden="true" /> Storage setup is waiting on a workspace owner or admin. Ask them to connect ClickHouse before opening the dashboard.
+      </div>
+      <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" onClick={() => window.location.reload()} type="button">
+        <RefreshCw size={15} /> Check again
+      </button>
+    </div>
+  );
+}
+
 function ByocSetup({
   busy, form, status, validation, onField, onValidate, onSave,
 }: {
@@ -1096,11 +1142,11 @@ function ByocSetup({
   const username = clickhouseIdentifierPreview(form.username, "instantml_writer");
   const setupSql = [
     `CREATE DATABASE IF NOT EXISTS ${database};`,
-    `CREATE USER IF NOT EXISTS ${username} IDENTIFIED BY '<copy-once-password>';`,
-    `GRANT SHOW, SELECT, INSERT, CREATE TABLE, ALTER TABLE, DROP TABLE ON ${database}.* TO ${username};`,
+    `CREATE USER IF NOT EXISTS ${username} IDENTIFIED WITH sha256_password BY '<copy-once-password>';`,
+    `GRANT SHOW, SELECT, INSERT, CREATE TABLE, CREATE VIEW, ALTER TABLE ON ${database}.* TO ${username};`,
     "",
     "-- Optional after InstantML validates and saves the connection:",
-    `-- REVOKE CREATE TABLE, ALTER TABLE, DROP TABLE ON ${database}.* FROM ${username};`,
+    `-- REVOKE CREATE TABLE, CREATE VIEW, ALTER TABLE ON ${database}.* FROM ${username};`,
   ].join("\n");
   const egressConfigured = egress.length > 0;
   const canSubmit = Boolean(form.endpoint.trim() && form.database.trim() && form.username.trim() && form.password && egressConfigured);
@@ -1118,14 +1164,15 @@ function ByocSetup({
     <div className="iml-actions">
       <div className="iml-byoc-callout">
         <div className="iml-byoc-callout-h">
-          <ServerCog size={15} aria-hidden="true" /> Recommended ClickHouse setup
+          <ServerCog size={15} aria-hidden="true" /> Recommended GCP ClickHouse setup
         </div>
         <ol className="iml-byoc-steps">
-          <li>ClickHouse Cloud: create a production service with HTTPS enabled.</li>
-          <li>Security: add the InstantML data-plane egress CIDRs to the service IP access list.</li>
+          <li>GCP: run a dedicated self-hosted ClickHouse deployment near the InstantML data-plane region.</li>
+          <li>Networking: expose the ClickHouse HTTP interface over HTTPS and allow only the InstantML egress CIDRs shown below.</li>
           <li>SQL console: create the database and writer user with the grants below.</li>
-          <li>Paste the HTTPS endpoint, database, username, and password here, then validate.</li>
+          <li>Paste the HTTPS endpoint origin, database, username, and password here, then validate.</li>
         </ol>
+        <p className="iml-hint">Run data goes to your GCP ClickHouse. InstantML storage guardrails count only R2 artifact bytes stored by us.</p>
         <div className="iml-egress">
           <span className="iml-egress-label">Data-plane egress</span>
           {egress.length > 0 ? egress.map((cidr) => <code key={cidr}>{cidr}</code>) : <span>Not configured. BYOC signup is disabled until egress is set.</span>}
@@ -1154,9 +1201,9 @@ function ByocSetup({
           inputMode="url"
           value={form.endpoint}
           onChange={(event) => onField("endpoint", event.target.value)}
-          placeholder="https://abc123.us-central1.gcp.clickhouse.cloud:8443"
+          placeholder="https://clickhouse.acme.example.com:8443"
         />
-        <span className="iml-hint">Use the HTTPS/native secure endpoint origin only, without paths or query strings.</span>
+        <span className="iml-hint">Use the public HTTPS ClickHouse HTTP endpoint origin only, without paths or query strings.</span>
       </div>
 
       <div className="iml-byoc-grid">
@@ -1281,11 +1328,11 @@ function StorageChoicePicker({
         <label className="iml-seg-opt">
           <input checked={storageChoice === STORAGE_BYOC} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_BYOC)} type="radio" />
           <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span><Database size={14} aria-hidden="true" /> Connect my ClickHouse</span>
-          <span className="iml-seg-d">Premium BYOC. R2 artifacts only count toward InstantML storage.</span>
+          <span className="iml-seg-d">Premium BYOC. Run data goes to your GCP ClickHouse; InstantML counts only R2 artifact bytes.</span>
         </label>
       </div>
       {storageChoice === STORAGE_BYOC ? (
-        <span className="iml-hint">BYOC requires Premium and a pre-created ClickHouse database allowlisted for InstantML egress.</span>
+        <span className="iml-hint">BYOC requires Premium and a pre-created GCP ClickHouse database reachable from InstantML egress.</span>
       ) : null}
     </fieldset>
   );
@@ -1389,8 +1436,13 @@ function workspaceUsesByoc(session: SessionPayload | null) {
 }
 
 function workspaceStorageReady(session: SessionPayload | null) {
-  if (!workspaceUsesByoc(session)) return true;
-  return STORAGE_READY_STATES.has(session?.organization?.storage_state ?? "");
+  if (!session?.organization?.id) return true;
+  return !organizationRequiresStorageOnboarding(session.organization);
+}
+
+function canManageWorkspaceStorage(session: SessionPayload | null) {
+  const role = session?.membership?.role;
+  return role === "owner" || role === "admin";
 }
 
 function clickhouseIdentifierPreview(value: string, fallback: string) {

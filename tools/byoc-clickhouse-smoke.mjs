@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -18,6 +18,8 @@ const clickhouseBase = `http://default:@127.0.0.1:${clickhouseHttpPort}`;
 const userDataUrl = `${clickhouseBase}/instantml_user_data_byoc`;
 const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
 const byocDatabase = `instantml_byoc_${Date.now().toString(36)}`;
+const byocUsername = "instantml_writer_smoke";
+const byocPassword = `smoke_${Date.now().toString(36)}`;
 let clickhouse = null;
 let server = null;
 let sessionCookie = "";
@@ -32,6 +34,14 @@ try {
     interserverHttpPort: clickhouseInterserverPort,
   });
   await clickhousePost(`${clickhouseBase}/default`, `CREATE DATABASE IF NOT EXISTS ${byocDatabase}`);
+  await clickhousePost(
+    `${clickhouseBase}/default`,
+    `CREATE USER IF NOT EXISTS ${byocUsername} IDENTIFIED WITH sha256_password BY '${byocPassword}'`,
+  );
+  await clickhousePost(
+    `${clickhouseBase}/default`,
+    `GRANT SHOW, SELECT, INSERT, CREATE TABLE, CREATE VIEW, ALTER TABLE ON ${byocDatabase}.* TO ${byocUsername}`,
+  );
 
   const serverLog = path.join(tempDir, "server.log");
   const output = fs.openSync(serverLog, "w");
@@ -91,8 +101,8 @@ try {
     org_id: orgId,
     endpoint: `http://127.0.0.1:${clickhouseHttpPort}`,
     database: byocDatabase,
-    username: "default",
-    password: "",
+    username: byocUsername,
+    password: byocPassword,
     storage_choice: "customer-clickhouse",
     allow_create_database: false,
   };
@@ -105,10 +115,15 @@ try {
   assert.equal(saved.body.connection.storage_state, "storage_ready");
   assert.equal(saved.body.connection.database, byocDatabase);
 
+  await clickhousePost(
+    `${clickhouseBase}/default`,
+    `REVOKE CREATE TABLE, CREATE VIEW, ALTER TABLE ON ${byocDatabase}.* FROM ${byocUsername}`,
+  );
+
   const rotated = await apiJson("POST", "/api/storage/clickhouse-connections/rotate-credentials", {
     org_id: orgId,
-    username: "default",
-    password: "",
+    username: byocUsername,
+    password: byocPassword,
   });
   assert.equal(rotated.body.connection.status, "ready");
   assert.equal(rotated.body.connection.database, byocDatabase);
@@ -119,23 +134,19 @@ try {
   const apiKey = keyPayload.body.api_key;
   assert.match(apiKey, /^instantml_/);
 
-  const run = (await apiJson("POST", "/runs", {
-    project: "byoc-smoke",
-    name: "byoc-route-ready",
-    config: { seed: 7 },
-    tags: ["byoc"],
-  }, { apiKey })).body.run;
-  await apiJson("POST", `/runs/${run.id}/metrics`, {
-    step: 1,
-    metrics: { "eval/accuracy": 0.98 },
-  }, { apiKey });
-  await apiJson("POST", `/api/runs/${run.id}/artifacts/upload`, {
-    type: "file",
-    name: "bytes.bin",
-    content_base64: "AQIDBA==",
-  }, { apiKey });
+  const sdkArtifactPath = path.join(tempDir, "bytes.bin");
+  fs.writeFileSync(sdkArtifactPath, Buffer.from([1, 2, 3, 4]));
+  runPythonSdk(apiKey, sdkArtifactPath);
 
-  assert.equal(await clickhouseCount(byocDatabase, "operational_records", "kind = 'run'"), 1);
+  assert.equal(
+    await clickhouseCount(
+      byocDatabase,
+      "operational_records",
+      "kind = 'run'",
+      "uniqExact(entity_id)",
+    ),
+    1,
+  );
   assert.equal(await clickhouseCount(byocDatabase, "metric_points", "key = 'eval/accuracy'"), 1);
 
   const usage = await apiJson("GET", "/api/usage");
@@ -160,6 +171,42 @@ try {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
+function runPythonSdk(apiKey, artifactPath) {
+  const script = `
+import os
+import sys
+sys.path.insert(0, "packages/python-sdk")
+import instantml as iml
+
+run = iml.init(
+    project="byoc-smoke",
+    name="byoc-python-sdk",
+    config={"seed": 7},
+    tags=["byoc", "python-sdk"],
+    base_url=os.environ["INSTANTML_BASE_URL"],
+    api_key=os.environ["INSTANTML_API_KEY"],
+    source_tracking=False,
+    upload_mode="sync",
+)
+run.log_metrics({"eval/accuracy": 0.98}, step=1)
+run.upload_file(os.environ["INSTANTML_ARTIFACT_PATH"], name="bytes.bin", step=1)
+run.finish()
+`;
+  const result = spawnSync("python3", ["-c", script], {
+    cwd: repo,
+    env: {
+      ...process.env,
+      INSTANTML_BASE_URL: baseUrl,
+      INSTANTML_API_KEY: apiKey,
+      INSTANTML_ARTIFACT_PATH: artifactPath,
+    },
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    throw new Error(`python BYOC SDK smoke failed with status ${result.status}`);
+  }
+}
+
 async function apiJson(method, pathname, body, options = {}) {
   const headers = { "content-type": "application/json" };
   if (sessionCookie) headers.cookie = sessionCookie;
@@ -180,10 +227,10 @@ async function apiJson(method, pathname, body, options = {}) {
   return { body: text ? JSON.parse(text) : {}, status: response.status };
 }
 
-async function clickhouseCount(database, table, where) {
+async function clickhouseCount(database, table, where, expression = "count()") {
   const text = await clickhousePost(
     `${clickhouseBase}/${database}`,
-    `SELECT count() AS count FROM ${table} WHERE ${where} FORMAT JSONEachRow`,
+    `SELECT ${expression} AS count FROM ${table} WHERE ${where} FORMAT JSONEachRow`,
   );
   return Number(JSON.parse(text.trim()).count);
 }

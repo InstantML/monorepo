@@ -267,6 +267,7 @@ run = ro.init(
     base_url=os.environ["INSTANTML_BASE_URL"],
     api_key=os.environ["INSTANTML_API_KEY"],
     source_tracking=False,
+    upload_mode="sync",
 )
 for step, value in enumerate([100, 101, 102]):
     run.log_metrics({"eval/return_mean": value, "train/loss": 1 / (step + 1)}, step=step)

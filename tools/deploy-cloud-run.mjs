@@ -884,7 +884,7 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_CLICKHOUSE_PROVISIONER: clickhouseProvisioner,
     INSTANTML_BYOC_EGRESS_CIDRS: publicStaticEgressIp
       ? `${publicStaticEgressIp}/32`
-      : value("INSTANTML_BYOC_EGRESS_CIDRS") || value("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST"),
+      : value("INSTANTML_BYOC_EGRESS_CIDRS"),
     INSTANTML_BYOC_EGRESS_SET_VERSION: value("INSTANTML_BYOC_EGRESS_SET_VERSION") || `${deploymentEnv}-${region}-${imageTag}`,
     INSTANTML_BYOC_SECRET_BACKEND: byocSecretBackendForDeployment(),
     INSTANTML_BYOC_SECRET_PROJECT_ID: value("INSTANTML_BYOC_SECRET_PROJECT_ID") || project,

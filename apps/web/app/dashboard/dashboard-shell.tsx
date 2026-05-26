@@ -7,7 +7,7 @@ import type { MouseEvent } from "react";
 
 import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest } from "../../src/api.js";
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
-import { canonicalDashboardPath, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
+import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
@@ -104,7 +104,7 @@ type SavedViewOption = {
 };
 type DashboardSessionPayload = {
   authenticated?: boolean;
-  organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string };
+  organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string; storage_state?: string };
   user?: { primary_email: string; display_name?: string | null; avatar_url?: string | null };
   membership?: { role: string; status: string };
   memberships?: Array<{ org_id: string; role: string; status: string }>;
@@ -991,6 +991,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       try {
         const session = await api.get("/api/auth/session", { signal: controller.signal });
         if (session.authenticated) {
+          const destination = postAuthRedirectPath(session, window.location.pathname || "/dashboard/runs");
+          if (destination.startsWith("/onboarding")) {
+            setDashboardAuthMessage("Finish storage setup before opening the dashboard.");
+            window.location.replace(destination);
+            return;
+          }
           setSessionPayload(session as DashboardSessionPayload);
           setDashboardAuthorized(true);
           return;

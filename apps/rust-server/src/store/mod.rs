@@ -143,6 +143,7 @@ pub struct Store {
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     byoc_clickhouse: ByocClickHouseConfig,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
+    customer_tenant_endpoints: Arc<Mutex<HashMap<Uuid, String>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
     /// MetricStore wired to the shared ClickHouse cell.
     /// All personal/free orgs route here instead of getting a dedicated service.
@@ -185,6 +186,7 @@ impl Store {
             hosted_clickhouse,
             byoc_clickhouse,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
