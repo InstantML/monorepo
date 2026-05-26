@@ -290,9 +290,9 @@ export function MetricChart({
     <div className="chart-area">
       <div className="chart-legend">
         {legendSeries.map((item, index) => (
-          <span className="legend-chip" key={item.id}><i className={`legend-dot dot-${index % 5}`} style={{ backgroundColor: chartColor(index) }} /> {item.identifier ?? item.name}</span>
+          <span className="legend-chip" key={item.id} title={item.identifier ?? item.name}><i className={`legend-dot dot-${index % 5}`} style={{ backgroundColor: chartColor(index) }} /> {item.identifier ?? item.name}</span>
         ))}
-        {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow">+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
+        {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow" title={normalizedSeries.slice(legendSeries.length).map((item) => item.identifier ?? item.name).join(", ")}>+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
       </div>
       <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
