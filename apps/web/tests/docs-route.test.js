@@ -96,13 +96,14 @@ test("docs markdown mirrors are routed from /docs/*.md", async () => {
 
 test("main app navigation links to the same-origin docs route", async () => {
   const landing = await readFile(path.join(webRoot, "components", "landing", "LandingPage.tsx"), "utf8");
-  const topbar = await readFile(path.join(webRoot, "app", "dashboard", "chrome", "topbar.tsx"), "utf8");
   const navRail = await readFile(path.join(webRoot, "app", "dashboard", "chrome", "nav-rail.tsx"), "utf8");
 
+  // Dashboard topbar no longer carries a docs link — the dedicated icon
+  // button was removed to declutter the brand bar. Mobile users still
+  // reach docs via the nav-rail; the landing page still links to it.
   assert.match(landing, /href="\/docs"/);
-  assert.match(topbar, /href="\/docs"/);
   assert.match(navRail, /href="\/docs"/);
-  assert.doesNotMatch(`${landing}\n${topbar}\n${navRail}`, /docs\.instantml\.ai/);
+  assert.doesNotMatch(`${landing}\n${navRail}`, /docs\.instantml\.ai/);
 });
 
 test("docs slug paths are normalized and reject traversal", () => {
