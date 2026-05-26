@@ -222,10 +222,15 @@ jobs:
             staging) frontend_base_url="https://staging.instantml.ai" ;;
             *)       frontend_base_url="https://instantml.ai" ;;
           esac
+          # Verified Resend sender address (must match a domain verified in the
+          # Resend dashboard). Both prod and staging send from the same noreply
+          # address until/unless staging gets its own verified subdomain.
+          email_from="noreply@instantml.ai"
           echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
           echo "topology=${topology}" >> "${GITHUB_OUTPUT}"
           echo "public_router=${public_router}" >> "${GITHUB_OUTPUT}"
           echo "frontend_base_url=${frontend_base_url}" >> "${GITHUB_OUTPUT}"
+          echo "email_from=${email_from}" >> "${GITHUB_OUTPUT}"
 
       - name: Reuse Pre-Built Image Tag
         id: image
@@ -252,6 +257,9 @@ jobs:
           # Hosted frontend origin, required when Resend is loaded from SM so
           # the deploy helper can stamp invitation accept links correctly.
           INSTANTML_FRONTEND_BASE_URL: ${{ steps.inputs.outputs.frontend_base_url }}
+          # Verified Resend sender (required when staging-resend-api-key is
+          # loaded from SM).
+          INSTANTML_EMAIL_FROM: ${{ steps.inputs.outputs.email_from }}
           # Skip the local-env rewrite step entirely; CI has no apps/web/.env.local.
           INSTANTML_WRITE_LOCAL_FRONTEND_ENV: "0"
           # Allow downstream tools to recognize this code path.
