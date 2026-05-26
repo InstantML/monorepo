@@ -29,6 +29,12 @@ type SessionPayload = {
   membership?: { role: string; status: string };
   onboarding_api_key?: { plaintext: string; prefix: string; id: string } | null;
   billing_checkout?: { intent_id?: string; status?: string; session_id?: string | null; url?: string | null } | null;
+  // Set by the backend when a signin-mode request just auto-provisioned a
+  // brand-new workspace (the first-time-Clerk-signin path). The frontend
+  // routes auto-provisioned sessions to the onboarding view even when the
+  // original request was `mode="signin"`, so the user lands directly in the
+  // SDK-key step instead of the signin card.
+  auto_provisioned?: boolean;
 };
 type DevGoogleAuthPayload = {
   email: string;
@@ -184,9 +190,17 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   // Route-based onboarding, plus the in-place post-signup reveal: after a
   // managed Clerk sign-up exchange we replaceState to /onboarding WITHOUT a
   // reload (to preserve the copy-once key in memory), so signup+authenticated
-  // must also render the onboarding view. Sign-in stays route-only so a
-  // returning signed-in visitor is still redirected to the app, not onboarding.
-  const isOnboarding = mode === "onboarding" || (signupMode && Boolean(session?.authenticated));
+  // must also render the onboarding view. The third case is the new
+  // first-time-signin auto-provision path: when the user lands on /signin but
+  // the backend just created their workspace (signaled by
+  // session.auto_provisioned), we render the onboarding view too so they get
+  // the SDK-key step immediately instead of being stranded on the signin card.
+  // A returning signed-in visitor (auto_provisioned=undefined/false) is still
+  // redirected to the app, not onboarding.
+  const isOnboarding =
+    mode === "onboarding"
+    || (signupMode && Boolean(session?.authenticated))
+    || Boolean(session?.auto_provisioned);
 
   // For managed Clerk signups the server auto-derives the workspace slug from
   // the Clerk profile; mirror it for a live preview + optional override.
@@ -404,7 +418,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         window.location.assign("/dashboard/runs");
         return;
       }
-      if (payload.mode === "signin") {
+      // Match the Clerk handler: if the backend auto-provisioned a workspace
+      // (the new first-time-signin path), route to /onboarding so the user
+      // lands in the SDK-key step rather than the dashboard, even when the
+      // request was `mode="signin"`.
+      const autoProvisioned = Boolean((sessionPayload as SessionPayload).auto_provisioned);
+      if (payload.mode === "signin" && !autoProvisioned) {
         note("Signed in. Opening your dashboard...");
         window.location.assign(nextPath);
       } else {
@@ -468,14 +487,19 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       // If the server auto-issued an onboarding key, reveal it immediately
       // in-place (no reload — keeps the copy-once plaintext in memory).
       const onboardingKey = payload.onboarding_api_key?.plaintext;
+      // `auto_provisioned` is set when the backend just created the workspace
+      // for a first-time user — this matters for the new signin auto-provision
+      // path: even when `mode="signin"` was sent, the user should land in the
+      // onboarding view (not the dashboard) so they pick up the SDK-key step.
+      const onboardingView = signupMode || Boolean(payload.auto_provisioned);
       if (onboardingKey) {
         setApiKey(onboardingKey);
         stashOnboardingKey(onboardingKey);
         note("Workspace created. Save your API key before opening the dashboard.");
         window.history.replaceState(null, "", "/onboarding");
       } else {
-        note(signupMode ? "Workspace created. Opening onboarding..." : "Signed in. Opening your dashboard...");
-        window.location.assign(signupMode ? "/onboarding" : nextPath);
+        note(onboardingView ? "Workspace created. Opening onboarding..." : "Signed in. Opening your dashboard...");
+        window.location.assign(onboardingView ? "/onboarding" : nextPath);
       }
     } catch (error) {
       clerkExchangeAttemptedRef.current = false;

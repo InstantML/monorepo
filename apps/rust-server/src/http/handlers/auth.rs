@@ -61,7 +61,20 @@ pub async fn auth_dev_google(
     }
     let created =
         store::create_dev_google_session(&state.store, input, Some(&state.config.billing)).await?;
-    json_with_session_cookie(&state, &headers, created.payload, &created.token)
+    let mut response_body = serde_json::to_value(&created.payload)
+        .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
+    if created.auto_provisioned {
+        if let Some(obj) = response_body.as_object_mut() {
+            // Mirror the Clerk handler so the web frontend can detect when the
+            // new first-time-signin auto-provision path fired and route to the
+            // onboarding view.
+            obj.insert(
+                "auto_provisioned".to_string(),
+                serde_json::Value::Bool(true),
+            );
+        }
+    }
+    json_with_session_cookie(&state, &headers, response_body, &created.token)
 }
 
 #[utoipa::path(
@@ -116,17 +129,36 @@ pub async fn auth_clerk(
         .await?;
     }
     validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
-    let created =
-        store::create_clerk_session(&state.store, principal, input, Some(&state.config.billing))
-            .await?;
+    let signup_allowlist = store::SignupAllowlist {
+        allowed_emails: state.config.signup_allowed_emails.clone(),
+        allowed_domains: state.config.signup_allowed_domains.clone(),
+    };
+    let created = store::create_clerk_session(
+        &state.store,
+        principal,
+        input,
+        Some(&state.config.billing),
+        signup_allowlist,
+    )
+    .await?;
     let mut response_body = serde_json::to_value(&created.payload)
         .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
-    if let Some(onboarding_key) = &created.onboarding_api_key {
-        if let Some(obj) = response_body.as_object_mut() {
+    if let Some(obj) = response_body.as_object_mut() {
+        if let Some(onboarding_key) = &created.onboarding_api_key {
             obj.insert(
                 "onboarding_api_key".to_string(),
                 serde_json::to_value(onboarding_key)
                     .map_err(|_| AppError::internal("failed to serialize onboarding key"))?,
+            );
+        }
+        // Signal to the web frontend that this call just auto-created the
+        // workspace (the new first-time-signin auto-provision path). Lets the
+        // dashboard route the response to /onboarding instead of stranding the
+        // user on the signin card when the request used `mode="signin"`.
+        if created.auto_provisioned {
+            obj.insert(
+                "auto_provisioned".to_string(),
+                serde_json::Value::Bool(true),
             );
         }
     }
