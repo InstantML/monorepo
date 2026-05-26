@@ -626,6 +626,31 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
         Client(base_url="http://example.test").init(project="demo", upload_mode="background")
 
 
+def test_client_init_omits_project_and_name_sends_none_for_server_defaulting(monkeypatch, tmp_path):
+    # Server fills in "uncategorized" + <adj>-<noun>-<seq> when these are
+    # absent — the SDK just passes None through. See
+    # apps/rust-server/src/store/runs/naming.rs.
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path, body))
+        return {"run": {"id": "run-default-name"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    Client(base_url="http://example.test").init(
+        source_tracking=False,
+        queue_dir=str(tmp_path / "async"),
+        async_init=False,
+    )
+
+    post = next(call for call in calls if call[1] == "/runs")
+    body = post[2]
+    assert body["project"] is None
+    assert body["name"] is None
+
+
 def test_client_init_defaults_to_async_upload_mode(monkeypatch, tmp_path):
     def fake_request(self, method, path, body=None):
         return {"run": {"id": "run-default-async"}}

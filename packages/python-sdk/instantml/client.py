@@ -326,7 +326,7 @@ class Client:
 
     def init(
         self,
-        project: str,
+        project: str | None = None,
         name: str | None = None,
         config: dict[str, Any] | None = None,
         tags: list[str] | None = None,
@@ -1705,7 +1705,7 @@ class Run:
 
 
 def init(
-    project: str,
+    project: str | None = None,
     name: str | None = None,
     config: dict[str, Any] | None = None,
     tags: list[str] | None = None,
@@ -2098,14 +2098,14 @@ class TransformersCallback:
 
 
 class LightningLogger:
-    def __init__(self, project: str, run: Run | None = None, **init_kwargs: Any) -> None:
+    def __init__(self, project: str | None = None, run: Run | None = None, **init_kwargs: Any) -> None:
         self.project = project
         self._run = run
         self._init_kwargs = init_kwargs
 
     @property
     def name(self) -> str:
-        return self.project
+        return self.project or "uncategorized"
 
     @property
     def version(self) -> str:
