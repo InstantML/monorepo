@@ -522,7 +522,9 @@ are not accepted. Shared demo sessions are read-only.
 
 BYOC is currently Premium-only and empty-org-only. Product writes and SDK key
 creation return `409` with `code: "storage_setup_required"` until
-`storage_state` is `storage_ready` or `storage_locked`.
+`storage_state` is `storage_ready` or `storage_locked`. The frontend mirrors
+this gate for sign-in, invite acceptance, and direct `/dashboard/*` loads by
+redirecting unready storage sessions back to `/onboarding`.
 
 | Method | Path | Body | Output |
 | --- | --- | --- | --- |

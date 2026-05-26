@@ -271,6 +271,13 @@ to an InstantML-hosted warehouse before choosing customer-owned storage:
 | `storage_migration_required` | Customer-owned route is reachable but behind the current InstantML schema and the runtime credential no longer has DDL. | Reads may remain available when compatible; writes and SDK-key reveal are blocked until owner/admin revalidates with temporary migration privileges. |
 | `storage_locked` | Product data exists. | Route switching blocked; credential rotation may be allowed in a later slice. |
 
+Frontend sign-in, invite acceptance, and direct dashboard route guards must use
+the same ready-state definition. Browser sessions with `storage_unconfigured`,
+`storage_validating`, or another non-ready storage state redirect to
+`/onboarding` instead of rendering `/dashboard/*`, so a user cannot skip the
+required hosted provisioning or BYOC connection step through `next` parameters,
+stale invite links, or copied dashboard URLs.
+
 The commit from `storage_validating` to `storage_ready` must re-check that the
 org is empty, write the route with compare-and-swap semantics, invalidate any
 tenant metric-store cache for that org, and run the post-create smoke from the

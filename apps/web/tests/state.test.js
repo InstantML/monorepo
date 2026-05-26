@@ -34,7 +34,7 @@ import {
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { buildCheckpointForkBody, buildCheckpointResumeCode, checkpointForkIdempotencyKey, defaultForkRunName } from "../src/checkpoints.js";
-import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, normalizeDeviceUserCode, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
+import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, isStorageReadyState, normalizeDeviceUserCode, pathFromLegacyHash, postAuthRedirectPath, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, sessionRequiresStorageOnboarding, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -736,6 +736,73 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(normalizeDeviceUserCode("ABCD-EFGH"), "ABCD-EFGH");
   assert.equal(normalizeDeviceUserCode("A-BCDEFGH"), "");
   assert.equal(normalizeDeviceUserCode("abc<script>"), "");
+});
+
+test("post-auth redirects keep unready storage in onboarding", () => {
+  const readySession = {
+    authenticated: true,
+    organization: {
+      id: "org-ready",
+      storage_choice: "customer-clickhouse",
+      storage_state: "storage_ready",
+    },
+  };
+  const lockedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-locked",
+      storage_choice: "customer-clickhouse",
+      storage_state: "storage_locked",
+    },
+  };
+  const validatingSession = {
+    authenticated: true,
+    organization: {
+      id: "org-validating",
+      storage_choice: "customer-clickhouse",
+      storage_state: "storage_validating",
+    },
+  };
+  const unconfiguredHostedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-hosted",
+      storage_choice: "instantml-hosted",
+      storage_state: "storage_unconfigured",
+    },
+  };
+  const legacyHostedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-legacy",
+      storage_choice: "instantml-hosted",
+    },
+  };
+  const legacyByocSession = {
+    authenticated: true,
+    organization: {
+      id: "org-byoc",
+      storage_choice: "customer-clickhouse",
+    },
+  };
+
+  assert.equal(isStorageReadyState("storage_ready"), true);
+  assert.equal(isStorageReadyState("storage_locked"), true);
+  assert.equal(isStorageReadyState("storage_validating"), false);
+  assert.equal(sessionRequiresStorageOnboarding(readySession), false);
+  assert.equal(sessionRequiresStorageOnboarding(lockedSession), false);
+  assert.equal(sessionRequiresStorageOnboarding(validatingSession), true);
+  assert.equal(sessionRequiresStorageOnboarding(unconfiguredHostedSession), true);
+  assert.equal(sessionRequiresStorageOnboarding(legacyHostedSession), false);
+  assert.equal(sessionRequiresStorageOnboarding(legacyByocSession), true);
+  assert.equal(postAuthRedirectPath(readySession, "/dashboard/settings"), "/dashboard/settings");
+  assert.equal(postAuthRedirectPath(lockedSession, "/dashboard/runs"), "/dashboard/runs");
+  assert.equal(postAuthRedirectPath(validatingSession, "/dashboard/runs"), "/onboarding");
+  assert.equal(postAuthRedirectPath(unconfiguredHostedSession, "/dashboard/runs"), "/onboarding");
+  assert.equal(postAuthRedirectPath(legacyHostedSession, "/dashboard/runs"), "/dashboard/runs");
+  assert.equal(postAuthRedirectPath(legacyByocSession, "/dashboard/runs"), "/onboarding");
+  assert.equal(postAuthRedirectPath({ authenticated: false }, "/dashboard/runs"), "/dashboard/runs");
+  assert.equal(postAuthRedirectPath(readySession, "https://evil.example/dashboard"), "/dashboard/runs");
 });
 
 test("deriveClerkSlug derives workspace slug from display name", () => {
