@@ -12,7 +12,14 @@ pub async fn create_project(
             ));
         }
     }
-    let name = validate_name(input.name.as_deref(), "project name")?;
+    // Omitted / blank project names land in the shared "uncategorized"
+    // project (matches W&B's default and the implicit-create path in
+    // create_run, so explicit and implicit creates converge on the same
+    // bucket).
+    let name = match input.name.as_deref().map(str::trim) {
+        Some(value) if !value.is_empty() => validate_name(Some(value), "project name")?,
+        _ => DEFAULT_PROJECT_NAME.to_string(),
+    };
     let description = validate_optional_name(input.description.as_deref(), "project description")?;
     {
         let data = store.data.lock().await;
