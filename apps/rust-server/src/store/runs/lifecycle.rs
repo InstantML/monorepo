@@ -113,7 +113,7 @@ pub async fn create_run(
                 .filter(|run| run.org_id == ctx.org_id && run.project_id == project_id)
                 .count() as u64
                 + 1;
-            generate_run_name(ctx.org_id, project_id, seq)
+            generate_run_name(seq)?
         }
     };
     let run = RunRow {
