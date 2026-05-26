@@ -1,7 +1,7 @@
 import { Activity, FileBarChart } from "lucide-react";
 
 import { MetricCard } from "../ui/metric-card";
-import { ReportList } from "./report-list";
+import { SavedViewsList } from "./saved-views-list";
 import { PageHead } from "../ui/page-head";
 import { formatNumber, metricGoalLabel } from "../../../src/state.js";
 import { shortMetricName } from "../../dashboard-models";
@@ -15,7 +15,13 @@ type Props = {
   totalRuns: number;
 };
 
-export function ReportsTabPane({ metricKey, overview, reportRows, selectedRunCount, totalRuns }: Props) {
+/**
+ * Saved-views surface — kept under the legacy "reports" file path while the
+ * new Reports feature ships under its own tab. The Reports nav entry now
+ * points at `reports-tab-pane.tsx`; this component renders the Saved Views
+ * tab content.
+ */
+export function SavedViewsTabPane({ metricKey, overview, reportRows, selectedRunCount, totalRuns }: Props) {
   return (
     <>
       <PageHead eyebrow="Workspace" title="Saved views" emphasis="on tap" lede={`${reportRows.length} local · ${shortMetricName(metricKey)}`} />
@@ -23,7 +29,7 @@ export function ReportsTabPane({ metricKey, overview, reportRows, selectedRunCou
         <section className="panel">
           <div className="panel-head"><h2><FileBarChart size={15} /> Local Saved Views <span>({reportRows.length})</span></h2></div>
           <div className="panel-body">
-            <ReportList rows={reportRows} />
+            <SavedViewsList rows={reportRows} />
           </div>
         </section>
         <section className="panel">

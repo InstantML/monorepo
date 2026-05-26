@@ -14,6 +14,7 @@ mod device_code;
 mod export;
 mod imports;
 mod objects;
+mod reports;
 mod runs;
 mod summaries;
 mod tenants;
@@ -31,6 +32,7 @@ pub use device_code::*;
 pub use export::*;
 pub use imports::*;
 pub use objects::*;
+pub use reports::*;
 pub use runs::*;
 use summaries::*;
 pub use tenants::TenantRouteRecord;
@@ -65,26 +67,26 @@ use crate::{
         ClickHouseConnectionValidateRequest, ClickHouseConnectionValidationResponse,
         ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
         CreateConsoleLogsRequest, CreateInvitationRequest, CreateObjectRequest,
-        CreateOrganizationRequest, CreateProjectRequest, CreateRunForkRequest, CreateRunRequest,
-        CreateUserRequest, CreatedAuthSession, DashboardPreferenceRow, DevGoogleAuthRequest,
-        EmailDeliveryRow, InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest,
-        LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
-        OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
-        RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-        RankReducerPoint, RequestContext, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest,
-        SeatRow, SeatUserRow, ServiceAccountRow, UpdateDashboardPreferencesRequest,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
-        WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE,
-        BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED,
-        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES,
-        MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES,
-        MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS,
-        MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS,
-        MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE,
-        PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED,
-        STORAGE_STATE_LOCKED, STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED,
-        STORAGE_STATE_VALIDATING,
+        CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest, CreateRunForkRequest,
+        CreateRunRequest, CreateUserRequest, CreatedAuthSession, DashboardPreferenceRow,
+        DevGoogleAuthRequest, EmailDeliveryRow, InvitationPreviewPayload, InvitationTokenRequest,
+        LogMetricsRequest, LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey,
+        OrgInvitationRow, OrganizationMembershipSummary, OrganizationRow, ProjectRow,
+        ProvisioningStatusPayload, PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint,
+        RankHeatmapPoint, RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse,
+        RankOutlierPoint, RankReducerPoint, ReportRow, RequestContext, ReserveSeatRequest, RunRow,
+        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+        UpdateDashboardPreferencesRequest, UpdateReportRequest, UpdateRunRequest,
+        UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
+        BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
+        BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT,
+        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
+        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
+        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS,
+        MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE,
+        MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
+        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED,
+        STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -525,6 +527,7 @@ struct StoreData {
     billing_usage_reports: BTreeMap<Uuid, BillingUsageReportRecord>,
     dashboard_preferences: BTreeMap<(Uuid, Option<Uuid>), DashboardPreferenceRow>,
     workspace_views: BTreeMap<Uuid, WorkspaceViewRow>,
+    reports: BTreeMap<Uuid, ReportRow>,
     next_attribute_id_by_org: HashMap<Uuid, i64>,
     next_import_id_by_org: HashMap<Uuid, i64>,
 }
@@ -627,6 +630,7 @@ impl StoreData {
             "billing_usage_report" => self.insert_billing_usage_report(parse_payload(payload)?),
             "dashboard_preference" => self.insert_dashboard_preference(parse_payload(payload)?),
             "workspace_view" => self.insert_workspace_view(parse_payload(payload)?),
+            "report" => self.insert_report(parse_payload(payload)?),
             _ => {}
         }
         Ok(())
@@ -839,6 +843,10 @@ impl StoreData {
 
     fn insert_workspace_view(&mut self, row: WorkspaceViewRow) {
         self.workspace_views.insert(row.id, row);
+    }
+
+    fn insert_report(&mut self, row: ReportRow) {
+        self.reports.insert(row.id, row);
     }
 
     fn remove_run(&mut self, run_id: Uuid) {
@@ -2001,6 +2009,85 @@ mod tests {
         assert!(
             data.projects.is_empty(),
             "cross-org project must not leak into org_a index"
+        );
+    }
+
+    fn replay_report(
+        org_id: Uuid,
+        report_id: Uuid,
+        title: &str,
+        visibility: &str,
+        deleted: bool,
+    ) -> ReportRow {
+        ReportRow {
+            schema_version: 1,
+            id: report_id,
+            org_id,
+            project_id: None,
+            title: title.to_string(),
+            description: None,
+            blocks: json!([{ "kind": "horizontal_rule" }]),
+            created_at: epoch(),
+            updated_at: epoch(),
+            author_user_id: None,
+            share_token: None,
+            visibility: visibility.to_string(),
+            deleted_at: if deleted { Some(epoch()) } else { None },
+        }
+    }
+
+    #[test]
+    fn report_replay_keeps_latest_revision_and_honors_soft_delete() {
+        let org_id = Uuid::from_u128(1);
+        let report_id = Uuid::from_u128(101);
+        let initial = replay_report(org_id, report_id, "draft", "private", false);
+        let renamed = replay_report(org_id, report_id, "final", "org", false);
+        let removed = replay_report(org_id, report_id, "final", "org", true);
+        let mut data = StoreData::default();
+        data.apply_operational_records(
+            vec![
+                replay_row("report", org_id, report_id.to_string(), &initial, 10),
+                replay_row("report", org_id, report_id.to_string(), &renamed, 20),
+                replay_row("report", org_id, report_id.to_string(), &removed, 30),
+            ],
+            ReplayScope::All,
+        )
+        .unwrap();
+        let row = data.reports.get(&report_id).expect("report present");
+        assert_eq!(row.title, "final");
+        assert_eq!(row.visibility, "org");
+        assert!(row.deleted_at.is_some(), "tombstone retained on replay");
+    }
+
+    #[test]
+    fn report_replay_rejects_cross_org_record_in_tenant_scope() {
+        // Confirm the tenant-replay invariant: an operational record whose
+        // outer `org_id` does not match the expected tenant must be rejected
+        // (even before any per-kind payload validation). This is what keeps
+        // a leaky record from one org's table from being applied into
+        // another's in-memory projection during shared-cell replay.
+        let expected_org = Uuid::from_u128(1);
+        let other_org = Uuid::from_u128(2);
+        let report_id = Uuid::from_u128(202);
+        let cross_org = replay_report(other_org, report_id, "leak", "private", false);
+        let mut data = StoreData::default();
+        let result = data.apply_operational_records(
+            vec![replay_row(
+                "report",
+                other_org,
+                report_id.to_string(),
+                &cross_org,
+                10,
+            )],
+            ReplayScope::Tenant(expected_org),
+        );
+        assert!(
+            result.is_err(),
+            "tenant-scoped replay must reject reports from a different org_id"
+        );
+        assert!(
+            data.reports.is_empty(),
+            "rejected report must not leak into tenant index"
         );
     }
 }

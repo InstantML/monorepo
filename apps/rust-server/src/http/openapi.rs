@@ -47,17 +47,18 @@ use crate::domain::{
     ClickHouseConnectionValidationResponse, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
     CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
     CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest,
-    CreateRunForkRequest, CreateRunRequest, CreateUserRequest, DashboardPreferenceRow,
-    DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest,
-    DeviceCodeStartRequest, InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest,
-    LogRankMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
-    OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-    PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
-    RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-    RankReducerPoint, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-    ServiceAccountRow, SwitchOrganizationRequest, UpdateDashboardPreferencesRequest,
-    UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
-    WorkspaceViewSummary,
+    CreateReportRequest, CreateRunForkRequest, CreateRunRequest, CreateUserRequest,
+    DashboardPreferenceRow, DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest,
+    DeviceCodePollRequest, DeviceCodeStartRequest, InvitationPreviewPayload,
+    InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest, MembershipRow,
+    MetricPointRow, MetricSeriesRow, OnboardingApiKey, OrganizationMembershipSummary,
+    OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactRow,
+    PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
+    RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
+    ReportRow, ReportSummary, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow,
+    SeatUserRow, ServiceAccountRow, SwitchOrganizationRequest, UpdateDashboardPreferencesRequest,
+    UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+    WorkspaceViewRow, WorkspaceViewSummary,
 };
 
 // ============================================================================
@@ -262,6 +263,19 @@ pub struct WorkspaceViewSummariesEnvelope {
     pub next_cursor: Option<String>,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct ReportEnvelope {
+    pub report: ReportRow,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ReportSummariesEnvelope {
+    pub reports: Vec<ReportSummary>,
+    pub limit: usize,
+    pub offset: usize,
+    pub total: usize,
+}
+
 /// Wrapper for `auth_dev_google` / `auth_clerk` responses, which serialize
 /// `AuthSessionPayload` plus an optional `onboarding_api_key` produced for
 /// brand-new accounts.
@@ -452,6 +466,16 @@ impl Modify for SecurityAddon {
         crate::http::handlers::dashboard::create_workspace_view,
         crate::http::handlers::dashboard::get_workspace_view,
         crate::http::handlers::dashboard::update_workspace_view,
+        // reports
+        crate::http::handlers::reports::create_report,
+        crate::http::handlers::reports::list_reports,
+        crate::http::handlers::reports::get_report,
+        crate::http::handlers::reports::update_report,
+        crate::http::handlers::reports::delete_report,
+        crate::http::handlers::reports::rotate_report_share_token,
+        crate::http::handlers::reports::refresh_report_block,
+        crate::http::handlers::reports::get_report_by_share_token,
+        crate::http::handlers::reports::export_report_markdown,
         // admin
         crate::http::handlers::admin::admin_overview,
         // orgs / users
@@ -558,6 +582,8 @@ impl Modify for SecurityAddon {
         DashboardPreferencesEnvelope,
         WorkspaceViewEnvelope,
         WorkspaceViewSummariesEnvelope,
+        ReportEnvelope,
+        ReportSummariesEnvelope,
         AttributesEnvelope,
         ObjectEnvelope,
         ArtifactEnvelope,
@@ -610,6 +636,7 @@ impl Modify for SecurityAddon {
         CreateObjectRequest,
         CreateOrganizationRequest,
         CreateProjectRequest,
+        CreateReportRequest,
         CreateRunForkRequest,
         CreateRunRequest,
         CreateUserRequest,
@@ -641,6 +668,8 @@ impl Modify for SecurityAddon {
         RankMetricsSummaryResponse,
         RankOutlierPoint,
         RankReducerPoint,
+        ReportRow,
+        ReportSummary,
         RunRow,
         SaveWorkspaceViewRequest,
         SeatRow,
@@ -648,6 +677,7 @@ impl Modify for SecurityAddon {
         ServiceAccountRow,
         SwitchOrganizationRequest,
         UpdateDashboardPreferencesRequest,
+        UpdateReportRequest,
         UpdateRunRequest,
         UploadArtifactRequest,
         UserRow,
@@ -669,6 +699,7 @@ impl Modify for SecurityAddon {
         (name = "invitations", description = "Token-backed organization invitations."),
         (name = "runs", description = "Experiment runs, metrics, attributes, objects, artifacts."),
         (name = "dashboard", description = "Browser dashboard preferences and saved workspace views."),
+        (name = "reports", description = "Notion-style report documents with live PanelGrids and LLM summary blocks."),
     ),
 )]
 pub struct ApiDoc;

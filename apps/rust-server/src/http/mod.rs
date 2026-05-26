@@ -34,19 +34,21 @@ use handlers::{
     billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
     billing_report_usage_overage, billing_status, billing_webhook, create_api_key, create_artifact,
     create_attributes, create_customer_clickhouse_connection, create_invitation, create_object,
-    create_org, create_project, create_run, create_user, create_workspace_view,
-    customer_clickhouse_connection_status, device_code_confirm, device_code_poll,
-    device_code_start, disable_service_account, download_artifact, export_data, fork_run,
-    get_dashboard_preferences, get_metrics, get_run, get_run_lineage, get_workspace_view, health,
-    import_mlflow, import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
+    create_org, create_project, create_report, create_run, create_user, create_workspace_view,
+    customer_clickhouse_connection_status, delete_report, device_code_confirm, device_code_poll,
+    device_code_start, disable_service_account, download_artifact, export_data,
+    export_report_markdown, fork_run, get_dashboard_preferences, get_metrics, get_report,
+    get_report_by_share_token, get_run, get_run_lineage, get_workspace_view, health, import_mlflow,
+    import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
     list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
-    list_org_memberships, list_orgs, list_projects, list_runs, list_seats, list_users,
-    list_workspace_views, log_console_logs, log_metrics, log_rank_metrics, metrics_handler,
-    metrics_series, not_found, openapi_json, org_name_availability, overview, preview_invitation,
-    rank_metrics_summary, readyz, resend_invitation, reserve_seat, reset_demo, revoke_api_key,
-    revoke_invitation, rotate_customer_clickhouse_credentials, runs_summary, side_by_side,
-    update_dashboard_preferences, update_run, update_workspace_view, upload_artifact, usage_export,
-    usage_summary, validate_customer_clickhouse_connection,
+    list_org_memberships, list_orgs, list_projects, list_reports, list_runs, list_seats,
+    list_users, list_workspace_views, log_console_logs, log_metrics, log_rank_metrics,
+    metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
+    preview_invitation, rank_metrics_summary, readyz, refresh_report_block, resend_invitation,
+    reserve_seat, reset_demo, revoke_api_key, revoke_invitation,
+    rotate_customer_clickhouse_credentials, rotate_report_share_token, runs_summary, side_by_side,
+    update_dashboard_preferences, update_report, update_run, update_workspace_view,
+    upload_artifact, usage_export, usage_summary, validate_customer_clickhouse_connection,
 };
 
 const SESSION_COOKIE: &str = "instantml_session";
@@ -182,6 +184,27 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route(
             "/api/workspace-views/:view_id",
             get(get_workspace_view).put(update_workspace_view),
+        )
+        .route("/api/reports", get(list_reports).post(create_report))
+        .route(
+            "/api/reports/share/:share_token",
+            get(get_report_by_share_token),
+        )
+        .route(
+            "/api/reports/:report_id",
+            get(get_report).patch(update_report).delete(delete_report),
+        )
+        .route(
+            "/api/reports/:report_id/share",
+            post(rotate_report_share_token),
+        )
+        .route(
+            "/api/reports/:report_id/blocks/:block_index/refresh",
+            post(refresh_report_block),
+        )
+        .route(
+            "/api/reports/:report_id/markdown",
+            get(export_report_markdown),
         )
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
