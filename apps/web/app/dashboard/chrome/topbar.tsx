@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { BookOpen, Check, ChevronDown, CircleHelp, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -362,14 +362,6 @@ export function DashboardTopbar({
                 <SlidersHorizontal size={15} />
               </button>
             ) : null}
-            <a
-              aria-label="Open docs"
-              className="icon-button framed brandbar-action-desktop"
-              href="/docs"
-              title="Docs"
-            >
-              <BookOpen size={15} />
-            </a>
             <button
               aria-label="Keyboard shortcuts"
               className="icon-button framed brandbar-action-desktop"
