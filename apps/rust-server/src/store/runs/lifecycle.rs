@@ -6,8 +6,8 @@ pub async fn create_run(
     input: CreateRunRequest,
 ) -> AppResult<RunRow> {
     // SDK callers that omit `project` (or send empty/whitespace) land in the
-    // shared "uncategorized" project — matches W&B's default and gives
-    // migrating users a recognizable home.
+    // shared "default" project so ad-hoc and migrated runs have a
+    // predictable home.
     let project_name = match input.project.as_deref().map(str::trim) {
         Some(value) if !value.is_empty() => validate_name(Some(value), "project")?,
         _ => DEFAULT_PROJECT_NAME.to_string(),

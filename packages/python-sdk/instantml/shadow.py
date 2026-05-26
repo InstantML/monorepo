@@ -157,10 +157,9 @@ def build_shadow(
 ) -> ShadowWandb | None:
     if not shadow_wandb:
         return None
-    # W&B's own default when project is omitted is to use "uncategorized" —
-    # mirror that on the shadow side so the InstantML and W&B sides land in
-    # the same project name.
-    project_name = project or "uncategorized"
+    # Mirror the InstantML server's default-project bucket on the shadow
+    # side so both halves of the dual-log land in the same project name.
+    project_name = project or "default"
     if shadow_wandb is True:
         return ShadowWandb(
             project=project_name, name=name, config=config, tags=tags, notes=notes

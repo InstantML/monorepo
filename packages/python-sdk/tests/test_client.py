@@ -627,8 +627,8 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
 
 
 def test_client_init_omits_project_and_name_sends_none_for_server_defaulting(monkeypatch, tmp_path):
-    # Server fills in "uncategorized" + <adj>-<noun>-<seq> when these are
-    # absent — the SDK just passes None through. See
+    # Server fills in "default" + <adj>-<noun>-<seq> when these are absent
+    # — the SDK just passes None through. See
     # apps/rust-server/src/store/runs/naming.rs.
     calls = []
 

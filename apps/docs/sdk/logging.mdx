@@ -26,7 +26,7 @@ run = ro.init(
 Both `project` and `name` are optional. If you omit them, defaults apply:
 
 ```python
-# No project → lands in the `uncategorized` project (W&B default).
+# No project → lands in the shared `default` project.
 # No name    → server assigns `<adjective>-<noun>-<sequence>` per project.
 run = ro.init()
 print(run.name)  # e.g. "bold-falcon-1"
@@ -34,13 +34,12 @@ print(run.name)  # e.g. "bold-falcon-1"
 
 | Field | Default when omitted | Notes |
 | --- | --- | --- |
-| `project` | `"uncategorized"` | Matches W&B's default project name. The project is created on first use. |
-| `name` | `<adjective>-<noun>-<N>` | `N` is the run's 1-indexed position in its project; e.g. the third run in `uncategorized` might be `serene-glacier-3`. Names are picked deterministically from `(org, project, N)` so concurrent creates that race on the same sequence still get distinct names. |
+| `project` | `"default"` | A shared bucket. The project is created on first use. |
+| `name` | `<adjective>-<noun>-<N>` | `N` is the run's 1-indexed position in its project; e.g. the third run in `default` might be `serene-glacier-3`. Names are picked deterministically from `(org, project, N)` so concurrent creates that race on the same sequence still get distinct names. |
 
 Pass an explicit `name=` whenever the run is meaningful long-term (e.g.
 named after a hyperparameter sweep cell or experiment cohort). The
-auto-name is for quick iteration, smoke tests, and migration parity with
-W&B.
+auto-name is for quick iteration and smoke tests.
 
 Use `ro.Client(...)` when you want to reuse a base URL, timeout, API key, or
 offline directory across several runs:
