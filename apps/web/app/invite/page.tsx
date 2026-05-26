@@ -29,6 +29,7 @@ export default function InvitePage() {
   const api = useMemo(() => new ApiClient(), []);
   const attemptedClerkExchangeRef = useRef(false);
   const acceptStartedRef = useRef(false);
+  const inviteHandoffRef = useRef(false);
   const { getToken, isLoaded: clerkLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
   const { user } = useUser();
@@ -57,8 +58,15 @@ export default function InvitePage() {
       return;
     }
     setToken(parsed);
-    saveStoredInviteToken(parsed);
     window.history.replaceState(null, "", "/invite");
+  }, []);
+
+  useEffect(() => {
+    function clearNonHandoffToken() {
+      if (!inviteHandoffRef.current) clearStoredInviteToken();
+    }
+    window.addEventListener("pagehide", clearNonHandoffToken);
+    return () => window.removeEventListener("pagehide", clearNonHandoffToken);
   }, []);
 
   useEffect(() => {
@@ -142,7 +150,7 @@ export default function InvitePage() {
       await api.post("/api/invitations/accept", { token });
       clearStoredInviteToken();
       note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      window.location.replace("/dashboard/runs");
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {
@@ -164,7 +172,7 @@ export default function InvitePage() {
       });
       clearStoredInviteToken();
       note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      window.location.replace("/dashboard/runs");
     } catch (error) {
       attemptedClerkExchangeRef.current = false;
       handleInviteFailure(error, "Unable to verify invitation.");
@@ -186,7 +194,7 @@ export default function InvitePage() {
       });
       clearStoredInviteToken();
       note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      window.location.replace("/dashboard/runs");
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {
@@ -199,19 +207,26 @@ export default function InvitePage() {
     acceptStartedRef.current = false;
     await clearInstantMlSession();
     setSession({ authenticated: false });
-    if (token) saveStoredInviteToken(token);
-    if (config.managed_clerk_enabled) await clerk.signOut();
+    if (config.managed_clerk_enabled) {
+      beginInviteHandoff();
+      await clerk.signOut();
+    }
     note("Choose an account that matches the invitation email.");
   }
 
   function handleInviteFailure(error: unknown, fallback: string) {
     if (shouldClearInviteToken(error)) clearStoredInviteToken();
     if (isEmailMismatch(error)) {
-      if (token) saveStoredInviteToken(token);
       void clearInstantMlSession();
       setSession({ authenticated: false });
     }
     fail(inviteErrorMessage(error, fallback));
+  }
+
+  function beginInviteHandoff() {
+    if (!token) return;
+    inviteHandoffRef.current = true;
+    saveStoredInviteToken(token);
   }
 
   async function clearInstantMlSession() {
@@ -259,12 +274,12 @@ export default function InvitePage() {
                     {!isSignedIn ? (
                       <>
                         <SignInButton mode="modal" forceRedirectUrl="/invite">
-                          <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy} type="button">
+                          <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy} onClick={beginInviteHandoff} type="button">
                             <ShieldCheck size={16} /> Sign in with Clerk <ArrowRight className="iml-arrow" size={15} />
                           </button>
                         </SignInButton>
                         <SignUpButton mode="modal" forceRedirectUrl="/invite">
-                          <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} type="button">
+                          <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={beginInviteHandoff} type="button">
                             <UserPlus size={16} /> Create verified account
                           </button>
                         </SignUpButton>

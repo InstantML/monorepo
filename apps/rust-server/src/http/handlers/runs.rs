@@ -11,8 +11,8 @@ use serde_json::{json, Value};
 
 use crate::{
     domain::{
-        CreateConsoleLogsRequest, CreateProjectRequest, CreateRunRequest, LogMetricsRequest,
-        LogRankMetricsRequest, UpdateRunRequest,
+        CreateConsoleLogsRequest, CreateProjectRequest, CreateRunForkRequest, CreateRunRequest,
+        LogMetricsRequest, LogRankMetricsRequest, UpdateRunRequest,
     },
     errors::AppResult,
     store,
@@ -146,6 +146,77 @@ pub async fn get_run(
     let run_id = parse_uuid(&run_id, "run not found")?;
     Ok(Json(
         json!({ "run": store::get_run(&state.store, &ctx, run_id).await? }),
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/runs/{run_id}/lineage",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Bounded direct lineage graph for the selected run", body = crate::http::openapi::RunLineageEnvelope),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn get_run_lineage(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(store::run_lineage(&state.store, &ctx, run_id).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/{run_id}/forks",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Source run UUID"),
+    ),
+    request_body = crate::domain::CreateRunForkRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Created forked run", body = crate::http::openapi::RunForkEnvelope),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 402, description = "Plan or payment limit prevents creating another run", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient scope or project access", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Source run or checkpoint not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Idempotency conflict", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn fork_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "export:read", &state)?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) =
+        read_json_with_raw::<CreateRunForkRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    Ok(Json(
+        store::fork_run(
+            &state.store,
+            &ctx,
+            run_id,
+            raw,
+            input,
+            idempotency_key,
+            state.config.max_body_bytes,
+        )
+        .await?,
     ))
 }
 

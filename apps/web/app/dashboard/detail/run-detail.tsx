@@ -1,15 +1,23 @@
 "use client";
 
-import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, Server, Star, Tag } from "lucide-react";
+import { useState } from "react";
+import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, GitFork, Server, Star, Tag, X } from "lucide-react";
 
-import { buildCheckpointResumeCode } from "../../../src/checkpoints.js";
+import { buildCheckpointResumeCode, checkpointStep, defaultForkRunName } from "../../../src/checkpoints.js";
 import { durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
+import { useFocusTrap } from "../ui/use-focus-trap";
 import { ArtifactMediaPreview } from "./artifact-panel";
 import { RichObjectPanel } from "./rich-object-panel";
 import type { Artifact, HoverPoint, LoggedObject, LoggedObjectRow, RunMetricRow, RunSummary, RunTimelineRow } from "../../dashboard-types";
+
+type ForkCheckpointOptions = {
+  inheritConfig: boolean;
+  name: string;
+  reason: string;
+};
 
 function SettingRow({ label, value }: { label: string; value: string }) {
   return (
@@ -86,11 +94,59 @@ function copyText(value: string) {
   void navigator.clipboard?.writeText(value);
 }
 
-function CheckpointList({ artifacts, run }: { artifacts: Artifact[]; run: RunSummary }) {
+function CheckpointList({
+  artifacts,
+  onForkCheckpoint,
+  run,
+}: {
+  artifacts: Artifact[];
+  onForkCheckpoint?: (artifact: Artifact, options: ForkCheckpointOptions) => Promise<void>;
+  run: RunSummary;
+}) {
+  const [forkArtifact, setForkArtifact] = useState<Artifact | null>(null);
+  const [forkName, setForkName] = useState("");
+  const [forkReason, setForkReason] = useState("");
+  const [inheritConfig, setInheritConfig] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const dialogRef = useFocusTrap<HTMLDivElement>(Boolean(forkArtifact), closeForkDialog, "#fork-run-name");
   const checkpoints = artifacts
     .filter((artifact) => artifact.type === "checkpoint")
     .sort((left, right) => (right.step ?? -1) - (left.step ?? -1));
   if (!checkpoints.length) return null;
+
+  function openForkDialog(artifact: Artifact) {
+    setForkArtifact(artifact);
+    setForkName(defaultForkRunName(artifact, run));
+    setForkReason("");
+    setInheritConfig(true);
+    setError("");
+  }
+
+  function closeForkDialog() {
+    if (busy) return;
+    setForkArtifact(null);
+    setError("");
+  }
+
+  async function submitFork() {
+    if (!forkArtifact || !onForkCheckpoint || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onForkCheckpoint(forkArtifact, {
+        inheritConfig,
+        name: forkName,
+        reason: forkReason,
+      });
+      setForkArtifact(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create fork.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="detail-section checkpoint-section">
       <h3><Box size={15} /> Checkpoints ({checkpoints.length})</h3>
@@ -118,11 +174,64 @@ function CheckpointList({ artifacts, run }: { artifacts: Artifact[]; run: RunSum
                 >
                   <Copy size={13} /> Resume Code
                 </button>
+                {onForkCheckpoint ? (
+                  <button
+                    aria-label={`Fork ${artifact.name}`}
+                    className="copy-button"
+                    disabled={busy}
+                    onClick={() => openForkDialog(artifact)}
+                    type="button"
+                  >
+                    <GitFork size={13} /> Fork
+                  </button>
+                ) : null}
               </div>
             </article>
           );
         })}
       </div>
+      {forkArtifact ? (
+        <div className="workspace-modal checkpoint-fork-modal" role="dialog" aria-modal="true" aria-label="Fork checkpoint">
+          <div className="workspace-modal-card checkpoint-fork-card" ref={dialogRef} tabIndex={-1}>
+            <div className="drawer-head">
+              <div>
+                <span className="analysis-eyebrow eyebrow--accent">Fork checkpoint</span>
+                <h2>{forkArtifact.name}</h2>
+              </div>
+              <button aria-label="Close fork dialog" className="icon-button framed" disabled={busy} onClick={closeForkDialog} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="checkpoint-fork-body">
+              <p className="checkpoint-fork-notice">InstantML creates a linked run record only. It does not start training.</p>
+              <div className="checkpoint-fork-grid">
+                <div><span>Source run</span><strong title={run.name}>{run.name}</strong></div>
+                <div><span>Checkpoint step</span><strong>{checkpointStep(forkArtifact) ?? "unknown"}</strong></div>
+                <div><span>Checkpoint id</span><strong title={forkArtifact.id}>{forkArtifact.id}</strong></div>
+              </div>
+              <label className="checkpoint-fork-field">
+                <span>Run name</span>
+                <input id="fork-run-name" value={forkName} onChange={(event) => setForkName(event.target.value)} />
+              </label>
+              <label className="checkpoint-fork-field">
+                <span>Reason</span>
+                <textarea rows={3} value={forkReason} onChange={(event) => setForkReason(event.target.value)} placeholder="Retry reason" />
+              </label>
+              <label className="checkpoint-fork-toggle">
+                <input type="checkbox" checked={inheritConfig} onChange={(event) => setInheritConfig(event.target.checked)} />
+                <span>Inherit source config</span>
+              </label>
+              {error ? <div className="checkpoint-fork-error" role="alert">{error}</div> : null}
+            </div>
+            <div className="checkpoint-fork-actions">
+              <button className="secondary" disabled={busy} onClick={closeForkDialog} type="button">Cancel</button>
+              <button className="primary" disabled={busy || !forkName.trim()} onClick={submitFork} type="button">
+                <GitFork size={14} /> {busy ? "Creating..." : "Create Fork"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -142,6 +251,7 @@ export function RunDetail({
   loggedObjects = [],
   metricRows,
   objectRowsById = {},
+  onForkCheckpoint,
   onRunMetadataSave,
   run,
   selectedCount,
@@ -157,21 +267,36 @@ export function RunDetail({
   metricRows: RunMetricRow[];
   objectRowsById?: Record<number, LoggedObjectRow[]>;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
+  onForkCheckpoint?: (artifact: Artifact, options: ForkCheckpointOptions) => Promise<void>;
   run: RunSummary | null;
   selectedCount: number;
   selectedRuns?: RunSummary[];
   timelineRows: RunTimelineRow[];
   workspaceSummary?: boolean;
-}) {
+  }) {
   if (!run) return <div className="empty">No run selected.</div>;
   const chartRuns = selectedRuns?.length ? selectedRuns : [run];
+  const commit = metadataScalar(run.metadata, "git_commit")
+    ?? metadataScalar(run.metadata, "commit")
+    ?? nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "commit"]);
+  const gitAvailable = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "available"]);
+  const gitDirty = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "dirty"]);
+  const gitDirtyUnknown = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "dirty_unknown"]);
+  const entrypoint = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "entrypoint"]);
+  const dirtyLabel = gitDirty === true ? "yes" : gitDirty === false ? "no" : gitDirtyUnknown === true ? "unknown" : "-";
+  const gitLabel = gitAvailable === false ? "unavailable" : gitAvailable === true || commit ? "available" : "-";
   const sourceRows = [
     ["Start time", formatRunTime(run.started_at ?? run.created_at)],
     ["End time", run.finished_at ? formatRunTime(run.finished_at) : "-"],
     ["Duration", durationLabel(run)],
+    ["Entry point", compactValue(entrypoint ?? "-")],
+    ["Git", compactValue(gitLabel)],
     ["Host", compactValue(run.metadata.hostname ?? run.metadata.host ?? "-")],
     ["PID", compactValue(run.metadata.pid ?? "-")],
-    ["Commit", compactValue(run.metadata.git_commit ?? run.metadata.commit ?? "-")],
+    ["Commit", compactValue(commit ?? "-")],
+    ["Dirty", compactValue(dirtyLabel)],
+    ["Python", compactValue(metadataScalar(run.metadata, "python") ?? "-")],
+    ["Platform", compactValue(metadataScalar(run.metadata, "platform") ?? "-")],
   ];
   const artifactRows = artifacts.slice(0, 4);
   const artifactCount = artifactCountForRun(run, artifacts.length);
@@ -236,6 +361,7 @@ export function RunDetail({
           <div><span>Checkpoint coverage</span><b>{formatNumber(run.artifact_counts?.checkpoint ?? 0, 0)} checkpoints</b></div>
         </section>
       ) : null}
+      <CheckpointList artifacts={artifacts} onForkCheckpoint={onForkCheckpoint} run={run} />
       <div className="detail-body-grid">
         <div className="detail-main-column">
           <section className="detail-section">
@@ -244,7 +370,6 @@ export function RunDetail({
           </section>
           {!workspaceSummary ? (
             <>
-              <CheckpointList artifacts={artifacts} run={run} />
               <section className="detail-section">
                 <h3><Folder size={15} /> Recent Artifacts ({artifacts.length})</h3>
                 {artifactRows.length ? artifactRows.map((artifact) => (
@@ -289,4 +414,18 @@ export function RunDetail({
       </div>
     </div>
   );
+}
+
+function metadataScalar(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value : null;
+}
+
+function nestedMetadataScalar(metadata: Record<string, unknown>, path: string[]) {
+  let current: unknown = metadata;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" || typeof current === "number" || typeof current === "boolean" ? current : null;
 }

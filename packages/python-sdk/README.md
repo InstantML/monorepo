@@ -25,7 +25,8 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Optionally keep a local SQLite audit store for attempted SDK events.
 - Optionally sample psutil/NVML system metrics during a run.
 - Optionally wrap stdout/stderr and expose lightweight Torch, Transformers, and Lightning adapters.
-- Capture source metadata for reproducibility.
+- Capture source metadata for reproducibility with privacy-safe defaults and explicit opt-in knobs for command, paths, branch, host/process identifiers, and git diff summaries.
+- Fork an existing Rust-backed run from a checkpoint and attach logging to that created child run.
 - Finish runs cleanly.
 
 Target public API:
@@ -73,6 +74,10 @@ run.finish()
 
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 checkpoint_path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
+child = api.fork_run("source-run-id", checkpoint_artifact_id="artifact-id")
+forked_run = ro.attach_run(child["id"], base_url="http://127.0.0.1:8000", api_key="instantml_...")
+forked_run.log({"train/loss": 0.1}, step=101)
+forked_run.finish()
 ```
 
 ## CLI: Login, logout, whoami
@@ -134,7 +139,7 @@ npm run test:hosted-clickhouse
 
 That smoke creates an API key through the onboarding route, passes it to `instantml.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
 
-Read-only run summary queries use the raw `Api` helper:
+Run summary, artifact download, and fork helpers use the raw `Api` helper:
 
 ```python
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
@@ -147,9 +152,17 @@ page = api.runs(
 )
 ```
 
-`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI.
+`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
 
 Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
+
+Source capture defaults intentionally favor reproducibility without broad local
+environment leakage. `source_tracking=True` records entrypoint basename, git
+availability/commit/dirty state, Python version, and platform. Use
+`source_tracking=False` to omit `_rlobs.source`, or pass
+`SourceTracking(command=True, paths=True, branch=True, hostname=True, pid=True,
+git_diff=True)` to opt into argv, cwd/repo root, branch, host/pid, and a safe
+git diff summary/digest. Raw patch text is never stored in run metadata.
 
 `Run.log_rank_metrics(data, step, rank, world_size, local_rank=None, weight=None,
 timestamp=None)` posts to `/runs/:run_id/rank-metrics`. `rank` is zero-based,

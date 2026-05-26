@@ -39,11 +39,18 @@ export async function GET(_request: Request, { params }: AssetParams) {
     const info = await stat(filePath);
     if (!info.isFile()) return new Response("Not found", { status: 404 });
     const body = await readFile(filePath);
+    const contentType = contentTypeFor(filePath, body);
+    const headers = new Headers({
+      "Cache-Control": "public, max-age=3600",
+      "Content-Type": contentType,
+    });
+    if (path.extname(filePath).toLowerCase() === ".svg") {
+      headers.set("Content-Disposition", "attachment");
+      headers.set("Content-Security-Policy", "sandbox");
+      headers.set("X-Content-Type-Options", "nosniff");
+    }
     return new Response(body, {
-      headers: {
-        "Cache-Control": "public, max-age=3600",
-        "Content-Type": contentTypeFor(filePath, body),
-      },
+      headers,
     });
   } catch {
     return new Response("Not found", { status: 404 });

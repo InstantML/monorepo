@@ -167,7 +167,7 @@ Preview rules:
 
 - Tables render at most 20 rows and 8 columns from the selected object.
 - Histograms render at most 64 bins from object value/summary data.
-- Media uses the existing safe same-origin artifact download helper when stored bytes are available.
+- Media uses the existing safe same-origin artifact download helper when stored bytes are available. Object-list responses include the linked artifact `storage_backend` so the frontend can make the same stored-byte decision for rich media cards as it does for raw artifact rows.
 - `demo://`, external, and missing-byte artifacts fall back to metadata text and copy/download actions.
 
 ## Performance Considerations
