@@ -2105,7 +2105,7 @@ class LightningLogger:
 
     @property
     def name(self) -> str:
-        return self.project or "uncategorized"
+        return self.project or "default"
 
     @property
     def version(self) -> str:

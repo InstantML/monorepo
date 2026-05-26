@@ -213,9 +213,19 @@ jobs:
             topology="${DEFAULT_TOPOLOGY:-split}"
             public_router="${PUBLIC_ROUTER:-false}"
           fi
+          # Resolve the hosted-frontend URL for the chosen environment.
+          # The deploy script needs this set (non-localhost) when Resend is
+          # configured so invitation accept links are correct. Source of
+          # truth: the actual user-facing domain per environment.
+          case "${environment}" in
+            prod)    frontend_base_url="https://instantml.ai" ;;
+            staging) frontend_base_url="https://staging.instantml.ai" ;;
+            *)       frontend_base_url="https://instantml.ai" ;;
+          esac
           echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
           echo "topology=${topology}" >> "${GITHUB_OUTPUT}"
           echo "public_router=${public_router}" >> "${GITHUB_OUTPUT}"
+          echo "frontend_base_url=${frontend_base_url}" >> "${GITHUB_OUTPUT}"
 
       - name: Reuse Pre-Built Image Tag
         id: image
@@ -239,6 +249,9 @@ jobs:
           INSTANTML_DEPLOY_ENV: ${{ steps.inputs.outputs.environment }}
           INSTANTML_CLOUD_RUN_TOPOLOGY: ${{ steps.inputs.outputs.topology }}
           INSTANTML_IMAGE_TAG: ${{ steps.image.outputs.image_tag }}
+          # Hosted frontend origin, required when Resend is loaded from SM so
+          # the deploy helper can stamp invitation accept links correctly.
+          INSTANTML_FRONTEND_BASE_URL: ${{ steps.inputs.outputs.frontend_base_url }}
           # Skip the local-env rewrite step entirely; CI has no apps/web/.env.local.
           INSTANTML_WRITE_LOCAL_FRONTEND_ENV: "0"
           # Allow downstream tools to recognize this code path.

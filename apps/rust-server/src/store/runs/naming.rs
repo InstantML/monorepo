@@ -6,12 +6,12 @@
 //!
 //! ## Naming premise
 //!
-//! Both Jay and Arjun (live demo, 2026-05-24) flagged the W&B `<adj>-<noun>-N`
-//! pattern as the right convention — friendly, memorable, sortable inside a
-//! project. We adopt the same shape with our own curated wordlists.
+//! Friendly `<adjective>-<noun>-N` defaults are the industry convention
+//! because they're memorable, sortable inside a project, and unambiguous in
+//! shared reports.
 //!
-//! - **Project default:** `"uncategorized"` (matches W&B; deliberate so
-//!   migrating users land on a recognizable home).
+//! - **Project default:** `"default"` — a single shared bucket so ad-hoc
+//!   and migrated runs land in a predictable place.
 //! - **Run default:** `<adjective>-<noun>-<sequence>` where the sequence is
 //!   the position of this run within its project, starting at 1. Adjective
 //!   and noun are picked deterministically from `(org_id, project_id,
@@ -27,13 +27,13 @@
 
 use uuid::Uuid;
 
-pub const DEFAULT_PROJECT_NAME: &str = "uncategorized";
+pub const DEFAULT_PROJECT_NAME: &str = "default";
 
 /// Generate a friendly default run name shaped like `<adj>-<noun>-<seq>`.
 ///
 /// The sequence (`seq`) is the position of this run within its project,
-/// **1-indexed** to match W&B's convention. The adjective and noun are
-/// chosen deterministically from `(org_id, project_id, seq)` so:
+/// **1-indexed**. The adjective and noun are chosen deterministically from
+/// `(org_id, project_id, seq)` so:
 ///
 /// - The same inputs always produce the same name (debuggable, testable).
 /// - Concurrent creates that race on the same sequence number still pick
@@ -222,9 +222,10 @@ mod tests {
     }
 
     #[test]
-    fn default_project_name_is_uncategorized() {
-        // Hard-coded for the W&B-migration symmetry; this test fails loud
-        // if anyone accidentally renames the default.
-        assert_eq!(DEFAULT_PROJECT_NAME, "uncategorized");
+    fn default_project_name_is_pinned() {
+        // Pinned so an accidental rename of the default trips a loud test
+        // failure rather than silently changing the bucket every implicit
+        // run lands in.
+        assert_eq!(DEFAULT_PROJECT_NAME, "default");
     }
 }
