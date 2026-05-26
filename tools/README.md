@@ -65,12 +65,13 @@ Important environment variables:
 - `INSTANTML_FRONTEND_BASE_URL`: hosted web app origin used in device-code and organization invite links. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
 - `INSTANTML_EMAIL_FROM`: verified sender used for organization invite email. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
 - `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
-- `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup. Keep static/private egress enabled for hosted GCP ClickHouse and BYOC/customer endpoints unless there is an explicit networking plan.
+- `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup. Keep static/private egress enabled for hosted GCP ClickHouse and BYOC/customer GCP ClickHouse endpoints unless there is an explicit networking plan.
 - `INSTANTML_CLOUD_RUN_VPC_EGRESS`: Cloud Run VPC egress mode when static egress is enabled. Default: `all-traffic`; use `private-ranges-only` only when the service does not need the NAT IP for public BYOC/provider allowlists.
 - `INSTANTML_CLOUD_RUN_NAT_LOGGING=1`: enables Cloud NAT logging for newly created NATs. Default is off to avoid paying for idle translation logs.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_SERVICES=none`: skips legacy ClickHouse Cloud access-list updates.
 - `INSTANTML_CLICKHOUSE_ALLOWLIST_KEYS=none`: skips legacy ClickHouse Cloud API-key access-list updates.
 - `INSTANTML_CLICKHOUSE_PROVISIONER=database`: current hosted GCP ClickHouse tenant-routing mode.
+- `INSTANTML_BYOC_EGRESS_CIDRS` / `INSTANTML_BYOC_EGRESS_SET_VERSION`: explicit static egress CIDRs and version label shown to BYOC customers. The deploy helper no longer falls back to legacy ClickHouse Cloud allowlist env for BYOC.
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation and tenant schema setup have room to finish.
 - `INSTANTML_ARTIFACT_BACKEND`: artifact byte backend. The helper defaults hosted deploys to `r2` when Cloudflare R2 credentials are present and to disabled local storage otherwise.
 - `CLOUDFLARE_R2_ACCOUNT_ID` / `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account used for per-org R2 buckets. The deploy helper normalizes either name to `CLOUDFLARE_ACCOUNT_ID` for the Rust service.
@@ -344,6 +345,11 @@ and dashboard routes. It verifies role-specific route tables, data-plane
 control-record refresh before auth, Python SDK ingestion through the data role,
 and dashboard readback after a data-process restart. It does not deploy or touch
 live GCP ClickHouse, ClickHouse Cloud, or Cloud Run resources.
+
+The shared local ClickHouse helper starts loopback ClickHouse with writable
+access storage, so local BYOC/browser checks can create a passworded
+ClickHouse user that matches the self-hosted GCP setup flow. Disposable smokes
+may still use the default user when they bypass the browser form directly.
 
 Expected import JSON shape:
 

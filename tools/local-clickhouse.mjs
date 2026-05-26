@@ -30,7 +30,7 @@ export async function ensureLocalClickHouse(options = {}) {
 
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });
-  for (const dir of ["tmp", "user_files", "format_schemas"]) {
+  for (const dir of ["tmp", "user_files", "format_schemas", "access"]) {
     fs.mkdirSync(path.join(dataDir, dir), { recursive: true });
   }
 
@@ -42,6 +42,7 @@ export async function ensureLocalClickHouse(options = {}) {
     `--tmp_path=${path.join(dataDir, "tmp")}`,
     `--user_files_path=${path.join(dataDir, "user_files")}`,
     `--format_schema_path=${path.join(dataDir, "format_schemas")}`,
+    `--access_control_path=${path.join(dataDir, "access")}`,
     `--http_port=${httpPort}`,
     `--tcp_port=${tcpPort}`,
     `--interserver_http_port=${interserverHttpPort}`,

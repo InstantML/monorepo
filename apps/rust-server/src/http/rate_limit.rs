@@ -267,7 +267,21 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
 }
 
 fn is_monthly_quota_exempt_route(method: &Method, path: &str) -> bool {
-    *method == Method::GET && matches!(path, "/api/usage" | "/api/usage/export")
+    (*method == Method::GET && matches!(path, "/api/usage" | "/api/usage/export"))
+        || is_storage_setup_route(method, path)
+}
+
+fn is_storage_setup_route(method: &Method, path: &str) -> bool {
+    matches!(
+        (method.as_str(), path),
+        ("GET", "/api/storage/clickhouse-connections/current")
+            | ("POST", "/api/storage/clickhouse-connections")
+            | ("POST", "/api/storage/clickhouse-connections/validate")
+            | (
+                "POST",
+                "/api/storage/clickhouse-connections/rotate-credentials"
+            )
+    )
 }
 
 fn plan_limit(plan: PlanTier, class: RequestClass) -> RateLimitSpec {
@@ -464,6 +478,23 @@ mod tests {
             RequestClass::General
         );
         assert!(classify_route(&Method::OPTIONS, "/api/usage").is_none());
+    }
+
+    #[test]
+    fn storage_setup_routes_skip_monthly_quota_until_storage_exists() {
+        for (method, path) in [
+            (Method::GET, "/api/storage/clickhouse-connections/current"),
+            (Method::POST, "/api/storage/clickhouse-connections"),
+            (Method::POST, "/api/storage/clickhouse-connections/validate"),
+            (
+                Method::POST,
+                "/api/storage/clickhouse-connections/rotate-credentials",
+            ),
+        ] {
+            let policy = classify_route(&method, path).expect("policy");
+            assert!(!policy.monthly_enforced, "{method} {path}");
+            assert!(policy.metered, "{method} {path}");
+        }
     }
 
     #[tokio::test]

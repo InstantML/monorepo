@@ -126,13 +126,15 @@ Cloud Run Rust API -> Google Cloud VPC/private ClickHouse endpoint
 This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, routes User Data and tenant databases to the InstantML-owned self-hosted GCP ClickHouse deployment, restricts hosted Clerk signup by allowlist, and enables hosted artifact byte uploads only when Cloudflare R2 credentials are configured.
 
 Premium BYOC orgs keep the same control-plane/session/API-key path, but their
-tenant product route points at a customer-owned ClickHouse HTTPS endpoint after
-owner/admin validation from the data-plane service. Hosted BYOC stores customer
-ClickHouse passwords in the configured BYOC Secret Manager backend and stores
-only the secret reference in the control-plane route record. Product writes and
-SDK-key creation are blocked while the org is `storage_unconfigured`. BYOC
-usage storage guardrails count only InstantML-owned local/R2 artifact bytes,
-not customer ClickHouse table bytes.
+tenant product route points at a customer-owned self-hosted GCP ClickHouse
+HTTPS endpoint after owner/admin validation from the data-plane service. The
+customer allowlists the configured InstantML BYOC egress CIDRs in its GCP
+firewall, load balancer, or reverse proxy before validation. Hosted BYOC stores
+customer ClickHouse passwords in the configured BYOC Secret Manager backend and
+stores only the secret reference in the control-plane route record. Product
+writes and SDK-key creation are blocked while the org is
+`storage_unconfigured`. BYOC usage storage guardrails count only
+InstantML-owned local/R2 artifact bytes, not customer ClickHouse table bytes.
 
 Split Cloud Run launch wiring:
 

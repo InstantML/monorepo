@@ -176,7 +176,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [byocForm, setByocForm] = useState<ByocForm>({
     endpoint: "",
     database: "instantml",
-    username: "default",
+    username: "instantml_writer",
     password: "",
   });
   const nextPath = typeof window === "undefined" ? "/dashboard/runs" : sanitizeNextPath(new URLSearchParams(window.location.search).get("next"));
@@ -1096,11 +1096,11 @@ function ByocSetup({
   const username = clickhouseIdentifierPreview(form.username, "instantml_writer");
   const setupSql = [
     `CREATE DATABASE IF NOT EXISTS ${database};`,
-    `CREATE USER IF NOT EXISTS ${username} IDENTIFIED BY '<copy-once-password>';`,
-    `GRANT SHOW, SELECT, INSERT, CREATE TABLE, ALTER TABLE, DROP TABLE ON ${database}.* TO ${username};`,
+    `CREATE USER IF NOT EXISTS ${username} IDENTIFIED WITH sha256_password BY '<copy-once-password>';`,
+    `GRANT SHOW, SELECT, INSERT, CREATE TABLE, CREATE VIEW, ALTER TABLE ON ${database}.* TO ${username};`,
     "",
     "-- Optional after InstantML validates and saves the connection:",
-    `-- REVOKE CREATE TABLE, ALTER TABLE, DROP TABLE ON ${database}.* FROM ${username};`,
+    `-- REVOKE CREATE TABLE, CREATE VIEW, ALTER TABLE ON ${database}.* FROM ${username};`,
   ].join("\n");
   const egressConfigured = egress.length > 0;
   const canSubmit = Boolean(form.endpoint.trim() && form.database.trim() && form.username.trim() && form.password && egressConfigured);
@@ -1118,14 +1118,15 @@ function ByocSetup({
     <div className="iml-actions">
       <div className="iml-byoc-callout">
         <div className="iml-byoc-callout-h">
-          <ServerCog size={15} aria-hidden="true" /> Recommended ClickHouse setup
+          <ServerCog size={15} aria-hidden="true" /> Recommended GCP ClickHouse setup
         </div>
         <ol className="iml-byoc-steps">
-          <li>ClickHouse Cloud: create a production service with HTTPS enabled.</li>
-          <li>Security: add the InstantML data-plane egress CIDRs to the service IP access list.</li>
+          <li>GCP: run a dedicated self-hosted ClickHouse deployment near the InstantML data-plane region.</li>
+          <li>Networking: expose the ClickHouse HTTP interface over HTTPS and allow only the InstantML egress CIDRs shown below.</li>
           <li>SQL console: create the database and writer user with the grants below.</li>
-          <li>Paste the HTTPS endpoint, database, username, and password here, then validate.</li>
+          <li>Paste the HTTPS endpoint origin, database, username, and password here, then validate.</li>
         </ol>
+        <p className="iml-hint">Run data goes to your GCP ClickHouse. InstantML storage guardrails count only R2 artifact bytes stored by us.</p>
         <div className="iml-egress">
           <span className="iml-egress-label">Data-plane egress</span>
           {egress.length > 0 ? egress.map((cidr) => <code key={cidr}>{cidr}</code>) : <span>Not configured. BYOC signup is disabled until egress is set.</span>}
@@ -1154,9 +1155,9 @@ function ByocSetup({
           inputMode="url"
           value={form.endpoint}
           onChange={(event) => onField("endpoint", event.target.value)}
-          placeholder="https://abc123.us-central1.gcp.clickhouse.cloud:8443"
+          placeholder="https://clickhouse.acme.example.com:8443"
         />
-        <span className="iml-hint">Use the HTTPS/native secure endpoint origin only, without paths or query strings.</span>
+        <span className="iml-hint">Use the public HTTPS ClickHouse HTTP endpoint origin only, without paths or query strings.</span>
       </div>
 
       <div className="iml-byoc-grid">
@@ -1281,11 +1282,11 @@ function StorageChoicePicker({
         <label className="iml-seg-opt">
           <input checked={storageChoice === STORAGE_BYOC} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_BYOC)} type="radio" />
           <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span><Database size={14} aria-hidden="true" /> Connect my ClickHouse</span>
-          <span className="iml-seg-d">Premium BYOC. R2 artifacts only count toward InstantML storage.</span>
+          <span className="iml-seg-d">Premium BYOC. Run data goes to your GCP ClickHouse; InstantML counts only R2 artifact bytes.</span>
         </label>
       </div>
       {storageChoice === STORAGE_BYOC ? (
-        <span className="iml-hint">BYOC requires Premium and a pre-created ClickHouse database allowlisted for InstantML egress.</span>
+        <span className="iml-hint">BYOC requires Premium and a pre-created GCP ClickHouse database reachable from InstantML egress.</span>
       ) : null}
     </fieldset>
   );

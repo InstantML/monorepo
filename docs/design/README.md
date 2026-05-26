@@ -65,13 +65,15 @@ Current implemented design sequence:
 - `2026-05-25-async-upload-default.md`: accepted follow-up that makes durable
   async the SDK `init()` default, keeps `Run(...)` sync by default, bounds idle
   health traffic, and documents the `upload_mode="sync"` escape hatch.
+- `2026-05-22-customer-owned-clickhouse.md`: implemented first slice for
+  Premium BYOC ClickHouse onboarding, updated so customer-facing BYOC now
+  recommends customer-owned self-hosted GCP ClickHouse with direct database
+  credentials, static InstantML egress allowlisting, Secret Manager-backed
+  credential storage, and R2-only InstantML storage accounting.
 
 Current draft/revised designs awaiting implementation approval:
 
-- `2026-05-22-customer-owned-clickhouse.md`: draft research plan for routing an
-  org's product data to customer-owned ClickHouse through a direct database
-  connection first, with ClickHouse Cloud API automation deferred pending
-  security and architecture review.
+- None.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

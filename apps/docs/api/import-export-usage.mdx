@@ -59,8 +59,10 @@ Usage includes:
 - Current UTC calendar-month API request usage.
 - Retained projects, runs, metric series, artifacts, API keys, and seats.
 - Exact artifact bytes when available.
-- Exact ClickHouse table bytes when available.
-- Blocked-at-limit storage estimates.
+- Exact InstantML-hosted ClickHouse table bytes when available.
+- Blocked-at-limit storage estimates. BYOC storage guardrails count only
+  InstantML-owned artifact bytes and never include customer-owned ClickHouse
+  database bytes.
 - Billing precision metadata.
 
 Metric-point and API-request usage reset monthly. Most other counters are
