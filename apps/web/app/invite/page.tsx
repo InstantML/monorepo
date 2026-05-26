@@ -150,7 +150,7 @@ export default function InvitePage() {
       await api.post("/api/invitations/accept", { token });
       clearStoredInviteToken();
       note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      window.location.replace("/dashboard/runs");
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {
@@ -172,7 +172,7 @@ export default function InvitePage() {
       });
       clearStoredInviteToken();
       note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      window.location.replace("/dashboard/runs");
     } catch (error) {
       attemptedClerkExchangeRef.current = false;
       handleInviteFailure(error, "Unable to verify invitation.");
@@ -194,7 +194,7 @@ export default function InvitePage() {
       });
       clearStoredInviteToken();
       note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      window.location.replace("/dashboard/runs");
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {

@@ -268,7 +268,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
           // instead of stranding them on the sign-in/up screen. Guarded so it
           // can never race / pre-empt an in-flight Clerk exchange (which owns
           // its own redirect, e.g. sign-up -> /onboarding).
-          window.location.assign(nextPath);
+          window.location.replace(nextPath);
           return;
         }
         if (authed) {
@@ -401,15 +401,15 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       if ((sessionPayload as SessionPayload).billing_checkout?.url) throw new Error("Billing checkout URL was not trusted.");
       if (isSharedDemoSession(sessionPayload as SessionPayload)) {
         note("Signed in to the read-only demo. Opening the dashboard...");
-        window.location.assign("/dashboard/runs");
+        window.location.replace("/dashboard/runs");
         return;
       }
       if (payload.mode === "signin") {
         note("Signed in. Opening your dashboard...");
-        window.location.assign(nextPath);
+        window.location.replace(nextPath);
       } else {
         note("Workspace created. Opening onboarding...");
-        window.location.assign("/onboarding");
+        window.location.replace("/onboarding");
       }
     } catch (error) {
       fail(error instanceof Error ? error.message : "Unable to sign in.");
@@ -475,7 +475,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         window.history.replaceState(null, "", "/onboarding");
       } else {
         note(signupMode ? "Workspace created. Opening onboarding..." : "Signed in. Opening your dashboard...");
-        window.location.assign(signupMode ? "/onboarding" : nextPath);
+        window.location.replace(signupMode ? "/onboarding" : nextPath);
       }
     } catch (error) {
       clerkExchangeAttemptedRef.current = false;
