@@ -139,11 +139,45 @@ function metricDelta(value: number | null, reference: number | null, goal: "mini
   return { text: `${percent > 0 ? "+" : ""}${formatNumber(percent, 1)}%`, tone, title: absText };
 }
 
-function bestRunByMetric(runs: RunSummary[], metricKey: string) {
+type MetricLookup = {
+  best: (runId: string, metricKey: string) => number | null;
+  latest: (runId: string, metricKey: string) => number | null;
+};
+
+// Compare data lives in the side-by-side payload's `rows` (paths like
+// `metric/<key>/<reducer>`), not on the lightweight run objects, so metric values
+// are read from there first and only fall back to the run's own aggregates.
+function buildMetricLookup(rawRows: any[], runs: RunSummary[]): MetricLookup {
+  const byPath = new Map<string, Record<string, unknown>>();
+  for (const row of rawRows ?? []) byPath.set(String(row.path), (row.values ?? {}) as Record<string, unknown>);
+  const runById = new Map(runs.map((run) => [run.id, run]));
+  const rowVal = (metricKey: string, reducer: string, runId: string) => {
+    const value = byPath.get(`metric/${metricKey}/${reducer}`)?.[runId];
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+  return {
+    best(runId, metricKey) {
+      const reducers = metricGoal(metricKey) === "minimize" ? ["min", "latest", "mean"] : ["max", "latest", "mean"];
+      for (const reducer of reducers) {
+        const value = rowVal(metricKey, reducer, runId);
+        if (value !== null) return value;
+      }
+      return metricBestValue(runById.get(runId), metricKey);
+    },
+    latest(runId, metricKey) {
+      const fromRows = rowVal(metricKey, "latest", runId);
+      if (fromRows !== null) return fromRows;
+      const latest = runById.get(runId)?.latest_metrics?.[metricKey];
+      return typeof latest === "number" && Number.isFinite(latest) ? latest : null;
+    },
+  };
+}
+
+function bestRunByMetric(runs: RunSummary[], metricKey: string, lookup: MetricLookup) {
   const goal = metricGoal(metricKey);
   return [...runs].sort((left, right) => {
-    const lv = metricBestValue(left, metricKey);
-    const rv = metricBestValue(right, metricKey);
+    const lv = lookup.best(left.id, metricKey);
+    const rv = lookup.best(right.id, metricKey);
     return goal === "minimize" ? compareNumbersAsc(lv, rv) : compareNumbersDesc(lv, rv);
   })[0] ?? null;
 }
@@ -381,6 +415,7 @@ function SortHead({
 function CompareRunTable({
   columns,
   colorByRunId,
+  lookup,
   metricKey,
   onOpenRunArtifacts,
   onReference,
@@ -391,6 +426,7 @@ function CompareRunTable({
 }: {
   columns: CompareColumn[];
   colorByRunId: Map<string, string>;
+  lookup: MetricLookup;
   metricKey: string;
   onOpenRunArtifacts?: (runId: string) => void;
   onReference?: (runId: string) => void;
@@ -464,9 +500,9 @@ function CompareRunTable({
               </div>
               {columns.map((column) => {
                 if (column.kind === "metric") {
-                  const best = metricBestValue(run, column.metricKey);
-                  const latest = run.latest_metrics?.[column.metricKey];
-                  const referenceBest = metricBestValue(referenceRun, column.metricKey);
+                  const best = lookup.best(run.id, column.metricKey);
+                  const latest = lookup.latest(run.id, column.metricKey);
+                  const referenceBest = referenceRun ? lookup.best(referenceRun.id, column.metricKey) : null;
                   const delta = isReference ? null : metricDelta(best, referenceBest, column.goal);
                   return (
                     <div className={`cmp-cell cmp-metric num ${column.metricKey === metricKey ? "primary" : ""}`} key={column.key} role="cell">
@@ -524,11 +560,10 @@ function CompareRunTable({
   );
 }
 
-function CompareSummary({ metricKey, referenceRunId, runs, color }: { metricKey: string; referenceRunId: string; runs: RunSummary[]; color: string }) {
-  const bestRun = bestRunByMetric(runs, metricKey);
-  const referenceRun = runs.find((run) => run.id === referenceRunId);
-  const bestValue = metricBestValue(bestRun, metricKey);
-  const referenceValue = metricBestValue(referenceRun, metricKey);
+function CompareSummary({ metricKey, referenceRunId, runs, color, lookup }: { metricKey: string; referenceRunId: string; runs: RunSummary[]; color: string; lookup: MetricLookup }) {
+  const bestRun = bestRunByMetric(runs, metricKey, lookup);
+  const bestValue = bestRun ? lookup.best(bestRun.id, metricKey) : null;
+  const referenceValue = lookup.best(referenceRunId, metricKey);
   const delta = bestRun && bestRun.id !== referenceRunId ? metricDelta(bestValue, referenceValue, metricGoal(metricKey)) : null;
   if (!bestRun) return null;
   return (
@@ -604,6 +639,7 @@ export function SideBySide({
     || "";
 
   const resolvedLayout = layout === "auto" ? "rows" : layout;
+  const lookup = buildMetricLookup(payload.rows ?? [], rawRuns);
 
   // Columns for the rows table: metric columns, then status/duration/artifacts, then
   // config columns (variation-first). "Diff only" hides config columns identical
@@ -619,7 +655,7 @@ export function SideBySide({
     ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),
   ];
 
-  const sortedRuns = sortRunsForTable(visibleRuns, sort, referenceRunId);
+  const sortedRuns = sortRunsForTable(visibleRuns, sort, referenceRunId, lookup);
 
   const onSortColumn = (col: string, preferAsc: boolean) => {
     setSort((current) => current.col === col ? { col, dir: current.dir === "asc" ? "desc" : "asc" } : { col, dir: preferAsc ? "asc" : "desc" });
@@ -641,7 +677,7 @@ export function SideBySide({
       })()
     : [];
 
-  const referenceColor = colorByRunId.get(bestRunByMetric(visibleRuns, metricKey)?.id ?? "") ?? "var(--accent)";
+  const referenceColor = colorByRunId.get(bestRunByMetric(visibleRuns, metricKey, lookup)?.id ?? "") ?? "var(--accent)";
   const hasRuns = visibleRuns.length > 0;
 
   return (
@@ -653,11 +689,12 @@ export function SideBySide({
       ) : null}
       {hasRuns ? (
         <>
-          <CompareSummary metricKey={metricKey} referenceRunId={referenceRunId} runs={visibleRuns} color={referenceColor} />
+          <CompareSummary metricKey={metricKey} referenceRunId={referenceRunId} runs={visibleRuns} color={referenceColor} lookup={lookup} />
           {resolvedLayout === "rows" ? (
             <CompareRunTable
               columns={columns}
               colorByRunId={colorByRunId}
+              lookup={lookup}
               metricKey={metricKey}
               onOpenRunArtifacts={onOpenRunArtifacts}
               onReference={handleReference}
@@ -680,7 +717,7 @@ export function SideBySide({
 
 // Sort the visible runs by the active column, then pin the reference run to the top
 // so deltas always read against a fixed anchor row.
-function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: string) {
+function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: string, lookup: MetricLookup) {
   const selectedOrder = new Map(runs.map((run, index) => [run.id, index]));
   const tie = (left: RunSummary, right: RunSummary) => (selectedOrder.get(left.id) ?? 0) - (selectedOrder.get(right.id) ?? 0);
   const dir = sort.dir === "asc" ? 1 : -1;
@@ -689,7 +726,7 @@ function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: s
     if (sort.col === "identity") result = left.name.localeCompare(right.name) * dir;
     else if (sort.col.startsWith("metric:")) {
       const key = sort.col.slice("metric:".length);
-      result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(metricBestValue(left, key), metricBestValue(right, key));
+      result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(lookup.best(left.id, key), lookup.best(right.id, key));
     } else if (sort.col.startsWith("config:")) {
       const key = sort.col.slice("config:".length);
       result = compareConfigValues(left.config?.[key], right.config?.[key]) * dir;
