@@ -1,7 +1,10 @@
 "use client";
 
-import { Download, Copy } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 
+import { formatMetricValue } from "../../../src/charts.js";
 import { formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import {
   artifactHasStoredBytes,
@@ -14,7 +17,6 @@ import {
   metricNamespace,
   metricTitle,
   runNoteText,
-  safeArtifactUri,
   shortValue,
 } from "../../dashboard-models";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, RunSummary } from "../../dashboard-types";
@@ -32,6 +34,31 @@ type CompareRowView = {
   values: Record<string, unknown>;
 };
 
+// Run-identity palette: deliberately excludes the brand green, amber, and coral —
+// those hues are reserved for delta semantics (green=better, coral=worse, amber=
+// differs), so a run's identity swatch can never be mistaken for a value judgement.
+// Reference identity is conveyed by the row tint + REF tag, not by swatch color.
+const IDENTITY_PALETTE = [
+  "#7da1e8", // blue
+  "#c084fc", // violet
+  "#5eead4", // teal
+  "#8b7cf6", // indigo
+  "#38bdf8", // sky
+  "#f0abfc", // orchid
+  "#22d3ee", // cyan
+  "#818cf8", // periwinkle
+  "#a3b3cc", // slate
+  "#2dd4bf", // aqua
+];
+
+type SortDir = "asc" | "desc";
+type SortState = { col: string; dir: SortDir };
+
+type MetricColumn = { kind: "metric"; key: string; metricKey: string; goal: "minimize" | "maximize" };
+type AttrColumn = { kind: "status" | "duration" | "artifacts"; key: string };
+type ConfigColumn = { kind: "config"; key: string; configKey: string };
+type CompareColumn = MetricColumn | AttrColumn | ConfigColumn;
+
 function compareSearchTokens(search: string) {
   return search.trim().toLowerCase().split(/\s+/).filter(Boolean);
 }
@@ -48,10 +75,6 @@ function compareRunSearchText(run: RunSummary, artifactsByRun: Record<string, Ar
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
-function compareDatesDesc(left: string, right: string) {
-  return compareNumbersDesc(Date.parse(left), Date.parse(right));
-}
-
 function compareNumbersDesc(left: unknown, right: unknown) {
   const leftNumber = typeof left === "number" && Number.isFinite(left) ? left : null;
   const rightNumber = typeof right === "number" && Number.isFinite(right) ? right : null;
@@ -62,19 +85,7 @@ function compareNumbersDesc(left: unknown, right: unknown) {
 }
 
 function compareNumbersAsc(left: unknown, right: unknown) {
-  const leftNumber = typeof left === "number" && Number.isFinite(left) ? left : null;
-  const rightNumber = typeof right === "number" && Number.isFinite(right) ? right : null;
-  if (leftNumber === null && rightNumber === null) return 0;
-  if (leftNumber === null) return 1;
-  if (rightNumber === null) return -1;
-  return leftNumber - rightNumber;
-}
-
-function compareMetricBest(left: RunSummary, right: RunSummary, metricKey: string) {
-  const goal = metricGoal(metricKey);
-  const leftValue = goal === "minimize" ? left.metric_aggregates?.[metricKey]?.min : left.metric_aggregates?.[metricKey]?.max;
-  const rightValue = goal === "minimize" ? right.metric_aggregates?.[metricKey]?.min : right.metric_aggregates?.[metricKey]?.max;
-  return goal === "minimize" ? compareNumbersAsc(leftValue, rightValue) : compareNumbersDesc(leftValue, rightValue);
+  return -compareNumbersDesc(left, right);
 }
 
 function compareConfigValues(left: unknown, right: unknown) {
@@ -94,57 +105,46 @@ function runDurationMs(run: RunSummary) {
   return Math.max(0, end - start);
 }
 
-function statusPriority(status: string) {
-  if (status === "failed") return 0;
-  if (status === "running") return 1;
-  if (status === "finished") return 2;
-  return 3;
-}
-
-function relativeDeltaLabel(value: unknown, reference: unknown) {
-  if (typeof value !== "number" || typeof reference !== "number" || !Number.isFinite(value) || !Number.isFinite(reference)) return "";
-  const delta = value - reference;
-  if (delta === 0) return "0";
-  if (reference === 0) return `${delta > 0 ? "+" : ""}${formatNumber(delta, 3)}`;
-  const percent = (delta / Math.abs(reference)) * 100;
-  return `${percent > 0 ? "+" : ""}${formatNumber(percent, 1)}%`;
-}
-
-function compareMetricValueForRun(rows: CompareRowView[], runId: string, metricKey: string, reducer: string) {
-  const row = rows.find((candidate) => candidate.path === `metric/${metricKey}/${reducer}`);
-  const value = row?.values?.[runId];
-  return value === undefined || value === null ? null : value;
-}
-
-function compareMetricBestValueForRun(rows: CompareRowView[], runId: string, metricKey: string) {
-  const reducers = metricGoal(metricKey) === "minimize" ? ["min", "latest", "mean"] : ["max", "latest", "mean"];
-  for (const reducer of reducers) {
-    const value = compareMetricValueForRun(rows, runId, metricKey, reducer);
-    if (value !== null) return value;
-  }
-  return null;
-}
-
-function compareMetricBestRunFromRows(runs: RunSummary[], rows: CompareRowView[], metricKey: string) {
-  const goal = metricGoal(metricKey);
-  const candidates = runs
-    .map((run) => {
-      const value = compareMetricBestValueForRun(rows, run.id, metricKey);
-      return typeof value === "number" && Number.isFinite(value) ? { run, value } : null;
-    })
-    .filter((item): item is { run: RunSummary; value: number } => Boolean(item));
-  if (!candidates.length) return null;
-  return candidates.sort((left, right) => goal === "minimize" ? left.value - right.value : right.value - left.value)[0];
+function formatDuration(ms: number | null) {
+  if (ms === null) return "-";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }
 
 function metricBestValue(run: RunSummary | undefined, metricKey: string) {
   if (!run) return null;
   const aggregate = run.metric_aggregates?.[metricKey];
-  return metricGoal(metricKey) === "minimize" ? aggregate?.min : aggregate?.max;
+  const value = metricGoal(metricKey) === "minimize" ? aggregate?.min : aggregate?.max;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+// Goal-aware delta vs the reference run. "Better" is lower for minimize metrics and
+// higher for maximize metrics, so the tone (green/coral) reflects the objective —
+// not the raw sign (a -4% loss is an improvement, and must read green).
+function metricDelta(value: number | null, reference: number | null, goal: "minimize" | "maximize") {
+  if (value === null || reference === null) return null;
+  if (value === reference) return { text: "0%", tone: "flat" as const, title: "Equal to reference" };
+  const diff = value - reference;
+  const improved = goal === "minimize" ? value < reference : value > reference;
+  const tone = improved ? ("up" as const) : ("down" as const);
+  const absText = `${diff > 0 ? "+" : ""}${formatMetricValue(diff)} vs reference`;
+  if (reference === 0) return { text: `${diff > 0 ? "+" : ""}${formatMetricValue(diff)}`, tone, title: absText };
+  const percent = (diff / Math.abs(reference)) * 100;
+  return { text: `${percent > 0 ? "+" : ""}${formatNumber(percent, 1)}%`, tone, title: absText };
 }
 
 function bestRunByMetric(runs: RunSummary[], metricKey: string) {
-  return [...runs].sort((left, right) => compareMetricBest(left, right, metricKey))[0] ?? null;
+  const goal = metricGoal(metricKey);
+  return [...runs].sort((left, right) => {
+    const lv = metricBestValue(left, metricKey);
+    const rv = metricBestValue(right, metricKey);
+    return goal === "minimize" ? compareNumbersAsc(lv, rv) : compareNumbersDesc(lv, rv);
+  })[0] ?? null;
 }
 
 function uniqueMetricKeys(keys: string[]) {
@@ -157,29 +157,33 @@ function uniqueMetricKeys(keys: string[]) {
   });
 }
 
-function sortCompareRuns(runs: RunSummary[], runSort: CompareRunSort, metricKey: string, configSortKey: string, artifactsByRun: Record<string, Artifact[]>) {
-  const selectedOrder = new Map(runs.map((run, index) => [run.id, index]));
-  return [...runs].sort((left, right) => {
-    const tie = (selectedOrder.get(left.id) ?? 0) - (selectedOrder.get(right.id) ?? 0) || left.name.localeCompare(right.name);
-    if (runSort === "selected") return tie;
-    if (runSort === "name") return left.name.localeCompare(right.name) || tie;
-    if (runSort === "newest") return compareDatesDesc(left.created_at, right.created_at) || tie;
-    if (runSort === "status") return statusPriority(left.status) - statusPriority(right.status) || left.status.localeCompare(right.status) || tie;
-    if (runSort === "duration") return compareNumbersDesc(runDurationMs(left), runDurationMs(right)) || tie;
-    if (runSort === "metric-latest") return compareNumbersDesc(left.latest_metrics?.[metricKey], right.latest_metrics?.[metricKey]) || tie;
-    if (runSort === "metric-best") return compareMetricBest(left, right, metricKey) || tie;
-    if (runSort === "artifacts") return compareNumbersDesc(artifactTotalForRun(left) + (artifactsByRun[left.id]?.length ?? 0), artifactTotalForRun(right) + (artifactsByRun[right.id]?.length ?? 0)) || tie;
-    if (runSort === "tags") return compareNumbersDesc(left.tags?.length ?? 0, right.tags?.length ?? 0) || (left.tags ?? []).join(" ").localeCompare((right.tags ?? []).join(" ")) || tie;
-    if (runSort === "notes") {
-      const leftNote = runNoteText(left);
-      const rightNote = runNoteText(right);
-      return Number(Boolean(rightNote)) - Number(Boolean(leftNote)) || leftNote.localeCompare(rightNote) || tie;
+function deriveConfigKeys(runs: RunSummary[]) {
+  const counts = new Map<string, number>();
+  const distinct = new Map<string, Set<string>>();
+  for (const run of runs) {
+    for (const [key, value] of Object.entries(run.config ?? {})) {
+      if (value && typeof value === "object") continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!distinct.has(key)) distinct.set(key, new Set());
+      distinct.get(key)!.add(compactValue(value));
     }
-    if (runSort === "config") return compareConfigValues(left.config?.[configSortKey], right.config?.[configSortKey]) || tie;
-    return tie;
+  }
+  // Prioritise config keys that vary across runs (the interesting ones), then by
+  // how widely they're populated, then alphabetically for a stable order.
+  return [...counts.keys()].sort((left, right) => {
+    const leftVaries = (distinct.get(left)?.size ?? 0) > 1 ? 1 : 0;
+    const rightVaries = (distinct.get(right)?.size ?? 0) > 1 ? 1 : 0;
+    return rightVaries - leftVaries || (counts.get(right) ?? 0) - (counts.get(left) ?? 0) || left.localeCompare(right);
   });
 }
 
+function configValuesDiffer(runs: RunSummary[], key: string) {
+  const seen = new Set<string>();
+  for (const run of runs) seen.add(compactValue(run.config?.[key]));
+  return seen.size > 1;
+}
+
+// ── matrix (transposed) helpers — unchanged behaviour ─────────────────────────
 function compareRowIsDifferent(row: CompareRowView, runs: RunSummary[], referenceRunId: string) {
   const referenceValue = compactValue(row.values?.[referenceRunId]);
   return runs.some((run) => run.id !== referenceRunId && compactValue(row.values?.[run.id]) !== referenceValue);
@@ -217,7 +221,7 @@ function sortCompareRows(rows: CompareRowView[], rowSort: CompareRowSort) {
   });
 }
 
-function buildCompareRows(rawRows: any[], runs: RunSummary[], artifactsByRun: Record<string, Artifact[]>): CompareRowView[] {
+function buildCompareRows(rawRows: any[], runs: RunSummary[]): CompareRowView[] {
   const seenRows = new Set<string>();
   return rawRows
     .map((row, index) => {
@@ -259,10 +263,6 @@ function artifactMediaKind(artifact: Artifact) {
   return "";
 }
 
-function artifactCanUseDownloadRoute(artifact: Artifact) {
-  return artifactHasStoredBytes(artifact);
-}
-
 function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
 }
@@ -270,8 +270,7 @@ function artifactDownloadUrl(artifact: Artifact) {
 function ArtifactMediaPreview({ artifact, compact = false, fallback = false }: { artifact: Artifact; compact?: boolean; fallback?: boolean }) {
   const kind = artifactMediaKind(artifact);
   if (!kind) return fallback ? <small className="artifact-media-fallback">Preview unavailable.</small> : null;
-  const canPlay = artifactCanUseDownloadRoute(artifact);
-  if (!canPlay) return <small className="artifact-media-fallback">{compact ? "Preview unavailable" : "Media preview unavailable; download or copy ID."}</small>;
+  if (!artifactHasStoredBytes(artifact)) return <small className="artifact-media-fallback">{compact ? "Preview unavailable" : "Media preview unavailable; download or copy ID."}</small>;
   const src = artifactDownloadUrl(artifact);
   if (kind === "image") return <img alt={artifact.name} className="artifact-media artifact-image" loading="lazy" src={src} />;
   return kind === "audio" ? <audio className="artifact-media" controls preload="metadata" src={src} /> : <video className="artifact-media" controls preload="metadata" src={src} />;
@@ -313,9 +312,10 @@ function CompareArtifactStrip({ artifactsByRun, runs }: { artifactsByRun: Record
   );
 }
 
-function CompareRunHead({ referenceRunId, run }: { referenceRunId: string; run: RunSummary }) {
+function CompareRunHead({ referenceRunId, run, color }: { referenceRunId: string; run: RunSummary; color: string }) {
   return (
     <div className={`compare-run-head ${run.id === referenceRunId ? "reference" : ""}`}>
+      <span className="cmp-swatch" style={{ background: color }} aria-hidden />
       <strong title={run.name}>{run.name}</strong>
       <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
       {run.id === referenceRunId ? <small className="compare-reference-badge">Reference</small> : null}
@@ -323,27 +323,12 @@ function CompareRunHead({ referenceRunId, run }: { referenceRunId: string; run: 
   );
 }
 
-function CompareEvidenceHead({ row }: { row: CompareRowView }) {
-  return (
-    <div className="compare-row-head compare-evidence-head" title={row.path}>
-      <small>{row.category}</small>
-      <strong>{row.label}</strong>
-    </div>
-  );
-}
-
-function splitCompareHeaderLabel(label: string) {
-  const slash = label.lastIndexOf("/");
-  if (slash < 0) return { prefix: "", suffix: label };
-  return { prefix: label.slice(0, slash + 1), suffix: label.slice(slash + 1) };
-}
-
-function CompareMatrix({ referenceRunId, rows, runs }: { referenceRunId: string; rows: CompareRowView[]; runs: RunSummary[] }) {
+function CompareMatrix({ referenceRunId, rows, runs, colorByRunId }: { referenceRunId: string; rows: CompareRowView[]; runs: RunSummary[]; colorByRunId: Map<string, string> }) {
   return (
     <div className="compare-matrix" style={{ gridTemplateColumns: `minmax(210px, 0.85fr) repeat(${runs.length}, minmax(180px, 1fr))` }}>
       <div className="compare-head compare-attribute">Attribute</div>
       {runs.map((run) => (
-        <CompareRunHead referenceRunId={referenceRunId} run={run} key={run.id} />
+        <CompareRunHead referenceRunId={referenceRunId} run={run} color={colorByRunId.get(run.id) ?? "var(--dim)"} key={run.id} />
       ))}
       {rows.map((row) => (
         <div className="compare-row-fragment" key={row.key} role="row">
@@ -355,11 +340,9 @@ function CompareMatrix({ referenceRunId, rows, runs }: { referenceRunId: string;
             const value = compactValue(row.values?.[run.id]);
             const referenceValue = row.values?.[referenceRunId];
             const changed = run.id !== referenceRunId && value !== compactValue(referenceValue);
-            const delta = run.id === referenceRunId ? "" : relativeDeltaLabel(row.values?.[run.id], referenceValue);
             return (
               <div className={`compare-cell ${run.id === referenceRunId ? "reference" : ""} ${changed ? "changed" : ""}`} key={`${row.key}-${run.id}`} title={value}>
                 <span>{shortValue(value)}</span>
-                {delta ? <small className={delta.startsWith("+") ? "positive" : delta.startsWith("-") ? "negative" : ""}>{delta}</small> : null}
               </div>
             );
           })}
@@ -369,143 +352,206 @@ function CompareMatrix({ referenceRunId, rows, runs }: { referenceRunId: string;
   );
 }
 
-function CompareRunRows({
-  allRows,
-  configSortKey,
+function SortHead({
+  active,
+  align,
+  dir,
+  label,
+  meta,
+  onSort,
+  sticky = false,
+  title,
+}: {
+  active: boolean;
+  align?: "num";
+  dir: SortDir;
+  label: string;
+  meta?: string;
+  onSort: () => void;
+  sticky?: boolean;
+  title?: string;
+}) {
+  const Chevron = !active ? ChevronsUpDown : dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <button
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      className={`cmp-th ${active ? "sorted" : ""} ${align === "num" ? "num" : ""} ${sticky ? "sticky" : ""}`}
+      onClick={onSort}
+      title={title ?? `Sort by ${label}`}
+      type="button"
+    >
+      <span className="cmp-th-label">{label}<Chevron className="cmp-th-chev" size={12} /></span>
+      {meta ? <span className="cmp-th-meta">{meta}</span> : null}
+    </button>
+  );
+}
+
+function CompareRunTable({
+  columns,
+  colorByRunId,
   metricKey,
   onOpenRunArtifacts,
-  onRunSort,
-  onRunSortMetricKey,
+  onReference,
   referenceRunId,
-  rows,
-  runSort,
   runs,
-  sortMetricKey,
-  tableMetricKeys,
+  sort,
+  onSort,
 }: {
-  allRows: CompareRowView[];
-  configSortKey: string;
+  columns: CompareColumn[];
+  colorByRunId: Map<string, string>;
   metricKey: string;
   onOpenRunArtifacts?: (runId: string) => void;
-  onRunSort?: (sort: CompareRunSort) => void;
-  onRunSortMetricKey?: (metric: string) => void;
+  onReference?: (runId: string) => void;
   referenceRunId: string;
-  rows: CompareRowView[];
-  runSort: CompareRunSort;
   runs: RunSummary[];
-  sortMetricKey: string;
-  tableMetricKeys: string[];
+  sort: SortState;
+  onSort: (col: string, preferAsc: boolean) => void;
 }) {
-  const metricColumns = tableMetricKeys.length ? tableMetricKeys : [metricKey];
-  const evidenceRows = rows.slice(0, Math.max(4, 8 - Math.max(0, metricColumns.length - 1)));
-  const omittedEvidenceCount = Math.max(0, rows.length - evidenceRows.length);
-  const fixedColumns = `280px repeat(${metricColumns.length}, minmax(148px, 170px)) 230px 96px 118px repeat(${evidenceRows.length}, 138px)`;
-  const requestRunSort = (nextSort: CompareRunSort, nextMetricKey?: string) => {
-    if (nextMetricKey) onRunSortMetricKey?.(nextMetricKey);
-    onRunSort?.(nextSort);
-  };
+  const referenceRun = runs.find((run) => run.id === referenceRunId);
+  const gridTemplate = `minmax(220px, 1.4fr) ${columns.map((column) => column.kind === "metric" ? "minmax(132px, 1fr)" : "minmax(96px, 0.7fr)").join(" ")}`;
   return (
-    <div className="compare-run-layout">
-      <div className="compare-run-table" role="grid" style={{ gridTemplateColumns: fixedColumns }}>
-        <button aria-label="Sort compared runs by name" className={`compare-row-head compare-sort-head sticky-run-cell ${runSort === "name" ? "active" : ""}`} onClick={() => requestRunSort("name")} type="button">Run</button>
-        {metricColumns.map((tableMetricKey) => (
-          <button
-            aria-label={`Sort compared runs by ${tableMetricKey}`}
-            className={`compare-row-head compare-sort-head ${sortMetricKey === tableMetricKey && (runSort === "metric-best" || runSort === "metric-latest") ? "active" : ""}`}
-            key={tableMetricKey}
-            onClick={() => requestRunSort("metric-best", tableMetricKey)}
-            title={tableMetricKey}
-            type="button"
-          >
-            <span>{metricTitle(tableMetricKey)}</span>
-            <small>{metricNamespace(tableMetricKey)} · {metricGoalLabel(tableMetricKey)}</small>
-          </button>
-        ))}
-        <button aria-label="Sort compared runs by annotations" className={`compare-row-head compare-sort-head ${runSort === "notes" || runSort === "tags" ? "active" : ""}`} onClick={() => requestRunSort(runSort === "notes" ? "tags" : "notes")} type="button">Annotations</button>
-        <button aria-label="Sort compared runs by artifact count" className={`compare-row-head compare-sort-head ${runSort === "artifacts" ? "active" : ""}`} onClick={() => requestRunSort("artifacts")} type="button">Artifacts</button>
-        <button aria-label={`Sort compared runs by ${configSortKey || "config"}`} className={`compare-row-head compare-sort-head ${runSort === "config" ? "active" : ""}`} onClick={() => requestRunSort("config")} type="button">{configSortKey || "Config"}</button>
-        {evidenceRows.map((row) => <CompareEvidenceHead key={row.key} row={row} />)}
+    <div className="cmp-table-wrap">
+      <div className="cmp-table" role="table" style={{ "--cmp-cols": gridTemplate } as CSSProperties}>
+        <div className="cmp-row cmp-head-row" role="row">
+          <SortHead active={sort.col === "identity"} dir={sort.dir} label="Run" onSort={() => onSort("identity", true)} sticky title="Sort by run name" />
+          {columns.map((column) => {
+            if (column.kind === "metric") {
+              return (
+                <SortHead
+                  active={sort.col === column.key}
+                  align="num"
+                  dir={sort.dir}
+                  key={column.key}
+                  label={metricTitle(column.metricKey)}
+                  meta={`${metricNamespace(column.metricKey)} · ${metricGoalLabel(column.metricKey)}`}
+                  onSort={() => onSort(column.key, column.goal === "minimize")}
+                  title={column.metricKey}
+                />
+              );
+            }
+            if (column.kind === "config") {
+              return (
+                <SortHead active={sort.col === column.key} align="num" dir={sort.dir} key={column.key} label={column.configKey} meta="config" onSort={() => onSort(column.key, true)} />
+              );
+            }
+            const labels: Record<string, [string, string | undefined, boolean]> = {
+              status: ["Status", undefined, false],
+              duration: ["Duration", "wall clock", true],
+              artifacts: ["Artifacts", undefined, true],
+            };
+            const [label, meta, numeric] = labels[column.kind];
+            return <SortHead active={sort.col === column.key} align={numeric ? "num" : undefined} dir={sort.dir} key={column.key} label={label} meta={meta} onSort={() => onSort(column.key, column.kind !== "duration")} />;
+          })}
+        </div>
         {runs.map((run) => {
-          const note = runNoteText(run);
-          const artifactCount = artifactTotalForRun(run);
+          const isReference = run.id === referenceRunId;
+          const color = colorByRunId.get(run.id) ?? "var(--dim)";
           return (
-            <div className="compare-run-line" key={run.id} role="row">
-              <div className={`compare-run-identity sticky-run-cell ${run.id === referenceRunId ? "reference" : ""}`}>
-                <strong title={run.name}>{run.name}</strong>
-                <span className="compare-run-meta-line">
-                  <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
-                  {run.id === referenceRunId ? <small className="compare-reference-badge">Reference</small> : <small>{run.project}</small>}
+            <div className={`cmp-row ${isReference ? "reference" : ""}`} key={run.id} role="row">
+              <div className="cmp-cell cmp-identity sticky" role="cell">
+                <span className="cmp-swatch" style={{ background: color }} aria-hidden />
+                <span className="cmp-identity-meta">
+                  <span className="cmp-run-name" title={run.name}>{run.name}</span>
+                  <span className="cmp-identity-sub">
+                    <span className={`pill cmp-status ${statusTone(run.status)}`}>{run.status}</span>
+                    {isReference ? <span className="cmp-ref-tag">Reference</span> : <span className="cmp-proj">{run.project}</span>}
+                  </span>
                 </span>
-              </div>
-              {metricColumns.map((tableMetricKey) => {
-                const aggregate = run.metric_aggregates?.[tableMetricKey];
-                const referenceAggregate = runs.find((candidate) => candidate.id === referenceRunId)?.metric_aggregates?.[tableMetricKey];
-                const latestValue = compareMetricValueForRun(allRows, run.id, tableMetricKey, "latest") ?? run.latest_metrics?.[tableMetricKey];
-                const bestValue = compareMetricBestValueForRun(allRows, run.id, tableMetricKey) ?? (metricGoal(tableMetricKey) === "minimize" ? aggregate?.min : aggregate?.max);
-                const referenceBestValue = compareMetricBestValueForRun(allRows, referenceRunId, tableMetricKey)
-                  ?? (metricGoal(tableMetricKey) === "minimize" ? referenceAggregate?.min : referenceAggregate?.max);
-                const delta = relativeDeltaLabel(bestValue, referenceBestValue);
-                return (
-                  <div className={`compare-run-cell compare-signal-cell compare-metric-cell ${tableMetricKey === metricKey ? "primary" : ""}`} key={`${run.id}-${tableMetricKey}`} title={tableMetricKey}>
-                    <strong>{compactValue(bestValue)}</strong>
-                    <small>latest {compactValue(latestValue)}{delta ? ` · ${delta}` : ""}</small>
-                  </div>
-                );
-              })}
-              <div className="compare-run-cell compare-annotations">
-                <TagList tags={run.tags} />
-                <small title={note}>{note || "No note"}</small>
-              </div>
-              <div className="compare-run-cell compare-artifact-count">
-                {artifactCount && onOpenRunArtifacts ? (
+                {onReference ? (
                   <button
-                    aria-label={`Open artifacts for ${run.name}`}
-                    className="compare-artifact-count-button"
-                    onClick={() => onOpenRunArtifacts(run.id)}
-                    title={`Open ${formatNumber(artifactCount, 0)} artifacts for ${run.name}`}
+                    aria-label={isReference ? `${run.name} is the reference run` : `Set ${run.name} as reference`}
+                    aria-pressed={isReference}
+                    className={`cmp-anchor ${isReference ? "on" : ""}`}
+                    onClick={() => onReference(run.id)}
+                    title={isReference ? "Reference run" : "Set as reference"}
                     type="button"
                   >
-                    {formatNumber(artifactCount, 0)}
+                    {isReference ? "◆" : "◇"}
                   </button>
-                ) : (
-                  <span>{formatNumber(artifactCount, 0)}</span>
-                )}
+                ) : null}
               </div>
-              <div className="compare-run-cell">{configSortKey ? compactValue(run.config?.[configSortKey]) : "-"}</div>
-              {evidenceRows.map((row) => {
-                const value = compactValue(row.values?.[run.id]);
-                const referenceValue = row.values?.[referenceRunId];
-                const changed = run.id !== referenceRunId && value !== compactValue(referenceValue);
+              {columns.map((column) => {
+                if (column.kind === "metric") {
+                  const best = metricBestValue(run, column.metricKey);
+                  const latest = run.latest_metrics?.[column.metricKey];
+                  const referenceBest = metricBestValue(referenceRun, column.metricKey);
+                  const delta = isReference ? null : metricDelta(best, referenceBest, column.goal);
+                  return (
+                    <div className={`cmp-cell cmp-metric num ${column.metricKey === metricKey ? "primary" : ""}`} key={column.key} role="cell">
+                      <span className="cmp-metric-val">{best === null ? <span className="cmp-dash">—</span> : formatMetricValue(best)}</span>
+                      <span className="cmp-metric-sub">
+                        {isReference ? (
+                          <span className="cmp-baseline">reference</span>
+                        ) : (
+                          <>
+                            {delta ? <span className={`cmp-delta ${delta.tone}`} title={delta.title}>{delta.text}</span> : null}
+                            {typeof latest === "number" && Number.isFinite(latest) ? <span className="cmp-latest">latest {formatMetricValue(latest)}</span> : null}
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  );
+                }
+                if (column.kind === "config") {
+                  const value = run.config?.[column.configKey];
+                  const differs = !isReference && compactValue(value) !== compactValue(referenceRun?.config?.[column.configKey]);
+                  return (
+                    <div className={`cmp-cell num ${differs ? "diff" : ""}`} key={column.key} role="cell" title={compactValue(value)}>
+                      {compactValue(value) === "-" ? <span className="cmp-dash">—</span> : shortValue(compactValue(value))}
+                    </div>
+                  );
+                }
+                if (column.kind === "status") {
+                  return (
+                    <div className="cmp-cell" key={column.key} role="cell">
+                      <span className={`pill cmp-status ${statusTone(run.status)}`}>{run.status}</span>
+                    </div>
+                  );
+                }
+                if (column.kind === "duration") {
+                  return <div className="cmp-cell num" key={column.key} role="cell">{formatDuration(runDurationMs(run))}</div>;
+                }
+                const artifactCount = artifactTotalForRun(run);
                 return (
-                  <div className={`compare-run-cell ${changed ? "changed" : ""}`} key={`${run.id}-${row.key}`} title={value}>{shortValue(value)}</div>
+                  <div className="cmp-cell num" key={column.key} role="cell">
+                    {artifactCount && onOpenRunArtifacts ? (
+                      <button aria-label={`Open ${formatNumber(artifactCount, 0)} artifacts for ${run.name}`} className="cmp-artifact-link" onClick={() => onOpenRunArtifacts(run.id)} type="button">
+                        {formatNumber(artifactCount, 0)}
+                      </button>
+                    ) : (
+                      <span>{artifactCount ? formatNumber(artifactCount, 0) : <span className="cmp-dash">—</span>}</span>
+                    )}
+                  </div>
                 );
               })}
             </div>
           );
         })}
       </div>
-      {omittedEvidenceCount ? (
-        <small className="matrix-note compare-evidence-note">Showing the top {evidenceRows.length} evidence fields in row mode; {omittedEvidenceCount} more are available through search, sorting, or column layout.</small>
-      ) : null}
     </div>
   );
 }
 
-function CompareSummary({ metricKey, referenceRunId, rows, runs }: { metricKey: string; referenceRunId: string; rows: CompareRowView[]; runs: RunSummary[] }) {
-  const bestRunFromRows = compareMetricBestRunFromRows(runs, rows, metricKey);
-  const bestRun = bestRunFromRows?.run ?? bestRunByMetric(runs, metricKey);
+function CompareSummary({ metricKey, referenceRunId, runs, color }: { metricKey: string; referenceRunId: string; runs: RunSummary[]; color: string }) {
+  const bestRun = bestRunByMetric(runs, metricKey);
   const referenceRun = runs.find((run) => run.id === referenceRunId);
-  const bestValue = bestRunFromRows?.value ?? metricBestValue(bestRun, metricKey);
+  const bestValue = metricBestValue(bestRun, metricKey);
   const referenceValue = metricBestValue(referenceRun, metricKey);
-  const delta = relativeDeltaLabel(bestValue, referenceValue);
+  const delta = bestRun && bestRun.id !== referenceRunId ? metricDelta(bestValue, referenceValue, metricGoal(metricKey)) : null;
   if (!bestRun) return null;
   return (
-    <div className="compare-summary">
-      <div className="compare-summary-cell">
-        <span className="analysis-eyebrow">{metricGoalLabel(metricKey)} run · {metricKey}</span>
-        <strong>{bestRun.name}</strong>
-        <em>{formatNumber(bestValue, 3)}{delta ? ` (${delta} vs reference)` : ""}</em>
+    <div className="cmp-best-banner">
+      <span className="cmp-swatch lg" style={{ background: color }} aria-hidden />
+      <div className="cmp-best-meta">
+        <span className="analysis-eyebrow">{metricGoalLabel(metricKey)} run · {metricTitle(metricKey)}</span>
+        <strong title={bestRun.name}>{bestRun.name}</strong>
       </div>
+      <span className="cmp-best-val">{bestValue === null ? "—" : formatMetricValue(bestValue)}</span>
+      {bestRun.id === referenceRunId ? (
+        <span className="cmp-best-delta">reference</span>
+      ) : delta ? (
+        <span className={`cmp-best-delta cmp-delta ${delta.tone}`} title={delta.title}>{delta.text} vs reference</span>
+      ) : null}
     </div>
   );
 }
@@ -517,13 +563,10 @@ export function SideBySide({
   layout = "auto",
   metricKey,
   onOpenRunArtifacts,
-  onRunSort,
-  onRunSortMetricKey,
+  onReferenceRunId,
   payload,
   referenceRunId: selectedReferenceRunId = "",
   rowSort = "signal",
-  runSort = "selected",
-  runSortMetricKey,
   search = "",
   tableMetrics,
 }: {
@@ -533,6 +576,7 @@ export function SideBySide({
   layout?: CompareLayout;
   metricKey: string;
   onOpenRunArtifacts?: (runId: string) => void;
+  onReferenceRunId?: (id: string) => void;
   onRunSort?: (sort: CompareRunSort) => void;
   onRunSortMetricKey?: (metric: string) => void;
   payload: any;
@@ -543,85 +587,125 @@ export function SideBySide({
   search?: string;
   tableMetrics?: string[];
 }) {
+  const metricTableKeys = useMemo(() => uniqueMetricKeys([metricKey, ...(tableMetrics ?? [])]).slice(0, 7), [metricKey, tableMetrics]);
+  const defaultSortCol = `metric:${metricKey}`;
+  const [sort, setSort] = useState<SortState>({ col: defaultSortCol, dir: metricGoal(metricKey) === "minimize" ? "asc" : "desc" });
+
   if (!payload?.rows?.length) return <div className="empty">Select runs to compare configs, metrics, and attributes.</div>;
   const rawRuns = (payload.runs ?? []) as RunSummary[];
-  const effectiveRunSortMetricKey = runSortMetricKey || metricKey;
-  const metricTableKeys = uniqueMetricKeys([metricKey, ...(tableMetrics ?? [])]).slice(0, 7);
-  const sortedRuns = sortCompareRuns(rawRuns, runSort, effectiveRunSortMetricKey, configSortKey, artifactsByRun);
+
+  // Stable run-identity color by selected order (independent of sort), so a run
+  // keeps the same swatch across re-sorts and matches the charts' color identity.
+  const colorByRunId = new Map(rawRuns.map((run, index) => [run.id, IDENTITY_PALETTE[index % IDENTITY_PALETTE.length]]));
+
   const searchTokens = compareSearchTokens(search);
   const runMatches = searchTokens.length
-    ? sortedRuns.filter((run) => searchTokens.every((token) => compareRunSearchText(run, artifactsByRun).includes(token)))
-    : sortedRuns;
-  const runSearchActive = searchTokens.length > 0 && runMatches.length > 0;
-  const selectedReferenceRun = selectedReferenceRunId ? sortedRuns.find((run) => run.id === selectedReferenceRunId) : null;
-  const referencePreservedBySearch = Boolean(runSearchActive && selectedReferenceRun && !runMatches.some((run) => run.id === selectedReferenceRun.id));
-  const visibleRuns = runSearchActive
-    ? referencePreservedBySearch && selectedReferenceRun
-      ? [selectedReferenceRun, ...runMatches]
-      : runMatches
-    : sortedRuns;
+    ? rawRuns.filter((run) => searchTokens.every((token) => compareRunSearchText(run, artifactsByRun).includes(token)))
+    : rawRuns;
+  const runSearchActive = searchTokens.length > 0;
+  const visibleRuns = runSearchActive && runMatches.length ? runMatches : runSearchActive ? [] : rawRuns;
+
   const referenceRunId = (selectedReferenceRunId && visibleRuns.some((run) => run.id === selectedReferenceRunId) ? selectedReferenceRunId : "")
     || (payload.reference_run_id && visibleRuns.some((run: RunSummary) => run.id === payload.reference_run_id) ? payload.reference_run_id : "")
     || visibleRuns[0]?.id
-    || sortedRuns[0]?.id
     || rawRuns[0]?.id
     || "";
+
   const resolvedLayout = layout === "auto" ? "rows" : layout;
-  const allRows = buildCompareRows(payload.rows ?? [], visibleRuns, artifactsByRun).map((row) => ({
-    ...row,
-    different: compareRowIsDifferent(row, visibleRuns, referenceRunId),
-    reference: row.values?.[referenceRunId],
-  }));
-  const diffRows = diffOnly ? allRows.filter((row) => row.different) : allRows;
-  const searchedRows = runSearchActive ? diffRows : filterCompareRows(diffRows, search);
-  const sortedRows = sortCompareRows(searchedRows, rowSort);
-  const rowLimit = resolvedLayout === "rows" ? 40 : 80;
-  const rows = sortedRows.slice(0, rowLimit);
-  const hiddenCount = Math.max(0, sortedRows.length - rows.length);
-  const searchActive = search.trim().length > 0;
-  const hasRows = rows.length > 0;
+
+  // Columns for the rows table: metric columns, then status/duration/artifacts, then
+  // config columns (variation-first). "Diff only" hides config columns identical
+  // across every run.
+  const configKeys = deriveConfigKeys(visibleRuns);
+  const orderedConfigKeys = configSortKey ? [configSortKey, ...configKeys.filter((key) => key !== configSortKey)] : configKeys;
+  const visibleConfigKeys = (diffOnly ? orderedConfigKeys.filter((key) => configValuesDiffer(visibleRuns, key)) : orderedConfigKeys).slice(0, 5);
+  const columns: CompareColumn[] = [
+    ...metricTableKeys.map((key): MetricColumn => ({ kind: "metric", key: `metric:${key}`, metricKey: key, goal: metricGoal(key) })),
+    { kind: "status", key: "status" },
+    { kind: "duration", key: "duration" },
+    { kind: "artifacts", key: "artifacts" },
+    ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),
+  ];
+
+  const sortedRuns = sortRunsForTable(visibleRuns, sort, referenceRunId);
+
+  const onSortColumn = (col: string, preferAsc: boolean) => {
+    setSort((current) => current.col === col ? { col, dir: current.dir === "asc" ? "desc" : "asc" } : { col, dir: preferAsc ? "asc" : "desc" });
+  };
+
+  const handleReference = onReferenceRunId ? (runId: string) => onReferenceRunId(runId) : undefined;
+
+  // ── matrix (transposed) layout state ────────────────────────────────────────
+  const matrixRows = resolvedLayout === "columns"
+    ? (() => {
+        const all = buildCompareRows(payload.rows ?? [], visibleRuns).map((row) => ({
+          ...row,
+          different: compareRowIsDifferent(row, visibleRuns, referenceRunId),
+          reference: row.values?.[referenceRunId],
+        }));
+        const diffRows = diffOnly ? all.filter((row) => row.different) : all;
+        const searched = runSearchActive ? diffRows : filterCompareRows(diffRows, search);
+        return sortCompareRows(searched, rowSort).slice(0, 80);
+      })()
+    : [];
+
+  const referenceColor = colorByRunId.get(bestRunByMetric(visibleRuns, metricKey)?.id ?? "") ?? "var(--accent)";
+  const hasRuns = visibleRuns.length > 0;
 
   return (
-    <div className="panel-body side-by-side" id="side-by-side">
+    <div className="panel-body side-by-side cmp-redesign" id="side-by-side">
       {runSearchActive ? (
         <small className="matrix-note search-scope-note">
-          Search matched {runMatches.length} of {sortedRuns.length} compared runs by name, tags, notes, config, or artifacts{referencePreservedBySearch ? "; reference preserved for deltas" : ""}.
+          Search matched {runMatches.length} of {rawRuns.length} compared runs by name, tags, notes, config, or artifacts.
         </small>
       ) : null}
-      {hasRows ? (
+      {hasRuns ? (
         <>
-          <CompareSummary metricKey={metricKey} referenceRunId={referenceRunId} rows={sortedRows} runs={visibleRuns} />
+          <CompareSummary metricKey={metricKey} referenceRunId={referenceRunId} runs={visibleRuns} color={referenceColor} />
           {resolvedLayout === "rows" ? (
-            <CompareRunRows
-              allRows={allRows}
-              configSortKey={configSortKey}
+            <CompareRunTable
+              columns={columns}
+              colorByRunId={colorByRunId}
               metricKey={metricKey}
               onOpenRunArtifacts={onOpenRunArtifacts}
-              onRunSort={onRunSort}
-              onRunSortMetricKey={onRunSortMetricKey}
+              onReference={handleReference}
               referenceRunId={referenceRunId}
-              rows={rows}
-              runSort={runSort}
-              sortMetricKey={effectiveRunSortMetricKey}
-              tableMetricKeys={metricTableKeys}
-              runs={visibleRuns}
+              runs={sortedRuns}
+              sort={sort}
+              onSort={onSortColumn}
             />
           ) : (
-            <CompareMatrix
-              referenceRunId={referenceRunId}
-              rows={rows}
-              runs={visibleRuns}
-            />
+            <CompareMatrix referenceRunId={referenceRunId} rows={matrixRows} runs={visibleRuns} colorByRunId={colorByRunId} />
           )}
           <CompareArtifactStrip artifactsByRun={artifactsByRun} runs={visibleRuns} />
         </>
-      ) : null}
-      {!hasRows ? <div className="empty">No compared runs or rows match the current search.</div> : null}
-      {hiddenCount ? (
-        <small className="matrix-note">
-          Showing {rows.length} of {sortedRows.length} rows{searchActive && !runSearchActive ? " after row search" : runSearchActive ? " for the matched runs" : ""}. Narrow the search or switch sorting to pull different evidence forward.
-        </small>
-      ) : null}
+      ) : (
+        <div className="empty">No compared runs match the current search.</div>
+      )}
     </div>
   );
+}
+
+// Sort the visible runs by the active column, then pin the reference run to the top
+// so deltas always read against a fixed anchor row.
+function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: string) {
+  const selectedOrder = new Map(runs.map((run, index) => [run.id, index]));
+  const tie = (left: RunSummary, right: RunSummary) => (selectedOrder.get(left.id) ?? 0) - (selectedOrder.get(right.id) ?? 0);
+  const dir = sort.dir === "asc" ? 1 : -1;
+  const sorted = [...runs].sort((left, right) => {
+    let result = 0;
+    if (sort.col === "identity") result = left.name.localeCompare(right.name) * dir;
+    else if (sort.col.startsWith("metric:")) {
+      const key = sort.col.slice("metric:".length);
+      result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(metricBestValue(left, key), metricBestValue(right, key));
+    } else if (sort.col.startsWith("config:")) {
+      const key = sort.col.slice("config:".length);
+      result = compareConfigValues(left.config?.[key], right.config?.[key]) * dir;
+    } else if (sort.col === "status") result = left.status.localeCompare(right.status) * dir;
+    else if (sort.col === "duration") result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(runDurationMs(left), runDurationMs(right));
+    else if (sort.col === "artifacts") result = (dir === 1 ? compareNumbersAsc : compareNumbersDesc)(artifactTotalForRun(left), artifactTotalForRun(right));
+    return result || tie(left, right);
+  });
+  const reference = sorted.find((run) => run.id === referenceRunId);
+  return reference ? [reference, ...sorted.filter((run) => run.id !== referenceRunId)] : sorted;
 }
