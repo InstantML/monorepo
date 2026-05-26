@@ -1018,6 +1018,7 @@ function OnboardingBody({
 }) {
   const storageSetupRequired = !workspaceStorageReady(session);
   const byocRequired = workspaceUsesByoc(session) && storageSetupRequired;
+  const canManageStorage = canManageWorkspaceStorage(session);
   return (
     <>
       <div className="iml-org">
@@ -1037,6 +1038,8 @@ function OnboardingBody({
           </a>
           <a className="iml-btn iml-btn--ghost iml-btn--block" href="/signup">Create a real workspace instead</a>
         </div>
+      ) : byocRequired && !canManageStorage ? (
+        <StorageSetupBlocked />
       ) : byocRequired ? (
         <ByocSetup
           busy={busy}
@@ -1103,6 +1106,19 @@ function StorageSetupPending({ busy }: { busy: boolean }) {
         <span className="iml-spin" aria-hidden="true" /> Workspace storage is not ready yet. SDK keys and dashboard access stay locked until provisioning finishes.
       </div>
       <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={() => window.location.reload()} type="button">
+        <RefreshCw size={15} /> Check again
+      </button>
+    </div>
+  );
+}
+
+function StorageSetupBlocked() {
+  return (
+    <div className="iml-actions">
+      <div className="iml-status is-busy" role="status">
+        <AlertCircle size={14} aria-hidden="true" /> Storage setup is waiting on a workspace owner or admin. Ask them to connect ClickHouse before opening the dashboard.
+      </div>
+      <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" onClick={() => window.location.reload()} type="button">
         <RefreshCw size={15} /> Check again
       </button>
     </div>
@@ -1422,6 +1438,11 @@ function workspaceUsesByoc(session: SessionPayload | null) {
 function workspaceStorageReady(session: SessionPayload | null) {
   if (!session?.organization?.id) return true;
   return !organizationRequiresStorageOnboarding(session.organization);
+}
+
+function canManageWorkspaceStorage(session: SessionPayload | null) {
+  const role = session?.membership?.role;
+  return role === "owner" || role === "admin";
 }
 
 function clickhouseIdentifierPreview(value: string, fallback: string) {
