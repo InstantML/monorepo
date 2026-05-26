@@ -127,10 +127,33 @@ jobs:
           set -euo pipefail
           image="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACT_REPOSITORY:-instantml}/instantml-rust-server:${IMAGE_TAG}"
           echo "Building ${image} via Cloud Build."
-          # Mirror the exact command tools/deploy-cloud-run.mjs would run, so
-          # the deploy step in job 2 can re-use this image without rebuilding.
-          gcloud --quiet --project "${GCP_PROJECT}" builds submit \
-            --tag "${image}" .
+          # Submit the build async + poll its status, instead of streaming
+          # logs. The streaming path in `gcloud builds submit` requires
+          # broad project-level Viewer permission to read the default-
+          # cloud-build logs bucket; polling only needs cloudbuild.builds
+          # .viewer which the deploy SA already has via builds.editor.
+          build_id=$(gcloud --quiet --project "${GCP_PROJECT}" builds submit \
+            --tag "${image}" --async --format='value(id)' .)
+          echo "Build submitted: ${build_id}"
+          echo "Logs: https://console.cloud.google.com/cloud-build/builds/${build_id}?project=${GCP_PROJECT}"
+          # Poll until the build reaches a terminal state. Cloud Build SLA
+          # is well under our 10-minute job budget; bail at 25 min just in
+          # case so we don't sit forever on a stuck build.
+          deadline=$(( $(date +%s) + 1500 ))
+          while [ "$(date +%s)" -lt "${deadline}" ]; do
+            status=$(gcloud --quiet --project "${GCP_PROJECT}" builds describe "${build_id}" --format='value(status)')
+            echo "Build ${build_id}: ${status}"
+            case "${status}" in
+              SUCCESS) echo "Build succeeded."; exit 0 ;;
+              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
+                echo "::error::Cloud Build finished with status ${status}."
+                exit 1 ;;
+              QUEUED|WORKING|PENDING) sleep 15 ;;
+              *) echo "Unknown status '${status}', sleeping."; sleep 15 ;;
+            esac
+          done
+          echo "::error::Build ${build_id} did not finish within 25 minutes."
+          exit 1
 
   deploy:
     name: Deploy To Cloud Run
