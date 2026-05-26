@@ -147,8 +147,19 @@ npm run dev:api
 Start the Next app in another terminal against that local API:
 
 ```bash
-INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
-INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
+INSTANTML_WEB_EXPLICIT_API_BASES=1 \
+INSTANTML_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_CONTROL_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_DATA_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_API_ALLOWED_ORIGINS=http://127.0.0.1:8000 \
+npm run web:build
+
+INSTANTML_WEB_EXPLICIT_API_BASES=1 \
+INSTANTML_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_CONTROL_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_DATA_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_API_ALLOWED_ORIGINS=http://127.0.0.1:8000 \
+npm run web:start
 ```
 
 Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create the copy-once SDK key, and enter the dashboard. Choose a Free/Pro/Premium plan, choose hosted storage or Premium BYOC ClickHouse, and optionally invite included seats. BYOC signups must first validate the customer ClickHouse endpoint from onboarding; the API key button stays blocked until the Rust data-plane route is ready.

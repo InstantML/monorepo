@@ -59,6 +59,9 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
 
   assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route");
   assert.match(authFlow, /window\.location\.assign\(nextPath\)/, "dev sign-in must not bounce returning users through onboarding");
+  assert.match(authFlow, /useState\("personal"\)/, "signup should default to the personal workspace account type");
+  assert.match(authFlow, /> Personal</, "signup should label the one-seat path as Personal, not legacy Customer");
+  assert.match(authFlow, /accountType === "business" \? "Organization" : "Workspace"/, "personal signup should label the name field as a workspace");
 
   assert.match(shell, /userTouchedDashboardFiltersRef/, "dashboard should track local filter edits while preferences load");
   assert.match(
@@ -82,6 +85,28 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
+});
+
+test("settings seat summary falls back to org membership metadata for read-only users", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+
+  assert.match(shell, /activeMembershipSummary/, "dashboard should retain the current membership summary");
+  assert.match(
+    shell,
+    /activeUsageOrg\?\.usage\?\.seats \?\? activeMembershipSummary\?\.member_count \?\? seats\.length/,
+    "read-only users should see the active member count instead of a misleading 0 seats when seat details are admin-only",
+  );
+});
+
+test("workspace creation UI keeps the active workspace visible and waits for availability", () => {
+  const topbar = readFileSync(`${root}app/dashboard/chrome/topbar.tsx`, "utf8");
+  const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
+
+  assert.match(topbar, /availability\?\.available === true && availability\.checkedName === trimmedName/, "create-workspace should wait for positive availability for the current name before submit");
+  assert.match(topbar, /disabled=\{busy \|\| personalBlocked \|\| !trimmedName \|\| !nameAvailable\}/, "create button should stay disabled while availability is unknown");
+  assert.match(topbar, /kind === "personal" \? "Workspace name" : "Organization name"/, "personal creation should use workspace-oriented copy");
+  assert.match(topbar, /> New workspace</, "menu action should match the mixed personal/org creation modal");
+  assert.match(css, /@media \(max-width: 720px\) \{[\s\S]*?\.account-workspace-current \{[\s\S]*?display: block;/, "mobile account trigger should keep the current workspace visible");
 });
 
 test("dashboard plan usage surfaces API request usage", () => {

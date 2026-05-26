@@ -182,6 +182,31 @@ Fresh UX reviewer:
   left workspace text passive.
 - Decision: accepted.
 
+Post-implementation frontend/UX reviewer:
+
+- Finding: the smoke test ignored generic 403 resource errors, the personal
+  signup field still said organization, and the create modal could briefly
+  reuse stale positive name availability.
+- Decision: accepted. The smoke now allowlists only expected 403 paths, the
+  personal signup field is workspace-labeled, and create availability is tied
+  to the checked name.
+
+Post-implementation backend/security reviewer:
+
+- Finding: paid org creation needed a recoverable checkout intent and a write
+  blocking account projection before contacting Stripe, and owner self-invite
+  checks needed case-insensitive comparison.
+- Decision: accepted. Paid create now persists `checkout_initializing`, blocks
+  writes with `checkout_pending`, records `checkout_failed` on Stripe setup
+  failure, and compares owner invite email case-insensitively.
+
+Post-implementation E2E reviewer:
+
+- Finding: read-only coverage hid controls but did not prove direct browser
+  session mutations were denied.
+- Decision: accepted. The UI smoke now asserts viewer 403s for run creation,
+  invitation creation, API key creation, and shared workspace view creation.
+
 ## Decision
 
 Accepted for implementation.

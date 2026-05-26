@@ -2380,15 +2380,22 @@ button.compare-row-head.active {
     display: none;
   }
   .account-workspace-trigger {
-    width: 36px;
-    padding: 0;
-    justify-content: center;
+    max-width: min(48vw, 180px);
+    padding: 0 8px 0 0;
+    justify-content: flex-start;
   }
   .account-workspace-trigger .avatar {
     border-right: 0;
     border-radius: calc(var(--radius) - 1px);
   }
-  .account-workspace-current,
+  .account-workspace-current {
+    display: block;
+    min-width: 0;
+    max-width: 28vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .account-workspace-trigger > svg {
     display: none;
   }

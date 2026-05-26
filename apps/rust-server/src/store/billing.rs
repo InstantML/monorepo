@@ -139,41 +139,24 @@ pub async fn create_checkout_for_org(
         created_at: Utc::now(),
         expires_at: None,
     };
-    store
-        .persist_locked(
-            "billing_checkout_intent",
-            org_id,
-            &intent.id.to_string(),
-            &intent,
+    intent.status = "checkout_initializing".to_string();
+    persist_billing_checkout_intent(store, &intent).await?;
+    let blocks_until_checkout = matches!(action, "paid_signup" | "new_org");
+    if blocks_until_checkout {
+        persist_billing_account(
+            store,
+            pending_checkout_account(
+                &org,
+                &account,
+                target_plan_tier,
+                &intent,
+                "Complete Stripe Checkout to unlock this workspace.",
+            ),
         )
         .await?;
-    {
-        let mut data = store.data.lock().await;
-        data.insert_billing_checkout_intent(intent.clone());
     }
-    if matches!(action, "paid_signup" | "new_org") {
-        let pending = BillingAccountProjection {
-            schema_version: 1,
-            org_id,
-            access_state: BILLING_CHECKOUT_PENDING.to_string(),
-            plan_tier: org.plan_tier.clone(),
-            effective_plan_tier: "free".to_string(),
-            requested_plan_tier: Some(target_plan_tier.to_string()),
-            paid_extra_seats: 0,
-            stripe_customer_id: account.stripe_customer_id.clone(),
-            stripe_subscription_id: account.stripe_subscription_id.clone(),
-            subscription_status: account.subscription_status.clone(),
-            current_period_start: account.current_period_start,
-            current_period_end: account.current_period_end,
-            cancel_at_period_end: false,
-            grace_until: None,
-            pending_intent_id: Some(intent.id),
-            message: Some("Complete Stripe Checkout to unlock this workspace.".to_string()),
-            updated_at: Utc::now(),
-        };
-        persist_billing_account(store, pending).await?;
-    }
-    let session = crate::stripe_billing::create_subscription_checkout(
+
+    let session = match crate::stripe_billing::create_subscription_checkout(
         config,
         crate::stripe_billing::SubscriptionCheckoutParams {
             customer_id: account.stripe_customer_id.clone(),
@@ -187,23 +170,49 @@ pub async fn create_checkout_for_org(
             cancel_url: config.cancel_url.clone(),
         },
     )
-    .await?;
+    .await
+    {
+        Ok(session) => session,
+        Err(error) => {
+            intent.status = "checkout_failed".to_string();
+            let _ = persist_billing_checkout_intent(store, &intent).await;
+            if blocks_until_checkout {
+                let _ = persist_billing_account(
+                    store,
+                    pending_checkout_account(
+                        &org,
+                        &account,
+                        target_plan_tier,
+                        &intent,
+                        "Stripe Checkout could not be created. Retry checkout from billing.",
+                    ),
+                )
+                .await;
+            }
+            return Err(error);
+        }
+    };
     intent.stripe_checkout_session_id = Some(session.id.clone());
-    intent.stripe_customer_id = session.customer_id.clone().or(account.stripe_customer_id);
+    intent.stripe_customer_id = session
+        .customer_id
+        .clone()
+        .or_else(|| account.stripe_customer_id.clone());
     intent.stripe_subscription_id = session.subscription_id.clone();
     intent.url = session.url.clone();
     intent.status = "checkout_created".to_string();
-    store
-        .persist_locked(
-            "billing_checkout_intent",
-            org_id,
-            &intent.id.to_string(),
-            &intent,
+    persist_billing_checkout_intent(store, &intent).await?;
+    if blocks_until_checkout {
+        persist_billing_account(
+            store,
+            pending_checkout_account(
+                &org,
+                &account,
+                target_plan_tier,
+                &intent,
+                "Complete Stripe Checkout to unlock this workspace.",
+            ),
         )
         .await?;
-    {
-        let mut data = store.data.lock().await;
-        data.insert_billing_checkout_intent(intent.clone());
     }
     Ok(BillingCheckoutInfo {
         intent_id: intent.id,
@@ -211,6 +220,40 @@ pub async fn create_checkout_for_org(
         session_id: intent.stripe_checkout_session_id,
         url: intent.url,
     })
+}
+
+fn pending_checkout_account(
+    org: &OrganizationRow,
+    account: &BillingAccountProjection,
+    target_plan_tier: &str,
+    intent: &BillingCheckoutIntent,
+    message: &str,
+) -> BillingAccountProjection {
+    BillingAccountProjection {
+        schema_version: 1,
+        org_id: org.id,
+        access_state: BILLING_CHECKOUT_PENDING.to_string(),
+        plan_tier: org.plan_tier.clone(),
+        effective_plan_tier: "free".to_string(),
+        requested_plan_tier: Some(target_plan_tier.to_string()),
+        paid_extra_seats: 0,
+        stripe_customer_id: intent
+            .stripe_customer_id
+            .clone()
+            .or_else(|| account.stripe_customer_id.clone()),
+        stripe_subscription_id: intent
+            .stripe_subscription_id
+            .clone()
+            .or_else(|| account.stripe_subscription_id.clone()),
+        subscription_status: account.subscription_status.clone(),
+        current_period_start: account.current_period_start,
+        current_period_end: account.current_period_end,
+        cancel_at_period_end: false,
+        grace_until: None,
+        pending_intent_id: Some(intent.id),
+        message: Some(message.to_string()),
+        updated_at: Utc::now(),
+    }
 }
 
 pub async fn sync_checkout_session(
@@ -1088,6 +1131,26 @@ async fn persist_billing_account(
     Ok(())
 }
 
+async fn persist_billing_checkout_intent(
+    store: &Store,
+    intent: &BillingCheckoutIntent,
+) -> AppResult<()> {
+    store
+        .persist_locked(
+            "billing_checkout_intent",
+            intent.org_id,
+            &intent.id.to_string(),
+            intent,
+        )
+        .await?;
+    store
+        .data
+        .lock()
+        .await
+        .insert_billing_checkout_intent(intent.clone());
+    Ok(())
+}
+
 async fn apply_local_free_plan(
     store: &Store,
     mut org: OrganizationRow,
@@ -1206,6 +1269,49 @@ fn datetime_from_unix(seconds: i64) -> Option<DateTime<Utc>> {
 mod tests {
     use super::*;
 
+    fn org_fixture(name: &str, slug: &str) -> OrganizationRow {
+        OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: slug.to_string(),
+            name: name.to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: PLAN_FREE.included_seats,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        }
+    }
+
+    fn store_with_data(data: StoreData) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_orgs_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
     #[test]
     fn default_paid_legacy_org_remains_active() {
         let org = OrganizationRow {
@@ -1224,5 +1330,77 @@ mod tests {
         let account = default_billing_account(&org);
         assert_eq!(account.access_state, BILLING_PAID_ACTIVE);
         assert_eq!(account.effective_plan_tier, "pro");
+    }
+
+    #[tokio::test]
+    async fn checkout_pending_account_keeps_paid_workspace_blocked_and_recoverable() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut org = org_fixture("Ada Lab", "ada-lab");
+        org.created_by_user_id = Some(user.id);
+        let intent = BillingCheckoutIntent {
+            schema_version: 1,
+            id: Uuid::new_v4(),
+            org_id: org.id,
+            user_id: user.id,
+            action: "new_org".to_string(),
+            target_plan_tier: "pro".to_string(),
+            pending_seat_emails: Vec::new(),
+            stripe_checkout_session_id: None,
+            stripe_customer_id: None,
+            stripe_subscription_id: None,
+            status: "checkout_failed".to_string(),
+            url: None,
+            created_at: Utc::now(),
+            expires_at: None,
+        };
+        let account = pending_checkout_account(
+            &org,
+            &default_billing_account(&org),
+            "pro",
+            &intent,
+            "Stripe Checkout could not be created. Retry checkout from billing.",
+        );
+        let mut data = StoreData::default();
+        data.insert_user(user);
+        data.insert_org(org.clone());
+        data.insert_billing_checkout_intent(intent.clone());
+        data.insert_billing_account(account);
+        let store = store_with_data(data);
+
+        let data = store.data.lock().await;
+        let stored_account = data
+            .billing_accounts
+            .get(&org.id)
+            .expect("billing account should block paid org writes after checkout failure");
+        assert_eq!(stored_account.access_state, BILLING_CHECKOUT_PENDING);
+        assert_eq!(stored_account.effective_plan_tier, "free");
+        assert_eq!(stored_account.requested_plan_tier.as_deref(), Some("pro"));
+        assert!(stored_account
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("could not be created"));
+        let intent_id = stored_account
+            .pending_intent_id
+            .expect("pending account should reference the checkout intent");
+        let stored_intent = data
+            .billing_checkout_intents
+            .get(&intent_id)
+            .cloned()
+            .expect("failed checkout should keep a recoverable local intent");
+        assert_eq!(stored_intent.status, "checkout_failed");
+        drop(data);
+
+        let blocked = ensure_billing_write_allowed(&store, org.id, "create runs")
+            .await
+            .unwrap_err();
+        assert_eq!(blocked.status(), StatusCode::PAYMENT_REQUIRED);
     }
 }

@@ -540,6 +540,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const activeMembershipRole = sessionPayload?.membership?.role ?? "";
   const canManageOrg = roleCanManageOrg(activeMembershipRole);
   const canWriteRuns = roleCanWriteRuns(activeMembershipRole);
+  const activeMembershipSummary = useMemo(
+    () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
+      ?? orgMemberships.find((membership) => membership.is_current)
+      ?? null,
+    [activeOrgId, orgMemberships],
+  );
   const activeUsageOrg = useMemo(() => usagePayload?.organizations?.find((org) => org.org_id === activeOrgId) ?? usagePayload?.organizations?.[0] ?? null, [activeOrgId, usagePayload]);
   const activeUsage = activeUsageOrg?.usage ?? {};
   const activeLimits = activeUsageOrg?.limits ?? {};
@@ -2855,7 +2861,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               orgName={sessionPayload?.organization?.name ?? ""}
               orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
               project={project}
-              reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? seats.length)}
+              reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
               seats={seats}
               selectedRunCount={selectedRunIds.length}
               status={status}

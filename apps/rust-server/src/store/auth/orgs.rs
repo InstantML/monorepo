@@ -158,6 +158,14 @@ pub async fn create_current_user_organization(
                 "personal workspace already exists for this user",
             ));
         }
+        if initial_invitations
+            .iter()
+            .any(|invitation| invitation.email.eq_ignore_ascii_case(&user.primary_email))
+        {
+            return Err(AppError::conflict(
+                "workspace owner cannot be invited to the same workspace",
+            ));
+        }
         let stored_plan_id = if paid_checkout_required {
             "free"
         } else {
@@ -307,7 +315,7 @@ fn normalize_initial_invitations(
 
 fn user_has_personal_workspace(data: &StoreData, user_id: Uuid) -> bool {
     data.organizations.values().any(|org| {
-        org.account_type == "personal"
+        is_personal_account_type(&org.account_type)
             && (org.created_by_user_id == Some(user_id)
                 || data.memberships.values().any(|membership| {
                     membership.org_id == org.id
@@ -347,7 +355,7 @@ pub(super) fn collect_user_org_memberships(
                 name: org.name.clone(),
                 slug: org.slug.clone(),
                 account_type: org.account_type.clone(),
-                is_personal: org.account_type == "personal",
+                is_personal: is_personal_account_type(&org.account_type),
                 plan_tier: org.plan_tier.clone(),
                 role: membership.role.clone(),
                 role_label: membership_role_label(&membership.role).to_string(),
@@ -683,7 +691,7 @@ mod tests {
     fn membership_summaries_include_labels_capabilities_and_personal_flag() {
         let user_id = Uuid::new_v4();
         let mut personal = org_fixture("Ada", "ada");
-        personal.account_type = "personal".to_string();
+        personal.account_type = "customer".to_string();
         let business = org_fixture("Acme", "acme");
         let mut data = StoreData::default();
         data.insert_org(personal.clone());
@@ -714,7 +722,7 @@ mod tests {
     async fn current_user_create_org_rejects_second_personal_workspace() {
         let user = UserRow {
             id: Uuid::new_v4(),
-            primary_email: "ada@example.com".to_string(),
+            primary_email: "Ada@Example.com".to_string(),
             display_name: Some("Ada".to_string()),
             avatar_url: None,
             created_at: Utc::now(),
@@ -750,7 +758,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn current_user_create_org_rejects_legacy_personal_owner_workspace() {
+    async fn current_user_create_org_rejects_legacy_customer_owner_workspace() {
         let user = UserRow {
             id: Uuid::new_v4(),
             primary_email: "ada@example.com".to_string(),
@@ -760,7 +768,7 @@ mod tests {
             last_seen_at: None,
         };
         let mut personal = org_fixture("Ada", "ada");
-        personal.account_type = "personal".to_string();
+        personal.account_type = "customer".to_string();
         personal.created_by_user_id = None;
         let mut data = StoreData::default();
         data.insert_user(user.clone());
@@ -786,6 +794,44 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_owner_initial_invite_before_persisting() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: Some(vec![InitialOrganizationInvitation {
+                    email: "ada@example.com".to_string(),
+                    role: Some("member".to_string()),
+                }]),
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+        assert!(store.data.lock().await.organizations.is_empty());
     }
 
     #[tokio::test]

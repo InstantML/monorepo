@@ -35,6 +35,7 @@ try {
   const paginationRunIds = [];
   const nextEnv = {
     ...process.env,
+    INSTANTML_WEB_EXPLICIT_API_BASES: "1",
     INSTANTML_API_BASE: apiBaseUrl,
     INSTANTML_CONTROL_API_BASE: apiBaseUrl,
     INSTANTML_DATA_API_BASE: apiBaseUrl,
@@ -60,6 +61,8 @@ try {
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
   const errors = [];
+  let expectedForbiddenResourceErrors = 0;
+  const unexpectedForbiddenResourceUrls = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
@@ -75,18 +78,28 @@ try {
   });
   page.on("response", (response) => {
     if (response.url().includes("/objects") && response.status() === 404) objectNotFoundUrls.push(response.url());
+    if (response.status() === 403) {
+      if (isExpectedForbiddenResource(response)) {
+        expectedForbiddenResourceErrors += 1;
+      } else {
+        unexpectedForbiddenResourceUrls.push(response.url());
+      }
+    }
   });
 
   const webBaseUrl = `http://127.0.0.1:${webPort}`;
+  const smokeId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const ownerEmail = `ui-smoke-${smokeId}@example.com`;
+  const primaryOrgName = `UI Smoke ${smokeId}`;
   await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".landing-root", { timeout: 10000 });
   assert.equal(summaryUrls.length, 0, "public landing page should not fetch run summaries");
 
   await page.goto(`${webBaseUrl}/signup`, { waitUntil: "domcontentloaded" });
-  await page.getByLabel("Email").fill("ui-smoke@example.com");
+  await page.getByLabel("Email").fill(ownerEmail);
   await page.getByLabel("Name").fill("UI Smoke");
   await page.getByLabel("Business").check();
-  await page.getByLabel("Organization").fill(`UI Smoke ${Date.now()}`);
+  await page.getByLabel("Organization").fill(primaryOrgName);
   await page.getByRole("radio", { name: /Pro/ }).check();
   await page.getByLabel("Reserved seats").fill("teammate@example.com");
   await page.getByRole("button", { name: /Continue with Dev Google/ }).click();
@@ -200,6 +213,9 @@ try {
   let screenshotPath = path.join(dir, "ui-smoke-core.png");
 
   if (!fullWorkspaceSmoke) {
+    if (backendMode !== "node") {
+      await assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName, smokeId);
+    }
     await page.screenshot({ path: screenshotPath, fullPage: true });
   } else {
 
@@ -966,6 +982,9 @@ try {
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("No runs match"));
   assert.match(await page.locator("#status-message").innerText(), /current filters/);
   assert.match(await page.locator(".workspace-run-list .compact-empty").innerText(), /No runs match/);
+  if (backendMode !== "node") {
+    await assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName, smokeId);
+  }
   screenshotPath = path.join(dir, "ui-smoke.png");
   await page.screenshot({ path: screenshotPath, fullPage: true });
   }
@@ -977,12 +996,17 @@ try {
       expectedNodeObject404s -= 1;
       return false;
     }
+    if (expectedForbiddenResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 403 (Forbidden)") {
+      expectedForbiddenResourceErrors -= 1;
+      return false;
+    }
     // The local-dev smoke signs in through InstantML's dev auth flow; Clerk's
     // optional browser bundle can fail independently when hosted env keys are
     // present on a machine without network access to Clerk.
     if (error.includes("TypeError: Failed to fetch") && error.includes("clerk.browser.js")) return false;
     return true;
   });
+  assert.deepEqual(unexpectedForbiddenResourceUrls, []);
   assert.deepEqual(unexpectedErrors, []);
   console.log(`UI smoke passed. Screenshot: ${screenshotPath}`);
 } finally {
@@ -1036,6 +1060,159 @@ async function assertWorkbarDropdownVisible(page, selectId) {
   await page.waitForFunction((id) => !document.querySelector(`#${id}-menu`), selectId);
 }
 
+async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName, smokeId) {
+  const workspaceName = `Switch Org ${smokeId}`;
+  const viewerEmail = `viewer-${smokeId}@example.com`;
+  const viewerRunName = `viewer-readable-${smokeId}`;
+
+  await page.setViewportSize({ width: 390, height: 820 });
+  await openAccountWorkspaceMenu(page);
+  const mobileTrigger = await page.locator(".account-workspace-trigger").evaluate((node) => ({
+    text: node.textContent ?? "",
+    width: node.getBoundingClientRect().width,
+  }));
+  assert.match(mobileTrigger.text, new RegExp(escapeRegExp(primaryOrgName)), "mobile account trigger should show current workspace name");
+  assert.ok(mobileTrigger.width > 70, `mobile account trigger should not collapse to avatar-only, got ${mobileTrigger.width}`);
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await openAccountWorkspaceMenu(page);
+  await page.getByRole("button", { name: "New workspace" }).click();
+  const modal = page.getByRole("dialog", { name: "Create workspace" });
+  await modal.waitFor({ state: "visible", timeout: 10000 });
+  await modal.getByRole("button", { name: "Organization" }).click();
+  await modal.getByLabel("Organization name").fill(workspaceName);
+  assert.equal(await modal.getByRole("button", { name: "Create workspace", exact: true }).isEnabled(), false, "create should wait for name availability");
+  await page.waitForFunction(() => document.querySelector(".workspace-create-status")?.textContent?.includes("available"));
+  await modal.getByRole("button", { name: "Create workspace", exact: true }).click();
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForFunction((name) => document.querySelector(".account-workspace-current")?.textContent?.includes(name), workspaceName);
+
+  const createdSession = await pageApiGet(page, "/api/auth/session");
+  assert.equal(createdSession.organization.name, workspaceName);
+
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-list", { timeout: 15000 });
+  const emptySummary = await pageApiGet(page, "/api/runs/summary?limit=1&offset=0");
+  assert.equal(emptySummary.total, 0, "new workspace should start without runs");
+  const emptyWorkspaceText = await page.locator("body").innerText();
+  assert.doesNotMatch(emptyWorkspaceText, /seed-44|page-run-/, "new workspace should not show prior workspace runs");
+
+  const viewerRun = (await pageApiRequest(page, "POST", "/runs", {
+    project: "viewer-project",
+    name: viewerRunName,
+    config: { seed: 101, role: "viewer-flow" },
+    tags: ["viewer-flow"],
+  })).run;
+  await pageApiRequest(page, "POST", `/runs/${viewerRun.id}/metrics`, {
+    step: 0,
+    metrics: { "eval/viewer_score": 0.3 },
+  });
+  await pageApiRequest(page, "POST", `/runs/${viewerRun.id}/metrics`, {
+    step: 1,
+    metrics: { "eval/viewer_score": 0.7 },
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction((name) => document.querySelector(".workspace-run-list")?.textContent?.includes(name), viewerRunName);
+
+  const invitePayload = await pageApiRequest(page, "POST", `/api/orgs/${createdSession.organization.id}/invitations`, {
+    email: viewerEmail,
+    role: "viewer",
+  });
+  assert.equal(invitePayload.invitation.role, "viewer");
+  assert.match(invitePayload.preview_link, /\/invite#t=instantml_invite_/);
+  const inviteTtlMs = new Date(invitePayload.invitation.expires_at).getTime() - new Date(invitePayload.invitation.created_at).getTime();
+  assert.ok(inviteTtlMs > 6.9 * 24 * 60 * 60 * 1000 && inviteTtlMs < 7.1 * 24 * 60 * 60 * 1000, `invite TTL should be 7 days, got ${inviteTtlMs}`);
+
+  await page.getByRole("link", { name: /^Settings$/ }).click();
+  await page.waitForFunction((email) => document.querySelector(".tab-pane.active")?.textContent?.includes(email), viewerEmail);
+  const ownerSettingsText = await page.locator(".tab-pane.active").innerText();
+  assert.match(ownerSettingsText, /2\s*\/\s*2/, "pending viewer invite should reserve the included free seat");
+  assert.match(ownerSettingsText, /Read only/);
+  assert.match(ownerSettingsText, /Expires/);
+
+  await openAccountWorkspaceMenu(page);
+  await page.waitForFunction((name) => document.querySelector("#account-workspace-menu")?.textContent?.includes(name), primaryOrgName);
+  await page.locator("#account-workspace-menu .account-workspace-option", { hasText: primaryOrgName }).click();
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForFunction((name) => document.querySelector(".account-workspace-current")?.textContent?.includes(name), primaryOrgName);
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("seed-44"));
+  const primaryWorkspaceText = await page.locator("body").innerText();
+  assert.doesNotMatch(primaryWorkspaceText, new RegExp(escapeRegExp(viewerRunName)), "primary workspace should not show run data from the created org");
+
+  const previewUrl = new URL(invitePayload.preview_link);
+  await page.goto(`${webBaseUrl}${previewUrl.pathname}${previewUrl.hash}`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.body.textContent?.includes("Read only invite"));
+  await page.getByLabel("Email").fill(viewerEmail);
+  await page.getByRole("button", { name: /Accept invitation/ }).click();
+  await page.waitForURL(/\/dashboard\/runs$/, { timeout: 15000 });
+  await page.waitForFunction((name) => document.querySelector(".workspace-run-list")?.textContent?.includes(name), viewerRunName);
+  const viewerRunsText = await page.locator("body").innerText();
+  assert.match(viewerRunsText, /eval\/viewer_score/);
+  assert.equal(await page.getByRole("button", { name: "Save view" }).isEnabled(), false);
+  await pageApiExpectStatus(page, "POST", "/runs", {
+    project: "viewer-project",
+    name: "viewer-must-not-write",
+  }, 403);
+  await pageApiExpectStatus(page, "POST", `/api/orgs/${createdSession.organization.id}/invitations`, {
+    email: `blocked-${smokeId}@example.com`,
+    role: "viewer",
+  }, 403);
+  await pageApiExpectStatus(page, "POST", `/api/orgs/${createdSession.organization.id}/api-keys`, {
+    name: "viewer blocked key",
+    scopes: ["sdk:ingest"],
+  }, 403);
+  await pageApiExpectStatus(page, "POST", "/api/workspace-views", {
+    name: "viewer blocked view",
+    payload: { panels: [] },
+  }, 403);
+
+  await openAccountWorkspaceMenu(page);
+  const viewerMenuText = await page.locator("#account-workspace-menu").innerText();
+  assert.match(viewerMenuText, /Read only/);
+  assert.doesNotMatch(viewerMenuText, /Manage billing/);
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("link", { name: /^Settings$/ }).click();
+  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Seat management is available to workspace admins."));
+  const viewerSettingsText = await page.locator(".tab-pane.active").innerText();
+  assert.match(viewerSettingsText, /2\s*\/\s*2/, "viewer Settings should use membership metadata for seat usage");
+  assert.doesNotMatch(viewerSettingsText, /Invite email/);
+
+  await page.getByRole("link", { name: /^API$/ }).click();
+  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("API key management is available to workspace admins."));
+  const viewerApiText = await page.locator(".tab-pane.active").innerText();
+  assert.doesNotMatch(viewerApiText, /API key name/);
+}
+
+async function openAccountWorkspaceMenu(page) {
+  const trigger = page.getByRole("button", { name: /Account and workspace menu/ });
+  await trigger.click();
+  await page.waitForSelector("#account-workspace-menu", { state: "visible", timeout: 10000 });
+}
+
+function isExpectedForbiddenResource(response) {
+  let path = "";
+  try {
+    path = new URL(response.url()).pathname;
+  } catch {
+    return false;
+  }
+  const method = response.request().method();
+  return (method === "GET" && (
+    path === "/api/usage"
+    || path === "/api/billing/status"
+    || /^\/api\/orgs\/[^/]+\/(?:seats|invitations|api-keys)$/.test(path)
+  ))
+    || (method === "POST" && (
+      path === "/runs"
+      || path === "/api/invitations/accept"
+      || path === "/api/workspace-views"
+      || /^\/api\/orgs\/[^/]+\/(?:invitations|api-keys)$/.test(path)
+    ));
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -1063,6 +1240,26 @@ async function pageApiRequest(page, method, route, body, options = {}) {
     await page.waitForTimeout(250);
   }
   assert.equal(result.ok, true, `${method} ${route}: ${JSON.stringify(result.payload)} (${result.status})`);
+  return result.payload;
+}
+
+async function pageApiExpectStatus(page, method, route, body, expectedStatus) {
+  const result = await page.evaluate(async ({ method, route, body }) => {
+    const response = await fetch(route, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { text };
+    }
+    return { ok: response.ok, payload, status: response.status };
+  }, { method, route, body });
+  assert.equal(result.status, expectedStatus, `${method} ${route}: expected ${expectedStatus}, got ${result.status} ${JSON.stringify(result.payload)}`);
   return result.payload;
 }
 

@@ -150,7 +150,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const { user } = useUser();
   const [config, setConfig] = useState<AuthConfig>({ dev_auth_enabled: false, managed_clerk_enabled: false, loaded: false });
   const [session, setSession] = useState<SessionPayload | null>(null);
-  const [accountType, setAccountType] = useState("customer");
+  const [accountType, setAccountType] = useState("personal");
   const [planTier, setPlanTier] = useState<PlanTier>("free");
   const [storageChoice, setStorageChoice] = useState<StorageChoice>(STORAGE_HOSTED);
   const [email, setEmail] = useState("");
@@ -645,7 +645,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       ? <>Connect your <span className="iml-em">ClickHouse</span></>
       : apiKey ? <>Save it, then <span className="iml-em">go.</span></> : <>Create your <span className="iml-em">SDK key</span></>)
     : signupMode
-      ? <>Set up your <span className="iml-em">{accountType === "business" ? "team org" : "org"}</span></>
+      ? <>Set up your <span className="iml-em">{accountType === "business" ? "team org" : "personal workspace"}</span></>
       : <>Sign in to your <span className="iml-em">workspace</span></>;
 
   const statusRole = isError ? "alert" : "status";
@@ -894,7 +894,7 @@ function SignupAside({ accountType }: { accountType: string }) {
           : <>The training tool you keep <span className="iml-em">open all day.</span></>}
       </p>
       <ol className="iml-steps" aria-label="Sign-up steps">
-        <li className="iml-step is-active"><span className="idx" aria-hidden="true">01</span><div><div className="st-t">Name your workspace</div><div className="st-s">Account type + org</div></div></li>
+        <li className="iml-step is-active"><span className="idx" aria-hidden="true">01</span><div><div className="st-t">Name your workspace</div><div className="st-s">Personal or org</div></div></li>
         <li className="iml-step"><span className="idx" aria-hidden="true">02</span><div><div className="st-t">Verify with Clerk</div><div className="st-s">Google / email</div></div></li>
         <li className="iml-step"><span className="idx" aria-hidden="true">03</span><div><div className="st-t">Create an SDK key</div><div className="st-s">Start logging</div></div></li>
       </ol>
@@ -1294,8 +1294,8 @@ function SignupFields({
         <legend className="iml-legend">Account type</legend>
         <div className="iml-seg">
           <label className="iml-seg-opt">
-            <input checked={accountType === "customer"} name="iml-account-type" onChange={() => onAccountType("customer")} type="radio" />
-            <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span> Customer</span>
+            <input checked={accountType === "personal"} name="iml-account-type" onChange={() => onAccountType("personal")} type="radio" />
+            <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span> Personal</span>
             <span className="iml-seg-d">Personal workspace · 1 seat</span>
           </label>
           <label className="iml-seg-opt">
@@ -1307,7 +1307,7 @@ function SignupFields({
       </fieldset>
 
       <div className="iml-field">
-        <label htmlFor="iml-org">Organization <span className="iml-hint">required</span></label>
+        <label htmlFor="iml-org">{accountType === "business" ? "Organization" : "Workspace"} <span className="iml-hint">required</span></label>
         <input
           className="iml-input"
           id="iml-org"

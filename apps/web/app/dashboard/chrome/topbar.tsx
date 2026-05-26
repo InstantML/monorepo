@@ -46,6 +46,7 @@ export type CreateWorkspaceInput = {
 
 export type WorkspaceNameAvailability = {
   available?: boolean;
+  checkedName?: string;
   slug?: string;
   message?: string;
 };
@@ -248,19 +249,28 @@ function WorkspaceCreateModal({
   const inviteDeferred = plan !== "free";
   const normalizedStorage = byocBlocked ? "instantml-hosted" : storage;
   const trimmedName = name.trim();
+  const nameAvailable = availability?.available === true && availability.checkedName === trimmedName;
+  const availabilityStatus = !trimmedName
+    ? ""
+    : availability === null
+      ? "Checking name..."
+      : availability.slug
+        ? `instantml.ai/${availability.slug}${availability.message ? ` · ${availability.message}` : ""}`
+        : availability.message ?? "Name unavailable.";
 
   useEffect(() => {
     let cancelled = false;
     setAvailability(null);
     if (!trimmedName) return undefined;
+    const checkedName = trimmedName;
     const id = window.setTimeout(() => {
-      onCheckName(trimmedName)
+      onCheckName(checkedName)
         .then((result) => {
-          if (!cancelled) setAvailability(result);
+          if (!cancelled) setAvailability({ ...result, checkedName });
         })
         .catch((checkError) => {
           if (!cancelled) {
-            setAvailability({ available: false, message: checkError instanceof Error ? checkError.message : "Unable to check this name." });
+            setAvailability({ available: false, checkedName, message: checkError instanceof Error ? checkError.message : "Unable to check this name." });
           }
         });
     }, 250);
@@ -275,7 +285,7 @@ function WorkspaceCreateModal({
   }, [byocBlocked, storage]);
 
   async function submit() {
-    if (busy || personalBlocked || !trimmedName || availability?.available === false) return;
+    if (busy || personalBlocked || !trimmedName || !nameAvailable) return;
     setBusy(true);
     setError("");
     try {
@@ -310,13 +320,12 @@ function WorkspaceCreateModal({
           </div>
           {personalBlocked ? <p className="form-error">You already have a personal workspace.</p> : null}
           <label className="workspace-create-field">
-            Organization name
+            {kind === "personal" ? "Workspace name" : "Organization name"}
             <input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
           </label>
           {trimmedName ? (
             <p className={`workspace-create-status ${availability?.available === false ? "error" : ""}`} role={availability?.available === false ? "alert" : "status"}>
-              {availability?.slug ? `instantml.ai/${availability.slug}` : "Checking name..."}
-              {availability?.message ? ` · ${availability.message}` : null}
+              {availabilityStatus}
             </p>
           ) : null}
           <div className="workspace-plan-grid" role="group" aria-label="Plan">
@@ -360,7 +369,7 @@ function WorkspaceCreateModal({
         </div>
         <div className="workspace-create-actions">
           <button className="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="primary-button" type="button" onClick={submit} disabled={busy || personalBlocked || !trimmedName || availability?.available === false}>
+          <button className="primary-button" type="button" onClick={submit} disabled={busy || personalBlocked || !trimmedName || !nameAvailable}>
             {busy ? "Creating" : plan === "free" ? "Create workspace" : "Continue to checkout"}
           </button>
         </div>
@@ -508,7 +517,7 @@ function AccountWorkspaceMenu({
           </div>
           {error ? <div className="org-switcher-error" role="alert">{error}</div> : null}
           <div className="account-workspace-actions">
-            <button type="button" onClick={() => { setCreateOpen(true); setOpen(false); }}><Plus size={14} /> New organization</button>
+            <button type="button" onClick={() => { setCreateOpen(true); setOpen(false); }}><Plus size={14} /> New workspace</button>
             <button type="button" onClick={() => { setOpen(false); onOpenSettings(); }}><Settings size={14} /> Workspace settings</button>
             {currentCapabilities.manage_billing ? (
               <button type="button" onClick={() => { setOpen(false); onOpenBilling(); }}><CreditCard size={14} /> Manage billing</button>
