@@ -16,6 +16,11 @@ const MAX_TEXT_BYTES = 512;
 const PROJECT_METADATA_BYTES = 512;
 const RUN_METADATA_BYTES = 1024;
 const ARTIFACT_METADATA_BYTES = 512;
+const MAX_RUN_SEARCH_QUERY_BYTES = 512;
+const MAX_RUN_SEARCH_TERMS = 32;
+const MAX_RUN_SEARCH_AST_NODES = 64;
+const MAX_RUN_SEARCH_DEPTH = 8;
+const MAX_RUN_SEARCH_FIELD_BYTES = 32 * 1024;
 
 export const PLAN_TIERS = Object.freeze({
   free: Object.freeze({
@@ -80,6 +85,14 @@ export const USAGE_OVERAGE_POLICY = Object.freeze({
 });
 
 export class ValidationError extends Error {}
+export class SearchValidationError extends ValidationError {
+  constructor(message, { code = "run_search_invalid", field = "q", position = null } = {}) {
+    super(message);
+    this.code = code;
+    this.field = field;
+    this.position = position;
+  }
+}
 export class NotFoundError extends Error {}
 export class ConflictError extends Error {}
 export class UnauthorizedError extends Error {}
@@ -1037,11 +1050,15 @@ function runSummaryForRun(state, run) {
 }
 
 export function exportData(state, input = {}) {
-  const projects = input.project || input.project_id || input.org_id ? listProjectsForExport(state, input) : state.projects;
-  const projectIds = new Set(projects.map((project) => project.id));
-  const runs = state.runs.filter((run) => projectIds.has(run.project_id));
+  const scopedProjects = input.project || input.project_id || input.org_id ? listProjectsForExport(state, input) : state.projects;
+  const scopedProjectIds = new Set(scopedProjects.map((project) => project.id));
+  const sortBy = validateRunSort(input.sort_by ?? input.sortBy ?? "created");
+  const metricKey = input.metric_key ? validateName(input.metric_key, "metric key") : "eval/return_mean";
+  const runs = sortRunRecords(state, filterRuns(state, input), sortBy, metricKey)
+    .filter((run) => scopedProjectIds.has(run.project_id));
   const runIds = new Set(runs.map((run) => run.id));
-  const orgIds = new Set(projects.map((project) => project.org_id));
+  const projects = scopedProjects.filter((project) => runs.some((run) => run.project_id === project.id));
+  const orgIds = new Set(scopedProjects.map((project) => project.org_id));
   return {
     version: 1,
     exported_at: utcNow(),
@@ -1692,17 +1709,467 @@ function filterRuns(state, input) {
     throw new ValidationError("status must be one of: failed, finished, running");
   }
   const orgId = input.org_id ? resolveOrgId(state, input.org_id) : null;
+  const search = compileRunSearch(input.q);
   return state.runs
     .filter((run) => (orgId ? run.org_id === orgId : true))
     .filter((run) => (input.project_id ? run.project_id === input.project_id : true))
     .filter((run) => (input.project ? run.project === input.project : true))
     .filter((run) => (input.status ? run.status === input.status : true))
-    .filter((run) => {
-      if (!input.q) return true;
-      const haystack = `${run.name} ${run.project} ${JSON.stringify(run.tags)} ${JSON.stringify(run.config)} ${JSON.stringify(run.metadata)}`.toLowerCase();
-      const queryParts = String(input.q).toLowerCase().split(/\s+/).filter(Boolean);
-      return queryParts.every((part) => haystack.includes(part));
-    });
+    .filter((run) => runMatchesSearch(run, search));
+}
+
+function compileRunSearch(rawInput) {
+  const raw = String(rawInput ?? "").trim();
+  if (!raw) return { expr: null };
+  if (Buffer.byteLength(raw, "utf8") > MAX_RUN_SEARCH_QUERY_BYTES) {
+    throw searchValidation("Run search is too long.", 1);
+  }
+  try {
+    const tokens = tokenizeRunSearch(raw);
+    return compileRunSearchTokens(raw, tokens);
+  } catch (error) {
+    if (error?.incomplete) return legacyRunSearch(raw);
+    if (error instanceof SearchValidationError) throw error;
+    throw searchValidation(error?.message || "Invalid run search.", error?.position ?? 1);
+  }
+}
+
+function compileRunSearchTokens(raw, tokens) {
+  const parser = new RunSearchParser(tokens);
+  let expr;
+  try {
+    expr = parser.parseOr(0);
+  } catch (error) {
+    if (error instanceof SearchValidationError) throw error;
+    return legacyRunSearch(raw);
+  }
+  if (parser.index !== tokens.length) return legacyRunSearch(raw);
+  if (countSearchPredicates(expr) > MAX_RUN_SEARCH_TERMS) {
+    throw searchValidation("Invalid run search: too many search terms.", 1);
+  }
+  if (countSearchNodes(expr) > MAX_RUN_SEARCH_AST_NODES) {
+    throw searchValidation("Invalid run search: query is too complex.", 1);
+  }
+  return { expr };
+}
+
+function legacyRunSearch(raw) {
+  return {
+    expr: {
+      kind: "and",
+      items: raw.split(/\s+/).filter(Boolean).map((value) => ({
+        kind: "predicate",
+        field: "all",
+        value: value.toLowerCase(),
+      })),
+    },
+  };
+}
+
+function tokenizeRunSearch(raw) {
+  const tokens = [];
+  let index = 0;
+  while (index < raw.length) {
+    const ch = raw[index];
+    if (/\s/.test(ch)) {
+      index += 1;
+      continue;
+    }
+    const column = searchColumn(raw, index);
+    if (ch === "(") {
+      tokens.push({ kind: "lparen" });
+      index += 1;
+      continue;
+    }
+    if (ch === ")") {
+      tokens.push({ kind: "rparen" });
+      index += 1;
+      continue;
+    }
+    if (ch === "-" && minusIsSearchNotOperator(raw, index)) {
+      tokens.push({ kind: "not" });
+      index += 1;
+      continue;
+    }
+    if (ch === "\"") {
+      const parsed = parseSearchQuote(raw, index);
+      tokens.push(quotedPredicateToken("all", parsed.value, column));
+      index = parsed.next;
+      continue;
+    }
+    const field = searchFieldPrefix(raw.slice(index));
+    if (field) {
+      const valueStart = index + field.length;
+      if (valueStart >= raw.length) throw incompleteSearch(column);
+      if (raw.slice(valueStart).startsWith("re:/")) {
+        parseSearchRegex(raw, valueStart + "re:/".length);
+        throw new SearchValidationError("Regex run search is supported by the Rust API only.", {
+          code: "run_search_regex_unsupported",
+          field: "q",
+          position: column,
+        });
+      }
+      if (raw[valueStart] === "\"") {
+        const parsed = parseSearchQuote(raw, valueStart);
+        tokens.push(quotedPredicateToken(field.field, parsed.value, column));
+        index = parsed.next;
+        continue;
+      }
+      if (raw[valueStart] === "(") throw incompleteSearch(column);
+      const next = scanSearchWordEnd(raw, valueStart);
+      const value = raw.slice(valueStart, next);
+      if (!value) throw incompleteSearch(column);
+      tokens.push(fieldPredicateToken(field.field, value, column));
+      index = next;
+      continue;
+    }
+    if (raw.slice(index).startsWith("re:/")) {
+      parseSearchRegex(raw, index + "re:/".length);
+      throw new SearchValidationError("Regex run search is supported by the Rust API only.", {
+        code: "run_search_regex_unsupported",
+        field: "q",
+        position: column,
+      });
+    }
+    const next = scanSearchWordEnd(raw, index);
+    const word = raw.slice(index, next);
+    if (word === "AND") tokens.push({ kind: "and" });
+    else if (word === "OR") tokens.push({ kind: "or" });
+    else if (word === "NOT") tokens.push({ kind: "not" });
+    else tokens.push(predicateToken("all", word));
+    index = next;
+  }
+  if (!tokens.length) throw incompleteSearch(1);
+  return tokens;
+}
+
+function minusIsSearchNotOperator(raw, index) {
+  const tail = raw.slice(index + 1);
+  return tail.startsWith("(") || tail.startsWith("re:/") || Boolean(searchFieldPrefix(tail));
+}
+
+function searchFieldPrefix(raw) {
+  for (const [name, field] of [
+    ["metadata", "metadata"],
+    ["project", "project"],
+    ["config", "config"],
+    ["status", "status"],
+    ["notes", "notes"],
+    ["name", "name"],
+    ["tags", "tag"],
+    ["tag", "tag"],
+    ["all", "all"],
+    ["id", "id"],
+  ]) {
+    const prefix = `${name}:`;
+    if (raw.startsWith(prefix)) return { field, length: prefix.length };
+  }
+  return null;
+}
+
+function predicateToken(field, rawValue) {
+  return { kind: "predicate", field, value: String(rawValue).trim().toLowerCase() };
+}
+
+function fieldPredicateToken(field, rawValue, column) {
+  const value = String(rawValue).trim();
+  if (!value) throw incompleteSearch(column);
+  if (field === "status" && !RUN_STATUSES.has(value.toLowerCase())) {
+    throw searchValidation("Invalid run search: status must be running, finished, or failed.", column);
+  }
+  if (field === "id" && value.length < 4) throw incompleteSearch(column);
+  return predicateToken(field, value);
+}
+
+function quotedPredicateToken(field, rawValue, column) {
+  const value = String(rawValue).trim();
+  if (!value) throw searchValidation("Invalid run search: quoted phrase must not be empty.", column);
+  return fieldPredicateToken(field, value, column);
+}
+
+function parseSearchQuote(raw, start) {
+  let value = "";
+  let index = start + 1;
+  while (index < raw.length) {
+    const ch = raw[index];
+    if (ch === "\"") return { value, next: index + 1 };
+    if (ch === "\\") {
+      const next = raw[index + 1];
+      if (next === undefined) throw incompleteSearch(searchColumn(raw, start));
+      if (next === "\"" || next === "\\") {
+        value += next;
+        index += 2;
+        continue;
+      }
+    }
+    value += ch;
+    index += 1;
+  }
+  throw incompleteSearch(searchColumn(raw, start));
+}
+
+function parseSearchRegex(raw, start) {
+  let index = start;
+  while (index < raw.length) {
+    const ch = raw[index];
+    if (ch === "/") return index + 1;
+    if (ch === "\\") {
+      if (raw[index + 1] === undefined) throw incompleteSearch(searchColumn(raw, start));
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  throw incompleteSearch(searchColumn(raw, start));
+}
+
+function scanSearchWordEnd(raw, start) {
+  let index = start;
+  while (index < raw.length && !/\s|\(|\)/.test(raw[index])) index += 1;
+  return index;
+}
+
+class RunSearchParser {
+  constructor(tokens) {
+    this.tokens = tokens;
+    this.index = 0;
+  }
+
+  parseOr(depth) {
+    this.checkDepth(depth);
+    const items = [this.parseAnd(depth + 1)];
+    while (this.peek()?.kind === "or") {
+      this.index += 1;
+      items.push(this.parseAnd(depth + 1));
+    }
+    return items.length === 1 ? items[0] : { kind: "or", items };
+  }
+
+  parseAnd(depth) {
+    this.checkDepth(depth);
+    const items = [this.parseUnary(depth + 1)];
+    while (true) {
+      const kind = this.peek()?.kind;
+      if (kind === "and") {
+        this.index += 1;
+        items.push(this.parseUnary(depth + 1));
+      } else if (kind === "predicate" || kind === "lparen" || kind === "not") {
+        items.push(this.parseUnary(depth + 1));
+      } else {
+        break;
+      }
+    }
+    return items.length === 1 ? items[0] : { kind: "and", items };
+  }
+
+  parseUnary(depth) {
+    this.checkDepth(depth);
+    if (this.peek()?.kind === "not") {
+      this.index += 1;
+      return { kind: "not", item: this.parseUnary(depth + 1) };
+    }
+    return this.parsePrimary(depth + 1);
+  }
+
+  parsePrimary(depth) {
+    this.checkDepth(depth);
+    const token = this.peek();
+    if (!token) throw new Error("incomplete search");
+    if (token.kind === "predicate") {
+      this.index += 1;
+      return { kind: "predicate", field: token.field, value: token.value };
+    }
+    if (token.kind === "lparen") {
+      this.index += 1;
+      const expr = this.parseOr(depth + 1);
+      if (this.peek()?.kind !== "rparen") throw new Error("incomplete search");
+      this.index += 1;
+      return expr;
+    }
+    throw new Error("incomplete search");
+  }
+
+  peek() {
+    return this.tokens[this.index];
+  }
+
+  checkDepth(depth) {
+    if (depth > MAX_RUN_SEARCH_DEPTH) {
+      throw searchValidation("Invalid run search: query nesting is too deep.", 1);
+    }
+  }
+}
+
+function runMatchesSearch(run, search) {
+  if (!search.expr) return true;
+  return searchExprMatches(search.expr, runSearchDocument(run));
+}
+
+function searchExprMatches(expr, doc) {
+  if (expr.kind === "predicate") return searchPredicateMatches(expr, doc);
+  if (expr.kind === "not") return !searchExprMatches(expr.item, doc);
+  if (expr.kind === "and") return expr.items.every((item) => searchExprMatches(item, doc));
+  if (expr.kind === "or") return expr.items.some((item) => searchExprMatches(item, doc));
+  return true;
+}
+
+function searchPredicateMatches(predicate, doc) {
+  if (predicate.field === "all") {
+    return doc.summary.includes(predicate.value)
+      || doc.config.includes(predicate.value)
+      || doc.metadata.includes(predicate.value);
+  }
+  if (predicate.field === "tag") return doc.tags.some((tag) => tag === predicate.value);
+  if (predicate.field === "status") return doc.status === predicate.value;
+  if (predicate.field === "id") return doc.id.startsWith(predicate.value);
+  return searchFieldText(predicate.field, doc).includes(predicate.value);
+}
+
+function runSearchDocument(run) {
+  const tags = Array.isArray(run.tags) ? run.tags.map((tag) => searchField(tag)) : [];
+  const config = safeSearchJson(run.config);
+  const metadata = safeSearchJson(run.metadata);
+  const notes = runNoteSearchText(run.metadata);
+  const name = searchField(run.name ?? "");
+  const project = searchField(run.project ?? "");
+  const status = searchField(run.status ?? "");
+  const id = searchField(run.id ?? "");
+  const summary = searchField(`${name} ${project} ${tags.join(" ")} ${notes} ${status} ${id}`);
+  return {
+    summary,
+    name,
+    project,
+    notes,
+    config,
+    metadata,
+    tags,
+    status,
+    id,
+  };
+}
+
+function runNoteSearchText(metadata) {
+  const pieces = [];
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    for (const key of ["notes", "note", "description", "summary", "comment"]) {
+      if (typeof metadata[key] === "string") pieces.push(metadata[key]);
+    }
+  }
+  return searchField(pieces.join(" "));
+}
+
+function searchFieldText(field, doc) {
+  if (field === "name") return doc.name;
+  if (field === "project") return doc.project;
+  if (field === "notes") return doc.notes;
+  if (field === "config") return doc.config;
+  if (field === "metadata") return doc.metadata;
+  if (field === "status") return doc.status;
+  if (field === "id") return doc.id;
+  return "";
+}
+
+function safeSearchJson(value) {
+  try {
+    return boundedSearchJson(value ?? {}).toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function boundedSearchJson(value) {
+  let bytes = 0;
+  let output = "";
+  const append = (text) => {
+    for (const char of String(text)) {
+      const nextBytes = Buffer.byteLength(char, "utf8");
+      if (bytes + nextBytes > MAX_RUN_SEARCH_FIELD_BYTES) return false;
+      output += char;
+      bytes += nextBytes;
+    }
+    return true;
+  };
+  const appendJsonString = (text) => {
+    if (!append("\"")) return false;
+    for (const char of String(text)) {
+      let escaped = char;
+      if (char === "\"" || char === "\\") escaped = `\\${char}`;
+      else if (char < " ") escaped = JSON.stringify(char).slice(1, -1);
+      if (!append(escaped)) return false;
+    }
+    return append("\"");
+  };
+  const visit = (item, seen = new Set()) => {
+    if (item === null) return append("null");
+    if (typeof item === "string") return appendJsonString(item);
+    if (typeof item === "number" || typeof item === "boolean") return append(JSON.stringify(item));
+    if (Array.isArray(item)) {
+      if (seen.has(item)) return append("null");
+      seen.add(item);
+      if (!append("[")) return false;
+      for (let index = 0; index < item.length; index += 1) {
+        if (index > 0 && !append(",")) return false;
+        if (!visit(item[index], seen)) return false;
+      }
+      seen.delete(item);
+      return append("]");
+    }
+    if (typeof item === "object") {
+      if (seen.has(item)) return append("null");
+      seen.add(item);
+      if (!append("{")) return false;
+      const entries = Object.entries(item);
+      for (let index = 0; index < entries.length; index += 1) {
+        const [key, entryValue] = entries[index];
+        if (index > 0 && !append(",")) return false;
+        if (!appendJsonString(key) || !append(":") || !visit(entryValue, seen)) return false;
+      }
+      seen.delete(item);
+      return append("}");
+    }
+    return append("null");
+  };
+  visit(value);
+  return output;
+}
+
+function searchField(value) {
+  const text = String(value ?? "");
+  let bytes = 0;
+  let output = "";
+  for (const char of text) {
+    const nextBytes = Buffer.byteLength(char, "utf8");
+    if (bytes + nextBytes > MAX_RUN_SEARCH_FIELD_BYTES) break;
+    output += char;
+    bytes += nextBytes;
+  }
+  return output.toLowerCase();
+}
+
+function countSearchPredicates(expr) {
+  if (expr.kind === "predicate") return 1;
+  if (expr.kind === "not") return countSearchPredicates(expr.item);
+  if (expr.items) return expr.items.reduce((sum, item) => sum + countSearchPredicates(item), 0);
+  return 0;
+}
+
+function countSearchNodes(expr) {
+  if (expr.kind === "predicate") return 1;
+  if (expr.kind === "not") return 1 + countSearchNodes(expr.item);
+  if (expr.items) return 1 + expr.items.reduce((sum, item) => sum + countSearchNodes(item), 0);
+  return 0;
+}
+
+function incompleteSearch(position) {
+  return { incomplete: true, position };
+}
+
+function searchValidation(message, position) {
+  return new SearchValidationError(message, { code: "run_search_invalid", field: "q", position });
+}
+
+function searchColumn(raw, index) {
+  return Array.from(raw.slice(0, Math.max(0, index))).length + 1;
 }
 
 function sortRunRecords(state, runs, sortBy, metricKey) {

@@ -104,12 +104,16 @@ pub async fn create_run(
     params(
         ("project" = Option<String>, Query, description = "Filter by project name"),
         ("status" = Option<String>, Query, description = "Filter by run status"),
+        ("q" = Option<String>, Query, description = "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex."),
+        ("sort_by" = Option<String>, Query, description = "Sort key: created, name, status, duration, metric-latest, or metric-best"),
+        ("metric_key" = Option<String>, Query, description = "Metric key used by metric-latest and metric-best sorts"),
         ("limit" = Option<i64>, Query, description = "Page size (1..=1000)"),
         ("offset" = Option<i64>, Query, description = "Offset for pagination"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
         (status = 200, description = "Page of runs", body = crate::http::openapi::RunsEnvelope),
+        (status = 400, description = "Invalid run search or query parameter", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -489,12 +493,13 @@ pub async fn list_console_logs(
     params(
         ("project" = Option<String>, Query, description = "Filter by project name"),
         ("status" = Option<String>, Query, description = "Filter by run status"),
-        ("q" = Option<String>, Query, description = "Substring search"),
+        ("q" = Option<String>, Query, description = "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex."),
         ("metric_key" = Option<String>, Query, description = "Metric key for best-value column"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
         (status = 200, description = "Dashboard overview payload", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Invalid run search or query parameter", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -515,16 +520,18 @@ pub async fn overview(
     params(
         ("project" = Option<String>, Query, description = "Filter by project name"),
         ("status" = Option<String>, Query, description = "Filter by run status"),
-        ("q" = Option<String>, Query, description = "Substring search"),
+        ("q" = Option<String>, Query, description = "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex."),
         ("sort_by" = Option<String>, Query, description = "Sort key"),
         ("metric_key" = Option<String>, Query, description = "Metric key for ranked column"),
         ("limit" = Option<i64>, Query, description = "Page size"),
         ("offset" = Option<i64>, Query, description = "Offset for pagination"),
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("projection" = Option<String>, Query, description = "Use selection for lightweight bulk-selection rows"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
         (status = 200, description = "Run summary page with metric key catalog", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Invalid run search or query parameter", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
     ),
 )]

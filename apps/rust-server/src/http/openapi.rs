@@ -234,13 +234,14 @@ pub struct AuthSessionUnauthenticated {
 
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
-    pub error: ErrorBody,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ErrorBody {
-    pub code: String,
-    pub message: String,
+    pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 1)]
+    pub position: Option<usize>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -524,7 +525,6 @@ impl Modify for SecurityAddon {
         AuthSessionUnauthenticated,
         AuthSessionWithOnboardingKey,
         ErrorResponse,
-        ErrorBody,
         ProjectEnvelope,
         ProjectsEnvelope,
         RunEnvelope,

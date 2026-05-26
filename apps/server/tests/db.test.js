@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { ConflictError, ForbiddenError, PlanLimitError, UnauthorizedError, createStore, defaultDbPath, emptyState, loadState, openStore, ValidationError } from "../src/db.js";
+import { ConflictError, ForbiddenError, PlanLimitError, SearchValidationError, UnauthorizedError, createStore, defaultDbPath, emptyState, loadState, openStore, ValidationError } from "../src/db.js";
 
 test("file-backed store persists and tolerates partial state files", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-store-"));
@@ -229,7 +229,7 @@ test("typed attributes, float steps, aggregates, artifacts, and comparison rows 
   const first = store.createRun({
     project: "compare",
     name: "seed-1",
-    config: { seed: 1, lr: 0.1 },
+    config: { seed: 1, lr: 0.1, delta: -1, label: "-loss" },
     tags: ["baseline"],
     metadata: { entrypoint: "train.py" },
   });
@@ -295,6 +295,29 @@ test("typed attributes, float steps, aggregates, artifacts, and comparison rows 
   assert.equal(updated.metadata.notes, "human note token stable policy");
   assert.equal(store.runsSummary({ project: "compare", q: "human stable" }).runs[0].id, first.id);
   assert.equal(store.runsSummary({ project: "compare", q: "reviewed" }).runs[0].id, first.id);
+  assert.equal(store.runsSummary({ project: "compare", q: "tag:baseline status:running" }).runs[0].id, first.id);
+  assert.equal(store.runsSummary({ project: "compare", q: "tag:candidate OR notes:policy" }).total, 2);
+  assert.equal(store.runsSummary({ project: "compare", q: "tag:baseline -notes:missing" }).runs[0].id, first.id);
+  assert.equal(store.runsSummary({ project: "compare", q: "-1" }).runs[0].id, first.id);
+  assert.equal(store.runsSummary({ project: "compare", q: "-loss" }).runs[0].id, first.id);
+  assert.equal(store.runsSummary({ project: "compare", q: `id:${first.id.slice(0, 8)}` }).runs[0].id, first.id);
+  assert.throws(() => store.runsSummary({ project: "compare", q: "\"\"" }), SearchValidationError);
+  assert.throws(() => store.runsSummary({ project: "compare", q: "NOT \"\"" }), SearchValidationError);
+  const longSearchTail = store.createRun({
+    project: "compare",
+    name: "long-search-tail",
+    config: { payload: "x".repeat(70_000) },
+    metadata: { notes: "tail-only-search-token" },
+  });
+  assert.equal(store.runsSummary({ project: "compare", q: "tail-only-search-token" }).runs[0].id, longSearchTail.id);
+  assert.equal(store.runsSummary({ project: "compare", q: "foo:bar" }).total, 0);
+  assert.throws(() => store.runsSummary({ project: "compare", q: "(((((((((tag:baseline)))))))))" }), SearchValidationError);
+  assert.equal(store.exportData({ project: "compare", q: "tag:baseline" }).runs.length, 1);
+  assert.throws(() => store.runsSummary({ project: "compare", q: "status:unknown" }), SearchValidationError);
+  assert.throws(
+    () => store.runsSummary({ project: "compare", q: "name:re:/seed-1/" }),
+    (error) => error instanceof SearchValidationError && error.code === "run_search_regex_unsupported",
+  );
 
   const comparison = store.sideBySide({ run_ids: [first.id, second.id], reference_run_id: first.id });
   assert.equal(comparison.runs.length, 2);

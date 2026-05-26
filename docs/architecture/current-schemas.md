@@ -592,8 +592,8 @@ product metadata when replayed.
 | --- | --- | --- |
 | `status` | string | Validated run status such as `running`, `finished`, or `failed`. |
 | `config` | JSON object | User config object. |
-| `tags` | string array | Searchable run tags. |
-| `metadata` | JSON object | Searchable metadata. Notes are stored under metadata when edited. |
+| `tags` | string array | Searchable run tags; `tag:`/`tags:` query clauses match these exactly, case-insensitively. |
+| `metadata` | JSON object | Searchable metadata. Notes are stored under metadata when edited and are also indexed for `notes:` query clauses. |
 | `parent_run_id` | UUID string or null | Authoritative parent pointer for same-project forked runs. |
 | `forked_from_step` | number or null | Source step used to create a fork, derived from the request or checkpoint artifact. |
 | `forked_from_artifact_id` | UUID string or null | Source checkpoint artifact id for checkpoint forks. |

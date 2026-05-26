@@ -112,7 +112,8 @@ All JSON API errors use HTTP status codes and a JSON body with at least an
 `error` string. Some errors also include a stable `code` string. Most handlers
 also attach `x-request-id`. Hosted tenant ClickHouse wake/start failures return
 `503` with `code: "warehouse_unavailable"` so clients can distinguish a waking
-tenant warehouse from a down control/API service.
+tenant warehouse from a down control/API service. Run-search validation errors
+return HTTP `400` with `code`, `field: "q"`, and optional `position`.
 
 Important row shapes:
 
@@ -161,6 +162,9 @@ Validation limits that affect callers:
 | Rank metrics per batch | 1,000 metrics for one `(run, step, rank)` |
 | Rank metric world size | Max 512 ranks; summary heatmaps return max 16,384 cells |
 | Run page limit | Default 100, max 1,000 |
+| Run search query | 512 bytes, 32 terms, 64 AST nodes, depth 8 |
+| Run search regex | Max 4 regexes, 128 bytes each; regex must not match empty text |
+| Per-run searched field text | First 32 KiB per indexed field |
 | Batched metric series run IDs | 2,000 |
 | Batched metric series response | Max 120,000 returned points; `effective_limit` is clamped per run |
 | Workspace-view payload | 64 KiB |
@@ -662,10 +666,10 @@ Query:
 | --- | --- |
 | `project` | Project name, omit or `all` for all projects |
 | `status` | `running`, `finished`, `failed`, omit or `all` for all statuses |
-| `q` | Whitespace-token search over run name, tags, config, metadata, and notes |
+| `q` | Run search query over run name, project, tags, notes, config, metadata, status, and ID |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, `metric-best` |
 | `metric_key` | Metric used by metric sorts, default `eval/return_mean` |
-| `limit` | Page size, max 500 |
+| `limit` | Page size, max 1,000 |
 | `offset` | Offset pagination |
 
 Output:
@@ -673,6 +677,28 @@ Output:
 ```json
 { "runs": [] }
 ```
+
+Run search keeps existing bare-text behavior: `seed 13` is an implicit `AND`
+over all searchable run fields. The same `q` language is shared by
+`GET /runs`, `/api/overview`, `/api/runs/summary`, summary selection
+projection, and `/api/export`.
+
+Supported syntax:
+
+- Quoted phrases: `"long context"`.
+- Fields: `name:`, `project:`, `notes:`, `config:`, `metadata:`, `tag:` /
+  `tags:`, `status:`, `id:`, and `all:`.
+- Exact tag/status and ID prefix matches: `tag:baseline status:finished`,
+  `id:8f34`.
+- Uppercase booleans and grouping: `(tag:baseline OR tag:candidate) -tag:debug`.
+  The `-` shorthand is an exclusion operator only before a field, regex, or
+  grouped expression, so literal terms such as `-1` still search as text.
+- Explicit Rust regex: `re:/seed-(13|14)/` or `name:re:/baseline-.*/`.
+
+Invalid closed syntax returns HTTP `400` with `code: "run_search_invalid"`,
+`field: "q"`, and an optional 1-based `position`. The deprecated Node
+compatibility server supports the non-regex subset and returns
+`code: "run_search_regex_unsupported"` for completed regex queries.
 
 ### `GET /runs/:run_id`
 
@@ -1028,7 +1054,7 @@ Query accepts the same filters as `GET /runs`, plus cursor pagination:
 | Parameter | Meaning |
 | --- | --- |
 | `cursor` | Cursor such as `offset:25`; when present it overrides `offset` |
-| `limit` | Page size, max 500 |
+| `limit` | Page size, max 1,000 |
 
 Output:
 
@@ -1298,7 +1324,7 @@ through this endpoint.
 
 Auth: tenant read access. API keys require `export:read`; browser sessions with
 viewer or higher role can export. Query accepts the same run filters as
-`GET /runs`.
+`GET /runs`, including the shared run-search `q` language.
 
 Output:
 

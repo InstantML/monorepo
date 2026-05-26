@@ -502,7 +502,7 @@ struct StoreData {
     runs_by_org_created: BTreeMap<(Uuid, DateTime<Utc>, Uuid), Uuid>,
     runs_by_org_project_created: BTreeMap<(Uuid, String, DateTime<Utc>, Uuid), Uuid>,
     runs_by_parent_created: BTreeMap<(Uuid, Uuid, DateTime<Utc>, Uuid), Uuid>,
-    run_search_texts: HashMap<Uuid, String>,
+    run_search_documents: HashMap<Uuid, Arc<RunSearchDocument>>,
     attributes: BTreeMap<(Uuid, i64), AttributeRow>,
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
     artifacts: BTreeMap<Uuid, ArtifactRow>,
@@ -735,7 +735,8 @@ impl StoreData {
             self.runs_by_parent_created
                 .insert((run.org_id, parent_run_id, run.created_at, run.id), run.id);
         }
-        self.run_search_texts.insert(run.id, run_search_text(&run));
+        self.run_search_documents
+            .insert(run.id, Arc::new(run_search_document(&run)));
         self.runs.insert(run.id, run);
     }
 
@@ -856,7 +857,7 @@ impl StoreData {
                     run.id,
                 ));
             }
-            self.run_search_texts.remove(&run.id);
+            self.run_search_documents.remove(&run.id);
         }
     }
 

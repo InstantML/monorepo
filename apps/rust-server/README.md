@@ -11,6 +11,12 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Support Premium customer-owned ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
 - Store artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, R2 references, exact byte counts, hashes, and MIME types. Artifact byte downloads always add defensive `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: sandbox` headers because artifact MIME metadata is user-provided.
+- Serve the authoritative run search language for `/runs`, `/api/overview`,
+  `/api/runs/summary`, selection projection, and `/api/export`. Bare `q` text
+  stays legacy implicit-AND search; advanced search supports field qualifiers,
+  exact tags/status/ID prefixes, quoted phrases, uppercase booleans,
+  field/group exclusion such as `-tag:debug`, parentheses, and bounded explicit
+  `re:/.../` regex.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
 

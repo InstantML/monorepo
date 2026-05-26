@@ -36,7 +36,7 @@ Artifact bytes go through `src/artifact-store.js`. The current implementation is
 - `POST /runs` creates a run and maps config/tags to typed attributes.
 - `POST /runs/:run_id/metrics` stores scalar metrics, updates maintained summaries, and accepts `Idempotency-Key` for retry-safe metric replay.
 - `POST /api/users`, `POST /api/orgs`, and `POST /api/orgs/:org_id/api-keys` provide local hosted-auth scaffolding.
-- `GET /api/runs/summary` returns bounded table summaries with latest metrics, aggregates, artifact counts, and whitespace-token search over run/project/tags/config/metadata text for Rust compatibility.
+- `GET /api/runs/summary` returns bounded table summaries with latest metrics, aggregates, artifact counts, and the non-regex subset of the shared Rust run-search language. Bare text remains whitespace-token implicit `AND`; fields, exact tags/status/ID prefixes, quoted phrases, uppercase booleans, parentheses, and field/group exclusion such as `-tag:debug` are supported. Completed `re:/.../` queries return `code: "run_search_regex_unsupported"` because this deprecated server must not evaluate user JavaScript regexes.
 - `PATCH /runs/:run_id` accepts status updates plus compatibility tag/note patches. `tags` replaces searchable run tags; `notes` writes `metadata.notes` and an empty note clears it.
 - `POST /api/runs/:run_id/attributes` stores typed attributes.
 - `GET /api/runs/:run_id/attributes` lists typed attributes with type and path-prefix filters.
@@ -47,7 +47,7 @@ Artifact bytes go through `src/artifact-store.js`. The current implementation is
 - `POST /api/imports/neptune` imports or dry-runs a Neptune Exporter-shaped JSON payload through the shared atomic importer path.
 - `POST /api/imports/wandb` imports or dry-runs a transformed W&B JSON payload with scalar history and artifact references. It does not download W&B artifact bytes.
 - `POST /api/imports/mlflow` imports or dry-runs a transformed MLflow JSON payload with metric history, latest-metric fallback, params, tags, timestamps, and artifact references. It does not crawl an MLflow server or download artifact bytes.
-- `GET /api/export` returns a portable JSON export filtered by project, project ID, or org ID.
+- `GET /api/export` returns a portable JSON export filtered by project, project ID, org ID, status, and the same non-regex run-search subset.
 - `GET /api/usage` returns org-scoped usage counts for seats, projects, runs, current UTC calendar-month scalar metric points, retained metric-point totals, retained metric series, artifacts, API keys, exact artifact bytes, estimated metadata bytes, the monthly `usage_period`, and blocked-at-limit warning metadata.
 - `GET /api/usage/export` returns the same usage shape as versioned JSON for billing/debug planning. It is not invoice truth.
 
@@ -95,7 +95,7 @@ npm run test:contract:node
 npm run test:ui:node
 ```
 
-The tests cover server persistence, org/API-key auth, usage scope enforcement, plan-limit write blocking, usage summaries/export, idempotent metric replay, strict numeric validation for SDK writes/imports, maintained metric summaries, export, typed attributes, artifact upload/download, Neptune/W&B/MLflow importer dry-run/import, side-by-side comparison, API contract behavior, Python SDK compatibility, frontend helper logic, demo reset safety, bounded metric queries, and static-file guardrails for custom static roots.
+The tests cover server persistence, org/API-key auth, usage scope enforcement, plan-limit write blocking, usage summaries/export, idempotent metric replay, strict numeric validation for SDK writes/imports, maintained metric summaries, export, the non-regex run-search compatibility subset plus regex rejection, typed attributes, artifact upload/download, Neptune/W&B/MLflow importer dry-run/import, side-by-side comparison, API contract behavior, Python SDK compatibility, frontend helper logic, demo reset safety, bounded metric queries, and static-file guardrails for custom static roots.
 
 ## Notes for Future Agents
 
