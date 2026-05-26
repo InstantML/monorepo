@@ -32,6 +32,11 @@ type AccountUser = {
   avatar_url?: string | null;
 };
 
+type RunSearchError = {
+  message: string;
+  position: number | null;
+} | null;
+
 function AccountAvatar({ user }: { user: AccountUser | null }) {
   const [imageFailed, setImageFailed] = useState(false);
   const displayName = user?.display_name ?? "";
@@ -211,6 +216,8 @@ export function DashboardTopbar({
   project,
   projects,
   query,
+  searchError,
+  searchErrorStale,
   savedViewKey,
   savedViews,
   sortBy,
@@ -254,6 +261,8 @@ export function DashboardTopbar({
   project: string;
   projects: string[];
   query: string;
+  searchError: RunSearchError;
+  searchErrorStale: boolean;
   savedViewKey: string;
   savedViews: SelectOption[];
   sortBy: string;
@@ -272,6 +281,8 @@ export function DashboardTopbar({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
   const [compactFilters, setCompactFilters] = useState(false);
+  const [searchHelpOpen, setSearchHelpOpen] = useState(false);
+  const searchHelpRef = useRef<HTMLDivElement>(null);
   const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
@@ -279,6 +290,9 @@ export function DashboardTopbar({
   const showWorkbar = activeTab !== "detail";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
+  const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
+    ? ` Column ${searchError.position}.`
+    : "";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -301,6 +315,22 @@ export function DashboardTopbar({
       root.style.removeProperty("--topbar-height");
     };
   }, [desktopFiltersCollapsed, showWorkbar]);
+
+  useEffect(() => {
+    if (!searchHelpOpen) return undefined;
+    function closeFromOutside(event: globalThis.PointerEvent) {
+      if (!searchHelpRef.current?.contains(event.target as Node)) setSearchHelpOpen(false);
+    }
+    function closeFromEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setSearchHelpOpen(false);
+    }
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", closeFromEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", closeFromEscape);
+    };
+  }, [searchHelpOpen]);
 
   return (
     <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`}>
@@ -427,10 +457,61 @@ export function DashboardTopbar({
             ]}
           />
           <span className="workbar-divider" aria-hidden="true" />
-          <label className="workbar-search">
-            <Search size={13} />
-            <input id="search" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="runs, tags, notes, config" aria-label="Search runs" />
-          </label>
+          <div
+            className={`workbar-search-group ${searchError ? "has-error" : ""} ${searchErrorStale ? "stale-error" : ""}`}
+            ref={searchHelpRef}
+          >
+            <label className="workbar-search">
+              <Search size={13} />
+              <input
+                aria-describedby={`run-search-help-note${searchError && !searchErrorStale ? " run-search-error" : ""}`}
+                aria-invalid={Boolean(searchError && !searchErrorStale)}
+                id="search"
+                onChange={(event) => onQuery(event.target.value)}
+                placeholder="runs, tags, notes, config"
+                type="search"
+                value={query}
+                aria-label="Search runs"
+              />
+            </label>
+            <button
+              aria-controls="run-search-help"
+              aria-expanded={searchHelpOpen}
+              aria-label="Run search syntax"
+              className="icon-button workbar-search-help"
+              onClick={() => setSearchHelpOpen((open) => !open)}
+              title="Run search syntax"
+              type="button"
+            >
+              <CircleHelp size={14} />
+            </button>
+            <span className="visually-hidden" id="run-search-help-note">
+              Search supports bare text, field filters, uppercase boolean operators, quoted phrases, and explicit regex.
+            </span>
+            {searchHelpOpen ? (
+              <div className="workbar-search-popover" id="run-search-help" role="note" aria-label="Run search syntax">
+                <strong>Run search</strong>
+                <code>reward stability</code>
+                <code>tag:baseline status:finished</code>
+                <code>name:"long context" -tag:debug</code>
+                <code>(tag:baseline OR tag:candidate) notes:ablated</code>
+                <code>re:/seed-(13|14)/</code>
+                <span>Regex requires the Rust API.</span>
+                <span>Fields: all, name, project, notes, config, metadata, tag/tags, status, id.</span>
+              </div>
+            ) : null}
+            {searchError ? (
+              <span
+                className="workbar-search-error"
+                id="run-search-error"
+                role="status"
+                aria-live="polite"
+                title={searchError.message}
+              >
+                {searchError.message}{searchErrorPositionSuffix}
+              </span>
+            ) : null}
+          </div>
           <CustomSelect
             className="compact"
             id="sort-select"

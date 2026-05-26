@@ -24,17 +24,6 @@ pub(super) fn has_status_filter(query: &HashMap<String, String>) -> bool {
         .unwrap_or(false)
 }
 
-pub(super) fn text_search_tokens(query: &HashMap<String, String>) -> Vec<String> {
-    query
-        .get("q")
-        .map(|q| {
-            q.split_whitespace()
-                .map(|part| part.to_ascii_lowercase())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 pub(super) fn metric_keys_from_run_values(run_values: &[Value], limit: usize) -> Vec<String> {
     let mut keys = BTreeSet::new();
     for value in run_values {

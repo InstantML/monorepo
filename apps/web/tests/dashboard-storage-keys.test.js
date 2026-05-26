@@ -53,14 +53,20 @@ test("workspace model accepts the revised panel schema and non-line types", () =
 
 test("dashboard shell protects control-plane state from stale UI interactions", () => {
   const authFlow = readFileSync(`${root}app/auth-flow.tsx`, "utf8");
+  const invite = readFileSync(`${root}app/invite/page.tsx`, "utf8");
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
   // globals.css is now a thin @import chain; rules live in styles/*.css.
   // The nav-label rule was moved to styles/overhaul.css during the 2026-05-18
   // globals-css-audit refactor. See docs/design/2026-05-18-globals-css-audit.md.
   const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
 
-  assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route");
-  assert.match(authFlow, /window\.location\.(?:assign|replace)\(nextPath\)/, "dev sign-in must not bounce returning users through onboarding");
+  assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route when storage is ready");
+  assert.match(authFlow, /postAuthRedirectPath\(sessionPayload, nextPath\)/, "dev sign-in should send unready storage sessions back to onboarding before dashboard");
+  assert.match(shell, /postAuthRedirectPath\(session, window\.location\.pathname \|\| "\/dashboard\/runs"\)/, "direct dashboard loads should redirect unready storage sessions to onboarding");
+  assert.match(invite, /postAuthRedirectPath\(payload, "\/dashboard\/runs"\)/, "accepted invitations should not bypass storage onboarding");
+  assert.match(authFlow, /StorageSetupPending/, "onboarding should block SDK-key creation while hosted storage is still provisioning");
+  assert.match(authFlow, /StorageSetupBlocked/, "unready BYOC member sessions should not render the owner/admin ClickHouse form");
+  assert.match(authFlow, /role === "owner" \|\| role === "admin"/, "only owners/admins should manage workspace storage from onboarding");
 
   assert.match(shell, /userTouchedDashboardFiltersRef/, "dashboard should track local filter edits while preferences load");
   assert.match(
@@ -97,6 +103,10 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /inFlight\.signal === controller\.signal && !inFlight\.signal\.aborted/, "compare artifact in-flight reuse should not reuse aborted requests from old selections");
   assert.match(shell, /compareArtifactInflightRef\.current\.get\(runId\) === entry/, "settled older artifact requests must not delete newer in-flight promises");
   assert.match(shell, /if \(queryInput !== query\) \{[\s\S]*setQuery\(queryInput\);[\s\S]*Select matching runs again[\s\S]*return;/, "select-all matching should not run against a stale debounced search query");
+  assert.match(shell, /function searchErrorFromApi\(error: unknown, query: string\): RunSearchError \| null/, "dashboard should only surface allowlisted structured run-search errors");
+  assert.match(shell, /setSearchError\(nextSearchError\);[\s\S]*setMessage\(previousMessage\);[\s\S]*return;/, "invalid run-search loads should keep the last valid results and message");
+  assert.match(shell, /searchError=\{searchError\}/, "topbar should receive committed-query search validation state");
+  assert.match(shell, /selectAllMatchingDisabled=\{queryInput !== query \|\| Boolean\(searchError && searchError\.query === query\)\}/, "bulk selection should stay disabled for stale or invalid committed searches");
   const artifactLoadEffect = shell.match(/async function loadArtifacts\(\)[\s\S]*?\}, \[[^\]]+\]\);/)?.[0] ?? "";
   assert.doesNotMatch(artifactLoadEffect, /runWorkspaceTab/, "artifact loads should not refetch on summary/data/files subtab changes");
   assert.match(shell, /artifactsRunId === primaryRun\?\.id/, "artifact rows should be keyed to the selected run before rendering checkpoint fork actions");
@@ -118,8 +128,13 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
 
   const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
   assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
+  assert.match(runsWorkspace, /disabled=\{selectAllMatchingBusy \|\| selectAllMatchingDisabled\}/, "select-all matching should honor invalid-search disabled state");
   assert.match(runsWorkspace, /pointerDragCleanupRef/, "pointer drag listeners should be cleaned up on unmount or interrupted drag");
   assert.match(runsWorkspace, /removeEventListener\("pointercancel"/, "pointer drag cleanup should remove cancellation listeners");
+
+  const topbar = readFileSync(`${root}app/dashboard/chrome/topbar.tsx`, "utf8");
+  assert.match(topbar, /workbar-search-popover/, "run search should include syntax help beside the actual search box");
+  assert.match(topbar, /aria-invalid=\{Boolean\(searchError && !searchErrorStale\)\}/, "search syntax errors should be associated with the input without marking stale edits invalid");
 
   const workspacePanelCard = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
   assert.match(workspacePanelCard, /resizeCleanupRef/, "panel resize listeners should be cleaned up on unmount or interrupted resize");

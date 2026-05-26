@@ -28,6 +28,7 @@ if (!externalApiBaseUrl && backendMode === "node") {
 const commandKey = process.platform === "darwin" ? "Meta" : "Control";
 let nextServer = null;
 let browser = null;
+let nextOutput = "";
 
 try {
   if (apiServer) await new Promise((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -54,7 +55,16 @@ try {
     env: nextEnv,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  await waitForHttp(`http://127.0.0.1:${webPort}`);
+  const appendNextOutput = (chunk) => {
+    nextOutput = `${nextOutput}${chunk.toString()}`.slice(-8192);
+  };
+  nextServer.stdout.on("data", appendNextOutput);
+  nextServer.stderr.on("data", appendNextOutput);
+  try {
+    await waitForHttp(`http://127.0.0.1:${webPort}`, nextServer);
+  } catch (error) {
+    throw new Error(`Next server did not become ready on port ${webPort}: ${error instanceof Error ? error.message : String(error)}\n${nextOutput}`);
+  }
   await assertStaticAssetsOk(`http://127.0.0.1:${webPort}`);
 
   browser = await chromium.launch();
@@ -766,9 +776,47 @@ try {
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
-  await page.fill("#search", "qa-note-smoke");
+  await page.getByRole("button", { name: "Run search syntax" }).click();
+  await page.waitForSelector("#run-search-help", { timeout: 10000 });
+  assert.match(await page.locator("#run-search-help").innerText(), /re:\/seed-\(13\|14\)\//);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#run-search-help", { state: "hidden", timeout: 10000 });
+  let summaryResponse = await fillSearchAndWaitForSummary(page, "qa-note-smoke");
+  assert.equal(summaryResponse.status(), 200);
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("qa-note-smoke"));
   assert.match(await page.locator(".workspace-run-list").innerText(), /qa-smoke/);
+  const noteSearchText = await page.locator(".workspace-run-list").innerText();
+  summaryResponse = await fillSearchAndWaitForSummary(page, "tag:note-search OR name:page-run-01");
+  assert.equal(summaryResponse.status(), 200);
+  await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("page-run-01"));
+  const booleanSearchText = await page.locator(".workspace-run-list").innerText();
+  assert.notEqual(booleanSearchText, noteSearchText, "boolean search should apply a new result set");
+  assert.match(booleanSearchText, /note-search/);
+  assert.match(booleanSearchText, /page-run-01/);
+  if (backendMode !== "node") {
+    summaryResponse = await fillSearchAndWaitForSummary(page, "re:/[/");
+    assert.equal(summaryResponse.status(), 400);
+    await page.waitForSelector("#run-search-error", { timeout: 10000 });
+    assert.equal(await page.locator("#search").getAttribute("aria-invalid"), "true");
+    assert.match(await page.locator("#run-search-error").innerText(), /Invalid run search/);
+    assert.doesNotMatch(await page.locator("#run-search-error").innerText(), /Column \d+\. Column \d+\./);
+  }
+  summaryResponse = await fillSearchAndWaitForSummary(page, "re:/page-run-0[12]/");
+  if (backendMode === "node") {
+    assert.equal(summaryResponse.status(), 400);
+    await page.waitForSelector("#run-search-error", { timeout: 10000 });
+    assert.match(await page.locator("#run-search-error").innerText(), /Rust API only/);
+  } else {
+    assert.equal(summaryResponse.status(), 200);
+    await page.waitForFunction(() => {
+      const text = document.querySelector(".workspace-run-list")?.textContent ?? "";
+      return text.includes("page-run-01") && text.includes("page-run-02") && !text.includes("qa-note-smoke");
+    });
+    const regexSearchText = await page.locator(".workspace-run-list").innerText();
+    assert.match(regexSearchText, /page-run-01/);
+    assert.match(regexSearchText, /page-run-02/);
+    assert.doesNotMatch(regexSearchText, /qa-note-smoke/);
+  }
   await page.fill("#search", "");
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 4);
@@ -1157,10 +1205,25 @@ function freePort() {
   });
 }
 
-async function waitForHttp(url) {
+async function fillSearchAndWaitForSummary(page, query) {
+  const responsePromise = page.waitForResponse((response) => {
+    if (!response.url().includes("/api/runs/summary")) return false;
+    return new URL(response.url()).searchParams.get("q") === query;
+  }, { timeout: 10000 });
+  await page.fill("#search", query);
+  const response = await responsePromise;
+  const finishedError = await response.finished();
+  assert.equal(finishedError, null, `summary response for ${query} should complete`);
+  return response;
+}
+
+async function waitForHttp(url, child = null) {
   const started = Date.now();
   let lastError = null;
   while (Date.now() - started < 30000) {
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
+      throw new Error(`process exited while waiting for ${url}: code=${child.exitCode} signal=${child.signalCode}`);
+    }
     try {
       const response = await fetch(url);
       if (response.ok) return;

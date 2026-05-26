@@ -1784,12 +1784,11 @@ export interface components {
             verification_uri: string;
             verification_uri_complete: string;
         };
-        ErrorBody: {
-            code: string;
-            message: string;
-        };
         ErrorResponse: {
-            error: components["schemas"]["ErrorBody"];
+            code?: string | null;
+            error: string;
+            field?: string | null;
+            position?: number | null;
         };
         HealthResponse: {
             status: string;
@@ -3162,7 +3161,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key */
                 sort_by?: string;
@@ -3182,6 +3181,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4144,7 +4152,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Metric key for best-value column */
                 metric_key?: string;
@@ -4162,6 +4170,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4220,7 +4237,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key */
                 sort_by?: string;
@@ -4232,6 +4249,8 @@ export interface operations {
                 offset?: number;
                 /** @description Pagination cursor */
                 cursor?: string;
+                /** @description Use selection for lightweight bulk-selection rows */
+                projection?: string;
             };
             header?: never;
             path?: never;
@@ -4246,6 +4265,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -5576,6 +5604,12 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
+                q?: string;
+                /** @description Sort key: created, name, status, duration, metric-latest, or metric-best */
+                sort_by?: string;
+                /** @description Metric key used by metric-latest and metric-best sorts */
+                metric_key?: string;
                 /** @description Page size (1..=1000) */
                 limit?: number;
                 /** @description Offset for pagination */
@@ -5594,6 +5628,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunsEnvelope"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

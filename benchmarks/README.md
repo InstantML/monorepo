@@ -51,6 +51,13 @@ The latest current-path result is
 self-hosted GCP ClickHouse, reading the `normal-runs-50k` project with 50,000
 runs and 522,000,000 metric points. It passed the current read-path budgets.
 
+The run-search language benchmark result in
+`benchmarks/2026-05-26-run-search-local-results.md` covers the new literal,
+tag, config, boolean, and Rust regex search paths over a disposable 20,000-run
+local ClickHouse dataset. It also records why a fresh W&B hosted search rerun
+was not collected in that workspace and points to the existing sanitized W&B
+public-API comparison for directional context.
+
 For the GCP self-hosted showcase workload, run the read-only direct benchmark
 with a short-lived API key:
 

@@ -108,6 +108,16 @@ test("HTTP lifecycle, summaries, artifacts, and API work", async () => {
     const noteSearch = await request(baseUrl, "GET", "/api/runs/summary?project=cartpole&q=server%20note");
     assert.equal(noteSearch.total, 1);
     assert.equal(noteSearch.runs[0].id, run.id);
+    const booleanSearch = await request(baseUrl, "GET", "/api/runs/summary?project=cartpole&q=tag%3Anote-search%20OR%20name%3Aseed-2");
+    assert.equal(booleanSearch.total, 2);
+    const regexSearch = await fetch(`${baseUrl}/api/runs/summary?project=cartpole&q=name%3Are%3A%2Fseed-1%2F`);
+    assert.equal(regexSearch.status, 400);
+    assert.deepEqual(await regexSearch.json(), {
+      error: "Regex run search is supported by the Rust API only.",
+      code: "run_search_regex_unsupported",
+      field: "q",
+      position: 1,
+    });
     assert.equal(summary.runs.find((item) => item.id === run.id).latest_metrics["eval/return_mean"], 5);
     assert.equal(summary.runs.find((item) => item.id === run.id).artifact_counts.checkpoint, 1);
     assert.equal(summary.runs.find((item) => item.id === run.id).metric_aggregates["eval/return_mean"].best_step, 0);
@@ -306,7 +316,7 @@ test("org API keys protect SDK ingestion and idempotent metric replay", async ()
     assert.equal((await request(baseUrl, "GET", `/runs/${run.id}/metrics?key=reward`, undefined, authHeaders)).metrics.length, 1);
     assert.equal((await request(baseUrl, "PATCH", `/runs/${run.id}`, { status: "finished" }, authHeaders)).run.status, "finished");
 
-    const exported = await request(baseUrl, "GET", "/api/export?project=secure", undefined, authHeaders);
+    const exported = await request(baseUrl, "GET", "/api/export?project=secure&q=name%3Aseed-1", undefined, authHeaders);
     assert.equal(exported.organizations[0].id, organization.id);
     assert.equal(exported.metric_series[0].count, 1);
   }, { requireApiKey: true, bootstrapToken: "test-bootstrap" });

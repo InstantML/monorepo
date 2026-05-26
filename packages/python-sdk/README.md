@@ -145,14 +145,16 @@ Run summary, artifact download, and fork helpers use the raw `Api` helper:
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 page = api.runs(
     project="cartpole",
-    q="seed 13",
+    q='tag:baseline status:finished notes:"reward stability"',
     sort_by="metric-best",
     metric_key="eval/return_mean",
     limit=25,
 )
 ```
 
-`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
+`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. Prefer `project` for Rust filtering; `project_id` remains a legacy SDK compatibility parameter and Rust-hosted summaries do not expose it as a query filter outside project-scoped API-key auth. The `q` language matches the dashboard search bar: bare terms are implicit `AND`, fields include `all`, `name`, `project`, `notes`, `config`, `metadata`, `tag`/`tags`, `status`, and `id`, uppercase `AND`/`OR`/`NOT` and grouping are supported, `-tag:debug` excludes field/group terms, quoted phrases are literal, and Rust supports explicit regex like `re:/seed-(13|14)/`. The deprecated Node compatibility API rejects completed regex with `run_search_regex_unsupported`.
+
+`Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
 
 Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
 

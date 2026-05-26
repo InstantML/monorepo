@@ -256,6 +256,17 @@ test("deploy helper defaults hosted ClickHouse provisioning to database mode", (
   assert.doesNotMatch(source, /INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service"/);
 });
 
+test("deploy helper keeps BYOC egress independent of legacy ClickHouse Cloud allowlists", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+  const lines = source.split("\n");
+  const byocEgressIndex = lines.findIndex((line) => line.includes("INSTANTML_BYOC_EGRESS_CIDRS:"));
+  const byocEgressBlock = lines.slice(byocEgressIndex, byocEgressIndex + 4).join("\n");
+
+  assert.match(source, /INSTANTML_BYOC_EGRESS_CIDRS: publicStaticEgressIp/);
+  assert.match(source, /value\("INSTANTML_BYOC_EGRESS_CIDRS"\)/);
+  assert.doesNotMatch(byocEgressBlock, /INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST/);
+});
+
 test("deploy helper keeps public router control paths and backend timeout complete", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 

@@ -93,6 +93,7 @@ export function RunsWorkspace({
   runSearch,
   runRailCollapsed,
   selectAllMatchingBusy,
+  selectAllMatchingDisabled,
   selectedRunIds,
   showAddPanelDrawer,
   summaryTotal,
@@ -140,6 +141,7 @@ export function RunsWorkspace({
   runSearch: string;
   runRailCollapsed: boolean;
   selectAllMatchingBusy: boolean;
+  selectAllMatchingDisabled: boolean;
   selectedRunIds: string[];
   showAddPanelDrawer: boolean;
   summaryTotal: number;
@@ -280,10 +282,14 @@ export function RunsWorkspace({
         {showSelectAllMatching ? (
           <div className="workspace-rail-select-banner" role="status" aria-live="polite">
             <span>{selectedRunIds.length} of {summaryTotal} selected.</span>
+            {selectAllMatchingDisabled ? (
+              <span className="visually-hidden">Refresh or fix the current search before selecting all matching runs.</span>
+            ) : null}
             <button
               className="link-button"
-              disabled={selectAllMatchingBusy}
+              disabled={selectAllMatchingBusy || selectAllMatchingDisabled}
               onClick={onSelectAllMatching}
+              title={selectAllMatchingDisabled ? "Refresh or fix the current search before selecting all matching runs." : undefined}
               type="button"
             >
               {selectAllMatchingBusy

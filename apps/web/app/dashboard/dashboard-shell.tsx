@@ -7,7 +7,7 @@ import type { MouseEvent } from "react";
 
 import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest } from "../../src/api.js";
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
-import { canonicalDashboardPath, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
+import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
@@ -104,7 +104,7 @@ type SavedViewOption = {
 };
 type DashboardSessionPayload = {
   authenticated?: boolean;
-  organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string };
+  organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string; storage_state?: string };
   user?: { primary_email: string; display_name?: string | null; avatar_url?: string | null };
   membership?: { role: string; status: string };
   memberships?: Array<{ org_id: string; role: string; status: string }>;
@@ -200,6 +200,27 @@ function messageTone(message: string): "error" | "loading" | "ok" {
 
 function isWarehouseStartingError(error: unknown) {
   return error instanceof ApiError && error.code === "warehouse_unavailable";
+}
+
+type RunSearchError = {
+  query: string;
+  code: string;
+  message: string;
+  position: number | null;
+};
+
+const RUN_SEARCH_ERROR_CODES = new Set(["run_search_invalid", "run_search_regex_unsupported"]);
+
+function searchErrorFromApi(error: unknown, query: string): RunSearchError | null {
+  if (!(error instanceof ApiError)) return null;
+  if (error.status !== 400 || error.field !== "q" || !RUN_SEARCH_ERROR_CODES.has(error.code)) return null;
+  const position = Number.isInteger(error.position) ? Number(error.position) : null;
+  return {
+    query,
+    code: error.code,
+    message: error.safeMessage || error.message || "Invalid run search.",
+    position,
+  };
 }
 
 function quickSearchTokenMatches(haystack: string, token: string) {
@@ -342,6 +363,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const compareArtifactCacheRef = useRef<Map<string, Artifact[]>>(new Map());
   const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
   const compareArtifactCacheVersionRef = useRef(0);
+  const messageRef = useRef("Loading runs...");
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
@@ -354,6 +376,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [status, setStatus] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
+  const [searchError, setSearchError] = useState<RunSearchError | null>(null);
   const [sortBy, setSortBy] = useState("created");
   const [metricKey, setMetricKey] = useState(DEFAULT_METRIC_KEY);
   const [metricFilter, setMetricFilter] = useState("");
@@ -484,6 +507,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     selectedRunsRef.current = selectedRuns;
   }, [selectedRuns]);
+  useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
   useLayoutEffect(() => {
     dashboardSelectionFilterKeyRef.current = dashboardSelectionFilterKey;
   }, [dashboardSelectionFilterKey]);
@@ -696,6 +722,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setSelectedRunDetails({});
     setPrimaryRunId("");
     setReferenceRunId("");
+    setSearchError(null);
     resetRunPagination();
   }, [activeOrgId, resetRunPagination]);
   const workspacePanelMetrics = useMemo(() => workspaceMetricKeys(workspaceView, panelSearch), [panelSearch, workspaceView]);
@@ -880,6 +907,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const silent = Boolean(options.silent);
     const requestOptions = options.signal ? { signal: options.signal } : {};
     const requestId = dashboardRequestRef.current + 1;
+    const previousMessage = messageRef.current;
     if (warehouseRetryTimerRef.current) {
       window.clearTimeout(warehouseRetryTimerRef.current);
       warehouseRetryTimerRef.current = null;
@@ -901,9 +929,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         retryTransientRequest(() => api.get(`/api/runs/summary${queryString(params)}`, requestOptions), retryOptions),
       ]);
       if (requestId !== dashboardRequestRef.current) return;
-      if (summaryResult.status === "rejected") throw summaryResult.reason;
+      if (summaryResult.status === "rejected") {
+        const nextSearchError = searchErrorFromApi(summaryResult.reason, query);
+        if (nextSearchError) {
+          setSearchError(nextSearchError);
+          if (!silent) setMessage(previousMessage);
+          return;
+        }
+        throw summaryResult.reason;
+      }
       const summaryPayload = summaryResult.value;
       const nextSummary = summaryPayload as Summary;
+      setSearchError(null);
       if (overviewResult.status === "fulfilled") {
         setOverview(overviewResult.value.overview as Overview);
       }
@@ -954,6 +991,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       try {
         const session = await api.get("/api/auth/session", { signal: controller.signal });
         if (session.authenticated) {
+          const destination = postAuthRedirectPath(session, window.location.pathname || "/dashboard/runs");
+          if (destination.startsWith("/onboarding")) {
+            setDashboardAuthMessage("Finish storage setup before opening the dashboard.");
+            window.location.replace(destination);
+            return;
+          }
           setSessionPayload(session as DashboardSessionPayload);
           setDashboardAuthorized(true);
           return;
@@ -1977,6 +2020,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setSavedViewKey(key);
     if (!key) {
       applyingSavedViewRef.current = false;
+      setSearchError(null);
       return;
     }
     if (systemSavedViewId(key) === "advanced-reducers") {
@@ -2027,6 +2071,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       ? view.activeTab as TabId
       : null;
     setStatus(savedViewString(view.status));
+    setSearchError(null);
     setQueryInput(savedViewString(view.query));
     setQuery(savedViewString(view.query));
     setSortBy(savedViewString(view.sortBy, "created"));
@@ -2145,6 +2190,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       resetRunPagination();
       setQuery(queryInput);
       setMessage("Applying the latest search filter. Select matching runs again after the results refresh.");
+      return;
+    }
+    if (searchError?.query === query) {
+      setMessage("Fix the run search syntax before selecting matching runs.");
       return;
     }
     selectAllMatchingControllerRef.current?.abort();
@@ -2303,6 +2352,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setStatus("");
     setQueryInput("");
     setQuery("");
+    setSearchError(null);
     setPageCursorStack([]);
     setPageOffset(0);
     setMessage("Filters cleared.");
@@ -2690,6 +2740,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         project={project}
         projects={projects}
         query={queryInput}
+        searchError={searchError}
+        searchErrorStale={Boolean(searchError && searchError.query !== queryInput)}
         savedViewKey={savedViewKey}
         savedViews={savedViews}
         sortBy={sortBy}
@@ -2799,6 +2851,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               queryInput={queryInput}
               runsRailCollapsed={runsRailCollapsed}
               selectAllMatchingBusy={selectAllMatchingBusy}
+              selectAllMatchingDisabled={queryInput !== query || Boolean(searchError && searchError.query === query)}
               selectedRunIds={selectedRunIds}
               sortedRuns={sortedRuns}
               status={status}

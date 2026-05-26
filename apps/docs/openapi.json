@@ -184,6 +184,33 @@
             }
           },
           {
+            "name": "q",
+            "in": "query",
+            "description": "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort key: created, name, status, duration, metric-latest, or metric-best",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "metric_key",
+            "in": "query",
+            "description": "Metric key used by metric-latest and metric-best sorts",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "Page size (1..=1000)",
@@ -211,6 +238,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RunsEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid run search or query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -670,7 +707,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Substring search",
+            "description": "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex.",
             "required": false,
             "schema": {
               "type": "string"
@@ -693,6 +730,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid run search or query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -746,7 +793,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Substring search",
+            "description": "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex.",
             "required": false,
             "schema": {
               "type": "string"
@@ -798,6 +845,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "projection",
+            "in": "query",
+            "description": "Use selection for lightweight bulk-selection rows",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -807,6 +863,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid run search or query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2157,7 +2223,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Substring search",
+            "description": "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex.",
             "required": false,
             "schema": {
               "type": "string"
@@ -2189,6 +2255,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid run search or query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2967,8 +3043,27 @@
           "error"
         ],
         "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "error": {
-            "$ref": "#/components/schemas/ErrorBody"
+            "type": "string"
+          },
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
           }
         }
       },
@@ -3790,21 +3885,6 @@
         "properties": {
           "workspace_view": {
             "$ref": "#/components/schemas/WorkspaceViewRow"
-          }
-        }
-      },
-      "ErrorBody": {
-        "type": "object",
-        "required": [
-          "code",
-          "message"
-        ],
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
           }
         }
       },
