@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "instantml"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Python SDK and CLI for logging InstantML training runs, metrics, artifacts, and rich objects."
 readme = "PYPI_README.md"
 requires-python = ">=3.11"
