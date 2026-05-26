@@ -41,7 +41,7 @@ type Props = {
   onResetCompareTableMetrics: () => void;
   onRunSortMetricKey: (key: string) => void;
   onRunSort: (sort: CompareRunSort) => void;
-  onUpdateRunTagsAndNotes: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
+  onUpdateRunTagsAndNotes?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   referenceRun: RunSummary | null;
   removeCompareTableMetric: (metric: string) => void;
   selectedRunIds: string[];

@@ -10,6 +10,7 @@ import { canonicalDashboardPath, pathFromLegacyHash, sanitizeNextPath, tabFromPa
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
+import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
 import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
@@ -20,6 +21,7 @@ import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
 import { DashboardTopbar } from "./chrome/topbar";
+import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
@@ -536,7 +538,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
   const activeMembershipRole = sessionPayload?.membership?.role ?? "";
-  const canManageOrg = activeMembershipRole === "owner" || activeMembershipRole === "admin";
+  const canManageOrg = roleCanManageOrg(activeMembershipRole);
+  const canWriteRuns = roleCanWriteRuns(activeMembershipRole);
   const activeUsageOrg = useMemo(() => usagePayload?.organizations?.find((org) => org.org_id === activeOrgId) ?? usagePayload?.organizations?.[0] ?? null, [activeOrgId, usagePayload]);
   const activeUsage = activeUsageOrg?.usage ?? {};
   const activeLimits = activeUsageOrg?.limits ?? {};
@@ -913,11 +916,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     [api],
   );
 
-  // Switch the session's bound org. The backend updates the session row in
-  // place; we refresh the local session payload from the returned body and
-  // reload memberships so the dropdown reflects the new `is_current` flags.
-  // Then we force a hard reload so every panel re-queries against the new
-  // org_id — cheaper than threading a "reload everything" signal through.
+  // Switch the session's bound org. The backend returns a refreshed session
+  // cookie and payload; the hard reload makes every org-scoped panel re-query
+  // instead of carrying run or metric selection across workspace boundaries.
   const switchOrganization = useCallback(
     async (targetOrgId: string) => {
       if (!targetOrgId) return;
@@ -944,6 +945,38 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
     },
     [api, loadOrgMemberships, sessionPayload?.organization?.id],
+  );
+
+  const checkWorkspaceName = useCallback(
+    async (name: string): Promise<WorkspaceNameAvailability> => {
+      return await api.get(`/api/orgs/name-availability${queryString({ name })}`) as WorkspaceNameAvailability;
+    },
+    [api],
+  );
+
+  const createWorkspace = useCallback(
+    async (input: CreateWorkspaceInput) => {
+      setOrgSwitchBusy(true);
+      setOrgSwitchError("");
+      setMessage(input.plan_tier === "free" ? "Creating workspace..." : "Opening checkout...");
+      try {
+        const payload = await api.post("/api/orgs/current-user", input);
+        const checkoutUrl = typeof payload?.billing_checkout?.url === "string" ? payload.billing_checkout.url : "";
+        if (checkoutUrl) {
+          window.location.assign(checkoutUrl);
+          return;
+        }
+        window.location.assign(window.location.pathname);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unable to create workspace.";
+        setOrgSwitchError(detail);
+        setMessage(detail);
+        throw error;
+      } finally {
+        setOrgSwitchBusy(false);
+      }
+    },
+    [api],
   );
 
   useEffect(() => {
@@ -1543,14 +1576,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [activeOrgId, dashboardAuthorized, loadUsage]);
 
   const loadApiKeys = useCallback(async (options: { signal?: AbortSignal } = {}) => {
-    if (!activeOrgId) return;
+    if (!activeOrgId || !canManageOrg) {
+      setApiKeys([]);
+      return;
+    }
     try {
       const payload = await api.get(`/api/orgs/${activeOrgId}/api-keys`, options);
       setApiKeys(Array.isArray(payload.api_keys) ? payload.api_keys as ApiKeyRow[] : []);
     } catch (error) {
       if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load API keys.");
     }
-  }, [activeOrgId, api]);
+  }, [activeOrgId, api, canManageOrg]);
 
   useEffect(() => {
     if (!dashboardAuthorized || activeTab !== "settings" || !activeOrgId) return;
@@ -1568,6 +1604,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
+    if (!canManageOrg) {
+      setMessage("Seat management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Sending invitation...");
     try {
@@ -1593,6 +1633,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function resendInvitation(invitationId: string) {
     if (!activeOrgId) return;
+    if (!canManageOrg) {
+      setMessage("Seat management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Resending invitation...");
     try {
@@ -1613,6 +1657,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function revokeInvitation(invitationId: string) {
     if (!activeOrgId) return;
+    if (!canManageOrg) {
+      setMessage("Seat management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Revoking invitation...");
     try {
@@ -1645,6 +1693,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function openBillingPortal() {
+    if (!canManageOrg) {
+      setMessage("Billing management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Opening billing portal...");
     try {
@@ -1659,6 +1711,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function changeBillingPlan(plan: "free" | "pro" | "premium") {
+    if (!canManageOrg) {
+      setMessage("Billing management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage(`Changing billing plan to ${planDisplayName(plan)}...`);
     try {
@@ -1678,6 +1734,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function cancelBilling() {
+    if (!canManageOrg) {
+      setMessage("Billing management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Scheduling cancellation...");
     try {
@@ -1692,7 +1752,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function createDashboardApiKey() {
-    if (!activeOrgId) return;
+    if (!activeOrgId || !canManageOrg) {
+      setMessage("API key management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setNewApiKey("");
     setMessage("Creating API key...");
@@ -1711,7 +1774,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function revokeDashboardApiKey(keyId: string) {
-    if (!activeOrgId || !keyId) return;
+    if (!activeOrgId || !keyId || !canManageOrg) {
+      setMessage("API key management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Revoking API key...");
     try {
@@ -1732,6 +1798,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function saveView() {
+    if (!canWriteRuns) {
+      setMessage("Read only workspaces can view runs and metrics but cannot save shared views.");
+      return;
+    }
     const fallbackName = `${project || "all"}:${metricKey || "metric"}`;
     const name = (viewName.trim() || fallbackName).replace(/[^A-Za-z0-9._:-]+/g, "-").slice(0, 64);
     setViewName(name);
@@ -1996,6 +2066,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function updateRunTagsAndNotes(runId: string, patch: { tags: string[]; notes: string }) {
+    if (!canWriteRuns) {
+      throw new Error("Read only workspaces can view run data but cannot edit run metadata.");
+    }
     const tags = patch.tags.map((tag) => tag.trim()).filter(Boolean).slice(0, 16);
     const notes = patch.notes.trim();
     const payload = await api.patch(`/runs/${runId}`, { tags, notes });
@@ -2390,6 +2463,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onQuickSearch={() => setQuickSearchOpen(true)}
         onRefresh={loadDashboard}
         onSaveView={saveView}
+        canSaveView={canWriteRuns}
+        onCheckWorkspaceName={checkWorkspaceName}
+        onCreateWorkspace={createWorkspace}
+        onOpenBilling={() => selectTab("settings")}
+        onOpenSettings={() => selectTab("settings")}
         onSelectTab={selectTab}
         onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
@@ -2623,7 +2701,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
-              onRunMetadataSave={updateRunTagsAndNotes}
+              onRunMetadataSave={canWriteRuns ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primaryDomain={primaryDomain}
               primaryFullDomain={primaryFullDomain}
@@ -2677,7 +2755,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onResetCompareTableMetrics={resetCompareTableMetrics}
               onRunSortMetricKey={setCompareSortMetricKey}
               onRunSort={setCompareRunSort}
-              onUpdateRunTagsAndNotes={updateRunTagsAndNotes}
+              onUpdateRunTagsAndNotes={canWriteRuns ? updateRunTagsAndNotes : undefined}
               referenceRun={referenceRun}
               removeCompareTableMetric={removeCompareTableMetric}
               selectedRunIds={selectedRunIds}
@@ -2807,6 +2885,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               apiKeyName={apiKeyName}
               apiKeys={apiKeys}
               apiRows={apiRows}
+              canManageOrg={canManageOrg}
               metricKey={metricKey}
               newApiKey={newApiKey}
               onApiKeyNameChange={setApiKeyName}

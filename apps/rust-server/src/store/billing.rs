@@ -27,6 +27,11 @@ pub async fn ensure_billing_write_allowed(
 }
 
 pub async fn billing_status(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
+    let session = ctx
+        .session
+        .as_ref()
+        .ok_or_else(|| AppError::unauthorized("browser session required"))?;
+    require_org_admin(store, session.user_id, ctx.org_id).await?;
     let data = store.data.lock().await;
     let org = data
         .organizations
@@ -146,7 +151,7 @@ pub async fn create_checkout_for_org(
         let mut data = store.data.lock().await;
         data.insert_billing_checkout_intent(intent.clone());
     }
-    if action == "paid_signup" {
+    if matches!(action, "paid_signup" | "new_org") {
         let pending = BillingAccountProjection {
             schema_version: 1,
             org_id,

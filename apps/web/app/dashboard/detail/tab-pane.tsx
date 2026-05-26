@@ -18,7 +18,7 @@ type Props = {
   onChartMove: (event: MouseEvent<SVGSVGElement>) => void;
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
-  onRunMetadataSave: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
+  onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   primaryDomain: any;
   primaryFullDomain: any;

@@ -188,9 +188,8 @@ pub async fn auth_logout(
 
 /// Re-point the caller's session at a different org they belong to.
 ///
-/// Used by the dashboard org-switcher. The session token is unchanged — only
-/// the bound `org_id` on the session row is updated, so subsequent requests
-/// from the same cookie scope to the newly selected org.
+/// Used by the dashboard org-switcher. The route preserves its response shape
+/// while the store mints a fresh browser session cookie for the selected org.
 #[utoipa::path(
     post,
     path = "/api/auth/switch-organization",
@@ -219,8 +218,8 @@ pub async fn auth_switch_organization(
     let target_org_id = input
         .org_id
         .ok_or_else(|| AppError::validation("org_id is required"))?;
-    let payload = store::switch_session_organization(&state.store, &token, target_org_id).await?;
-    Ok(Json(payload).into_response())
+    let created = store::switch_session_organization(&state.store, &token, target_org_id).await?;
+    json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
 
 // --- Device-code (RFC 8628) handlers ---

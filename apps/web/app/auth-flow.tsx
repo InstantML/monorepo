@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../src/api.js";
 import { clerkIssuerConfigError } from "../src/clerk-config.js";
+import { roleLabel } from "../src/roles.js";
 import { sanitizeNextPath } from "../src/routes.js";
 import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
@@ -986,7 +987,7 @@ function OnboardingBody({
         </span>
         <div className="iml-org-m">
           <strong>{session?.organization?.name ?? "Workspace ready"}</strong>
-          <span>{session?.user?.primary_email ?? "Signed in"} · {demo ? "read-only" : (session?.membership?.role ?? "owner")}{demo ? null : ` · ${planLabel(session?.organization?.plan_tier)} plan`}</span>
+          <span>{session?.user?.primary_email ?? "Signed in"} · {demo ? "Read only" : roleLabel(session?.membership?.role ?? "owner")}{demo ? null : ` · ${planLabel(session?.organization?.plan_tier)} plan`}</span>
         </div>
       </div>
 

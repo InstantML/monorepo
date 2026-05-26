@@ -5,6 +5,7 @@ import { MetricCard } from "../ui/metric-card";
 import { PageHead } from "../ui/page-head";
 import { SettingRow } from "./setting-row";
 import { formatNumber } from "../../../src/state.js";
+import { roleLabel } from "../../../src/roles.js";
 import type { components } from "../../../src/types/api.generated";
 
 type SeatRow = components["schemas"]["SeatRow"];
@@ -220,9 +221,9 @@ export function SettingsTabPane({
                   label="Role"
                   onChange={onInviteRole}
                   options={[
-                    { value: "member", label: "Member" },
+                    { value: "member", label: "Write/read" },
                     { value: "admin", label: "Admin" },
-                    { value: "viewer", label: "Viewer" },
+                    { value: "viewer", label: "Read only" },
                   ]}
                   value={inviteRole}
                 />
@@ -234,7 +235,7 @@ export function SettingsTabPane({
                 <div className="api-row" key={seat.membership.id}>
                   <span>{seat.membership.status}</span>
                   <strong>{seat.user.primary_email}</strong>
-                  <code>{seat.membership.role}</code>
+                  <code>{roleLabel(seat.membership.role)}</code>
                 </div>
               ))}
               {visibleInvitations.map((invitation) => (
@@ -244,7 +245,7 @@ export function SettingsTabPane({
                     {invitation.email}
                     <small>Expires {formatInviteDate(invitation.expires_at)}</small>
                   </strong>
-                  <code>{invitation.role}</code>
+                  <code>{roleLabel(invitation.role)}</code>
                   {canManageOrg && invitation.status === "pending" ? (
                     <>
                       {invitationLinks[invitation.id] ? (

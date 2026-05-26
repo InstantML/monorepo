@@ -5,6 +5,7 @@ use axum::{
     body::Bytes,
     extract::{Path, Query, State},
     http::HeaderMap,
+    response::IntoResponse,
     Json,
 };
 use serde_json::{json, Value};
@@ -12,8 +13,9 @@ use serde_json::{json, Value};
 use crate::{
     domain::{
         ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
-        ClickHouseConnectionValidateRequest, CreateApiKeyRequest, CreateOrganizationRequest,
-        CreateUserRequest, ReserveSeatRequest,
+        ClickHouseConnectionValidateRequest, CreateApiKeyRequest,
+        CreateCurrentUserOrganizationRequest, CreateOrganizationRequest, CreateUserRequest,
+        ReserveSeatRequest,
     },
     errors::AppResult,
     store,
@@ -116,6 +118,48 @@ pub async fn create_org(
     Ok(Json(
         json!({ "organization": store::create_organization(&state.store, input).await? }),
     ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/orgs/current-user",
+    tag = "orgs",
+    request_body = crate::domain::CreateCurrentUserOrganizationRequest,
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Created organization for the current browser user", body = crate::domain::CurrentUserOrganizationCreateResponse),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Missing session", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Organization or personal workspace already exists", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn create_current_user_org(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<axum::response::Response> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
+    let session = session_context(&state, &headers).await?;
+    let input = read_json::<CreateCurrentUserOrganizationRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    let created = store::create_current_user_organization(
+        &state.store,
+        session.user.id,
+        session.organization.id,
+        input,
+        &state.config.billing,
+        &state.config.email,
+    )
+    .await?;
+    if let Some(token) = created.token.as_deref() {
+        super::helpers::json_with_session_cookie(&state, &headers, created.response, token)
+    } else {
+        Ok(Json(created.response).into_response())
+    }
 }
 
 #[utoipa::path(
