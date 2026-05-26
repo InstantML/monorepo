@@ -13,51 +13,44 @@
 //! - **Project default:** `"default"` — a single shared bucket so ad-hoc
 //!   and migrated runs land in a predictable place.
 //! - **Run default:** `<adjective>-<noun>-<sequence>` where the sequence is
-//!   the position of this run within its project, starting at 1. Adjective
-//!   and noun are picked deterministically from `(org_id, project_id,
-//!   sequence)` so the name is reproducible and concurrent run-creates in
-//!   the same project never collide on the same sequence.
+//!   the position of this run within its project, starting at 1. The
+//!   adjective/noun pair is rolled from OS entropy on every call, so two
+//!   concurrent creates that race on the same sequence still get distinct
+//!   human-readable handles. Per-run uniqueness is also guaranteed by the
+//!   underlying UUID; the name is the friendly label, not the identity.
 //!
 //! The wordlists are intentionally generic (animals, weather, colors,
 //! nature, materials) — not ML-flavored, since names appear in shared
 //! reports, screenshots, and customer demos forever.
 //!
-//! Two-pass picks (`adj × noun`) gives ~16k unique base names; the
-//! trailing sequence number guarantees per-project uniqueness regardless.
+//! Two-pass picks (`adj × noun`) give ~16k unique base names; the trailing
+//! sequence number guarantees per-project ordering regardless.
 
-use uuid::Uuid;
+use crate::errors::{AppError, AppResult};
 
 pub const DEFAULT_PROJECT_NAME: &str = "default";
 
 /// Generate a friendly default run name shaped like `<adj>-<noun>-<seq>`.
 ///
 /// The sequence (`seq`) is the position of this run within its project,
-/// **1-indexed**. The adjective and noun are chosen deterministically from
-/// `(org_id, project_id, seq)` so:
-///
-/// - The same inputs always produce the same name (debuggable, testable).
-/// - Concurrent creates that race on the same sequence number still pick
-///   different adjective/noun pairs from the same seed component, reducing
-///   the practical collision rate even if the sequence count is briefly
-///   stale.
+/// **1-indexed**. The adjective and noun are picked from OS entropy, so
+/// each call produces an independent roll — concurrent creates that race
+/// on the same sequence still get distinct adj/noun pairs.
 ///
 /// The output is always a valid `validate_name` result — lowercase ASCII,
 /// hyphen-separated, well under any size limit.
-pub fn generate_run_name(org_id: Uuid, project_id: Uuid, seq: u64) -> String {
-    let seed = hash_seed(org_id, project_id, seq);
-    let adj = ADJECTIVES[(seed % ADJECTIVES.len() as u64) as usize];
-    let noun = NOUNS[((seed / ADJECTIVES.len() as u64) % NOUNS.len() as u64) as usize];
-    format!("{adj}-{noun}-{seq}")
+pub fn generate_run_name(seq: u64) -> AppResult<String> {
+    let pick = random_u64()?;
+    let adj = ADJECTIVES[(pick % ADJECTIVES.len() as u64) as usize];
+    let noun = NOUNS[((pick / ADJECTIVES.len() as u64) % NOUNS.len() as u64) as usize];
+    Ok(format!("{adj}-{noun}-{seq}"))
 }
 
-fn hash_seed(org_id: Uuid, project_id: Uuid, seq: u64) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    org_id.hash(&mut hasher);
-    project_id.hash(&mut hasher);
-    seq.hash(&mut hasher);
-    hasher.finish()
+fn random_u64() -> AppResult<u64> {
+    let mut bytes = [0u8; 8];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|error| AppError::internal(format!("failed to roll default run name: {error}")))?;
+    Ok(u64::from_le_bytes(bytes))
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -149,64 +142,50 @@ const NOUNS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn run_name_is_kebab_with_sequence_suffix() {
-        let name = generate_run_name(Uuid::nil(), Uuid::nil(), 1);
-        let parts: Vec<&str> = name.rsplitn(2, '-').collect();
-        // Last segment is the sequence number.
-        assert_eq!(parts[0], "1");
-        // The rest is `<adj>-<noun>`.
+        let name = generate_run_name(1).unwrap();
+        // Trailing segment is the sequence number.
+        assert!(name.ends_with("-1"), "expected -1 suffix, got {name}");
+        // Three hyphen-separated segments: adj, noun, seq.
+        assert_eq!(name.split('-').count(), 3, "shape changed: {name}");
+        let mut parts = name.split('-');
+        let adj = parts.next().unwrap();
+        let noun = parts.next().unwrap();
         assert!(
-            parts[1].contains('-'),
-            "expected adj-noun before suffix, got {name}"
+            ADJECTIVES.contains(&adj),
+            "adjective not in wordlist: {adj}"
         );
+        assert!(NOUNS.contains(&noun), "noun not in wordlist: {noun}");
     }
 
     #[test]
-    fn run_name_is_deterministic_for_same_inputs() {
-        let org = Uuid::from_u128(42);
-        let project = Uuid::from_u128(7);
-        assert_eq!(
-            generate_run_name(org, project, 1),
-            generate_run_name(org, project, 1)
+    fn run_name_carries_through_arbitrary_sequence() {
+        let name = generate_run_name(42).unwrap();
+        assert!(name.ends_with("-42"), "expected -42 suffix, got {name}");
+    }
+
+    #[test]
+    fn concurrent_calls_with_same_sequence_are_almost_always_distinct() {
+        // With 64×64 = 4096 base combinations and OS-entropy seeding, 200
+        // rolls at the same sequence should produce a healthy spread of
+        // unique names. We tolerate a small collision count (birthday-paradox
+        // bound) but the set must not collapse to one entry.
+        let names: HashSet<String> = (0..200).map(|_| generate_run_name(1).unwrap()).collect();
+        assert!(
+            names.len() > 100,
+            "expected >100 distinct names from 200 rolls, got {} — random seeding may be broken",
+            names.len()
         );
-    }
-
-    #[test]
-    fn run_name_differs_across_sequence() {
-        let org = Uuid::from_u128(42);
-        let project = Uuid::from_u128(7);
-        let a = generate_run_name(org, project, 1);
-        let b = generate_run_name(org, project, 2);
-        assert_ne!(a, b);
-        // The sequence suffix flips, which alone forces inequality even when
-        // the adj/noun roll happens to match.
-        assert!(a.ends_with("-1"));
-        assert!(b.ends_with("-2"));
-    }
-
-    #[test]
-    fn run_name_differs_across_project() {
-        // Same sequence, different projects → adj/noun should drift so that
-        // the human-readable handle remains distinct even when sequences
-        // coincide across projects.
-        let org = Uuid::from_u128(42);
-        let a = generate_run_name(org, Uuid::from_u128(1), 1);
-        let b = generate_run_name(org, Uuid::from_u128(2), 1);
-        // Both end in -1 by construction; but the adj-noun prefix should
-        // (almost always) differ. The 1-in-4096 collision is acceptable.
-        if a == b {
-            // Document the rare expected case.
-            assert!(a.ends_with("-1"));
-        }
     }
 
     #[test]
     fn run_name_under_size_limit() {
         // Sanity: the longest combination plus a 20-digit sequence still
         // fits comfortably under the 1024-byte validate_name limit.
-        let name = generate_run_name(Uuid::nil(), Uuid::nil(), u64::MAX);
+        let name = generate_run_name(u64::MAX).unwrap();
         assert!(name.len() < 64, "unexpectedly long name: {name}");
     }
 
