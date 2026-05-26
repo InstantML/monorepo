@@ -34,7 +34,7 @@ import {
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { buildCheckpointForkBody, buildCheckpointResumeCode, checkpointForkIdempotencyKey, defaultForkRunName } from "../src/checkpoints.js";
-import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, isStorageReadyState, normalizeDeviceUserCode, pathFromLegacyHash, postAuthRedirectPath, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, sessionRequiresStorageOnboarding, tabFromPath, tabToPath } from "../src/routes.js";
+import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, isStorageReadyState, normalizeDeviceUserCode, onboardingRedirectPath, pathFromLegacyHash, postAuthRedirectPath, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, sessionRequiresStorageOnboarding, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -778,6 +778,14 @@ test("post-auth redirects keep unready storage in onboarding", () => {
       storage_choice: "instantml-hosted",
     },
   };
+  const emptyStateHostedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-empty",
+      storage_choice: "instantml-hosted",
+      storage_state: "",
+    },
+  };
   const legacyByocSession = {
     authenticated: true,
     organization: {
@@ -794,13 +802,17 @@ test("post-auth redirects keep unready storage in onboarding", () => {
   assert.equal(sessionRequiresStorageOnboarding(validatingSession), true);
   assert.equal(sessionRequiresStorageOnboarding(unconfiguredHostedSession), true);
   assert.equal(sessionRequiresStorageOnboarding(legacyHostedSession), false);
+  assert.equal(sessionRequiresStorageOnboarding(emptyStateHostedSession), true);
   assert.equal(sessionRequiresStorageOnboarding(legacyByocSession), true);
   assert.equal(postAuthRedirectPath(readySession, "/dashboard/settings"), "/dashboard/settings");
   assert.equal(postAuthRedirectPath(lockedSession, "/dashboard/runs"), "/dashboard/runs");
-  assert.equal(postAuthRedirectPath(validatingSession, "/dashboard/runs"), "/onboarding");
-  assert.equal(postAuthRedirectPath(unconfiguredHostedSession, "/dashboard/runs"), "/onboarding");
+  assert.equal(onboardingRedirectPath("/dashboard/settings"), "/onboarding?next=%2Fdashboard%2Fsettings");
+  assert.equal(onboardingRedirectPath("/onboarding"), "/onboarding");
+  assert.equal(postAuthRedirectPath(validatingSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
+  assert.equal(postAuthRedirectPath(unconfiguredHostedSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
   assert.equal(postAuthRedirectPath(legacyHostedSession, "/dashboard/runs"), "/dashboard/runs");
-  assert.equal(postAuthRedirectPath(legacyByocSession, "/dashboard/runs"), "/onboarding");
+  assert.equal(postAuthRedirectPath(emptyStateHostedSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
+  assert.equal(postAuthRedirectPath(legacyByocSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
   assert.equal(postAuthRedirectPath({ authenticated: false }, "/dashboard/runs"), "/dashboard/runs");
   assert.equal(postAuthRedirectPath(readySession, "https://evil.example/dashboard"), "/dashboard/runs");
 });

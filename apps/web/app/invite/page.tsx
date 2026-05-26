@@ -230,7 +230,7 @@ export default function InvitePage() {
 
   function openAcceptedWorkspace(payload: SessionPayload) {
     const destination = postAuthRedirectPath(payload, "/dashboard/runs");
-    note(destination === "/onboarding"
+    note(destination.startsWith("/onboarding")
       ? "Invitation accepted. Opening storage setup..."
       : "Invitation accepted. Opening dashboard...");
     window.location.replace(destination);

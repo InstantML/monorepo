@@ -955,7 +955,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         const session = await api.get("/api/auth/session", { signal: controller.signal });
         if (session.authenticated) {
           const destination = postAuthRedirectPath(session, window.location.pathname || "/dashboard/runs");
-          if (destination === "/onboarding") {
+          if (destination.startsWith("/onboarding")) {
             setDashboardAuthMessage("Finish storage setup before opening the dashboard.");
             window.location.replace(destination);
             return;

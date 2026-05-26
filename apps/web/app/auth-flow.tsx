@@ -407,7 +407,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       }
       if (payload.mode === "signin") {
         const destination = postAuthRedirectPath(sessionPayload, nextPath);
-        note(destination === "/onboarding" ? "Signed in. Opening storage setup..." : "Signed in. Opening your dashboard...");
+        note(destination.startsWith("/onboarding") ? "Signed in. Opening storage setup..." : "Signed in. Opening your dashboard...");
         window.location.replace(destination);
       } else {
         note("Workspace created. Opening onboarding...");
@@ -477,7 +477,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         window.history.replaceState(null, "", "/onboarding");
       } else {
         const destination = signupMode ? "/onboarding" : postAuthRedirectPath(payload, nextPath);
-        note(destination === "/onboarding"
+        note(destination.startsWith("/onboarding")
           ? "Workspace ready for onboarding. Opening setup..."
           : "Signed in. Opening your dashboard...");
         window.location.replace(destination);

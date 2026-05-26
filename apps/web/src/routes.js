@@ -77,7 +77,7 @@ export function isStorageReadyState(value) {
 export function organizationRequiresStorageOnboarding(organization) {
   if (!organization?.id) return false;
   if (isStorageReadyState(organization.storage_state)) return false;
-  if (organization.storage_state) return true;
+  if (Object.prototype.hasOwnProperty.call(organization, "storage_state")) return true;
   return organization.storage_choice === "customer-clickhouse";
 }
 
@@ -86,9 +86,15 @@ export function sessionRequiresStorageOnboarding(session) {
   return organizationRequiresStorageOnboarding(session.organization);
 }
 
+export function onboardingRedirectPath(requestedPath = "/dashboard/runs") {
+  const nextPath = sanitizeNextPath(requestedPath);
+  if (nextPath === ONBOARDING_PATH || nextPath.startsWith(`${ONBOARDING_PATH}/`)) return ONBOARDING_PATH;
+  return `${ONBOARDING_PATH}?next=${encodeURIComponent(nextPath)}`;
+}
+
 export function postAuthRedirectPath(session, requestedPath = "/dashboard/runs") {
   return sessionRequiresStorageOnboarding(session)
-    ? ONBOARDING_PATH
+    ? onboardingRedirectPath(requestedPath)
     : sanitizeNextPath(requestedPath);
 }
 
