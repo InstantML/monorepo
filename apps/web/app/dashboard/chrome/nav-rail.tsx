@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, CircleHelp, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Sun } from "lucide-react";
+import { BookOpen, CircleHelp, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useRef } from "react";
 import type { MouseEvent } from "react";
 
@@ -14,20 +14,14 @@ export function DashboardNav({
   onPinnedChange,
   onSelect,
   onShortcutHelp,
-  onSignOut,
-  onThemeToggle,
   pinned,
-  theme,
 }: {
   activeTab: TabId;
   onAutoOpenChange: (open: boolean) => void;
   onPinnedChange: (pinned: boolean) => void;
   onSelect: (tabId: TabId) => void;
   onShortcutHelp?: () => void;
-  onSignOut?: () => void;
-  onThemeToggle?: () => void;
   pinned: boolean;
-  theme?: "light" | "dark";
 }) {
   const navRef = useRef<HTMLElement>(null);
 
@@ -97,27 +91,10 @@ export function DashboardNav({
           <BookOpen size={15} />
           <span className="tab-label">Docs</span>
         </a>
-        {onThemeToggle ? (
-          <button
-            className="tab-button"
-            type="button"
-            onClick={onThemeToggle}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-            <span className="tab-label">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-          </button>
-        ) : null}
         {onShortcutHelp ? (
           <button className="tab-button" type="button" onClick={onShortcutHelp} aria-label="Keyboard shortcuts">
             <CircleHelp size={15} />
             <span className="tab-label">Shortcuts</span>
-          </button>
-        ) : null}
-        {onSignOut ? (
-          <button className="tab-button" type="button" onClick={onSignOut} aria-label="Sign out">
-            <LogOut size={15} />
-            <span className="tab-label">Sign out</span>
           </button>
         ) : null}
       </div>
