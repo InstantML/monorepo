@@ -2712,7 +2712,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       <DashboardTopbar
         activeIcon={ActiveIcon}
         activeTab={activeTab}
-        accountUser={sessionPayload?.user ?? null}
         detailRunName={primaryRun?.name ?? ""}
         message={message}
         mobileNavOpen={mobileNavOpen}
@@ -2724,11 +2723,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onRefresh={loadDashboard}
         onSaveView={saveView}
         onSelectTab={selectTab}
-        onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
         onSortBy={changeRunSort}
         onStatus={changeStatus}
-        onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onViewName={setViewName}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
@@ -2747,7 +2744,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         sortBy={sortBy}
         status={status}
         storageUsagePercent={storagePercent}
-        theme={theme}
         tone={currentMessageTone}
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
@@ -2771,10 +2767,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           onPinnedChange={setNavPinned}
           onSelect={selectTab}
           onShortcutHelp={() => { setMobileNavOpen(false); openShortcutHelp(); }}
-          onSignOut={signOut}
-          onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
           pinned={navPinned}
-          theme={theme}
         />
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
