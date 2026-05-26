@@ -127,7 +127,7 @@ INSTANTML_SCALE_RUNS=5 INSTANTML_SCALE_METRICS=4 INSTANTML_SCALE_POINTS=100 node
 
 ## Rust Large-Run Benchmark
 
-`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 100,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 20,000-step chart series. It starts disposable ClickHouse, applies the Rust ClickHouse schema, seeds operational records and metric rows directly into ClickHouse, starts the Rust API, and prints JSON p50/p95 timings.
+`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 100,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 20,000-step chart series. It starts disposable ClickHouse, applies the Rust ClickHouse schema, seeds operational records and metric rows directly into ClickHouse, starts the Rust API, and prints JSON p50/p95 timings for newest pages, literal search, field search, boolean search, regex search, metric sort, and chart reads.
 
 ```bash
 npm run benchmark:large-runs

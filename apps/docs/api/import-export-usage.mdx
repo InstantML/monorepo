@@ -11,12 +11,21 @@ debugging.
 ## Export
 
 ```http
-GET /api/export?project=cartpole&status=finished
+GET /api/export?project=cartpole&status=finished&q=tag%3Abaseline%20NOT%20tag%3Adebug
 Authorization: Bearer instantml_...
 ```
 
 Requires tenant read access. API keys need `export:read`; browser sessions need
 viewer or higher role.
+
+Export accepts the same bounded run filters as `GET /runs`, including
+`project`, `status`, `sort_by`, `metric_key`, and the shared run-search `q`
+language. Search supports bare text, `tag:`/`tags:`, `notes:`, `config:`,
+`metadata:`, `status:`, `id:`, uppercase `AND`/`OR`/`NOT`, field/group
+exclusion with `-`, quoted phrases, and explicit Rust regex such as
+`re:/seed-(13|14)/`. The deprecated Node compatibility API supports the
+non-regex subset and returns `run_search_regex_unsupported` for completed regex
+queries.
 
 Response shape:
 

@@ -38,9 +38,9 @@ Accepted filters:
 | Parameter | Meaning |
 | --- | --- |
 | `project` | Project name. Omit or use `all` for all projects. |
-| `project_id` | Exact project ID filter. |
+| `project_id` | Legacy SDK compatibility parameter. Rust-hosted run summaries do not expose it as a query filter; use `project` or a project-scoped API key. |
 | `status` | `running`, `finished`, `failed`, or `all`. |
-| `q` | Token search over run name, tags, notes, config, and metadata. |
+| `q` | Shared run search query. Bare text remains implicit `AND`; field filters, exact tags/status, ID prefixes, uppercase booleans, phrases, grouping, field/group exclusion such as `-tag:debug`, and explicit Rust `re:/.../` regex are supported. |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, or `metric-best`. |
 | `metric_key` | Metric used for metric sorts. |
 | `limit` | Page size. |
@@ -49,6 +49,16 @@ Accepted filters:
 
 Do not combine `cursor` with a nonzero `offset`; the helper raises
 `ValueError`.
+
+Useful `q` examples:
+
+```text
+seed 13
+tag:baseline status:finished
+name:"long context" -tag:debug
+(tag:baseline OR tag:candidate) notes:ablated
+re:/seed-(13|14)/
+```
 
 ## Download artifact bytes
 

@@ -658,6 +658,19 @@ test("api client handles query strings and malformed responses", async () => {
   await assert.rejects(() => new ApiClient().get("/html-error"), /Server is unavailable/);
   globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "validation_error", request_id: "req_1" }) });
   await assert.rejects(() => new ApiClient().get("/bad-request"), /Request was invalid.+req_1/);
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
+    json: async () => ({ error: "Invalid run search: regex is invalid at column 6.", code: "run_search_invalid", field: "q", position: 6 }),
+  });
+  await assert.rejects(
+    () => new ApiClient().get("/bad-search"),
+    (error) => error instanceof ApiError
+      && error.code === "run_search_invalid"
+      && error.field === "q"
+      && error.position === 6
+      && /Invalid run search/.test(error.message),
+  );
   globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ code: "warehouse_unavailable" }) });
   await assert.rejects(async () => {
     await new ApiClient().get("/warehouse");

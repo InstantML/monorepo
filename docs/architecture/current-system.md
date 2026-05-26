@@ -210,7 +210,12 @@ The Rust server stores in ClickHouse operational records:
 
 - Control-plane/local data: users, identities, organizations, memberships, browser sessions, service accounts, API keys, account/plan fields, tenant-route requested/applied warehouse profile fields, and service-routing-ready org identifiers.
 - Product metadata: projects, runs, typed attributes, artifacts, imports, idempotency records, usage snapshots, and table preview rows.
-- Project and run search text is derived in the Rust index from stored run name, tags, config, metadata, and explicit note fields.
+- Project and run search text is derived in the Rust index from stored run name,
+  project, tags, config, metadata, status, ID, and explicit note fields. The
+  shared `q` language keeps bare-text implicit-AND matching and adds field
+  qualifiers, exact tags/status/ID prefixes, quoted phrases, uppercase
+  booleans, field/group exclusion, grouping, and bounded explicit Rust regex for
+  `/runs`, summaries, overview, selection projection, and export.
 
 The Rust server stores in ClickHouse metric tables:
 
