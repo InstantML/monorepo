@@ -350,7 +350,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [orgMemberships, setOrgMemberships] = useState<OrgMembershipSummary[]>([]);
   const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
   const [orgSwitchError, setOrgSwitchError] = useState("");
-  const [project, setProject] = useState("");
+  // Seed the project from ?project=… so that direct deep-links and the back/forward
+  // gestures restore the previously-selected project. The `loadProjects` effect
+  // below will reset to "" if the URL referenced a project the user no longer has
+  // access to, and the preferences loader runs only when this is empty.
+  const [project, setProject] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : (new URLSearchParams(window.location.search).get("project") ?? "")
+  );
   const [status, setStatus] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
@@ -656,6 +664,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setProject(value);
+    // Push the project change onto history so the browser back/forward
+    // gestures can restore the prior selection.
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (value) params.set("project", value);
+      else params.delete("project");
+      const qs = params.toString();
+      const url = window.location.pathname + (qs ? `?${qs}` : "");
+      if (url !== window.location.pathname + window.location.search) {
+        window.history.pushState(null, "", url);
+      }
+    }
     if (projectPreferenceLoadedRef.current) {
       if (projectPreferenceWriteTimerRef.current) window.clearTimeout(projectPreferenceWriteTimerRef.current);
       projectPreferenceWriteTimerRef.current = window.setTimeout(() => {
@@ -1129,15 +1149,23 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     function applyRouteTab() {
+      // Preserve any query string (notably ?project=…) when normalizing the path,
+      // so back/forward navigation through pushed history entries doesn't strip
+      // the project selection.
+      const search = window.location.search;
       const legacyPath = pathFromLegacyHash(window.location.hash);
       if (legacyPath) {
-        window.history.replaceState(null, "", legacyPath);
+        window.history.replaceState(null, "", legacyPath + search);
       } else {
         const canonicalPath = canonicalDashboardPath(window.location.pathname);
-        if (window.location.pathname !== canonicalPath) window.history.replaceState(null, "", canonicalPath);
+        if (window.location.pathname !== canonicalPath) window.history.replaceState(null, "", canonicalPath + search);
       }
       const nextTab = tabFromPath(window.location.pathname) as TabId;
       setActiveTab(nextTab);
+      // Sync project state from the URL on popstate so back/forward restores
+      // the previously-selected project.
+      const projectParam = new URLSearchParams(window.location.search).get("project") ?? "";
+      setProject(projectParam);
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
       const summaryTotal = summaryTotalRef.current;
       setMessage(nextTab === "runs" && summaryTotal ? runsPageMessage(summaryTotal, 0, 0) : `Opened ${label}.`);
@@ -2502,7 +2530,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setActiveTab(tabId);
     setMobileNavOpen(false);
     setMessage(tabId === "runs" && summary.total ? runsPageMessage(summary.total, pageOffset, sortedRuns.length) : `Opened ${label}.`);
-    window.history.replaceState(null, "", tabToPath(tabId));
+    // Push a fresh history entry on tab change so the browser back gesture
+    // returns to the previously-active tab. Preserve any query string
+    // (notably ?project=…) so projects survive tab switches.
+    const url = tabToPath(tabId) + window.location.search;
+    if (url !== window.location.pathname + window.location.search) {
+      window.history.pushState(null, "", url);
+    }
     focusRouteStatus();
   }
 
