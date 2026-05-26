@@ -60,7 +60,7 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
 
   assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route");
-  assert.match(authFlow, /window\.location\.assign\(nextPath\)/, "dev sign-in must not bounce returning users through onboarding");
+  assert.match(authFlow, /window\.location\.(?:assign|replace)\(nextPath\)/, "dev sign-in must not bounce returning users through onboarding");
 
   assert.match(shell, /userTouchedDashboardFiltersRef/, "dashboard should track local filter edits while preferences load");
   assert.match(
