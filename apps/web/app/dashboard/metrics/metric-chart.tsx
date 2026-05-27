@@ -237,7 +237,7 @@ export function MetricChart({
   zoomRange?: ChartZoomRange;
 }) {
   const denseChart = shouldUseDenseChart(normalizedSeries);
-  const visibleHover = denseChart ? null : hover;
+  const visibleHover = hover;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (!denseChart) return;
@@ -332,7 +332,7 @@ export function MetricChart({
       </div>
       <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
-        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={denseChart ? undefined : onMove} onMouseLeave={onLeave}>
+        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
             <g key={`y-${tick}`}>
               <line className="grid-line" x1={padding} x2={width - padding} y1={yPos(tick)} y2={yPos(tick)} />
