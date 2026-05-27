@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, FileText, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  FileText,
+  Plus,
+  Redo2,
+  Sparkles,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 
 import { ApiClient } from "../../../src/api.js";
 import {
@@ -20,6 +28,9 @@ import { AutoSavePill } from "./auto-save-pill";
 import type { AutoSaveStatus } from "./auto-save-pill";
 import { createAutoSaveScheduler } from "./auto-save";
 import type { ReportRecord, ReportSummary } from "./block-types";
+import { useReportHistory, snapshotFromReport } from "./use-report-history";
+import type { HistorySnapshot } from "./use-report-history";
+import { classifySnapshotMode } from "./report-history-core.js";
 
 type Mode =
   | { kind: "list" }
@@ -33,6 +44,15 @@ interface SavePayload {
   visibility: ReportRecord["visibility"];
   blocks: ReportRecord["blocks"];
 }
+
+// Sentinel passed to `useReportHistory` on first mount; the `reset` effect
+// replaces it with the real initial snapshot once a report is loaded.
+const EMPTY_HISTORY_SNAPSHOT: HistorySnapshot = {
+  title: "",
+  description: "",
+  visibility: "private",
+  blocks: [],
+};
 
 /**
  * Top-level Reports tab. Owns the list + editor flow plus the auto-save
@@ -61,6 +81,16 @@ export function ReportsTabPane() {
   // First-render guard — we don't auto-save on the initial mount.
   const hasUserEditedRef = useRef(false);
 
+  // Undo/redo history. Stacks live across re-renders; `reset` clears them
+  // on report-switch. The snapshot we initialize with is a placeholder —
+  // it gets replaced immediately by the `reset` in the report-switch
+  // effect below, before the user can interact with the editor.
+  const history = useReportHistory(EMPTY_HISTORY_SNAPSHOT);
+  // We need the *previous* snapshot to classify each edit (text-only vs
+  // structural). The active report state is async, so keeping a ref of the
+  // last-emitted snapshot is simpler than threading through useEffect.
+  const lastSnapshotRef = useRef<HistorySnapshot | null>(null);
+
   const loadList = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -87,13 +117,18 @@ export function ReportsTabPane() {
         setActiveReport(report);
         setAutoSave({ state: "idle" });
         hasUserEditedRef.current = false;
+        // History resets to the freshly-loaded report. Undo before any
+        // user edit is a no-op (canUndo === false).
+        const snapshot = snapshotFromReport(report);
+        history.reset(snapshot);
+        lastSnapshotRef.current = snapshot;
       } catch (loadError) {
         setError(messageFromError(loadError));
       } finally {
         setBusy(false);
       }
     },
-    [api],
+    [api, history],
   );
 
   // Build (or rebuild) the scheduler whenever we open a new report id.
@@ -171,6 +206,14 @@ export function ReportsTabPane() {
         hasUserEditedRef.current = true;
         return;
       }
+      const nextSnapshot = snapshotFromReport(next);
+      // Classify against the previous snapshot — text-only diffs coalesce
+      // into one history entry per 500 ms typing burst; everything else
+      // (structural changes, title/description/visibility) snapshots
+      // immediately.
+      const mode = classifySnapshotMode(lastSnapshotRef.current, nextSnapshot);
+      history.push(nextSnapshot, mode);
+      lastSnapshotRef.current = nextSnapshot;
       const payload: SavePayload = {
         title: next.title,
         description: next.description ?? "",
@@ -181,8 +224,53 @@ export function ReportsTabPane() {
       setAutoSave({ state: "dirty" });
       schedulerRef.current?.schedule(payload);
     },
+    [history],
+  );
+
+  // Restore a snapshot produced by undo/redo. We bypass the
+  // hasUserEditedRef guard because the user has obviously edited the
+  // report by this point — and we explicitly do NOT re-push the restored
+  // value into the history (push() is only for new edits).
+  const applyRestoredSnapshot = useCallback(
+    (snapshot: HistorySnapshot) => {
+      setActiveReport((current) =>
+        current
+          ? {
+              ...current,
+              title: snapshot.title,
+              description: snapshot.description,
+              visibility: snapshot.visibility,
+              blocks: snapshot.blocks,
+            }
+          : current,
+      );
+      lastSnapshotRef.current = snapshot;
+      const payload: SavePayload = {
+        title: snapshot.title,
+        description: snapshot.description,
+        visibility: snapshot.visibility,
+        blocks: snapshot.blocks,
+      };
+      lastPayloadRef.current = payload;
+      // Mirror exactly what an edit does: mark dirty + schedule a save.
+      // This persists the undone state across reloads (matches Notion).
+      setAutoSave({ state: "dirty" });
+      schedulerRef.current?.schedule(payload);
+    },
     [],
   );
+
+  const handleUndo = useCallback(() => {
+    if (!history.canUndo) return;
+    const restored = history.undo();
+    if (restored) applyRestoredSnapshot(restored);
+  }, [history, applyRestoredSnapshot]);
+
+  const handleRedo = useCallback(() => {
+    if (!history.canRedo) return;
+    const restored = history.redo();
+    if (restored) applyRestoredSnapshot(restored);
+  }, [history, applyRestoredSnapshot]);
 
   const handleRetry = useCallback(() => {
     const payload = lastPayloadRef.current;
@@ -239,13 +327,16 @@ export function ReportsTabPane() {
     }
   }, [activeReport, api]);
 
-  // Flush pending save before leaving the editor.
+  // Flush pending save before leaving the editor. Also flush any pending
+  // history-coalesce snapshot so the last burst is preserved if the user
+  // returns to this report.
   const flushAndLeave = useCallback(async (next: Mode) => {
+    history.flush();
     if (schedulerRef.current && schedulerRef.current.hasPending()) {
       await schedulerRef.current.flushNow();
     }
     setMode(next);
-  }, []);
+  }, [history]);
 
   return (
     <>
@@ -282,6 +373,28 @@ export function ReportsTabPane() {
             <AutoSavePill status={autoSave} onRetry={handleRetry} />
             <button
               type="button"
+              className="report-pane__icon-button report-pane__history-button"
+              onClick={handleUndo}
+              disabled={!history.canUndo}
+              aria-disabled={!history.canUndo}
+              aria-label="Undo"
+              title="Undo (⌘Z)"
+            >
+              <Undo2 size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="report-pane__icon-button report-pane__history-button"
+              onClick={handleRedo}
+              disabled={!history.canRedo}
+              aria-disabled={!history.canRedo}
+              aria-label="Redo"
+              title="Redo (⌘⇧Z)"
+            >
+              <Redo2 size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
               className="report-pane__icon-button"
               onClick={() => void handleShare()}
               title={activeReport.share_token ? "Rotate share link" : "Create share link"}
@@ -309,6 +422,8 @@ export function ReportsTabPane() {
             autoFocusTitle={Boolean(mode.kind === "open" && mode.autoFocus)}
             onChange={handleEditorChange}
             onRefreshBlock={(index) => void handleRefreshBlock(index)}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
           />
         </section>
       ) : null}

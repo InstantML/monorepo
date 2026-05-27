@@ -1758,6 +1758,32 @@ a.report-pane__icon-button:focus-visible {
   color: #ef4444;
 }
 
+/*
+ * Undo / Redo history buttons. Match the rest of the toolbar (same
+ * .report-pane__icon-button styles) but gain a disabled state when the
+ * stack is empty. The transition timing matches the rest of the editor
+ * (180 ms cubic-bezier on background) for a coherent feel.
+ */
+.report-pane__history-button {
+  padding: 6px 8px;
+}
+
+.report-pane__history-button[disabled],
+.report-pane__history-button[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-2);
+  border-color: transparent;
+}
+
+.report-pane__history-button[disabled]:hover,
+.report-pane__history-button[aria-disabled="true"]:hover {
+  background: transparent;
+  color: var(--text-2);
+  border-color: transparent;
+}
+
 /* Auto-save pill (sits in the toolbar) */
 
 .report-auto-save-pill {

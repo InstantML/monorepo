@@ -59,6 +59,13 @@ type Props = {
   readOnly?: boolean;
   onChange?: (next: EditorReport) => void;
   onRefreshBlock?: (blockIndex: number) => void;
+  /**
+   * Cmd-Z handlers. Wired by the parent (which owns the history stack);
+   * the editor only listens for the keystroke. When `readOnly` is set the
+   * handlers are ignored (no undo on the public share view).
+   */
+  onUndo?: () => void;
+  onRedo?: () => void;
 };
 
 interface SlashMenuState {
@@ -127,6 +134,8 @@ export function ReportEditor({
   readOnly = false,
   onChange,
   onRefreshBlock,
+  onUndo,
+  onRedo,
 }: Props) {
   const [gapPickerAt, setGapPickerAt] = useState<number | null>(null);
   const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
@@ -138,6 +147,35 @@ export function ReportEditor({
   useEffect(() => {
     if (!readOnly && autoFocusTitle && titleRef.current) titleRef.current.focus();
   }, [autoFocusTitle, readOnly]);
+
+  // Global Cmd-Z / Cmd-Shift-Z (and Cmd-Y) handler. Our React-controlled
+  // inputs don't participate in the browser's native undo stack, so we
+  // can safely preempt it. Suppressed in `readOnly` mode (public share
+  // view) and when the slash menu is open (so Arrow keys + Enter still
+  // pick a block).
+  useEffect(() => {
+    if (readOnly) return;
+    if (!onUndo && !onRedo) return;
+    const handler = (event: KeyboardEvent) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (!meta) return;
+      const key = event.key.toLowerCase();
+      const isUndoCombo = key === "z" && !event.shiftKey;
+      const isRedoCombo = (key === "z" && event.shiftKey) || key === "y";
+      if (!isUndoCombo && !isRedoCombo) return;
+      // If the slash menu is open we let its handler win — Enter / arrows
+      // shouldn't trigger undo even though they share a modifier key.
+      if (slashMenu) return;
+      event.preventDefault();
+      if (isUndoCombo) {
+        onUndo?.();
+      } else {
+        onRedo?.();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [readOnly, onUndo, onRedo, slashMenu]);
 
   // Auto-size the description textarea so it grows with content (no resize
   // grip, no visible scrollbar — matches the at-rest paragraph rhythm).
