@@ -86,6 +86,15 @@ export function ReportsTabPane() {
   // it gets replaced immediately by the `reset` in the report-switch
   // effect below, before the user can interact with the editor.
   const history = useReportHistory(EMPTY_HISTORY_SNAPSHOT);
+  // The `history` object's identity changes when canUndo/canRedo flip
+  // (because the hook returns a useMemo'd handle that depends on those
+  // flags). If we let `loadReport` depend on `history`, the very first
+  // user edit recreates `loadReport`, which re-fires its useEffect and
+  // reloads the report from the server — wiping the user's in-progress
+  // typing. Pin the controller methods to a ref so the closures below
+  // can call them without depending on the unstable handle.
+  const historyRef = useRef(history);
+  historyRef.current = history;
   // We need the *previous* snapshot to classify each edit (text-only vs
   // structural). The active report state is async, so keeping a ref of the
   // last-emitted snapshot is simpler than threading through useEffect.
@@ -120,7 +129,7 @@ export function ReportsTabPane() {
         // History resets to the freshly-loaded report. Undo before any
         // user edit is a no-op (canUndo === false).
         const snapshot = snapshotFromReport(report);
-        history.reset(snapshot);
+        historyRef.current.reset(snapshot);
         lastSnapshotRef.current = snapshot;
       } catch (loadError) {
         setError(messageFromError(loadError));
@@ -128,7 +137,7 @@ export function ReportsTabPane() {
         setBusy(false);
       }
     },
-    [api, history],
+    [api],
   );
 
   // Build (or rebuild) the scheduler whenever we open a new report id.
@@ -227,7 +236,7 @@ export function ReportsTabPane() {
       // (structural changes, title/description/visibility) snapshots
       // immediately.
       const mode = classifySnapshotMode(lastSnapshotRef.current, nextSnapshot);
-      history.push(nextSnapshot, mode);
+      historyRef.current.push(nextSnapshot, mode);
       lastSnapshotRef.current = nextSnapshot;
       const payload: SavePayload = {
         title: next.title,
@@ -239,7 +248,7 @@ export function ReportsTabPane() {
       setAutoSave({ state: "dirty" });
       schedulerRef.current?.schedule(payload);
     },
-    [history],
+    [],
   );
 
   // Restore a snapshot produced by undo/redo. We bypass the
@@ -346,12 +355,12 @@ export function ReportsTabPane() {
   // history-coalesce snapshot so the last burst is preserved if the user
   // returns to this report.
   const flushAndLeave = useCallback(async (next: Mode) => {
-    history.flush();
+    historyRef.current.flush();
     if (schedulerRef.current && schedulerRef.current.hasPending()) {
       await schedulerRef.current.flushNow();
     }
     setMode(next);
-  }, [history]);
+  }, []);
 
   return (
     <>
