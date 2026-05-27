@@ -112,6 +112,8 @@ const nextConfig = {
       { source: "/api/dashboard/preferences", destination: `${apiBases.control}/api/dashboard/preferences` },
       { source: "/api/workspace-views", destination: `${apiBases.control}/api/workspace-views` },
       { source: "/api/workspace-views/:path*", destination: `${apiBases.control}/api/workspace-views/:path*` },
+      { source: "/api/reports", destination: `${apiBases.control}/api/reports` },
+      { source: "/api/reports/:path*", destination: `${apiBases.control}/api/reports/:path*` },
       { source: "/api/:path*", destination: `${apiBases.data}/api/:path*` },
       { source: "/runs/:path*", destination: `${apiBases.data}/runs/:path*` },
       { source: "/projects", destination: `${apiBases.data}/projects` },
