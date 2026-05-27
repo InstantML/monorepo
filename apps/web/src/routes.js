@@ -45,13 +45,18 @@ export function tabToPath(tab) {
 
 export function tabFromPath(pathname) {
   const urlPath = String(pathname ?? "").split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
-  const match = urlPath.match(/^\/dashboard(?:\/([^/]+))?$/);
+  const match = urlPath.match(/^\/dashboard(?:\/([^/]+))?(?:\/.*)?$/);
   if (!match) return DEFAULT_DASHBOARD_TAB;
   return isDashboardTab(match[1]) ? match[1] : DEFAULT_DASHBOARD_TAB;
 }
 
 export function canonicalDashboardPath(pathname) {
-  return tabToPath(tabFromPath(pathname));
+  const urlPath = String(pathname ?? "").split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
+  const match = urlPath.match(/^\/dashboard(?:\/([^/]+))?(\/.*)?$/);
+  if (!match) return tabToPath(DEFAULT_DASHBOARD_TAB);
+  const tab = isDashboardTab(match[1]) ? match[1] : DEFAULT_DASHBOARD_TAB;
+  if (tab === "reports" && match[2]) return `/dashboard/reports${match[2]}`;
+  return tabToPath(tab);
 }
 
 export function pathFromLegacyHash(hash) {

@@ -27,6 +27,9 @@ type FetchState =
   | { kind: "ready"; runs: ResolvedRun[] };
 
 const MAX_RUNS_PER_PANEL = 50;
+const EMPTY_RUNSET_IDS: string[] = [];
+
+type RunsetFetchSpec = Pick<RunsetData, "projects" | "pinned_run_ids" | "limit">;
 
 /**
  * Parallel-coordinates panel: one vertical axis per dimension, one polyline
@@ -46,17 +49,25 @@ export function ParallelCoordinatesRenderer({
   const client = useMemo(() => api ?? new ApiClient(), [api]);
   const [state, setState] = useState<FetchState>({ kind: "idle" });
   const seqRef = useRef(0);
-  const fetchKey = useMemo(() => {
-    if (!runset) return "";
-    return [runset.projects.join(","), (runset.pinned_run_ids ?? []).join(",")].join(" ");
-  }, [runset]);
+  const fetchProjects = runset?.projects ?? EMPTY_RUNSET_IDS;
+  const fetchPinnedRunIds = runset?.pinned_run_ids ?? EMPTY_RUNSET_IDS;
+  const fetchLimit = runset?.limit;
+  const hasRunset = !!runset;
+  const fetchSpec = useMemo<RunsetFetchSpec | null>(() => {
+    if (!hasRunset) return null;
+    return {
+      projects: [...fetchProjects],
+      pinned_run_ids: [...fetchPinnedRunIds],
+      limit: fetchLimit,
+    };
+  }, [fetchLimit, fetchPinnedRunIds, fetchProjects, hasRunset]);
 
   useEffect(() => {
-    if (!runset) {
+    if (!fetchSpec) {
       setState({ kind: "idle" });
       return;
     }
-    if (!runset.projects.length && !(runset.pinned_run_ids ?? []).length) {
+    if (!fetchSpec.projects.length && !(fetchSpec.pinned_run_ids ?? []).length) {
       setState({ kind: "ready", runs: [] });
       return;
     }
@@ -65,7 +76,7 @@ export function ParallelCoordinatesRenderer({
     setState({ kind: "loading" });
     (async () => {
       try {
-        const runs = await fetchRuns(client, runset, controller.signal);
+        const runs = await fetchRuns(client, fetchSpec, controller.signal);
         if (seq !== seqRef.current) return;
         setState({ kind: "ready", runs });
       } catch (error) {
@@ -78,7 +89,7 @@ export function ParallelCoordinatesRenderer({
       }
     })();
     return () => controller.abort();
-  }, [client, runset, fetchKey]);
+  }, [client, fetchSpec]);
 
   if (!runset) {
     return <div className="panel-chart panel-chart--empty">Runset {panel.runset_index} not configured.</div>;
@@ -269,7 +280,7 @@ function readPath(run: ResolvedRun, segments: string[]): unknown {
 
 async function fetchRuns(
   api: ApiClient,
-  runset: RunsetData,
+  runset: RunsetFetchSpec,
   signal: AbortSignal,
 ): Promise<ResolvedRun[]> {
   const collected = new Map<string, ResolvedRun>();

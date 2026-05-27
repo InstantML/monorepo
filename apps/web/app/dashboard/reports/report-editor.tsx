@@ -11,6 +11,8 @@ import {
 } from "react";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 
+import { CustomSelect } from "../ui/select";
+import type { SelectOption } from "../ui/select";
 import {
   CalloutBlock,
   CodeBlock,
@@ -74,6 +76,14 @@ interface SlashMenuState {
   caretAnchor: { top: number; left: number } | null;
   triggerOffset: number;
 }
+
+const VISIBILITY_OPTIONS: Array<SelectOption & {
+  value: ReportRecord["visibility"];
+}> = [
+  { value: "private", label: "Private", description: "Only you" },
+  { value: "org", label: "Organization", description: "Your team" },
+  { value: "public", label: "Public", description: "Anyone with the link" },
+];
 
 /**
  * Walk the block list and return every PanelGrid except the host index.
@@ -466,24 +476,20 @@ export function ReportEditor({
         />
         {!readOnly ? (
           <div className="report-editor__visibility">
-            <label className="report-block__label" htmlFor="report-visibility">
-              Visibility
-            </label>
-            <select
+            <CustomSelect
+              className="report-visibility-select"
               id="report-visibility"
-              className="report-block__select"
+              label="Visibility"
+              labelClassName="report-block__label"
+              options={VISIBILITY_OPTIONS}
               value={report.visibility}
-              onChange={(event) =>
+              onChange={(visibility) =>
                 emit({
                   ...report,
-                  visibility: event.target.value as ReportRecord["visibility"],
+                  visibility: visibility as ReportRecord["visibility"],
                 })
               }
-            >
-              <option value="private">Private — only you</option>
-              <option value="org">Organization — your team</option>
-              <option value="public">Public — anyone with the link</option>
-            </select>
+            />
           </div>
         ) : null}
       </header>
@@ -856,9 +862,12 @@ function BlockBody({
       );
     case "markdown":
       return (
-        <MarkdownBlock
+        <MarkdownTextWrap
           block={block as MarkdownBlockData}
-          onChange={(next) => onChange(next)}
+          onChange={onChange}
+          onTextChange={onTextChange}
+          onSlashKeyDown={onSlashKeyDown}
+          slashOpen={slashOpen}
         />
       );
     case "code":
@@ -911,6 +920,79 @@ function ParagraphTextWrap({
   ) => boolean;
   slashOpen: boolean;
 }) {
+  return (
+    <SlashAwareAutosizeTextarea
+      block={block}
+      className="report-block__textarea report-block__textarea--paragraph"
+      placeholder="Type / for commands, or write a paragraph…"
+      aria-label="Paragraph text"
+      onChange={onChange}
+      onTextChange={onTextChange}
+      onSlashKeyDown={onSlashKeyDown}
+      slashOpen={slashOpen}
+    />
+  );
+}
+
+function MarkdownTextWrap({
+  block,
+  onChange,
+  onTextChange,
+  onSlashKeyDown,
+  slashOpen,
+}: {
+  block: MarkdownBlockData;
+  onChange: (next: ReportBlock) => void;
+  onTextChange: (
+    element: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+  ) => void;
+  onSlashKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => boolean;
+  slashOpen: boolean;
+}) {
+  return (
+    <SlashAwareAutosizeTextarea
+      block={block}
+      className="report-block__textarea report-block__textarea--markdown"
+      placeholder="# Heading...  (markdown)"
+      aria-label="Markdown content"
+      spellCheck={false}
+      onChange={onChange}
+      onTextChange={onTextChange}
+      onSlashKeyDown={onSlashKeyDown}
+      slashOpen={slashOpen}
+    />
+  );
+}
+
+function SlashAwareAutosizeTextarea({
+  block,
+  className,
+  onChange,
+  onTextChange,
+  onSlashKeyDown,
+  placeholder,
+  slashOpen,
+  ...textareaProps
+}: {
+  block: ParagraphBlockData | MarkdownBlockData;
+  className: string;
+  placeholder: string;
+  onChange: (next: ReportBlock) => void;
+  onTextChange: (
+    element: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+  ) => void;
+  onSlashKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => boolean;
+  slashOpen: boolean;
+} & Omit<
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "className" | "onChange" | "onInput" | "onKeyDown" | "placeholder" | "value"
+>) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const autoSize = useCallback(() => {
     const el = ref.current;
@@ -924,10 +1006,10 @@ function ParagraphTextWrap({
   return (
     <textarea
       ref={ref}
-      className="report-block__textarea report-block__textarea--paragraph"
+      className={className}
       rows={1}
       value={block.text}
-      placeholder="Type / for commands, or write a paragraph…"
+      placeholder={placeholder}
       onChange={(event) => {
         const next = { ...block, text: event.target.value };
         onChange(next);
@@ -939,7 +1021,7 @@ function ParagraphTextWrap({
           if (onSlashKeyDown(event)) return;
         }
       }}
-      aria-label="Paragraph text"
+      {...textareaProps}
     />
   );
 }

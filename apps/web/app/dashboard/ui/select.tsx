@@ -5,6 +5,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 export type SelectOption = {
+  description?: string;
   disabled?: boolean;
   label: string;
   value: string;
@@ -188,7 +189,10 @@ export function CustomSelect({
           }}
           type="button"
         >
-          <span className="select-trigger-value" id={valueId}>{selected.label}</span>
+          <span className="select-trigger-value" id={valueId}>
+            <span>{selected.label}</span>
+            {selected.description ? <span>{selected.description}</span> : null}
+          </span>
           <ChevronDown size={15} />
         </button>
         {open ? (
@@ -210,7 +214,10 @@ export function CustomSelect({
                   type="button"
                 >
                   <span className="select-check">{optionSelected ? <Check size={15} /> : null}</span>
-                  <span>{option.label}</span>
+                  <span className="select-option-text">
+                    <span>{option.label}</span>
+                    {option.description ? <span>{option.description}</span> : null}
+                  </span>
                 </button>
               );
             })}

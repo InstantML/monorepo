@@ -52,6 +52,7 @@ import {
  */
 const MAX_RUNS_PER_PANEL = 50;
 const METRIC_SERIES_BUCKETS = 1_200;
+const EMPTY_RUNSET_IDS: string[] = [];
 
 type ResolvedRun = {
   id: string;
@@ -66,6 +67,8 @@ type FetchState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; runs: ResolvedRun[]; series: Record<string, MetricSeries[]> };
+
+type RunsetFetchSpec = Pick<RunsetData, "projects" | "pinned_run_ids" | "limit">;
 
 type Props = {
   panel: PanelData;
@@ -113,19 +116,21 @@ function LiveChartImpl({ panel, runset, api: client }: LiveChartProps) {
   const requestSeqRef = useRef(0);
 
   const metricsNeeded = useMemo(() => metricsForPanel(panel), [panel]);
-  const fetchKey = useMemo(() => {
-    if (!runset) return "";
-    return [
-      runset.projects.join(","),
-      (runset.pinned_run_ids ?? []).join(","),
-      runset.limit ?? "",
-      metricsNeeded.join(","),
-      JSON.stringify(runset.run_settings ?? {}),
-    ].join(" ");
-  }, [runset, metricsNeeded]);
+  const fetchProjects = runset?.projects ?? EMPTY_RUNSET_IDS;
+  const fetchPinnedRunIds = runset?.pinned_run_ids ?? EMPTY_RUNSET_IDS;
+  const fetchLimit = runset?.limit;
+  const hasRunset = !!runset;
+  const fetchSpec = useMemo<RunsetFetchSpec | null>(() => {
+    if (!hasRunset) return null;
+    return {
+      projects: [...fetchProjects],
+      pinned_run_ids: [...fetchPinnedRunIds],
+      limit: fetchLimit,
+    };
+  }, [fetchLimit, fetchPinnedRunIds, fetchProjects, hasRunset]);
 
   useEffect(() => {
-    if (!runset || metricsNeeded.length === 0) {
+    if (!fetchSpec || metricsNeeded.length === 0) {
       setState({ kind: "idle" });
       return;
     }
@@ -134,16 +139,8 @@ function LiveChartImpl({ panel, runset, api: client }: LiveChartProps) {
     setState({ kind: "loading" });
     (async () => {
       try {
-        const allRuns = await resolveRunsForRunset(client, runset, controller.signal);
+        const runs = await resolveRunsForRunset(client, fetchSpec, controller.signal);
         if (seq !== requestSeqRef.current) return;
-        // Filter out runs the user excluded via the run-set table: `disabled`
-        // removes them from charts entirely, `hidden` also suppresses them
-        // here so chart and table feel like one unit.
-        const settings = runset.run_settings ?? {};
-        const runs = allRuns.filter((run) => {
-          const entry = settings[run.id];
-          return !(entry?.disabled || entry?.hidden);
-        });
         if (!runs.length) {
           setState({ kind: "ready", runs: [], series: {} });
           return;
@@ -166,7 +163,22 @@ function LiveChartImpl({ panel, runset, api: client }: LiveChartProps) {
     return () => {
       controller.abort();
     };
-  }, [client, runset, fetchKey, metricsNeeded]);
+  }, [client, fetchSpec, metricsNeeded]);
+
+  const visibleRuns = useMemo(() => {
+    if (state.kind !== "ready") return [];
+    const settings = runset?.run_settings ?? {};
+    return state.runs.filter((run) => {
+      const entry = settings[run.id];
+      return !(entry?.disabled || entry?.hidden);
+    });
+  }, [runset?.run_settings, state]);
+
+  const visibleSeries = useMemo(() => {
+    if (state.kind !== "ready") return {};
+    const visibleRunIds = new Set(visibleRuns.map((run) => run.id));
+    return filterSeriesByRunIds(state.series, visibleRunIds);
+  }, [state, visibleRuns]);
 
   if (!runset) {
     return <div className="panel-chart panel-chart--empty">Runset {panel.runset_index} not configured.</div>;
@@ -180,25 +192,24 @@ function LiveChartImpl({ panel, runset, api: client }: LiveChartProps) {
   if (state.kind === "idle" || metricsNeeded.length === 0) {
     return <div className="panel-chart panel-chart--empty">Pick a metric to draw the chart.</div>;
   }
-  const { runs, series } = state;
-  if (!runs.length) {
+  if (!visibleRuns.length) {
     return <div className="panel-chart panel-chart--empty">No runs match this runset yet.</div>;
   }
 
   switch (panel.type) {
     case "line":
-      return <LineChart panel={panel} series={series[panel.metric_key] ?? []} />;
+      return <LineChart panel={panel} series={visibleSeries[panel.metric_key] ?? []} />;
     case "bar":
-      return <BarChart panel={panel} runs={runs} series={series[panel.metric_key] ?? []} />;
+      return <BarChart panel={panel} runs={visibleRuns} series={visibleSeries[panel.metric_key] ?? []} />;
     case "scalar":
-      return <ScalarChart panel={panel} runs={runs} series={series[panel.metric_key] ?? []} />;
+      return <ScalarChart panel={panel} runs={visibleRuns} series={visibleSeries[panel.metric_key] ?? []} />;
     case "scatter":
       return (
         <ScatterChart
           panel={panel}
-          runs={runs}
-          xSeries={series[panel.x_metric] ?? []}
-          ySeries={series[panel.y_metric] ?? []}
+          runs={visibleRuns}
+          xSeries={visibleSeries[panel.x_metric] ?? []}
+          ySeries={visibleSeries[panel.y_metric] ?? []}
         />
       );
   }
@@ -223,7 +234,7 @@ function metricsForPanel(
 
 async function resolveRunsForRunset(
   api: ApiClient,
-  runset: RunsetData,
+  runset: RunsetFetchSpec,
   signal: AbortSignal,
 ): Promise<ResolvedRun[]> {
   const collected = new Map<string, ResolvedRun>();
@@ -256,6 +267,17 @@ function clampLimit(value: number | null): number {
     return MAX_RUNS_PER_PANEL;
   }
   return Math.min(Math.floor(value), MAX_RUNS_PER_PANEL);
+}
+
+function filterSeriesByRunIds(
+  series: Record<string, MetricSeries[]>,
+  visibleRunIds: Set<string>,
+): Record<string, MetricSeries[]> {
+  const filtered: Record<string, MetricSeries[]> = {};
+  for (const [metricKey, entries] of Object.entries(series)) {
+    filtered[metricKey] = entries.filter((entry) => visibleRunIds.has(entry.id));
+  }
+  return filtered;
 }
 
 async function resolvePinnedRun(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 
 import { ApiClient } from "../../../../src/api.js";
 import {
@@ -351,11 +352,12 @@ function RunsetEditor({
         {!readOnly ? (
           <button
             type="button"
-            className="report-block__action report-block__action--secondary"
+            className="report-block__icon-action report-block__icon-action--danger"
             onClick={onRemove}
             aria-label={`Remove runset ${index + 1}`}
+            title={`Remove runset ${index + 1}`}
           >
-            Remove
+            <Trash2 size={14} aria-hidden="true" />
           </button>
         ) : null}
       </div>
@@ -454,6 +456,17 @@ function PanelEditor({
 }) {
   return (
     <div className="report-block__panel-editor">
+      {!readOnly ? (
+        <button
+          type="button"
+          className="report-block__icon-action report-block__icon-action--danger report-block__panel-delete"
+          onClick={onRemove}
+          aria-label={`Remove panel ${panelIndex + 1}`}
+          title={`Remove panel ${panelIndex + 1}`}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </button>
+      ) : null}
       <div className="report-block__row">
         <label className="report-block__label">Panel type</label>
         <select
@@ -469,16 +482,6 @@ function PanelEditor({
             </option>
           ))}
         </select>
-        {!readOnly ? (
-          <button
-            type="button"
-            className="report-block__action report-block__action--secondary"
-            onClick={onRemove}
-            aria-label={`Remove panel ${panelIndex + 1}`}
-          >
-            Remove
-          </button>
-        ) : null}
       </div>
       {"runset_index" in panel ? (
         <div className="report-block__row">

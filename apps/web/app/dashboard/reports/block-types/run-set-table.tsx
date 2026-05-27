@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 import { ApiClient } from "../../../../src/api.js";
 import type { PanelGridBlockData, RunsetData, RunsetRunSettings } from "./types";
@@ -19,6 +20,7 @@ import { RUN_COLOR_PALETTE } from "./types";
 
 const PAGE_SIZE = 10;
 const NAME_TRUNCATE_AT = 28;
+const EMPTY_RUNSET_IDS: string[] = [];
 
 const STATUS_LABELS: Record<string, string> = {
   running: "Running",
@@ -44,6 +46,8 @@ type FetchState =
   | { kind: "error"; message: string }
   | { kind: "ready"; runs: RunRow[] };
 
+type RunsetFetchSpec = Pick<RunsetData, "projects" | "pinned_run_ids" | "limit">;
+
 type Props = {
   block: PanelGridBlockData;
   runsetIndex: number;
@@ -62,21 +66,25 @@ export function RunSetTable({ block, runsetIndex, readOnly = false, api, onChang
   const [openMenu, setOpenMenu] = useState<"filter" | "group" | "sort" | null>(null);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
 
-  const fetchKey = useMemo(() => {
-    if (!runset) return "";
-    return [
-      runset.projects.join(","),
-      (runset.pinned_run_ids ?? []).join(","),
-      runset.limit ?? "",
-    ].join(" ");
-  }, [runset]);
+  const fetchProjects = runset?.projects ?? EMPTY_RUNSET_IDS;
+  const fetchPinnedRunIds = runset?.pinned_run_ids ?? EMPTY_RUNSET_IDS;
+  const fetchLimit = runset?.limit;
+  const hasRunset = !!runset;
+  const fetchSpec = useMemo<RunsetFetchSpec | null>(() => {
+    if (!hasRunset) return null;
+    return {
+      projects: [...fetchProjects],
+      pinned_run_ids: [...fetchPinnedRunIds],
+      limit: fetchLimit,
+    };
+  }, [fetchLimit, fetchPinnedRunIds, fetchProjects, hasRunset]);
 
   useEffect(() => {
-    if (!runset) {
+    if (!fetchSpec) {
       setState({ kind: "idle" });
       return;
     }
-    if (!runset.projects.length && !(runset.pinned_run_ids ?? []).length) {
+    if (!fetchSpec.projects.length && !(fetchSpec.pinned_run_ids ?? []).length) {
       setState({ kind: "ready", runs: [] });
       return;
     }
@@ -85,7 +93,7 @@ export function RunSetTable({ block, runsetIndex, readOnly = false, api, onChang
     setState({ kind: "loading" });
     (async () => {
       try {
-        const runs = await fetchRunsForRunset(client, runset, controller.signal);
+        const runs = await fetchRunsForRunset(client, fetchSpec, controller.signal);
         if (seq !== requestSeqRef.current) return;
         setState({ kind: "ready", runs });
       } catch (error) {
@@ -96,7 +104,7 @@ export function RunSetTable({ block, runsetIndex, readOnly = false, api, onChang
       }
     })();
     return () => controller.abort();
-  }, [client, runset, fetchKey]);
+  }, [client, fetchSpec]);
 
   const updateRunset = useCallback(
     (patch: Partial<RunsetData>) => {
@@ -318,7 +326,11 @@ export function RunSetTable({ block, runsetIndex, readOnly = false, api, onChang
                       aria-pressed={!hidden}
                       title={hidden ? "Hidden from charts" : "Visible in charts"}
                     >
-                      {hidden ? "⊘" : "◉"}
+                      {hidden ? (
+                        <EyeOff size={14} strokeWidth={1.8} aria-hidden="true" />
+                      ) : (
+                        <Eye size={14} strokeWidth={1.8} aria-hidden="true" />
+                      )}
                     </button>
                   </td>
                   <td className="runset-table__col-color">
@@ -680,7 +692,7 @@ function ColorPickerPopover({
  */
 async function fetchRunsForRunset(
   api: ApiClient,
-  runset: RunsetData,
+  runset: RunsetFetchSpec,
   signal: AbortSignal,
 ): Promise<RunRow[]> {
   const collected = new Map<string, RunRow>();

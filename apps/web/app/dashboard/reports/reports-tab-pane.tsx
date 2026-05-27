@@ -1,6 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import { usePathname } from "next/navigation";
 import {
   ChevronLeft,
   FileText,
@@ -39,6 +49,7 @@ type Mode =
 const AUTO_SAVE_DELAY_MS = 800;
 
 interface SavePayload {
+  clientSeq: number;
   title: string;
   description: string;
   visibility: ReportRecord["visibility"];
@@ -63,9 +74,13 @@ const EMPTY_HISTORY_SNAPSHOT: HistorySnapshot = {
  * those into one PATCH per 800 ms of quiet.
  */
 export function ReportsTabPane() {
+  const pathname = usePathname();
   const api = useMemo(() => new ApiClient(), []);
   const [summaries, setSummaries] = useState<ReportSummary[]>([]);
-  const [mode, setMode] = useState<Mode>({ kind: "list" });
+  const [mode, setMode] = useState<Mode>(() => {
+    const reportId = reportIdFromDashboardPath(pathname);
+    return reportId ? { kind: "open", reportId } : { kind: "list" };
+  });
   const [activeReport, setActiveReport] = useState<ReportRecord | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshingBlockIndex, setRefreshingBlockIndex] = useState<number | null>(null);
@@ -78,8 +93,6 @@ export function ReportsTabPane() {
   const schedulerRef = useRef<ReturnType<typeof createAutoSaveScheduler<SavePayload>> | null>(null);
   // Latest payload that the editor handed us. Used by the retry button.
   const lastPayloadRef = useRef<SavePayload | null>(null);
-  // First-render guard — we don't auto-save on the initial mount.
-  const hasUserEditedRef = useRef(false);
 
   // Undo/redo history. Stacks live across re-renders; `reset` clears them
   // on report-switch. The snapshot we initialize with is a placeholder —
@@ -99,6 +112,8 @@ export function ReportsTabPane() {
   // structural). The active report state is async, so keeping a ref of the
   // last-emitted snapshot is simpler than threading through useEffect.
   const lastSnapshotRef = useRef<HistorySnapshot | null>(null);
+  const loadReportSeqRef = useRef(0);
+  const editSeqRef = useRef(0);
 
   const loadList = useCallback(async () => {
     setBusy(true);
@@ -117,24 +132,57 @@ export function ReportsTabPane() {
     void loadList();
   }, [loadList]);
 
+  useEffect(() => {
+    setModeFromPath(pathname, setMode);
+  }, [pathname]);
+
+  useEffect(() => {
+    const syncFromHistory = () => setModeFromPath(window.location.pathname, setMode);
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
+  }, []);
+
+  const openReport = useCallback(
+    (reportId: string, options?: { autoFocus?: boolean; replace?: boolean }) => {
+      setMode({ kind: "open", reportId, autoFocus: options?.autoFocus });
+      pushDashboardPath(dashboardReportPath(reportId), options?.replace);
+    },
+    [],
+  );
+
+  const showReportList = useCallback(
+    (options?: { replace?: boolean }) => {
+      setMode({ kind: "list" });
+      pushDashboardPath("/dashboard/reports", options?.replace);
+    },
+    [],
+  );
+
   const loadReport = useCallback(
     async (reportId: string) => {
+      const seq = loadReportSeqRef.current + 1;
+      loadReportSeqRef.current = seq;
       setBusy(true);
       setError(null);
+      setActiveReport((current) => (current?.id === reportId ? current : null));
       try {
         const report = await fetchReport(api, reportId);
+        if (loadReportSeqRef.current !== seq) return;
         setActiveReport(report);
         setAutoSave({ state: "idle" });
-        hasUserEditedRef.current = false;
         // History resets to the freshly-loaded report. Undo before any
         // user edit is a no-op (canUndo === false).
         const snapshot = snapshotFromReport(report);
         historyRef.current.reset(snapshot);
         lastSnapshotRef.current = snapshot;
       } catch (loadError) {
-        setError(messageFromError(loadError));
+        if (loadReportSeqRef.current === seq) {
+          setError(messageFromError(loadError));
+        }
       } finally {
-        setBusy(false);
+        if (loadReportSeqRef.current === seq) {
+          setBusy(false);
+        }
       }
     },
     [api],
@@ -153,7 +201,8 @@ export function ReportsTabPane() {
       flush: async (payload) => {
         setAutoSave({ state: "saving" });
         try {
-          const updated = await patchReport(api, reportId, payload);
+          const { clientSeq, ...serverPayload } = payload;
+          const updated = await patchReport(api, reportId, serverPayload);
           if (updated) {
             // Critical: only update server-derived fields. NEVER overwrite
             // title / description / blocks / visibility from the response —
@@ -172,16 +221,20 @@ export function ReportsTabPane() {
                 : current,
             );
           }
-          setAutoSave({ state: "saved", at: Date.now() });
+          if (clientSeq === editSeqRef.current && !schedulerRef.current?.hasPending()) {
+            setAutoSave({ state: "saved", at: Date.now() });
+          }
           // Refresh the list silently so summaries reflect the new title.
           void listReports(api)
             .then(({ reports }) => setSummaries(reports))
             .catch(() => undefined);
         } catch (saveError) {
-          setAutoSave({
-            state: "error",
-            message: messageFromError(saveError),
-          });
+          if (payload.clientSeq === editSeqRef.current) {
+            setAutoSave({
+              state: "error",
+              message: messageFromError(saveError),
+            });
+          }
         }
       },
     });
@@ -210,7 +263,7 @@ export function ReportsTabPane() {
       });
       if (created) {
         await loadList();
-        setMode({ kind: "open", reportId: created.id, autoFocus: true });
+        openReport(created.id, { autoFocus: true });
       }
     } catch (createError) {
       setError(messageFromError(createError));
@@ -224,12 +277,6 @@ export function ReportsTabPane() {
       next: Pick<ReportRecord, "id" | "title" | "description" | "blocks" | "visibility">,
     ) => {
       setActiveReport((current) => (current ? { ...current, ...next } : current));
-      // First setState from `loadReport` would push the initial value in too
-      // — guard against scheduling a save for that no-op edit.
-      if (!hasUserEditedRef.current) {
-        hasUserEditedRef.current = true;
-        return;
-      }
       const nextSnapshot = snapshotFromReport(next);
       // Classify against the previous snapshot — text-only diffs coalesce
       // into one history entry per 500 ms typing burst; everything else
@@ -239,11 +286,13 @@ export function ReportsTabPane() {
       historyRef.current.push(nextSnapshot, mode);
       lastSnapshotRef.current = nextSnapshot;
       const payload: SavePayload = {
+        clientSeq: editSeqRef.current + 1,
         title: next.title,
         description: next.description ?? "",
         visibility: next.visibility,
         blocks: next.blocks,
       };
+      editSeqRef.current = payload.clientSeq;
       lastPayloadRef.current = payload;
       setAutoSave({ state: "dirty" });
       schedulerRef.current?.schedule(payload);
@@ -251,10 +300,8 @@ export function ReportsTabPane() {
     [],
   );
 
-  // Restore a snapshot produced by undo/redo. We bypass the
-  // hasUserEditedRef guard because the user has obviously edited the
-  // report by this point — and we explicitly do NOT re-push the restored
-  // value into the history (push() is only for new edits).
+  // Restore a snapshot produced by undo/redo. We explicitly do NOT re-push
+  // the restored value into the history (push() is only for new edits).
   const applyRestoredSnapshot = useCallback(
     (snapshot: HistorySnapshot) => {
       setActiveReport((current) =>
@@ -270,11 +317,13 @@ export function ReportsTabPane() {
       );
       lastSnapshotRef.current = snapshot;
       const payload: SavePayload = {
+        clientSeq: editSeqRef.current + 1,
         title: snapshot.title,
         description: snapshot.description,
         visibility: snapshot.visibility,
         blocks: snapshot.blocks,
       };
+      editSeqRef.current = payload.clientSeq;
       lastPayloadRef.current = payload;
       // Mirror exactly what an edit does: mark dirty + schedule a save.
       // This persists the undone state across reloads (matches Notion).
@@ -310,15 +359,22 @@ export function ReportsTabPane() {
       try {
         await deleteReport(api, reportId);
         await loadList();
-        setMode({ kind: "list" });
+        showReportList({ replace: true });
       } catch (deleteError) {
         setError(messageFromError(deleteError));
       } finally {
         setBusy(false);
       }
     },
-    [api, loadList],
+    [api, loadList, showReportList],
   );
+
+  const flushPendingEdits = useCallback(async () => {
+    historyRef.current.flush();
+    if (schedulerRef.current && schedulerRef.current.hasPending()) {
+      await schedulerRef.current.flushNow();
+    }
+  }, []);
 
   const handleRefreshBlock = useCallback(
     async (blockIndex: number) => {
@@ -326,6 +382,7 @@ export function ReportsTabPane() {
       setRefreshingBlockIndex(blockIndex);
       setError(null);
       try {
+        await flushPendingEdits();
         const refreshed = await refreshReportBlock(api, activeReport.id, blockIndex);
         if (refreshed) setActiveReport(refreshed);
       } catch (refreshError) {
@@ -334,7 +391,7 @@ export function ReportsTabPane() {
         setRefreshingBlockIndex(null);
       }
     },
-    [activeReport, api],
+    [activeReport, api, flushPendingEdits],
   );
 
   const handleShare = useCallback(async () => {
@@ -342,25 +399,44 @@ export function ReportsTabPane() {
     setBusy(true);
     setError(null);
     try {
+      await flushPendingEdits();
       const updated = await rotateReportShareToken(api, activeReport.id);
-      if (updated) setActiveReport(updated);
+      if (updated) {
+        setActiveReport((current) =>
+          current
+            ? {
+                ...current,
+                visibility: updated.visibility,
+                updated_at: updated.updated_at,
+                share_token: updated.share_token,
+              }
+            : updated,
+        );
+      }
     } catch (shareError) {
       setError(messageFromError(shareError));
     } finally {
       setBusy(false);
     }
-  }, [activeReport, api]);
+  }, [activeReport, api, flushPendingEdits]);
 
   // Flush pending save before leaving the editor. Also flush any pending
   // history-coalesce snapshot so the last burst is preserved if the user
   // returns to this report.
   const flushAndLeave = useCallback(async (next: Mode) => {
-    historyRef.current.flush();
-    if (schedulerRef.current && schedulerRef.current.hasPending()) {
-      await schedulerRef.current.flushNow();
+    await flushPendingEdits();
+    if (next.kind === "list") {
+      showReportList();
+    } else {
+      openReport(next.reportId, { autoFocus: next.autoFocus });
     }
-    setMode(next);
-  }, []);
+  }, [flushPendingEdits, openReport, showReportList]);
+
+  const handleExportMarkdown = useCallback(async () => {
+    if (!activeReport) return;
+    await flushPendingEdits();
+    window.open(reportMarkdownUrl(activeReport.id), "_blank", "noopener,noreferrer");
+  }, [activeReport, flushPendingEdits]);
 
   return (
     <>
@@ -375,24 +451,30 @@ export function ReportsTabPane() {
         <ReportsListPane
           summaries={summaries}
           busy={busy}
-          onOpen={(reportId) => setMode({ kind: "open", reportId })}
+          onOpen={(reportId) => openReport(reportId)}
           onCreate={() => void handleCreate()}
-          onDelete={(reportId) => void handleDelete(reportId)}
+          onDelete={(reportId, title) => {
+            if (!window.confirm(`Delete "${title || "Untitled report"}"? This cannot be undone.`)) {
+              return;
+            }
+            void handleDelete(reportId);
+          }}
         />
+      ) : null}
+      {mode.kind === "open" && !activeReport ? (
+        <section className="report-pane">
+          <ReportToolbar onBack={() => void flushAndLeave({ kind: "list" })}>
+            <div className="report-pane__toolbar-spacer" />
+            <span className="report-pane__loading-status" aria-live="polite">
+              Loading report...
+            </span>
+          </ReportToolbar>
+          <ReportLoadingSkeleton />
+        </section>
       ) : null}
       {mode.kind === "open" && activeReport ? (
         <section className="report-pane">
-          <div className="report-pane__toolbar">
-            <button
-              type="button"
-              className="report-pane__icon-button"
-              onClick={() => void flushAndLeave({ kind: "list" })}
-              title="Back to all reports"
-              aria-label="Back to all reports"
-            >
-              <ChevronLeft size={15} aria-hidden="true" />
-              <span className="report-pane__toolbar-label">All reports</span>
-            </button>
+          <ReportToolbar onBack={() => void flushAndLeave({ kind: "list" })}>
             <div className="report-pane__toolbar-spacer" />
             <AutoSavePill status={autoSave} onRetry={handleRetry} />
             <button
@@ -425,19 +507,25 @@ export function ReportsTabPane() {
             >
               {activeReport.share_token ? "Rotate share" : "Share"}
             </button>
-            <a
+            <button
+              type="button"
               className="report-pane__icon-button"
-              href={reportMarkdownUrl(activeReport.id)}
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={() => void handleExportMarkdown()}
               title="Export as Markdown"
             >
               Export
-            </a>
-          </div>
+            </button>
+          </ReportToolbar>
           {activeReport.share_token ? (
             <p className="report-pane__share">
-              Public share URL · <code>/r/{activeReport.share_token}</code>
+              Public share URL ·{" "}
+              <a
+                href={shareUrlForToken(activeReport.share_token)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {shareUrlForToken(activeReport.share_token)}
+              </a>
             </p>
           ) : null}
           <ReportEditor
@@ -455,6 +543,30 @@ export function ReportsTabPane() {
   );
 }
 
+function ReportToolbar({
+  children,
+  onBack,
+}: {
+  children: ReactNode;
+  onBack: () => void;
+}) {
+  return (
+    <div className="report-pane__toolbar">
+      <button
+        type="button"
+        className="report-pane__icon-button"
+        onClick={onBack}
+        title="Back to all reports"
+        aria-label="Back to all reports"
+      >
+        <ChevronLeft size={15} aria-hidden="true" />
+        <span className="report-pane__toolbar-label">All reports</span>
+      </button>
+      {children}
+    </div>
+  );
+}
+
 function ReportsListPane({
   summaries,
   busy,
@@ -466,17 +578,20 @@ function ReportsListPane({
   busy: boolean;
   onOpen: (reportId: string) => void;
   onCreate: () => void;
-  onDelete: (reportId: string) => void;
+  onDelete: (reportId: string, title: string) => void;
 }) {
   return (
     <>
-      <section className="panel">
-        <div className="panel-head">
-          <h2>
-            <FileText size={15} /> Your reports{" "}
-            <span>({summaries.length})</span>
-          </h2>
-          <div className="panel-head-actions">
+      <section className="report-home">
+        <div className="report-home__header">
+          <div>
+            <h2>
+              <FileText size={16} /> Reports
+              <span>{summaries.length}</span>
+            </h2>
+            <p>Experiment writeups, live panels, and shareable readouts.</p>
+          </div>
+          <div className="report-home__actions">
             <button
               type="button"
               className="report-pane__icon-button"
@@ -487,10 +602,24 @@ function ReportsListPane({
             </button>
           </div>
         </div>
-        <div className="panel-body">
-          {summaries.length === 0 ? (
-            <div className="empty">
-              No reports yet. Create one to start documenting an experiment line.
+        <div className="report-home__body">
+          {busy && summaries.length === 0 ? (
+            <div className="report-list__loading" aria-live="polite">
+              Loading reports...
+            </div>
+          ) : summaries.length === 0 ? (
+            <div className="report-list__empty">
+              <FileText size={22} aria-hidden="true" />
+              <strong>No reports yet</strong>
+              <span>Create the first writeup for this workspace.</span>
+              <button
+                type="button"
+                className="report-pane__icon-button"
+                onClick={() => onCreate()}
+                disabled={busy}
+              >
+                <Plus size={14} aria-hidden="true" /> Create report
+              </button>
             </div>
           ) : (
             <ul className="report-list">
@@ -533,8 +662,9 @@ function ReportsListPane({
                     <button
                       type="button"
                       className="report-pane__icon-button report-pane__icon-button--danger"
-                      onClick={() => onDelete(summary.id)}
+                      onClick={() => onDelete(summary.id, summary.title)}
                       aria-label={`Delete report ${summary.title}`}
+                      disabled={busy}
                     >
                       <Trash2 size={13} aria-hidden="true" />
                     </button>
@@ -553,6 +683,65 @@ function messageFromError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "Something went wrong loading reports.";
+}
+
+function setModeFromPath(
+  pathname: string | null,
+  setMode: Dispatch<SetStateAction<Mode>>,
+) {
+  const reportId = reportIdFromDashboardPath(pathname);
+  setMode((current) => {
+    if (!reportId) return current.kind === "list" ? current : { kind: "list" };
+    if (current.kind === "open" && current.reportId === reportId) return current;
+    return { kind: "open", reportId };
+  });
+}
+
+function reportIdFromDashboardPath(pathname: string | null): string | null {
+  if (!pathname) return null;
+  const parts = pathname.split("/").filter(Boolean);
+  const reportsIndex = parts.indexOf("reports");
+  const rawReportId = reportsIndex >= 0 ? parts[reportsIndex + 1] : null;
+  if (!rawReportId) return null;
+  try {
+    return decodeURIComponent(rawReportId);
+  } catch {
+    return rawReportId;
+  }
+}
+
+function dashboardReportPath(reportId: string): string {
+  return `/dashboard/reports/${encodeURIComponent(reportId)}`;
+}
+
+function pushDashboardPath(path: string, replace = false) {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === path) return;
+  if (replace) {
+    window.history.replaceState(null, "", path);
+  } else {
+    window.history.pushState(null, "", path);
+  }
+}
+
+function shareUrlForToken(token: string): string {
+  const path = `/r/${token}`;
+  if (typeof window === "undefined") return path;
+  return `${window.location.origin}${path}`;
+}
+
+function ReportLoadingSkeleton() {
+  return (
+    <div className="report-editor report-editor--loading" aria-label="Loading report">
+      <div className="report-skeleton report-skeleton--title" />
+      <div className="report-skeleton report-skeleton--description" />
+      <div className="report-skeleton report-skeleton--meta" />
+      <div className="report-skeleton report-skeleton--line" />
+      <div className="report-skeleton report-skeleton--line report-skeleton--wide" />
+      <div className="report-skeleton report-skeleton--line report-skeleton--short" />
+      <div className="report-skeleton report-skeleton--panel" />
+    </div>
+  );
 }
 
 /**
