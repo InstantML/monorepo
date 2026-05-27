@@ -107,8 +107,12 @@ fn validate_single_block(index: usize, block: &Value) -> AppResult<()> {
     validate_json_size(block, "block", MAX_SINGLE_BLOCK_BYTES)?;
     match kind {
         "heading" => validate_heading(index, object),
-        "paragraph" => validate_text_field(index, object, "text", false),
-        "markdown" => validate_text_field(index, object, "text", false),
+        // Empty text is allowed on paragraph / markdown / heading / callout
+        // blocks so the editor's auto-save can fire the moment a block is
+        // inserted, before the user has typed anything. Block-presence is
+        // the user's intent; emptiness is the in-progress state.
+        "paragraph" => validate_text_field(index, object, "text", true),
+        "markdown" => validate_text_field(index, object, "text", true),
         "code" => validate_code(index, object),
         "callout" => validate_callout(index, object),
         "horizontal_rule" => Ok(()),
@@ -130,7 +134,7 @@ fn validate_heading(index: usize, object: &Map<String, Value>) -> AppResult<()> 
             "heading block at index {index} `level` must be 1, 2, or 3"
         )));
     }
-    validate_text_field(index, object, "text", false)
+    validate_text_field(index, object, "text", true)
 }
 
 fn validate_text_field(
@@ -180,7 +184,7 @@ fn validate_callout(index: usize, object: &Map<String, Value>) -> AppResult<()> 
             "callout block at index {index} has unsupported variant `{variant}`"
         )));
     }
-    validate_text_field(index, object, "text", false)
+    validate_text_field(index, object, "text", true)
 }
 
 fn validate_image(index: usize, object: &Map<String, Value>) -> AppResult<()> {
