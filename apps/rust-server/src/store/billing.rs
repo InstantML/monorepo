@@ -325,13 +325,14 @@ async fn sync_retrieved_checkout_session(
     require_org_admin(store, browser_session.user_id, checkout_org_id).await?;
     apply_checkout_session(
         store,
-        Some(checkout_org_id),
-        &session.id,
-        session.customer_id,
-        session.subscription_id,
-        session.payment_status,
-        session.status,
-        session.metadata,
+        CheckoutSessionApply {
+            expected_org_id: Some(checkout_org_id),
+            session_id: &session.id,
+            customer_id: session.customer_id,
+            subscription_id: session.subscription_id,
+            payment_status: session.payment_status,
+            metadata: session.metadata,
+        },
     )
     .await
 }
@@ -783,19 +784,17 @@ pub async fn process_stripe_webhook(store: &Store, event: Value) -> AppResult<Va
             let session_id = validate_name(object.get("id").and_then(Value::as_str), "session id")?;
             let account = apply_checkout_session(
                 store,
-                None,
-                &session_id,
-                stripe_id_field(&object, "customer"),
-                stripe_id_field(&object, "subscription"),
-                object
-                    .get("payment_status")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                object
-                    .get("status")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                object.get("metadata").cloned().unwrap_or(Value::Null),
+                CheckoutSessionApply {
+                    expected_org_id: None,
+                    session_id: &session_id,
+                    customer_id: stripe_id_field(&object, "customer"),
+                    subscription_id: stripe_id_field(&object, "subscription"),
+                    payment_status: object
+                        .get("payment_status")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    metadata: object.get("metadata").cloned().unwrap_or(Value::Null),
+                },
             )
             .await?;
             org_id = Some(account.org_id);
@@ -852,17 +851,21 @@ pub async fn process_stripe_webhook(store: &Store, event: Value) -> AppResult<Va
     Ok(json!({ "processed": true, "applied": applied }))
 }
 
-async fn apply_checkout_session(
-    store: &Store,
+struct CheckoutSessionApply<'a> {
     expected_org_id: Option<Uuid>,
-    session_id: &str,
+    session_id: &'a str,
     customer_id: Option<String>,
     subscription_id: Option<String>,
     payment_status: Option<String>,
-    _status: Option<String>,
     metadata: Value,
+}
+
+async fn apply_checkout_session(
+    store: &Store,
+    checkout: CheckoutSessionApply<'_>,
 ) -> AppResult<BillingAccountProjection> {
-    let intent_id = metadata
+    let intent_id = checkout
+        .metadata
         .get("intent_id")
         .and_then(Value::as_str)
         .and_then(|raw| Uuid::parse_str(raw).ok());
@@ -873,12 +876,14 @@ async fn apply_checkout_session(
             .or_else(|| {
                 data.billing_checkout_intents
                     .values()
-                    .find(|intent| intent.stripe_checkout_session_id.as_deref() == Some(session_id))
+                    .find(|intent| {
+                        intent.stripe_checkout_session_id.as_deref() == Some(checkout.session_id)
+                    })
                     .cloned()
             })
             .ok_or_else(|| AppError::not_found("billing checkout intent not found"))?
     };
-    if let Some(expected_org_id) = expected_org_id {
+    if let Some(expected_org_id) = checkout.expected_org_id {
         if intent.org_id != expected_org_id {
             return Err(AppError::forbidden(
                 "Checkout Session belongs to a different organization",
@@ -891,9 +896,10 @@ async fn apply_checkout_session(
             data.billing_accounts.get(&intent.org_id).cloned()
         };
         if let Some(account) = current_account {
-            let subscription_matches = subscription_id.as_deref().map_or(true, |id| {
-                account.stripe_subscription_id.as_deref() == Some(id)
-            });
+            let subscription_matches = checkout
+                .subscription_id
+                .as_deref()
+                .is_none_or(|id| account.stripe_subscription_id.as_deref() == Some(id));
             if account.access_state == BILLING_PAID_ACTIVE
                 && account.pending_intent_id == Some(intent.id)
                 && subscription_matches
@@ -907,7 +913,7 @@ async fn apply_checkout_session(
             "Checkout Session has already been applied; start a new checkout to change billing",
         ));
     }
-    let paid = payment_status.as_deref() == Some("paid");
+    let paid = checkout.payment_status.as_deref() == Some("paid");
     if !paid {
         intent.status = "pending_payment".to_string();
         store
@@ -930,8 +936,11 @@ async fn apply_checkout_session(
         ));
     }
     intent.status = "fulfilled".to_string();
-    intent.stripe_customer_id = customer_id.clone().or(intent.stripe_customer_id);
-    intent.stripe_subscription_id = subscription_id.clone().or(intent.stripe_subscription_id);
+    intent.stripe_customer_id = checkout.customer_id.clone().or(intent.stripe_customer_id);
+    intent.stripe_subscription_id = checkout
+        .subscription_id
+        .clone()
+        .or(intent.stripe_subscription_id);
     store
         .persist_locked(
             "billing_checkout_intent",
@@ -951,8 +960,8 @@ async fn apply_checkout_session(
             org_id: intent.org_id,
             user_id: intent.user_id,
             target_plan_tier: intent.target_plan_tier,
-            customer_id,
-            subscription_id,
+            customer_id: checkout.customer_id,
+            subscription_id: checkout.subscription_id,
             pending_seat_emails: intent.pending_seat_emails,
             intent_id: Some(intent.id),
         },
@@ -1890,13 +1899,14 @@ mod tests {
 
         let error = apply_checkout_session(
             &store,
-            Some(other_org.id),
-            "cs_test_123",
-            Some("cus_test".to_string()),
-            Some("sub_test".to_string()),
-            Some("paid".to_string()),
-            Some("complete".to_string()),
-            json!({ "intent_id": intent_id.to_string(), "org_id": other_org.id.to_string() }),
+            CheckoutSessionApply {
+                expected_org_id: Some(other_org.id),
+                session_id: "cs_test_123",
+                customer_id: Some("cus_test".to_string()),
+                subscription_id: Some("sub_test".to_string()),
+                payment_status: Some("paid".to_string()),
+                metadata: json!({ "intent_id": intent_id.to_string(), "org_id": other_org.id.to_string() }),
+            },
         )
         .await
         .unwrap_err();
@@ -2000,13 +2010,14 @@ mod tests {
 
         let error = apply_checkout_session(
             &store,
-            Some(org.id),
-            "cs_test_unpaid",
-            Some("cus_test".to_string()),
-            Some("sub_test".to_string()),
-            Some("unpaid".to_string()),
-            Some("complete".to_string()),
-            json!({ "intent_id": intent_id.to_string(), "org_id": org.id.to_string() }),
+            CheckoutSessionApply {
+                expected_org_id: Some(org.id),
+                session_id: "cs_test_unpaid",
+                customer_id: Some("cus_test".to_string()),
+                subscription_id: Some("sub_test".to_string()),
+                payment_status: Some("unpaid".to_string()),
+                metadata: json!({ "intent_id": intent_id.to_string(), "org_id": org.id.to_string() }),
+            },
         )
         .await
         .unwrap_err();
@@ -2019,7 +2030,7 @@ mod tests {
                 .map(|intent| intent.status.as_str()),
             Some("pending_payment")
         );
-        assert!(data.billing_accounts.get(&org.id).is_none());
+        assert!(!data.billing_accounts.contains_key(&org.id));
     }
 
     #[tokio::test]
@@ -2071,13 +2082,14 @@ mod tests {
 
         let error = apply_checkout_session(
             &store,
-            Some(org.id),
-            &session_id,
-            Some("cus_test".to_string()),
-            Some("sub_test".to_string()),
-            Some("paid".to_string()),
-            Some("complete".to_string()),
-            json!({ "intent_id": intent_id.to_string(), "org_id": org.id.to_string() }),
+            CheckoutSessionApply {
+                expected_org_id: Some(org.id),
+                session_id: &session_id,
+                customer_id: Some("cus_test".to_string()),
+                subscription_id: Some("sub_test".to_string()),
+                payment_status: Some("paid".to_string()),
+                metadata: json!({ "intent_id": intent_id.to_string(), "org_id": org.id.to_string() }),
+            },
         )
         .await
         .unwrap_err();
