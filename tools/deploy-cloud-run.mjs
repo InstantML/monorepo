@@ -659,14 +659,24 @@ function ensureGcloudAuth() {
 }
 
 function enableServices() {
-  run(["services", "enable",
+  const required = [
     "run.googleapis.com",
     "cloudbuild.googleapis.com",
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
     "compute.googleapis.com",
     "iam.googleapis.com",
-  ]);
+  ];
+  if (fromSecretManager) {
+    // The CI deploy service account is scoped to runtime operations (Cloud
+    // Run admin, IAM binder, Secret Manager accessor) and does not carry
+    // serviceusage.services.enable. Even no-op enables fail without it, so
+    // skip this step in CI — the project is assumed already-provisioned by
+    // the laptop path that does have the permission.
+    console.log(`Assuming required GCP services already enabled (CI mode): ${required.join(", ")}.`);
+    return;
+  }
+  run(["services", "enable", ...required]);
 }
 
 function ensureArtifactRepository() {
