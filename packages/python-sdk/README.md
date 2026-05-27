@@ -316,6 +316,25 @@ python3 -m pip install "instantml[all]"
 
 Release upload uses `.github/workflows/python-sdk-release.yml` with PyPI/TestPyPI Trusted Publishing. Before the first upload, configure pending trusted publishers for the `instantml` project, using workflow file `python-sdk-release.yml` and GitHub Environments `pypi` and `testpypi`. Public PyPI publication should remain gated on final public license/terms approval; the package metadata currently marks the SDK as `LicenseRef-Proprietary` rather than open source.
 
+## Module Layout
+
+`instantml.client` remains the public compatibility facade for `Client`, `Api`,
+`Run`, `init()`, `attach_run()`, rich object wrappers, and private helpers that
+older tests or scripts may import. The first decomposition slice moves leaf
+helpers into focused modules:
+
+- `instantml.objects`: table, histogram, file/artifact, checkpoint policy, text,
+  image, audio, and video value wrappers.
+- `instantml.media`: local-file URI checks, file hashing, and lazy image/audio/
+  video materialization helpers.
+- `instantml.log_payload`: `Run.log()` payload classification and rank-metric
+  context validation helpers.
+
+Keep new leaf modules free of runtime imports from `instantml.client`. Stateful
+run lifecycle, async queue coordination, console capture, system metrics,
+process spooling, and framework adapters still live in `client.py` until a
+follow-up design splits those collaborator boundaries.
+
 ## Usage
 
 ```python

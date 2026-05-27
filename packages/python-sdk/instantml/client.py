@@ -36,6 +36,34 @@ from .async_queue import (
     queue_path_for_run,
 )
 from .errors import InstantMLError
+from .log_payload import (
+    _classify_log_payload,
+    _classify_log_sequence,
+    _validate_rank_context,
+    _validate_rank_weight,
+)
+from .media import (
+    _FileStats,
+    _hash_file,
+    _is_local_file_uri,
+    _strip_file_uri,
+    _write_audio_data,
+    _write_image_data,
+    _write_video_data,
+)
+from .objects import (
+    Artifact,
+    Audio,
+    CheckpointPolicy,
+    File,
+    Histogram,
+    Image,
+    Table,
+    Text,
+    Video,
+    _histogram_counts_for_edges,
+    _histogram_from_count,
+)
 from .serialization import (
     _flatten,
     _flatten_numeric_value,
@@ -86,242 +114,11 @@ _RATE_LIMIT_RETRY_BASE_SECONDS = 0.25
 _RATE_LIMIT_RETRY_MAX_SECONDS = 5.0
 
 
-def _is_local_file_uri(uri: str) -> bool:
-    if not isinstance(uri, str):
-        return False
-    if uri.startswith("file://"):
-        return True
-    return "://" not in uri and Path(uri).exists()
-
-
-def _strip_file_uri(uri: str) -> str:
-    return uri[len("file://"):] if uri.startswith("file://") else uri
-
-
 def _default_base_url() -> str:
     return os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
 
 
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
-
-
-class Table:
-    """Inline table object for rich run logging."""
-
-    def __init__(
-        self,
-        columns: list[str] | tuple[str, ...] | None = None,
-        rows: list[dict[str, Any] | list[Any] | tuple[Any, ...]] | tuple[dict[str, Any] | list[Any] | tuple[Any, ...], ...] | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        dataframe: Any | None = None,
-        data: Any | None = None,
-    ) -> None:
-        if dataframe is not None and data is not None:
-            raise ValueError("table accepts either dataframe or data, not both")
-        if dataframe is not None:
-            columns = list(getattr(dataframe, "columns", []))
-            rows = dataframe.to_dict(orient="records")
-        elif data is not None:
-            rows = data
-            if columns is None and isinstance(rows, list) and rows and isinstance(rows[0], dict):
-                columns = list(rows[0].keys())
-        self.columns = list(columns) if columns is not None else []
-        self.rows = list(rows) if isinstance(rows, tuple) else rows if rows is not None else []
-        self.metadata = metadata
-
-    @classmethod
-    def from_dataframe(cls, dataframe: Any, metadata: dict[str, Any] | None = None) -> "Table":
-        return cls(metadata=metadata, dataframe=dataframe)
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        columns: list[str] | tuple[str, ...] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Table":
-        return cls(columns=columns, data=data, metadata=metadata)
-
-
-class Histogram:
-    """Histogram rich object.
-
-    The positional ``Histogram(bins, counts)`` form is intentionally preserved.
-    Use ``Histogram.from_values(...)`` for NumPy/tensor/list values.
-    """
-
-    def __init__(self, bins: list[int | float], counts: list[int | float], metadata: dict[str, Any] | None = None) -> None:
-        self.bins = list(bins) if isinstance(bins, tuple) else bins
-        self.counts = list(counts) if isinstance(counts, tuple) else counts
-        self.metadata = metadata
-
-    @classmethod
-    def from_values(
-        cls,
-        values: Any,
-        bins: int | list[int | float] | tuple[int | float, ...] = 64,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Histogram":
-        numeric_values = _coerce_numeric_values(values, "histogram values")
-        if isinstance(bins, bool):
-            raise TypeError("histogram bin count must be an integer")
-        if isinstance(bins, int):
-            if bins <= 0:
-                raise ValueError("histogram bin count must be positive")
-            return cls(*_histogram_from_count(numeric_values, bins), metadata=metadata)
-        edges = _validate_numeric_list(list(bins), "histogram bins", nonnegative=False)
-        if len(edges) < 2:
-            raise ValueError("histogram bins must contain at least two edges")
-        return cls(edges, _histogram_counts_for_edges(numeric_values, edges), metadata=metadata)
-
-
-@dataclass(frozen=True)
-class File:
-    path: str
-    name: str | None = None
-    artifact_type: str = "file"
-    metadata: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class Artifact(File):
-    pass
-
-
-@dataclass(frozen=True)
-class CheckpointPolicy:
-    """Simple step-interval helper for checkpointing training loops."""
-
-    every_steps: int
-    include_step_zero: bool = False
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.every_steps, int) or isinstance(self.every_steps, bool):
-            raise TypeError("every_steps must be an integer")
-        if self.every_steps <= 0:
-            raise ValueError("every_steps must be positive")
-
-    def should_save(self, step: int | float | None) -> bool:
-        normalized = _validate_step(step)
-        if normalized is None:
-            return False
-        numeric = float(normalized)
-        if numeric == 0:
-            return self.include_step_zero
-        if not numeric.is_integer():
-            return False
-        return int(numeric) % self.every_steps == 0
-
-
-@dataclass(frozen=True)
-class Text:
-    data: str
-    name: str | None = None
-    metadata: dict[str, Any] | None = None
-
-
-class Image:
-    def __init__(
-        self,
-        path: str | os.PathLike[str] | Any | None = None,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        data: Any | None = None,
-    ) -> None:
-        if data is not None and path is not None:
-            raise ValueError("image accepts either path or data, not both")
-        if data is None and path is not None and not isinstance(path, (str, os.PathLike)):
-            data = path
-            path = None
-        self.path = None if path is None else os.fspath(path)
-        self.data = data
-        self.caption = caption
-        self.metadata = metadata
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Image":
-        return cls(caption=caption, metadata=metadata, data=data)
-
-
-class Video:
-    def __init__(
-        self,
-        path: str | os.PathLike[str] | Any | None = None,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        data: Any | None = None,
-        fps: int | float = 30,
-        format: str = "mp4",
-    ) -> None:
-        if data is not None and path is not None:
-            raise ValueError("video accepts either path or data, not both")
-        if data is None and path is not None and not isinstance(path, (str, os.PathLike)):
-            data = path
-            path = None
-        self.path = None if path is None else os.fspath(path)
-        self.data = data
-        self.caption = caption
-        self.metadata = metadata
-        self.fps = fps
-        self.format = format
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        fps: int | float = 30,
-        format: str = "mp4",
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Video":
-        return cls(caption=caption, metadata=metadata, data=data, fps=fps, format=format)
-
-
-class Audio:
-    def __init__(
-        self,
-        path: str | os.PathLike[str] | Any | None = None,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        data: Any | None = None,
-        sample_rate: int = 48000,
-    ) -> None:
-        if data is not None and path is not None:
-            raise ValueError("audio accepts either path or data, not both")
-        if data is None and path is not None and not isinstance(path, (str, os.PathLike)):
-            data = path
-            path = None
-        self.path = None if path is None else os.fspath(path)
-        self.data = data
-        self.caption = caption
-        self.metadata = metadata
-        self.sample_rate = sample_rate
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        sample_rate: int = 48000,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Audio":
-        return cls(caption=caption, metadata=metadata, data=data, sample_rate=sample_rate)
-
-
-@dataclass(frozen=True)
-class _FileStats:
-    path: str
-    sha256: str
-    size_bytes: int
 
 
 @dataclass(frozen=True)
@@ -2390,182 +2187,6 @@ class LightningLogger:
     def finalize(self, status: str = "finished") -> None:
         if self._run is not None:
             self._run.finish(status)
-
-
-def _classify_log_payload(
-    data: dict[str, Any],
-) -> tuple[dict[str, float], dict[str, str], dict[str, Table | Histogram | Image | Video | Audio], dict[str, File]]:
-    if not isinstance(data, dict):
-        raise TypeError("log data must be a dictionary")
-    metrics: dict[str, float] = {}
-    text: dict[str, str] = {}
-    objects: dict[str, Table | Histogram | Image | Video | Audio] = {}
-    files: dict[str, File] = {}
-    for raw_key, value in data.items():
-        key = _validate_text(raw_key, "log key")
-        if _is_scalar_number(value):
-            metrics[key] = float(value)
-        elif isinstance(value, str):
-            text[key] = value
-        elif isinstance(value, Text):
-            text[key] = _validate_plain_string(value.data, "text data")
-        elif isinstance(value, (Table, Histogram, Image, Video, Audio)):
-            objects[key] = value
-        elif isinstance(value, File):
-            files[key] = value
-        elif isinstance(value, (list, tuple)):
-            _classify_log_sequence(key, value, objects, files)
-        else:
-            raise TypeError(f"log value for {key!r} has unsupported type {type(value).__name__}")
-    return metrics, text, objects, files
-
-
-def _validate_rank_context(rank: int, world_size: int, local_rank: int | None) -> tuple[int, int, int]:
-    if not isinstance(world_size, int) or isinstance(world_size, bool):
-        raise TypeError("world_size must be an integer")
-    if world_size < 1:
-        raise ValueError("world_size must be at least 1")
-    if world_size > 512:
-        raise ValueError("world_size must be at most 512")
-    if not isinstance(rank, int) or isinstance(rank, bool):
-        raise TypeError("rank must be an integer")
-    if rank < 0 or rank >= world_size:
-        raise ValueError("rank must be between 0 and world_size - 1")
-    resolved_local_rank = rank if local_rank is None else local_rank
-    if not isinstance(resolved_local_rank, int) or isinstance(resolved_local_rank, bool):
-        raise TypeError("local_rank must be an integer")
-    if resolved_local_rank < 0 or resolved_local_rank >= world_size:
-        raise ValueError("local_rank must be between 0 and world_size - 1")
-    return rank, world_size, resolved_local_rank
-
-
-def _validate_rank_weight(weight: int | float | None) -> float:
-    if weight is None:
-        return 1.0
-    if isinstance(weight, bool) or not isinstance(weight, (int, float)):
-        raise TypeError("weight must be a number")
-    value = float(weight)
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError("weight must be finite and positive")
-    return value
-
-
-def _classify_log_sequence(
-    key: str,
-    values: list[Any] | tuple[Any, ...],
-    objects: dict[str, Table | Histogram | Image | Video | Audio],
-    files: dict[str, File],
-) -> None:
-    if not values:
-        raise ValueError(f"log sequence for {key!r} must not be empty")
-    if all(_is_scalar_number(value) for value in values):
-        raise TypeError(f"log sequence for {key!r} is numeric; use Histogram.from_values() or Table")
-    if all(isinstance(value, (Table, Histogram, Image, Video, Audio)) for value in values):
-        for index, value in enumerate(values):
-            objects[f"{key}/{index}"] = value
-        return
-    if all(isinstance(value, File) for value in values):
-        for index, value in enumerate(values):
-            files[f"{key}/{index}"] = value
-        return
-    raise TypeError(f"log sequence for {key!r} must contain one homogeneous supported type")
-
-
-def _histogram_from_count(values: list[float], bins: int) -> tuple[list[float], list[float]]:
-    low = min(values)
-    high = max(values)
-    if low == high:
-        if bins == 1:
-            return [low - 0.5, high + 0.5], [float(len(values))]
-        width = 1.0 / bins
-        start = low - 0.5
-        edges = [start + index * width for index in range(bins + 1)]
-        return edges, _histogram_counts_for_edges(values, edges)
-    width = (high - low) / bins
-    edges = [low + index * width for index in range(bins)]
-    edges.append(high)
-    return edges, _histogram_counts_for_edges(values, edges)
-
-
-def _histogram_counts_for_edges(values: list[float], edges: list[float]) -> list[float]:
-    counts = [0.0 for _ in range(len(edges) - 1)]
-    for value in values:
-        if value < edges[0] or value > edges[-1]:
-            continue
-        if value == edges[-1]:
-            counts[-1] += 1.0
-            continue
-        for index in range(len(edges) - 1):
-            if edges[index] <= value < edges[index + 1]:
-                counts[index] += 1.0
-                break
-    return counts
-
-
-def _hash_file(path: Path) -> _FileStats:
-    if not path.exists() or not path.is_file():
-        raise InstantMLError(f"upload source does not exist: {path}")
-    digest = hashlib.sha256()
-    size_bytes = 0
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            size_bytes += len(chunk)
-            digest.update(chunk)
-    return _FileStats(path=str(path), sha256=digest.hexdigest(), size_bytes=size_bytes)
-
-
-def _write_image_data(data: Any, target: Path) -> None:
-    if data is None:
-        raise InstantMLError("image data is required")
-    if callable(getattr(data, "savefig", None)):
-        data.savefig(target)
-        return
-    if callable(getattr(data, "save", None)):
-        data.save(target)
-        return
-    try:
-        from PIL import Image as PillowImage
-    except ImportError as exc:
-        raise InstantMLError("Pillow is required to log image data") from exc
-    try:
-        import numpy as np
-    except ImportError as exc:
-        raise InstantMLError("numpy is required to log image data arrays") from exc
-    array = np.asarray(_tensor_to_python(data))
-    if array.dtype != np.uint8:
-        if array.max() <= 1.0:
-            array = array * 255
-        array = np.clip(array, 0, 255).astype("uint8")
-    PillowImage.fromarray(array).save(target)
-
-
-def _write_audio_data(data: Any, target: Path, sample_rate: int) -> None:
-    if data is None:
-        raise InstantMLError("audio data is required")
-    try:
-        import soundfile
-    except ImportError as exc:
-        raise InstantMLError("soundfile is required to log audio data") from exc
-    soundfile.write(target, _tensor_to_python(data), sample_rate)
-
-
-def _write_video_data(data: Any, target: Path, fps: int | float) -> None:
-    if data is None:
-        raise InstantMLError("video data is required")
-    try:
-        import imageio.v3 as imageio
-    except ImportError as imageio_error:
-        try:
-            from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-        except ImportError as moviepy_error:
-            raise InstantMLError("moviepy or imageio is required to log video data") from moviepy_error
-        clip = ImageSequenceClip(_tensor_to_python(data), fps=fps)
-        clip.write_videofile(str(target), logger=None)
-        return
-    try:
-        imageio.imwrite(target, _tensor_to_python(data), fps=fps)
-    except TypeError as exc:
-        raise InstantMLError("moviepy or imageio is required to log video data") from exc
 
 
 def _collect_system_metrics(psutil_module: Any | None = None, pynvml_module: Any | None = None) -> dict[str, float]:
