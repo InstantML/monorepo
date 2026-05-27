@@ -149,7 +149,7 @@ class ShadowWandb:
 def build_shadow(
     shadow_wandb: Any,
     *,
-    project: str,
+    project: str | None,
     name: str | None,
     config: dict[str, Any] | None,
     tags: list[str] | None,
@@ -157,13 +157,16 @@ def build_shadow(
 ) -> ShadowWandb | None:
     if not shadow_wandb:
         return None
+    # Mirror the InstantML server's default-project bucket on the shadow
+    # side so both halves of the dual-log land in the same project name.
+    project_name = project or "default"
     if shadow_wandb is True:
         return ShadowWandb(
-            project=project, name=name, config=config, tags=tags, notes=notes
+            project=project_name, name=name, config=config, tags=tags, notes=notes
         )
     if isinstance(shadow_wandb, dict):
         return ShadowWandb(
-            project=project,
+            project=project_name,
             name=name,
             config=config,
             tags=tags,
@@ -171,7 +174,7 @@ def build_shadow(
             wandb_kwargs=shadow_wandb,
         )
     return ShadowWandb(
-        project=project,
+        project=project_name,
         name=name,
         config=config,
         tags=tags,

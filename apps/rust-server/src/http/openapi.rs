@@ -46,18 +46,20 @@ use crate::domain::{
     ClickHouseConnectionStatus, ClickHouseConnectionValidateRequest,
     ClickHouseConnectionValidationResponse, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
     CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
-    CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest,
-    CreateRunForkRequest, CreateRunRequest, CreateUserRequest, DashboardPreferenceRow,
+    CreateCurrentUserOrganizationRequest, CreateInvitationRequest, CreateObjectRequest,
+    CreateOrganizationRequest, CreateProjectRequest, CreateRunForkRequest, CreateRunRequest,
+    CreateUserRequest, CurrentUserOrganizationCreateResponse, DashboardPreferenceRow,
     DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest,
-    DeviceCodeStartRequest, InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest,
-    LogRankMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
-    OrganizationMembershipSummary, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-    PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
-    RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-    RankReducerPoint, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-    ServiceAccountRow, SwitchOrganizationRequest, UpdateDashboardPreferencesRequest,
-    UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
-    WorkspaceViewSummary,
+    DeviceCodeStartRequest, InitialInvitationCreateResult, InitialOrganizationInvitation,
+    InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
+    MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
+    OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
+    ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow,
+    RankCoveragePoint, RankHeatmapPoint, RankMetricLimits, RankMetricTruncation,
+    RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint, ReserveSeatRequest, RunRow,
+    SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SwitchOrganizationRequest,
+    UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+    UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
 };
 
 // ============================================================================
@@ -234,13 +236,14 @@ pub struct AuthSessionUnauthenticated {
 
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
-    pub error: ErrorBody,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ErrorBody {
-    pub code: String,
-    pub message: String,
+    pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 1)]
+    pub position: Option<usize>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -457,6 +460,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::orgs::create_user,
         crate::http::handlers::orgs::list_users,
         crate::http::handlers::orgs::create_org,
+        crate::http::handlers::orgs::create_current_user_org,
         crate::http::handlers::orgs::list_orgs,
         crate::http::handlers::orgs::list_org_memberships,
         crate::http::handlers::orgs::org_name_availability,
@@ -524,7 +528,6 @@ impl Modify for SecurityAddon {
         AuthSessionUnauthenticated,
         AuthSessionWithOnboardingKey,
         ErrorResponse,
-        ErrorBody,
         ProjectEnvelope,
         ProjectsEnvelope,
         RunEnvelope,
@@ -606,6 +609,7 @@ impl Modify for SecurityAddon {
         CreateArtifactRequest,
         CreateAttributesRequest,
         CreateConsoleLogsRequest,
+        CreateCurrentUserOrganizationRequest,
         CreateInvitationRequest,
         CreateObjectRequest,
         CreateOrganizationRequest,
@@ -613,12 +617,15 @@ impl Modify for SecurityAddon {
         CreateRunForkRequest,
         CreateRunRequest,
         CreateUserRequest,
+        CurrentUserOrganizationCreateResponse,
         DashboardPreferenceRow,
         DevGoogleAuthRequest,
         DeviceCodeClientInfo,
         DeviceCodeConfirmRequest,
         DeviceCodePollRequest,
         DeviceCodeStartRequest,
+        InitialInvitationCreateResult,
+        InitialOrganizationInvitation,
         InvitationPreviewPayload,
         InvitationTokenRequest,
         LogMetricsRequest,
@@ -628,6 +635,7 @@ impl Modify for SecurityAddon {
         MetricSeriesRow,
         OnboardingApiKey,
         OrganizationMembershipSummary,
+        OrganizationRoleCapabilities,
         OrganizationRow,
         ProjectRow,
         ProvisioningStatusPayload,

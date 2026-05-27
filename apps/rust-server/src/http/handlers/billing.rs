@@ -23,6 +23,7 @@ use super::helpers::{context, header_text, read_json, read_json_value, validate_
     responses(
         (status = 200, description = "Billing account projection and plan catalog", body = crate::http::openapi::JsonObjectResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Owner or admin role required", body = crate::http::openapi::ErrorResponse),
     ),
 )]
 pub async fn billing_status(

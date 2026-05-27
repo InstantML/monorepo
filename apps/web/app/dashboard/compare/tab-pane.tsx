@@ -41,7 +41,7 @@ type Props = {
   onResetCompareTableMetrics: () => void;
   onRunSortMetricKey: (key: string) => void;
   onRunSort: (sort: CompareRunSort) => void;
-  onUpdateRunTagsAndNotes: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
+  onUpdateRunTagsAndNotes?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   referenceRun: RunSummary | null;
   removeCompareTableMetric: (metric: string) => void;
   selectedRunIds: string[];
@@ -95,7 +95,7 @@ export function CompareTabPane({
           <div className="analysis-title-block">
             <span className="analysis-eyebrow eyebrow--accent">Compare</span>
             <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs <span className="serif-em">side by side</span></h2>
-            <p>{metricKey} · {metricGoalLabel(metricKey)} objective · row-first evidence scan</p>
+            <p>{metricTitle(metricKey)} · {metricGoalLabel(metricKey)} objective · sort any column</p>
           </div>
           <div className="analysis-stat-strip">
             <div className="analysis-stat"><span>Reference</span><strong title={referenceRun?.name}>{referenceRun?.name ?? "-"}</strong></div>
@@ -143,39 +143,22 @@ export function CompareTabPane({
             ]}
             value={compareLayout === "columns" ? "columns" : "rows"}
           />
-          <CustomSelect
-            id="compare-row-sort"
-            label="Evidence"
-            onChange={onCompareRowSort}
-            options={[
-              { value: "signal", label: "Signal" },
-              { value: "changed", label: "Changed first" },
-              { value: "missing", label: "Missing first" },
-              { value: "category", label: "Category" },
-              { value: "name", label: "Name" },
-              { value: "spread", label: "Numeric spread" },
-            ]}
-            value={compareRowSort}
-          />
-          <CustomSelect
-            id="compare-run-sort"
-            label="Runs"
-            onChange={onCompareRunSort}
-            options={[
-              { value: "metric-best", label: "Metric best" },
-              { value: "metric-latest", label: "Metric latest" },
-              { value: "selected", label: "Selected order" },
-              { value: "name", label: "Name" },
-              { value: "newest", label: "Newest" },
-              { value: "status", label: "Status" },
-              { value: "duration", label: "Duration" },
-              { value: "artifacts", label: "Artifacts" },
-              { value: "tags", label: "Tags" },
-              { value: "notes", label: "Notes" },
-              { value: "config", label: "Config key" },
-            ]}
-            value={compareRunSort}
-          />
+          {compareLayout === "columns" ? (
+            <CustomSelect
+              id="compare-row-sort"
+              label="Evidence"
+              onChange={onCompareRowSort}
+              options={[
+                { value: "signal", label: "Signal" },
+                { value: "changed", label: "Changed first" },
+                { value: "missing", label: "Missing first" },
+                { value: "category", label: "Category" },
+                { value: "name", label: "Name" },
+                { value: "spread", label: "Numeric spread" },
+              ]}
+              value={compareRowSort}
+            />
+          ) : null}
           <CustomSelect
             disabled={!compareConfigKeys.length}
             id="compare-config-key"
@@ -192,19 +175,8 @@ export function CompareTabPane({
         <div className="compare-metric-strip" aria-label="Compare table metric columns">
           <span>Metric columns</span>
           {compareTableMetricKeys.map((metric) => (
-            <div className={`compare-metric-pill ${compareSortMetricKey === metric ? "active" : ""}`} key={metric}>
-              <button
-                aria-label={`Sort compared runs by ${metric}`}
-                className="compare-metric-label"
-                onClick={() => {
-                  onRunSortMetricKey(metric);
-                  onRunSort("metric-best");
-                }}
-                title={metric}
-                type="button"
-              >
-                {metricTitle(metric)}
-              </button>
+            <div className={`compare-metric-pill ${metric === metricKey ? "active" : ""}`} key={metric}>
+              <span className="compare-metric-label" title={metric}>{metricTitle(metric)}</span>
               {metric !== metricKey ? (
                 <button aria-label={`Remove ${metric} column`} className="compare-metric-remove" onClick={() => removeCompareTableMetric(metric)} title="Remove metric column" type="button">
                   <X size={12} />
@@ -240,6 +212,7 @@ export function CompareTabPane({
           layout={compareLayout}
           metricKey={metricKey}
           onOpenRunArtifacts={onOpenRunArtifacts}
+          onReferenceRunId={onReferenceRunId}
           onRunSort={onRunSort}
           onRunSortMetricKey={onRunSortMetricKey}
           payload={sideBySide}

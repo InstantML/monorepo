@@ -145,14 +145,16 @@ Run summary, artifact download, and fork helpers use the raw `Api` helper:
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 page = api.runs(
     project="cartpole",
-    q="seed 13",
+    q='tag:baseline status:finished notes:"reward stability"',
     sort_by="metric-best",
     metric_key="eval/return_mean",
     limit=25,
 )
 ```
 
-`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. `Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
+`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. Prefer `project` for Rust filtering; `project_id` remains a legacy SDK compatibility parameter and Rust-hosted summaries do not expose it as a query filter outside project-scoped API-key auth. The `q` language matches the dashboard search bar: bare terms are implicit `AND`, fields include `all`, `name`, `project`, `notes`, `config`, `metadata`, `tag`/`tags`, `status`, and `id`, uppercase `AND`/`OR`/`NOT` and grouping are supported, `-tag:debug` excludes field/group terms, quoted phrases are literal, and Rust supports explicit regex like `re:/seed-(13|14)/`. The deprecated Node compatibility API rejects completed regex with `run_search_regex_unsupported`.
+
+`Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
 
 Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
 
@@ -188,11 +190,13 @@ run.log_snapshot(
 run.finish()
 ```
 
-Durable async metric/log mode is the default for `init()` and `Client.init()`.
-It is inspired by Neptune-style local-first logging: scalar metrics, rank
-metrics, console logs, and final run status are validated, stored locally in a
-per-run SQLite WAL queue, and drained by a separate uploader process. Delivery,
-network, and API errors on those queued hot paths are reflected in
+Async metric/log mode is the default for `init()` and `Client.init()`. It is
+inspired by Neptune-style local-first logging: scalar metrics, rank metrics,
+console logs, and final run status are validated, snapshotted into a small
+process-local producer buffer, group-committed to a per-run SQLite WAL queue,
+and drained by a separate uploader process. The default producer flushes at 64
+events, 64 KiB of serialized payloads, or 20 ms since the oldest buffered event.
+Delivery, network, and API errors on those queued hot paths are reflected in
 `Run.upload_status()` and dashboard upload-health metrics instead of raising
 from `log_metrics()`, `log_rank_metrics()`, `log_console()`, or `finish()`.
 
@@ -208,11 +212,17 @@ run.finish(timeout=30)
 ```
 
 Pass `queue_dir="..."` to move the default `.instantml/async` queue. The queue
-stores metric and console payloads locally in SQLite WAL files; add
+stores flushed metric and console payloads locally as plaintext SQLite WAL files
+with owner-only permissions where the OS supports them; add
 `.instantml/` to `.gitignore` for projects that do not already ignore local SDK
-state. If the queue cannot open or local queue limits are reached, the SDK warns
-and continues the training loop. Use `upload_mode="sync"` for scripts and CI
-checks that need metric/log API errors to raise in the foreground.
+state. A returned async `log()` can be lost if the Python process is killed
+before the short producer buffer reaches SQLite, so call `flush()`, `finish()`,
+or a wait helper before short scripts exit. `Run.upload_status()` forces a local
+producer flush before returning and includes `buffered_events`, `buffered_bytes`,
+and `last_flush_error`. If the queue cannot open or local queue limits are
+reached, the SDK warns and continues the training loop. Use `upload_mode="sync"`
+for scripts and CI checks that need metric/log API errors to raise in the
+foreground.
 
 Async v1 intentionally keeps response-returning helpers synchronous: configs,
 attributes, tags, notes, rich objects, media, and artifact uploads stay on the
@@ -225,13 +235,16 @@ credentials used by normal SDK calls:
 instantml-uploader --queue-dir .instantml/async --base-url http://127.0.0.1:8000
 ```
 
-`Run.wait_for_submission(timeout=...)` returns when pending rows have been
-claimed or processed. `Run.wait_for_processing(timeout=...)` returns when queued
+`Run.wait_for_submission(timeout=...)` first flushes the producer buffer, then
+returns when pending rows have been claimed or processed.
+`Run.wait_for_processing(timeout=...)` first flushes, then returns when queued
 rows have either processed or failed. Both return `False` on timeout or terminal
-queue failures. `Run.finish(timeout=None)` uses the client's HTTP timeout as a
-bounded default; pass an explicit timeout or call `wait_for_processing()` first
+queue failures. `Run.finish(timeout=None)` flushes existing events, queues and
+flushes the final status, then waits using the client's HTTP timeout as a
+bounded default. Pass an explicit timeout or call `wait_for_processing()` first
 when you want a longer wait. See
-`docs/design/2026-05-25-durable-async-sdk-logging.md`.
+`docs/design/2026-05-25-durable-async-sdk-logging.md` and
+`docs/design/2026-05-27-async-sqlite-batching.md`.
 
 ## Design Requirement
 
@@ -302,6 +315,25 @@ python3 -m pip install "instantml[all]"
 ```
 
 Release upload uses `.github/workflows/python-sdk-release.yml` with PyPI/TestPyPI Trusted Publishing. Before the first upload, configure pending trusted publishers for the `instantml` project, using workflow file `python-sdk-release.yml` and GitHub Environments `pypi` and `testpypi`. Public PyPI publication should remain gated on final public license/terms approval; the package metadata currently marks the SDK as `LicenseRef-Proprietary` rather than open source.
+
+## Module Layout
+
+`instantml.client` remains the public compatibility facade for `Client`, `Api`,
+`Run`, `init()`, `attach_run()`, rich object wrappers, and private helpers that
+older tests or scripts may import. The first decomposition slice moves leaf
+helpers into focused modules:
+
+- `instantml.objects`: table, histogram, file/artifact, checkpoint policy, text,
+  image, audio, and video value wrappers.
+- `instantml.media`: local-file URI checks, file hashing, and lazy image/audio/
+  video materialization helpers.
+- `instantml.log_payload`: `Run.log()` payload classification and rank-metric
+  context validation helpers.
+
+Keep new leaf modules free of runtime imports from `instantml.client`. Stateful
+run lifecycle, async queue coordination, console capture, system metrics,
+process spooling, and framework adapters still live in `client.py` until a
+follow-up design splits those collaborator boundaries.
 
 ## Usage
 
@@ -463,7 +495,7 @@ PYTHONPATH=packages/python-sdk python3 -c "import instantml as ro; print(ro.Clie
 python3 -m pytest
 ```
 
-The SDK defaults to durable async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
+The SDK defaults to buffered async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 

@@ -124,6 +124,7 @@ pub fn openapi_path_available_for_plane(
         || path == "/api/users"
         || path.starts_with("/api/invitations/")
         || path == "/api/orgs"
+        || path == "/api/orgs/current-user"
         || path == "/api/orgs/memberships"
         || path == "/api/orgs/name-availability"
         || path == "/api/dashboard/preferences"

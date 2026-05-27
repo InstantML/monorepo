@@ -410,16 +410,123 @@ pub(super) fn datetime_from_micros(micros: i64) -> DateTime<Utc> {
     DateTime::<Utc>::from_timestamp(secs, nanos).unwrap_or_else(epoch)
 }
 
-pub(super) fn run_search_text(run: &RunRow) -> String {
-    format!(
-        "{} {} {} {} {}",
-        run.project,
-        run.name,
-        run.tags.join(" "),
-        run.config,
-        run.metadata
-    )
-    .to_ascii_lowercase()
+const MAX_RUN_SEARCH_FIELD_BYTES: usize = 32 * 1024;
+
+#[derive(Clone, Debug)]
+pub(super) struct RunSearchDocument {
+    pub summary: String,
+    pub name: String,
+    pub project: String,
+    pub notes: String,
+    pub config: String,
+    pub metadata: String,
+    pub tags: Vec<String>,
+    pub status: String,
+    pub id: String,
+}
+
+pub(super) fn run_search_document(run: &RunRow) -> RunSearchDocument {
+    let name = search_field(&run.name);
+    let project = search_field(&run.project);
+    let tags = run
+        .tags
+        .iter()
+        .map(|tag| search_field(tag))
+        .collect::<Vec<_>>();
+    let config = search_json_field(&run.config);
+    let metadata = search_json_field(&run.metadata);
+    let notes = note_search_text(&run.metadata);
+    let status = search_field(&run.status);
+    let id = run.id.to_string().to_ascii_lowercase();
+    let tags_text = tags.join(" ");
+    let summary = search_field(
+        &[
+            project.as_str(),
+            name.as_str(),
+            tags_text.as_str(),
+            notes.as_str(),
+            status.as_str(),
+            id.as_str(),
+        ]
+        .join(" "),
+    );
+    RunSearchDocument {
+        summary,
+        name,
+        project,
+        notes,
+        config,
+        metadata,
+        tags,
+        status,
+        id,
+    }
+}
+
+fn note_search_text(metadata: &Value) -> String {
+    let Some(object) = metadata.as_object() else {
+        return String::new();
+    };
+    let joined = ["notes", "note", "description", "summary", "comment"]
+        .into_iter()
+        .filter_map(|key| object.get(key).and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    search_field(&joined)
+}
+
+fn search_field(value: &str) -> String {
+    truncate_utf8(value, MAX_RUN_SEARCH_FIELD_BYTES).to_ascii_lowercase()
+}
+
+fn search_json_field(value: &Value) -> String {
+    let mut writer = BoundedJsonWriter::new(MAX_RUN_SEARCH_FIELD_BYTES);
+    let _ = serde_json::to_writer(&mut writer, value);
+    String::from_utf8_lossy(&writer.bytes).to_ascii_lowercase()
+}
+
+struct BoundedJsonWriter {
+    bytes: Vec<u8>,
+    limit: usize,
+}
+
+impl BoundedJsonWriter {
+    fn new(limit: usize) -> Self {
+        Self {
+            bytes: Vec::with_capacity(limit.min(1024)),
+            limit,
+        }
+    }
+}
+
+impl std::io::Write for BoundedJsonWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let remaining = self.limit.saturating_sub(self.bytes.len());
+        if remaining == 0 {
+            return Err(std::io::Error::other("search json field limit reached"));
+        }
+        let take = remaining.min(buf.len());
+        self.bytes.extend_from_slice(&buf[..take]);
+        if take < buf.len() {
+            return Err(std::io::Error::other("search json field limit reached"));
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
+    if value.len() <= max_bytes {
+        return value;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
 }
 
 pub(super) fn parse_run_ids(raw: Option<&String>) -> AppResult<Vec<Uuid>> {
@@ -791,10 +898,33 @@ mod tests {
         );
         row.project = "hosted-scale-data".to_string();
 
-        let search = run_search_text(&row);
+        let search = run_search_document(&row);
 
-        assert!(search.contains("hosted-scale-data"));
-        assert!(search.contains("model-a"));
+        assert!(search.project.contains("hosted-scale-data"));
+        assert!(search.name.contains("model-a"));
+        assert!(search.status.contains("finished"));
+        assert!(search.id.contains(&row.id.to_string()));
+    }
+
+    #[test]
+    fn run_search_document_bounds_large_json_fields() {
+        let mut row = run(
+            Uuid::from_u128(20),
+            Uuid::from_u128(21),
+            Uuid::from_u128(22),
+            "model-b",
+        );
+        row.config = json!({ "payload": "x".repeat(MAX_RUN_SEARCH_FIELD_BYTES * 2) });
+        row.metadata = json!({
+            "notes": "important notes",
+            "payload": "y".repeat(MAX_RUN_SEARCH_FIELD_BYTES * 2)
+        });
+
+        let doc = run_search_document(&row);
+
+        assert!(doc.config.len() <= MAX_RUN_SEARCH_FIELD_BYTES);
+        assert!(doc.metadata.len() <= MAX_RUN_SEARCH_FIELD_BYTES);
+        assert!(doc.notes.contains("important notes"));
     }
 
     #[test]

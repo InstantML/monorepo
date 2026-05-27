@@ -2,8 +2,9 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::Method;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::Sha256;
+use std::env;
 
 use crate::{
     config::BillingConfig,
@@ -76,6 +77,24 @@ pub async fn create_subscription_checkout(
     config: &BillingConfig,
     params: SubscriptionCheckoutParams,
 ) -> AppResult<StripeCheckoutSession> {
+    if mock_checkout_enabled(config) {
+        let session_id = format!(
+            "cs_test_instantml__{}__{}__{}__{}",
+            params.org_id, params.user_id, params.intent_id, params.target_plan_tier
+        );
+        let url = params
+            .success_url
+            .replace("{CHECKOUT_SESSION_ID}", &session_id);
+        return Ok(StripeCheckoutSession {
+            id: session_id,
+            url: Some(url),
+            customer_id: Some(format!("cus_mock_{}", params.org_id)),
+            subscription_id: Some(format!("sub_mock_{}", params.intent_id)),
+            payment_status: Some("unpaid".to_string()),
+            status: Some("open".to_string()),
+            metadata: json!({}),
+        });
+    }
     let price_id = ensure_plan_price_id(config, &params.target_plan_tier).await?;
     let storage_price_id = ensure_storage_overage_price_id(config).await?;
     let api_request_price_id =
@@ -131,6 +150,9 @@ pub async fn retrieve_checkout_session(
     config: &BillingConfig,
     session_id: &str,
 ) -> AppResult<StripeCheckoutSession> {
+    if mock_checkout_enabled(config) && session_id.starts_with("cs_test_instantml__") {
+        return mock_checkout_session(session_id);
+    }
     let value = get_json(
         config,
         &format!("/v1/checkout/sessions/{session_id}"),
@@ -894,6 +916,59 @@ fn stripe_unavailable(message: impl Into<String>) -> AppError {
         "billing_unavailable",
         message,
     )
+}
+
+fn mock_checkout_enabled(config: &BillingConfig) -> bool {
+    let requested = env::var("INSTANTML_STRIPE_MOCK_CHECKOUT")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false);
+    requested && billing_urls_are_local(config)
+}
+
+fn billing_urls_are_local(config: &BillingConfig) -> bool {
+    [config.success_url.as_str(), config.cancel_url.as_str()]
+        .iter()
+        .all(|url| {
+            url.starts_with("http://localhost:")
+                || url.starts_with("http://127.0.0.1:")
+                || url.starts_with("http://[::1]:")
+        })
+}
+
+fn mock_checkout_session(session_id: &str) -> AppResult<StripeCheckoutSession> {
+    let parts = session_id
+        .strip_prefix("cs_test_instantml__")
+        .unwrap_or_default()
+        .split("__")
+        .collect::<Vec<_>>();
+    if parts.len() != 4 {
+        return Err(stripe_unavailable("mock checkout session id is malformed"));
+    }
+    let org_id = parts[0];
+    let user_id = parts[1];
+    let intent_id = parts[2];
+    let target_plan_tier = parts[3];
+    Ok(StripeCheckoutSession {
+        id: session_id.to_string(),
+        url: None,
+        customer_id: Some(format!("cus_mock_{org_id}")),
+        subscription_id: Some(format!("sub_mock_{intent_id}")),
+        payment_status: Some("paid".to_string()),
+        status: Some("complete".to_string()),
+        metadata: json!({
+            "org_id": org_id,
+            "user_id": user_id,
+            "intent_id": intent_id,
+            "action": "mock_checkout",
+            "target_plan_tier": target_plan_tier
+        }),
+    })
 }
 
 #[cfg(test)]

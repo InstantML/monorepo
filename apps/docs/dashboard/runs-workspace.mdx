@@ -13,6 +13,11 @@ summary stats, metric panels, saved views, and a bounded server-backed run list.
 ## Search and sort
 
 Use the search field for names, tags, notes, configs, and indexed run context.
+Bare text such as `reward stability` keeps implicit-AND matching. Add precise
+filters with `tag:baseline`, `status:finished`, `name:"long context"`,
+`-tag:debug`, `(tag:baseline OR tag:candidate) notes:ablated`, or
+`re:/seed-(13|14)/`. The help icon beside the dashboard search box mirrors this
+syntax and invalid searches keep the last valid results visible.
 
 Sort modes include:
 

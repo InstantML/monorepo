@@ -71,25 +71,49 @@ export function chartDomain(series, xKey = "step", metricKey = "", xRange = null
   };
 }
 
+// "Nice" axis ticks: round the tick step to the 1-2-5 family so labels land on
+// human-friendly values (50/100/150 rather than 128.3/192.9/257.5) and integer
+// domains like training step never show fractional ticks (20/40/60 not 20.8/40.5).
+// Ticks are emitted on multiples of the nice step that fall within [min, max], so
+// they position correctly under the chart's linear value→pixel scale.
 export function axisTicks(min, max, count = 5) {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
   if (min === max) return [min];
+  const target = Math.max(2, count);
+  const rawStep = (max - min) / (target - 1);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const normalized = rawStep / magnitude;
+  const niceUnit = normalized < 1.5 ? 1 : normalized < 3 ? 2 : normalized < 7 ? 5 : 10;
+  const step = niceUnit * magnitude;
   const ticks = [];
-  const step = (max - min) / Math.max(1, count - 1);
-  for (let index = 0; index < count; index += 1) ticks.push(min + step * index);
-  return ticks;
+  const first = Math.ceil(min / step) * step;
+  for (let value = first, index = 0; value <= max + step * 1e-9 && index < 1000; value += step, index += 1) {
+    // Snap floating-point drift (e.g. 60.00000000001) back to the clean value.
+    ticks.push(Number(value.toFixed(10)));
+  }
+  return ticks.length ? ticks : [min, max];
 }
 
 export function nearestPoint(normalizedSeries, x, y, maxDistance = 18) {
   let nearest = null;
+  const consider = (item, point, distance) => {
+    if (distance <= maxDistance && (!nearest || distance < nearest.distance)) {
+      nearest = { runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance };
+    }
+  };
   for (const item of normalizedSeries) {
+    let previous = null;
     for (const point of item.normalizedPoints ?? []) {
       // Hit-test against the displayed line: the smoothed curve when smoothing
       // is on, otherwise the raw line.
-      const distance = Math.hypot(point.x - x, (point.displayY ?? point.y) - y);
-      if (distance <= maxDistance && (!nearest || distance < nearest.distance)) {
-        nearest = { runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance };
+      const pointY = point.displayY ?? point.y;
+      consider(item, point, Math.hypot(point.x - x, pointY - y));
+      if (previous) {
+        const previousY = previous.displayY ?? previous.y;
+        const segmentHit = distanceToSegment(x, y, previous.x, previousY, point.x, pointY);
+        consider(item, segmentHit.t <= 0.5 ? previous : point, segmentHit.distance);
       }
+      previous = point;
     }
   }
   return nearest;
@@ -248,6 +272,19 @@ function boundedXRange(range, minX, maxX) {
 function pointInRange(point, xKey, range) {
   const value = xValue(point, xKey);
   return value >= range.min && value <= range.max;
+}
+
+function distanceToSegment(x, y, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSq = dx * dx + dy * dy;
+  if (!Number.isFinite(lengthSq) || lengthSq <= 0) {
+    return { distance: Math.hypot(x - x1, y - y1), t: 0 };
+  }
+  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lengthSq));
+  const px = x1 + t * dx;
+  const py = y1 + t * dy;
+  return { distance: Math.hypot(x - px, y - py), t };
 }
 
 function valueDomain(points, metricKey = "") {

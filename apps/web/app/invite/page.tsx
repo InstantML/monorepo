@@ -6,6 +6,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../../src/api.js";
 import { clerkIssuerConfigError } from "../../src/clerk-config.js";
+import { roleLabel } from "../../src/roles.js";
+import { postAuthRedirectPath } from "../../src/routes.js";
 import type { components } from "../../src/types/api.generated";
 import { InstantMlMark } from "../instantml-mark";
 
@@ -19,6 +21,7 @@ type AuthConfig = {
 type SessionPayload = {
   authenticated?: boolean;
   user?: { primary_email?: string };
+  organization?: { id: string; storage_choice?: string; storage_state?: string };
 };
 type InvitationPreview = components["schemas"]["InvitationPreviewPayload"];
 
@@ -147,10 +150,9 @@ export default function InvitePage() {
     setBusy(true);
     note("Accepting invitation...");
     try {
-      await api.post("/api/invitations/accept", { token });
+      const payload = await api.post("/api/invitations/accept", { token });
       clearStoredInviteToken();
-      note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      openAcceptedWorkspace(payload as SessionPayload);
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {
@@ -165,14 +167,13 @@ export default function InvitePage() {
     try {
       const clerkToken = await getToken({ skipCache: true });
       if (!clerkToken) throw new Error("Clerk did not return a session token.");
-      await api.post("/api/auth/clerk", {
+      const payload = await api.post("/api/auth/clerk", {
         token: clerkToken,
         mode: "signin",
         accept_invite_token: token,
       });
       clearStoredInviteToken();
-      note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      openAcceptedWorkspace(payload as SessionPayload);
     } catch (error) {
       attemptedClerkExchangeRef.current = false;
       handleInviteFailure(error, "Unable to verify invitation.");
@@ -187,14 +188,13 @@ export default function InvitePage() {
     setBusy(true);
     note("Accepting invitation...");
     try {
-      await api.post("/api/auth/dev/google", {
+      const payload = await api.post("/api/auth/dev/google", {
         email: devEmail.trim(),
         mode: "signin",
         accept_invite_token: token,
       });
       clearStoredInviteToken();
-      note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      openAcceptedWorkspace(payload as SessionPayload);
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {
@@ -229,6 +229,14 @@ export default function InvitePage() {
     saveStoredInviteToken(token);
   }
 
+  function openAcceptedWorkspace(payload: SessionPayload) {
+    const destination = postAuthRedirectPath(payload, "/dashboard/runs");
+    note(destination.startsWith("/onboarding")
+      ? "Invitation accepted. Opening storage setup..."
+      : "Invitation accepted. Opening dashboard...");
+    window.location.replace(destination);
+  }
+
   async function clearInstantMlSession() {
     try {
       await api.post("/api/auth/logout", {});
@@ -254,7 +262,7 @@ export default function InvitePage() {
                 InstantML
               </div>
               <p className={`iml-eyebrow${isError ? " is-danger" : " is-accent"}`}>
-                {preview?.role ? `${preview.role} invite` : "Workspace invite"}
+                {preview?.role ? `${roleLabel(preview.role)} invite` : "Workspace invite"}
               </p>
               <h1 className="iml-headline">{preview ? <>Join <span className="iml-em">{preview.org_name}</span></> : "Open invitation"}</h1>
               <p className="iml-sub">

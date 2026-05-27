@@ -1,27 +1,54 @@
 "use client";
 
-import { BookOpen, Check, ChevronDown, CircleHelp, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, Search, SlidersHorizontal, Sun, X } from "lucide-react";
+import { BookOpen, Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Moon, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { InstantMlMark } from "../../instantml-mark";
 import { accountDisplayLabel, accountInitials, safeAccountAvatarUrl } from "../../../src/account.js";
+import { roleCapabilities, roleLabel } from "../../../src/roles.js";
 import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import { CustomSelect } from "../ui/select";
 import type { SelectOption } from "../ui/select";
 import type { TabId } from "../../dashboard-types";
+import { useFocusTrap } from "../ui/use-focus-trap";
 
 export type OrgMembershipSummary = {
   org_id: string;
   name: string;
   slug: string;
+  account_type?: string;
+  is_personal?: boolean;
   plan_tier: string;
   role: string;
+  role_label?: string;
   status: string;
   member_count: number;
   is_current: boolean;
+  capabilities?: {
+    manage_billing?: boolean;
+    manage_members?: boolean;
+    write_runs?: boolean;
+    manage_api_keys?: boolean;
+  };
+};
+
+export type CreateWorkspaceInput = {
+  name: string;
+  account_type: "personal" | "business";
+  plan_tier: "free" | "pro" | "premium";
+  storage_choice: "instantml-hosted" | "customer-clickhouse";
+  initial_invitations: Array<{ email: string; role: "admin" | "member" | "viewer" }>;
+  switch_on_create: boolean;
+};
+
+export type WorkspaceNameAvailability = {
+  available?: boolean;
+  checkedName?: string;
+  slug?: string;
+  message?: string;
 };
 
 const ORG_SWITCHER_SEARCH_THRESHOLD = 7;
@@ -45,15 +72,20 @@ function AccountAvatar({ user }: { user: AccountUser | null }) {
   }, [user?.avatar_url]);
 
   return (
-    <div className={`avatar brandbar-action-desktop ${avatarUrl ? "avatar--image" : ""}`} aria-label={`Account: ${label}`} title={label}>
+    <span className={`avatar ${avatarUrl ? "avatar--image" : ""}`} aria-label={`Account: ${label}`} title={label}>
       {avatarUrl ? (
         <img alt="" className="avatar-image" onError={() => setImageFailed(true)} referrerPolicy="no-referrer" src={avatarUrl} />
       ) : (
         <span aria-hidden="true">{initials}</span>
       )}
-    </div>
+    </span>
   );
 }
+
+type RunSearchError = {
+  message: string;
+  position: number | null;
+} | null;
 
 export function OrgSwitcher({
   busy,
@@ -167,7 +199,7 @@ export function OrgSwitcher({
                 <span className="org-switcher-option-body">
                   <span className="org-switcher-option-name">{membership.name}</span>
                   <span className="org-switcher-option-meta">
-                    {membership.role} · {membership.member_count} {membership.member_count === 1 ? "member" : "members"}
+                    {membershipRoleLabel(membership)} · {membership.member_count} {membership.member_count === 1 ? "member" : "members"}
                   </span>
                 </span>
               </button>
@@ -177,6 +209,370 @@ export function OrgSwitcher({
           )}
           {error ? <div className="org-switcher-error" role="alert">{error}</div> : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function planName(tier?: string | null) {
+  if (!tier) return "Free";
+  return tier.slice(0, 1).toUpperCase() + tier.slice(1);
+}
+
+function membershipRoleLabel(membership: OrgMembershipSummary) {
+  return membership.role_label || roleLabel(membership.role);
+}
+
+function membershipCapabilities(membership: OrgMembershipSummary | null | undefined) {
+  return membership?.capabilities || roleCapabilities(membership?.role);
+}
+
+function WorkspaceCreateModal({
+  memberships,
+  onCheckName,
+  onClose,
+  onCreate,
+}: {
+  memberships: OrgMembershipSummary[];
+  onCheckName: (name: string) => Promise<WorkspaceNameAvailability>;
+  onClose: () => void;
+  onCreate: (input: CreateWorkspaceInput) => Promise<void>;
+}) {
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "input[name='workspace-name']");
+  const [kind, setKind] = useState<"personal" | "business">("business");
+  const [name, setName] = useState("");
+  const [plan, setPlan] = useState<"free" | "pro" | "premium">("free");
+  const [storage, setStorage] = useState<"instantml-hosted" | "customer-clickhouse">("instantml-hosted");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "member" | "viewer">("member");
+  const [availability, setAvailability] = useState<WorkspaceNameAvailability | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const hasPersonal = memberships.some((membership) => membership.is_personal || membership.account_type === "personal");
+  const personalBlocked = kind === "personal" && hasPersonal;
+  const byocBlocked = plan !== "premium";
+  const inviteDeferred = plan !== "free";
+  const invitesAllowed = kind === "business" && !inviteDeferred;
+  const normalizedStorage = byocBlocked ? "instantml-hosted" : storage;
+  const trimmedName = name.trim();
+  const nameAvailable = availability?.available === true && availability.checkedName === trimmedName;
+  const availabilityStatus = !trimmedName
+    ? ""
+    : availability === null
+      ? "Checking name..."
+      : availability.slug
+        ? `instantml.ai/${availability.slug}${availability.message ? ` · ${availability.message}` : ""}`
+        : availability.message ?? "Name unavailable.";
+
+  useEffect(() => {
+    let cancelled = false;
+    setAvailability(null);
+    if (!trimmedName) return undefined;
+    const checkedName = trimmedName;
+    const id = window.setTimeout(() => {
+      onCheckName(checkedName)
+        .then((result) => {
+          if (!cancelled) setAvailability({ ...result, checkedName });
+        })
+        .catch((checkError) => {
+          if (!cancelled) {
+            setAvailability({ available: false, checkedName, message: checkError instanceof Error ? checkError.message : "Unable to check this name." });
+          }
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [onCheckName, trimmedName]);
+
+  useEffect(() => {
+    if (byocBlocked && storage === "customer-clickhouse") setStorage("instantml-hosted");
+  }, [byocBlocked, storage]);
+
+  async function submit() {
+    if (busy || personalBlocked || !trimmedName || !nameAvailable) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onCreate({
+        name: trimmedName,
+        account_type: kind,
+        plan_tier: plan,
+        storage_choice: normalizedStorage,
+        initial_invitations: invitesAllowed && inviteEmail.trim() ? [{ email: inviteEmail.trim(), role: inviteRole }] : [],
+        switch_on_create: true,
+      });
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Unable to create workspace.");
+      setBusy(false);
+    }
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    submit();
+  }
+
+  return (
+    <div className="workspace-modal-backdrop" role="presentation">
+      <section className="workspace-create-modal" role="dialog" aria-modal="true" aria-label="Create workspace" ref={dialogRef} tabIndex={-1}>
+        <div className="workspace-create-head">
+          <div>
+            <h2>Create workspace</h2>
+            <p>Billing, seats, roles, projects, and runs belong to this workspace.</p>
+          </div>
+          <button className="icon-button framed" type="button" aria-label="Close create workspace" onClick={onClose}><X size={15} /></button>
+        </div>
+        <form className="workspace-create-form" onSubmit={handleSubmit}>
+          <div className="workspace-create-body">
+            <div className="workspace-segment" role="group" aria-label="Workspace type">
+              <button aria-pressed={kind === "personal"} className={kind === "personal" ? "selected" : ""} type="button" onClick={() => setKind("personal")}>Personal workspace</button>
+              <button aria-pressed={kind === "business"} className={kind === "business" ? "selected" : ""} type="button" onClick={() => setKind("business")}>Organization</button>
+            </div>
+            {personalBlocked ? <p className="form-error">You already have a personal workspace.</p> : null}
+            <label className="workspace-create-field">
+              {kind === "personal" ? "Workspace name" : "Organization name"}
+              <input autoFocus name="workspace-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
+            </label>
+            {trimmedName ? (
+              <p className={`workspace-create-status ${availability?.available === false ? "error" : ""}`} role={availability?.available === false ? "alert" : "status"}>
+                {availabilityStatus}
+              </p>
+            ) : null}
+            <div className="workspace-plan-grid" role="group" aria-label="Plan">
+              {(["free", "pro", "premium"] as const).map((tier) => (
+                <button aria-pressed={plan === tier} className={plan === tier ? "selected" : ""} key={tier} type="button" onClick={() => setPlan(tier)}>
+                  <strong>{planName(tier)}</strong>
+                  <span>{tier === "free" ? "Start small" : tier === "pro" ? "Team default" : "BYOC ready"}</span>
+                </button>
+              ))}
+            </div>
+            <div className="workspace-storage-choice" role="group" aria-label="Storage">
+              <label>
+                <input checked={normalizedStorage === "instantml-hosted"} name="workspace-storage" onChange={() => setStorage("instantml-hosted")} type="radio" />
+                InstantML-hosted
+              </label>
+              <label className={byocBlocked ? "disabled" : ""}>
+                <input checked={normalizedStorage === "customer-clickhouse"} disabled={byocBlocked} name="workspace-storage" onChange={() => setStorage("customer-clickhouse")} type="radio" />
+                Advanced: connect my ClickHouse
+              </label>
+            </div>
+            {kind === "business" ? (
+              <div className="workspace-invite-row">
+                <label className="workspace-create-field">
+                  Invite teammates
+                  <input autoComplete="email" disabled={inviteDeferred} value={inviteDeferred ? "" : inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder={inviteDeferred ? "Invite after checkout" : "teammate@example.com"} type="email" />
+                </label>
+                <CustomSelect
+                  id="workspace-create-role"
+                  label="Role"
+                  disabled={inviteDeferred}
+                  onChange={(value) => setInviteRole(value === "admin" || value === "viewer" ? value : "member")}
+                  options={[
+                    { value: "member", label: "Write/read" },
+                    { value: "admin", label: "Admin" },
+                    { value: "viewer", label: "Read only" },
+                  ]}
+                  value={inviteRole}
+                />
+              </div>
+            ) : (
+              <p className="setting-hint">Personal workspaces are single-seat. Create an organization to invite teammates.</p>
+            )}
+            {kind === "business" && inviteDeferred ? <p className="setting-hint">Invite teammates after checkout unlocks the workspace.</p> : null}
+            {error ? <p className="form-error" role="alert">{error}</p> : null}
+          </div>
+          <div className="workspace-create-actions">
+            <button className="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={busy || personalBlocked || !trimmedName || !nameAvailable}>
+              {busy ? "Creating" : plan === "free" ? "Create workspace" : "Continue to checkout"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function AccountWorkspaceMenu({
+  accountUser,
+  busy,
+  current,
+  error,
+  memberships,
+  onCheckWorkspaceName,
+  onCreateWorkspace,
+  onOpenBilling,
+  onOpenSettings,
+  onSelect,
+  onSignOut,
+}: {
+  accountUser: AccountUser | null;
+  busy: boolean;
+  current: { id: string; name: string } | null;
+  error: string;
+  memberships: OrgMembershipSummary[];
+  onCheckWorkspaceName: (name: string) => Promise<WorkspaceNameAvailability>;
+  onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
+  onOpenBilling: () => void;
+  onOpenSettings: () => void;
+  onSelect: (orgId: string) => void;
+  onSignOut: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const displayName = accountDisplayLabel(accountUser?.display_name ?? "", accountUser?.primary_email ?? "");
+  const currentMembership = memberships.find((membership) => membership.is_current) ?? memberships.find((membership) => membership.org_id === current?.id) ?? null;
+  const currentName = current?.name || currentMembership?.name || "Workspace";
+  const currentCapabilities = membershipCapabilities(currentMembership);
+  const filterToken = filter.trim().toLowerCase();
+  const visible = filterToken
+    ? memberships.filter((membership) => membership.name.toLowerCase().includes(filterToken) || membership.slug.toLowerCase().includes(filterToken))
+    : memberships;
+  const personal = visible.filter((membership) => membership.is_personal || membership.account_type === "personal");
+  const organizations = visible.filter((membership) => !(membership.is_personal || membership.account_type === "personal"));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function closeFromOutside(event: globalThis.PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    function handleKeydown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+      if (event.key !== "Tab" || !menuRef.current) return;
+      const focusable = Array.from(menuRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      )).filter((node) => node.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", handleKeydown);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", handleKeydown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) setFilter("");
+  }, [open]);
+
+  useEffect(() => {
+    if (open) window.setTimeout(() => searchRef.current?.focus(), 0);
+  }, [open]);
+
+  function renderMembership(membership: OrgMembershipSummary) {
+    return (
+      <button
+        aria-current={membership.is_current ? "true" : undefined}
+        className={`account-workspace-option ${membership.is_current ? "selected" : ""}`}
+        disabled={busy || membership.is_current}
+        key={membership.org_id}
+        onClick={() => {
+          setOpen(false);
+          if (!membership.is_current) onSelect(membership.org_id);
+        }}
+        type="button"
+      >
+        <span className="org-switcher-check" aria-hidden="true">{membership.is_current ? <Check size={13} /> : null}</span>
+        <span className="org-switcher-option-body">
+          <span className="org-switcher-option-name">{membership.name}</span>
+          <span className="org-switcher-option-meta">
+            {membershipRoleLabel(membership)} · {planName(membership.plan_tier)} · {membership.member_count} {membership.member_count === 1 ? "member" : "members"}
+          </span>
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="account-workspace" ref={rootRef}>
+      <button
+        aria-controls="account-workspace-menu"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={`Account and workspace menu. Current workspace: ${currentName}.`}
+        className="account-workspace-trigger"
+        disabled={busy}
+        onClick={() => setOpen((value) => !value)}
+        ref={triggerRef}
+        type="button"
+      >
+        <AccountAvatar user={accountUser} />
+        <span className="account-workspace-current">{currentName}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="account-workspace-menu" id="account-workspace-menu" ref={menuRef} role="dialog" aria-label="Account and workspace">
+          <div className="account-workspace-identity">
+            <AccountAvatar user={accountUser} />
+            <span>
+              <strong>{accountUser?.display_name || accountUser?.primary_email || "Account"}</strong>
+              <small>{displayName}</small>
+            </span>
+          </div>
+          {currentMembership ? (
+            <div className="account-workspace-current-card">
+              <span>Current workspace</span>
+              <strong>{currentMembership.name}</strong>
+              <small>{membershipRoleLabel(currentMembership)} · {planName(currentMembership.plan_tier)} · {currentMembership.member_count} {currentMembership.member_count === 1 ? "member" : "members"}</small>
+            </div>
+          ) : null}
+          <label className="account-workspace-search">
+            <Search size={13} aria-hidden="true" />
+            <input aria-label="Search workspaces" onChange={(event) => setFilter(event.target.value)} placeholder="Search workspaces" ref={searchRef} type="search" value={filter} />
+          </label>
+          <div className="account-workspace-list" aria-label="Switch workspace">
+            {personal.length ? <span className="account-workspace-section">Personal</span> : null}
+            {personal.map(renderMembership)}
+            {organizations.length ? <span className="account-workspace-section">Organizations</span> : null}
+            {organizations.map(renderMembership)}
+            {!visible.length ? <div className="org-switcher-empty">No matches.</div> : null}
+          </div>
+          {error ? <div className="org-switcher-error" role="alert">{error}</div> : null}
+          <div className="account-workspace-actions">
+            <button type="button" onClick={() => { setCreateOpen(true); setOpen(false); }}><Plus size={14} /> New workspace</button>
+            <button type="button" onClick={() => { setOpen(false); onOpenSettings(); }}><Settings size={14} /> Workspace settings</button>
+            {currentCapabilities.manage_billing ? (
+              <button type="button" onClick={() => { setOpen(false); onOpenBilling(); }}><CreditCard size={14} /> Manage billing</button>
+            ) : null}
+            <button type="button" onClick={() => { setOpen(false); onSignOut(); }}><LogOut size={14} /> Sign out</button>
+          </div>
+        </div>
+      ) : null}
+      {createOpen ? (
+        <WorkspaceCreateModal
+          memberships={memberships}
+          onCheckName={onCheckWorkspaceName}
+          onClose={() => {
+            setCreateOpen(false);
+            triggerRef.current?.focus();
+          }}
+          onCreate={onCreateWorkspace}
+        />
       ) : null}
     </div>
   );
@@ -196,6 +592,11 @@ export function DashboardTopbar({
   onQuickSearch,
   onRefresh,
   onSaveView,
+  canSaveView,
+  onCheckWorkspaceName,
+  onCreateWorkspace,
+  onOpenBilling,
+  onOpenSettings,
   onSelectTab,
   onSignOut,
   onShortcutHelp,
@@ -211,6 +612,8 @@ export function DashboardTopbar({
   project,
   projects,
   query,
+  searchError,
+  searchErrorStale,
   savedViewKey,
   savedViews,
   sortBy,
@@ -239,6 +642,11 @@ export function DashboardTopbar({
   onQuickSearch: () => void;
   onRefresh: () => void;
   onSaveView: () => void;
+  canSaveView: boolean;
+  onCheckWorkspaceName: (name: string) => Promise<WorkspaceNameAvailability>;
+  onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
+  onOpenBilling: () => void;
+  onOpenSettings: () => void;
   onSelectTab: (tabId: TabId) => void;
   onSignOut: () => void;
   onShortcutHelp: () => void;
@@ -254,6 +662,8 @@ export function DashboardTopbar({
   project: string;
   projects: string[];
   query: string;
+  searchError: RunSearchError;
+  searchErrorStale: boolean;
   savedViewKey: string;
   savedViews: SelectOption[];
   sortBy: string;
@@ -272,6 +682,8 @@ export function DashboardTopbar({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
   const [compactFilters, setCompactFilters] = useState(false);
+  const [searchHelpOpen, setSearchHelpOpen] = useState(false);
+  const searchHelpRef = useRef<HTMLDivElement>(null);
   const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
@@ -279,6 +691,9 @@ export function DashboardTopbar({
   const showWorkbar = activeTab !== "detail";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
+  const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
+    ? ` Column ${searchError.position}.`
+    : "";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -302,6 +717,22 @@ export function DashboardTopbar({
     };
   }, [desktopFiltersCollapsed, showWorkbar]);
 
+  useEffect(() => {
+    if (!searchHelpOpen) return undefined;
+    function closeFromOutside(event: globalThis.PointerEvent) {
+      if (!searchHelpRef.current?.contains(event.target as Node)) setSearchHelpOpen(false);
+    }
+    function closeFromEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setSearchHelpOpen(false);
+    }
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", closeFromEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", closeFromEscape);
+    };
+  }, [searchHelpOpen]);
+
   return (
     <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`}>
       <div className="brandbar">
@@ -323,13 +754,7 @@ export function DashboardTopbar({
           <span className="brand-wordmark" aria-label="InstantML">
             instant<span className="brand-wordmark__accent">ml</span>
           </span>
-          <OrgSwitcher
-            busy={orgSwitchBusy}
-            current={workspaceId ? { id: workspaceId, name: workspaceName } : null}
-            error={orgSwitchError}
-            memberships={orgMemberships}
-            onSelect={onSwitchOrg}
-          />
+          <span className="org-switcher-label" aria-label="Workspace">{workspaceName || "Workspace"}</span>
           <nav className="breadcrumb" aria-label="Breadcrumb">
             <span className="crumb">{project || "demo"}</span>
             <span className="sep" aria-hidden="true">/</span>
@@ -370,14 +795,6 @@ export function DashboardTopbar({
                 <SlidersHorizontal size={15} />
               </button>
             ) : null}
-            <a
-              aria-label="Open docs"
-              className="icon-button framed brandbar-action-desktop"
-              href="/docs"
-              title="Docs"
-            >
-              <BookOpen size={15} />
-            </a>
             <button
               aria-label="Keyboard shortcuts"
               className="icon-button framed brandbar-action-desktop"
@@ -387,6 +804,14 @@ export function DashboardTopbar({
             >
               <CircleHelp size={15} />
             </button>
+            <a
+              aria-label="Open docs"
+              className="icon-button framed brandbar-action-desktop"
+              href="/docs"
+              title="Docs"
+            >
+              <BookOpen size={15} />
+            </a>
             <button
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
               aria-pressed={dark}
@@ -397,16 +822,19 @@ export function DashboardTopbar({
             >
               {dark ? <Sun size={15} /> : <Moon size={15} />}
             </button>
-            <button
-              aria-label="Sign out"
-              className="icon-button framed brandbar-action-desktop"
-              onClick={onSignOut}
-              title="Sign out"
-              type="button"
-            >
-              <LogOut size={15} />
-            </button>
-            <AccountAvatar user={accountUser} />
+            <AccountWorkspaceMenu
+              accountUser={accountUser}
+              busy={orgSwitchBusy}
+              current={workspaceId ? { id: workspaceId, name: workspaceName } : null}
+              error={orgSwitchError}
+              memberships={orgMemberships}
+              onCheckWorkspaceName={onCheckWorkspaceName}
+              onCreateWorkspace={onCreateWorkspace}
+              onOpenBilling={onOpenBilling}
+              onOpenSettings={onOpenSettings}
+              onSelect={onSwitchOrg}
+              onSignOut={onSignOut}
+            />
           </div>
         </div>
       </div>
@@ -427,10 +855,61 @@ export function DashboardTopbar({
             ]}
           />
           <span className="workbar-divider" aria-hidden="true" />
-          <label className="workbar-search">
-            <Search size={13} />
-            <input id="search" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="runs, tags, notes, config" aria-label="Search runs" />
-          </label>
+          <div
+            className={`workbar-search-group ${searchError ? "has-error" : ""} ${searchErrorStale ? "stale-error" : ""}`}
+            ref={searchHelpRef}
+          >
+            <label className="workbar-search">
+              <Search size={13} />
+              <input
+                aria-describedby={`run-search-help-note${searchError && !searchErrorStale ? " run-search-error" : ""}`}
+                aria-invalid={Boolean(searchError && !searchErrorStale)}
+                id="search"
+                onChange={(event) => onQuery(event.target.value)}
+                placeholder="runs, tags, notes, config"
+                type="search"
+                value={query}
+                aria-label="Search runs"
+              />
+            </label>
+            <button
+              aria-controls="run-search-help"
+              aria-expanded={searchHelpOpen}
+              aria-label="Run search syntax"
+              className="icon-button workbar-search-help"
+              onClick={() => setSearchHelpOpen((open) => !open)}
+              title="Run search syntax"
+              type="button"
+            >
+              <CircleHelp size={14} />
+            </button>
+            <span className="visually-hidden" id="run-search-help-note">
+              Search supports bare text, field filters, uppercase boolean operators, quoted phrases, and explicit regex.
+            </span>
+            {searchHelpOpen ? (
+              <div className="workbar-search-popover" id="run-search-help" role="note" aria-label="Run search syntax">
+                <strong>Run search</strong>
+                <code>reward stability</code>
+                <code>tag:baseline status:finished</code>
+                <code>name:"long context" -tag:debug</code>
+                <code>(tag:baseline OR tag:candidate) notes:ablated</code>
+                <code>re:/seed-(13|14)/</code>
+                <span>Regex requires the Rust API.</span>
+                <span>Fields: all, name, project, notes, config, metadata, tag/tags, status, id.</span>
+              </div>
+            ) : null}
+            {searchError ? (
+              <span
+                className="workbar-search-error"
+                id="run-search-error"
+                role="status"
+                aria-live="polite"
+                title={searchError.message}
+              >
+                {searchError.message}{searchErrorPositionSuffix}
+              </span>
+            ) : null}
+          </div>
           <CustomSelect
             className="compact"
             id="sort-select"
@@ -453,7 +932,7 @@ export function DashboardTopbar({
             Name
             <input id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
           </label>
-          <button className="primary-button" id="save-view" type="button" onClick={onSaveView}><Save size={14} /> Save view</button>
+          <button className="primary-button" disabled={!canSaveView} id="save-view" title={canSaveView ? "Save view" : "Read only workspaces cannot save shared views"} type="button" onClick={onSaveView}><Save size={14} /> Save view</button>
           <CustomSelect
             className="compact"
             id="saved-view-select"

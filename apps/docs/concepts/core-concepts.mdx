@@ -23,6 +23,10 @@ Examples:
 Projects are also a useful API-key boundary. Project-scoped keys can restrict
 SDK logging and reads to one project.
 
+If you call `instantml.init()` without `project=`, the run lands in a shared
+project named **`default`**. You can rename or filter into it like any
+other project.
+
 ## Run
 
 A run is one training, evaluation, sweep, import, or experiment execution.
@@ -36,6 +40,15 @@ Runs carry:
 - Maintained metric summaries.
 - Source metadata when the SDK can capture it.
 - Artifacts, checkpoints, rich objects, logs, and media.
+
+If you call `instantml.init()` without `name=`, the server assigns a
+friendly default of the form `<adjective>-<noun>-<sequence>`, where
+sequence is the run's 1-indexed position in its project. Examples:
+`bold-falcon-1`, `serene-glacier-42`, `radiant-river-127`. Adjective and
+noun are picked deterministically from the org, project, and sequence,
+so concurrent creates that race on the same sequence still get distinct
+names. You can edit the name later from the Run Detail page or via the
+API.
 
 ## Metric
 
@@ -99,7 +112,9 @@ Use notes for human context:
 run.set_notes("Reward improved, but entropy dipped late.")
 ```
 
-Both are searchable in the dashboard and visible in comparison workflows.
+Both are searchable in the dashboard and visible in comparison workflows. Use
+bare text for broad matching, `tag:baseline` for exact tag matching, and
+`notes:"ready for compare"` when the note text should be the filter target.
 
 ## Artifact
 

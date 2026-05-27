@@ -36,6 +36,7 @@ try {
   const bootstrapToken = "rust-smoke-bootstrap";
   const serverLog = path.join(tempDir, "server.log");
   const output = fs.openSync(serverLog, "w");
+  const mockBilling = mode === "ui" && process.env.INSTANTML_UI_SMOKE_FULL_WORKSPACE === "1";
   server = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
     env: {
@@ -45,7 +46,11 @@ try {
       INSTANTML_AUTH_MODE: authMode,
       INSTANTML_BOOTSTRAP_TOKEN: bootstrapToken,
       INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
-      INSTANTML_BILLING_ENABLED: process.env.INSTANTML_RUST_SMOKE_BILLING_ENABLED || "false",
+      INSTANTML_BILLING_ENABLED: process.env.INSTANTML_RUST_SMOKE_BILLING_ENABLED || (mockBilling ? "true" : "false"),
+      ...(mockBilling ? {
+        INSTANTML_STRIPE_MOCK_CHECKOUT: "true",
+        STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "sk_test_instantml_mock",
+      } : {}),
     },
     stdio: ["ignore", output, output],
   });

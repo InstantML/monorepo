@@ -5,8 +5,19 @@ pub async fn create_run(
     ctx: &RequestContext,
     input: CreateRunRequest,
 ) -> AppResult<RunRow> {
-    let project_name = validate_name(input.project.as_deref(), "project")?;
-    let name = validate_name(input.name.as_deref().or(Some("run")), "run name")?;
+    // SDK callers that omit `project` (or send empty/whitespace) land in the
+    // shared "default" project so ad-hoc and migrated runs have a
+    // predictable home.
+    let project_name = match input.project.as_deref().map(str::trim) {
+        Some(value) if !value.is_empty() => validate_name(Some(value), "project")?,
+        _ => DEFAULT_PROJECT_NAME.to_string(),
+    };
+    // The run name is auto-generated below once we know the project_id and
+    // its current run count; only validate here when the caller passed one.
+    let explicit_name = match input.name.as_deref().map(str::trim) {
+        Some(value) if !value.is_empty() => Some(validate_name(Some(value), "run name")?),
+        _ => None,
+    };
     let config = validate_json_object(input.config, "config")?;
     let tags = validate_tags(input.tags)?;
     let metadata = validate_json_object(input.metadata, "metadata")?;
@@ -90,6 +101,21 @@ pub async fn create_run(
             return Err(AppError::forbidden("run belongs to a different project"));
         }
     }
+    // Default name: <adjective>-<noun>-<sequence>, where sequence is this
+    // run's 1-indexed position in the project. Counts `data.runs` under the
+    // lock so the sequence is consistent with what we're about to insert.
+    let name = match explicit_name {
+        Some(provided) => provided,
+        None => {
+            let seq = data
+                .runs
+                .values()
+                .filter(|run| run.org_id == ctx.org_id && run.project_id == project_id)
+                .count() as u64
+                + 1;
+            generate_run_name(seq)?
+        }
+    };
     let run = RunRow {
         id: Uuid::new_v4(),
         org_id: ctx.org_id,

@@ -20,9 +20,9 @@ use crate::{
 
 use super::super::AppState;
 use super::helpers::{
-    clear_session_cookie, header_value, json_with_session_cookie, read_json, request_rate_key,
-    session_context, session_cookie, validate_clerk_signup_allowed, validate_mutation_origin,
-    validate_mutation_origin_required,
+    clear_session_cookie, header_value, json_with_session_cookie, read_json,
+    reject_demo_session_mutation, request_rate_key, session_context, session_cookie,
+    validate_clerk_signup_allowed, validate_mutation_origin, validate_mutation_origin_required,
 };
 
 #[utoipa::path(
@@ -220,9 +220,8 @@ pub async fn auth_logout(
 
 /// Re-point the caller's session at a different org they belong to.
 ///
-/// Used by the dashboard org-switcher. The session token is unchanged — only
-/// the bound `org_id` on the session row is updated, so subsequent requests
-/// from the same cookie scope to the newly selected org.
+/// Used by the dashboard org-switcher. The route preserves its response shape
+/// while the store mints a fresh browser session cookie for the selected org.
 #[utoipa::path(
     post,
     path = "/api/auth/switch-organization",
@@ -251,8 +250,8 @@ pub async fn auth_switch_organization(
     let target_org_id = input
         .org_id
         .ok_or_else(|| AppError::validation("org_id is required"))?;
-    let payload = store::switch_session_organization(&state.store, &token, target_org_id).await?;
-    Ok(Json(payload).into_response())
+    let created = store::switch_session_organization(&state.store, &token, target_org_id).await?;
+    json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
 
 // --- Device-code (RFC 8628) handlers ---
@@ -333,13 +332,20 @@ pub async fn device_code_confirm(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
     let input =
         read_json::<DeviceCodeConfirmRequest>(&headers, bytes, state.config.max_body_bytes)?;
     let raw_user_code = input
         .user_code
         .ok_or_else(|| AppError::validation("user_code is required"))?;
-    // Requires a valid browser session.
     let session_payload = session_context(&state, &headers).await?;
+    store::require_org_admin(
+        &state.store,
+        session_payload.user.id,
+        session_payload.organization.id,
+    )
+    .await?;
     let result = store::device_code_confirm(
         &state.store,
         session_payload.user.id,

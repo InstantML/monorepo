@@ -34,7 +34,7 @@ import {
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { buildCheckpointForkBody, buildCheckpointResumeCode, checkpointForkIdempotencyKey, defaultForkRunName } from "../src/checkpoints.js";
-import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, normalizeDeviceUserCode, pathFromLegacyHash, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../src/routes.js";
+import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, isStorageReadyState, normalizeDeviceUserCode, onboardingRedirectPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, sessionRequiresStorageOnboarding, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -271,6 +271,12 @@ test("redirect URL helpers allow only intended destinations", () => {
   assert.equal(safeStripeRedirectUrl("http://checkout.stripe.com/c/pay/cs_test"), "");
   assert.equal(safeStripeRedirectUrl("https://checkout.stripe.evil.example/c/pay/cs_test"), "");
   assert.equal(safeStripeRedirectUrl("javascript:alert(1)"), "");
+
+  assert.equal(safeCheckoutRedirectUrl("/billing/return?session_id=cs_test_instantml__abc12345", "https://app.instantml.ai"), "https://app.instantml.ai/billing/return?session_id=cs_test_instantml__abc12345");
+  assert.equal(safeCheckoutRedirectUrl("https://app.instantml.ai/billing/return?session_id=cs_live_12345678", "https://app.instantml.ai"), "https://app.instantml.ai/billing/return?session_id=cs_live_12345678");
+  assert.equal(safeCheckoutRedirectUrl("/billing/return?session_id=bad", "https://app.instantml.ai"), "");
+  assert.equal(safeCheckoutRedirectUrl("/billing/return?session_id=cs_test_12345678&next=//evil.example", "https://app.instantml.ai"), "");
+  assert.equal(safeCheckoutRedirectUrl("/dashboard/settings?session_id=cs_test_12345678", "https://app.instantml.ai"), "");
 });
 
 test("summary helpers format stable UI values", () => {
@@ -345,6 +351,7 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.match(formatAxisValue(new Date("2026-01-01T00:00:00.000Z").getTime(), "time"), /:/);
   assert.equal(formatAxisValue(null), "-");
   assert.equal(nearestPoint(normalized, normalized[0].normalizedPoints[0].x, normalized[0].normalizedPoints[0].y).runName, "run-a");
+  assert.equal(nearestPoint(normalized, 50, 40, 1).runName, "run-a");
   assert.equal(nearestPoint(normalized, 999, 999), null);
   assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 560, height: 360 }, 290, 200, 560, 640), { x: 280, y: 320 });
   assert.deepEqual(chartDomain([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/accuracy"), { minX: 0, maxX: 1, minY: 0, maxY: 1 });
@@ -658,6 +665,19 @@ test("api client handles query strings and malformed responses", async () => {
   await assert.rejects(() => new ApiClient().get("/html-error"), /Server is unavailable/);
   globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "validation_error", request_id: "req_1" }) });
   await assert.rejects(() => new ApiClient().get("/bad-request"), /Request was invalid.+req_1/);
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
+    json: async () => ({ error: "Invalid run search: regex is invalid at column 6.", code: "run_search_invalid", field: "q", position: 6 }),
+  });
+  await assert.rejects(
+    () => new ApiClient().get("/bad-search"),
+    (error) => error instanceof ApiError
+      && error.code === "run_search_invalid"
+      && error.field === "q"
+      && error.position === 6
+      && /Invalid run search/.test(error.message),
+  );
   globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ code: "warehouse_unavailable" }) });
   await assert.rejects(async () => {
     await new ApiClient().get("/warehouse");
@@ -736,6 +756,85 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(normalizeDeviceUserCode("ABCD-EFGH"), "ABCD-EFGH");
   assert.equal(normalizeDeviceUserCode("A-BCDEFGH"), "");
   assert.equal(normalizeDeviceUserCode("abc<script>"), "");
+});
+
+test("post-auth redirects keep unready storage in onboarding", () => {
+  const readySession = {
+    authenticated: true,
+    organization: {
+      id: "org-ready",
+      storage_choice: "customer-clickhouse",
+      storage_state: "storage_ready",
+    },
+  };
+  const lockedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-locked",
+      storage_choice: "customer-clickhouse",
+      storage_state: "storage_locked",
+    },
+  };
+  const validatingSession = {
+    authenticated: true,
+    organization: {
+      id: "org-validating",
+      storage_choice: "customer-clickhouse",
+      storage_state: "storage_validating",
+    },
+  };
+  const unconfiguredHostedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-hosted",
+      storage_choice: "instantml-hosted",
+      storage_state: "storage_unconfigured",
+    },
+  };
+  const legacyHostedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-legacy",
+      storage_choice: "instantml-hosted",
+    },
+  };
+  const emptyStateHostedSession = {
+    authenticated: true,
+    organization: {
+      id: "org-empty",
+      storage_choice: "instantml-hosted",
+      storage_state: "",
+    },
+  };
+  const legacyByocSession = {
+    authenticated: true,
+    organization: {
+      id: "org-byoc",
+      storage_choice: "customer-clickhouse",
+    },
+  };
+
+  assert.equal(isStorageReadyState("storage_ready"), true);
+  assert.equal(isStorageReadyState("storage_locked"), true);
+  assert.equal(isStorageReadyState("storage_validating"), false);
+  assert.equal(sessionRequiresStorageOnboarding(readySession), false);
+  assert.equal(sessionRequiresStorageOnboarding(lockedSession), false);
+  assert.equal(sessionRequiresStorageOnboarding(validatingSession), true);
+  assert.equal(sessionRequiresStorageOnboarding(unconfiguredHostedSession), true);
+  assert.equal(sessionRequiresStorageOnboarding(legacyHostedSession), false);
+  assert.equal(sessionRequiresStorageOnboarding(emptyStateHostedSession), true);
+  assert.equal(sessionRequiresStorageOnboarding(legacyByocSession), true);
+  assert.equal(postAuthRedirectPath(readySession, "/dashboard/settings"), "/dashboard/settings");
+  assert.equal(postAuthRedirectPath(lockedSession, "/dashboard/runs"), "/dashboard/runs");
+  assert.equal(onboardingRedirectPath("/dashboard/settings"), "/onboarding?next=%2Fdashboard%2Fsettings");
+  assert.equal(onboardingRedirectPath("/onboarding"), "/onboarding");
+  assert.equal(postAuthRedirectPath(validatingSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
+  assert.equal(postAuthRedirectPath(unconfiguredHostedSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
+  assert.equal(postAuthRedirectPath(legacyHostedSession, "/dashboard/runs"), "/dashboard/runs");
+  assert.equal(postAuthRedirectPath(emptyStateHostedSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
+  assert.equal(postAuthRedirectPath(legacyByocSession, "/dashboard/runs"), "/onboarding?next=%2Fdashboard%2Fruns");
+  assert.equal(postAuthRedirectPath({ authenticated: false }, "/dashboard/runs"), "/dashboard/runs");
+  assert.equal(postAuthRedirectPath(readySession, "https://evil.example/dashboard"), "/dashboard/runs");
 });
 
 test("deriveClerkSlug derives workspace slug from display name", () => {

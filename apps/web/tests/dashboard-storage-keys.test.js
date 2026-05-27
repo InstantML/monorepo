@@ -53,14 +53,23 @@ test("workspace model accepts the revised panel schema and non-line types", () =
 
 test("dashboard shell protects control-plane state from stale UI interactions", () => {
   const authFlow = readFileSync(`${root}app/auth-flow.tsx`, "utf8");
+  const invite = readFileSync(`${root}app/invite/page.tsx`, "utf8");
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
   // globals.css is now a thin @import chain; rules live in styles/*.css.
   // The nav-label rule was moved to styles/overhaul.css during the 2026-05-18
   // globals-css-audit refactor. See docs/design/2026-05-18-globals-css-audit.md.
   const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
 
-  assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route");
-  assert.match(authFlow, /window\.location\.assign\(nextPath\)/, "dev sign-in must not bounce returning users through onboarding");
+  assert.match(authFlow, /payload\.mode === "signin"/, "dev sign-in should preserve the requested next dashboard route when storage is ready");
+  assert.match(authFlow, /postAuthRedirectPath\(sessionPayload, nextPath\)/, "dev sign-in should send unready storage sessions back to onboarding before dashboard");
+  assert.match(shell, /postAuthRedirectPath\(session, window\.location\.pathname \|\| "\/dashboard\/runs"\)/, "direct dashboard loads should redirect unready storage sessions to onboarding");
+  assert.match(invite, /postAuthRedirectPath\(payload, "\/dashboard\/runs"\)/, "accepted invitations should not bypass storage onboarding");
+  assert.match(authFlow, /StorageSetupPending/, "onboarding should block SDK-key creation while hosted storage is still provisioning");
+  assert.match(authFlow, /StorageSetupBlocked/, "unready BYOC member sessions should not render the owner/admin ClickHouse form");
+  assert.match(authFlow, /role === "owner" \|\| role === "admin"/, "only owners/admins should manage workspace storage from onboarding");
+  assert.match(authFlow, /useState\("personal"\)/, "signup should default to the personal workspace account type");
+  assert.match(authFlow, /> Personal</, "signup should label the one-seat path as Personal, not legacy Customer");
+  assert.match(authFlow, /accountType === "business" \? "Organization" : "Workspace"/, "personal signup should label the name field as a workspace");
 
   assert.match(shell, /userTouchedDashboardFiltersRef/, "dashboard should track local filter edits while preferences load");
   assert.match(
@@ -82,12 +91,21 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /localSavedViewKey\(name, localSavedViewProjectScope\)/, "local fallback view saves should use scoped keys");
   assert.match(shell, /scopedWorkspaceStorageKey/, "workspace layout storage should be scoped by active org/user/project");
   assert.match(shell, /workspaceStorageKey\(project, localSavedViewScope \? localSavedViewProjectScope : ""\)/, "workspace layouts should not share one project-only key across users");
-  assert.match(shell, /localSavedViewScope \? null : safeSavedView\(localStorage\.getItem\(workspaceStorageKey\(project\)\)\)/, "authenticated workspace layout loads should not auto-migrate ambiguous legacy project-only keys");
+  assert.match(shell, /legacyWorkspaceStorageKeys\(project, activeOrgId\)/, "authenticated workspace layout loads should migrate old org/project layout keys into the scoped key");
   assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
   assert.match(shell, /ADVANCED_REDUCERS_VIEW_KEY\s*=\s*"system:advanced-reducers"/, "advanced reducer preset should be a built-in view, not the default route");
   assert.match(shell, /selectTab\("advanced"\)/, "advanced reducer preset should open the advanced route");
+  assert.match(shell, /setOrgSwitchError\(detail\);[\s\S]*?setMessage\(detail\);/, "failed workspace switches should remain visible after the menu closes");
+  assert.match(shell, /metricCatalogSelectionIds/, "metric catalog counts should use the effective chart run scope");
+  assert.match(shell, /selectedRunIds\.length \? selectedRunIds : sortedRuns\.map/, "no explicit run selection should count visible runs as selected for metrics");
+  assert.match(shell, /migrateLegacySavedViewsToScope\(activeOrgId, localSavedViewProjectScope\)/, "legacy local saved views should migrate into the active org/user/project scope");
+  assert.match(shell, /safeCheckoutRedirectUrl\(payload\?\.billing_checkout\?\.url\)/, "workspace creation checkout URLs should use the shared redirect allowlist");
+  assert.match(shell, /if \(payload\?\.billing_checkout\?\.url\) throw new Error\("Billing checkout URL was not trusted\."\);/, "untrusted workspace creation checkout URLs should not be opened");
+  assert.match(shell, /if \(payload\?\.checkout\?\.url\) throw new Error\("Billing checkout URL was not trusted\."\);/, "untrusted plan-change checkout URLs should not be opened");
+  assert.match(shell, /if \(payload\?\.checkout\) \{[\s\S]*?Retry from billing settings/, "checkout failures should leave a retry path in settings");
   assert.match(shell, /selectedFetchRunKey/, "metric-series fetches should wait for selected run details to resolve");
+  assert.match(shell, /const runsForFetch = metricSeriesRuns;/, "metric-series fetches should use selected runs or visible runs when no explicit selection exists");
   assert.match(shell, /useLayoutEffect\(\(\) => \{[\s\S]*dashboardSelectionFilterKeyRef\.current = dashboardSelectionFilterKey/, "selection filter guard should update before synchronous select-all interactions");
   assert.match(shell, /api\.get\(`\/runs\/\$\{id\}`, \{ signal: controller\.signal \}\)/, "off-page selected run hydration should be abortable");
   assert.match(shell, /runWithConcurrency\(tasks, 6\)/, "off-page selected run hydration should cap API fanout");
@@ -97,6 +115,10 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /inFlight\.signal === controller\.signal && !inFlight\.signal\.aborted/, "compare artifact in-flight reuse should not reuse aborted requests from old selections");
   assert.match(shell, /compareArtifactInflightRef\.current\.get\(runId\) === entry/, "settled older artifact requests must not delete newer in-flight promises");
   assert.match(shell, /if \(queryInput !== query\) \{[\s\S]*setQuery\(queryInput\);[\s\S]*Select matching runs again[\s\S]*return;/, "select-all matching should not run against a stale debounced search query");
+  assert.match(shell, /function searchErrorFromApi\(error: unknown, query: string\): RunSearchError \| null/, "dashboard should only surface allowlisted structured run-search errors");
+  assert.match(shell, /setSearchError\(nextSearchError\);[\s\S]*setMessage\(previousMessage\);[\s\S]*return;/, "invalid run-search loads should keep the last valid results and message");
+  assert.match(shell, /searchError=\{searchError\}/, "topbar should receive committed-query search validation state");
+  assert.match(shell, /selectAllMatchingDisabled=\{queryInput !== query \|\| Boolean\(searchError && searchError\.query === query\)\}/, "bulk selection should stay disabled for stale or invalid committed searches");
   const artifactLoadEffect = shell.match(/async function loadArtifacts\(\)[\s\S]*?\}, \[[^\]]+\]\);/)?.[0] ?? "";
   assert.doesNotMatch(artifactLoadEffect, /runWorkspaceTab/, "artifact loads should not refetch on summary/data/files subtab changes");
   assert.match(shell, /artifactsRunId === primaryRun\?\.id/, "artifact rows should be keyed to the selected run before rendering checkpoint fork actions");
@@ -118,18 +140,55 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
 
   const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
   assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
+  assert.match(runsWorkspace, /disabled=\{selectAllMatchingBusy \|\| selectAllMatchingDisabled\}/, "select-all matching should honor invalid-search disabled state");
   assert.match(runsWorkspace, /pointerDragCleanupRef/, "pointer drag listeners should be cleaned up on unmount or interrupted drag");
   assert.match(runsWorkspace, /removeEventListener\("pointercancel"/, "pointer drag cleanup should remove cancellation listeners");
+
+  const topbar = readFileSync(`${root}app/dashboard/chrome/topbar.tsx`, "utf8");
+  assert.match(topbar, /workbar-search-popover/, "run search should include syntax help beside the actual search box");
+  assert.match(topbar, /aria-invalid=\{Boolean\(searchError && !searchErrorStale\)\}/, "search syntax errors should be associated with the input without marking stale edits invalid");
 
   const workspacePanelCard = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
   assert.match(workspacePanelCard, /resizeCleanupRef/, "panel resize listeners should be cleaned up on unmount or interrupted resize");
   assert.match(workspacePanelCard, /addEventListener\("pointercancel"/, "panel resize should handle pointer cancellation");
+  assert.match(workspacePanelCard, /hoverFrameRef/, "workspace panel chart hover should be animation-frame throttled for dense selections");
+  assert.match(workspacePanelCard, /cancelAnimationFrame\(hoverFrameRef\.current\)/, "workspace panel chart hover should cancel pending work on leave/unmount");
+
+  const metricChart = readFileSync(`${root}app/dashboard/metrics/metric-chart.tsx`, "utf8");
+  assert.doesNotMatch(metricChart, /visibleHover\s*=\s*denseChart\s*\?\s*null/, "dense canvas charts should keep hover marker and tooltip rendering");
+  assert.doesNotMatch(metricChart, /onMouseMove=\{denseChart\s*\?\s*undefined\s*:\s*onMove\}/, "dense canvas charts should keep the SVG hover hit target");
 
   const distributedPane = readFileSync(`${root}app/dashboard/distributed/tab-pane.tsx`, "utf8");
   assert.doesNotMatch(distributedPane, /if \(!rankKey && next\.key\) setRankKey\(next\.key\)/, "rank metrics should not double-fetch the server default key");
   assert.match(distributedPane, /function changeRankKey[\s\S]*setSummary\(null\)/, "rank-key changes should clear old reducer data before relabeling charts");
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
+});
+
+test("settings seat summary falls back to org membership metadata for read-only users", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+
+  assert.match(shell, /activeMembershipSummary/, "dashboard should retain the current membership summary");
+  assert.match(
+    shell,
+    /activeUsageOrg\?\.usage\?\.seats \?\? activeMembershipSummary\?\.member_count \?\? seats\.length/,
+    "read-only users should see the active member count instead of a misleading 0 seats when seat details are admin-only",
+  );
+});
+
+test("workspace creation UI keeps the active workspace visible and waits for availability", () => {
+  const topbar = readFileSync(`${root}app/dashboard/chrome/topbar.tsx`, "utf8");
+  const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
+
+  assert.match(topbar, /availability\?\.available === true && availability\.checkedName === trimmedName/, "create-workspace should wait for positive availability for the current name before submit");
+  assert.match(topbar, /disabled=\{busy \|\| personalBlocked \|\| !trimmedName \|\| !nameAvailable\}/, "create button should stay disabled while availability is unknown");
+  assert.match(topbar, /useFocusTrap<HTMLDivElement>\(true, onClose, "input\[name='workspace-name'\]"\)/, "create modal should initially focus the workspace name field");
+  assert.match(topbar, /kind === "personal" \? "Workspace name" : "Organization name"/, "personal creation should use workspace-oriented copy");
+  assert.match(topbar, /initial_invitations: invitesAllowed && inviteEmail\.trim\(\)/, "personal workspace creation should not submit teammate invitations");
+  assert.match(topbar, /> New workspace</, "menu action should match the mixed personal/org creation modal");
+  assert.equal(/account-workspace-list" role="listbox"/.test(topbar), false, "account workspace menu should not claim listbox semantics without arrow-key handling");
+  assert.match(css, /\.account-workspace-search:focus-within/, "account workspace search should have a visible keyboard focus state");
+  assert.match(css, /@media \(max-width: 720px\) \{[\s\S]*?\.account-workspace-current \{[\s\S]*?display: block;/, "mobile account trigger should keep the current workspace visible");
 });
 
 test("workspace view API normalizes generated and legacy envelopes", () => {
@@ -158,8 +217,8 @@ test("API key UI does not expose admin controls to read-only members", () => {
   const apiPane = readFileSync(`${root}app/dashboard/api/tab-pane.tsx`, "utf8");
 
   assert.match(shell, /!activeOrgId \|\| !canManageOrg/, "dashboard should skip API-key loads for non-admin members");
-  assert.match(shell, /if \(!activeOrgId \|\| !canManageOrg\) return;[\s\S]*setAdminBusy\(true\);[\s\S]*Creating API key/, "API-key create handler should reject non-admin invocation");
-  assert.match(shell, /if \(!activeOrgId \|\| !keyId \|\| !canManageOrg\) return;[\s\S]*setAdminBusy\(true\);[\s\S]*Revoking API key/, "API-key revoke handler should reject non-admin invocation");
+  assert.match(shell, /if \(!activeOrgId \|\| !canManageOrg\) \{[\s\S]*?API key management is available to workspace admins\.[\s\S]*?return;[\s\S]*?\}[\s\S]*setAdminBusy\(true\);[\s\S]*Creating API key/, "API-key create handler should reject non-admin invocation");
+  assert.match(shell, /if \(!activeOrgId \|\| !keyId \|\| !canManageOrg\) \{[\s\S]*?API key management is available to workspace admins\.[\s\S]*?return;[\s\S]*?\}[\s\S]*setAdminBusy\(true\);[\s\S]*Revoking API key/, "API-key revoke handler should reject non-admin invocation");
   assert.match(shell, /canManageOrg=\{canManageOrg\}/, "API tab should receive membership capabilities");
   assert.match(apiPane, /PageHead eyebrow=\{canManageOrg \? "Admin" : "Read-only"\}/, "API tab should label read-only access");
   assert.match(apiPane, /const visibleApiKeys = canManageOrg \? apiKeys : \[\];/, "API tab should hide stale key rows from read-only members");
@@ -182,4 +241,6 @@ test("dashboard plan usage surfaces API request usage", () => {
   assert.match(settings, /Ingest API rate/, "Settings should show the per-second ingest rate policy");
   assert.match(settings, /Monthly reset/, "Settings should show monthly reset timing");
   assert.match(topbar, /apiRequestPercent/, "topbar plan badge should include API request pressure");
+  assert.match(settings, /Retry Pro/, "Settings should expose a retry action for failed Pro checkout");
+  assert.match(settings, /Retry Premium/, "Settings should expose a retry action for failed Premium checkout");
 });

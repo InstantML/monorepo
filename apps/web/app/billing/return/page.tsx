@@ -25,7 +25,7 @@ export default function BillingReturnPage() {
         setState("ok");
         setMessage("Payment verified. Opening onboarding...");
         redirectTimer = window.setTimeout(() => {
-          if (!controller.signal.aborted) window.location.assign("/onboarding");
+          if (!controller.signal.aborted) window.location.replace("/onboarding");
         }, 800);
       } catch (error) {
         if ((error as { name?: string })?.name === "AbortError") return;

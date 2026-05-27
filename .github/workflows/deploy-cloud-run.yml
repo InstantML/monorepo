@@ -127,10 +127,33 @@ jobs:
           set -euo pipefail
           image="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACT_REPOSITORY:-instantml}/instantml-rust-server:${IMAGE_TAG}"
           echo "Building ${image} via Cloud Build."
-          # Mirror the exact command tools/deploy-cloud-run.mjs would run, so
-          # the deploy step in job 2 can re-use this image without rebuilding.
-          gcloud --quiet --project "${GCP_PROJECT}" builds submit \
-            --tag "${image}" .
+          # Submit the build async + poll its status, instead of streaming
+          # logs. The streaming path in `gcloud builds submit` requires
+          # broad project-level Viewer permission to read the default-
+          # cloud-build logs bucket; polling only needs cloudbuild.builds
+          # .viewer which the deploy SA already has via builds.editor.
+          build_id=$(gcloud --quiet --project "${GCP_PROJECT}" builds submit \
+            --tag "${image}" --async --format='value(id)' .)
+          echo "Build submitted: ${build_id}"
+          echo "Logs: https://console.cloud.google.com/cloud-build/builds/${build_id}?project=${GCP_PROJECT}"
+          # Poll until the build reaches a terminal state. Cloud Build SLA
+          # is well under our 10-minute job budget; bail at 25 min just in
+          # case so we don't sit forever on a stuck build.
+          deadline=$(( $(date +%s) + 1500 ))
+          while [ "$(date +%s)" -lt "${deadline}" ]; do
+            status=$(gcloud --quiet --project "${GCP_PROJECT}" builds describe "${build_id}" --format='value(status)')
+            echo "Build ${build_id}: ${status}"
+            case "${status}" in
+              SUCCESS) echo "Build succeeded."; exit 0 ;;
+              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
+                echo "::error::Cloud Build finished with status ${status}."
+                exit 1 ;;
+              QUEUED|WORKING|PENDING) sleep 15 ;;
+              *) echo "Unknown status '${status}', sleeping."; sleep 15 ;;
+            esac
+          done
+          echo "::error::Build ${build_id} did not finish within 25 minutes."
+          exit 1
 
   deploy:
     name: Deploy To Cloud Run
@@ -190,9 +213,19 @@ jobs:
             topology="${DEFAULT_TOPOLOGY:-split}"
             public_router="${PUBLIC_ROUTER:-false}"
           fi
+          # Resolve the hosted-frontend URL for the chosen environment.
+          # The deploy script needs this set (non-localhost) when Resend is
+          # configured so invitation accept links are correct. Source of
+          # truth: the actual user-facing domain per environment.
+          case "${environment}" in
+            prod)    frontend_base_url="https://instantml.ai" ;;
+            staging) frontend_base_url="https://staging.instantml.ai" ;;
+            *)       frontend_base_url="https://instantml.ai" ;;
+          esac
           echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
           echo "topology=${topology}" >> "${GITHUB_OUTPUT}"
           echo "public_router=${public_router}" >> "${GITHUB_OUTPUT}"
+          echo "frontend_base_url=${frontend_base_url}" >> "${GITHUB_OUTPUT}"
 
       - name: Reuse Pre-Built Image Tag
         id: image
@@ -216,6 +249,9 @@ jobs:
           INSTANTML_DEPLOY_ENV: ${{ steps.inputs.outputs.environment }}
           INSTANTML_CLOUD_RUN_TOPOLOGY: ${{ steps.inputs.outputs.topology }}
           INSTANTML_IMAGE_TAG: ${{ steps.image.outputs.image_tag }}
+          # Hosted frontend origin, required when Resend is loaded from SM so
+          # the deploy helper can stamp invitation accept links correctly.
+          INSTANTML_FRONTEND_BASE_URL: ${{ steps.inputs.outputs.frontend_base_url }}
           # Skip the local-env rewrite step entirely; CI has no apps/web/.env.local.
           INSTANTML_WRITE_LOCAL_FRONTEND_ENV: "0"
           # Allow downstream tools to recognize this code path.

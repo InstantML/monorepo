@@ -1,4 +1,6 @@
 export const DEFAULT_DASHBOARD_TAB = "runs";
+export const ONBOARDING_PATH = "/onboarding";
+export const STORAGE_READY_STATES = new Set(["storage_ready", "storage_locked"]);
 
 export const DASHBOARD_TAB_IDS = [
   "runs",
@@ -22,6 +24,7 @@ const DASHBOARD_TABS = new Set(DASHBOARD_TAB_IDS);
 const SAFE_NEXT_PREFIXES = ["/dashboard", "/onboarding"];
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
 const STRIPE_REDIRECT_ORIGINS = new Set(["https://checkout.stripe.com", "https://billing.stripe.com"]);
+const LOCAL_CHECKOUT_SESSION_PATTERN = /^cs_(?:test|live)_[A-Za-z0-9_=-]{8,}$/;
 
 export function normalizeDeviceUserCode(value) {
   const raw = String(value ?? "").trim();
@@ -68,6 +71,34 @@ export function sanitizeNextPath(value, fallback = "/dashboard/runs") {
   return fallback;
 }
 
+export function isStorageReadyState(value) {
+  return STORAGE_READY_STATES.has(String(value ?? ""));
+}
+
+export function organizationRequiresStorageOnboarding(organization) {
+  if (!organization?.id) return false;
+  if (isStorageReadyState(organization.storage_state)) return false;
+  if (Object.prototype.hasOwnProperty.call(organization, "storage_state")) return true;
+  return organization.storage_choice === "customer-clickhouse";
+}
+
+export function sessionRequiresStorageOnboarding(session) {
+  if (!session?.authenticated) return false;
+  return organizationRequiresStorageOnboarding(session.organization);
+}
+
+export function onboardingRedirectPath(requestedPath = "/dashboard/runs") {
+  const nextPath = sanitizeNextPath(requestedPath);
+  if (nextPath === ONBOARDING_PATH || nextPath.startsWith(`${ONBOARDING_PATH}/`)) return ONBOARDING_PATH;
+  return `${ONBOARDING_PATH}?next=${encodeURIComponent(nextPath)}`;
+}
+
+export function postAuthRedirectPath(session, requestedPath = "/dashboard/runs") {
+  return sessionRequiresStorageOnboarding(session)
+    ? onboardingRedirectPath(requestedPath)
+    : sanitizeNextPath(requestedPath);
+}
+
 function sanitizeDeviceAuthPath(raw) {
   try {
     const url = new URL(raw, "http://instantml.local");
@@ -96,15 +127,22 @@ export function safeSameOriginInviteUrl(value, baseOrigin = globalThis.location?
   }
 }
 
-export function safeStripeRedirectUrl(value) {
+export function safeCheckoutRedirectUrl(value, baseOrigin = globalThis.location?.origin ?? "http://localhost") {
   const raw = String(value ?? "").trim();
   if (!raw || CONTROL_CHAR_PATTERN.test(raw)) return "";
   try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:") return "";
-    if (!STRIPE_REDIRECT_ORIGINS.has(url.origin)) return "";
+    const url = new URL(raw, baseOrigin);
+    if (url.origin === baseOrigin) {
+      if (url.pathname !== "/billing/return" || url.hash) return "";
+      const keys = [...url.searchParams.keys()];
+      if (keys.length !== 1 || keys[0] !== "session_id") return "";
+      return LOCAL_CHECKOUT_SESSION_PATTERN.test(url.searchParams.get("session_id") ?? "") ? url.href : "";
+    }
+    if (url.protocol !== "https:" || !STRIPE_REDIRECT_ORIGINS.has(url.origin)) return "";
     return url.href;
   } catch {
     return "";
   }
 }
+
+export const safeStripeRedirectUrl = safeCheckoutRedirectUrl;

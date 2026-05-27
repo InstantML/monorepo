@@ -5,6 +5,7 @@ use axum::{
     body::Bytes,
     extract::{Path, Query, State},
     http::HeaderMap,
+    response::IntoResponse,
     Json,
 };
 use serde_json::{json, Value};
@@ -12,8 +13,9 @@ use serde_json::{json, Value};
 use crate::{
     domain::{
         ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
-        ClickHouseConnectionValidateRequest, CreateApiKeyRequest, CreateOrganizationRequest,
-        CreateUserRequest, ReserveSeatRequest,
+        ClickHouseConnectionValidateRequest, CreateApiKeyRequest,
+        CreateCurrentUserOrganizationRequest, CreateOrganizationRequest, CreateUserRequest,
+        ReserveSeatRequest,
     },
     errors::AppResult,
     store,
@@ -119,6 +121,48 @@ pub async fn create_org(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/orgs/current-user",
+    tag = "orgs",
+    request_body = crate::domain::CreateCurrentUserOrganizationRequest,
+    security(("browserSession" = [])),
+    responses(
+        (status = 200, description = "Created organization for the current browser user", body = crate::domain::CurrentUserOrganizationCreateResponse),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Missing session", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Organization or personal workspace already exists", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn create_current_user_org(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<axum::response::Response> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
+    let session = session_context(&state, &headers).await?;
+    let input = read_json::<CreateCurrentUserOrganizationRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    let created = store::create_current_user_organization(
+        &state.store,
+        session.user.id,
+        session.organization.id,
+        input,
+        &state.config.billing,
+        &state.config.email,
+    )
+    .await?;
+    if let Some(token) = created.token.as_deref() {
+        super::helpers::json_with_session_cookie(&state, &headers, created.response, token)
+    } else {
+        Ok(Json(created.response).into_response())
+    }
+}
+
+#[utoipa::path(
     get,
     path = "/api/orgs",
     tag = "orgs",
@@ -208,6 +252,12 @@ pub async fn validate_customer_clickhouse_connection(
     reject_demo_session_mutation(&state, &headers).await?;
     let session = session_context(&state, &headers).await?;
     store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    store::ensure_billing_write_allowed(
+        &state.store,
+        session.organization.id,
+        "configure customer ClickHouse",
+    )
+    .await?;
     let mut input = read_json::<ClickHouseConnectionValidateRequest>(
         &headers,
         bytes,
@@ -254,6 +304,12 @@ pub async fn create_customer_clickhouse_connection(
     reject_demo_session_mutation(&state, &headers).await?;
     let session = session_context(&state, &headers).await?;
     store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    store::ensure_billing_write_allowed(
+        &state.store,
+        session.organization.id,
+        "configure customer ClickHouse",
+    )
+    .await?;
     let mut input = read_json::<ClickHouseConnectionCreateRequest>(
         &headers,
         bytes,
@@ -300,6 +356,12 @@ pub async fn rotate_customer_clickhouse_credentials(
     reject_demo_session_mutation(&state, &headers).await?;
     let session = session_context(&state, &headers).await?;
     store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    store::ensure_billing_write_allowed(
+        &state.store,
+        session.organization.id,
+        "configure customer ClickHouse",
+    )
+    .await?;
     let mut input = read_json::<ClickHouseConnectionRotateCredentialsRequest>(
         &headers,
         bytes,

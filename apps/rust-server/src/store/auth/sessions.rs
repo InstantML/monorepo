@@ -118,9 +118,18 @@ pub(super) async fn create_verified_provider_session(
     let canonical_plan_tier = validate_plan_tier(input.plan_tier.as_deref())?;
     let storage_choice = validate_storage_choice(input.storage_choice.as_deref())?;
     let plan = plan_tier(&canonical_plan_tier);
-    let paid_signup_requires_checkout =
-        billing_config.is_some_and(|config| config.enabled) && canonical_plan_tier != "free";
+    let shared_demo_auth = provider == "dev-google" && is_shared_demo_email(&email);
+    let paid_signup_requires_checkout = if shared_demo_auth {
+        false
+    } else {
+        require_paid_checkout_for_plan(billing_config, &canonical_plan_tier)?
+    };
     let seat_emails = normalized_invite_emails(input.seat_emails, &email)?;
+    if account_type == "personal" && !seat_emails.is_empty() {
+        return Err(AppError::validation(
+            "personal workspaces cannot reserve teammate seats",
+        ));
+    }
     if let Some(invite_token) = input.accept_invite_token.as_deref() {
         preflight_invitation_for_email(store, invite_token, &email).await?;
     }
@@ -223,6 +232,7 @@ pub(super) async fn create_verified_provider_session(
                 .await?;
             data.insert_org(org.clone());
         }
+        ensure_shared_demo_billing_account(store, &mut data, &org).await?;
         drop(data);
         return create_session_for_org(store, user, org).await;
     }
@@ -305,6 +315,11 @@ pub(super) async fn create_verified_provider_session(
     } else {
         account_type.clone()
     };
+    if is_personal_account_type(&effective_account_type) && !seat_emails.is_empty() {
+        return Err(AppError::validation(
+            "personal workspaces cannot reserve teammate seats",
+        ));
+    }
     let tenant_routing_tier = if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
         "customer-clickhouse".to_string()
     } else if is_personal_account_type(&effective_account_type) {
@@ -320,19 +335,19 @@ pub(super) async fn create_verified_provider_session(
     if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
         store.require_customer_clickhouse_signup_ready()?;
     }
-    let stored_plan_tier = if paid_signup_requires_checkout {
-        "free".to_string()
-    } else {
-        canonical_plan_tier.clone()
-    };
+    let stored_plan_tier = canonical_plan_tier.clone();
     let stored_plan = plan_tier(&stored_plan_tier);
     let org = OrganizationRow {
         id: Uuid::new_v4(),
         slug: org_slug,
         name: org_name,
         plan_tier: stored_plan_tier,
+        seat_limit: if is_personal_account_type(&effective_account_type) {
+            1
+        } else {
+            stored_plan.included_seats
+        },
         account_type: effective_account_type,
-        seat_limit: stored_plan.included_seats,
         created_by_user_id: Some(user.id),
         created_at: Utc::now(),
         tenant_routing_tier,
@@ -352,6 +367,7 @@ pub(super) async fn create_verified_provider_session(
         .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
         .await?;
     data.insert_membership(owner.clone());
+    ensure_shared_demo_billing_account(store, &mut data, &org).await?;
     drop(data);
     if paid_signup_requires_checkout {
         let mut data = store.data.lock().await;
@@ -462,12 +478,55 @@ pub(super) async fn create_session_for_org(
 
 async fn billing_blocks_tenant_route(store: &Store, org_id: Uuid) -> bool {
     let data = store.data.lock().await;
-    data.billing_accounts.get(&org_id).is_some_and(|account| {
-        matches!(
+    match data.billing_accounts.get(&org_id) {
+        Some(account) => matches!(
             account.access_state.as_str(),
             BILLING_CHECKOUT_PENDING | BILLING_READ_ONLY_PAYMENT_REQUIRED | BILLING_CANCELED
+        ),
+        None => data
+            .organizations
+            .get(&org_id)
+            .is_some_and(is_user_billing_managed_paid_workspace),
+    }
+}
+
+async fn ensure_shared_demo_billing_account(
+    store: &Store,
+    data: &mut StoreData,
+    org: &OrganizationRow,
+) -> AppResult<()> {
+    if !is_shared_demo_org(org) || data.billing_accounts.contains_key(&org.id) {
+        return Ok(());
+    }
+    let account = BillingAccountProjection {
+        schema_version: 1,
+        org_id: org.id,
+        access_state: BILLING_PAID_ACTIVE.to_string(),
+        plan_tier: org.plan_tier.clone(),
+        effective_plan_tier: org.plan_tier.clone(),
+        requested_plan_tier: None,
+        paid_extra_seats: 0,
+        stripe_customer_id: None,
+        stripe_subscription_id: None,
+        subscription_status: Some("demo".to_string()),
+        current_period_start: None,
+        current_period_end: None,
+        cancel_at_period_end: false,
+        grace_until: None,
+        pending_intent_id: None,
+        message: Some("Shared demo workspace is billing-exempt.".to_string()),
+        updated_at: Utc::now(),
+    };
+    store
+        .persist_locked(
+            "billing_account",
+            account.org_id,
+            &account.org_id.to_string(),
+            &account,
         )
-    })
+        .await?;
+    data.insert_billing_account(account);
+    Ok(())
 }
 
 pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthSessionPayload> {
@@ -515,6 +574,34 @@ pub async fn revoke_session(store: &Store, token: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn store_with_data(data: StoreData) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_sessions_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
 
     #[test]
     fn strict_email_linking_allows_operator_bootstrap_identity() {
@@ -898,5 +985,79 @@ mod tests {
             !should_auto_create,
             "strict_signin must suppress auto-create fall-through"
         );
+    }
+
+    #[tokio::test]
+    async fn auto_derived_personal_signup_rejects_teammate_seats() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "owner@example.com".to_string(),
+            display_name: Some("Owner Example".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities.insert(
+            ("clerk".to_string(), "user_auto_personal".to_string()),
+            user.id,
+        );
+        let store = store_with_data(data);
+        let error = create_verified_provider_session(
+            &store,
+            VerifiedProviderSessionInput {
+                provider: "clerk".to_string(),
+                provider_subject: "user_auto_personal".to_string(),
+                email: "owner@example.com".to_string(),
+                display_name: Some("Owner Example".to_string()),
+                avatar_url: None,
+                account_type: "business".to_string(),
+                mode: Some("signup".to_string()),
+                org_name: None,
+                plan_tier: Some("free".to_string()),
+                storage_choice: None,
+                seat_emails: vec!["teammate@example.com".to_string()],
+                accept_invite_org_id: None,
+                accept_invite_token: None,
+                strict_email_linking: true,
+                strict_signin: false,
+                auto_derive_display_name: Some("Owner Example".to_string()),
+                auto_derive_email: "owner@example.com".to_string(),
+                signup_allowlist: SignupAllowlist::default(),
+            },
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+        assert!(error
+            .message()
+            .contains("personal workspaces cannot reserve teammate seats"));
+        assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_paid_billing_projection_blocks_tenant_route_creation() {
+        let user_id = Uuid::new_v4();
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "paid-without-billing".to_string(),
+            name: "Paid Without Billing".to_string(),
+            plan_tier: "pro".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: PLAN_PRO.included_seats,
+            created_by_user_id: Some(user_id),
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        };
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        let store = store_with_data(data);
+
+        assert!(billing_blocks_tenant_route(&store, org.id).await);
     }
 }

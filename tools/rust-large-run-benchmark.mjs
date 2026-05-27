@@ -67,11 +67,39 @@ try {
   const firstRunId = firstPage.runs?.[0]?.id;
   if (!firstRunId) throw new Error("benchmark seed did not produce runs");
 
+  const seed13Total = seededRunsForSeed(13);
+  const seed14Total = seededRunsForSeed(14);
+  const llmTotal = Math.floor(runCount / 3);
   const measurements = {
-    summary_newest_project: await measureEndpoint("summary_newest_project", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`),
-    summary_newest_org: await measureEndpoint("summary_newest_org", `/api/runs/summary?${new URLSearchParams({ limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`),
-    summary_search_seed_13: await measureEndpoint("summary_search_seed_13", `/api/runs/summary?${new URLSearchParams({ project, q: "seed 13", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`),
-    summary_sort_metric_best: await measureEndpoint("summary_sort_metric_best", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "metric-best", metric_key: "eval/return_mean" })}`),
+    summary_newest_project: await measureEndpoint("summary_newest_project", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_newest_project", payload, runCount);
+    }),
+    summary_newest_org: await measureEndpoint("summary_newest_org", `/api/runs/summary?${new URLSearchParams({ limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_newest_org", payload, runCount);
+    }),
+    summary_search_seed_13: await measureEndpoint("summary_search_seed_13", `/api/runs/summary?${new URLSearchParams({ project, q: "seed-13", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_search_seed_13", payload, seed13Total);
+      assertRuns("summary_search_seed_13", payload, (run) => run.name.includes("seed-13") || run.tags?.includes("seed-13"));
+    }),
+    summary_search_tag_seed_13: await measureEndpoint("summary_search_tag_seed_13", `/api/runs/summary?${new URLSearchParams({ project, q: "tag:seed-13", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_search_tag_seed_13", payload, seed13Total);
+      assertRuns("summary_search_tag_seed_13", payload, (run) => run.tags?.includes("seed-13"));
+    }),
+    summary_search_config_llm: await measureEndpoint("summary_search_config_llm", `/api/runs/summary?${new URLSearchParams({ project, q: "config:llm", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_search_config_llm", payload, llmTotal);
+      assertRuns("summary_search_config_llm", payload, (run) => run.config?.model === "llm");
+    }),
+    summary_search_boolean_notes: await measureEndpoint("summary_search_boolean_notes", `/api/runs/summary?${new URLSearchParams({ project, q: "(tag:seed-13 OR tag:seed-14) notes:stability", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_search_boolean_notes", payload, seed13Total + seed14Total);
+      assertRuns("summary_search_boolean_notes", payload, (run) => (run.tags?.includes("seed-13") || run.tags?.includes("seed-14")) && run.metadata?.notes?.includes("stability"));
+    }),
+    summary_search_regex_seed: await measureEndpoint("summary_search_regex_seed", `/api/runs/summary?${new URLSearchParams({ project, q: "re:/seed-(13|14)/", limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_search_regex_seed", payload, seed13Total + seed14Total);
+      assertRuns("summary_search_regex_seed", payload, (run) => /seed-(13|14)/i.test(`${run.name} ${run.tags?.join(" ") ?? ""} ${run.metadata?.notes ?? ""}`));
+    }),
+    summary_sort_metric_best: await measureEndpoint("summary_sort_metric_best", `/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "metric-best", metric_key: "eval/return_mean" })}`, (payload) => {
+      assertSummaryTotal("summary_sort_metric_best", payload, runCount);
+    }),
     chart_series: await measureEndpoint("chart_series", `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: "eval/return_mean", limit: "5000" })}`),
   };
 
@@ -92,6 +120,7 @@ try {
     budgets_ms: {
       summary_newest_project_p95: 300,
       summary_search_and_sort_p95: 500,
+      summary_advanced_search_p95: 750,
       chart_series_p95: 200,
       web_first_useful_render: 2000,
     },
@@ -265,7 +294,7 @@ async function insertMetricPoints(points) {
   );
 }
 
-async function measureEndpoint(name, pathSuffix) {
+async function measureEndpoint(name, pathSuffix, validate) {
   for (let index = 0; index < warmups; index += 1) await fetchJson(apiBaseUrl + pathSuffix);
   const timings = [];
   for (let index = 0; index < samples; index += 1) {
@@ -274,8 +303,28 @@ async function measureEndpoint(name, pathSuffix) {
     timings.push(performance.now() - started);
     if (name.startsWith("summary") && !Array.isArray(payload.runs)) throw new Error(`${name} returned malformed runs payload`);
     if (name === "chart_series" && !Array.isArray(payload.metrics)) throw new Error("chart_series returned malformed metrics payload");
+    if (validate) validate(payload);
   }
   return summarize(timings);
+}
+
+function seededRunsForSeed(seed) {
+  let count = 0;
+  for (let index = 1; index <= runCount; index += 1) {
+    if (index % 100 === seed) count += 1;
+  }
+  return count;
+}
+
+function assertSummaryTotal(name, payload, expected) {
+  if (payload.total !== expected) {
+    throw new Error(`${name} returned total ${payload.total}, expected ${expected}`);
+  }
+}
+
+function assertRuns(name, payload, predicate) {
+  const badRun = payload.runs.find((run) => !predicate(run));
+  if (badRun) throw new Error(`${name} returned non-matching run ${badRun.id || badRun.name}`);
 }
 
 async function measureWebFirstUsefulRender() {
@@ -333,6 +382,9 @@ function budgetFailures(result) {
   if (result.measurements.summary_newest_project.p95_ms > result.budgets_ms.summary_newest_project_p95) failures.push("summary_newest_project p95 exceeded 300 ms");
   for (const key of ["summary_search_seed_13", "summary_sort_metric_best"]) {
     if (result.measurements[key].p95_ms > result.budgets_ms.summary_search_and_sort_p95) failures.push(`${key} p95 exceeded 500 ms`);
+  }
+  for (const key of ["summary_search_tag_seed_13", "summary_search_config_llm", "summary_search_boolean_notes", "summary_search_regex_seed"]) {
+    if (result.measurements[key].p95_ms > result.budgets_ms.summary_advanced_search_p95) failures.push(`${key} p95 exceeded 750 ms`);
   }
   if (result.measurements.chart_series.p95_ms > result.budgets_ms.chart_series_p95) failures.push("chart_series p95 exceeded 200 ms");
   if (result.web && result.web.first_useful_render_ms > result.budgets_ms.web_first_useful_render) failures.push("web first useful render exceeded 2000 ms");

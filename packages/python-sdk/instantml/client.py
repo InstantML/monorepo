@@ -26,9 +26,44 @@ from typing import Any
 
 from .async_queue import (
     AsyncQueueRepository,
+    DEFAULT_PRODUCER_BATCH_BYTES,
+    DEFAULT_PRODUCER_BATCH_EVENTS,
+    DEFAULT_PRODUCER_FLUSH_SECONDS,
+    DEFAULT_PRODUCER_MAX_BUFFER_BYTES,
+    DEFAULT_PRODUCER_MAX_BUFFER_EVENTS,
+    DEFAULT_PRODUCER_RETRY_SECONDS,
+    PreparedQueuedEvent,
     queue_path_for_run,
 )
 from .errors import InstantMLError
+from .log_payload import (
+    _classify_log_payload,
+    _classify_log_sequence,
+    _validate_rank_context,
+    _validate_rank_weight,
+)
+from .media import (
+    _FileStats,
+    _hash_file,
+    _is_local_file_uri,
+    _strip_file_uri,
+    _write_audio_data,
+    _write_image_data,
+    _write_video_data,
+)
+from .objects import (
+    Artifact,
+    Audio,
+    CheckpointPolicy,
+    File,
+    Histogram,
+    Image,
+    Table,
+    Text,
+    Video,
+    _histogram_counts_for_edges,
+    _histogram_from_count,
+)
 from .serialization import (
     _flatten,
     _flatten_numeric_value,
@@ -79,242 +114,11 @@ _RATE_LIMIT_RETRY_BASE_SECONDS = 0.25
 _RATE_LIMIT_RETRY_MAX_SECONDS = 5.0
 
 
-def _is_local_file_uri(uri: str) -> bool:
-    if not isinstance(uri, str):
-        return False
-    if uri.startswith("file://"):
-        return True
-    return "://" not in uri and Path(uri).exists()
-
-
-def _strip_file_uri(uri: str) -> str:
-    return uri[len("file://"):] if uri.startswith("file://") else uri
-
-
 def _default_base_url() -> str:
     return os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
 
 
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
-
-
-class Table:
-    """Inline table object for rich run logging."""
-
-    def __init__(
-        self,
-        columns: list[str] | tuple[str, ...] | None = None,
-        rows: list[dict[str, Any] | list[Any] | tuple[Any, ...]] | tuple[dict[str, Any] | list[Any] | tuple[Any, ...], ...] | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        dataframe: Any | None = None,
-        data: Any | None = None,
-    ) -> None:
-        if dataframe is not None and data is not None:
-            raise ValueError("table accepts either dataframe or data, not both")
-        if dataframe is not None:
-            columns = list(getattr(dataframe, "columns", []))
-            rows = dataframe.to_dict(orient="records")
-        elif data is not None:
-            rows = data
-            if columns is None and isinstance(rows, list) and rows and isinstance(rows[0], dict):
-                columns = list(rows[0].keys())
-        self.columns = list(columns) if columns is not None else []
-        self.rows = list(rows) if isinstance(rows, tuple) else rows if rows is not None else []
-        self.metadata = metadata
-
-    @classmethod
-    def from_dataframe(cls, dataframe: Any, metadata: dict[str, Any] | None = None) -> "Table":
-        return cls(metadata=metadata, dataframe=dataframe)
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        columns: list[str] | tuple[str, ...] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Table":
-        return cls(columns=columns, data=data, metadata=metadata)
-
-
-class Histogram:
-    """Histogram rich object.
-
-    The positional ``Histogram(bins, counts)`` form is intentionally preserved.
-    Use ``Histogram.from_values(...)`` for NumPy/tensor/list values.
-    """
-
-    def __init__(self, bins: list[int | float], counts: list[int | float], metadata: dict[str, Any] | None = None) -> None:
-        self.bins = list(bins) if isinstance(bins, tuple) else bins
-        self.counts = list(counts) if isinstance(counts, tuple) else counts
-        self.metadata = metadata
-
-    @classmethod
-    def from_values(
-        cls,
-        values: Any,
-        bins: int | list[int | float] | tuple[int | float, ...] = 64,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Histogram":
-        numeric_values = _coerce_numeric_values(values, "histogram values")
-        if isinstance(bins, bool):
-            raise TypeError("histogram bin count must be an integer")
-        if isinstance(bins, int):
-            if bins <= 0:
-                raise ValueError("histogram bin count must be positive")
-            return cls(*_histogram_from_count(numeric_values, bins), metadata=metadata)
-        edges = _validate_numeric_list(list(bins), "histogram bins", nonnegative=False)
-        if len(edges) < 2:
-            raise ValueError("histogram bins must contain at least two edges")
-        return cls(edges, _histogram_counts_for_edges(numeric_values, edges), metadata=metadata)
-
-
-@dataclass(frozen=True)
-class File:
-    path: str
-    name: str | None = None
-    artifact_type: str = "file"
-    metadata: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class Artifact(File):
-    pass
-
-
-@dataclass(frozen=True)
-class CheckpointPolicy:
-    """Simple step-interval helper for checkpointing training loops."""
-
-    every_steps: int
-    include_step_zero: bool = False
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.every_steps, int) or isinstance(self.every_steps, bool):
-            raise TypeError("every_steps must be an integer")
-        if self.every_steps <= 0:
-            raise ValueError("every_steps must be positive")
-
-    def should_save(self, step: int | float | None) -> bool:
-        normalized = _validate_step(step)
-        if normalized is None:
-            return False
-        numeric = float(normalized)
-        if numeric == 0:
-            return self.include_step_zero
-        if not numeric.is_integer():
-            return False
-        return int(numeric) % self.every_steps == 0
-
-
-@dataclass(frozen=True)
-class Text:
-    data: str
-    name: str | None = None
-    metadata: dict[str, Any] | None = None
-
-
-class Image:
-    def __init__(
-        self,
-        path: str | os.PathLike[str] | Any | None = None,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        data: Any | None = None,
-    ) -> None:
-        if data is not None and path is not None:
-            raise ValueError("image accepts either path or data, not both")
-        if data is None and path is not None and not isinstance(path, (str, os.PathLike)):
-            data = path
-            path = None
-        self.path = None if path is None else os.fspath(path)
-        self.data = data
-        self.caption = caption
-        self.metadata = metadata
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Image":
-        return cls(caption=caption, metadata=metadata, data=data)
-
-
-class Video:
-    def __init__(
-        self,
-        path: str | os.PathLike[str] | Any | None = None,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        data: Any | None = None,
-        fps: int | float = 30,
-        format: str = "mp4",
-    ) -> None:
-        if data is not None and path is not None:
-            raise ValueError("video accepts either path or data, not both")
-        if data is None and path is not None and not isinstance(path, (str, os.PathLike)):
-            data = path
-            path = None
-        self.path = None if path is None else os.fspath(path)
-        self.data = data
-        self.caption = caption
-        self.metadata = metadata
-        self.fps = fps
-        self.format = format
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        fps: int | float = 30,
-        format: str = "mp4",
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Video":
-        return cls(caption=caption, metadata=metadata, data=data, fps=fps, format=format)
-
-
-class Audio:
-    def __init__(
-        self,
-        path: str | os.PathLike[str] | Any | None = None,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        *,
-        data: Any | None = None,
-        sample_rate: int = 48000,
-    ) -> None:
-        if data is not None and path is not None:
-            raise ValueError("audio accepts either path or data, not both")
-        if data is None and path is not None and not isinstance(path, (str, os.PathLike)):
-            data = path
-            path = None
-        self.path = None if path is None else os.fspath(path)
-        self.data = data
-        self.caption = caption
-        self.metadata = metadata
-        self.sample_rate = sample_rate
-
-    @classmethod
-    def from_data(
-        cls,
-        data: Any,
-        sample_rate: int = 48000,
-        caption: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> "Audio":
-        return cls(caption=caption, metadata=metadata, data=data, sample_rate=sample_rate)
-
-
-@dataclass(frozen=True)
-class _FileStats:
-    path: str
-    sha256: str
-    size_bytes: int
 
 
 @dataclass(frozen=True)
@@ -326,7 +130,7 @@ class Client:
 
     def init(
         self,
-        project: str,
+        project: str | None = None,
         name: str | None = None,
         config: dict[str, Any] | None = None,
         tags: list[str] | None = None,
@@ -684,6 +488,198 @@ class Api:
         return str(target)
 
 
+def _is_retryable_sqlite_enqueue_error(message: str) -> bool:
+    lowered = message.lower()
+    return "locked" in lowered or "busy" in lowered
+
+
+class _AsyncProducerBuffer:
+    def __init__(
+        self,
+        run: "Run",
+        *,
+        max_events: int = DEFAULT_PRODUCER_BATCH_EVENTS,
+        max_bytes: int = DEFAULT_PRODUCER_BATCH_BYTES,
+        max_age_seconds: float = DEFAULT_PRODUCER_FLUSH_SECONDS,
+        hard_max_events: int = DEFAULT_PRODUCER_MAX_BUFFER_EVENTS,
+        hard_max_bytes: int = DEFAULT_PRODUCER_MAX_BUFFER_BYTES,
+        retry_seconds: float = DEFAULT_PRODUCER_RETRY_SECONDS,
+        clock: Any = time.monotonic,
+    ) -> None:
+        self._run = run
+        self._max_events = max_events
+        self._max_bytes = max_bytes
+        self._max_age_seconds = max_age_seconds
+        self._hard_max_events = hard_max_events
+        self._hard_max_bytes = hard_max_bytes
+        self._retry_seconds = retry_seconds
+        self._clock = clock
+        self._condition = threading.Condition(threading.RLock())
+        self._buffer: list[tuple[int, PreparedQueuedEvent]] = []
+        self._buffer_bytes = 0
+        self._oldest_buffered_at: float | None = None
+        self._next_sequence = 1
+        self._completed_sequence = 0
+        self._flush_requested = False
+        self._closed = False
+        self._worker: threading.Thread | None = None
+        self._last_flush_error: str | None = None
+
+    def append(self, event: PreparedQueuedEvent) -> bool:
+        warning: tuple[str, int] | None = None
+        with self._condition:
+            if self._closed:
+                warning = ("async producer buffer is closed; dropped event", 1)
+            elif len(self._buffer) + 1 > self._hard_max_events or self._buffer_bytes + event.body_size_bytes > self._hard_max_bytes:
+                warning = ("async producer buffer hard limit reached; dropped event", 1)
+            else:
+                sequence = self._next_sequence
+                self._next_sequence += 1
+                self._buffer.append((sequence, event))
+                self._buffer_bytes += event.body_size_bytes
+                if self._oldest_buffered_at is None:
+                    self._oldest_buffered_at = self._clock()
+                try:
+                    self._ensure_worker_locked()
+                except Exception:
+                    self._buffer.pop()
+                    self._next_sequence -= 1
+                    self._buffer_bytes -= event.body_size_bytes
+                    if not self._buffer:
+                        self._oldest_buffered_at = None
+                    raise
+                if len(self._buffer) >= self._max_events or self._buffer_bytes >= self._max_bytes:
+                    self._flush_requested = True
+                self._condition.notify_all()
+                return True
+        if warning is not None:
+            self._run._warn_async_drop(warning[0], count_local=True, count=warning[1])
+        return False
+
+    def force_flush(self, timeout: float | None = None) -> bool:
+        deadline = None if timeout is None else self._clock() + max(0.0, timeout)
+        with self._condition:
+            target_sequence = self._next_sequence - 1
+            if target_sequence <= self._completed_sequence:
+                return True
+            self._ensure_worker_locked()
+            self._flush_requested = True
+            self._condition.notify_all()
+            while self._completed_sequence < target_sequence:
+                worker_dead = self._worker is not None and not self._worker.is_alive()
+                if worker_dead and self._buffer:
+                    self._ensure_worker_locked()
+                    self._flush_requested = True
+                    self._condition.notify_all()
+                if deadline is not None:
+                    remaining = deadline - self._clock()
+                    if remaining <= 0:
+                        self._last_flush_error = "async producer flush timed out"
+                        return False
+                    self._condition.wait(timeout=min(remaining, 0.05))
+                else:
+                    self._condition.wait(timeout=0.05)
+            return True
+
+    def stop(self, timeout: float | None = None) -> bool:
+        ok = self.force_flush(timeout=timeout)
+        with self._condition:
+            self._closed = True
+            self._condition.notify_all()
+            worker = self._worker
+        if worker is not None and worker.is_alive():
+            worker.join(timeout=timeout)
+            if worker.is_alive():
+                with self._condition:
+                    self._last_flush_error = "async producer writer did not stop before timeout"
+                return False
+        return ok
+
+    def status(self) -> dict[str, Any]:
+        with self._condition:
+            return {
+                "buffered_events": len(self._buffer),
+                "buffered_bytes": self._buffer_bytes,
+                "last_flush_error": self._last_flush_error,
+            }
+
+    def _ensure_worker_locked(self) -> None:
+        if self._closed:
+            return
+        if self._worker is not None and self._worker.is_alive():
+            return
+        self._worker = threading.Thread(
+            target=self._worker_loop,
+            name=f"instantml-async-producer-{self._run._run_id}",
+            daemon=True,
+        )
+        self._worker.start()
+
+    def _flush_due_locked(self) -> bool:
+        if not self._buffer:
+            return False
+        if self._flush_requested or len(self._buffer) >= self._max_events or self._buffer_bytes >= self._max_bytes:
+            return True
+        if self._oldest_buffered_at is None:
+            return False
+        return self._clock() - self._oldest_buffered_at >= self._max_age_seconds
+
+    def _worker_loop(self) -> None:
+        while True:
+            with self._condition:
+                while not self._closed and not self._flush_due_locked():
+                    timeout = None
+                    if self._buffer and self._oldest_buffered_at is not None:
+                        timeout = max(0.0, self._max_age_seconds - (self._clock() - self._oldest_buffered_at))
+                    self._condition.wait(timeout=timeout)
+                if self._closed and not self._buffer:
+                    return
+                if not self._buffer:
+                    continue
+                batch = self._buffer
+                self._buffer = []
+                self._buffer_bytes = 0
+                self._oldest_buffered_at = None
+                self._flush_requested = False
+            ok, retryable, message, completed = self._write_batch(batch)
+            with self._condition:
+                if ok or not retryable:
+                    if completed:
+                        self._completed_sequence = max(self._completed_sequence, completed)
+                    self._last_flush_error = message
+                    self._condition.notify_all()
+                    continue
+                self._buffer = batch + self._buffer
+                self._buffer_bytes += sum(event.body_size_bytes for _, event in batch)
+                self._oldest_buffered_at = self._clock()
+                self._flush_requested = True
+                self._last_flush_error = message
+                self._condition.notify_all()
+            time.sleep(self._retry_seconds)
+
+    def _write_batch(self, batch: list[tuple[int, PreparedQueuedEvent]]) -> tuple[bool, bool, str | None, int | None]:
+        if not batch:
+            return True, False, None, None
+        last_sequence = batch[-1][0]
+        events = [event for _, event in batch]
+        try:
+            queue = self._run._require_async_queue()
+            result = queue.enqueue_many_prepared(events)
+            if result.inserted:
+                self._run._start_async_uploader()
+            if result.dropped:
+                message = result.message or "async queue dropped buffered events because local queue limits were reached"
+                self._run._warn_async_drop(message)
+                return True, False, message, last_sequence
+            return True, False, None, last_sequence
+        except Exception as exc:  # noqa: BLE001 - async producer must not stop training
+            message = f"async producer flush failed: {exc}"
+            if _is_retryable_sqlite_enqueue_error(str(exc)):
+                return False, True, message, None
+            self._run._warn_async_drop(message, count_local=True, count=len(batch))
+            return False, False, message, last_sequence
+
+
 class Run:
     def __init__(
         self,
@@ -705,11 +701,14 @@ class Run:
         self.spool_dir = spool_dir
         self.queue_dir = queue_dir
         self.media_dir = media_dir
+        self._lock = threading.RLock()
         self._process_spool_run_dir = _process_spool_run_dir(spool_dir, run_id) if upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID else None
         if self._process_spool_run_dir is not None:
             self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
         self._async_queue: AsyncQueueRepository | None = None
         self._async_process: subprocess.Popen[Any] | None = None
+        self._async_process_lock = threading.RLock()
+        self._async_buffer: _AsyncProducerBuffer | None = _AsyncProducerBuffer(self) if upload_mode == "async" else None
         self._async_start_warning_emitted = False
         self._last_async_warning_at = 0.0
         self._async_disabled_reason: str | None = None
@@ -722,7 +721,6 @@ class Run:
         self._console_line_numbers: dict[str, int] = {}
         self._process_sequence: int = 0
         self._auto_step: int | float = 0
-        self._lock = threading.RLock()
         self._finished = False
         self._local_store: "_LocalStore | None" = _local_store
         self._system_sampler: "_SystemMetricsSampler | None" = None
@@ -771,6 +769,7 @@ class Run:
         return self._run_id
 
     def upload_status(self) -> dict[str, Any]:
+        buffer_status = self._async_buffer_status()
         if self.upload_mode != "async":
             return {
                 "mode": self.upload_mode,
@@ -781,6 +780,7 @@ class Run:
                 "dropped": 0,
                 "oldest_pending_age_seconds": None,
                 "last_error": None,
+                **buffer_status,
             }
         if self._async_disabled_reason is not None:
             return {
@@ -793,9 +793,16 @@ class Run:
                 "oldest_pending_age_seconds": None,
                 "last_error": f"async queue unavailable: {self._async_disabled_reason}",
                 "queue_available": False,
+                **buffer_status,
             }
+        self._force_async_buffer_flush(timeout=0.1)
+        buffer_status = self._async_buffer_status()
         queue = self._require_async_queue()
-        return {"mode": "async", **queue.status()}
+        status = queue.status()
+        status["dropped"] += self._async_local_dropped
+        if buffer_status["last_flush_error"] and not status["last_error"]:
+            status["last_error"] = buffer_status["last_flush_error"]
+        return {"mode": "async", "queue_available": True, **status, **buffer_status}
 
     def wait_for_submission(self, timeout: float | None = None) -> bool:
         """Wait until async queued events have been claimed or completed."""
@@ -810,11 +817,14 @@ class Run:
             return True
         if self._async_disabled_reason is not None:
             return False
-        queue = self._require_async_queue()
         deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        flush_timeout = None if deadline is None else max(0.0, deadline - time.monotonic())
+        if not self._force_async_buffer_flush(timeout=flush_timeout):
+            return False
+        queue = self._require_async_queue()
         while True:
             status = queue.status()
-            if status["failed"]:
+            if status["failed"] or status["dropped"] or self._async_local_dropped:
                 return False
             pending = status["pending"] + (status["in_flight"] if include_in_flight else 0)
             if pending == 0:
@@ -854,76 +864,91 @@ class Run:
         assert self._async_queue is not None
         return self._async_queue
 
+    def _async_buffer_status(self) -> dict[str, Any]:
+        if self._async_buffer is None:
+            return {"buffered_events": 0, "buffered_bytes": 0, "last_flush_error": None}
+        return self._async_buffer.status()
+
+    def _force_async_buffer_flush(self, timeout: float | None = None) -> bool:
+        if self.upload_mode != "async" or self._async_buffer is None:
+            return True
+        ok = self._async_buffer.force_flush(timeout=timeout)
+        if not ok:
+            self._warn_async_drop("async producer buffer did not flush before timeout")
+        return ok
+
     def _start_async_uploader(self) -> None:
-        run_id = self._run_id
-        if self.upload_mode != "async" or not run_id or run_id == _PENDING_RUN_ID:
-            return
-        if self._async_disabled_reason is not None:
-            return
-        if self._async_process is not None and self._async_process.poll() is None:
-            return
-        queue = self._require_async_queue()
-        stderr_file = None
-        try:
-            resolved_api_key = self.client._resolve_api_key()
-            args = {
-                "queue_path": str(queue.path),
-                "base_url": self.client.base_url,
-                "api_key": None,
-                "timeout": self.client.timeout,
-                "run_id": run_id,
-                "parent_pid": os.getpid(),
-            }
-            env = os.environ.copy()
-            if resolved_api_key:
-                env["INSTANTML_API_KEY"] = resolved_api_key
-            stderr_path = queue.path.with_name("uploader.stderr.log")
-            stderr_file = stderr_path.open("ab")
-            process = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-c",
-                    (
-                        "import json, sys; "
-                        "from instantml.async_queue import run_async_uploader; "
-                        "from instantml.credentials import _resolve_api_key; "
-                        "args = json.loads(sys.argv[1]); "
-                        "args['api_key'] = _resolve_api_key(None); "
-                        "run_async_uploader(**args)"
-                    ),
-                    json.dumps(args, separators=(",", ":")),
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=stderr_file,
-                close_fds=True,
-                env=env,
-            )
-            stderr_file.close()
+        with self._async_process_lock:
+            run_id = self._run_id
+            if self.upload_mode != "async" or not run_id or run_id == _PENDING_RUN_ID:
+                return
+            if self._async_disabled_reason is not None:
+                return
+            if self._async_process is not None and self._async_process.poll() is None:
+                return
+            queue = self._require_async_queue()
             stderr_file = None
-            self._async_process = process
-        except Exception as exc:  # noqa: BLE001 - queue remains durable for CLI recovery
-            if stderr_file is not None:
+            try:
+                resolved_api_key = self.client._resolve_api_key()
+                args = {
+                    "queue_path": str(queue.path),
+                    "base_url": self.client.base_url,
+                    "api_key": None,
+                    "timeout": self.client.timeout,
+                    "run_id": run_id,
+                    "parent_pid": os.getpid(),
+                }
+                env = os.environ.copy()
+                if resolved_api_key:
+                    env["INSTANTML_API_KEY"] = resolved_api_key
+                stderr_path = queue.path.with_name("uploader.stderr.log")
+                stderr_file = stderr_path.open("ab")
+                process = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        (
+                            "import json, sys; "
+                            "from instantml.async_queue import run_async_uploader; "
+                            "from instantml.credentials import _resolve_api_key; "
+                            "args = json.loads(sys.argv[1]); "
+                            "args['api_key'] = _resolve_api_key(None); "
+                            "run_async_uploader(**args)"
+                        ),
+                        json.dumps(args, separators=(",", ":")),
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=stderr_file,
+                    close_fds=True,
+                    env=env,
+                )
                 stderr_file.close()
-            if not self._async_start_warning_emitted:
-                warnings.warn(f"async uploader process could not start: {exc}", RuntimeWarning, stacklevel=2)
-                self._async_start_warning_emitted = True
+                stderr_file = None
+                self._async_process = process
+            except Exception as exc:  # noqa: BLE001 - queue remains durable for CLI recovery
+                if stderr_file is not None:
+                    stderr_file.close()
+                if not self._async_start_warning_emitted:
+                    warnings.warn(f"async uploader process could not start: {exc}", RuntimeWarning, stacklevel=2)
+                    self._async_start_warning_emitted = True
 
     def _stop_async_uploader(self, timeout: float | None = None) -> None:
-        process = self._async_process
-        if process is None:
-            return
-        wait_timeout = max(0.0, min(timeout if timeout is not None else 0.2, 2.0))
-        try:
-            process.wait(timeout=wait_timeout)
-        except subprocess.TimeoutExpired:
-            process.terminate()
+        with self._async_process_lock:
+            process = self._async_process
+            if process is None:
+                return
+            wait_timeout = max(0.0, min(timeout if timeout is not None else 0.2, 2.0))
             try:
-                process.wait(timeout=1.0)
+                process.wait(timeout=wait_timeout)
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=1.0)
-        self._async_process = None
+                process.terminate()
+                try:
+                    process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=1.0)
+            self._async_process = None
 
     def __enter__(self) -> "Run":
         return self
@@ -1563,12 +1588,17 @@ class Run:
         if self._local_store is not None:
             self._local_store.record_file(self.run_id, step, key, stats, artifact_type, timestamp)
 
-    def flush(self) -> None:
+    def _flush_pending_requests(self) -> None:
         with self._lock:
             pending = self._queue
             self._queue = []
         for event in pending:
             self._request_or_spool(event["method"], event["path"], event["body"])
+
+    def flush(self) -> None:
+        self._flush_pending_requests()
+        if self.upload_mode == "async":
+            self._force_async_buffer_flush(timeout=getattr(self.client, "timeout", 10.0))
 
     def replay_offline(self) -> int:
         if not self.client.offline_dir:
@@ -1594,20 +1624,23 @@ class Run:
         if capture is not None:
             capture.restore()
         try:
-            self.flush()
+            self._flush_pending_requests()
             if self.upload_mode == "spool":
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
                 return
             if self.upload_mode == "async":
+                self._force_async_buffer_flush(timeout=async_finish_timeout)
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
-                async_processed = self.wait_for_processing(timeout=async_finish_timeout)
+                status_flushed = self._force_async_buffer_flush(timeout=async_finish_timeout)
+                async_processed = status_flushed and self.wait_for_processing(timeout=async_finish_timeout)
                 if not async_processed:
                     if self._async_disabled_reason is not None:
                         message = f"async upload unavailable; finish status was not delivered: {self._async_disabled_reason}"
                     else:
                         message = (
-                            "async upload did not finish before finish() timeout; queued data remains on disk for the "
-                            "background uploader or instantml-uploader recovery"
+                            "async upload did not finish before finish() timeout; flushed queue rows remain on disk for the "
+                            "background uploader or instantml-uploader recovery, while any still-buffered producer events "
+                            "remain process-local"
                         )
                     warnings.warn(message, RuntimeWarning, stacklevel=2)
                 return
@@ -1620,12 +1653,23 @@ class Run:
             if self._local_store is not None:
                 self._local_store.close()
             if self.upload_mode == "async":
+                producer_stopped = True
+                if self._async_buffer is not None:
+                    producer_stopped = self._async_buffer.stop(timeout=async_finish_timeout)
                 if self._async_queue is not None:
                     if not async_processed:
                         status_snapshot = self._async_queue.status()
                         async_processed = status_snapshot["pending"] + status_snapshot["in_flight"] == 0
-                    self._async_queue.close()
-                if async_processed:
+                    if producer_stopped:
+                        self._async_queue.close()
+                    else:
+                        async_processed = False
+                        warnings.warn(
+                            "async producer writer did not stop before finish() timeout; leaving the local queue open for the writer",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                if async_processed and producer_stopped:
                     self._stop_async_uploader(timeout=async_finish_timeout)
             if self._shadow is not None:
                 self._shadow.finish(status)
@@ -1639,29 +1683,10 @@ class Run:
         step: int | float | None = None,
         event_timestamp: str | None = None,
     ) -> None:
+        if self.upload_mode == "async" and _async_request_supported(method, path, body):
+            self._enqueue_async_request(method, path, body)
+            return
         with self._lock:
-            if self.upload_mode == "async" and _async_request_supported(method, path, body):
-                if self._async_disabled_reason is not None:
-                    self._warn_async_drop(
-                        f"async queue unavailable; dropped event: {self._async_disabled_reason}",
-                        count_local=True,
-                    )
-                    return
-                try:
-                    queue = self._require_async_queue()
-                    sequence_id = queue.enqueue(
-                        method,
-                        path,
-                        body,
-                        idempotency_key=f"instantml-{self.run_id}-{uuid.uuid4().hex}",
-                    )
-                    if sequence_id is not None:
-                        self._start_async_uploader()
-                    else:
-                        self._warn_async_drop("async queue dropped an event because local queue limits were reached")
-                except Exception as exc:  # noqa: BLE001 - async delivery must not stop training
-                    self._warn_async_drop(f"async queue could not record event: {exc}", count_local=True)
-                return
             if self.upload_mode == "spool":
                 self._process_sequence += 1
                 event = _process_event(
@@ -1686,9 +1711,36 @@ class Run:
             return
         self._request_or_spool(method, path, body)
 
-    def _warn_async_drop(self, message: str, *, count_local: bool = False) -> None:
+    def _enqueue_async_request(self, method: str, path: str, body: dict[str, Any]) -> None:
+        if self._async_disabled_reason is not None:
+            self._warn_async_drop(
+                f"async queue unavailable; dropped event: {self._async_disabled_reason}",
+                count_local=True,
+            )
+            return
+        try:
+            queue = self._require_async_queue()
+            event = queue.prepare_event(
+                method,
+                path,
+                body,
+                idempotency_key=f"instantml-{self.run_id}-{uuid.uuid4().hex}",
+                created_at=time.time(),
+            )
+            if self._async_buffer is None:
+                result = queue.enqueue_many_prepared([event])
+                if result.inserted:
+                    self._start_async_uploader()
+                elif result.dropped:
+                    self._warn_async_drop(result.message or "async queue dropped an event because local queue limits were reached")
+                return
+            self._async_buffer.append(event)
+        except Exception as exc:  # noqa: BLE001 - async delivery must not stop training
+            self._warn_async_drop(f"async queue could not record event: {exc}", count_local=True)
+
+    def _warn_async_drop(self, message: str, *, count_local: bool = False, count: int = 1) -> None:
         if count_local:
-            self._async_local_dropped += 1
+            self._async_local_dropped += max(1, count)
         now = time.time()
         if now - self._last_async_warning_at > 5:
             warnings.warn(message, RuntimeWarning, stacklevel=2)
@@ -1705,7 +1757,7 @@ class Run:
 
 
 def init(
-    project: str,
+    project: str | None = None,
     name: str | None = None,
     config: dict[str, Any] | None = None,
     tags: list[str] | None = None,
@@ -2098,14 +2150,14 @@ class TransformersCallback:
 
 
 class LightningLogger:
-    def __init__(self, project: str, run: Run | None = None, **init_kwargs: Any) -> None:
+    def __init__(self, project: str | None = None, run: Run | None = None, **init_kwargs: Any) -> None:
         self.project = project
         self._run = run
         self._init_kwargs = init_kwargs
 
     @property
     def name(self) -> str:
-        return self.project
+        return self.project or "default"
 
     @property
     def version(self) -> str:
@@ -2135,182 +2187,6 @@ class LightningLogger:
     def finalize(self, status: str = "finished") -> None:
         if self._run is not None:
             self._run.finish(status)
-
-
-def _classify_log_payload(
-    data: dict[str, Any],
-) -> tuple[dict[str, float], dict[str, str], dict[str, Table | Histogram | Image | Video | Audio], dict[str, File]]:
-    if not isinstance(data, dict):
-        raise TypeError("log data must be a dictionary")
-    metrics: dict[str, float] = {}
-    text: dict[str, str] = {}
-    objects: dict[str, Table | Histogram | Image | Video | Audio] = {}
-    files: dict[str, File] = {}
-    for raw_key, value in data.items():
-        key = _validate_text(raw_key, "log key")
-        if _is_scalar_number(value):
-            metrics[key] = float(value)
-        elif isinstance(value, str):
-            text[key] = value
-        elif isinstance(value, Text):
-            text[key] = _validate_plain_string(value.data, "text data")
-        elif isinstance(value, (Table, Histogram, Image, Video, Audio)):
-            objects[key] = value
-        elif isinstance(value, File):
-            files[key] = value
-        elif isinstance(value, (list, tuple)):
-            _classify_log_sequence(key, value, objects, files)
-        else:
-            raise TypeError(f"log value for {key!r} has unsupported type {type(value).__name__}")
-    return metrics, text, objects, files
-
-
-def _validate_rank_context(rank: int, world_size: int, local_rank: int | None) -> tuple[int, int, int]:
-    if not isinstance(world_size, int) or isinstance(world_size, bool):
-        raise TypeError("world_size must be an integer")
-    if world_size < 1:
-        raise ValueError("world_size must be at least 1")
-    if world_size > 512:
-        raise ValueError("world_size must be at most 512")
-    if not isinstance(rank, int) or isinstance(rank, bool):
-        raise TypeError("rank must be an integer")
-    if rank < 0 or rank >= world_size:
-        raise ValueError("rank must be between 0 and world_size - 1")
-    resolved_local_rank = rank if local_rank is None else local_rank
-    if not isinstance(resolved_local_rank, int) or isinstance(resolved_local_rank, bool):
-        raise TypeError("local_rank must be an integer")
-    if resolved_local_rank < 0 or resolved_local_rank >= world_size:
-        raise ValueError("local_rank must be between 0 and world_size - 1")
-    return rank, world_size, resolved_local_rank
-
-
-def _validate_rank_weight(weight: int | float | None) -> float:
-    if weight is None:
-        return 1.0
-    if isinstance(weight, bool) or not isinstance(weight, (int, float)):
-        raise TypeError("weight must be a number")
-    value = float(weight)
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError("weight must be finite and positive")
-    return value
-
-
-def _classify_log_sequence(
-    key: str,
-    values: list[Any] | tuple[Any, ...],
-    objects: dict[str, Table | Histogram | Image | Video | Audio],
-    files: dict[str, File],
-) -> None:
-    if not values:
-        raise ValueError(f"log sequence for {key!r} must not be empty")
-    if all(_is_scalar_number(value) for value in values):
-        raise TypeError(f"log sequence for {key!r} is numeric; use Histogram.from_values() or Table")
-    if all(isinstance(value, (Table, Histogram, Image, Video, Audio)) for value in values):
-        for index, value in enumerate(values):
-            objects[f"{key}/{index}"] = value
-        return
-    if all(isinstance(value, File) for value in values):
-        for index, value in enumerate(values):
-            files[f"{key}/{index}"] = value
-        return
-    raise TypeError(f"log sequence for {key!r} must contain one homogeneous supported type")
-
-
-def _histogram_from_count(values: list[float], bins: int) -> tuple[list[float], list[float]]:
-    low = min(values)
-    high = max(values)
-    if low == high:
-        if bins == 1:
-            return [low - 0.5, high + 0.5], [float(len(values))]
-        width = 1.0 / bins
-        start = low - 0.5
-        edges = [start + index * width for index in range(bins + 1)]
-        return edges, _histogram_counts_for_edges(values, edges)
-    width = (high - low) / bins
-    edges = [low + index * width for index in range(bins)]
-    edges.append(high)
-    return edges, _histogram_counts_for_edges(values, edges)
-
-
-def _histogram_counts_for_edges(values: list[float], edges: list[float]) -> list[float]:
-    counts = [0.0 for _ in range(len(edges) - 1)]
-    for value in values:
-        if value < edges[0] or value > edges[-1]:
-            continue
-        if value == edges[-1]:
-            counts[-1] += 1.0
-            continue
-        for index in range(len(edges) - 1):
-            if edges[index] <= value < edges[index + 1]:
-                counts[index] += 1.0
-                break
-    return counts
-
-
-def _hash_file(path: Path) -> _FileStats:
-    if not path.exists() or not path.is_file():
-        raise InstantMLError(f"upload source does not exist: {path}")
-    digest = hashlib.sha256()
-    size_bytes = 0
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            size_bytes += len(chunk)
-            digest.update(chunk)
-    return _FileStats(path=str(path), sha256=digest.hexdigest(), size_bytes=size_bytes)
-
-
-def _write_image_data(data: Any, target: Path) -> None:
-    if data is None:
-        raise InstantMLError("image data is required")
-    if callable(getattr(data, "savefig", None)):
-        data.savefig(target)
-        return
-    if callable(getattr(data, "save", None)):
-        data.save(target)
-        return
-    try:
-        from PIL import Image as PillowImage
-    except ImportError as exc:
-        raise InstantMLError("Pillow is required to log image data") from exc
-    try:
-        import numpy as np
-    except ImportError as exc:
-        raise InstantMLError("numpy is required to log image data arrays") from exc
-    array = np.asarray(_tensor_to_python(data))
-    if array.dtype != np.uint8:
-        if array.max() <= 1.0:
-            array = array * 255
-        array = np.clip(array, 0, 255).astype("uint8")
-    PillowImage.fromarray(array).save(target)
-
-
-def _write_audio_data(data: Any, target: Path, sample_rate: int) -> None:
-    if data is None:
-        raise InstantMLError("audio data is required")
-    try:
-        import soundfile
-    except ImportError as exc:
-        raise InstantMLError("soundfile is required to log audio data") from exc
-    soundfile.write(target, _tensor_to_python(data), sample_rate)
-
-
-def _write_video_data(data: Any, target: Path, fps: int | float) -> None:
-    if data is None:
-        raise InstantMLError("video data is required")
-    try:
-        import imageio.v3 as imageio
-    except ImportError as imageio_error:
-        try:
-            from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-        except ImportError as moviepy_error:
-            raise InstantMLError("moviepy or imageio is required to log video data") from moviepy_error
-        clip = ImageSequenceClip(_tensor_to_python(data), fps=fps)
-        clip.write_videofile(str(target), logger=None)
-        return
-    try:
-        imageio.imwrite(target, _tensor_to_python(data), fps=fps)
-    except TypeError as exc:
-        raise InstantMLError("moviepy or imageio is required to log video data") from exc
 
 
 def _collect_system_metrics(psutil_module: Any | None = None, pynvml_module: Any | None = None) -> dict[str, float]:

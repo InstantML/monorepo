@@ -1,5 +1,6 @@
 import json
 import os
+import stat
 import sqlite3
 import subprocess
 import sys
@@ -17,7 +18,7 @@ import instantml.async_queue as async_queue
 import instantml.client as client_module
 import instantml.source as source_module
 import instantml.uploader as uploader
-from instantml.async_queue import AsyncQueueRepository, DeliveryResult, drain_queue_once
+from instantml.async_queue import AsyncQueueRepository, DeliveryResult, EnqueueBatchResult, drain_queue_once
 from instantml.client import (
     Client,
     InstantMLError,
@@ -626,6 +627,31 @@ def test_client_init_process_spool_mode_propagates_options(monkeypatch, tmp_path
         Client(base_url="http://example.test").init(project="demo", upload_mode="background")
 
 
+def test_client_init_omits_project_and_name_sends_none_for_server_defaulting(monkeypatch, tmp_path):
+    # Server fills in "default" + <adj>-<noun>-<seq> when these are absent
+    # — the SDK just passes None through. See
+    # apps/rust-server/src/store/runs/naming.rs.
+    calls = []
+
+    def fake_request(self, method, path, body=None):
+        calls.append((method, path, body))
+        return {"run": {"id": "run-default-name"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    Client(base_url="http://example.test").init(
+        source_tracking=False,
+        queue_dir=str(tmp_path / "async"),
+        async_init=False,
+    )
+
+    post = next(call for call in calls if call[1] == "/runs")
+    body = post[2]
+    assert body["project"] is None
+    assert body["name"] is None
+
+
 def test_client_init_defaults_to_async_upload_mode(monkeypatch, tmp_path):
     def fake_request(self, method, path, body=None):
         return {"run": {"id": "run-default-async"}}
@@ -773,6 +799,442 @@ def test_async_upload_mode_queues_metric_hot_path_without_network(monkeypatch, t
     with pytest.warns(RuntimeWarning, match="async upload did not finish"):
         run.finish("failed", timeout=0)
     assert run.upload_status()["pending"] == 4
+
+
+def test_async_producer_buffer_force_flushes_for_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            raise AssertionError("async metric hot path should not use network")
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._async_buffer = client_module._AsyncProducerBuffer(run, max_events=64, max_bytes=64 * 1024, max_age_seconds=60)
+    started = []
+    monkeypatch.setattr(run, "_start_async_uploader", lambda: started.append(True))
+    run.log_metrics({"reward": 1.5}, step=1)
+
+    assert run._async_buffer.status()["buffered_events"] == 1
+    assert run._require_async_queue().status()["pending"] == 0
+    assert started == []
+    run.flush()
+    assert run._require_async_queue().status()["pending"] == 1
+    assert started == [True]
+    status = run.upload_status()
+    assert status["pending"] == 1
+    assert status["buffered_events"] == 0
+
+
+def test_async_producer_buffer_hard_cap_drops_newest(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._async_buffer = client_module._AsyncProducerBuffer(run, hard_max_events=1, max_age_seconds=60)
+    run.log_metrics({"first": 1.0}, step=1)
+    with pytest.warns(RuntimeWarning, match="hard limit"):
+        run.log_metrics({"second": 2.0}, step=2)
+
+    status = run.upload_status()
+    assert status["pending"] == 1
+    assert status["dropped"] == 1
+
+
+def test_async_producer_buffer_retries_locked_flush(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._async_buffer = client_module._AsyncProducerBuffer(run, max_events=1, retry_seconds=0.001)
+    queue = run._require_async_queue()
+    original = queue.enqueue_many_prepared
+    calls = {"count": 0}
+
+    def flaky_enqueue(events):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise InstantMLError("async queue enqueue failed: database is locked")
+        return original(events)
+
+    monkeypatch.setattr(queue, "enqueue_many_prepared", flaky_enqueue)
+
+    run.log_metrics({"reward": 1.0}, step=1)
+
+    assert run._force_async_buffer_flush(timeout=1.0)
+    assert calls["count"] >= 2
+    assert run.upload_status()["pending"] == 1
+
+
+def test_async_producer_buffer_edge_paths(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    queue = run._require_async_queue()
+    event = queue.prepare_event("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1}, "step": 1})
+
+    closed_buffer = client_module._AsyncProducerBuffer(run)
+    with closed_buffer._condition:
+        closed_buffer._closed = True
+    with pytest.warns(RuntimeWarning, match="producer buffer is closed"):
+        assert not closed_buffer.append(event)
+    closed_buffer._ensure_worker_locked()
+    assert closed_buffer._worker is None
+
+    no_timestamp_buffer = client_module._AsyncProducerBuffer(run, max_age_seconds=60)
+    with no_timestamp_buffer._condition:
+        no_timestamp_buffer._buffer = [(1, event)]
+        no_timestamp_buffer._buffer_bytes = event.body_size_bytes
+        no_timestamp_buffer._oldest_buffered_at = None
+        assert not no_timestamp_buffer._flush_due_locked()
+
+    dead_buffer = client_module._AsyncProducerBuffer(run)
+
+    class DeadWorker:
+        def is_alive(self):
+            return False
+
+    ensure_calls = []
+    with dead_buffer._condition:
+        dead_buffer._worker = DeadWorker()  # type: ignore[assignment]
+        dead_buffer._buffer = [(1, event)]
+        dead_buffer._buffer_bytes = event.body_size_bytes
+        dead_buffer._next_sequence = 2
+    monkeypatch.setattr(dead_buffer, "_ensure_worker_locked", lambda: ensure_calls.append("ensure"))
+    assert not dead_buffer.force_flush(timeout=0)
+    assert len(ensure_calls) >= 2
+
+    waiting_buffer = client_module._AsyncProducerBuffer(run, max_age_seconds=60)
+    write_started = threading.Event()
+
+    def slow_write(batch):
+        write_started.set()
+        time.sleep(0.02)
+        return True, False, None, batch[-1][0]
+
+    monkeypatch.setattr(waiting_buffer, "_write_batch", slow_write)
+    assert waiting_buffer.append(event)
+    flush_result = []
+    flush_thread = threading.Thread(target=lambda: flush_result.append(waiting_buffer.force_flush(timeout=None)))
+    flush_thread.start()
+    assert write_started.wait(timeout=1.0)
+    flush_thread.join(timeout=1.0)
+    assert flush_result == [True]
+    waiting_buffer.stop(timeout=1.0)
+
+    empty_continue_buffer = client_module._AsyncProducerBuffer(run, max_age_seconds=60)
+    calls = {"flush_due": 0}
+    worker_reentered = threading.Event()
+
+    def fake_flush_due():
+        calls["flush_due"] += 1
+        if calls["flush_due"] == 1:
+            return True
+        worker_reentered.set()
+        return False
+
+    monkeypatch.setattr(empty_continue_buffer, "_flush_due_locked", fake_flush_due)
+    worker = threading.Thread(target=empty_continue_buffer._worker_loop)
+    worker.start()
+    assert worker_reentered.wait(timeout=1.0)
+    with empty_continue_buffer._condition:
+        empty_continue_buffer._closed = True
+        empty_continue_buffer._condition.notify_all()
+    worker.join(timeout=1.0)
+    assert not worker.is_alive()
+
+
+def test_async_producer_buffer_write_batch_outcomes(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    queue = run._require_async_queue()
+    event = queue.prepare_event("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1}, "step": 1})
+    buffer = client_module._AsyncProducerBuffer(run)
+
+    assert buffer._write_batch([]) == (True, False, None, None)
+
+    monkeypatch.setattr(
+        queue,
+        "enqueue_many_prepared",
+        lambda events: EnqueueBatchResult(inserted=0, dropped=len(events), message="queue limit reached"),
+    )
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="queue limit reached"):
+        assert buffer._write_batch([(1, event)]) == (True, False, "queue limit reached", 1)
+
+    monkeypatch.setattr(queue, "enqueue_many_prepared", lambda events: (_ for _ in ()).throw(ValueError("broken batch")))
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="producer flush failed"):
+        ok, retryable, message, completed = buffer._write_batch([(2, event)])
+    assert not ok
+    assert not retryable
+    assert "broken batch" in str(message)
+    assert completed == 2
+    assert run._async_local_dropped == 1
+
+
+def test_async_producer_buffer_rolls_back_append_when_worker_start_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    queue = run._require_async_queue()
+    event = queue.prepare_event("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1}, "step": 1})
+    buffer = client_module._AsyncProducerBuffer(run)
+    monkeypatch.setattr(buffer, "_ensure_worker_locked", lambda: (_ for _ in ()).throw(RuntimeError("no thread")))
+
+    with pytest.raises(RuntimeError, match="no thread"):
+        buffer.append(event)
+
+    assert buffer.status()["buffered_events"] == 0
+    assert buffer.status()["buffered_bytes"] == 0
+    assert buffer._next_sequence == 1
+
+
+def test_async_producer_buffer_handles_concurrent_loggers(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            raise AssertionError("async metric hot path should not use network")
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._async_buffer = client_module._AsyncProducerBuffer(run, max_events=8, max_age_seconds=60)
+    total_threads = 4
+    events_per_thread = 25
+
+    def log_many(thread_index):
+        key = f"reward/{thread_index}"
+        for index in range(events_per_thread):
+            run.log_metrics({key: index}, step=index)
+
+    threads = [threading.Thread(target=log_many, args=(thread_index,)) for thread_index in range(total_threads)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5.0)
+        assert not thread.is_alive()
+
+    assert run._force_async_buffer_flush(timeout=1.0)
+    status = run.upload_status()
+    assert status["pending"] == total_threads * events_per_thread
+    assert status["dropped"] == 0
+
+
+def test_async_status_and_wait_reflect_buffer_errors_and_local_drops(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path / "status"))
+    assert run._force_async_buffer_flush(timeout=0)
+    run._async_buffer._last_flush_error = "buffer failed"  # type: ignore[union-attr]
+    monkeypatch.setattr(run, "_force_async_buffer_flush", lambda timeout=None: True)
+    assert run.upload_status()["last_error"] == "buffer failed"
+
+    blocked = Run(client=FakeClient(), run_id="run-2", upload_mode="async", queue_dir=str(tmp_path / "blocked"))
+    monkeypatch.setattr(blocked, "_force_async_buffer_flush", lambda timeout=None: False)
+    assert not blocked.wait_for_submission(timeout=0)
+
+    dropped = Run(client=FakeClient(), run_id="run-3", upload_mode="async", queue_dir=str(tmp_path / "dropped"))
+    dropped._async_local_dropped = 1
+    assert not dropped.wait_for_processing(timeout=0)
+
+    sync_run = Run(client=FakeClient(), run_id="run-4", upload_mode="sync")
+    assert sync_run._force_async_buffer_flush(timeout=0)
+    unbuffered = Run(client=FakeClient(), run_id="run-5", upload_mode="async", queue_dir=str(tmp_path / "unbuffered"))
+    unbuffered._async_buffer = None
+    assert unbuffered._force_async_buffer_flush(timeout=0)
+
+
+def test_async_unbuffered_enqueue_starts_uploader(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._async_buffer = None
+    started = []
+    monkeypatch.setattr(run, "_start_async_uploader", lambda: started.append(True))
+
+    run.log_metrics({"reward": 1}, step=1)
+
+    assert started == [True]
+    assert run.upload_status()["pending"] == 1
+
+
+def test_async_start_uploader_serializes_concurrent_calls(monkeypatch, tmp_path):
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+    popen_calls = []
+
+    def fake_popen(*args, **kwargs):
+        time.sleep(0.01)
+        popen_calls.append((args, kwargs))
+        return FakeProcess()
+
+    monkeypatch.setattr(client_module.subprocess, "Popen", fake_popen)
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._async_process = None
+    popen_calls.clear()
+
+    threads = [threading.Thread(target=run._start_async_uploader) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=1.0)
+        assert not thread.is_alive()
+
+    assert len(popen_calls) == 1
+
+
+def test_async_finish_does_not_close_queue_when_producer_writer_is_alive(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    queue = run._require_async_queue()
+    closed = []
+    monkeypatch.setattr(run, "_submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(run, "_force_async_buffer_flush", lambda timeout=None: True)
+    monkeypatch.setattr(run, "wait_for_processing", lambda timeout=None: True)
+    monkeypatch.setattr(run._async_buffer, "stop", lambda timeout=None: False)
+    monkeypatch.setattr(queue, "close", lambda: closed.append(True))
+
+    with pytest.warns(RuntimeWarning, match="producer writer did not stop"):
+        run.finish(timeout=0.01)
+
+    assert closed == []
+
+
+def test_async_wait_fails_on_repository_drops(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run._require_async_queue().increment_counter("dropped", 1)
+
+    assert not run.wait_for_processing(timeout=0)
 
 
 def test_async_queue_open_failure_warns_and_drops_hot_path(monkeypatch, tmp_path):
@@ -1164,6 +1626,22 @@ def test_async_queue_directory_drain_and_lock_paths(monkeypatch, tmp_path):
 def test_async_queue_repository_edge_cases(monkeypatch, tmp_path):
     repository = AsyncQueueRepository(tmp_path / "queue.sqlite3", max_event_bytes=16, max_queue_bytes=256 * 1024)
     repository.init_db()
+    assert stat.S_IMODE(repository.path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(repository.path.stat().st_mode) == 0o600
+    original_chmod = async_queue.Path.chmod
+
+    def broken_chmod(path, mode):
+        if path in {repository.path.parent, repository.path}:
+            raise OSError("chmod denied")
+        return original_chmod(path, mode)
+
+    monkeypatch.setattr(async_queue.Path, "chmod", broken_chmod)
+    repository._harden_file_permissions()
+    monkeypatch.setattr(async_queue.Path, "chmod", original_chmod)
+
+    empty_result = repository.enqueue_many_prepared([])
+    assert empty_result.inserted == 0
+    assert empty_result.dropped == 0
 
     assert repository.enqueue("POST", "/runs/run-1/metrics", {"blob": "x" * 64}) is None
     assert repository.counter("dropped") == 1
@@ -1198,6 +1676,7 @@ def test_async_queue_repository_edge_cases(monkeypatch, tmp_path):
     missing_repository._checkpoint_wal()
 
     monkeypatch.setattr(repository, "_queue_file_size_bytes", lambda: repository.max_queue_bytes)
+    assert repository._queue_is_full(1)
     assert repository.enqueue("POST", "/runs/run-1/metrics", {"m": 3}, idempotency_key="c") is None
 
     class BrokenRepository(AsyncQueueRepository):
@@ -1218,6 +1697,56 @@ def test_async_queue_repository_edge_cases(monkeypatch, tmp_path):
     repository.close()
 
 
+def test_async_queue_prepared_batch_preserves_order_and_counts(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3", max_event_bytes=128, max_queue_bytes=10_000)
+    repository.init_db()
+    monkeypatch.setattr(repository, "_queue_file_size_bytes", lambda: 0)
+    events = [
+        repository.prepare_event("POST", "/runs/run-1/metrics", {"m": index}, idempotency_key=f"event-{index}", created_at=100.0 + index)
+        for index in range(3)
+    ]
+
+    result = repository.enqueue_many_prepared(events)
+
+    assert result.inserted == 3
+    assert result.dropped == 0
+    assert result.first_sequence_id == 1
+    assert result.last_sequence_id == 3
+    claimed = repository.claim_batch("lease", max_batch_bytes=10_000, max_event_bytes=128, lease_seconds=1)
+    assert [event.idempotency_key for event in claimed] == ["event-0", "event-1", "event-2"]
+    assert [event.body["m"] for event in claimed] == [0, 1, 2]
+
+
+def test_async_queue_prepared_batch_drops_oversized_and_queue_suffix(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3", max_event_bytes=64, max_queue_bytes=10)
+    repository.init_db()
+    monkeypatch.setattr(repository, "_queue_file_size_bytes", lambda: 0)
+    first = repository.prepare_event("POST", "/runs/run-1/metrics", {"m": 1}, idempotency_key="first", created_at=1.0)
+    second = repository.prepare_event("POST", "/runs/run-1/metrics", {"m": 2}, idempotency_key="second", created_at=2.0)
+    oversized = repository.prepare_event("POST", "/runs/run-1/metrics", {"blob": "x" * 128}, idempotency_key="big", created_at=3.0)
+
+    result = repository.enqueue_many_prepared([first, second, oversized])
+
+    assert result.inserted == 1
+    assert result.dropped == 2
+    assert repository.counter("dropped") == 2
+    claimed = repository.claim_batch("lease", max_batch_bytes=10_000, max_event_bytes=128, lease_seconds=1)
+    assert [event.idempotency_key for event in claimed] == ["first"]
+
+
+def test_async_queue_prepared_batch_drops_when_disk_space_missing(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    monkeypatch.setattr(repository, "_has_disk_space", lambda: False)
+    event = repository.prepare_event("POST", "/runs/run-1/metrics", {"m": 1})
+
+    result = repository.enqueue_many_prepared([event])
+
+    assert result.inserted == 0
+    assert result.dropped == 1
+    assert repository.counter("dropped") == 1
+
+
 def test_async_queue_enqueue_error_records_drop(monkeypatch, tmp_path):
     repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
 
@@ -1233,6 +1762,36 @@ def test_async_queue_enqueue_error_records_drop(monkeypatch, tmp_path):
 
     with pytest.raises(InstantMLError, match="async queue enqueue failed"):
         repository.enqueue("POST", "/runs/run-1/metrics", {"m": 1})
+
+
+def test_async_queue_prepared_batch_rolls_back_on_insert_error(monkeypatch, tmp_path):
+    repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
+    repository.init_db()
+    event = repository.prepare_event("POST", "/runs/run-1/metrics", {"m": 1})
+
+    class BadInsertConnection:
+        def __init__(self):
+            self.rolled_back = False
+
+        def executemany(self, *args, **kwargs):
+            raise sqlite3.Error("insert failed")
+
+        def execute(self, *args, **kwargs):
+            raise AssertionError("execute should not run after executemany fails")
+
+        def rollback(self):
+            self.rolled_back = True
+
+        def close(self):
+            pass
+
+    bad_connection = BadInsertConnection()
+    repository._connection = bad_connection  # type: ignore[assignment]
+    monkeypatch.setattr(repository, "_available_queue_bytes", lambda: event.body_size_bytes)
+
+    with pytest.raises(InstantMLError, match="insert failed"):
+        repository.enqueue_many_prepared([event])
+    assert bad_connection.rolled_back
 
 
 def test_async_queue_real_drain_and_uploader_loop(monkeypatch, tmp_path):
@@ -1628,7 +2187,12 @@ def test_async_submit_drop_and_warning_rate_limit(monkeypatch, tmp_path):
             return {}
 
     run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
-    monkeypatch.setattr(run._require_async_queue(), "enqueue", lambda *args, **kwargs: None)
+    run._async_buffer = None
+    monkeypatch.setattr(
+        run._require_async_queue(),
+        "enqueue_many_prepared",
+        lambda events: EnqueueBatchResult(inserted=0, dropped=len(events), message="dropped an event"),
+    )
     with pytest.warns(RuntimeWarning, match="dropped an event"):
         run.log_metrics({"reward": 1}, step=1)
     with pytest.warns(RuntimeWarning, match="manual warning"):
@@ -1636,7 +2200,7 @@ def test_async_submit_drop_and_warning_rate_limit(monkeypatch, tmp_path):
         run._warn_async_drop("manual warning")
     run._warn_async_drop("manual warning")
 
-    monkeypatch.setattr(run._require_async_queue(), "enqueue", lambda *args, **kwargs: (_ for _ in ()).throw(sqlite3.Error("broken")))
+    monkeypatch.setattr(run._require_async_queue(), "enqueue_many_prepared", lambda events: (_ for _ in ()).throw(sqlite3.Error("broken")))
     run._last_async_warning_at = 0
     with pytest.warns(RuntimeWarning, match="could not record"):
         run.log_metrics({"reward": 2}, step=2)

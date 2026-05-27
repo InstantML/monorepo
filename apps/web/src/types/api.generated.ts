@@ -175,9 +175,8 @@ export interface paths {
         put?: never;
         /**
          * Re-point the caller's session at a different org they belong to.
-         * @description Used by the dashboard org-switcher. The session token is unchanged — only
-         *     the bound `org_id` on the session row is updated, so subsequent requests
-         *     from the same cookie scope to the newly selected org.
+         * @description Used by the dashboard org-switcher. The route preserves its response shape
+         *     while the store mints a fresh browser session cookie for the selected org.
          */
         post: operations["auth_switch_organization"];
         delete?: never;
@@ -532,6 +531,22 @@ export interface paths {
         get: operations["list_orgs"];
         put?: never;
         post: operations["create_org"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orgs/current-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_current_user_org"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1671,6 +1686,14 @@ export interface components {
             lines?: components["schemas"]["ConsoleLogInput"][] | null;
             stream?: string | null;
         };
+        CreateCurrentUserOrganizationRequest: {
+            account_type?: string | null;
+            initial_invitations?: components["schemas"]["InitialOrganizationInvitation"][] | null;
+            name?: string | null;
+            plan_tier?: string | null;
+            storage_choice?: string | null;
+            switch_on_create?: boolean | null;
+        };
         CreateInvitationRequest: {
             email?: string | null;
             role?: string | null;
@@ -1725,6 +1748,15 @@ export interface components {
             primary_email?: string | null;
             provider?: string | null;
             provider_subject?: string | null;
+        };
+        CurrentUserOrganizationCreateResponse: {
+            billing_checkout?: null | components["schemas"]["BillingCheckoutInfo"];
+            invitations?: components["schemas"]["InitialInvitationCreateResult"][];
+            membership: components["schemas"]["MembershipRow"];
+            memberships: components["schemas"]["OrganizationMembershipSummary"][];
+            onboarding_api_key?: null | components["schemas"]["OnboardingApiKey"];
+            organization: components["schemas"]["OrganizationRow"];
+            session?: null | components["schemas"]["AuthSessionPayload"];
         };
         DashboardPreferenceRow: {
             /** Format: uuid */
@@ -1784,15 +1816,23 @@ export interface components {
             verification_uri: string;
             verification_uri_complete: string;
         };
-        ErrorBody: {
-            code: string;
-            message: string;
-        };
         ErrorResponse: {
-            error: components["schemas"]["ErrorBody"];
+            code?: string | null;
+            error: string;
+            field?: string | null;
+            position?: number | null;
         };
         HealthResponse: {
             status: string;
+        };
+        InitialInvitationCreateResult: {
+            delivery_error?: string | null;
+            invitation: components["schemas"]["PublicInvitationRow"];
+            preview_link?: string | null;
+        };
+        InitialOrganizationInvitation: {
+            email: string;
+            role?: string | null;
         };
         InsertedEnvelope: {
             /** Format: int64 */
@@ -1936,19 +1976,29 @@ export interface components {
          *     dropdown can show "Acme · admin · 5 members" without forcing the client to
          *     stitch responses together. */
         OrganizationMembershipSummary: {
+            account_type: string;
+            capabilities: components["schemas"]["OrganizationRoleCapabilities"];
             is_current: boolean;
+            is_personal: boolean;
             member_count: number;
             name: string;
             /** Format: uuid */
             org_id: string;
             plan_tier: string;
             role: string;
+            role_label: string;
             slug: string;
             status: string;
         };
         OrganizationNameAvailability: {
             available: boolean;
             slug: string;
+        };
+        OrganizationRoleCapabilities: {
+            manage_api_keys: boolean;
+            manage_billing: boolean;
+            manage_members: boolean;
+            write_runs: boolean;
         };
         OrganizationRow: {
             account_type: string;
@@ -2971,6 +3021,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Owner or admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     billing_report_storage_overage: {
@@ -3162,7 +3221,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key */
                 sort_by?: string;
@@ -3182,6 +3241,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -3623,6 +3691,57 @@ export interface operations {
             };
             /** @description Bootstrap token required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_current_user_org: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCurrentUserOrganizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Created organization for the current browser user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUserOrganizationCreateResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Organization or personal workspace already exists */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4144,7 +4263,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Metric key for best-value column */
                 metric_key?: string;
@@ -4162,6 +4281,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4220,7 +4348,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key */
                 sort_by?: string;
@@ -4232,6 +4360,8 @@ export interface operations {
                 offset?: number;
                 /** @description Pagination cursor */
                 cursor?: string;
+                /** @description Use selection for lightweight bulk-selection rows */
+                projection?: string;
             };
             header?: never;
             path?: never;
@@ -4246,6 +4376,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -5576,6 +5715,12 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
+                q?: string;
+                /** @description Sort key: created, name, status, duration, metric-latest, or metric-best */
+                sort_by?: string;
+                /** @description Metric key used by metric-latest and metric-best sorts */
+                metric_key?: string;
                 /** @description Page size (1..=1000) */
                 limit?: number;
                 /** @description Offset for pagination */
@@ -5594,6 +5739,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunsEnvelope"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

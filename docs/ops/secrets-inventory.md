@@ -63,7 +63,7 @@ Cloud Run env (set inline in the service spec, not in Secret Manager).
 | `INSTANTML_DEV_AUTH_ENABLED` | `false` | Bypass auth in dev only. |
 | `INSTANTML_SERVICE_PLANE` | `control` or `data` | Per-service role. |
 | `INSTANTML_HOSTED_CLICKHOUSE_ENABLED` | `false` (local) / `true` (hosted) | Toggle hosted CH routing. |
-| `INSTANTML_CLICKHOUSE_PROVISIONER` | `database` (local) / `cloud-service` (hosted) | Tenant provisioning mode. |
+| `INSTANTML_CLICKHOUSE_PROVISIONER` | `database` | Tenant provisioning mode. Current hosted prod/staging use database-mode tenant routing on self-hosted GCP ClickHouse; `cloud-service` is legacy operator-only. |
 | `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER` | `aws` | CH Cloud provider. |
 | `INSTANTML_CLICKHOUSE_CLOUD_REGION` | `us-east-1` | CH Cloud region. |
 | `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` | egress CIDRs | Cloud Run static-NAT IP allow-list. |
@@ -74,7 +74,8 @@ Cloud Run env (set inline in the service spec, not in Secret Manager).
 | `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING` | `false` | Gate plan-driven warehouse upsizing. |
 | `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` | unset | Optional explicit CH org id. |
 | `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS` | `false` | Whether per-tenant CH passwords may live in user-data DB. |
-| `INSTANTML_BYOC_EGRESS_CIDRS` | static egress | BYOC outbound allow-list. |
+| `INSTANTML_BYOC_EGRESS_CIDRS` | static egress | BYOC outbound allow-list shown to customers for GCP firewall/load-balancer rules. Must be set explicitly; legacy ClickHouse Cloud allowlist env is not a BYOC fallback. |
+| `INSTANTML_BYOC_EGRESS_SET_VERSION` | deploy label | Version/label for the displayed BYOC static egress set. Hosted BYOC is disabled when CIDRs are unversioned. |
 | `INSTANTML_BYOC_SECRET_BACKEND` | `gcp-secret-manager` | BYOC credential store choice. |
 | `INSTANTML_BYOC_SECRET_PROJECT_ID` | current project | BYOC secret project. |
 | `INSTANTML_BYOC_SECRET_PREFIX` | `<service>-byoc-clickhouse` | BYOC secret id prefix. |
