@@ -225,7 +225,7 @@ export function buildTools({ apiUrl, apiKey }) {
     {
       name: "tracker.list_reports",
       description:
-        "List Notion-style reports in the org. Each entry is a summary (id, title, block_count, visibility, has_share_token, updated_at). Use this to discover existing reports before reading or editing one.",
+        "List block-based reports in the org. Each entry is a summary (id, title, block_count, visibility, has_share_token, updated_at). Use this to discover existing reports before reading or editing one.",
       inputSchema: {
         type: "object",
         properties: {
@@ -275,7 +275,7 @@ export function buildTools({ apiUrl, apiKey }) {
     {
       name: "tracker.create_report",
       description:
-        "Create a new Notion-style report. `blocks` is an ordered array of block objects." +
+        "Create a new block-based report. `blocks` is an ordered array of block objects." +
         BLOCK_SCHEMA_HINT +
         " Call tracker.report_block_schema first if you need a reference example.",
       inputSchema: {

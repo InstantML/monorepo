@@ -9,7 +9,7 @@ import { RUN_COLOR_PALETTE } from "./types";
 /**
  * Run-set table widget — the load-bearing v1.2 addition.
  *
- * Renders the runs resolved by every PanelGrid runset as a Notion-style table
+ * Renders the runs resolved by every PanelGrid runset as a block-based table
  * with per-row visibility / disable / color controls. Mutations are persisted
  * back to the Runset spec (via `onChange`) so the charts above re-render
  * with the user's selections. The table never short-circuits chart fetches

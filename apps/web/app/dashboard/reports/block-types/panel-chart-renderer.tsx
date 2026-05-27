@@ -46,7 +46,7 @@ import {
 
 /**
  * Hard cap on the number of runs we resolve per panel. Reports embed live
- * charts inside long Notion-style documents, so we trade off completeness for
+ * charts inside long block-based documents, so we trade off completeness for
  * page-load latency: a runset that would resolve >50 runs is truncated and a
  * notice is shown. Matches the v1 perf-safety guidance in the brief.
  */

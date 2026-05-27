@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../../../../src/api.js";
-import { AddPanelModal, cloneInventoryPanel } from "./add-panel-modal";
+import {
+  AddPanelModal,
+  cloneInventoryPanel,
+  defaultPanelWithMetric,
+} from "./add-panel-modal";
+import type { InRunsetCandidate } from "./add-panel-modal";
 import { PanelChartRenderer } from "./panel-chart-renderer";
 import { RunSetTable } from "./run-set-table";
 import type {
@@ -32,6 +37,12 @@ type Props = {
   block: PanelGridBlockData;
   readOnly?: boolean;
   onChange?: (next: PanelGridBlockData) => void;
+  /**
+   * Sibling PanelGrids in the same report — surfaced in the modal's
+   * "From this report" tab. Caller (ReportEditor) is responsible for
+   * filtering out the host block by index.
+   */
+  siblingPanelGrids?: { blockIndex: number; label: string; block: PanelGridBlockData }[];
 };
 
 const PANEL_TYPE_LABEL: Record<PanelType, string> = {
@@ -55,7 +66,7 @@ const PANEL_TYPE_LABEL: Record<PanelType, string> = {
  * same metrics-series fetch path as the metrics tab. Charts re-fetch live
  * whenever the runset or panel config changes.
  */
-export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
+export function PanelGridBlock({ block, readOnly = false, onChange, siblingPanelGrids }: Props) {
   const api = useMemo(() => new ApiClient(), []);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const projectOptions = useProjectOptions(api);
@@ -91,12 +102,24 @@ export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
     [block, onChange],
   );
   const addPanel = useCallback(
-    (type: PanelType) => {
+    (type: PanelType, metricKey?: string) => {
       if (!onChange) return;
       onChange({
         ...block,
-        panels: [...block.panels, defaultPanel(type)],
+        panels: [...block.panels, defaultPanelWithMetric(type, metricKey)],
       });
+      setPaletteOpen(false);
+    },
+    [block, onChange],
+  );
+  const addFromCandidate = useCallback(
+    (candidate: InRunsetCandidate) => {
+      if (!onChange) return;
+      const cloned = JSON.parse(JSON.stringify(candidate.panel)) as PanelData;
+      if ("runset_index" in cloned) {
+        (cloned as { runset_index: number }).runset_index = 0;
+      }
+      onChange({ ...block, panels: [...block.panels, cloned] });
       setPaletteOpen(false);
     },
     [block, onChange],
@@ -247,9 +270,12 @@ export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
       <AddPanelModal
         open={paletteOpen}
         api={api}
+        hostRunsets={block.runsets}
+        inReportCandidates={siblingPanelGrids}
         onClose={() => setPaletteOpen(false)}
-        onPickType={(type) => addPanel(type)}
+        onPickType={(type, metricKey) => addPanel(type, metricKey)}
         onPickFromInventory={(entry) => addInventoryPanel(entry)}
+        onPickFromCandidate={(candidate) => addFromCandidate(candidate)}
       />
     </div>
   );

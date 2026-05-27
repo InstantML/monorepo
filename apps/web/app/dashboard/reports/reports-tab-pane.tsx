@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, Plus, Sparkles, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, FileText, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import { ApiClient } from "../../../src/api.js";
 import {
@@ -17,22 +17,30 @@ import {
 import { PageHead } from "../ui/page-head";
 import { ReportEditor } from "./report-editor";
 import { ReportViewer } from "./report-viewer";
-import type {
-  ReportBlock,
-  ReportRecord,
-  ReportSummary,
-} from "./block-types";
+import { AutoSavePill } from "./auto-save-pill";
+import type { AutoSaveStatus } from "./auto-save-pill";
+import { createAutoSaveScheduler } from "./auto-save";
+import type { ReportRecord, ReportSummary } from "./block-types";
 
 type Mode =
   | { kind: "list" }
-  | { kind: "edit"; reportId: string }
+  | { kind: "edit"; reportId: string; autoFocus?: boolean }
   | { kind: "view"; reportId: string };
 
-const DEFAULT_BLOCKS: ReportBlock[] = [];
+const AUTO_SAVE_DELAY_MS = 800;
+
+interface SavePayload {
+  title: string;
+  description: string;
+  visibility: ReportRecord["visibility"];
+  blocks: ReportRecord["blocks"];
+}
 
 /**
- * Top-level Reports tab. Handles the list/editor/viewer flow internally so
- * the dashboard-shell wiring stays a thin pass-through.
+ * Top-level Reports tab. Owns the list/editor/viewer flow plus the
+ * auto-save scheduler — the editor itself is a controlled component that
+ * fires `onChange` for every edit; this pane debounces those into one
+ * PATCH per 800 ms of quiet.
  */
 export function ReportsTabPane() {
   const api = useMemo(() => new ApiClient(), []);
@@ -42,6 +50,16 @@ export function ReportsTabPane() {
   const [busy, setBusy] = useState(false);
   const [refreshingBlockIndex, setRefreshingBlockIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoSave, setAutoSave] = useState<AutoSaveStatus>({ state: "idle" });
+
+  // Per-editor auto-save scheduler. Recreated each time we open a new
+  // report so the cleanup of the previous one doesn't fire after we mount
+  // its replacement.
+  const schedulerRef = useRef<ReturnType<typeof createAutoSaveScheduler<SavePayload>> | null>(null);
+  // Latest payload that the editor handed us. Used by the retry button.
+  const lastPayloadRef = useRef<SavePayload | null>(null);
+  // First-render guard — we don't auto-save on the initial mount.
+  const hasUserEditedRef = useRef(false);
 
   const loadList = useCallback(async () => {
     setBusy(true);
@@ -67,6 +85,8 @@ export function ReportsTabPane() {
       try {
         const report = await fetchReport(api, reportId);
         setActiveReport(report);
+        setAutoSave({ state: "idle" });
+        hasUserEditedRef.current = false;
       } catch (loadError) {
         setError(messageFromError(loadError));
       } finally {
@@ -76,6 +96,43 @@ export function ReportsTabPane() {
     [api],
   );
 
+  // Build (or rebuild) the scheduler whenever we enter edit mode for a new id.
+  useEffect(() => {
+    if (mode.kind !== "edit") {
+      schedulerRef.current?.dispose();
+      schedulerRef.current = null;
+      return;
+    }
+    const reportId = mode.reportId;
+    const scheduler = createAutoSaveScheduler<SavePayload>({
+      delayMs: AUTO_SAVE_DELAY_MS,
+      flush: async (payload) => {
+        setAutoSave({ state: "saving" });
+        try {
+          const updated = await patchReport(api, reportId, payload);
+          if (updated) {
+            setActiveReport((current) => (current ? { ...current, ...updated } : current));
+          }
+          setAutoSave({ state: "saved", at: Date.now() });
+          // Refresh the list silently so summaries reflect the new title.
+          void listReports(api)
+            .then(({ reports }) => setSummaries(reports))
+            .catch(() => undefined);
+        } catch (saveError) {
+          setAutoSave({
+            state: "error",
+            message: messageFromError(saveError),
+          });
+        }
+      },
+    });
+    schedulerRef.current = scheduler;
+    return () => {
+      scheduler.dispose();
+      if (schedulerRef.current === scheduler) schedulerRef.current = null;
+    };
+  }, [mode, api]);
+
   useEffect(() => {
     if (mode.kind === "list") {
       setActiveReport(null);
@@ -84,56 +141,55 @@ export function ReportsTabPane() {
     void loadReport(mode.reportId);
   }, [mode, loadReport]);
 
-  const handleCreate = useCallback(
-    async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        const created = await createReport(api, {
-          title: "Untitled report",
-          visibility: "private",
-        });
-        if (created) {
-          await loadList();
-          setMode({ kind: "edit", reportId: created.id });
-        }
-      } catch (createError) {
-        setError(messageFromError(createError));
-      } finally {
-        setBusy(false);
+  const handleCreate = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createReport(api, {
+        title: "Untitled report",
+        visibility: "private",
+      });
+      if (created) {
+        await loadList();
+        setMode({ kind: "edit", reportId: created.id, autoFocus: true });
       }
-    },
-    [api, loadList],
-  );
+    } catch (createError) {
+      setError(messageFromError(createError));
+    } finally {
+      setBusy(false);
+    }
+  }, [api, loadList]);
 
   const handleEditorChange = useCallback(
-    (next: Pick<ReportRecord, "id" | "title" | "description" | "blocks" | "visibility">) => {
-      setActiveReport((current) =>
-        current ? { ...current, ...next } : current,
-      );
+    (
+      next: Pick<ReportRecord, "id" | "title" | "description" | "blocks" | "visibility">,
+    ) => {
+      setActiveReport((current) => (current ? { ...current, ...next } : current));
+      // First setState from `loadReport` would push the initial value in too
+      // — guard against scheduling a save for that no-op edit.
+      if (!hasUserEditedRef.current) {
+        hasUserEditedRef.current = true;
+        return;
+      }
+      const payload: SavePayload = {
+        title: next.title,
+        description: next.description ?? "",
+        visibility: next.visibility,
+        blocks: next.blocks,
+      };
+      lastPayloadRef.current = payload;
+      setAutoSave({ state: "dirty" });
+      schedulerRef.current?.schedule(payload);
     },
     [],
   );
 
-  const handleSave = useCallback(async () => {
-    if (!activeReport) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await patchReport(api, activeReport.id, {
-        title: activeReport.title,
-        description: activeReport.description ?? "",
-        visibility: activeReport.visibility,
-        blocks: activeReport.blocks,
-      });
-      if (updated) setActiveReport(updated);
-      await loadList();
-    } catch (saveError) {
-      setError(messageFromError(saveError));
-    } finally {
-      setBusy(false);
-    }
-  }, [activeReport, api, loadList]);
+  const handleRetry = useCallback(() => {
+    const payload = lastPayloadRef.current;
+    if (!payload) return;
+    schedulerRef.current?.schedule(payload);
+    void schedulerRef.current?.flushNow();
+  }, []);
 
   const handleDelete = useCallback(
     async (reportId: string) => {
@@ -183,13 +239,21 @@ export function ReportsTabPane() {
     }
   }, [activeReport, api]);
 
+  // Flush pending save before leaving edit mode.
+  const flushAndLeave = useCallback(async (next: Mode) => {
+    if (schedulerRef.current && schedulerRef.current.hasPending()) {
+      await schedulerRef.current.flushNow();
+    }
+    setMode(next);
+  }, []);
+
   return (
     <>
       <PageHead
         eyebrow="Workspace"
         title="Reports"
         emphasis="for collaboration"
-        lede="Notion-style documents · live PanelGrids · LLM summaries"
+        lede="Block-based documents · live PanelGrids · LLM summaries"
       />
       {error ? <div className="report-error" role="alert">{error}</div> : null}
       {mode.kind === "list" ? (
@@ -204,68 +268,78 @@ export function ReportsTabPane() {
       ) : null}
       {mode.kind === "edit" && activeReport ? (
         <section className="report-pane">
-          <div className="report-pane__head">
+          <div className="report-pane__toolbar">
             <button
               type="button"
-              className="report-pane__back"
-              onClick={() => setMode({ kind: "list" })}
+              className="report-pane__icon-button"
+              onClick={() => void flushAndLeave({ kind: "list" })}
+              title="Back to all reports"
+              aria-label="Back to all reports"
             >
-              ← All reports
+              <ChevronLeft size={15} aria-hidden="true" />
+              <span className="report-pane__toolbar-label">All reports</span>
             </button>
-            <div className="report-pane__head-actions">
-              <button
-                type="button"
-                className="report-pane__action"
-                onClick={() => setMode({ kind: "view", reportId: activeReport.id })}
-              >
-                Preview
-              </button>
-              <button
-                type="button"
-                className="report-pane__action"
-                onClick={() => void handleShare()}
-              >
-                {activeReport.share_token ? "Rotate share link" : "Create share link"}
-              </button>
-              <a
-                className="report-pane__action"
-                href={reportMarkdownUrl(activeReport.id)}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Export Markdown
-              </a>
-            </div>
+            <div className="report-pane__toolbar-spacer" />
+            <AutoSavePill status={autoSave} onRetry={handleRetry} />
+            <button
+              type="button"
+              className="report-pane__icon-button"
+              onClick={() =>
+                void flushAndLeave({ kind: "view", reportId: activeReport.id })
+              }
+              title="Preview"
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              className="report-pane__icon-button"
+              onClick={() => void handleShare()}
+              title={activeReport.share_token ? "Rotate share link" : "Create share link"}
+            >
+              {activeReport.share_token ? "Rotate share" : "Share"}
+            </button>
+            <a
+              className="report-pane__icon-button"
+              href={reportMarkdownUrl(activeReport.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Export as Markdown"
+            >
+              Export
+            </a>
           </div>
           {activeReport.share_token ? (
             <p className="report-pane__share">
-              Public share URL ·{" "}
-              <code>/r/{activeReport.share_token}</code>
+              Public share URL · <code>/r/{activeReport.share_token}</code>
             </p>
           ) : null}
           <ReportEditor
             report={activeReport}
-            saving={busy}
             refreshingBlockIndex={refreshingBlockIndex}
+            autoFocusTitle={Boolean(mode.kind === "edit" && mode.autoFocus)}
             onChange={handleEditorChange}
-            onSave={() => void handleSave()}
             onRefreshBlock={(index) => void handleRefreshBlock(index)}
           />
         </section>
       ) : null}
       {mode.kind === "view" && activeReport ? (
         <section className="report-pane">
-          <div className="report-pane__head">
+          <div className="report-pane__toolbar">
             <button
               type="button"
-              className="report-pane__back"
+              className="report-pane__icon-button"
               onClick={() => setMode({ kind: "list" })}
+              title="Back to all reports"
+              aria-label="Back to all reports"
             >
-              ← All reports
+              <ChevronLeft size={15} aria-hidden="true" />
+              <span className="report-pane__toolbar-label">All reports</span>
             </button>
+            <div className="report-pane__toolbar-spacer" />
             <button
               type="button"
-              className="report-pane__action"
+              className="report-pane__icon-button"
               onClick={() => setMode({ kind: "edit", reportId: activeReport.id })}
             >
               Edit
@@ -304,7 +378,7 @@ function ReportsListPane({
           <div className="panel-head-actions">
             <button
               type="button"
-              className="report-pane__action"
+              className="report-pane__icon-button"
               onClick={() => onCreate()}
               disabled={busy}
             >
@@ -342,14 +416,14 @@ function ReportsListPane({
                   <div className="report-list__actions">
                     <button
                       type="button"
-                      className="report-pane__action"
+                      className="report-pane__icon-button"
                       onClick={() => onOpenEdit(summary.id)}
                     >
                       Edit
                     </button>
                     <button
                       type="button"
-                      className="report-pane__action report-pane__action--danger"
+                      className="report-pane__icon-button report-pane__icon-button--danger"
                       onClick={() => onDelete(summary.id)}
                       aria-label={`Delete report ${summary.title}`}
                     >

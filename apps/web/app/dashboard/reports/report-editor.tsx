@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { GripVertical, Plus, Trash2 } from "lucide-react";
 
 import {
   CalloutBlock,
@@ -16,10 +23,21 @@ import {
   ParagraphBlock,
 } from "./block-types";
 import type {
+  HeadingBlockData,
+  PanelGridBlockData,
+  ParagraphBlockData,
+  MarkdownBlockData,
   ReportBlock,
   ReportBlockKind,
   ReportRecord,
 } from "./block-types";
+import { BlockPicker } from "./block-types/block-picker";
+import {
+  detectSlashTrigger,
+  filterBlockPicker,
+  BLOCK_PICKER_CATALOG,
+  resolvePickerKind,
+} from "./slash-command";
 
 type EditorReport = Pick<
   ReportRecord,
@@ -28,39 +46,81 @@ type EditorReport = Pick<
 
 type Props = {
   report: EditorReport;
-  saving?: boolean;
   refreshingBlockIndex?: number | null;
+  /** When true the title input auto-focuses on mount (new-report flow). */
+  autoFocusTitle?: boolean;
   onChange: (next: EditorReport) => void;
-  onSave?: () => void;
   onRefreshBlock?: (blockIndex: number) => void;
 };
 
-const BLOCK_PALETTE: { kind: ReportBlockKind; label: string }[] = [
-  { kind: "heading", label: "Heading" },
-  { kind: "paragraph", label: "Paragraph" },
-  { kind: "markdown", label: "Markdown" },
-  { kind: "code", label: "Code" },
-  { kind: "callout", label: "Callout" },
-  { kind: "horizontal_rule", label: "Divider" },
-  { kind: "image", label: "Image" },
-  { kind: "panel_grid", label: "PanelGrid" },
-  { kind: "llm_summary", label: "LLM summary" },
-];
+interface SlashMenuState {
+  blockIndex: number;
+  query: string;
+  caretAnchor: { top: number; left: number } | null;
+  triggerOffset: number;
+}
 
 /**
- * Notion-style block editor. We keep the surface deliberately simple for
- * v1: one block per row, explicit move-up / move-down buttons, an insert
- * picker after each block. Drag-to-reorder is a v1.5 polish.
+ * Walk the block list and return every PanelGrid except the host index.
+ * Each candidate is labeled with the nearest preceding heading's text, so
+ * the "From this report" tab is human-readable.
+ */
+function collectSiblingPanelGrids(
+  blocks: ReportBlock[],
+  hostIndex: number,
+): { blockIndex: number; label: string; block: PanelGridBlockData }[] {
+  const candidates: { blockIndex: number; label: string; block: PanelGridBlockData }[] = [];
+  let lastHeading: string | null = null;
+  let gridCount = 0;
+  for (let i = 0; i < blocks.length; i += 1) {
+    const block = blocks[i];
+    if (block.kind === "heading") {
+      lastHeading = (block as HeadingBlockData).text || lastHeading;
+    } else if (block.kind === "panel_grid") {
+      gridCount += 1;
+      if (i !== hostIndex) {
+        const grid = block as PanelGridBlockData;
+        const label = lastHeading
+          ? `${lastHeading} (PanelGrid #${gridCount})`
+          : `PanelGrid #${gridCount}`;
+        candidates.push({ blockIndex: i, label, block: grid });
+      }
+    }
+  }
+  return candidates;
+}
+
+/**
+ * block-based block editor. Five behaviors:
+ *
+ *   - Hover-line `+` between every adjacent pair of blocks opens the same
+ *     BlockPicker the slash command uses.
+ *   - `/` inside a paragraph / markdown / heading text input opens a
+ *     floating picker anchored to the caret.
+ *   - Drag handle (`⋮⋮`) on the left edge supports HTML5 drag-and-drop.
+ *   - Cmd/Ctrl+Shift+↑/↓ moves the focused block.
+ *   - Empty editor renders a single centered `+` affordance.
+ *
+ * Auto-save lives in the parent (reports-tab-pane) — the editor is a
+ * controlled component; every `onChange` triggers a debounce there.
  */
 export function ReportEditor({
   report,
-  saving = false,
   refreshingBlockIndex,
+  autoFocusTitle = false,
   onChange,
-  onSave,
   onRefreshBlock,
 }: Props) {
-  const [paletteOpenAt, setPaletteOpenAt] = useState<number | null>(null);
+  const [gapPickerAt, setGapPickerAt] = useState<number | null>(null);
+  const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
+  const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const titleRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (autoFocusTitle && titleRef.current) titleRef.current.focus();
+  }, [autoFocusTitle]);
+
   const replaceBlock = useCallback(
     (index: number, next: ReportBlock) => {
       const blocks = report.blocks.map((block, current) =>
@@ -70,15 +130,28 @@ export function ReportEditor({
     },
     [report, onChange],
   );
-  const insertBlock = useCallback(
-    (index: number, kind: ReportBlockKind) => {
+
+  const insertBlockAt = useCallback(
+    (index: number, block: ReportBlock) => {
       const next = [...report.blocks];
-      next.splice(index, 0, defaultBlock(kind));
+      next.splice(index, 0, block);
       onChange({ ...report, blocks: next });
-      setPaletteOpenAt(null);
     },
     [report, onChange],
   );
+
+  const insertKindAt = useCallback(
+    (index: number, kind: ReportBlockKind, headingLevel?: 1 | 2 | 3) => {
+      const block = defaultBlock(kind);
+      if (kind === "heading" && headingLevel) {
+        (block as HeadingBlockData).level = headingLevel;
+        (block as HeadingBlockData).text = "";
+      }
+      insertBlockAt(index, block);
+    },
+    [insertBlockAt],
+  );
+
   const removeBlock = useCallback(
     (index: number) => {
       const next = report.blocks.filter((_, current) => current !== index);
@@ -86,33 +159,221 @@ export function ReportEditor({
     },
     [report, onChange],
   );
+
   const moveBlock = useCallback(
-    (index: number, direction: -1 | 1) => {
-      const target = index + direction;
-      if (target < 0 || target >= report.blocks.length) return;
+    (from: number, to: number) => {
+      if (from === to || to < 0 || to >= report.blocks.length) return;
       const next = [...report.blocks];
-      const [moved] = next.splice(index, 1);
-      next.splice(target, 0, moved);
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
       onChange({ ...report, blocks: next });
     },
     [report, onChange],
   );
+
+  const handlePickerSelect = useCallback(
+    (id: string, index: number) => {
+      const resolved = resolvePickerKind(id);
+      if (!resolved) return;
+      insertKindAt(index, resolved.kind, resolved.headingLevel);
+      setGapPickerAt(null);
+    },
+    [insertKindAt],
+  );
+
+  // ── Slash-command handler ─────────────────────────────────────────────────
+  // Called by paragraph/markdown/heading inputs after every keystroke. Looks
+  // for a `/` on the active line and opens / updates the floating picker.
+  const handleTextChange = useCallback(
+    (
+      blockIndex: number,
+      element: HTMLInputElement | HTMLTextAreaElement,
+      committedText: string,
+    ) => {
+      const caret = element.selectionStart ?? committedText.length;
+      const trigger = detectSlashTrigger(committedText, caret);
+      if (!trigger.active) {
+        setSlashMenu(null);
+        return;
+      }
+      // Anchor the picker near the caret using the input's bounding rect.
+      // For textareas we approximate with the input's top-right corner so the
+      // menu stays visible without needing a per-character caret measurer.
+      const rect = element.getBoundingClientRect();
+      setSlashMenu({
+        blockIndex,
+        query: trigger.query,
+        triggerOffset: trigger.triggerOffset,
+        caretAnchor: { top: rect.top + rect.height + 6, left: rect.left + 8 },
+      });
+    },
+    [],
+  );
+
+  // When the slash menu picks an entry: strip the `/query` text from the
+  // source input and swap the block kind in place. This is the "convert
+  // current block" UX users expect — typing `/h1` on an empty
+  // paragraph turns it into a Heading 1.
+  const commitSlashPick = useCallback(
+    (id: string) => {
+      if (!slashMenu) return;
+      const resolved = resolvePickerKind(id);
+      if (!resolved) return;
+      const current = report.blocks[slashMenu.blockIndex];
+      if (!current) return;
+      const isTextBlock =
+        current.kind === "paragraph" ||
+        current.kind === "markdown" ||
+        current.kind === "heading";
+      // Strip the `/query` prefix from the source so the user sees the new
+      // block, not the slash they typed.
+      const stripFrom = (text: string) =>
+        text.slice(0, slashMenu.triggerOffset) +
+        text.slice(slashMenu.triggerOffset + 1 + slashMenu.query.length);
+      let stripped: ReportBlock = current;
+      if (isTextBlock) {
+        const text =
+          current.kind === "paragraph"
+            ? (current as ParagraphBlockData).text
+            : current.kind === "markdown"
+              ? (current as MarkdownBlockData).text
+              : (current as HeadingBlockData).text;
+        stripped = {
+          ...current,
+          text: stripFrom(text),
+        } as ReportBlock;
+      }
+      // If the source block is an empty text block (or the only content was
+      // the slash query), convert in place. Otherwise insert below.
+      const isEmpty =
+        isTextBlock &&
+        (stripped.kind === "paragraph" ||
+          stripped.kind === "markdown" ||
+          stripped.kind === "heading") &&
+        (
+          (stripped as ParagraphBlockData | MarkdownBlockData | HeadingBlockData).text
+        ).trim().length === 0;
+      const newBlock = (() => {
+        const b = defaultBlock(resolved.kind);
+        if (resolved.kind === "heading" && resolved.headingLevel) {
+          (b as HeadingBlockData).level = resolved.headingLevel;
+          (b as HeadingBlockData).text = "";
+        }
+        return b;
+      })();
+      if (isEmpty) {
+        // Replace in place.
+        const next = report.blocks.map((block, current2) =>
+          current2 === slashMenu.blockIndex ? newBlock : block,
+        );
+        onChange({ ...report, blocks: next });
+      } else {
+        // Keep the stripped source, insert new block after it.
+        const next = [...report.blocks];
+        next.splice(slashMenu.blockIndex, 1, stripped);
+        next.splice(slashMenu.blockIndex + 1, 0, newBlock);
+        onChange({ ...report, blocks: next });
+      }
+      setSlashMenu(null);
+    },
+    [slashMenu, report, onChange],
+  );
+
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  useEffect(() => {
+    setSlashActiveIndex(0);
+  }, [slashMenu?.query]);
+
+  // Forward Up/Down/Enter from a text input to the slash menu while open.
+  const handleSlashKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (!slashMenu) return false;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSlashMenu(null);
+        return true;
+      }
+      const entries = filterBlockPicker(slashMenu.query, BLOCK_PICKER_CATALOG);
+      if (entries.length === 0) return false;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashActiveIndex((current) => (current + 1) % entries.length);
+        return true;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashActiveIndex(
+          (current) => (current - 1 + entries.length) % entries.length,
+        );
+        return true;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const pick = entries[slashActiveIndex];
+        if (pick) commitSlashPick(pick.id);
+        return true;
+      }
+      return false;
+    },
+    [slashMenu, slashActiveIndex, commitSlashPick],
+  );
+
+  // ── Drag-and-drop ─────────────────────────────────────────────────────────
+  const onDragStart = useCallback((index: number) => {
+    setDragSourceIndex(index);
+  }, []);
+  const onDragEnd = useCallback(() => {
+    setDragSourceIndex(null);
+    setDropIndex(null);
+  }, []);
+  const onDropAtGap = useCallback(
+    (gapIndex: number) => {
+      if (dragSourceIndex === null) return;
+      // Dropping at a gap index N moves the source into position N. If the
+      // source is above the gap we need to compensate for the splice removal.
+      let target = gapIndex;
+      if (dragSourceIndex < gapIndex) target = gapIndex - 1;
+      if (target === dragSourceIndex) {
+        // No-op drop on self.
+        setDragSourceIndex(null);
+        setDropIndex(null);
+        return;
+      }
+      moveBlock(dragSourceIndex, target);
+      setDragSourceIndex(null);
+      setDropIndex(null);
+    },
+    [dragSourceIndex, moveBlock],
+  );
+
+  // Keyboard reorder: Cmd/Ctrl+Shift+Arrow.
+  const onBlockKeyDown = useCallback(
+    (index: number, event: React.KeyboardEvent<HTMLDivElement>) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (!meta || !event.shiftKey) return;
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveBlock(index, index - 1);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveBlock(index, index + 1);
+      }
+    },
+    [moveBlock],
+  );
+
   return (
     <div className="report-editor">
       <header className="report-editor__head">
-        <label className="report-block__label" htmlFor="report-title">
-          Title
-        </label>
         <input
+          ref={titleRef}
           id="report-title"
           className="report-editor__title"
           value={report.title}
           placeholder="Untitled report"
           onChange={(event) => onChange({ ...report, title: event.target.value })}
+          aria-label="Report title"
         />
-        <label className="report-block__label" htmlFor="report-description">
-          Description (optional)
-        </label>
         <input
           id="report-description"
           className="report-editor__description"
@@ -121,10 +382,14 @@ export function ReportEditor({
           onChange={(event) =>
             onChange({ ...report, description: event.target.value })
           }
+          aria-label="Report description"
         />
         <div className="report-editor__visibility">
-          <label className="report-block__label">Visibility</label>
+          <label className="report-block__label" htmlFor="report-visibility">
+            Visibility
+          </label>
           <select
+            id="report-visibility"
             className="report-block__select"
             value={report.visibility}
             onChange={(event) =>
@@ -139,125 +404,284 @@ export function ReportEditor({
             <option value="public">Public — anyone with the link</option>
           </select>
         </div>
-        {onSave ? (
-          <div className="report-editor__actions">
-            <button
-              type="button"
-              className="report-editor__primary"
-              onClick={onSave}
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Save"}
-            </button>
-          </div>
-        ) : null}
       </header>
 
       <div className="report-editor__blocks">
-        <InsertSlot
-          openAt={paletteOpenAt}
+        {report.blocks.length === 0 ? (
+          <EmptyEditorPrompt onPick={(id) => handlePickerSelect(id, 0)} />
+        ) : null}
+        <HoverGap
           index={0}
-          onOpen={(index) => setPaletteOpenAt(index)}
-          onInsert={(kind) => insertBlock(0, kind)}
+          open={gapPickerAt === 0}
+          dropActive={dragSourceIndex !== null && dropIndex === 0}
+          onOpen={() => setGapPickerAt(0)}
+          onDismiss={() => setGapPickerAt(null)}
+          onPick={(id) => handlePickerSelect(id, 0)}
+          onDragOver={() => setDropIndex(0)}
+          onDragLeave={() => setDropIndex((current) => (current === 0 ? null : current))}
+          onDrop={() => onDropAtGap(0)}
+          dragActive={dragSourceIndex !== null}
         />
-        {report.blocks.map((block, index) => (
-          <div className="report-editor__block-wrap" key={index}>
-            <div className="report-editor__block-controls">
-              <span className="report-editor__block-kind">{block.kind}</span>
-              <button
-                type="button"
-                className="report-editor__control"
-                aria-label="Move block up"
-                disabled={index === 0}
-                onClick={() => moveBlock(index, -1)}
-              >
-                <ArrowUp size={14} />
-              </button>
-              <button
-                type="button"
-                className="report-editor__control"
-                aria-label="Move block down"
-                disabled={index === report.blocks.length - 1}
-                onClick={() => moveBlock(index, 1)}
-              >
-                <ArrowDown size={14} />
-              </button>
-              <button
-                type="button"
-                className="report-editor__control report-editor__control--danger"
-                aria-label="Delete block"
-                onClick={() => removeBlock(index)}
-              >
-                <Trash2 size={14} />
-              </button>
+        {report.blocks.map((block, index) => {
+          const isDragging = dragSourceIndex === index;
+          // Build the sibling list lazily for panel-grid blocks only — the
+          // computation is otherwise pure overhead per render. We also try
+          // to label siblings with the nearest preceding heading so the
+          // user sees "Llama 8B vs 12B comparison" rather than "PanelGrid #2".
+          const siblingsForGrid =
+            block.kind === "panel_grid"
+              ? collectSiblingPanelGrids(report.blocks, index)
+              : undefined;
+          return (
+            <div key={index}>
+              <DraggableBlock
+                block={block}
+                index={index}
+                refreshing={refreshingBlockIndex === index}
+                dragging={isDragging}
+                onChange={(next) => replaceBlock(index, next)}
+                onRemove={() => removeBlock(index)}
+                onRefresh={
+                  block.kind === "llm_summary" && onRefreshBlock
+                    ? () => onRefreshBlock(index)
+                    : undefined
+                }
+                onDragStart={() => onDragStart(index)}
+                onDragEnd={onDragEnd}
+                onKeyDown={(event) => onBlockKeyDown(index, event)}
+                onTextChange={(element, text) =>
+                  handleTextChange(index, element, text)
+                }
+                onSlashKeyDown={handleSlashKeyDown}
+                slashOpen={slashMenu?.blockIndex === index}
+                siblingPanelGrids={siblingsForGrid}
+              />
+              <HoverGap
+                index={index + 1}
+                open={gapPickerAt === index + 1}
+                dropActive={
+                  dragSourceIndex !== null && dropIndex === index + 1
+                }
+                onOpen={() => setGapPickerAt(index + 1)}
+                onDismiss={() => setGapPickerAt(null)}
+                onPick={(id) => handlePickerSelect(id, index + 1)}
+                onDragOver={() => setDropIndex(index + 1)}
+                onDragLeave={() =>
+                  setDropIndex((current) =>
+                    current === index + 1 ? null : current,
+                  )
+                }
+                onDrop={() => onDropAtGap(index + 1)}
+                dragActive={dragSourceIndex !== null}
+              />
             </div>
-            <BlockEditor
-              block={block}
-              busy={refreshingBlockIndex === index}
-              onChange={(next) => replaceBlock(index, next)}
-              onRefresh={
-                block.kind === "llm_summary" && onRefreshBlock
-                  ? () => onRefreshBlock(index)
-                  : undefined
-              }
-            />
-            <InsertSlot
-              openAt={paletteOpenAt}
-              index={index + 1}
-              onOpen={(slot) => setPaletteOpenAt(slot)}
-              onInsert={(kind) => insertBlock(index + 1, kind)}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {slashMenu && slashMenu.caretAnchor ? (
+        <div
+          className="block-picker-floating"
+          style={
+            {
+              top: slashMenu.caretAnchor.top,
+              left: slashMenu.caretAnchor.left,
+            } as CSSProperties
+          }
+          role="dialog"
+          aria-label="Slash command palette"
+        >
+          <SlashMenuList
+            query={slashMenu.query}
+            activeIndex={slashActiveIndex}
+            onHover={setSlashActiveIndex}
+            onPick={(id) => commitSlashPick(id)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function InsertSlot({
-  openAt,
-  index,
-  onOpen,
-  onInsert,
-}: {
-  openAt: number | null;
-  index: number;
-  onOpen: (slot: number | null) => void;
-  onInsert: (kind: ReportBlockKind) => void;
-}) {
-  const open = openAt === index;
+// ── Internal components ─────────────────────────────────────────────────────
+
+function EmptyEditorPrompt({ onPick }: { onPick: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="report-editor__insert">
+    <div className="report-editor__empty">
       {open ? (
-        <div className="report-editor__palette">
-          {BLOCK_PALETTE.map((entry) => (
-            <button
-              key={entry.kind}
-              type="button"
-              className="report-editor__palette-item"
-              onClick={() => onInsert(entry.kind)}
-            >
-              {entry.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="report-editor__palette-item report-editor__palette-item--cancel"
-            onClick={() => onOpen(null)}
-          >
-            Cancel
-          </button>
+        <BlockPicker
+          variant="inline"
+          onPick={(id) => {
+            setOpen(false);
+            onPick(id);
+          }}
+          onDismiss={() => setOpen(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          className="report-editor__empty-button"
+          onClick={() => setOpen(true)}
+          aria-label="Add your first block"
+        >
+          <Plus size={16} aria-hidden="true" />
+          <span>
+            Type <kbd>/</kbd> or click + to add your first block
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HoverGap({
+  index,
+  open,
+  dropActive,
+  dragActive,
+  onOpen,
+  onDismiss,
+  onPick,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: {
+  index: number;
+  open: boolean;
+  dropActive: boolean;
+  dragActive: boolean;
+  onOpen: () => void;
+  onDismiss: () => void;
+  onPick: (id: string) => void;
+  onDragOver: () => void;
+  onDragLeave: () => void;
+  onDrop: () => void;
+}) {
+  return (
+    <div
+      className={`report-block-handle-zone${dropActive ? " report-block-handle-zone--drop" : ""}${dragActive ? " report-block-handle-zone--drag" : ""}`}
+      onDragOver={(event) => {
+        if (!dragActive) return;
+        event.preventDefault();
+        onDragOver();
+      }}
+      onDragLeave={onDragLeave}
+      onDrop={(event) => {
+        if (!dragActive) return;
+        event.preventDefault();
+        onDrop();
+      }}
+    >
+      {open ? (
+        <div className="block-picker-anchor">
+          <BlockPicker
+            variant="inline"
+            onPick={(id) => onPick(id)}
+            onDismiss={onDismiss}
+          />
         </div>
       ) : (
         <button
           type="button"
-          className="report-editor__insert-btn"
-          onClick={() => onOpen(index)}
+          className="report-block-handle-zone__add"
+          onClick={onOpen}
           aria-label={`Insert block at position ${index}`}
+          title="Click to add block (or type /)"
         >
-          + Insert block
+          <Plus size={14} aria-hidden="true" />
         </button>
       )}
+      <span className="report-block-drop-indicator" aria-hidden="true" />
+    </div>
+  );
+}
+
+function DraggableBlock({
+  block,
+  index,
+  refreshing,
+  dragging,
+  onChange,
+  onRemove,
+  onRefresh,
+  onDragStart,
+  onDragEnd,
+  onKeyDown,
+  onTextChange,
+  onSlashKeyDown,
+  slashOpen,
+  siblingPanelGrids,
+}: {
+  block: ReportBlock;
+  index: number;
+  refreshing: boolean;
+  dragging: boolean;
+  onChange: (next: ReportBlock) => void;
+  onRemove: () => void;
+  onRefresh?: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  onTextChange: (
+    element: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+  ) => void;
+  onSlashKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => boolean;
+  slashOpen: boolean;
+  siblingPanelGrids?: {
+    blockIndex: number;
+    label: string;
+    block: import("./block-types/types").PanelGridBlockData;
+  }[];
+}) {
+  return (
+    <div
+      className={`report-editor__block-wrap${dragging ? " report-editor__block-wrap--dragging" : ""}`}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+    >
+      <div
+        className="report-block-handle"
+        draggable
+        onDragStart={(event) => {
+          // Native DnD requires a payload to enable drop targets across the doc.
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", `block:${index}`);
+          }
+          onDragStart();
+        }}
+        onDragEnd={onDragEnd}
+        title="Drag to reorder (or Cmd/Ctrl+Shift+↑/↓)"
+        aria-label={`Drag block ${index + 1}`}
+      >
+        <GripVertical size={14} aria-hidden="true" />
+      </div>
+      <div className="report-editor__block-controls">
+        <span className="report-editor__block-kind">{block.kind.replace("_", " ")}</span>
+        <button
+          type="button"
+          className="report-editor__control report-editor__control--danger"
+          aria-label="Delete block"
+          onClick={onRemove}
+          title="Delete block"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+      <BlockEditor
+        block={block}
+        busy={refreshing}
+        slashOpen={slashOpen}
+        onChange={onChange}
+        onTextChange={onTextChange}
+        onSlashKeyDown={onSlashKeyDown}
+        onRefresh={onRefresh}
+        siblingPanelGrids={siblingPanelGrids}
+      />
     </div>
   );
 }
@@ -265,21 +689,59 @@ function InsertSlot({
 function BlockEditor({
   block,
   busy,
+  slashOpen,
   onChange,
+  onTextChange,
+  onSlashKeyDown,
   onRefresh,
+  siblingPanelGrids,
 }: {
   block: ReportBlock;
   busy: boolean;
+  slashOpen: boolean;
   onChange: (next: ReportBlock) => void;
+  onTextChange: (
+    element: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+  ) => void;
+  onSlashKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => boolean;
   onRefresh?: () => void;
+  siblingPanelGrids?: {
+    blockIndex: number;
+    label: string;
+    block: import("./block-types/types").PanelGridBlockData;
+  }[];
 }) {
   switch (block.kind) {
     case "heading":
-      return <HeadingBlock block={block} onChange={onChange} />;
+      return (
+        <HeadingTextWrap
+          block={block as HeadingBlockData}
+          onChange={onChange}
+          onTextChange={onTextChange}
+          onSlashKeyDown={onSlashKeyDown}
+          slashOpen={slashOpen}
+        />
+      );
     case "paragraph":
-      return <ParagraphBlock block={block} onChange={onChange} />;
+      return (
+        <ParagraphTextWrap
+          block={block as ParagraphBlockData}
+          onChange={onChange}
+          onTextChange={onTextChange}
+          onSlashKeyDown={onSlashKeyDown}
+          slashOpen={slashOpen}
+        />
+      );
     case "markdown":
-      return <MarkdownBlock block={block} onChange={onChange} />;
+      return (
+        <MarkdownTextWrap
+          block={block as MarkdownBlockData}
+          onChange={onChange}
+        />
+      );
     case "code":
       return <CodeBlock block={block} onChange={onChange} />;
     case "callout":
@@ -289,7 +751,13 @@ function BlockEditor({
     case "image":
       return <ImageBlock block={block} onChange={onChange} />;
     case "panel_grid":
-      return <PanelGridBlock block={block} onChange={onChange} />;
+      return (
+        <PanelGridBlock
+          block={block}
+          onChange={onChange}
+          siblingPanelGrids={siblingPanelGrids}
+        />
+      );
     case "llm_summary":
       return (
         <LlmSummaryBlock
@@ -301,3 +769,166 @@ function BlockEditor({
       );
   }
 }
+
+// Thin wrappers that route slash-trigger events back up to the editor.
+function ParagraphTextWrap({
+  block,
+  onChange,
+  onTextChange,
+  onSlashKeyDown,
+  slashOpen,
+}: {
+  block: ParagraphBlockData;
+  onChange: (next: ReportBlock) => void;
+  onTextChange: (
+    element: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+  ) => void;
+  onSlashKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => boolean;
+  slashOpen: boolean;
+}) {
+  return (
+    <textarea
+      className="report-block__textarea report-block__textarea--paragraph"
+      rows={Math.min(8, Math.max(2, block.text.split("\n").length + 1))}
+      value={block.text}
+      placeholder="Type / for commands, or write a paragraph…"
+      onChange={(event) => {
+        const next = { ...block, text: event.target.value };
+        onChange(next);
+        onTextChange(event.currentTarget, event.target.value);
+      }}
+      onKeyDown={(event) => {
+        if (slashOpen) {
+          if (onSlashKeyDown(event)) return;
+        }
+      }}
+      aria-label="Paragraph text"
+    />
+  );
+}
+
+function MarkdownTextWrap({
+  block,
+  onChange,
+}: {
+  block: MarkdownBlockData;
+  onChange: (next: ReportBlock) => void;
+}) {
+  // Slash-command for markdown blocks intentionally deferred — markdown is
+  // for users who already know what they want. The hover-line `+` and the
+  // paragraph slash flow cover the discovery path.
+  return <MarkdownBlock block={block} onChange={(next) => onChange(next)} />;
+}
+
+function HeadingTextWrap({
+  block,
+  onChange,
+  onTextChange,
+  onSlashKeyDown,
+  slashOpen,
+}: {
+  block: HeadingBlockData;
+  onChange: (next: ReportBlock) => void;
+  onTextChange: (
+    element: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+  ) => void;
+  onSlashKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => boolean;
+  slashOpen: boolean;
+}) {
+  const headingClass = block.level === 1
+    ? "report-block__heading-input report-block__heading-input--h1"
+    : block.level === 2
+      ? "report-block__heading-input report-block__heading-input--h2"
+      : "report-block__heading-input report-block__heading-input--h3";
+  return (
+    <div className="report-block report-block--heading">
+      <div className="report-block__heading-controls">
+        <select
+          className="report-block__select report-block__select--inline"
+          value={block.level}
+          onChange={(event) =>
+            onChange({ ...block, level: Number(event.target.value) as 1 | 2 | 3 })
+          }
+          aria-label="Heading level"
+        >
+          <option value={1}>H1</option>
+          <option value={2}>H2</option>
+          <option value={3}>H3</option>
+        </select>
+      </div>
+      <input
+        className={headingClass}
+        value={block.text}
+        placeholder={`Heading ${block.level}`}
+        onChange={(event) => {
+          const next = { ...block, text: event.target.value };
+          onChange(next);
+          onTextChange(event.currentTarget, event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (slashOpen) {
+            if (onSlashKeyDown(event)) return;
+          }
+        }}
+        aria-label="Heading text"
+      />
+    </div>
+  );
+}
+
+
+function SlashMenuList({
+  query,
+  activeIndex,
+  onHover,
+  onPick,
+}: {
+  query: string;
+  activeIndex: number;
+  onHover: (index: number) => void;
+  onPick: (id: string) => void;
+}) {
+  const entries = useMemo(
+    () => filterBlockPicker(query, BLOCK_PICKER_CATALOG),
+    [query],
+  );
+  if (entries.length === 0) {
+    return <div className="block-picker__empty">No blocks match “{query}”</div>;
+  }
+  return (
+    <div className="block-picker__list" role="listbox">
+      {entries.map((entry, index) => {
+        const active = index === activeIndex;
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            role="option"
+            aria-selected={active}
+            className={`block-picker__row${active ? " block-picker__row--active" : ""}`}
+            onMouseEnter={() => onHover(index)}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onPick(entry.id);
+            }}
+          >
+            <span className="block-picker__copy">
+              <span className="block-picker__label">{entry.label}</span>
+              {entry.hint ? (
+                <span className="block-picker__hint">{entry.hint}</span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export { BLOCK_PICKER_CATALOG };

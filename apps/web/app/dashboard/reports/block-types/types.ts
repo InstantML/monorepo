@@ -1,4 +1,4 @@
-// Shared TypeScript type definitions for Notion-style report blocks.
+// Shared TypeScript type definitions for block-based report blocks.
 // Mirrors the Rust block validation in apps/rust-server/src/store/reports/.
 
 export type HeadingLevel = 1 | 2 | 3;

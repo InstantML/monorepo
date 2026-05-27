@@ -9,6 +9,7 @@ export { PanelGridBlock } from "./panel-grid-block";
 export { LlmSummaryBlock } from "./llm-summary-block";
 export { RunSetTable } from "./run-set-table";
 export { AddPanelModal } from "./add-panel-modal";
+export { BlockPicker } from "./block-picker";
 export type {
   CalloutBlockData,
   CalloutVariant,

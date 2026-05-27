@@ -3,7 +3,7 @@
 import type { ReportRow } from "../../dashboard-types";
 
 /**
- * List of locally-saved workspace views. (The Notion-style Reports feature
+ * List of locally-saved workspace views. (The block-based Reports feature
  * lives under `reports-tab-pane.tsx`; this surface is the legacy
  * saved-views index.)
  */

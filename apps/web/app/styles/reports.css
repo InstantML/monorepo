@@ -1,7 +1,7 @@
 /* ── reports.css — document-style Reports surface ──────────────────────────
  * Selectors: .report-pane, .report-list, .report-editor, .report-block,
  * .report-render, .report-viewer, .report-error.
- * The Reports tab is a Notion-style document surface — distinct from the
+ * The Reports tab is a block-based document surface — distinct from the
  * dashboard's data-dense panels. Generous whitespace, content-column width,
  * narrative typography.
  * ─────────────────────────────────────────────────────────────────────────── */
@@ -1625,4 +1625,648 @@ a.report-pane__action:hover {
 .report-block__panel-fields {
   display: grid;
   gap: 8px;
+}
+
+/* ───── v1.3 block-based editor — toolbar, picker, drag, autosave ───── */
+
+@keyframes report-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}
+
+.spin {
+  animation: report-spin 0.9s linear infinite;
+}
+
+/* Compact pane toolbar that replaces the old chrome */
+
+.report-pane__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.report-pane__toolbar-spacer {
+  flex: 1;
+}
+
+.report-pane__toolbar-label {
+  font: 600 12.5px/1 var(--f-sans);
+}
+
+.report-pane__icon-button,
+a.report-pane__icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font: 600 12.5px/1 var(--f-sans);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.report-pane__icon-button:hover,
+a.report-pane__icon-button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.report-pane__icon-button:focus-visible,
+a.report-pane__icon-button:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+}
+
+.report-pane__icon-button--danger {
+  color: #ef4444;
+}
+
+.report-pane__icon-button--danger:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+}
+
+/* Auto-save pill (sits in the toolbar) */
+
+.report-auto-save-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 140px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: 600 11.5px/1 var(--f-sans);
+  letter-spacing: 0.005em;
+  transition: background 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.report-auto-save-pill--idle {
+  color: var(--muted);
+}
+
+.report-auto-save-pill--dirty {
+  color: var(--text-2);
+}
+
+.report-auto-save-pill--dirty svg {
+  fill: currentColor;
+}
+
+.report-auto-save-pill--saving {
+  color: var(--accent-strong);
+}
+
+.report-auto-save-pill--saved {
+  color: var(--muted);
+}
+
+.report-auto-save-pill--error {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.report-auto-save-pill__retry {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  font: 700 11px/1 var(--f-sans);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.report-auto-save-pill__retry:hover {
+  background: rgba(239, 68, 68, 0.16);
+}
+
+/* Block hover-line + button (the gap between adjacent blocks) */
+
+.report-block-handle-zone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  margin: 0;
+}
+
+.report-block-handle-zone__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+  position: relative;
+  z-index: 2;
+}
+
+.report-block-handle-zone:hover .report-block-handle-zone__add {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.report-block-handle-zone__add:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.report-block-handle-zone__add:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+  opacity: 1;
+  transform: scale(1);
+}
+
+.report-block-drop-indicator {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: background 120ms ease;
+}
+
+.report-block-handle-zone--drag .report-block-drop-indicator {
+  background: rgba(31, 184, 119, 0.16);
+}
+
+.report-block-handle-zone--drop .report-block-drop-indicator {
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-block-handle-zone__add {
+    transition: none;
+  }
+}
+
+/* Empty-editor prompt — beats the dead void */
+
+.report-editor__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 24px;
+}
+
+.report-editor__empty-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 13.5px/1 var(--f-sans);
+  cursor: pointer;
+  transition: border-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 120ms ease;
+}
+
+.report-editor__empty-button:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.report-editor__empty-button kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  font: 600 11px/1 var(--f-mono, monospace);
+  color: var(--text);
+  margin: 0 2px;
+}
+
+/* Drag handle attached to the left edge of every block wrap */
+
+.report-editor__block-wrap {
+  position: relative;
+  padding-left: 28px;
+  border-radius: 12px;
+  transition: background 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 120ms ease;
+}
+
+.report-editor__block-wrap--dragging {
+  opacity: 0.55;
+}
+
+.report-block-handle {
+  position: absolute;
+  left: 2px;
+  top: 14px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 120ms ease,
+    color 120ms ease;
+  z-index: 3;
+  user-select: none;
+}
+
+.report-block-handle:active {
+  cursor: grabbing;
+}
+
+.report-editor__block-wrap:hover .report-block-handle,
+.report-editor__block-wrap:focus-within .report-block-handle {
+  opacity: 1;
+}
+
+.report-block-handle:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-block-handle,
+  .report-editor__block-wrap {
+    transition: none;
+  }
+}
+
+/* Heading block visual treatment */
+
+.report-block__heading-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.report-block__select--inline {
+  width: auto;
+  min-width: 64px;
+  padding: 4px 24px 4px 10px;
+  font: 600 11.5px/1 var(--f-sans);
+}
+
+.report-block__heading-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: -2px -10px;
+  color: var(--text);
+  font-family: var(--f-sans);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.report-block__heading-input:hover {
+  background: var(--bg-soft);
+}
+
+.report-block__heading-input:focus {
+  outline: none;
+  background: var(--bg-soft);
+  border-color: var(--accent-line);
+}
+
+.report-block__heading-input--h1 {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+}
+
+.report-block__heading-input--h2 {
+  font-size: 20px;
+  font-weight: 740;
+  line-height: 1.25;
+  letter-spacing: -0.008em;
+}
+
+.report-block__heading-input--h3 {
+  font-size: 16.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+
+/* Paragraph styling polish */
+
+.report-block__textarea--paragraph {
+  font: 540 14.5px/1.7 var(--f-sans);
+  border-color: transparent;
+  background: transparent;
+  min-height: 60px;
+  padding: 8px 10px;
+}
+
+.report-block__textarea--paragraph:hover {
+  background: var(--bg-soft);
+}
+
+.report-block__textarea--paragraph:focus {
+  background: var(--bg-soft);
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+/* Tighten the block-list rhythm */
+
+.report-editor__blocks {
+  display: grid;
+  gap: 0;
+}
+
+.report-editor__block-wrap > .report-block,
+.report-editor__block-wrap > .report-block--heading {
+  margin: 0;
+}
+
+/* Block-picker — shared by hover-line and slash-command */
+
+.block-picker {
+  width: 280px;
+  max-width: 90vw;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  z-index: 50;
+}
+
+.block-picker--inline {
+  position: relative;
+  margin: 0 auto;
+}
+
+.block-picker--floating {
+  position: relative;
+}
+
+.block-picker__search {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 10px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font: 540 12.5px/1.4 var(--f-sans);
+}
+
+.block-picker__search:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  background: var(--surface);
+}
+
+.block-picker__list {
+  display: grid;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.block-picker__empty {
+  padding: 12px 10px;
+  text-align: center;
+  font: 540 12px/1.4 var(--f-sans);
+  color: var(--muted);
+}
+
+.block-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.block-picker__row:hover,
+.block-picker__row--active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.block-picker__icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: var(--bg-soft);
+  color: var(--text-2);
+}
+
+.block-picker__row--active .block-picker__icon {
+  background: var(--surface);
+  color: var(--accent-strong);
+}
+
+.block-picker__copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.block-picker__label {
+  font: 600 12.5px/1.3 var(--f-sans);
+}
+
+.block-picker__hint {
+  font: 540 11px/1.3 var(--f-sans);
+  color: var(--muted);
+}
+
+.block-picker__row--active .block-picker__hint {
+  color: var(--accent-strong);
+  opacity: 0.7;
+}
+
+.block-picker-anchor {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, 6px);
+  z-index: 60;
+}
+
+.block-picker-floating {
+  position: fixed;
+  z-index: 80;
+}
+
+/* Add-panel modal v1.3 — footer + combobox */
+
+.add-panel-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.add-panel-modal__footer-hint {
+  font: 540 11.5px/1.4 var(--f-sans);
+  color: var(--muted);
+}
+
+.add-panel-modal__cell--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+.add-panel-modal__combo {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+
+.add-panel-modal__combo-label {
+  font: 600 11px/1.4 var(--f-sans);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.add-panel-modal__combo-shell {
+  position: relative;
+}
+
+.add-panel-modal__combo-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-soft);
+  font: 540 13px/1.4 var(--f-sans);
+  color: var(--text);
+}
+
+.add-panel-modal__combo-input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+.add-panel-modal__combo-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.1);
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.add-panel-modal__combo-row {
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: 540 12.5px/1.4 var(--f-mono, monospace);
+  color: var(--text);
+}
+
+.add-panel-modal__combo-row:hover,
+.add-panel-modal__combo-row--active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* Block focus polish — applied to text-block containers via block-wrap */
+
+.report-editor__block-wrap:focus-within {
+  background: transparent;
+}
+
+.report-editor__block-wrap > .report-block {
+  transition: border-color 120ms ease,
+    box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animation honoring prefers-reduced-motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .report-pane__icon-button,
+  .report-auto-save-pill,
+  .report-editor__empty-button,
+  .report-editor__block-wrap,
+  .add-panel-modal__cell--active,
+  .add-panel-modal__combo-input {
+    transition: none;
+  }
 }
