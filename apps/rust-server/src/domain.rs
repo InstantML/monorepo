@@ -296,6 +296,12 @@ pub struct CreatedAuthSession {
     pub token: String,
     pub payload: AuthSessionPayload,
     pub onboarding_api_key: Option<OnboardingApiKey>,
+    /// `true` when this call just auto-created the workspace for a brand-new
+    /// user (the new first-time-Clerk-signin auto-provision path). The web
+    /// frontend uses this to route the response into the onboarding view
+    /// instead of the plain dashboard, even when the original request was
+    /// `mode="signin"`.
+    pub auto_provisioned: bool,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]

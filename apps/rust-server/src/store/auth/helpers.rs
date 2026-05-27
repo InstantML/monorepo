@@ -33,10 +33,60 @@ pub(super) struct VerifiedProviderSessionInput {
     pub(super) accept_invite_org_id: Option<Uuid>,
     pub(super) accept_invite_token: Option<String>,
     pub(super) strict_email_linking: bool,
+    /// When `true`, signin mode requires the user to already have an org (or a
+    /// pending invite). When `false` (the new default for verified-identity
+    /// providers like Clerk/dev-google), a signin request for a brand-new user
+    /// transparently falls through to the auto-derive signup path. This removes
+    /// the historic "organization is required for signup" round-trip that
+    /// stranded first-time Clerk users on the signin card.
+    pub(super) strict_signin: bool,
     /// Clerk display name used to auto-derive a workspace name when org_name is absent.
     pub(super) auto_derive_display_name: Option<String>,
     /// Clerk email used to auto-derive a workspace name from the handle when display_name is absent.
     pub(super) auto_derive_email: String,
+    /// Optional signup allowlist enforced at the moment we decide to create a
+    /// new org. When non-empty (either field), the email must be present in
+    /// `allowed_emails` or its domain in `allowed_domains`; otherwise org
+    /// creation is forbidden. Existing-user signins are not affected because
+    /// the check only fires on the auto-create path.
+    pub(super) signup_allowlist: SignupAllowlist,
+}
+
+/// Hosted signup allowlist, mirrored from `AppConfig::signup_allowed_emails`
+/// and `AppConfig::signup_allowed_domains`. Enforced inside
+/// `create_verified_provider_session` immediately before a new org is created,
+/// so it applies both to explicit `mode="signup"` requests and to the new
+/// signin-mode auto-provision fall-through. Existing-user signins skip this
+/// check because the function returns earlier via the existing-org or
+/// pending-invite branches.
+#[derive(Default, Clone)]
+pub struct SignupAllowlist {
+    pub allowed_emails: Vec<String>,
+    pub allowed_domains: Vec<String>,
+}
+
+impl SignupAllowlist {
+    pub(super) fn check(&self, email: &str) -> AppResult<()> {
+        if self.allowed_emails.is_empty() && self.allowed_domains.is_empty() {
+            return Ok(());
+        }
+        let normalized = email.trim().to_ascii_lowercase();
+        if self
+            .allowed_emails
+            .iter()
+            .any(|allowed| allowed == &normalized)
+        {
+            return Ok(());
+        }
+        if let Some((_, domain)) = normalized.split_once('@') {
+            if self.allowed_domains.iter().any(|allowed| allowed == domain) {
+                return Ok(());
+            }
+        }
+        Err(AppError::forbidden(
+            "hosted signup is restricted to invited accounts",
+        ))
+    }
 }
 
 pub(super) fn user_has_non_bootstrap_identity(data: &StoreData, user_id: Uuid) -> bool {

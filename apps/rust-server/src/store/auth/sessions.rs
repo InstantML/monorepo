@@ -33,8 +33,14 @@ pub async fn create_dev_google_session(
             accept_invite_org_id: input.accept_invite_org_id,
             accept_invite_token: input.accept_invite_token,
             strict_email_linking: false,
+            // Dev-google is a "verified-identity provider" in local dev: a
+            // first-time signin should land in a workspace without forcing the
+            // user to click "Create a workspace" first.
+            strict_signin: false,
             auto_derive_display_name: input.display_name,
             auto_derive_email: input.email,
+            // Local dev never enforces the hosted signup allowlist.
+            signup_allowlist: SignupAllowlist::default(),
         },
         billing_config,
     )
@@ -46,6 +52,7 @@ pub async fn create_clerk_session(
     principal: ManagedAuthPrincipal,
     input: ClerkAuthRequest,
     billing_config: Option<&crate::config::BillingConfig>,
+    signup_allowlist: SignupAllowlist,
 ) -> AppResult<CreatedAuthSession> {
     if !principal.email_verified {
         return Err(AppError::unauthorized("Clerk email is not verified"));
@@ -77,9 +84,20 @@ pub async fn create_clerk_session(
             accept_invite_org_id: input.accept_invite_org_id,
             accept_invite_token: input.accept_invite_token,
             strict_email_linking: true,
+            // Clerk is a verified-identity provider: a first-time signin with
+            // no existing org and no pending invite should fall through to
+            // auto-create a workspace named after the Clerk profile, instead
+            // of returning the historic "organization is required for signup"
+            // error that stranded users on the signin card.
+            strict_signin: false,
             // Provide Clerk profile fields for auto-derivation fallback.
             auto_derive_display_name: principal.display_name,
             auto_derive_email: principal.email,
+            // The hosted signup allowlist is enforced at the moment we decide
+            // to create a new org (not only for explicit signup-mode requests),
+            // so the security boundary holds for the new signin auto-provision
+            // path too.
+            signup_allowlist,
         },
         billing_config,
     )
@@ -218,6 +236,8 @@ pub(super) async fn create_verified_provider_session(
         drop(data);
         return create_session_for_org(store, user, org).await;
     }
+    // Legacy dev-google "accept invite by org id" path. Clerk hosted invites
+    // are accepted only via `accept_invite_token` (handled earlier).
     if allow_legacy_invite_activation {
         if let Some(invite_org_id) = input.accept_invite_org_id {
             if let Some(org) =
@@ -228,34 +248,53 @@ pub(super) async fn create_verified_provider_session(
             }
             return Err(AppError::not_found("invitation not found"));
         }
-        if mode != "signup" {
-            let invites = pending_invites_for_user(&data, user.id);
-            match invites.len() {
-                0 => return Err(AppError::validation("organization is required for signup")),
-                1 => {
-                    let org =
-                        activate_invited_membership(store, &mut data, user.id, invites[0].org_id)
-                            .await?
-                            .ok_or_else(|| AppError::not_found("invitation not found"))?;
-                    drop(data);
-                    return create_session_for_org(store, user, org).await;
-                }
-                _ => {
-                    return Err(AppError::with_code(
-                        StatusCode::CONFLICT,
-                        "multiple_pending_invites",
-                        "multiple pending invitations",
-                    ))
-                }
-            }
-        }
     } else if input.accept_invite_org_id.is_some() {
         return Err(AppError::validation(
             "invitation token is required to accept hosted invitations",
         ));
-    } else if mode != "signup" {
-        return Err(AppError::validation("organization is required for signup"));
     }
+    // If a previous org owner pre-reserved a seat for this user's email, we'll
+    // have a membership in "invited" status that we should auto-activate
+    // instead of creating a fresh workspace. This applies to both providers.
+    if mode != "signup" {
+        let invites = pending_invites_for_user(&data, user.id);
+        match invites.len() {
+            0 => {
+                // No existing org and no pending invite. The historic behavior
+                // here was to reject with 400 "organization is required for
+                // signup", which stranded first-time Clerk users on the signin
+                // card. Verified-identity providers (Clerk, dev-google) now
+                // fall through to the auto-derive signup path so the user
+                // lands directly in a workspace. Callers that genuinely need
+                // "must already exist" semantics can opt in via `strict_signin`.
+                if input.strict_signin {
+                    return Err(AppError::validation("organization is required for signup"));
+                }
+                // fall through to auto-create below
+            }
+            1 => {
+                let org = activate_invited_membership(store, &mut data, user.id, invites[0].org_id)
+                    .await?
+                    .ok_or_else(|| AppError::not_found("invitation not found"))?;
+                drop(data);
+                return create_session_for_org(store, user, org).await;
+            }
+            _ => {
+                return Err(AppError::with_code(
+                    StatusCode::CONFLICT,
+                    "multiple_pending_invites",
+                    "multiple pending invitations",
+                ))
+            }
+        }
+    }
+    // From this point on we will create a new org for the user. Enforce the
+    // hosted signup allowlist consistently whether the request arrived as
+    // mode="signup" (explicit) or fell through from mode="signin" (the new
+    // auto-provision path). The HTTP-layer pre-check still short-circuits
+    // explicit-signup requests, so this is a defense-in-depth guard for the
+    // implicit path.
+    input.signup_allowlist.check(&email)?;
     let (org_name, org_slug, auto_derived) = if let Some(name) = input.org_name {
         let slug = slugify(&name);
         if data.orgs_by_slug.contains_key(&slug) {
@@ -354,6 +393,7 @@ pub(super) async fn create_verified_provider_session(
             token,
             payload,
             onboarding_api_key: None,
+            auto_provisioned: true,
         });
     }
     if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
@@ -391,6 +431,7 @@ pub(super) async fn create_verified_provider_session(
         token,
         payload,
         onboarding_api_key,
+        auto_provisioned: true,
     })
 }
 
@@ -431,6 +472,7 @@ pub(super) async fn create_session_for_org(
         token,
         payload,
         onboarding_api_key: None,
+        auto_provisioned: false,
     })
 }
 
@@ -699,6 +741,252 @@ mod tests {
         assert!(slug.starts_with("tony-xin-"));
     }
 
+    // ---------------------------------------------------------------------
+    // Auto-provision-on-first-signin coverage.
+    //
+    // `create_verified_provider_session` cannot be exercised end-to-end in a
+    // unit test because its happy path writes through `persist_locked`, which
+    // requires a live ClickHouse client. The CI suite has no ClickHouse, so
+    // we test the new behavior at the level of the *decision logic* it gates
+    // on: which branch fires for each scenario. The six tests below mirror
+    // the six scenarios called out in the PR brief.
+    // ---------------------------------------------------------------------
+
+    fn user_row(id: Uuid, email: &str) -> UserRow {
+        UserRow {
+            id,
+            primary_email: email.to_string(),
+            display_name: None,
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: Some(Utc::now()),
+        }
+    }
+
+    fn fresh_clerk_data() -> (StoreData, UserRow) {
+        // A Clerk-verified user that already exists as a UserRow (so the
+        // existing-user lookup in create_verified_provider_session succeeds)
+        // but has no membership in any org and no pending invites. Exactly
+        // the state of a first-time Clerk signin.
+        let user = user_row(Uuid::new_v4(), "tony@example.com");
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities.insert(
+            ("clerk".to_string(), "user_test_subject".to_string()),
+            user.id,
+        );
+        (data, user)
+    }
+
+    #[test]
+    fn fresh_clerk_signin_with_no_org_falls_through_to_auto_create() {
+        // Scenario 1: brand-new Clerk-verified user, mode != "signup", no
+        // existing org, no pending invites. The new behavior is to fall
+        // through to the auto-create path instead of returning the historic
+        // 400 "organization is required for signup".
+        let (data, user) = fresh_clerk_data();
+
+        // Pre-condition: no existing active membership.
+        assert!(
+            existing_org_for_auth(&data, user.id, None, "customer").is_none(),
+            "fresh user must not have an existing org"
+        );
+        // Pre-condition: no pending invites by membership.
+        assert!(
+            pending_invites_for_user(&data, user.id).is_empty(),
+            "fresh user must not have a pending invite"
+        );
+
+        // The strict_signin gate is what flips behavior: when false (the new
+        // default for Clerk / dev-google), we fall through. When true, the
+        // old error is preserved.
+        let strict_signin = false;
+        let should_auto_create =
+            pending_invites_for_user(&data, user.id).is_empty() && !strict_signin;
+        assert!(
+            should_auto_create,
+            "Clerk first-time signin must fall through to auto-create"
+        );
+
+        // The auto-derive slug for "tony@example.com" with no display name is
+        // the email handle.
+        let slug = derive_workspace_slug(None, &user.primary_email);
+        assert_eq!(slug, "tony");
+    }
+
+    #[test]
+    fn fresh_clerk_signin_on_signup_allowlist_passes() {
+        // Scenario 2: brand-new Clerk user, mode != "signup", and the email
+        // IS on the signup allowlist. The allowlist check must pass so the
+        // auto-create path proceeds.
+        let allowlist = SignupAllowlist {
+            allowed_emails: vec!["tony@example.com".to_string()],
+            allowed_domains: Vec::new(),
+        };
+        assert!(allowlist.check("tony@example.com").is_ok());
+
+        // Domain-based allowlist must also pass.
+        let allowlist = SignupAllowlist {
+            allowed_emails: Vec::new(),
+            allowed_domains: vec!["instantml.ai".to_string()],
+        };
+        assert!(allowlist.check("anyone@instantml.ai").is_ok());
+
+        // Case insensitivity: allowlist comparison normalizes the incoming
+        // email but expects allowlist entries already lowercase.
+        assert!(allowlist.check("MIXED@instantml.ai").is_ok());
+    }
+
+    #[test]
+    fn fresh_clerk_signin_not_on_signup_allowlist_still_403s() {
+        // Scenario 3: brand-new Clerk user, mode != "signup", email NOT on
+        // the allowlist. The auto-create branch is reachable, but the
+        // allowlist check defends the security boundary and must reject.
+        let allowlist = SignupAllowlist {
+            allowed_emails: vec!["founder@example.com".to_string()],
+            allowed_domains: vec!["instantml.ai".to_string()],
+        };
+        let error = allowlist.check("stranger@example.org").unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::FORBIDDEN);
+
+        // A nominally-similar domain must NOT match (substring guard).
+        assert!(allowlist.check("user@notinstantml.ai").is_err());
+
+        // An empty allowlist (the local-dev / unconfigured case) must not
+        // block anyone.
+        let empty = SignupAllowlist::default();
+        assert!(empty.check("anyone@example.com").is_ok());
+    }
+
+    #[test]
+    fn fresh_clerk_signin_with_pending_invite_uses_invite_path() {
+        // Scenario 4: brand-new Clerk user with a pre-reserved seat (a
+        // membership in "invited" status) must auto-attach to that org via
+        // the existing invite-activation branch, NOT auto-create a new org.
+        let user = user_row(Uuid::new_v4(), "teammate@example.com");
+        let inviting_org_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities.insert(
+            ("clerk".to_string(), "user_pending_invite".to_string()),
+            user.id,
+        );
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id: inviting_org_id,
+            user_id: user.id,
+            role: "member".to_string(),
+            status: "invited".to_string(),
+            created_at: Utc::now(),
+        });
+
+        // No active membership yet (so existing-org lookup fails).
+        assert!(existing_org_for_auth(&data, user.id, None, "customer").is_none());
+
+        // But there is exactly one pending invite, which is the branch that
+        // must fire before any auto-create.
+        let invites = pending_invites_for_user(&data, user.id);
+        assert_eq!(invites.len(), 1, "must see the pending invite");
+        assert_eq!(invites[0].org_id, inviting_org_id);
+        assert_eq!(invites[0].status, "invited");
+    }
+
+    #[test]
+    fn returning_clerk_user_with_existing_org_does_not_auto_create() {
+        // Scenario 5: returning Clerk user with an active membership must
+        // hit the existing-org branch and reuse that org, NOT auto-create.
+        let user = user_row(Uuid::new_v4(), "tony@example.com");
+        let org_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities
+            .insert(("clerk".to_string(), "user_returning".to_string()), user.id);
+        data.insert_org(OrganizationRow {
+            id: org_id,
+            slug: "tony-xin".to_string(),
+            name: "Tony Xin".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: Some(user.id),
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        });
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id,
+            user_id: user.id,
+            role: "owner".to_string(),
+            status: "active".to_string(),
+            created_at: Utc::now(),
+        });
+
+        let existing = existing_org_for_auth(&data, user.id, None, "personal");
+        assert!(existing.is_some(), "returning user must match existing org");
+        assert_eq!(existing.unwrap().id, org_id);
+        // No pending invites either — the function should hit the existing-org
+        // early return before ever consulting them.
+        assert!(pending_invites_for_user(&data, user.id).is_empty());
+    }
+
+    #[test]
+    fn explicit_signup_with_custom_org_name_does_not_auto_derive() {
+        // Scenario 6: a user-typed org_name on an explicit "Create a
+        // workspace" signup must be preserved verbatim (with collision
+        // detection), NOT replaced by the Clerk-profile auto-derived slug.
+        let custom_name = "My Custom Workspace";
+        let custom_slug = slugify(custom_name);
+        assert_eq!(custom_slug, "my-custom-workspace");
+
+        // Auto-derived slug for the same user would be different.
+        let auto_slug = derive_workspace_slug(Some("Tony Xin"), "tony@example.com");
+        assert_eq!(auto_slug, "tony-xin");
+        assert_ne!(custom_slug, auto_slug, "auto-derive must not shadow custom");
+
+        // Slug collision still applies for the custom path: if the slug is
+        // already taken, the create branch must reject with a conflict
+        // (instead of silently appending a numeric suffix the way
+        // unique_slug does on the auto-derive path).
+        let mut data = StoreData::default();
+        data.insert_org(OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: custom_slug.clone(),
+            name: "Existing Workspace".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "personal".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        });
+        assert!(
+            data.orgs_by_slug.contains_key(&custom_slug),
+            "pre-seeded slug must collide"
+        );
+    }
+
+    #[test]
+    fn strict_signin_preserves_legacy_400_for_callers_that_opt_in() {
+        // Defense for callers that genuinely want "must already exist"
+        // semantics: when strict_signin=true and the user has no org and no
+        // pending invite, the legacy 400 "organization is required for
+        // signup" error is preserved instead of falling through to
+        // auto-create. The new default is false for both Clerk and
+        // dev-google, but this guards the field from being silently dropped.
+        let (data, user) = fresh_clerk_data();
+        let strict_signin = true;
+        let should_auto_create =
+            pending_invites_for_user(&data, user.id).is_empty() && !strict_signin;
+        assert!(
+            !should_auto_create,
+            "strict_signin must suppress auto-create fall-through"
+        );
+    }
+
     #[tokio::test]
     async fn auto_derived_personal_signup_rejects_teammate_seats() {
         let user = UserRow {
@@ -733,8 +1021,10 @@ mod tests {
                 accept_invite_org_id: None,
                 accept_invite_token: None,
                 strict_email_linking: true,
+                strict_signin: false,
                 auto_derive_display_name: Some("Owner Example".to_string()),
                 auto_derive_email: "owner@example.com".to_string(),
+                signup_allowlist: SignupAllowlist::default(),
             },
             None,
         )

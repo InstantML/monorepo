@@ -520,6 +520,7 @@ pub async fn switch_session_organization(
             token: token.to_string(),
             payload,
             onboarding_api_key: None,
+            auto_provisioned: false,
         });
     }
 
@@ -551,6 +552,7 @@ pub async fn switch_session_organization(
         token: new_token,
         payload,
         onboarding_api_key: None,
+        auto_provisioned: false,
     })
 }
 
