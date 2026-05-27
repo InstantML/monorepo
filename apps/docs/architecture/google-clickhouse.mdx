@@ -10,7 +10,8 @@ metrics in an InstantML-owned ClickHouse deployment on Google Cloud. This
 replaces the earlier InstantML-owned ClickHouse Cloud path for the default
 hosted service.
 
-Customer-owned ClickHouse remains a separate Premium storage option.
+Customer-owned self-hosted GCP ClickHouse remains a separate Premium storage
+option.
 
 ## Hosted topology
 
@@ -72,8 +73,8 @@ measurements justify resizing.
 - Run-list and chart endpoints remain bounded; raw metric history is fetched
   through dedicated series endpoints.
 - Artifact uploads and downloads continue through InstantML API routes.
-- Customer-owned ClickHouse setup is still available for Premium teams that
-  want their product data in their own warehouse.
+- Customer-owned GCP ClickHouse setup is still available for Premium teams that
+  want their product data in their own deployment.
 
 ## Current benchmark signal
 

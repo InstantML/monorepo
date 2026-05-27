@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ApiClient, ApiError } from "../../src/api.js";
 import { clerkIssuerConfigError } from "../../src/clerk-config.js";
 import { roleLabel } from "../../src/roles.js";
+import { postAuthRedirectPath } from "../../src/routes.js";
 import type { components } from "../../src/types/api.generated";
 import { InstantMlMark } from "../instantml-mark";
 
@@ -20,6 +21,7 @@ type AuthConfig = {
 type SessionPayload = {
   authenticated?: boolean;
   user?: { primary_email?: string };
+  organization?: { id: string; storage_choice?: string; storage_state?: string };
 };
 type InvitationPreview = components["schemas"]["InvitationPreviewPayload"];
 
@@ -30,6 +32,7 @@ export default function InvitePage() {
   const api = useMemo(() => new ApiClient(), []);
   const attemptedClerkExchangeRef = useRef(false);
   const acceptStartedRef = useRef(false);
+  const inviteHandoffRef = useRef(false);
   const { getToken, isLoaded: clerkLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
   const { user } = useUser();
@@ -58,8 +61,15 @@ export default function InvitePage() {
       return;
     }
     setToken(parsed);
-    saveStoredInviteToken(parsed);
     window.history.replaceState(null, "", "/invite");
+  }, []);
+
+  useEffect(() => {
+    function clearNonHandoffToken() {
+      if (!inviteHandoffRef.current) clearStoredInviteToken();
+    }
+    window.addEventListener("pagehide", clearNonHandoffToken);
+    return () => window.removeEventListener("pagehide", clearNonHandoffToken);
   }, []);
 
   useEffect(() => {
@@ -140,10 +150,9 @@ export default function InvitePage() {
     setBusy(true);
     note("Accepting invitation...");
     try {
-      await api.post("/api/invitations/accept", { token });
+      const payload = await api.post("/api/invitations/accept", { token });
       clearStoredInviteToken();
-      note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      openAcceptedWorkspace(payload as SessionPayload);
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {
@@ -158,14 +167,13 @@ export default function InvitePage() {
     try {
       const clerkToken = await getToken({ skipCache: true });
       if (!clerkToken) throw new Error("Clerk did not return a session token.");
-      await api.post("/api/auth/clerk", {
+      const payload = await api.post("/api/auth/clerk", {
         token: clerkToken,
         mode: "signin",
         accept_invite_token: token,
       });
       clearStoredInviteToken();
-      note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      openAcceptedWorkspace(payload as SessionPayload);
     } catch (error) {
       attemptedClerkExchangeRef.current = false;
       handleInviteFailure(error, "Unable to verify invitation.");
@@ -180,14 +188,13 @@ export default function InvitePage() {
     setBusy(true);
     note("Accepting invitation...");
     try {
-      await api.post("/api/auth/dev/google", {
+      const payload = await api.post("/api/auth/dev/google", {
         email: devEmail.trim(),
         mode: "signin",
         accept_invite_token: token,
       });
       clearStoredInviteToken();
-      note("Invitation accepted. Opening dashboard...");
-      window.location.assign("/dashboard/runs");
+      openAcceptedWorkspace(payload as SessionPayload);
     } catch (error) {
       handleInviteFailure(error, "Unable to accept invitation.");
     } finally {
@@ -200,19 +207,34 @@ export default function InvitePage() {
     acceptStartedRef.current = false;
     await clearInstantMlSession();
     setSession({ authenticated: false });
-    if (token) saveStoredInviteToken(token);
-    if (config.managed_clerk_enabled) await clerk.signOut();
+    if (config.managed_clerk_enabled) {
+      beginInviteHandoff();
+      await clerk.signOut();
+    }
     note("Choose an account that matches the invitation email.");
   }
 
   function handleInviteFailure(error: unknown, fallback: string) {
     if (shouldClearInviteToken(error)) clearStoredInviteToken();
     if (isEmailMismatch(error)) {
-      if (token) saveStoredInviteToken(token);
       void clearInstantMlSession();
       setSession({ authenticated: false });
     }
     fail(inviteErrorMessage(error, fallback));
+  }
+
+  function beginInviteHandoff() {
+    if (!token) return;
+    inviteHandoffRef.current = true;
+    saveStoredInviteToken(token);
+  }
+
+  function openAcceptedWorkspace(payload: SessionPayload) {
+    const destination = postAuthRedirectPath(payload, "/dashboard/runs");
+    note(destination.startsWith("/onboarding")
+      ? "Invitation accepted. Opening storage setup..."
+      : "Invitation accepted. Opening dashboard...");
+    window.location.replace(destination);
   }
 
   async function clearInstantMlSession() {
@@ -260,12 +282,12 @@ export default function InvitePage() {
                     {!isSignedIn ? (
                       <>
                         <SignInButton mode="modal" forceRedirectUrl="/invite">
-                          <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy} type="button">
+                          <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy} onClick={beginInviteHandoff} type="button">
                             <ShieldCheck size={16} /> Sign in with Clerk <ArrowRight className="iml-arrow" size={15} />
                           </button>
                         </SignInButton>
                         <SignUpButton mode="modal" forceRedirectUrl="/invite">
-                          <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} type="button">
+                          <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={beginInviteHandoff} type="button">
                             <UserPlus size={16} /> Create verified account
                           </button>
                         </SignUpButton>

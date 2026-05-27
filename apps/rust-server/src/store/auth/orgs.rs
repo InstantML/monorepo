@@ -228,7 +228,10 @@ pub async fn create_current_user_organization(
         )
     } else {
         if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
-            store.ensure_tenant_route(&org).await?;
+            if let Err(error) = store.ensure_tenant_route(&org).await {
+                let _ = abandon_current_user_org_create(store, &org, &owner).await;
+                return Err(error);
+            }
         }
         for invitation in &initial_invitations {
             let outcome = create_org_invitation(
@@ -301,6 +304,41 @@ pub async fn organization_name_availability(
         "available": available,
         "message": message
     }))
+}
+
+async fn abandon_current_user_org_create(
+    store: &Store,
+    org: &OrganizationRow,
+    owner: &MembershipRow,
+) -> AppResult<()> {
+    let mut abandoned_org = org.clone();
+    abandoned_org.slug = format!("failed-{}", org.id);
+    abandoned_org.created_by_user_id = None;
+    abandoned_org.storage_state = STORAGE_STATE_UNCONFIGURED.to_string();
+
+    let mut revoked_owner = owner.clone();
+    revoked_owner.status = "revoked".to_string();
+
+    store
+        .persist_locked(
+            "organization",
+            abandoned_org.id,
+            &abandoned_org.id.to_string(),
+            &abandoned_org,
+        )
+        .await?;
+    store
+        .persist_locked(
+            "membership",
+            revoked_owner.org_id,
+            &revoked_owner.id.to_string(),
+            &revoked_owner,
+        )
+        .await?;
+    let mut data = store.data.lock().await;
+    data.insert_org(abandoned_org);
+    data.insert_membership(revoked_owner);
+    Ok(())
 }
 
 fn normalize_initial_invitations(
@@ -565,6 +603,44 @@ mod tests {
                 credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn hosted_store_with_data(data: StoreData) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_orgs_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: Some(crate::config::HostedClickHouseConfig {
+                user_data_url: "http://default:@127.0.0.1:8123/instantml_user_data_test"
+                    .to_string(),
+                tenant_base_url: "http://default:@127.0.0.1:9/instantml_tenant_route_failure"
+                    .to_string(),
+                provisioner: crate::config::ClickHouseProvisioner::Database,
+                allow_stored_tenant_passwords: false,
+                cloud: None,
+                shared_cell_url: None,
+            }),
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
@@ -967,6 +1043,53 @@ mod tests {
             Some("email delivery failed")
         );
         assert!(invite.preview_link.is_none());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_abandons_active_membership_when_tenant_route_fails() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = hosted_store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Broken Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: None,
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.status().is_server_error());
+
+        let data = store.data.lock().await;
+        assert!(
+            !data.orgs_by_slug.contains_key("broken-lab"),
+            "failed user-facing creates should free the requested slug"
+        );
+        assert!(
+            data.memberships
+                .values()
+                .all(|membership| membership.user_id != user.id || membership.status != "active"),
+            "failed user-facing creates should not leave a switchable workspace"
+        );
+        assert!(collect_user_org_memberships(&data, user.id, Uuid::new_v4()).is_empty());
     }
 
     #[tokio::test]

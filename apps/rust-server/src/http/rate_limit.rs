@@ -255,6 +255,7 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
                 "/api/storage/clickhouse-connections/rotate-credentials"
             )
     ) || (*method == Method::PATCH && path.starts_with("/runs/"))
+        || (*method == Method::POST && path.starts_with("/api/runs/") && path.ends_with("/forks"))
         || (*method == Method::POST
             && (path.ends_with("/metrics")
                 || path.ends_with("/rank-metrics")
@@ -266,11 +267,14 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
 }
 
 fn is_monthly_quota_exempt_route(method: &Method, path: &str) -> bool {
+    (*method == Method::GET && matches!(path, "/api/usage" | "/api/usage/export"))
+        || is_storage_setup_route(method, path)
+}
+
+fn is_storage_setup_route(method: &Method, path: &str) -> bool {
     matches!(
         (method.as_str(), path),
-        ("GET", "/api/usage")
-            | ("GET", "/api/usage/export")
-            | ("GET", "/api/storage/clickhouse-connections/current")
+        ("GET", "/api/storage/clickhouse-connections/current")
             | ("POST", "/api/storage/clickhouse-connections")
             | ("POST", "/api/storage/clickhouse-connections/validate")
             | (
@@ -462,6 +466,12 @@ mod tests {
             RequestClass::Ingest
         );
         assert_eq!(
+            classify_route(&Method::POST, "/api/runs/run-1/forks")
+                .expect("policy")
+                .class,
+            RequestClass::Ingest
+        );
+        assert_eq!(
             classify_route(&Method::GET, "/api/usage")
                 .expect("policy")
                 .class,
@@ -478,6 +488,23 @@ mod tests {
                 .monthly_enforced
         );
         assert!(classify_route(&Method::OPTIONS, "/api/usage").is_none());
+    }
+
+    #[test]
+    fn storage_setup_routes_skip_monthly_quota_until_storage_exists() {
+        for (method, path) in [
+            (Method::GET, "/api/storage/clickhouse-connections/current"),
+            (Method::POST, "/api/storage/clickhouse-connections"),
+            (Method::POST, "/api/storage/clickhouse-connections/validate"),
+            (
+                Method::POST,
+                "/api/storage/clickhouse-connections/rotate-credentials",
+            ),
+        ] {
+            let policy = classify_route(&method, path).expect("policy");
+            assert!(!policy.monthly_enforced, "{method} {path}");
+            assert!(policy.metered, "{method} {path}");
+        }
     }
 
     #[tokio::test]

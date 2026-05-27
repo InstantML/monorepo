@@ -21,6 +21,9 @@
 //!
 //! See `docs/design/2026-05-19-utoipa-migration.md` for context on why this
 //! pattern replaced the legacy hand-rolled `openapi_json` index.
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, SecurityScheme},
@@ -28,6 +31,7 @@ use utoipa::{
 };
 
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::domain::{
     AdminApiKeySummary, AdminBillingSummary, AdminOrgCounts, AdminOrganizationSummary,
@@ -43,19 +47,19 @@ use crate::domain::{
     ClickHouseConnectionValidationResponse, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
     CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
     CreateCurrentUserOrganizationRequest, CreateInvitationRequest, CreateObjectRequest,
-    CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest, CreateUserRequest,
-    CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DevGoogleAuthRequest,
-    DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
-    InitialInvitationCreateResult, InitialOrganizationInvitation, InvitationPreviewPayload,
-    InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest, MembershipRow,
-    MetricPointRow, MetricSeriesRow, OnboardingApiKey, OrganizationMembershipSummary,
-    OrganizationRoleCapabilities, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-    PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
-    RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-    RankReducerPoint, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-    ServiceAccountRow, SwitchOrganizationRequest, UpdateDashboardPreferencesRequest,
-    UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
-    WorkspaceViewSummary,
+    CreateOrganizationRequest, CreateProjectRequest, CreateRunForkRequest, CreateRunRequest,
+    CreateUserRequest, CurrentUserOrganizationCreateResponse, DashboardPreferenceRow,
+    DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest,
+    DeviceCodeStartRequest, InitialInvitationCreateResult, InitialOrganizationInvitation,
+    InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
+    MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
+    OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
+    ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow,
+    RankCoveragePoint, RankHeatmapPoint, RankMetricLimits, RankMetricTruncation,
+    RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint, ReserveSeatRequest, RunRow,
+    SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SwitchOrganizationRequest,
+    UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+    UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
 };
 
 // ============================================================================
@@ -98,6 +102,70 @@ pub struct RunEnvelope {
 #[derive(Serialize, ToSchema)]
 pub struct RunsEnvelope {
     pub runs: Vec<RunRow>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunMetricAggregate {
+    pub latest: Option<f64>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub mean: Option<f64>,
+    pub variance: Option<f64>,
+    pub count: i64,
+    pub best_step: Option<f64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunSummaryRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub name: String,
+    pub status: String,
+    #[schema(value_type = Object)]
+    pub config: Value,
+    pub tags: Vec<String>,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_run_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from_step: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from_artifact_id: Option<Uuid>,
+    pub latest_metrics: BTreeMap<String, Option<f64>>,
+    pub metric_aggregates: BTreeMap<String, RunMetricAggregate>,
+    pub metric_keys: Vec<String>,
+    pub artifact_counts: BTreeMap<String, i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunForkContext {
+    pub parent_run_id: Uuid,
+    pub forked_from_step: Option<f64>,
+    pub forked_from_artifact_id: Option<Uuid>,
+    pub message: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunForkEnvelope {
+    pub run: RunSummaryRow,
+    pub fork: RunForkContext,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunLineageEnvelope {
+    pub run: RunSummaryRow,
+    pub parent: Option<RunSummaryRow>,
+    pub children: Vec<RunSummaryRow>,
+    pub checkpoint_artifact: Option<PublicArtifactRow>,
+    pub children_total: usize,
+    pub has_more_children: bool,
+    pub limit: usize,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -168,13 +236,14 @@ pub struct AuthSessionUnauthenticated {
 
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
-    pub error: ErrorBody,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ErrorBody {
-    pub code: String,
-    pub message: String,
+    pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 1)]
+    pub position: Option<usize>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -184,12 +253,15 @@ pub struct DashboardPreferencesEnvelope {
 
 #[derive(Serialize, ToSchema)]
 pub struct WorkspaceViewEnvelope {
+    #[serde(rename = "workspace_view")]
     pub view: WorkspaceViewRow,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct WorkspaceViewSummariesEnvelope {
+    #[serde(rename = "workspace_views")]
     pub views: Vec<WorkspaceViewSummary>,
+    pub next_cursor: Option<String>,
 }
 
 /// Wrapper for `auth_dev_google` / `auth_clerk` responses, which serialize
@@ -414,6 +486,8 @@ impl Modify for SecurityAddon {
         crate::http::handlers::runs::create_run,
         crate::http::handlers::runs::list_runs,
         crate::http::handlers::runs::get_run,
+        crate::http::handlers::runs::get_run_lineage,
+        crate::http::handlers::runs::fork_run,
         crate::http::handlers::runs::update_run,
         crate::http::handlers::runs::log_metrics,
         crate::http::handlers::runs::get_metrics,
@@ -454,11 +528,15 @@ impl Modify for SecurityAddon {
         AuthSessionUnauthenticated,
         AuthSessionWithOnboardingKey,
         ErrorResponse,
-        ErrorBody,
         ProjectEnvelope,
         ProjectsEnvelope,
         RunEnvelope,
         RunsEnvelope,
+        RunMetricAggregate,
+        RunSummaryRow,
+        RunForkContext,
+        RunForkEnvelope,
+        RunLineageEnvelope,
         InsertedEnvelope,
         SeatEnvelope,
         SeatsEnvelope,
@@ -536,6 +614,7 @@ impl Modify for SecurityAddon {
         CreateObjectRequest,
         CreateOrganizationRequest,
         CreateProjectRequest,
+        CreateRunForkRequest,
         CreateRunRequest,
         CreateUserRequest,
         CurrentUserOrganizationCreateResponse,

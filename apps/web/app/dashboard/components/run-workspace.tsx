@@ -35,6 +35,7 @@ import type {
   LoggedObject,
   LoggedObjectRow,
   MetricSeries,
+  RunLineage,
   RunMetricRow,
   RunSummary,
   RunTimelineRow,
@@ -44,6 +45,7 @@ export type RunWorkspaceTabId = "summary" | "data" | "logs" | "files" | "system"
 type ChartZoomRange = { min: number; max: number } | null;
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;
+  post(path: string, body?: any, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<any>;
 };
 const RUN_WORKSPACE_REQUEST_RETRY_DELAYS_MS = [250, 700, 1_500];
 
@@ -91,6 +93,7 @@ export function RunWorkspace({
   onChartMove,
   onChartPointHover,
   onChartZoomRangeChange,
+  onForkCheckpoint,
   onRunMetadataSave,
   onWorkspaceTabChange,
   run,
@@ -119,6 +122,7 @@ export function RunWorkspace({
   onChartMove: (event: MouseEvent<SVGSVGElement>) => void;
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
+  onForkCheckpoint?: (artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) => Promise<void>;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   run: RunSummary | null;
@@ -175,6 +179,7 @@ export function RunWorkspace({
           loggedObjects={loggedObjects}
           metricRows={metricRows}
           objectRowsById={objectRowsById}
+          onForkCheckpoint={onForkCheckpoint}
           onRunMetadataSave={onRunMetadataSave}
           run={run}
           selectedCount={selectedCount}
@@ -216,13 +221,14 @@ export function RunWorkspace({
         <RunEvidenceExplorer artifacts={artifacts} objects={loggedObjects} rowsByObjectId={objectRowsById} run={run} />
       ) : null}
       {tab === "system" ? <RunSystemPanel run={run} metricRows={metricRows} /> : null}
-      {tab === "graph" ? <RunGraphPanel run={run} /> : null}
+      {tab === "graph" ? <RunGraphPanel api={api} run={run} /> : null}
     </div>
   );
 }
 
 function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [stream, setStream] = useState<"stdout" | "stderr">("stdout");
+  const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<ConsoleLogLine[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -231,8 +237,31 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const requestKeyRef = useRef(0);
+  const scrollFrameRef = useRef<number | null>(null);
+  const pendingScrollTopRef = useRef(0);
   const windowRows = terminalWindow(lines.length, scrollTop, TERMINAL_ROW_HEIGHT, TERMINAL_VIEWPORT_HEIGHT);
-  const visibleLines = lines.slice(windowRows.start, windowRows.end);
+  const tokenizedLines = useMemo(() => (
+    lines.map((line) => ({ ...line, tokens: ansiTokens(line.message) }))
+  ), [lines]);
+  const visibleLines = tokenizedLines.slice(windowRows.start, windowRows.end);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput), 250);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
+
+  function updateScrollTop(nextScrollTop: number) {
+    pendingScrollTopRef.current = nextScrollTop;
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      setScrollTop(pendingScrollTopRef.current);
+    });
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -296,7 +325,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
         </div>
         <label className="logs-search">
           <Search size={14} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter logs" />
+          <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Filter logs" />
         </label>
         <button className="icon-button framed" aria-label="Refresh logs" onClick={() => setRefreshKey((current) => current + 1)} type="button">
           <RefreshCw size={15} />
@@ -309,7 +338,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
           <span>Line</span>
           <span>Message</span>
         </div>
-        <div className="terminal-scroll" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+        <div className="terminal-scroll" onScroll={(event) => updateScrollTop(event.currentTarget.scrollTop)}>
           <div className="terminal-spacer" style={{ height: windowRows.totalHeight }}>
             <div className="terminal-window" style={{ transform: `translateY(${windowRows.offsetTop}px)` }}>
               {visibleLines.map((line) => (
@@ -317,7 +346,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
                   <span className="terminal-ts">{formatTimestamp(line.timestamp)}</span>
                   <span className="terminal-line">{line.line_number}</span>
                   <span className="terminal-message">
-                    {ansiTokens(line.message).map((token, index) => (
+                    {line.tokens.map((token, index) => (
                       <span className={token.className || undefined} key={index}>{token.text}</span>
                     ))}
                   </span>
@@ -508,14 +537,120 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
   );
 }
 
-function RunGraphPanel({ run }: { run: RunSummary }) {
+function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
+  const [lineage, setLineage] = useState<RunLineage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const requestKeyRef = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const requestKey = requestKeyRef.current + 1;
+    requestKeyRef.current = requestKey;
+    setLoading(true);
+    setError("");
+    setLineage(null);
+    api.get(`/api/runs/${run.id}/lineage`, { signal: controller.signal })
+      .then((payload) => {
+        if (requestKey !== requestKeyRef.current) return;
+        setLineage(payload as RunLineage);
+      })
+      .catch((caught) => {
+        if (isAbortError(caught) || requestKey !== requestKeyRef.current) return;
+        setLineage(null);
+        setError(caught instanceof Error ? caught.message : "Unable to load lineage.");
+      })
+      .finally(() => {
+        if (requestKey === requestKeyRef.current) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [api, refreshKey, run.id]);
+
+  const visibleLineage = lineage?.run?.id === run.id ? lineage : null;
+  const parent = visibleLineage?.parent;
+  const children = Array.isArray(visibleLineage?.children) ? visibleLineage.children : [];
+  const checkpoint = visibleLineage?.checkpoint_artifact;
+  const hasGraph = Boolean(parent || children.length || checkpoint);
   return (
     <section className="run-workspace-panel graph-panel">
-      <div className="empty">
-        <GitBranch size={18} />
-        Graph data has not been logged for {run.name} yet.
+      <div className="panel-head compact-panel-head">
+        <h2><GitBranch size={15} /> Lineage</h2>
+        <button className="icon-button framed" aria-label="Refresh lineage" onClick={() => setRefreshKey((current) => current + 1)} type="button">
+          <RefreshCw size={15} />
+        </button>
       </div>
+      {error ? <div className="empty compact-empty" role="alert">{error}</div> : null}
+      {loading && !visibleLineage ? <div className="empty compact-empty">Loading lineage...</div> : null}
+      {!loading && !error && !hasGraph ? (
+        <div className="empty">
+          <GitBranch size={18} />
+          No forks or checkpoint lineage have been recorded for {run.name}.
+        </div>
+      ) : null}
+      {hasGraph ? (
+        <div className="lineage-layout" aria-live="polite">
+          <div className="lineage-cards" role="list" aria-label="Lineage nodes">
+            <LineageNode label="Parent" run={parent ?? null} empty="No parent run" />
+            <LineageNode label="Selected" run={visibleLineage?.run ?? run} />
+            <div className="lineage-node" role="listitem">
+              <span>Checkpoint</span>
+              {checkpoint ? (
+                <>
+                  <strong title={checkpoint.name}>{checkpoint.name}</strong>
+                  <small>{checkpoint.step === null ? "no step" : `step ${checkpoint.step}`}</small>
+                </>
+              ) : <strong>No checkpoint</strong>}
+            </div>
+          </div>
+          <div className="lineage-children">
+            <div className="lineage-children-head">
+              <h3>Children</h3>
+              <span>{formatNumber(visibleLineage?.children_total ?? children.length, 0)} direct forks</span>
+            </div>
+            {children.length ? (
+              <table className="table lineage-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Run</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Step</th>
+                    <th scope="col">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {children.map((child) => (
+                    <tr key={child.id}>
+                      <td><strong title={child.name}>{child.name}</strong></td>
+                      <td><span className={`pill ${statusTone(child.status)}`}>{child.status}</span></td>
+                      <td>{child.forked_from_step ?? "unknown"}</td>
+                      <td>{formatTimestamp(child.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="empty compact-empty">No direct children yet.</div>}
+            {visibleLineage?.has_more_children ? (
+              <p className="lineage-truncated">Showing the latest {formatNumber(visibleLineage.limit ?? children.length, 0)} children.</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function LineageNode({ empty, label, run }: { empty?: string; label: string; run: RunSummary | null }) {
+  return (
+    <div className="lineage-node" role="listitem">
+      <span>{label}</span>
+      {run ? (
+        <>
+          <strong title={run.name}>{run.name}</strong>
+          <small>{run.project} · {run.status}</small>
+        </>
+      ) : <strong>{empty ?? "Not available"}</strong>}
+    </div>
   );
 }
 

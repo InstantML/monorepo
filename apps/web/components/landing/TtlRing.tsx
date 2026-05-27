@@ -4,7 +4,7 @@
 // benchmark p95 for project summary (78 ms) — see
 // apps/rust-server README. Visual sweep is CSS-driven and cosmetic.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 const MAX_MS = 200;
 const TARGET_MS = 78;
@@ -16,9 +16,17 @@ export function TtlRing() {
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
 
-  const [t, setT] = useState(TARGET_MS);
+  const valueRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<SVGCircleElement>(null);
   const startedRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+
+  function updateDial(nextMs: number) {
+    const fillFraction = Math.min(1, nextMs / MAX_MS);
+    const offset = circumference * (1 - fillFraction);
+    if (valueRef.current) valueRef.current.textContent = String(Math.round(nextMs));
+    progressRef.current?.setAttribute("stroke-dashoffset", String(offset));
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -29,7 +37,7 @@ export function TtlRing() {
       const elapsed = ((ts - startedRef.current) / 1000) % CYCLE_S;
       const fraction = elapsed / CYCLE_S;
       const eased = fraction < 0.5 ? fraction * 2 : 1;
-      setT(TARGET_MS * eased);
+      updateDial(TARGET_MS * eased);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -41,9 +49,9 @@ export function TtlRing() {
     };
   }, []);
 
-  const fillFraction = Math.min(1, t / MAX_MS);
+  const fillFraction = Math.min(1, TARGET_MS / MAX_MS);
   const offset = circumference * (1 - fillFraction);
-  const display = Math.round(t);
+  const display = Math.round(TARGET_MS);
 
   return (
     <div className="landing-ttl-ring">
@@ -74,6 +82,7 @@ export function TtlRing() {
           fill="none"
         />
         <circle
+          ref={progressRef}
           cx={size / 2}
           cy={size / 2}
           r={r}
@@ -89,7 +98,7 @@ export function TtlRing() {
 
       <div className="landing-ttl-ring__label">
         <div className="landing-ttl-ring__eyebrow">project p95</div>
-        <div className="landing-ttl-ring__value">{display}</div>
+        <div className="landing-ttl-ring__value" ref={valueRef}>{display}</div>
         <div className="landing-ttl-ring__unit">ms · at 100k runs</div>
       </div>
     </div>

@@ -246,6 +246,16 @@ impl ByocClickHouseConfig {
                 "customer-owned ClickHouse is not available until InstantML data-plane egress CIDRs are configured",
             ));
         }
+        let egress_version = self.egress_set_version.trim();
+        if !self.allow_private_endpoints
+            && matches!(egress_version, "" | "configured" | "local-dev" | "unknown")
+        {
+            return Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "byoc_egress_unconfigured",
+                "customer-owned ClickHouse is not available until InstantML data-plane egress CIDRs have an environment-specific version",
+            ));
+        }
         if matches!(self.credential_store, ByocCredentialStoreConfig::Disabled) {
             return Err(AppError::with_code(
                 http::StatusCode::SERVICE_UNAVAILABLE,
@@ -536,9 +546,7 @@ fn hosted_clickhouse_config(
 }
 
 fn byoc_clickhouse_config() -> AppResult<ByocClickHouseConfig> {
-    let egress_cidrs = env_string_list("INSTANTML_BYOC_EGRESS_CIDRS")
-        .or_else(|| env_string_list("INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST"))
-        .unwrap_or_default();
+    let egress_cidrs = env_string_list("INSTANTML_BYOC_EGRESS_CIDRS").unwrap_or_default();
     let egress_set_version = env_string(
         "INSTANTML_BYOC_EGRESS_SET_VERSION",
         if egress_cidrs.is_empty() {
@@ -948,6 +956,24 @@ mod tests {
             vec!["10.0.0.1/32".to_string(), "0.0.0.0/0".to_string()]
         );
         assert!(split_env_string_list(" , ").is_empty());
+    }
+
+    #[test]
+    fn byoc_customer_setup_requires_versioned_static_egress() {
+        let config = ByocClickHouseConfig {
+            egress_cidrs: vec!["203.0.113.10/32".to_string()],
+            egress_set_version: "configured".to_string(),
+            allow_private_endpoints: false,
+            credential_store: ByocCredentialStoreConfig::LocalUserData,
+        };
+        let error = config.require_customer_setup_enabled().unwrap_err();
+        assert_eq!(error.code(), Some("byoc_egress_unconfigured"));
+
+        let configured = ByocClickHouseConfig {
+            egress_set_version: "staging-us-central1-2026-05-25".to_string(),
+            ..config
+        };
+        configured.require_customer_setup_enabled().unwrap();
     }
 
     #[test]

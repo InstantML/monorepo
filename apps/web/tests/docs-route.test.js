@@ -40,6 +40,13 @@ test("docs app route renders docs source instead of redirecting to a docs host",
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
 });
 
+test("docs loader caches static filesystem work for server renders", async () => {
+  const docs = await readFile(path.join(webRoot, "src", "docs.js"), "utf8");
+  assert.match(docs, /from "react"/, "docs loader should use React cache for request-level dedupe");
+  assert.match(docs, /loadDocsPageByPath\s*=\s*cache/, "metadata and page loads should dedupe by normalized docs path");
+  assert.match(docs, /loadApiReferenceEndpoints\s*=\s*cache/, "generated API reference parsing should be cached");
+});
+
 test("first-run onboarding links to human and agent quickstart docs", async () => {
   const authFlow = await readFile(path.join(webRoot, "app", "auth-flow.tsx"), "utf8");
   const emptyWorkspace = await readFile(
@@ -65,6 +72,12 @@ test("docs asset route serves images from the docs source tree", async () => {
   const route = await readFile(path.join(webRoot, "app", "docs", "assets", "[...path]", "route.ts"), "utf8");
   assert.match(route, /docsImagesRoot/);
   assert.match(route, /Content-Type/);
+  assert.match(route, /Content-Disposition/);
+  assert.match(route, /Content-Security-Policy/);
+  assert.match(route, /X-Content-Type-Options/);
+  assert.match(route, /\.svg/);
+  assert.match(route, /sandbox/);
+  assert.match(route, /nosniff/);
 });
 
 test("docs markdown mirrors are routed from /docs/*.md", async () => {
@@ -83,13 +96,14 @@ test("docs markdown mirrors are routed from /docs/*.md", async () => {
 
 test("main app navigation links to the same-origin docs route", async () => {
   const landing = await readFile(path.join(webRoot, "components", "landing", "LandingPage.tsx"), "utf8");
-  const topbar = await readFile(path.join(webRoot, "app", "dashboard", "chrome", "topbar.tsx"), "utf8");
   const navRail = await readFile(path.join(webRoot, "app", "dashboard", "chrome", "nav-rail.tsx"), "utf8");
 
+  // Dashboard topbar no longer carries a docs link — the dedicated icon
+  // button was removed to declutter the brand bar. Mobile users still
+  // reach docs via the nav-rail; the landing page still links to it.
   assert.match(landing, /href="\/docs"/);
-  assert.match(topbar, /href="\/docs"/);
   assert.match(navRail, /href="\/docs"/);
-  assert.doesNotMatch(`${landing}\n${topbar}\n${navRail}`, /docs\.instantml\.ai/);
+  assert.doesNotMatch(`${landing}\n${navRail}`, /docs\.instantml\.ai/);
 });
 
 test("docs slug paths are normalized and reject traversal", () => {

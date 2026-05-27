@@ -43,7 +43,13 @@ from .serialization import (
 from .credentials import _check_credentials_or_raise, _resolve_api_key as _resolve_api_key_from_env
 from .http import _error_message, _offline_path, _spool_event
 from .shadow import ShadowWandb, build_shadow as _build_shadow_wandb
-from .source import _environment_metadata, _git_metadata, _source_metadata
+from .source import (
+    SourceTracking,
+    _environment_metadata,
+    _git_metadata,
+    _normalize_source_tracking,
+    _source_metadata,
+)
 from .validation import (
     CONSOLE_LOG_STREAMS,
     MAX_CONSOLE_LOG_LINES_PER_BATCH,
@@ -320,7 +326,7 @@ class Client:
 
     def init(
         self,
-        project: str,
+        project: str | None = None,
         name: str | None = None,
         config: dict[str, Any] | None = None,
         tags: list[str] | None = None,
@@ -328,7 +334,7 @@ class Client:
         metadata: dict[str, Any] | None = None,
         buffer_size: int = 0,
         offline_dir: str | None = None,
-        source_tracking: bool = True,
+        source_tracking: bool | SourceTracking = True,
         upload_mode: str = "async",
         spool_dir: str | None = None,
         local_store: bool = False,
@@ -343,9 +349,10 @@ class Client:
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
             raise ValueError("metadata key '_rlobs' is reserved for SDK-owned metadata")
-        combined_metadata = _environment_metadata()
-        if source_tracking:
-            combined_metadata["_rlobs"] = {"source": _source_metadata()}
+        source_settings = _normalize_source_tracking(source_tracking)
+        combined_metadata = _environment_metadata(source_settings)
+        if source_settings is not None:
+            combined_metadata["_rlobs"] = {"source": _source_metadata(source_settings)}
         combined_metadata.update(metadata or {})
         if notes is not None:
             combined_metadata["notes"] = _validate_note_text(notes)
@@ -430,6 +437,49 @@ class Client:
         thread.start()
         return run
 
+    def attach_run(
+        self,
+        run_id: str,
+        buffer_size: int = 0,
+        upload_mode: str = "async",
+        spool_dir: str | None = None,
+        local_store: bool = False,
+        local_store_dir: str | None = None,
+        system_metrics: bool = False,
+        system_metrics_interval: float = 15.0,
+        capture_console: bool = False,
+        queue_dir: str | None = None,
+        validate: bool = True,
+    ) -> "Run":
+        """Return a Run handle for an existing server-side run."""
+
+        run_id = _validate_text(run_id, "run id")
+        _validate_upload_mode(upload_mode)
+        if not isinstance(validate, bool):
+            raise TypeError("validate must be a bool")
+        if validate:
+            response = self._request(
+                "GET",
+                f"/runs/{urllib.parse.quote(run_id, safe='')}",
+            )
+            run_payload = response.get("run")
+            if not isinstance(run_payload, dict) or str(run_payload.get("id", "")) != run_id:
+                raise InstantMLError("server returned an invalid run response")
+        run = Run(
+            client=self,
+            run_id=run_id,
+            buffer_size=buffer_size,
+            upload_mode=upload_mode,
+            spool_dir=spool_dir,
+            queue_dir=queue_dir,
+            _local_store=_LocalStore(local_store_dir, run_id) if local_store else None,
+        )
+        if system_metrics:
+            run.start_system_metrics(interval=system_metrics_interval)
+        if capture_console:
+            run.capture_console()
+        return run
+
     def _resolve_api_key(self) -> str | None:
         return _resolve_api_key_from_env(self.api_key)
 
@@ -507,7 +557,7 @@ def _async_request_supported(method: str, path: str, body: dict[str, Any]) -> bo
 
 @dataclass(frozen=True)
 class Api:
-    """Tiny raw read-only API helper for post-hoc queries."""
+    """Tiny raw API helper for post-hoc queries and run fork creation."""
 
     base_url: str = field(default_factory=_default_base_url)
     timeout: float = 10.0
@@ -548,6 +598,60 @@ class Api:
             "GET",
             path,
         )
+
+    def fork_run(
+        self,
+        source_run_id: str,
+        *,
+        step: int | float | None = None,
+        checkpoint_artifact_id: str | None = None,
+        inherit_config: bool = True,
+        config_overrides: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+        name: str | None = None,
+        notes: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        source_run_id = _validate_text(source_run_id, "source run id")
+        if not isinstance(inherit_config, bool):
+            raise TypeError("inherit_config must be a bool")
+        body: dict[str, Any] = {"inherit_config": inherit_config}
+        normalized_step = _validate_step(step)
+        if normalized_step is not None:
+            body["step"] = normalized_step
+        if checkpoint_artifact_id is not None:
+            body["checkpoint_artifact_id"] = _validate_text(checkpoint_artifact_id, "checkpoint artifact id")
+        if config_overrides is not None:
+            body["config_overrides"] = _validate_optional_json_object(config_overrides, "config_overrides")
+        if tags is not None:
+            if isinstance(tags, (str, bytes)) or not isinstance(tags, (list, tuple)):
+                raise TypeError("tags must be a list of strings")
+            body["tags"] = [_validate_text(tag, "tag") for tag in tags]
+        if name is not None:
+            body["name"] = _validate_text(name, "run name")
+        if notes is not None:
+            normalized_notes = _validate_note_text(notes)
+            if not normalized_notes.strip():
+                raise ValueError("notes must not be empty")
+            body["notes"] = normalized_notes
+        if metadata is not None:
+            body["metadata"] = _validate_optional_json_object(metadata, "metadata")
+        safe_idempotency_key = (
+            _validate_text(idempotency_key, "idempotency key")
+            if idempotency_key is not None
+            else _fork_idempotency_key(source_run_id, body)
+        )
+        response = Client(base_url=self.base_url, timeout=self.timeout, api_key=self.api_key)._request(
+            "POST",
+            f"/api/runs/{urllib.parse.quote(source_run_id, safe='')}/forks",
+            body,
+            idempotency_key=safe_idempotency_key,
+        )
+        run = response.get("run")
+        if not isinstance(run, dict):
+            raise InstantMLError("server returned an invalid fork response")
+        return run
 
     def download_artifact(self, artifact_id: str, output_path: str | os.PathLike[str]) -> str:
         artifact_id = _validate_text(artifact_id, "artifact id")
@@ -1601,7 +1705,7 @@ class Run:
 
 
 def init(
-    project: str,
+    project: str | None = None,
     name: str | None = None,
     config: dict[str, Any] | None = None,
     tags: list[str] | None = None,
@@ -1612,7 +1716,7 @@ def init(
     buffer_size: int = 0,
     offline_dir: str | None = None,
     api_key: str | None = None,
-    source_tracking: bool = True,
+    source_tracking: bool | SourceTracking = True,
     upload_mode: str = "async",
     spool_dir: str | None = None,
     local_store: bool = False,
@@ -1655,6 +1759,52 @@ def init(
         async_init=async_init,
         shadow_wandb=shadow_wandb,
     )
+
+
+def attach_run(
+    run_id: str,
+    base_url: str | None = None,
+    timeout: float = 10.0,
+    buffer_size: int = 0,
+    offline_dir: str | None = None,
+    api_key: str | None = None,
+    upload_mode: str = "async",
+    spool_dir: str | None = None,
+    local_store: bool = False,
+    local_store_dir: str | None = None,
+    system_metrics: bool = False,
+    system_metrics_interval: float = 15.0,
+    capture_console: bool = False,
+    queue_dir: str | None = None,
+    validate: bool = True,
+) -> Run:
+    """Attach SDK logging to an existing run, such as a UI-created fork."""
+
+    _check_credentials_or_raise(api_key)
+    return Client(
+        base_url=base_url or _default_base_url(),
+        timeout=timeout,
+        offline_dir=offline_dir,
+        api_key=api_key,
+    ).attach_run(
+        run_id,
+        buffer_size=buffer_size,
+        upload_mode=upload_mode,
+        spool_dir=spool_dir,
+        local_store=local_store,
+        local_store_dir=local_store_dir,
+        system_metrics=system_metrics,
+        system_metrics_interval=system_metrics_interval,
+        capture_console=capture_console,
+        queue_dir=queue_dir,
+        validate=validate,
+    )
+
+
+def _fork_idempotency_key(source_run_id: str, body: dict[str, Any]) -> str:
+    canonical_body = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    digest = hashlib.sha256(f"{source_run_id}\0{canonical_body}".encode("utf-8")).hexdigest()
+    return f"instantml-fork-{digest[:32]}"
 
 
 class _LocalStore:
@@ -1948,14 +2098,14 @@ class TransformersCallback:
 
 
 class LightningLogger:
-    def __init__(self, project: str, run: Run | None = None, **init_kwargs: Any) -> None:
+    def __init__(self, project: str | None = None, run: Run | None = None, **init_kwargs: Any) -> None:
         self.project = project
         self._run = run
         self._init_kwargs = init_kwargs
 
     @property
     def name(self) -> str:
-        return self.project
+        return self.project or "default"
 
     @property
     def version(self) -> str:

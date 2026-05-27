@@ -126,13 +126,15 @@ Cloud Run Rust API -> Google Cloud VPC/private ClickHouse endpoint
 This Cloud Run slice is operationally useful but not public-launch complete. It uses Secret Manager for runtime secrets, keeps dev auth disabled, routes User Data and tenant databases to the InstantML-owned self-hosted GCP ClickHouse deployment, restricts hosted Clerk signup by allowlist, and enables hosted artifact byte uploads only when Cloudflare R2 credentials are configured.
 
 Premium BYOC orgs keep the same control-plane/session/API-key path, but their
-tenant product route points at a customer-owned ClickHouse HTTPS endpoint after
-owner/admin validation from the data-plane service. Hosted BYOC stores customer
-ClickHouse passwords in the configured BYOC Secret Manager backend and stores
-only the secret reference in the control-plane route record. Product writes and
-SDK-key creation are blocked while the org is `storage_unconfigured`. BYOC
-usage storage guardrails count only InstantML-owned local/R2 artifact bytes,
-not customer ClickHouse table bytes.
+tenant product route points at a customer-owned self-hosted GCP ClickHouse
+HTTPS endpoint after owner/admin validation from the data-plane service. The
+customer allowlists the configured InstantML BYOC egress CIDRs in its GCP
+firewall, load balancer, or reverse proxy before validation. Hosted BYOC stores
+customer ClickHouse passwords in the configured BYOC Secret Manager backend and
+stores only the secret reference in the control-plane route record. Product
+writes and SDK-key creation are blocked while the org is
+`storage_unconfigured`. BYOC usage storage guardrails count only
+InstantML-owned local/R2 artifact bytes, not customer ClickHouse table bytes.
 
 Split Cloud Run launch wiring:
 
@@ -210,7 +212,12 @@ The Rust server stores in ClickHouse operational records:
 
 - Control-plane/local data: users, identities, organizations, memberships, browser sessions, service accounts, API keys, account/plan fields, tenant-route requested/applied warehouse profile fields, and service-routing-ready org identifiers.
 - Product metadata: projects, runs, typed attributes, artifacts, imports, idempotency records, usage snapshots, and table preview rows.
-- Project and run search text is derived in the Rust index from stored run name, tags, config, metadata, and explicit note fields.
+- Project and run search text is derived in the Rust index from stored run name,
+  project, tags, config, metadata, status, ID, and explicit note fields. The
+  shared `q` language keeps bare-text implicit-AND matching and adds field
+  qualifiers, exact tags/status/ID prefixes, quoted phrases, uppercase
+  booleans, field/group exclusion, grouping, and bounded explicit Rust regex for
+  `/runs`, summaries, overview, selection projection, and export.
 
 The Rust server stores in ClickHouse metric tables:
 

@@ -12,6 +12,8 @@ pub struct AppError {
     status: StatusCode,
     message: String,
     code: Option<&'static str>,
+    field: Option<&'static str>,
+    position: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -19,6 +21,10 @@ struct ErrorBody<'a> {
     error: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     code: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<usize>,
 }
 
 impl AppError {
@@ -27,6 +33,8 @@ impl AppError {
             status,
             message: message.into(),
             code: None,
+            field: None,
+            position: None,
         }
     }
 
@@ -35,6 +43,24 @@ impl AppError {
             status,
             message: message.into(),
             code: Some(code),
+            field: None,
+            position: None,
+        }
+    }
+
+    pub fn with_field_code(
+        status: StatusCode,
+        code: &'static str,
+        field: &'static str,
+        position: Option<usize>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            status,
+            message: message.into(),
+            code: Some(code),
+            field: Some(field),
+            position,
         }
     }
 
@@ -44,6 +70,16 @@ impl AppError {
 
     pub fn validation(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, message)
+    }
+
+    pub fn search_validation(message: impl Into<String>, position: Option<usize>) -> Self {
+        Self::with_field_code(
+            StatusCode::BAD_REQUEST,
+            "run_search_invalid",
+            "q",
+            position,
+            message,
+        )
     }
 
     pub fn unauthorized(message: impl Into<String>) -> Self {
@@ -120,6 +156,8 @@ impl IntoResponse for AppError {
             Json(ErrorBody {
                 error: public_error,
                 code: self.code,
+                field: self.field,
+                position: self.position,
             }),
         )
             .into_response()

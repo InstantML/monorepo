@@ -354,13 +354,17 @@ pub async fn create_billing_portal(
             .and_then(|account| account.stripe_customer_id.clone())
             .ok_or_else(|| AppError::validation("Stripe customer is not available"))?
     };
-    let return_url = input
-        .return_url
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| config.portal_return_url.clone());
+    let return_url = billing_portal_return_url(config, input);
     let portal =
         crate::stripe_billing::create_portal_session(config, &customer_id, &return_url).await?;
     Ok(json!({ "url": portal.url }))
+}
+
+fn billing_portal_return_url(
+    config: &crate::config::BillingConfig,
+    _input: BillingPortalRequest,
+) -> String {
+    config.portal_return_url.clone()
 }
 
 pub async fn change_billing_plan(
@@ -1549,6 +1553,7 @@ mod tests {
                 credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
@@ -1578,6 +1583,21 @@ mod tests {
         let account = default_billing_account(&org);
         assert_eq!(account.access_state, BILLING_PAID_ACTIVE);
         assert_eq!(account.effective_plan_tier, "pro");
+    }
+
+    #[test]
+    fn billing_portal_return_url_ignores_client_url() {
+        let mut config = crate::config::BillingConfig::disabled(Some("https://app.instantml.ai"));
+        config.portal_return_url = "https://app.instantml.ai/dashboard/settings".to_string();
+
+        let return_url = billing_portal_return_url(
+            &config,
+            BillingPortalRequest {
+                return_url: Some("https://evil.example/phish".to_string()),
+            },
+        );
+
+        assert_eq!(return_url, "https://app.instantml.ai/dashboard/settings");
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 # Current Control And Data-Plane Schema Reference
 
-Date: 2026-05-17
+Date: 2026-05-25
 
 Status: Current implemented schema surface for `apps/rust-server`
 
@@ -581,7 +581,10 @@ product metadata when replayed.
   "metadata": {},
   "created_at": "2026-05-16T00:00:00Z",
   "started_at": "2026-05-16T00:00:00Z",
-  "finished_at": null
+  "finished_at": null,
+  "parent_run_id": null,
+  "forked_from_step": null,
+  "forked_from_artifact_id": null
 }
 ```
 
@@ -589,8 +592,16 @@ product metadata when replayed.
 | --- | --- | --- |
 | `status` | string | Validated run status such as `running`, `finished`, or `failed`. |
 | `config` | JSON object | User config object. |
-| `tags` | string array | Searchable run tags. |
-| `metadata` | JSON object | Searchable metadata. Notes are stored under metadata when edited. |
+| `tags` | string array | Searchable run tags; `tag:`/`tags:` query clauses match these exactly, case-insensitively. |
+| `metadata` | JSON object | Searchable metadata. Notes are stored under metadata when edited and are also indexed for `notes:` query clauses. |
+| `parent_run_id` | UUID string or null | Authoritative parent pointer for same-project forked runs. |
+| `forked_from_step` | number or null | Source step used to create a fork, derived from the request or checkpoint artifact. |
+| `forked_from_artifact_id` | UUID string or null | Source checkpoint artifact id for checkpoint forks. |
+
+Forked child runs may also include a convenience `metadata.lineage` snapshot for
+UI display. The top-level lineage fields are authoritative and are indexed in
+memory by `(org_id, parent_run_id, created_at, run_id)` during operational
+record replay.
 
 ### `AttributeRow`
 

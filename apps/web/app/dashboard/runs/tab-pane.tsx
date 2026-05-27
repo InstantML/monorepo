@@ -91,6 +91,7 @@ type Props = {
   queryInput: string;
   runsRailCollapsed: boolean;
   selectAllMatchingBusy: boolean;
+  selectAllMatchingDisabled: boolean;
   selectedRunIds: string[];
   sortedRuns: RunSummary[];
   status: string;
@@ -170,6 +171,7 @@ export function RunsTabPane({
   queryInput,
   runsRailCollapsed,
   selectAllMatchingBusy,
+  selectAllMatchingDisabled,
   selectedRunIds,
   sortedRuns,
   status,
@@ -264,6 +266,7 @@ export function RunsTabPane({
         onToggleRun={onToggleRun}
         onToggleSection={onToggleSection}
         selectAllMatchingBusy={selectAllMatchingBusy}
+        selectAllMatchingDisabled={selectAllMatchingDisabled}
         hasNextPage={hasNextPage}
         hasPreviousPage={hasPreviousPage}
         onNextPage={onNextPage}

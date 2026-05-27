@@ -930,6 +930,20 @@ pub struct CreateRunRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateRunForkRequest {
+    pub name: Option<String>,
+    pub step: Option<f64>,
+    pub checkpoint_artifact_id: Option<Uuid>,
+    pub inherit_config: Option<bool>,
+    #[schema(value_type = Option<Object>)]
+    pub config_overrides: Option<Value>,
+    pub tags: Option<Vec<String>>,
+    pub notes: Option<String>,
+    #[schema(value_type = Option<Object>)]
+    pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateDashboardPreferencesRequest {
     pub selected_project: Option<String>,
 }
@@ -998,6 +1012,12 @@ pub struct RunRow {
     pub created_at: DateTime<Utc>,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_run_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from_step: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from_artifact_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

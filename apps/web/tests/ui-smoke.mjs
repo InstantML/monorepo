@@ -30,6 +30,7 @@ let nextServer = null;
 let browser = null;
 let expectedBadRequestResourceErrors = 0;
 let expectedPaymentRequiredResourceErrors = 0;
+let nextOutput = "";
 
 try {
   if (apiServer) await new Promise((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -57,7 +58,16 @@ try {
     env: nextEnv,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  await waitForHttp(`http://127.0.0.1:${webPort}`);
+  const appendNextOutput = (chunk) => {
+    nextOutput = `${nextOutput}${chunk.toString()}`.slice(-8192);
+  };
+  nextServer.stdout.on("data", appendNextOutput);
+  nextServer.stderr.on("data", appendNextOutput);
+  try {
+    await waitForHttp(`http://127.0.0.1:${webPort}`, nextServer);
+  } catch (error) {
+    throw new Error(`Next server did not become ready on port ${webPort}: ${error instanceof Error ? error.message : String(error)}\n${nextOutput}`);
+  }
   await assertStaticAssetsOk(`http://127.0.0.1:${webPort}`);
 
   browser = await chromium.launch();
@@ -75,11 +85,15 @@ try {
   const summaryUrls = [];
   const objectUrls = [];
   const logUrls = [];
+  const forkRequests = [];
   const objectNotFoundUrls = [];
   page.on("request", (request) => {
     if (request.url().includes("/api/runs/summary")) summaryUrls.push(request.url());
     if (request.url().includes("/objects")) objectUrls.push(request.url());
     if (request.url().includes("/logs")) logUrls.push(request.url());
+    if (request.method() === "POST" && request.url().includes("/api/runs/") && request.url().endsWith("/forks")) {
+      forkRequests.push({ headers: request.headers(), url: request.url() });
+    }
   });
   page.on("response", (response) => {
     if (response.url().includes("/objects") && response.status() === 404) objectNotFoundUrls.push(response.url());
@@ -540,6 +554,35 @@ try {
     }));
     assert.ok(tablePreviewSize.headers <= 8, `table preview should cap columns, got ${tablePreviewSize.headers}`);
     assert.ok(tablePreviewSize.cells <= 160, `table preview should cap cells, got ${tablePreviewSize.cells}`);
+    await page.locator(".run-workspace-tabs").getByRole("button", { name: "Summary" }).click();
+    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa-checkpoint.json"));
+    const forkName = `ui-smoke-fork-${Date.now()}`;
+    const forkRequestsBefore = forkRequests.length;
+    await page.getByRole("button", { name: /^Fork qa-checkpoint\.json$/ }).click();
+    await page.waitForSelector(".checkpoint-fork-modal", { timeout: 10000 });
+    assert.match(await page.locator(".checkpoint-fork-modal").innerText(), /does not start training/);
+    await page.fill("#fork-run-name", forkName);
+    await page.locator(".checkpoint-fork-modal textarea").fill("UI smoke retry");
+    await Promise.all([
+      page.waitForResponse((response) => (
+        response.request().method() === "POST"
+          && response.url().includes("/api/runs/")
+          && response.url().endsWith("/forks")
+          && response.status() === 200
+      )),
+      page.locator(".checkpoint-fork-modal").getByRole("button", { name: /Create Fork/ }).click(),
+    ]);
+    await page.waitForFunction(
+      (name) => document.querySelector(".run-workspace-name")?.textContent?.includes(name),
+      forkName,
+    );
+    await page.waitForFunction(() => document.querySelector(".run-workspace-tab.active")?.textContent?.includes("Graph"));
+    await page.waitForFunction(() => {
+      const text = document.querySelector(".graph-panel")?.textContent ?? "";
+      return text.includes("Parent") && text.includes("qa-checkpoint.json") && text.includes("No direct children yet.");
+    });
+    assert.equal(forkRequests.length, forkRequestsBefore + 1, "checkpoint fork should submit exactly one request");
+    assert.match(forkRequests.at(-1).headers["idempotency-key"], /^instantml-fork-[0-9a-f]{32}$/);
   } else {
     await page.getByRole("button", { name: "Files" }).click();
     await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("No evidence logged"));
@@ -913,9 +956,47 @@ try {
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
-  await page.fill("#search", "qa-note-smoke");
+  await page.getByRole("button", { name: "Run search syntax" }).click();
+  await page.waitForSelector("#run-search-help", { timeout: 10000 });
+  assert.match(await page.locator("#run-search-help").innerText(), /re:\/seed-\(13\|14\)\//);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#run-search-help", { state: "hidden", timeout: 10000 });
+  let summaryResponse = await fillSearchAndWaitForSummary(page, "qa-note-smoke");
+  assert.equal(summaryResponse.status(), 200);
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("qa-note-smoke"));
   assert.match(await page.locator(".workspace-run-list").innerText(), /qa-smoke/);
+  const noteSearchText = await page.locator(".workspace-run-list").innerText();
+  summaryResponse = await fillSearchAndWaitForSummary(page, "tag:note-search OR name:page-run-01");
+  assert.equal(summaryResponse.status(), 200);
+  await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("page-run-01"));
+  const booleanSearchText = await page.locator(".workspace-run-list").innerText();
+  assert.notEqual(booleanSearchText, noteSearchText, "boolean search should apply a new result set");
+  assert.match(booleanSearchText, /note-search/);
+  assert.match(booleanSearchText, /page-run-01/);
+  if (backendMode !== "node") {
+    summaryResponse = await fillSearchAndWaitForSummary(page, "re:/[/");
+    assert.equal(summaryResponse.status(), 400);
+    await page.waitForSelector("#run-search-error", { timeout: 10000 });
+    assert.equal(await page.locator("#search").getAttribute("aria-invalid"), "true");
+    assert.match(await page.locator("#run-search-error").innerText(), /Invalid run search/);
+    assert.doesNotMatch(await page.locator("#run-search-error").innerText(), /Column \d+\. Column \d+\./);
+  }
+  summaryResponse = await fillSearchAndWaitForSummary(page, "re:/page-run-0[12]/");
+  if (backendMode === "node") {
+    assert.equal(summaryResponse.status(), 400);
+    await page.waitForSelector("#run-search-error", { timeout: 10000 });
+    assert.match(await page.locator("#run-search-error").innerText(), /Rust API only/);
+  } else {
+    assert.equal(summaryResponse.status(), 200);
+    await page.waitForFunction(() => {
+      const text = document.querySelector(".workspace-run-list")?.textContent ?? "";
+      return text.includes("page-run-01") && text.includes("page-run-02") && !text.includes("qa-note-smoke");
+    });
+    const regexSearchText = await page.locator(".workspace-run-list").innerText();
+    assert.match(regexSearchText, /page-run-01/);
+    assert.match(regexSearchText, /page-run-02/);
+    assert.doesNotMatch(regexSearchText, /qa-note-smoke/);
+  }
   await page.fill("#search", "");
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 4);
@@ -1494,7 +1575,7 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   assert.doesNotMatch(viewerSettingsText, /Invite email/);
 
   await page.getByRole("link", { name: /^API$/ }).click();
-  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("API key management is available to workspace admins."));
+  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("API-key management is available to workspace owners and admins."));
   const viewerApiText = await page.locator(".tab-pane.active").innerText();
   assert.doesNotMatch(viewerApiText, /API key name/);
 }
@@ -1718,10 +1799,25 @@ function freePort() {
   });
 }
 
-async function waitForHttp(url) {
+async function fillSearchAndWaitForSummary(page, query) {
+  const responsePromise = page.waitForResponse((response) => {
+    if (!response.url().includes("/api/runs/summary")) return false;
+    return new URL(response.url()).searchParams.get("q") === query;
+  }, { timeout: 10000 });
+  await page.fill("#search", query);
+  const response = await responsePromise;
+  const finishedError = await response.finished();
+  assert.equal(finishedError, null, `summary response for ${query} should complete`);
+  return response;
+}
+
+async function waitForHttp(url, child = null) {
   const started = Date.now();
   let lastError = null;
   while (Date.now() - started < 30000) {
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
+      throw new Error(`process exited while waiting for ${url}: code=${child.exitCode} signal=${child.signalCode}`);
+    }
     try {
       const response = await fetch(url);
       if (response.ok) return;

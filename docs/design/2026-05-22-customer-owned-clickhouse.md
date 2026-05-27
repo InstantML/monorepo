@@ -2,7 +2,7 @@
 
 Date: 2026-05-22
 
-Status: Implemented first slice; reviewed; hardened after onboarding review
+Status: Implemented first slice; reviewed; updated for GCP self-hosted BYOC
 
 Owner: Codex
 
@@ -15,20 +15,20 @@ host the control plane for identity, organizations, sessions, API keys, billing,
 and tenant-route metadata, but the org's product data would be routed to a
 ClickHouse endpoint supplied by the customer.
 
-The smallest useful version is not a full ClickHouse Cloud account integration.
-It is a direct ClickHouse connection flow where an owner/admin supplies an
-HTTPS endpoint, database, username, and password for an InstantML-scoped
-database. The server validates connectivity, checks migration privileges, runs
-the existing ClickHouse schema migration, and records a `tenant_route` with a
-new `customer-clickhouse` provisioner.
+The smallest useful version is a direct connection to a customer-provisioned
+self-hosted ClickHouse deployment on Google Cloud. An owner/admin supplies a
+public HTTPS ClickHouse HTTP endpoint, database, username, and password for an
+InstantML-scoped database. The server validates connectivity, checks migration
+privileges, runs the existing ClickHouse schema migration, and records a
+`tenant_route` with the `customer-clickhouse` provisioner.
 
 Reviewer feedback found that the first implementation should be narrower than
 the original draft. The accepted candidate slice is Premium/Enterprise-gated,
 empty-org only, public HTTPS ClickHouse HTTP endpoints only, pre-created
 databases only, Secret Manager only, and validation/smoke from the actual
 Rust data-plane egress path. Automatic database creation, private networking,
-self-managed edge cases, customer-owned object storage, and ClickHouse Cloud
-API automation remain deferred.
+self-hosted private-network edge cases, customer-owned object storage, and any
+ClickHouse Cloud API automation remain outside the customer-facing first slice.
 
 Onboarding should make the storage choice explicit: InstantML can provision a
 hosted ClickHouse warehouse for the customer, or the customer can bring their
@@ -36,23 +36,23 @@ own ClickHouse. When a user chooses BYOC, the product should show a recommended
 ClickHouse provisioning flow and recommended settings before asking for
 credentials.
 
-ClickHouse Cloud does expose a REST API that can create and manage services,
-API keys, service query endpoints, and BYOC infrastructure. That API is useful
-for a later automation slice, but using it first would require customers to
-trust InstantML with broad ClickHouse Cloud API credentials. The first slice
-should avoid that by letting customers create a narrow database user themselves.
+The previous draft considered ClickHouse Cloud service automation. That is no
+longer the recommended BYOC path after InstantML moved its hosted beta from
+ClickHouse Cloud to self-hosted GCP ClickHouse. Customers should provision and
+operate their own GCP ClickHouse endpoint, firewall it to InstantML egress
+CIDRs, and create a narrow database user themselves. Hosted validation and
+route creation must fail closed when InstantML does not have a non-empty,
+versioned, environment-specific BYOC egress CIDR set.
 
-External research sources, verified on 2026-05-22:
+External research sources, verified on 2026-05-25:
 
-- ClickHouse Cloud API overview: https://clickhouse.com/docs/cloud/manage/api/api-overview
-- ClickHouse Cloud OpenAPI reference: https://clickhouse.com/docs/cloud/manage/api/swagger
+- ClickHouse installation options: https://clickhouse.com/docs/install
 - ClickHouse HTTP interface: https://clickhouse.com/docs/interfaces/http
+- ClickHouse TLS configuration: https://clickhouse.com/docs/guides/sre/tls/configuring-tls
 - ClickHouse SQL `CREATE USER`: https://clickhouse.com/docs/sql-reference/statements/create/user
 - ClickHouse SQL `GRANT`: https://clickhouse.com/docs/sql-reference/statements/grant
 - ClickHouse access control: https://clickhouse.com/docs/operations/access-rights
-- ClickHouse BYOC product page: https://clickhouse.com/cloud/bring-your-own-cloud
-- ClickHouse BYOC on GCP GA note: https://clickhouse.com/blog/byoc-gcp-ga
-- ClickHouse warehouses article: https://clickhouse.com/jp/blog/introducing-warehouses-compute-compute-separation-in-clickhouse-cloud
+- Google Cloud VPC firewall rules: https://cloud.google.com/firewall/docs/using-firewalls
 
 ## Goals
 
@@ -67,8 +67,8 @@ External research sources, verified on 2026-05-22:
 - Make the access and security model explicit enough for customers to create a
   least-privilege ClickHouse user.
 - Make the required InstantML Rust API/data-plane egress IP addresses visible
-  during setup so the customer can add them to the ClickHouse allowlist before
-  validation.
+  before validation so the customer can add them to the GCP firewall,
+  load-balancer allowlist, or reverse-proxy allowlist first.
 - For BYOC org storage accounting, count only artifact bytes InstantML stores
   for that org in Cloudflare R2. Do not count or bill customer-owned ClickHouse
   warehouse bytes.
@@ -82,22 +82,23 @@ External research sources, verified on 2026-05-22:
 
 ## Non-Goals
 
-- No one-click ClickHouse OAuth flow. The researched ClickHouse Cloud API uses
-  API-key basic auth, not delegated OAuth.
+- No one-click ClickHouse OAuth flow. Self-hosted ClickHouse setup uses direct
+  database credentials, not delegated OAuth.
 - No customer-owned artifact object storage in this slice. Artifacts still use
   the current InstantML artifact backend unless a separate BYO object storage
   design is accepted.
 - No automatic migration of an org that already has hosted InstantML product
   data. Existing org migration needs an export/import or copy design.
-- No ClickHouse Cloud BYOC infrastructure provisioning in the first slice.
+- No ClickHouse Cloud service or BYOC infrastructure provisioning in the first
+  slice.
 - No private networking in the first slice: no PrivateLink, Private Service
   Connect, VPN, customer private DNS, or private BYOC service endpoints.
 - No direct SDK-to-customer-ClickHouse writes. SDK traffic continues to hit
   InstantML's API so auth, idempotency, summaries, and route policy remain
   consistent.
 - No customer-owned ClickHouse storage billing, byte metering, or warehouse size
-  estimation. The customer's warehouse cost is between the customer and
-  ClickHouse or their self-managed infrastructure provider.
+  estimation. The customer's ClickHouse cost is between the customer and their
+  GCP infrastructure/provider choices.
 - No Free or self-serve Pro BYOC in the first slice. Customer-owned ClickHouse
   is Premium/Enterprise or explicit operator entitlement until support and
   security burden is measured.
@@ -105,19 +106,20 @@ External research sources, verified on 2026-05-22:
 
 ## Users and Use Cases
 
-Security-conscious ML startup choosing BYOC:
+Security-conscious ML startup choosing GCP self-hosted BYOC:
 
 1. Creates an InstantML org.
 2. Chooses between `InstantML provisions ClickHouse` and `Use my ClickHouse`.
 3. Selects `Use my ClickHouse` before creating runs.
-4. Follows InstantML's recommended ClickHouse provisioning instructions.
+4. Follows InstantML's recommended GCP self-hosted ClickHouse provisioning
+   instructions.
 5. Adds the displayed InstantML Rust API/data-plane egress CIDRs to the
-   ClickHouse Cloud service IP access list or self-managed firewall.
-6. Creates a database and service user in its own ClickHouse Cloud, BYOC, or
-   self-managed deployment.
+   GCP firewall, load balancer allowlist, or reverse-proxy allowlist protecting
+   ClickHouse.
+6. Creates a database and service user in its own GCP ClickHouse deployment.
 7. Enters the endpoint and credentials in InstantML.
 8. InstantML validates and migrates the database, then routes SDK/UI product
-   traffic to that customer-owned warehouse.
+   traffic to that customer-owned ClickHouse deployment.
 
 Small team choosing hosted provisioning:
 
@@ -136,7 +138,8 @@ Operator:
 
 ## Research Findings
 
-ClickHouse has two relevant APIs:
+ClickHouse has one API surface that matters for the GCP self-hosted BYOC first
+slice:
 
 - Database HTTP/HTTPS interface. ClickHouse supports querying over HTTP/HTTPS
   using GET for readonly queries and POST for mutating queries. The current Rust
@@ -144,31 +147,20 @@ ClickHouse has two relevant APIs:
   `http://user:pass@host:port/database`, with `https` defaulting to port `8443`.
   This is enough to read and write InstantML's ClickHouse schema when the user
   provides database credentials.
-- ClickHouse Cloud management API. ClickHouse documents a REST API for managing
-  organizations and services, creating/provisioning API keys, managing members,
-  and more. The OpenAPI reference includes `POST
-  /v1/organizations/{organizationId}/services` with provider, region,
-  `ipAccessList`, replica memory, replica count, `dataWarehouseId`, and `byocId`
-  fields. It also includes `POST /v1/organizations/{organizationId}/keys` for
-  API keys with state, assigned roles, and IP access list, plus endpoints for
-  BYOC infrastructure and service query endpoints.
 
-ClickHouse Cloud's BYOC product is ClickHouse-managed infrastructure deployed
-into the customer's AWS, GCP, or Azure account. The customer data plane stays in
-the customer cloud account while the ClickHouse-managed control plane handles
-orchestration, scaling, upgrades, monitoring, and billing. For InstantML, this
-does not require special handling if the customer gives us a normal reachable
-ClickHouse database endpoint. If we later automate ClickHouse Cloud service
-creation inside BYOC, the Cloud API's `byocId` support is the relevant path.
-In the first slice, "reachable" means a public HTTPS ClickHouse HTTP endpoint
-reachable from InstantML Cloud Run static egress. Private BYOC networking is a
-separate enterprise connectivity design.
+The recommended deployment is a customer-owned GCP VM, managed instance group,
+GKE StatefulSet, or equivalent that runs open-source ClickHouse and exposes the
+ClickHouse HTTP interface over HTTPS. The production endpoint must be reachable
+from InstantML's Cloud Run static egress CIDRs and must not be open to
+`0.0.0.0/0`. A GCP firewall rule, HTTPS load balancer, or reverse proxy can
+enforce the allowlist. ClickHouse itself must still authenticate a dedicated
+database user.
 
-ClickHouse Cloud warehouses are groups of services that share data,
-backups, users, roles, and grants. A customer can isolate read and write
-workloads with separate services, but InstantML ingestion must connect to a
-read-write service. Connecting to a read-only warehouse service would fail
-schema migration and metric inserts.
+ClickHouse Cloud is not part of the recommended customer-facing BYOC path.
+InstantML should not ask for ClickHouse Cloud API keys, should not create paid
+ClickHouse Cloud services as part of onboarding, and should keep any
+provider-backed `cloud-service` compatibility behind explicit operator-only
+configuration.
 
 ## Proposed Design
 
@@ -178,14 +170,14 @@ Add a customer-owned tenant-route provisioner:
 
 - `provisioner`: `customer-clickhouse`
 - `warehouse_kind`: `customer-owned`
-- `status`: `validating`, `ready`, `failed`, or `disabled`
+- `status`: `validating`, `ready`, `migration_required`, `failed`, or
+  `disabled`
 - `endpoint`: sanitized endpoint origin, never including password
 - `database`: customer-selected database
 - `username`: customer-selected service user
 - `password_secret_ref`: Secret Manager version reference
 - `password_ciphertext`: not allowed for hosted customer-owned routes
-- `service_id`: optional customer-provided ClickHouse Cloud service id for
-  operator diagnostics only
+- `service_id`: always null for the recommended GCP self-hosted BYOC path
 
 Keep this route in the existing control-plane `tenant_route` record family.
 Tenant-owned product data continues to live in the routed ClickHouse database.
@@ -200,10 +192,13 @@ The candidate first implementation must be narrower:
 - Public HTTPS ClickHouse endpoints only.
 - Customer pre-creates the database.
 - Hosted BYOC secrets live only in Secret Manager.
+- Hosted BYOC validation/create fails when `INSTANTML_BYOC_EGRESS_CIDRS` is
+  empty, dynamic, or missing an environment-specific
+  `INSTANTML_BYOC_EGRESS_SET_VERSION`.
 - Route creation requires a successful data-plane validation and post-create
   smoke from the same egress path.
 - No stored admin credential.
-- No self-managed private-network edge cases beyond public HTTPS endpoints.
+- No self-hosted private-network edge cases beyond public HTTPS endpoints.
 - No rotation UI; rotation can be a later Settings feature after the initial
   path is stable.
 
@@ -217,35 +212,46 @@ The frontend should expose the flow only to owner/admin users:
    `Use my ClickHouse`.
 3. If hosted provisioning is selected, use the current hosted tenant-route
    path: shared cell for eligible personal/free orgs, otherwise the existing
-   database or `cloud-service` provisioner.
+   database provisioner on InstantML-owned self-hosted GCP ClickHouse. The
+   legacy `cloud-service` provisioner must not be part of self-serve signup.
 4. If BYOC is selected, require the org to be Premium/Enterprise or explicitly
    entitled, then show a clear data-location panel: runs, metrics, logs,
    attributes, and tenant operational metadata go to customer ClickHouse; raw
    artifact bytes still go to InstantML R2 until a separate BYO object-storage
    design exists.
-5. Show recommended ClickHouse provisioning instructions:
-   create or choose a read-write ClickHouse service, create a dedicated
-   database, create a narrow `instantml_writer` user, and add InstantML egress
-   CIDRs to the service allowlist.
-6. Show recommended settings for ClickHouse Cloud:
-   - Provider/region: choose a region near the InstantML data-plane region that
-     will write to the warehouse; if training jobs are far away, remember the
-     path is SDK -> InstantML API -> ClickHouse.
-   - Service type: read-write service, not readonly replica.
-   - Network access: add every displayed InstantML Rust API/data-plane egress
-     CIDR, including production and staging only when the customer plans to use
-     both environments.
+5. Show recommended GCP ClickHouse provisioning instructions:
+   create or choose a read-write self-hosted ClickHouse deployment on GCP,
+   create a dedicated database, create a narrow `instantml_writer` user, expose
+   the ClickHouse HTTP interface over HTTPS, and add InstantML egress CIDRs to
+   the GCP firewall or load-balancer allowlist.
+6. Show recommended settings for GCP self-hosted ClickHouse:
+   - Region: choose a GCP region near the InstantML data-plane region that will
+     write to ClickHouse; if training jobs are far away, remember the path is
+     SDK -> InstantML API -> ClickHouse.
+   - Deployment: use a dedicated VM, managed instance group, GKE StatefulSet, or
+     equivalent with persistent disk, backups/snapshots, monitoring, and disk
+     alerts owned by the customer.
+   - Network access: expose only the HTTPS ClickHouse HTTP endpoint, and add
+     every displayed InstantML Rust API/data-plane egress CIDR to the GCP
+     firewall, load balancer, or reverse-proxy allowlist. Include production
+     and staging only when the customer plans to use both environments.
    - Database: one dedicated database per InstantML org.
    - User: one dedicated user per InstantML org, scoped to that database.
-   - TLS: require HTTPS from hosted InstantML to ClickHouse.
-   - Endpoint: public HTTPS ClickHouse HTTP endpoint for the first slice.
-   - Backups/retention: customer-owned and configured in ClickHouse Cloud or the
-     self-managed environment, not by InstantML.
-7. Ask for endpoint, database, username, and password.
-8. Validate and save in one flow, or issue a short-lived server-side validation
+   - TLS: require HTTPS from hosted InstantML to ClickHouse. Self-signed
+     certificates are for local tests only; production must use a certificate
+     trusted by the Rust service.
+   - Endpoint: public HTTPS ClickHouse HTTP endpoint origin for the first
+     slice, for example `https://clickhouse.customer.example.com:8443`.
+   - Backups/retention: customer-owned and configured in GCP/ClickHouse, not by
+     InstantML.
+7. Fetch current setup status before validation and show
+   `required_egress_cidrs` plus `egress_set_version`; validation/save remains
+   disabled until these are configured.
+8. Ask for endpoint, database, username, and password.
+9. Validate and save in one flow, or issue a short-lived server-side validation
    token that binds the exact endpoint/database/username tuple and expires
    quickly. Do not let the create request change values after validation.
-9. After validation, store the secret reference, write the ready tenant route,
+10. After validation, store the secret reference, write the ready tenant route,
    and block changing storage mode once product data exists.
 
 For the first slice, support only empty orgs or orgs with no projects/runs.
@@ -262,7 +268,15 @@ to an InstantML-hosted warehouse before choosing customer-owned storage:
 | `storage_unconfigured` | New org has no ready tenant route. | Control-plane setup only; no SDK key reveal; no project/run/import/artifact writes. |
 | `storage_validating` | Owner/admin is validating BYOC. | Control-plane setup only; product writes blocked. |
 | `storage_ready` | Hosted or BYOC route is ready. | Normal writes allowed under plan/payment limits. |
+| `storage_migration_required` | Customer-owned route is reachable but behind the current InstantML schema and the runtime credential no longer has DDL. | Reads may remain available when compatible; writes and SDK-key reveal are blocked until owner/admin revalidates with temporary migration privileges. |
 | `storage_locked` | Product data exists. | Route switching blocked; credential rotation may be allowed in a later slice. |
+
+Frontend sign-in, invite acceptance, and direct dashboard route guards must use
+the same ready-state definition. Browser sessions with `storage_unconfigured`,
+`storage_validating`, or another non-ready storage state redirect to
+`/onboarding` instead of rendering `/dashboard/*`, so a user cannot skip the
+required hosted provisioning or BYOC connection step through `next` parameters,
+stale invite links, or copied dashboard URLs.
 
 The commit from `storage_validating` to `storage_ready` must re-check that the
 org is empty, write the route with compare-and-swap semantics, invalidate any
@@ -273,35 +287,47 @@ data-plane service before SDK keys or onboarding API keys are returned.
 
 The backend validation endpoint should perform these checks in order:
 
-1. Parse and normalize the endpoint. Hosted UI flow requires `https`; local
+1. Require BYOC setup configuration to be production-shaped in hosted mode:
+   non-empty static egress CIDRs, an environment/version label for that egress
+   set, and a non-local credential store. `GET
+   /api/storage/clickhouse-connections/current` must expose the egress values
+   before validation so customers can allowlist first.
+2. Parse and normalize the endpoint. Hosted UI flow requires `https`; local
    development may allow `http`.
-2. Accept only normalized `https://host:port` endpoint origins. Reject userinfo,
+3. Accept only normalized `https://host:port` endpoint origins. Reject userinfo,
    path, query, fragments, redirects, non-HTTPS schemes, and implicit mutation
    of endpoint values between validate and create.
-3. Resolve DNS and reject loopback, link-local, private, multicast, reserved,
+4. Resolve DNS and reject loopback, link-local, private, multicast, reserved,
    metadata-service, and other non-public A/AAAA/CNAME targets at validation,
    create, and route-load time unless an operator-only allowlist permits them.
-   Add an infrastructure egress deny rule for metadata/private networks where
-   possible so URL validation is not the only SSRF defense.
-4. Connect from the same static egress path that the Rust data-plane service
+   Runtime clients must re-resolve before opening a new connection, disable
+   redirects, and keep the actual HTTP request bound to the vetted hostname/IP
+   set. Hosted infrastructure must also deny metadata/private egress; URL
+   validation alone is not sufficient.
+5. Enforce TLS with default trusted roots, hostname verification, and SNI for
+   the submitted host. Hosted mode must not allow insecure verifiers or custom
+   local CAs; TLS failures should produce stable diagnostics such as
+   `tls_handshake_failed`, `tls_hostname_mismatch`, or
+   `tls_certificate_expired`.
+6. Connect from the same static egress path that the Rust data-plane service
    will use for product reads/writes, or require the customer allowlist to cover
    both validation and data-plane egress CIDRs. The existing hosted split deploy
    uses the same Cloud NAT egress for control and data services; if that changes,
    BYOC validation must list both.
-5. Run `SELECT 1`, `SELECT version()`, and `SELECT currentUser()`.
-6. Confirm the named database already exists. First-slice BYOC migration must
+7. Run `SELECT 1`, `SELECT version()`, and `SELECT currentUser()`.
+8. Confirm the named database already exists. First-slice BYOC migration must
    skip the current `ensure_database` behavior so a database-scoped user does
    not need server-wide `CREATE DATABASE`. Database names must pass strict
    identifier validation before any query is built.
-7. Run schema migration in BYOC mode during validation/save and record the
+9. Run schema migration in BYOC mode during validation/save and record the
    applied schema version on the route. Normal route loads skip migration while
    the route is current so the retained runtime user does not need DDL forever.
-8. Insert and read a short-lived validation record in `operational_records` or
+10. Insert and read a short-lived validation record in `operational_records` or
    use a dedicated validation table if a later review rejects writing to product
    tables during validation.
-9. Run a post-create smoke from the data-plane service using the ready route:
+11. Run a post-create smoke from the data-plane service using the ready route:
    connect, migrate/verify schema, insert, and read.
-10. Delete/expire any validation marker through normal operational-record
+12. Delete/expire any validation marker through normal operational-record
    semantics if needed. Do not require `DROP` for the service user.
 
 ### Customer SQL Setup
@@ -315,16 +341,16 @@ CREATE USER IF NOT EXISTS instantml_writer
 IDENTIFIED WITH sha256_password BY '<generated-password>'
 HOST IP '<instantml-egress-cidr-1>';
 
-GRANT SELECT, INSERT, CREATE TABLE, CREATE VIEW, ALTER TABLE
+GRANT SHOW, SELECT, INSERT, CREATE TABLE, CREATE VIEW, ALTER TABLE
 ON instantml_<org_slug_or_uuid>.*
 TO instantml_writer;
 ```
 
-When there are multiple InstantML egress CIDRs, the UI should render generated
-SQL or ClickHouse Cloud allowlist rows for every value instead of showing one
-placeholder. For ClickHouse Cloud, network allowlisting should usually happen
-in the service IP access list; SQL `HOST IP` restrictions are more relevant to
-self-managed ClickHouse and should not be presented as the only allowlist step.
+When there are multiple InstantML egress CIDRs, the UI should render every
+value so the customer can copy them into GCP firewall source ranges, load
+balancer security policy rules, or reverse-proxy allowlists. SQL `HOST IP`
+restrictions are optional defense-in-depth for self-hosted ClickHouse and
+should not be presented as the only allowlist step.
 
 If the customer wants InstantML to create the database, the admin credential
 used during validation also needs `CREATE DATABASE` on the server. This is not
@@ -338,58 +364,68 @@ CIDR, and avoid hardcoding them in frontend code. Route records should include
 an `egress_set_version` so operators know which allowlist values were used at
 validation time.
 
+The grant list above is for the current `0001_initial.sql` schema, which creates
+tables and a materialized view. Future schema changes may need additional DDL;
+if the customer has revoked DDL, InstantML should mark the route
+`migration_required` and ask the owner/admin to temporarily re-grant migration
+privileges and revalidate.
+
 Storage-byte reporting must not read `system.parts` for customer-owned
 ClickHouse. For BYOC orgs, usage and billing should count only artifact bytes
 stored by InstantML in Cloudflare R2. The customer's ClickHouse warehouse bytes
 should be displayed, if at all, as customer-managed and not included in
 InstantML tracked-storage limits or invoices.
 
-### Later Automation Slice
+### Deferred Automation
 
-After the direct-connection flow is working, add an optional ClickHouse Cloud
-automation path:
-
-1. Customer pastes a ClickHouse Cloud API key id/secret and organization id.
-2. InstantML calls `GET /v1/organizations` or
-   `GET /v1/organizations/{organizationId}` to verify the key.
-3. Customer chooses an existing service/warehouse or allows InstantML to create
-   a service with `POST /v1/organizations/{organizationId}/services`.
-4. InstantML configures `ipAccessList` for InstantML egress CIDRs when allowed.
-5. InstantML creates or asks the customer to create a database service user.
-6. InstantML discards the Cloud API key after setup unless the customer
-   explicitly opts into ongoing management.
-
-This should be Premium/Enterprise-only until security review is complete,
-because Cloud API keys can be broad and the API can create paid resources.
+Do not add ClickHouse Cloud account automation to BYOC onboarding. A future
+automation slice, if accepted, should target customer-owned GCP infrastructure
+that the customer explicitly authorizes, such as Terraform snippets, a
+customer-run setup script, or operator-reviewed private connectivity. Any flow
+that creates external paid resources remains Premium/Enterprise-only and must
+require an explicit confirmation before resource creation.
 
 ### Secrets
 
 Hosted BYOC must use Secret Manager, not User Data payloads or application-level
 encrypted blobs in the first production slice:
 
-- Secret path shape: `gcp-secret-manager:projects/<project>/secrets/<prefix>-<org_id>/versions/<version>`.
+- Secret path shape: `gcp-secret-manager:projects/<project>/secrets/<prefix>-<cell_id>-<org_id>/versions/<version>`.
 - Control plane can create, read, rotate, and destroy secret versions used by
   customer-owned routes. Route disable should schedule destruction of the
   retained current version when self-serve disable is added.
 - Data plane can read only the current version for orgs routed to that cell.
+  Production IAM should use separate control/data service accounts and the
+  narrowest Secret Manager permissions practical for the BYOC prefix or
+  per-secret bindings. A broad project-wide `secretAccessor` grant is acceptable
+  only for internal smoke rollout and must be tracked as an operational
+  hardening follow-up before public BYOC.
 - User Data stores only a versioned `password_secret_ref`.
 - Request logs, error logs, audit records, and User Data payloads must never
   contain plaintext passwords, full connection URLs with userinfo, or raw
   request bodies.
-- Route create, validation, rotation, disable, and failed secret read write
-  audit events with stable reason codes.
+- Route create, validation, future rotation, disable, and failed secret read
+  write audit events with stable reason codes.
 - Disabling a BYOC route must either destroy or schedule destruction of the
   retained secret version, subject to operator recovery policy.
 
 ### Runtime Credentials
 
 Initial validation/save needs DDL because it applies the InstantML schema inside
-the pre-created customer database. The saved route now records the applied
-schema version; normal route loads skip schema migration when the route is at
-the current version, so customers can revoke DDL after setup and re-grant it
-only for future InstantML migrations.
+the pre-created customer database. The saved route records the applied schema
+version; normal route loads skip schema migration when the route is at the
+current version, so customers can revoke DDL after setup and re-grant it only
+for future InstantML migrations.
 
-The second option is the target before broad customer rollout.
+When InstantML deploys schema version `N+1` and a BYOC route is still at `N`,
+route load must not silently keep accepting writes against an old schema if the
+runtime credential cannot migrate. The route should enter
+`migration_required`, preserve control-plane login/settings access, and block
+new product writes until an owner/admin temporarily re-grants migration
+privileges and reruns validation/save. A later design may split this into a
+short-lived migrator credential plus a permanently low-privilege runtime
+credential, but the first slice keeps one credential and makes the regrant
+workflow explicit.
 
 ### Usage Accounting
 
@@ -457,7 +493,7 @@ Control-plane route payload additions or conventions:
 
 - `provisioner = "customer-clickhouse"`
 - `warehouse_kind = "customer-owned"`
-- `status = "validating" | "ready" | "failed" | "disabled"`
+- `status = "validating" | "ready" | "migration_required" | "failed" | "disabled"`
 - `endpoint_host`: optional sanitized host for display, if the full endpoint
   becomes too sensitive to expose.
 - `secret_version`: optional secret version reference for rotation.
@@ -468,7 +504,8 @@ Control-plane route payload additions or conventions:
 - `egress_set_version`: version of the InstantML egress CIDR set shown and used
   during validation.
 - `storage_state`: org-level state such as `storage_unconfigured`,
-  `storage_validating`, `storage_ready`, or `storage_locked`.
+  `storage_validating`, `storage_ready`, `storage_migration_required`, or
+  `storage_locked`.
 
 Tenant ClickHouse schema remains the current `0001_initial.sql` schema:
 
@@ -482,13 +519,21 @@ Tenant ClickHouse schema remains the current `0001_initial.sql` schema:
 
 Draft control-plane endpoints:
 
+`GET /api/storage/clickhouse-connections/current`
+
+Returns current route status and safe metadata for onboarding/Settings. This is
+also the pre-validation egress contract: the UI uses
+`required_egress_cidrs` and `egress_set_version` from this response before the
+customer submits credentials. Hosted BYOC validation and creation are disabled
+when the CIDR list is empty or unversioned.
+
 `POST /api/storage/clickhouse-connections/validate`
 
 Request:
 
 ```json
 {
-  "endpoint": "https://abc123.us-central1.gcp.clickhouse.cloud:8443",
+  "endpoint": "https://clickhouse.customer.example.com:8443",
   "database": "instantml_acme",
   "username": "instantml_writer",
   "password": "copy-once-secret",
@@ -521,14 +566,10 @@ the safe tenant-route payload with no password.
 
 `POST /api/storage/clickhouse-connections/rotate-credentials`
 
-Rotates the retained credential for an existing BYOC route. It validates the new
-credential against the saved endpoint/database without rerunning schema
-migration, stores a new Secret Manager version, updates the route reference, and
-attempts to destroy the previous version.
-
-`GET /api/storage/clickhouse-connections/current`
-
-Returns current route status and safe metadata for Settings.
+Implemented for operator/local smoke coverage and future Settings UX, but not
+part of the self-serve first-slice onboarding surface. Customer-facing rotation
+copy should stay deferred until the revalidation and migration-required UX are
+complete.
 
 All endpoints require owner/admin browser session. Hosted API keys must not be
 able to create or rotate warehouse connections.
@@ -545,6 +586,11 @@ Error behavior:
   attempted before the org has a ready storage route.
 - `409 storage_setup_in_progress` when product writes are attempted during
   validation.
+- `409 storage_migration_required` when BYOC route schema is behind the current
+  server version and the customer must temporarily re-grant migration
+  privileges.
+- `503 byoc_egress_unconfigured` when hosted BYOC egress CIDRs are missing or
+  unversioned.
 - `503 warehouse_unavailable` for transient connection and startup failures.
 
 Customer-facing statuses should distinguish `allowlist_missing`,
@@ -561,8 +607,8 @@ instead of showing all failures as warehouse startup.
 - Normal run lists remain summary-only and paginated.
 - Metric series remain fetched through existing bounded endpoints.
 - The first implementation should measure validation latency and normal metric
-  insert latency against ClickHouse Cloud public endpoint and at least one
-  self-managed HTTPS endpoint.
+  insert latency against local disposable ClickHouse and at least one GCP
+  self-hosted HTTPS endpoint.
 - BYOC storage usage queries must stay on the artifact metadata/R2 accounting
   path. Do not add customer ClickHouse `system.parts` or table-byte scans to
   usage summaries.
@@ -576,16 +622,18 @@ and ClickHouse BYOC infrastructure setup.
 
 Deferred complexity:
 
-- Automatic ClickHouse Cloud service creation.
-- ClickHouse Cloud BYOC infrastructure creation.
+- Automatic ClickHouse service creation in customer GCP.
+- ClickHouse Cloud service or BYOC infrastructure creation.
 - Warehouse read/write service selection UI.
 - Customer-owned artifact storage.
 - Existing org data migration.
+- Customer-facing credential rotation UI.
 - Direct SDK-to-cell routing.
 - Private connectivity: PrivateLink, Private Service Connect, VPN, or customer
   private DNS.
 - Automated database/user creation.
-- Broad self-managed ClickHouse support beyond public HTTPS endpoint testing.
+- Broad self-hosted ClickHouse support beyond the documented GCP public HTTPS
+  endpoint testing path.
 - Multi-instance data-plane write gates beyond the current single-writer
   documented limits.
 
@@ -599,13 +647,24 @@ Deferred complexity:
 - InstantML rotates or changes Rust server egress IPs: BYOC orgs must be shown
   a required allowlist update before traffic moves, or both old and new CIDRs
   must be listed during a migration window.
+- Hosted service has no static/versioned egress set: BYOC validation/create is
+  disabled and the UI shows setup unavailable instead of letting customers paste
+  credentials that cannot validate.
+- Customer TLS certificate expires or does not match the submitted hostname:
+  validation and route load fail with TLS-specific diagnostics, not generic
+  warehouse startup copy.
+- Customer DNS changes from a public address to a private/reserved address:
+  route load and new connections fail closed before product writes.
 - Validation comes from control egress but writes come from data egress:
   creation must fail until data-plane smoke passes from the actual product
   route.
 - Customer points to a read-only service: migration or insert validation fails
   before route creation.
-- Customer rotates credentials: owner/admin rotation updates the Secret Manager
-  version and must pass validation before the route changes.
+- Customer rotates credentials: future owner/admin rotation updates the Secret
+  Manager version and must pass validation before the route changes.
+- InstantML ships a schema migration after DDL was revoked: the route enters
+  `migration_required`; writes stay blocked until the customer re-grants DDL and
+  reruns validation/save.
 - Customer drops tables: readiness or route load fails; repair path is rerun
   migration if privileges allow it.
 - Existing hosted data exists: route creation is blocked until a migration
@@ -623,8 +682,8 @@ Deferred complexity:
 Implementation should add BYOC-specific observability before rollout:
 
 - Structured events for validation start/success/failure, route create,
-  post-create data-plane smoke, secret read failure, credential rotation,
-  route disable, and egress-set mismatch.
+  post-create data-plane smoke, secret read failure, future credential rotation,
+  route disable, schema migration-required, and egress-set mismatch.
 - Stable failure labels: `allowlist_missing`, `dns_blocked`,
   `unsafe_endpoint`, `auth_failed`, `migration_denied`, `schema_drift`,
   `secret_unavailable`, `warehouse_unavailable`, and `data_plane_smoke_failed`.
@@ -664,6 +723,9 @@ Design-only work does not need tests. Implementation should add:
   plaintext credentials.
 - Data-plane smoke tests proving validation from control alone is insufficient
   unless the actual data-plane route also connects, inserts, and reads.
+- Source-level tests or runtime tests proving the customer-facing setup grants
+  match `clickhouse/0001_initial.sql`, including table creation, materialized
+  view creation, validation insert/read, and no `CREATE DATABASE` requirement.
 
 Implemented first-slice tests in this branch cover storage-choice validation,
 storage-ready write gates, BYOC database identifier validation, and BYOC
@@ -682,7 +744,7 @@ Implementation must update:
 - `docs/architecture/current-schemas.md`: tenant-route payload conventions.
 - `docs/architecture/current-api.md`: new control-plane endpoints.
 - Customer setup doc under `docs/users/` or `docs/product/` with exact SQL and
-  ClickHouse Cloud IP allowlist steps.
+  GCP firewall/load-balancer allowlist steps.
 - Operator runbooks for egress rotation, BYOC validation failures, credential
   rotation, and BYOC customer warehouse outages.
 
@@ -693,8 +755,9 @@ ClickHouse Cloud API first:
 - Pros: can create services, update IP allowlists, and potentially create a
   service in a BYOC infrastructure using `byocId`.
 - Cons: requires broad Cloud API credentials, can create paid resources, and is
-  more vendor-specific than direct database access.
-- Decision: defer.
+  no longer matches InstantML's current self-hosted GCP ClickHouse operating
+  model.
+- Decision: reject for the recommended BYOC flow; keep only as legacy research.
 
 Ask for ClickHouse admin database credentials:
 
@@ -722,8 +785,16 @@ Use ClickHouse service query endpoints:
 - Pros: Cloud API exposes endpoint management for executing queries via API.
 - Cons: current Rust data path already uses the database HTTP interface, and
   service query endpoints add a Cloud-specific integration layer that does not
-  help self-managed ClickHouse.
+  help self-hosted ClickHouse.
 - Decision: defer.
+
+Separate migrator and runtime credentials:
+
+- Pros: avoids storing DDL-capable credentials after setup.
+- Cons: adds UI, secret storage, route schema, and support complexity before we
+  know how often BYOC customers revoke DDL.
+- Decision: defer. First slice uses one credential, records schema version, and
+  blocks with `migration_required` when DDL is needed again.
 
 ## Review Notes
 
@@ -771,6 +842,78 @@ Fresh reviewer 3:
   through a control-plane ledger, and add BYOC metrics/events/runbooks.
 - Decision: Incorporated as required implementation constraints.
 
+2026-05-25 GCP self-hosted update reviewer A:
+
+- Finding: The GCP direction was correct, but hosted BYOC needed to fail closed
+  when static egress CIDRs were absent or unversioned, and schema-upgrade
+  behavior after DDL revocation needed a clear customer/operator path.
+- Risk: Customers could paste credentials before they had a usable allowlist, or
+  a future InstantML schema version could either store excessive DDL privilege
+  forever or break BYOC writes without actionable status.
+- Recommended edit: Make `GET current` the pre-validation egress contract, reject
+  hosted validation/create without a configured egress set, document
+  `migration_required`, and test the customer SQL grants against the current
+  schema.
+- Decision: Incorporated. Rotation remains implemented for operator/local smoke,
+  but customer-facing rotation UX stays deferred.
+
+2026-05-25 GCP self-hosted update reviewer B:
+
+- Finding: Endpoint SSRF, TLS, and Secret Manager scoping were too declarative
+  for a persisted customer-supplied endpoint.
+- Risk: A customer DNS change or compromised data-plane service could turn BYOC
+  into unsafe outbound access or expose more customer ClickHouse passwords than
+  the affected cell needs.
+- Recommended edit: Require re-resolution/new-connection checks, no redirects,
+  metadata/private egress deny, trusted-root TLS with hostname verification/SNI,
+  TLS-specific failure codes, separate control/data service accounts, and
+  narrow Secret Manager grants before public rollout.
+- Decision: Incorporated as production invariants. Existing broad Secret Manager
+  access remains acceptable only for internal smoke rollout and must be tracked
+  as hardening before public BYOC.
+
+2026-05-25 GCP self-hosted update reviewer C:
+
+- Finding: Customer-facing copy clearly pointed to GCP self-hosted BYOC and
+  R2-only InstantML storage accounting, but the design index still listed this
+  doc as draft and legacy Cloud caveats could be copied into user docs.
+- Risk: Future agents could reintroduce ClickHouse Cloud onboarding or believe
+  the design still awaited approval.
+- Recommended edit: Update the design index and keep Cloud-specific details in
+  alternatives/operator-only notes.
+- Decision: Incorporated. Customer-facing docs and UI must teach only GCP
+  self-hosted ClickHouse for BYOC.
+
+2026-05-25 implementation review:
+
+- Finding: Usage docs still had hosted-warehouse wording that could imply BYOC
+  database bytes count when a customer database is org-scoped. The onboarding
+  form also defaulted the BYOC username to `default`, and the BYOC smoke used
+  direct REST calls instead of the Python SDK.
+- Risk: Customers could follow less-safe SQL guidance, support could misread
+  storage usage for BYOC orgs, and local verification could miss SDK upload
+  behavior.
+- Recommended edit: Clarify that BYOC storage guardrails use only InstantML R2
+  artifact bytes, default to `instantml_writer`, and make the BYOC smoke create
+  an SDK run, log metrics, upload a file artifact, then verify R2/local artifact
+  accounting after DDL grants are revoked.
+- Decision: Incorporated.
+
+2026-05-25 runtime safety review:
+
+- Finding: Endpoint safety was enforced at validation/save time but not checked
+  again when cached customer routes were reused.
+- Risk: A DNS or stored-route change after setup could point product writes at a
+  private or reserved address.
+- Recommended edit: Re-resolve and re-normalize customer endpoints before route
+  load and before returning a cached customer tenant store, without taking the
+  main store-data lock from write paths.
+- Decision: Incorporated with a customer-endpoint cache and unit coverage for
+  rejecting a cached route that resolves to loopback, including IPv4-mapped IPv6
+  private/reserved targets. The ClickHouse HTTP client uses Hyper directly
+  rather than a redirect-following browser-style client, so customer redirects
+  are not part of the accepted runtime path.
+
 ## Coverage Exceptions
 
 Coverage exception:
@@ -788,6 +931,7 @@ Coverage exception:
 ## Decision
 
 The implemented first slice is a gated, empty-org, public-HTTPS,
-pre-created-database BYOC path with explicit storage setup state,
-data-plane-origin validation, Secret Manager-backed customer credential storage,
-R2-only storage accounting, and no ClickHouse Cloud API automation.
+pre-created-database BYOC path for customer-owned GCP ClickHouse with explicit
+storage setup state, data-plane-origin validation, Secret Manager-backed
+customer credential storage, R2-only storage accounting, and no ClickHouse
+Cloud API automation.

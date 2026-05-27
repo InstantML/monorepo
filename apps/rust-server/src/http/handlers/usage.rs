@@ -20,13 +20,14 @@ use super::helpers::{context, require_scope};
     params(
         ("project" = Option<String>, Query, description = "Filter by project name"),
         ("status" = Option<String>, Query, description = "Filter by run status"),
-        ("q" = Option<String>, Query, description = "Substring search"),
+        ("q" = Option<String>, Query, description = "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex."),
         ("sort_by" = Option<String>, Query, description = "Sort key"),
         ("metric_key" = Option<String>, Query, description = "Metric key for export columns"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
         (status = 200, description = "Versioned export payload", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Invalid run search or query parameter", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
         (status = 403, description = "Missing export scope", body = crate::http::openapi::ErrorResponse),
     ),

@@ -173,9 +173,10 @@ pub async fn runs_summary(
         .get("projection")
         .map(|value| value == "selection")
         .unwrap_or(false);
-    let indexed_page = if sort_by == "created" {
+    let search = compile_run_search(query.get("q").map(String::as_str))?;
+    let indexed_page = if sort_by == "created" && search.is_simple_literal_and() {
         let data = store.data.lock().await;
-        created_index_page(&data, ctx, query, offset, limit)
+        created_index_page(&data, ctx, query, &search, offset, limit)
     } else if matches!(sort_by.as_str(), "metric-latest" | "metric-best") {
         metric_sorted_index_page(store, ctx, query, &sort_by, metric_key, offset, limit).await?
     } else {
@@ -184,7 +185,7 @@ pub async fn runs_summary(
     let (total, page_runs) = if let Some(page) = indexed_page {
         page
     } else {
-        let mut all_runs = collect_filtered_runs(store, ctx, query).await?;
+        let mut all_runs = collect_filtered_runs_with_search(store, ctx, query, &search).await?;
         let total = all_runs.len();
         let page_runs = if matches!(sort_by.as_str(), "metric-latest" | "metric-best")
             && all_runs.len() > MAX_CLICKHOUSE_RUN_ID_CHUNK
@@ -242,21 +243,23 @@ pub(super) async fn collect_filtered_runs(
     ctx: &RequestContext,
     query: &HashMap<String, String>,
 ) -> AppResult<Vec<RunRow>> {
+    let search = compile_run_search(query.get("q").map(String::as_str))?;
+    collect_filtered_runs_with_search(store, ctx, query, &search).await
+}
+
+async fn collect_filtered_runs_with_search(
+    store: &Store,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    search: &CompiledRunSearch,
+) -> AppResult<Vec<RunRow>> {
     let project = query
         .get("project")
         .filter(|value| !value.is_empty() && value.as_str() != "all");
     let status = query
         .get("status")
         .filter(|value| !value.is_empty() && value.as_str() != "all");
-    let tokens = query
-        .get("q")
-        .map(|q| {
-            q.split_whitespace()
-                .map(|part| part.to_ascii_lowercase())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let runs = {
+    let candidates = {
         let data = store.data.lock().await;
         data.runs
             .values()
@@ -270,22 +273,28 @@ pub(super) async fn collect_filtered_runs(
             })
             .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
             .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
-            .filter(|run| {
-                if tokens.is_empty() {
-                    return true;
-                }
-                data.run_search_texts
-                    .get(&run.id)
-                    .map(|haystack| tokens.iter().all(|token| haystack.contains(token)))
-                    .unwrap_or_else(|| {
-                        let haystack = run_search_text(run);
-                        tokens.iter().all(|token| haystack.contains(token))
-                    })
+            .map(|run| {
+                let doc = if search.is_empty() {
+                    None
+                } else {
+                    Some(
+                        data.run_search_documents
+                            .get(&run.id)
+                            .cloned()
+                            .unwrap_or_else(|| Arc::new(run_search_document(run))),
+                    )
+                };
+                (run.clone(), doc)
             })
-            .cloned()
             .collect::<Vec<_>>()
     };
-    Ok(runs)
+    if search.is_empty() {
+        return Ok(candidates.into_iter().map(|(run, _)| run).collect());
+    }
+    Ok(candidates
+        .into_iter()
+        .filter_map(|(run, doc)| doc.filter(|doc| search.matches(doc.as_ref())).map(|_| run))
+        .collect())
 }
 
 pub(super) async fn sort_runs(
@@ -349,10 +358,10 @@ async fn metric_sorted_index_page(
     if has_text_search(query) || has_status_filter(query) {
         return Ok(None);
     }
+    let search = CompiledRunSearch::empty();
     let total = {
         let data = store.data.lock().await;
-        let tokens = text_search_tokens(query);
-        indexed_run_total(&data, ctx, query, &tokens)
+        indexed_run_total(&data, ctx, query, &search)
     };
     if total <= MAX_CLICKHOUSE_RUN_ID_CHUNK {
         return Ok(None);
@@ -367,10 +376,9 @@ async fn metric_sorted_index_page(
             .await?;
         let mut page = {
             let data = store.data.lock().await;
-            let tokens = text_search_tokens(query);
             rows.into_iter()
                 .filter_map(|row| data.runs.get(&row.run_id))
-                .filter(|run| run_matches_indexed_query(&data, ctx, query, run, &tokens))
+                .filter(|run| run_matches_indexed_query(&data, ctx, query, &search, run))
                 .cloned()
                 .collect::<Vec<_>>()
         };
@@ -378,8 +386,7 @@ async fn metric_sorted_index_page(
             let mut seen = page.iter().map(|run| run.id).collect::<BTreeSet<_>>();
             if page.len() < target {
                 let data = store.data.lock().await;
-                let tokens = text_search_tokens(query);
-                append_created_index_runs(&data, ctx, query, &tokens, &mut seen, target, &mut page);
+                append_created_index_runs(&data, ctx, query, &search, &mut seen, target, &mut page);
             }
             break page;
         }
@@ -445,18 +452,18 @@ pub(super) fn created_index_page(
     data: &StoreData,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
+    search: &CompiledRunSearch,
     offset: usize,
     limit: usize,
 ) -> Option<(usize, Vec<RunRow>)> {
-    let tokens = text_search_tokens(query);
-    let total = indexed_run_total(data, ctx, query, &tokens);
+    let total = indexed_run_total(data, ctx, query, search);
     let mut seen = BTreeSet::new();
     let mut page = Vec::with_capacity(limit);
     append_created_index_runs(
         data,
         ctx,
         query,
-        &tokens,
+        search,
         &mut seen,
         offset.saturating_add(limit),
         &mut page,
@@ -468,7 +475,7 @@ pub(super) fn append_created_index_runs(
     data: &StoreData,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
-    tokens: &[String],
+    search: &CompiledRunSearch,
     seen: &mut BTreeSet<Uuid>,
     target: usize,
     page: &mut Vec<RunRow>,
@@ -482,7 +489,7 @@ pub(super) fn append_created_index_runs(
             let Some(run) = data.runs.get(run_id) else {
                 continue;
             };
-            if run_matches_indexed_query(data, ctx, query, run, tokens) {
+            if run_matches_indexed_query(data, ctx, query, search, run) {
                 seen.insert(*run_id);
                 page.push(run.clone());
                 if page.len() >= target {
@@ -499,7 +506,7 @@ pub(super) fn append_created_index_runs(
         let Some(run) = data.runs.get(run_id) else {
             continue;
         };
-        if run_matches_indexed_query(data, ctx, query, run, tokens) {
+        if run_matches_indexed_query(data, ctx, query, search, run) {
             seen.insert(*run_id);
             page.push(run.clone());
             if page.len() >= target {
@@ -513,7 +520,7 @@ fn indexed_run_total(
     data: &StoreData,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
-    tokens: &[String],
+    search: &CompiledRunSearch,
 ) -> usize {
     if let Some(project) = project_filter(query) {
         data.runs_by_org_project_created
@@ -524,7 +531,7 @@ fn indexed_run_total(
                     && data
                         .runs
                         .get(run_id)
-                        .map(|run| run_matches_indexed_query(data, ctx, query, run, tokens))
+                        .map(|run| run_matches_indexed_query(data, ctx, query, search, run))
                         .unwrap_or(false)
             })
             .count()
@@ -536,7 +543,7 @@ fn indexed_run_total(
                     && data
                         .runs
                         .get(run_id)
-                        .map(|run| run_matches_indexed_query(data, ctx, query, run, tokens))
+                        .map(|run| run_matches_indexed_query(data, ctx, query, search, run))
                         .unwrap_or(false)
             })
             .count()
@@ -547,8 +554,8 @@ fn run_matches_indexed_query(
     data: &StoreData,
     ctx: &RequestContext,
     query: &HashMap<String, String>,
+    search: &CompiledRunSearch,
     run: &RunRow,
-    tokens: &[String],
 ) -> bool {
     if run.org_id != ctx.org_id {
         return false;
@@ -570,18 +577,8 @@ fn run_matches_indexed_query(
     {
         return false;
     }
-    if !tokens.is_empty() {
-        let matches = data
-            .run_search_texts
-            .get(&run.id)
-            .map(|haystack| tokens.iter().all(|token| haystack.contains(token)))
-            .unwrap_or_else(|| {
-                let haystack = run_search_text(run);
-                tokens.iter().all(|token| haystack.contains(token))
-            });
-        if !matches {
-            return false;
-        }
+    if !run_matches_search(data, run, search) {
+        return false;
     }
     project_filter(query)
         .map(|project| run.project == project)
@@ -607,6 +604,9 @@ mod tests {
             created_at,
             started_at: created_at,
             finished_at: Some(created_at + ChronoDuration::seconds(30)),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 
@@ -653,7 +653,8 @@ mod tests {
             ("status".to_string(), "failed".to_string()),
             ("q".to_string(), "reward stability".to_string()),
         ]);
-        let (total, page) = created_index_page(&data, &ctx, &query, 0, 25).unwrap();
+        let search = compile_run_search(query.get("q").map(String::as_str)).unwrap();
+        let (total, page) = created_index_page(&data, &ctx, &query, &search, 0, 25).unwrap();
 
         assert_eq!(total, 1);
         assert_eq!(page.len(), 1);

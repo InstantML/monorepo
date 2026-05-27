@@ -11,12 +11,21 @@ debugging.
 ## Export
 
 ```http
-GET /api/export?project=cartpole&status=finished
+GET /api/export?project=cartpole&status=finished&q=tag%3Abaseline%20NOT%20tag%3Adebug
 Authorization: Bearer instantml_...
 ```
 
 Requires tenant read access. API keys need `export:read`; browser sessions need
 viewer or higher role.
+
+Export accepts the same bounded run filters as `GET /runs`, including
+`project`, `status`, `sort_by`, `metric_key`, and the shared run-search `q`
+language. Search supports bare text, `tag:`/`tags:`, `notes:`, `config:`,
+`metadata:`, `status:`, `id:`, uppercase `AND`/`OR`/`NOT`, field/group
+exclusion with `-`, quoted phrases, and explicit Rust regex such as
+`re:/seed-(13|14)/`. The deprecated Node compatibility API supports the
+non-regex subset and returns `run_search_regex_unsupported` for completed regex
+queries.
 
 Response shape:
 
@@ -59,8 +68,10 @@ Usage includes:
 - Current UTC calendar-month API request usage.
 - Retained projects, runs, metric series, artifacts, API keys, and seats.
 - Exact artifact bytes when available.
-- Exact ClickHouse table bytes when available.
-- Blocked-at-limit storage estimates.
+- Exact InstantML-hosted ClickHouse table bytes when available.
+- Blocked-at-limit storage estimates. BYOC storage guardrails count only
+  InstantML-owned artifact bytes and never include customer-owned ClickHouse
+  database bytes.
 - Billing precision metadata.
 
 Metric-point and API-request usage reset monthly. Most other counters are

@@ -886,20 +886,17 @@ small {
   cursor: crosshair;
 }
 
-/* When smoothing is on, the raw line/markers fade back so the opaque smoothed
- * curve reads as the primary signal. */
+/* EMA smoothing: the smoothed curve renders at full opacity as the primary
+ * signal, with the raw series kept faintly visible ("slightly opaque") behind
+ * it for context. */
 .series.series-raw {
-  opacity: 0.22;
+  opacity: 0.3;
   stroke-width: 1;
 }
 
 .series.series-smooth {
   opacity: 1;
-  stroke-width: 1.9;
-}
-
-.series-point.series-point-raw {
-  opacity: 0.28;
+  stroke-width: 1.65;
 }
 
 .tooltip-smoothed {
@@ -908,10 +905,17 @@ small {
   font-weight: 600;
 }
 
+/* Filled marker shown at the hovered sample (markers are otherwise omitted on
+ * continuous lines). */
+.hover-point {
+  stroke-width: 1.5;
+}
+
 .hover-ring {
   fill: none;
-  stroke: #1e2a36;
+  stroke: var(--chart-tick, #94a3b8);
   stroke-width: 1.5;
+  opacity: 0.65;
 }
 
 .hover-guide {
@@ -1201,8 +1205,12 @@ small {
 }
 
 .compare-metric-pill.active {
-  border-color: rgba(31, 184, 119, 0.72);
-  box-shadow: inset 0 0 0 1px rgba(31, 184, 119, 0.16);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.compare-metric-pill.active .compare-metric-label {
+  color: var(--accent-strong);
 }
 
 .compare-metric-pill button {
@@ -1217,10 +1225,15 @@ small {
   cursor: pointer;
 }
 
-.compare-metric-pill > button:first-child {
+/* The primary-metric label is a non-interactive <span>; added-metric labels are
+ * plain text beside a remove button. Both share the same padded label styling. */
+.compare-metric-pill > button:first-child,
+.compare-metric-pill .compare-metric-label {
   max-width: 190px;
   overflow: hidden;
   padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

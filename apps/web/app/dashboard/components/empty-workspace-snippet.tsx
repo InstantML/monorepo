@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 // in 5 minutes?").
 
 const ONBOARDING_KEY_STORAGE = "instantml_onboarding_key";
+const ONBOARDING_KEY_STORAGE_TTL_MS = 10 * 60 * 1000;
 const PIP_LINE = "pip install --pre instantml";
 const LOGIN_LINE = "instantml login";
 
@@ -57,8 +58,20 @@ function buildSnippetWithKey(apiKey: string): string {
 function readStashedKey(): string {
   if (typeof window === "undefined") return "";
   try {
-    return window.sessionStorage.getItem(ONBOARDING_KEY_STORAGE) || "";
+    const raw = window.sessionStorage.getItem(ONBOARDING_KEY_STORAGE) || "";
+    window.sessionStorage.removeItem(ONBOARDING_KEY_STORAGE);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw);
+    const createdAt = Number(parsed?.createdAt ?? 0);
+    const plaintext = typeof parsed?.plaintext === "string" ? parsed.plaintext : "";
+    if (!plaintext || !Number.isFinite(createdAt) || Date.now() - createdAt > ONBOARDING_KEY_STORAGE_TTL_MS) return "";
+    return plaintext;
   } catch {
+    try {
+      window.sessionStorage.removeItem(ONBOARDING_KEY_STORAGE);
+    } catch {
+      // Ignore storage failures in restricted browser modes.
+    }
     return "";
   }
 }

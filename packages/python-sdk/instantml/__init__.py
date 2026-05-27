@@ -1,6 +1,6 @@
 """Python SDK for Training Observability."""
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0a2"
 
 from .client import (
     Api,
@@ -14,10 +14,12 @@ from .client import (
     LightningLogger,
     InstantMLError,
     Run,
+    SourceTracking,
     Table,
     Text,
     TransformersCallback,
     Video,
+    attach_run,
     init,
 )
 
@@ -33,12 +35,14 @@ __all__ = [
     "LightningLogger",
     "InstantMLError",
     "Run",
+    "SourceTracking",
     "Table",
     "Text",
     "TransformersCallback",
     "Video",
     "__version__",
     "drain_spool",
+    "attach_run",
     "init",
 ]
 

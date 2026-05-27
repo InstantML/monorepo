@@ -799,6 +799,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/forks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["fork_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_run_lineage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}/logs": {
         parameters: {
             query?: never;
@@ -1689,6 +1721,18 @@ export interface components {
             description?: string | null;
             name?: string | null;
         };
+        CreateRunForkRequest: {
+            /** Format: uuid */
+            checkpoint_artifact_id?: string | null;
+            config_overrides?: Record<string, never> | null;
+            inherit_config?: boolean | null;
+            metadata?: Record<string, never> | null;
+            name?: string | null;
+            notes?: string | null;
+            /** Format: double */
+            step?: number | null;
+            tags?: string[] | null;
+        };
         CreateRunRequest: {
             config?: Record<string, never> | null;
             metadata?: Record<string, never> | null;
@@ -1772,12 +1816,11 @@ export interface components {
             verification_uri: string;
             verification_uri_complete: string;
         };
-        ErrorBody: {
-            code: string;
-            message: string;
-        };
         ErrorResponse: {
-            error: components["schemas"]["ErrorBody"];
+            code?: string | null;
+            error: string;
+            field?: string | null;
+            position?: number | null;
         };
         HealthResponse: {
             status: string;
@@ -2152,6 +2195,44 @@ export interface components {
         RunEnvelope: {
             run: components["schemas"]["RunRow"];
         };
+        RunForkContext: {
+            /** Format: uuid */
+            forked_from_artifact_id?: string | null;
+            /** Format: double */
+            forked_from_step?: number | null;
+            message: string;
+            /** Format: uuid */
+            parent_run_id: string;
+        };
+        RunForkEnvelope: {
+            fork: components["schemas"]["RunForkContext"];
+            run: components["schemas"]["RunSummaryRow"];
+        };
+        RunLineageEnvelope: {
+            checkpoint_artifact?: null | components["schemas"]["PublicArtifactRow"];
+            children: components["schemas"]["RunSummaryRow"][];
+            children_total: number;
+            has_more_children: boolean;
+            limit: number;
+            parent?: null | components["schemas"]["RunSummaryRow"];
+            run: components["schemas"]["RunSummaryRow"];
+        };
+        RunMetricAggregate: {
+            /** Format: double */
+            best_step?: number | null;
+            /** Format: int64 */
+            count: number;
+            /** Format: double */
+            latest?: number | null;
+            /** Format: double */
+            max?: number | null;
+            /** Format: double */
+            mean?: number | null;
+            /** Format: double */
+            min?: number | null;
+            /** Format: double */
+            variance?: number | null;
+        };
         RunRow: {
             config: Record<string, never>;
             /** Format: date-time */
@@ -2159,11 +2240,53 @@ export interface components {
             /** Format: date-time */
             finished_at?: string | null;
             /** Format: uuid */
+            forked_from_artifact_id?: string | null;
+            /** Format: double */
+            forked_from_step?: number | null;
+            /** Format: uuid */
             id: string;
             metadata: Record<string, never>;
             name: string;
             /** Format: uuid */
             org_id: string;
+            /** Format: uuid */
+            parent_run_id?: string | null;
+            project: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: date-time */
+            started_at: string;
+            status: string;
+            tags: string[];
+        };
+        RunSummaryRow: {
+            artifact_counts: {
+                [key: string]: number;
+            };
+            config: Record<string, never>;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            finished_at?: string | null;
+            /** Format: uuid */
+            forked_from_artifact_id?: string | null;
+            /** Format: double */
+            forked_from_step?: number | null;
+            /** Format: uuid */
+            id: string;
+            latest_metrics: {
+                [key: string]: number | null;
+            };
+            metadata: Record<string, never>;
+            metric_aggregates: {
+                [key: string]: components["schemas"]["RunMetricAggregate"];
+            };
+            metric_keys: string[];
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            parent_run_id?: string | null;
             project: string;
             /** Format: uuid */
             project_id: string;
@@ -2269,7 +2392,7 @@ export interface components {
             users: components["schemas"]["UserRow"][];
         };
         WorkspaceViewEnvelope: {
-            view: components["schemas"]["WorkspaceViewRow"];
+            workspace_view: components["schemas"]["WorkspaceViewRow"];
         };
         WorkspaceViewRow: {
             /** Format: date-time */
@@ -2291,7 +2414,8 @@ export interface components {
             updated_at: string;
         };
         WorkspaceViewSummariesEnvelope: {
-            views: components["schemas"]["WorkspaceViewSummary"][];
+            next_cursor?: string | null;
+            workspace_views: components["schemas"]["WorkspaceViewSummary"][];
         };
         WorkspaceViewSummary: {
             /** Format: date-time */
@@ -3097,7 +3221,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key */
                 sort_by?: string;
@@ -3117,6 +3241,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4130,7 +4263,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Metric key for best-value column */
                 metric_key?: string;
@@ -4148,6 +4281,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4206,7 +4348,7 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
-                /** @description Substring search */
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key */
                 sort_by?: string;
@@ -4218,6 +4360,8 @@ export interface operations {
                 offset?: number;
                 /** @description Pagination cursor */
                 cursor?: string;
+                /** @description Use selection for lightweight bulk-selection rows */
+                projection?: string;
             };
             header?: never;
             path?: never;
@@ -4232,6 +4376,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4506,6 +4659,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    fork_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Source run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRunForkRequest"];
+            };
+        };
+        responses: {
+            /** @description Created forked run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunForkEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Plan or payment limit prevents creating another run */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source run or checkpoint not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_run_lineage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded direct lineage graph for the selected run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunLineageEnvelope"];
                 };
             };
             /** @description Run not found */
@@ -5449,6 +5715,12 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
+                /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
+                q?: string;
+                /** @description Sort key: created, name, status, duration, metric-latest, or metric-best */
+                sort_by?: string;
+                /** @description Metric key used by metric-latest and metric-best sorts */
+                metric_key?: string;
                 /** @description Page size (1..=1000) */
                 limit?: number;
                 /** @description Offset for pagination */
@@ -5467,6 +5739,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunsEnvelope"];
+                };
+            };
+            /** @description Invalid run search or query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

@@ -37,9 +37,23 @@ Most handlers also attach `x-request-id`.
 | `rate_limit_exceeded` | The request exceeded a short-window API rate limit |
 | `api_request_monthly_limit_exceeded` | The org reached a monthly API request allowance and does not have billable overage |
 | `warehouse_unavailable` | Hosted tenant warehouse is waking or unavailable |
+| `run_search_invalid` | The `q` run-search query has closed but invalid syntax |
+| `run_search_regex_unsupported` | Deprecated Node compatibility was asked to evaluate `re:/.../` |
 
 `warehouse_unavailable` uses HTTP `503` and is retryable from a client point of
 view.
+
+Run-search validation errors use HTTP `400` and include `field: "q"` plus an
+optional 1-based `position`:
+
+```json
+{
+  "error": "Invalid run search: regex is invalid at column 6.",
+  "code": "run_search_invalid",
+  "field": "q",
+  "position": 6
+}
+```
 
 ## Pagination and bounds
 
@@ -60,6 +74,9 @@ Common limits:
 | Rank metrics per batch | 1,000 metrics for one `(run, step, rank)` |
 | Rank metric world size | 512 ranks |
 | Run page limit | Default 100, max 1,000 |
+| Run search query | 512 bytes, 32 terms, 64 AST nodes, depth 8 |
+| Run search regex | Max 4 regexes, 128 bytes each; regex must not match empty text |
+| Per-run searched field text | First 32 KiB per indexed field |
 | Batched metric series run IDs | 2,000 |
 | Batched metric series response | Max 120,000 returned points |
 | Workspace-view payload | 64 KiB |

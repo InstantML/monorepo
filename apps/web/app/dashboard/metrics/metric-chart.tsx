@@ -237,6 +237,7 @@ export function MetricChart({
   zoomRange?: ChartZoomRange;
 }) {
   const denseChart = shouldUseDenseChart(normalizedSeries);
+  const visibleHover = denseChart ? null : hover;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (!denseChart) return;
@@ -299,12 +300,12 @@ export function MetricChart({
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     return <div className="chart-area"><div className="empty">{emptyMessage}</div></div>;
   }
-  const pointCount = normalizedSeries.reduce((sum, item) => sum + (item.normalizedPoints?.length ?? 0), 0);
-  // Per-point <circle> markers are the dominant SVG paint cost on the
-  // canvas (one node per data point per series). The polyline already
-  // conveys the curve and hover is resolved geometrically by the svg-level
-  // onMove handler, so markers only earn their keep on sparse charts.
-  const showPointNodes = pointCount <= 240;
+  // Lines render solid. Per-point markers are only drawn for genuinely sparse
+  // series (1–2 samples) where a bare polyline would be invisible/ambiguous;
+  // multi-point series read as a clean continuous line. Hovering still surfaces
+  // a marker (the hover ring + dot below), and hit-testing is geometric via the
+  // svg-level onMove handler, so markers aren't needed for interactivity.
+  const sparsePointThreshold = 2;
   const xTicks = axisTicks(domain.minX, domain.maxX, 5);
   const yTicks = axisTicks(domain.minY, domain.maxY, 5);
   // Use the real domain span (never clamp to 1) so gridlines + tick labels line
@@ -314,9 +315,10 @@ export function MetricChart({
   const ySpan = (domain.maxY - domain.minY) || 1;
   const xPos = (value: number) => padding + ((value - domain.minX) / xSpan) * (width - padding * 2);
   const yPos = (value: number) => height - padding - ((value - domain.minY) / ySpan) * (height - padding * 2);
-  const hoverRows = hover ? tooltipRows(normalizedSeries, hover.point.xValue, xMode, hover.runId) : [];
-  const hoverEdge = hover ? (hover.point.x < width * 0.3 ? "edge-left" : hover.point.x > width * 0.62 ? "edge-right" : "") : "";
-  const hoverLeft = hover ? (hoverEdge === "edge-left" ? "16px" : `${Math.min(82, Math.max(18, (hover.point.x / width) * 100))}%`) : "0px";
+  const hoverRows = visibleHover ? tooltipRows(normalizedSeries, visibleHover.point.xValue, xMode, visibleHover.runId) : [];
+  const hoverEdge = visibleHover ? (visibleHover.point.x < width * 0.3 ? "edge-left" : visibleHover.point.x > width * 0.62 ? "edge-right" : "") : "";
+  const hoverLeft = visibleHover ? (hoverEdge === "edge-left" ? "16px" : `${Math.min(82, Math.max(18, (visibleHover.point.x / width) * 100))}%`) : "0px";
+  const hoverIndex = visibleHover ? normalizedSeries.findIndex((item) => item.id === visibleHover.runId) : -1;
   const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
   const legendSeries = normalizedSeries.slice(0, legendLimit);
 
@@ -324,13 +326,13 @@ export function MetricChart({
     <div className="chart-area">
       <div className="chart-legend">
         {legendSeries.map((item, index) => (
-          <span className="legend-chip" key={item.id}><i className={`legend-dot dot-${index % 5}`} style={{ backgroundColor: chartColor(index) }} /> {item.identifier ?? item.name}</span>
+          <span className="legend-chip" key={item.id} title={item.identifier ?? item.name}><i className={`legend-dot dot-${index % 5}`} style={{ backgroundColor: chartColor(index) }} /> {item.identifier ?? item.name}</span>
         ))}
-        {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow">+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
+        {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow" title={normalizedSeries.slice(legendSeries.length).map((item) => item.identifier ?? item.name).join(", ")}>+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
       </div>
       <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
-        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
+        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={denseChart ? undefined : onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
             <g key={`y-${tick}`}>
               <line className="grid-line" x1={padding} x2={width - padding} y1={yPos(tick)} y2={yPos(tick)} />
@@ -347,7 +349,7 @@ export function MetricChart({
           <line className="axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
           <text className="axis-label" x={width / 2} y={height - 5} textAnchor="middle">{xMode === "time" ? "Logged time" : "Training step"}</text>
           <text className="axis-label" x={10} y={height / 2} textAnchor="middle" transform={`rotate(-90 10 ${height / 2})`}>{metricTitle(metricKey)}</text>
-          {hover ? <line className="hover-guide" x1={hover.point.x} x2={hover.point.x} y1={padding} y2={height - padding} /> : null}
+          {visibleHover ? <line className="hover-guide" x1={visibleHover.point.x} x2={visibleHover.point.x} y1={padding} y2={height - padding} /> : null}
           {!denseChart ? normalizedSeries.map((item, index) => (
             <g key={item.id}>
               <polyline
@@ -358,28 +360,39 @@ export function MetricChart({
               {item.smoothed && item.smoothPath ? (
                 <polyline className={`series series-${index % 5} series-smooth`} points={item.smoothPath} style={{ stroke: chartColor(index) }} />
               ) : null}
-              {showPointNodes ? (item.normalizedPoints ?? []).map((point: any) => (
+              {(item.normalizedPoints?.length ?? 0) <= sparsePointThreshold ? (item.normalizedPoints ?? []).map((point: any) => (
                 <circle
                   key={`${item.id}-${point.step}-${point.created_at}`}
-                  className={`series-point point-${index % 5}${item.smoothed ? " series-point-raw" : ""}`}
+                  className={`series-point point-${index % 5}`}
                   cx={point.x}
                   cy={point.displayY ?? point.y}
                   style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
                   onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance: 0 })}
-                  r={2.4}
+                  r={2.6}
                 />
               )) : null}
             </g>
           )) : null}
-          {hover ? <circle className="hover-ring" cx={hover.point.x} cy={hover.point.displayY ?? hover.point.y} r={8} /> : null}
+          {visibleHover ? (
+            <>
+              <circle
+                className="hover-point"
+                cx={visibleHover.point.x}
+                cy={visibleHover.point.displayY ?? visibleHover.point.y}
+                r={3.2}
+                style={{ fill: hoverIndex >= 0 ? chartColor(hoverIndex) : "var(--accent)", stroke: "var(--chart-card-bg, var(--surface))" }}
+              />
+              <circle className="hover-ring" cx={visibleHover.point.x} cy={visibleHover.point.displayY ?? visibleHover.point.y} r={8} />
+            </>
+          ) : null}
         </svg>
       </div>
-      {hover ? (
+      {visibleHover ? (
         <div
           className={`chart-tooltip ${hoverEdge}`}
-          style={{ left: hoverLeft, top: `${Math.min(76, Math.max(18, ((hover.point.displayY ?? hover.point.y) / height) * 100))}%` }}
+          style={{ left: hoverLeft, top: `${Math.min(76, Math.max(18, ((visibleHover.point.displayY ?? visibleHover.point.y) / height) * 100))}%` }}
         >
-          <div className="chart-tooltip-head">{xMode === "time" ? formatAxisValue(hover.point.xValue, xMode) : `Step ${formatNumber(hover.point.step, 0)}`}</div>
+          <div className="chart-tooltip-head">{xMode === "time" ? formatAxisValue(visibleHover.point.xValue, xMode) : `Step ${formatNumber(visibleHover.point.step, 0)}`}</div>
           <div className="chart-tooltip-cols"><span>Value</span><span>Name</span></div>
           {hoverRows.map((row) => (
             <span className={`chart-tooltip-row${row.active ? " active" : ""}`} key={row.id}>

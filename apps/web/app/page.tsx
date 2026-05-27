@@ -35,7 +35,9 @@ export const metadata: Metadata = {
  * Routing:
  *   Visitor has a Clerk session → /signin
  *     The /signin page checks for an active InstantML session and
- *     redirects to /dashboard/runs when both sessions are present.
+ *     redirects to /dashboard/runs when both sessions are present
+ *     and org storage is ready; otherwise it sends the user back to
+ *     /onboarding to finish storage setup.
  *     This reuses existing logic without duplicating the InstantML
  *     session check here.
  *

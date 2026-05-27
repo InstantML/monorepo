@@ -124,7 +124,9 @@ impl Store {
         let metric_store = self.metric_store_from_route(&route).await?;
         self.persist_upgraded_route_schema_version_if_needed(&route)
             .await?;
-        let records = metric_store.load_operational_records().await?;
+        let records = metric_store
+            .load_operational_records_for_org(org_id)
+            .await?;
         let stats = {
             let mut data = self.data.lock().await;
             data.apply_operational_records(records, ReplayScope::Tenant(org_id))?
@@ -133,6 +135,8 @@ impl Store {
             .lock()
             .await
             .insert(org_id, metric_store);
+        self.cache_customer_route_endpoint_if_needed(org_id, &route)
+            .await;
         self.tenant_loaded.lock().await.insert(org_id);
         let mut clock = self.record_clock_micros.lock().await;
         *clock = (*clock).max(stats.latest_record_micros);
@@ -155,6 +159,8 @@ impl Store {
         if !self.hosted_clickhouse_enabled() {
             return Ok(self.metric_store.clone());
         }
+        self.ensure_cached_customer_route_endpoint_safe(org_id)
+            .await?;
         if let Some(metric_store) = self.tenant_metric_stores.lock().await.get(&org_id).cloned() {
             return Ok(metric_store);
         }
@@ -166,6 +172,32 @@ impl Store {
                 .ok_or_else(|| tenant_unavailable("shared cell is not configured"));
         }
         Err(tenant_unavailable("tenant route is not loaded"))
+    }
+
+    async fn ensure_cached_customer_route_endpoint_safe(&self, org_id: Uuid) -> AppResult<()> {
+        let endpoint = self
+            .customer_tenant_endpoints
+            .lock()
+            .await
+            .get(&org_id)
+            .cloned();
+        if let Some(endpoint) = endpoint {
+            ensure_customer_endpoint_safe(&endpoint, &self.byoc_clickhouse).await?;
+        }
+        Ok(())
+    }
+
+    async fn cache_customer_route_endpoint_if_needed(
+        &self,
+        org_id: Uuid,
+        route: &TenantRouteRecord,
+    ) {
+        let mut endpoints = self.customer_tenant_endpoints.lock().await;
+        if route.provisioner == CUSTOMER_CLICKHOUSE_PROVISIONER {
+            endpoints.insert(org_id, route.endpoint.clone());
+        } else {
+            endpoints.remove(&org_id);
+        }
     }
 
     /// Returns true when the org's routing tier is "shared" and a shared-cell
@@ -303,6 +335,8 @@ impl Store {
                     .lock()
                     .await
                     .insert(org.id, metric_store);
+                self.cache_customer_route_endpoint_if_needed(org.id, &route)
+                    .await;
                 self.tenant_loaded.lock().await.insert(org.id);
                 Ok(route)
             }
@@ -508,6 +542,8 @@ impl Store {
             .lock()
             .await
             .insert(route.org_id, metric_store);
+        self.cache_customer_route_endpoint_if_needed(route.org_id, &ready)
+            .await;
         self.tenant_loaded.lock().await.insert(route.org_id);
         Ok(Some(ready))
     }
@@ -585,9 +621,14 @@ impl Store {
     }
 
     async fn metric_store_from_route(&self, route: &TenantRouteRecord) -> AppResult<MetricStore> {
+        let endpoint = if route.provisioner == CUSTOMER_CLICKHOUSE_PROVISIONER {
+            ensure_customer_route_endpoint_safe(route, &self.byoc_clickhouse).await?
+        } else {
+            route.endpoint.clone()
+        };
         let password = self.tenant_password(route).await?;
         let connection = ClickHouseConnection {
-            endpoint: route.endpoint.clone(),
+            endpoint,
             username: route.username.clone(),
             password,
             database: route.database.clone(),
@@ -796,6 +837,8 @@ impl Store {
             .lock()
             .await
             .insert(org_id, metric_store);
+        self.cache_customer_route_endpoint_if_needed(org_id, &route)
+            .await;
         self.tenant_loaded.lock().await.insert(org_id);
         Ok(connection_status_payload(&org, Some(&route), config, None))
     }
@@ -848,7 +891,7 @@ impl Store {
             .as_deref()
             .ok_or_else(|| AppError::validation("password is required"))?;
         let connection = ClickHouseConnection {
-            endpoint: route.endpoint.clone(),
+            endpoint: ensure_customer_route_endpoint_safe(&route, config).await?,
             username,
             password: password.to_string(),
             database: route.database.clone(),
@@ -871,6 +914,8 @@ impl Store {
             .lock()
             .await
             .insert(org_id, metric_store);
+        self.cache_customer_route_endpoint_if_needed(org_id, &route)
+            .await;
         self.tenant_loaded.lock().await.insert(org_id);
         if let Err(error) = destroy_byoc_clickhouse_password_version(
             &config.credential_store,
@@ -993,6 +1038,28 @@ async fn normalize_customer_endpoint(
     Ok(format!("{}://{}:{}", parsed.scheme(), host, port))
 }
 
+async fn ensure_customer_route_endpoint_safe(
+    route: &TenantRouteRecord,
+    config: &ByocClickHouseConfig,
+) -> AppResult<String> {
+    ensure_customer_endpoint_safe(&route.endpoint, config).await
+}
+
+async fn ensure_customer_endpoint_safe(
+    endpoint: &str,
+    config: &ByocClickHouseConfig,
+) -> AppResult<String> {
+    let normalized = normalize_customer_endpoint(Some(endpoint), config).await?;
+    if normalized != endpoint {
+        return Err(AppError::with_code(
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid_clickhouse_connection",
+            "stored customer-owned ClickHouse endpoint is not normalized",
+        ));
+    }
+    Ok(normalized)
+}
+
 async fn reject_private_endpoint(host: &str, port: u16) -> AppResult<()> {
     let addrs = tokio::net::lookup_host((host, port))
         .await
@@ -1027,6 +1094,9 @@ fn private_or_reserved_ip(ip: IpAddr) -> bool {
                 || ip.octets()[0] >= 224
         }
         IpAddr::V6(ip) => {
+            if let Some(mapped) = ip.to_ipv4_mapped() {
+                return private_or_reserved_ip(IpAddr::V4(mapped));
+            }
             let first = ip.segments()[0];
             ip.is_loopback()
                 || ip.is_unspecified()
@@ -1930,6 +2000,53 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn cached_customer_routes_recheck_endpoint_safety() {
+        let customer_org_id = Uuid::from_u128(0xC0_01);
+        let mut data = StoreData::default();
+        data.insert_org(test_org(
+            customer_org_id,
+            "customer-org",
+            "customer",
+            CUSTOMER_CLICKHOUSE_PROVISIONER,
+            STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
+        ));
+        let mut route = test_route(
+            customer_org_id,
+            CUSTOMER_CLICKHOUSE_PROVISIONER,
+            "customer_db",
+        );
+        route.endpoint = "https://127.0.0.1:8443".to_string();
+        data.insert_tenant_route(route.clone());
+        let mut store = test_hosted_store(data, false);
+        store.byoc_clickhouse.allow_private_endpoints = false;
+        store.byoc_clickhouse.egress_cidrs = vec!["203.0.113.10/32".to_string()];
+        store.byoc_clickhouse.egress_set_version = "prod-us-central1-test".to_string();
+        store
+            .customer_tenant_endpoints
+            .lock()
+            .await
+            .insert(customer_org_id, route.endpoint);
+
+        let error = store
+            .ensure_cached_customer_route_endpoint_safe(customer_org_id)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), Some("unsafe_clickhouse_host"));
+    }
+
+    #[test]
+    fn private_or_reserved_ip_rejects_ipv4_mapped_ipv6_targets() {
+        for raw in [
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "::ffff:169.254.169.254",
+        ] {
+            let ip = raw.parse::<IpAddr>().unwrap();
+            assert!(private_or_reserved_ip(ip), "{raw}");
+        }
+    }
+
     #[test]
     fn business_org_routes_to_dedicated_tier() {
         let org = OrganizationRow {
@@ -1976,6 +2093,7 @@ mod tests {
                 credential_store: ByocCredentialStoreConfig::LocalUserData,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: shared_cell_enabled.then(|| {
                 crate::metric_store::connect_url(

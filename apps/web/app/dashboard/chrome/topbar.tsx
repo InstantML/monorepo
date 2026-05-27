@@ -2,7 +2,7 @@
 
 import { BookOpen, Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Moon, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { InstantMlMark } from "../../instantml-mark";
@@ -81,6 +81,11 @@ function AccountAvatar({ user }: { user: AccountUser | null }) {
     </span>
   );
 }
+
+type RunSearchError = {
+  message: string;
+  position: number | null;
+} | null;
 
 export function OrgSwitcher({
   busy,
@@ -304,6 +309,11 @@ function WorkspaceCreateModal({
     }
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    submit();
+  }
+
   return (
     <div className="workspace-modal-backdrop" role="presentation">
       <section className="workspace-create-modal" role="dialog" aria-modal="true" aria-label="Create workspace" ref={dialogRef} tabIndex={-1}>
@@ -314,70 +324,72 @@ function WorkspaceCreateModal({
           </div>
           <button className="icon-button framed" type="button" aria-label="Close create workspace" onClick={onClose}><X size={15} /></button>
         </div>
-        <div className="workspace-create-body">
-          <div className="workspace-segment" role="group" aria-label="Workspace type">
-            <button aria-pressed={kind === "personal"} className={kind === "personal" ? "selected" : ""} type="button" onClick={() => setKind("personal")}>Personal workspace</button>
-            <button aria-pressed={kind === "business"} className={kind === "business" ? "selected" : ""} type="button" onClick={() => setKind("business")}>Organization</button>
-          </div>
-          {personalBlocked ? <p className="form-error">You already have a personal workspace.</p> : null}
-          <label className="workspace-create-field">
-            {kind === "personal" ? "Workspace name" : "Organization name"}
-            <input autoFocus name="workspace-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
-          </label>
-          {trimmedName ? (
-            <p className={`workspace-create-status ${availability?.available === false ? "error" : ""}`} role={availability?.available === false ? "alert" : "status"}>
-              {availabilityStatus}
-            </p>
-          ) : null}
-          <div className="workspace-plan-grid" role="group" aria-label="Plan">
-            {(["free", "pro", "premium"] as const).map((tier) => (
-              <button aria-pressed={plan === tier} className={plan === tier ? "selected" : ""} key={tier} type="button" onClick={() => setPlan(tier)}>
-                <strong>{planName(tier)}</strong>
-                <span>{tier === "free" ? "Start small" : tier === "pro" ? "Team default" : "BYOC ready"}</span>
-              </button>
-            ))}
-          </div>
-          <div className="workspace-storage-choice" role="group" aria-label="Storage">
-            <label>
-              <input checked={normalizedStorage === "instantml-hosted"} name="workspace-storage" onChange={() => setStorage("instantml-hosted")} type="radio" />
-              InstantML-hosted
-            </label>
-            <label className={byocBlocked ? "disabled" : ""}>
-              <input checked={normalizedStorage === "customer-clickhouse"} disabled={byocBlocked} name="workspace-storage" onChange={() => setStorage("customer-clickhouse")} type="radio" />
-              Advanced: connect my ClickHouse
-            </label>
-          </div>
-          {kind === "business" ? (
-            <div className="workspace-invite-row">
-              <label className="workspace-create-field">
-                Invite teammates
-                <input autoComplete="email" disabled={inviteDeferred} value={inviteDeferred ? "" : inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder={inviteDeferred ? "Invite after checkout" : "teammate@example.com"} type="email" />
-              </label>
-              <CustomSelect
-                id="workspace-create-role"
-                label="Role"
-                disabled={inviteDeferred}
-                onChange={(value) => setInviteRole(value === "admin" || value === "viewer" ? value : "member")}
-                options={[
-                  { value: "member", label: "Write/read" },
-                  { value: "admin", label: "Admin" },
-                  { value: "viewer", label: "Read only" },
-                ]}
-                value={inviteRole}
-              />
+        <form className="workspace-create-form" onSubmit={handleSubmit}>
+          <div className="workspace-create-body">
+            <div className="workspace-segment" role="group" aria-label="Workspace type">
+              <button aria-pressed={kind === "personal"} className={kind === "personal" ? "selected" : ""} type="button" onClick={() => setKind("personal")}>Personal workspace</button>
+              <button aria-pressed={kind === "business"} className={kind === "business" ? "selected" : ""} type="button" onClick={() => setKind("business")}>Organization</button>
             </div>
-          ) : (
-            <p className="setting-hint">Personal workspaces are single-seat. Create an organization to invite teammates.</p>
-          )}
-          {kind === "business" && inviteDeferred ? <p className="setting-hint">Invite teammates after checkout unlocks the workspace.</p> : null}
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
-        </div>
-        <div className="workspace-create-actions">
-          <button className="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="primary-button" type="button" onClick={submit} disabled={busy || personalBlocked || !trimmedName || !nameAvailable}>
-            {busy ? "Creating" : plan === "free" ? "Create workspace" : "Continue to checkout"}
-          </button>
-        </div>
+            {personalBlocked ? <p className="form-error">You already have a personal workspace.</p> : null}
+            <label className="workspace-create-field">
+              {kind === "personal" ? "Workspace name" : "Organization name"}
+              <input autoFocus name="workspace-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
+            </label>
+            {trimmedName ? (
+              <p className={`workspace-create-status ${availability?.available === false ? "error" : ""}`} role={availability?.available === false ? "alert" : "status"}>
+                {availabilityStatus}
+              </p>
+            ) : null}
+            <div className="workspace-plan-grid" role="group" aria-label="Plan">
+              {(["free", "pro", "premium"] as const).map((tier) => (
+                <button aria-pressed={plan === tier} className={plan === tier ? "selected" : ""} key={tier} type="button" onClick={() => setPlan(tier)}>
+                  <strong>{planName(tier)}</strong>
+                  <span>{tier === "free" ? "Start small" : tier === "pro" ? "Team default" : "BYOC ready"}</span>
+                </button>
+              ))}
+            </div>
+            <div className="workspace-storage-choice" role="group" aria-label="Storage">
+              <label>
+                <input checked={normalizedStorage === "instantml-hosted"} name="workspace-storage" onChange={() => setStorage("instantml-hosted")} type="radio" />
+                InstantML-hosted
+              </label>
+              <label className={byocBlocked ? "disabled" : ""}>
+                <input checked={normalizedStorage === "customer-clickhouse"} disabled={byocBlocked} name="workspace-storage" onChange={() => setStorage("customer-clickhouse")} type="radio" />
+                Advanced: connect my ClickHouse
+              </label>
+            </div>
+            {kind === "business" ? (
+              <div className="workspace-invite-row">
+                <label className="workspace-create-field">
+                  Invite teammates
+                  <input autoComplete="email" disabled={inviteDeferred} value={inviteDeferred ? "" : inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder={inviteDeferred ? "Invite after checkout" : "teammate@example.com"} type="email" />
+                </label>
+                <CustomSelect
+                  id="workspace-create-role"
+                  label="Role"
+                  disabled={inviteDeferred}
+                  onChange={(value) => setInviteRole(value === "admin" || value === "viewer" ? value : "member")}
+                  options={[
+                    { value: "member", label: "Write/read" },
+                    { value: "admin", label: "Admin" },
+                    { value: "viewer", label: "Read only" },
+                  ]}
+                  value={inviteRole}
+                />
+              </div>
+            ) : (
+              <p className="setting-hint">Personal workspaces are single-seat. Create an organization to invite teammates.</p>
+            )}
+            {kind === "business" && inviteDeferred ? <p className="setting-hint">Invite teammates after checkout unlocks the workspace.</p> : null}
+            {error ? <p className="form-error" role="alert">{error}</p> : null}
+          </div>
+          <div className="workspace-create-actions">
+            <button className="ghost" type="button" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={busy || personalBlocked || !trimmedName || !nameAvailable}>
+              {busy ? "Creating" : plan === "free" ? "Create workspace" : "Continue to checkout"}
+            </button>
+          </div>
+        </form>
       </section>
     </div>
   );
@@ -600,6 +612,8 @@ export function DashboardTopbar({
   project,
   projects,
   query,
+  searchError,
+  searchErrorStale,
   savedViewKey,
   savedViews,
   sortBy,
@@ -648,6 +662,8 @@ export function DashboardTopbar({
   project: string;
   projects: string[];
   query: string;
+  searchError: RunSearchError;
+  searchErrorStale: boolean;
   savedViewKey: string;
   savedViews: SelectOption[];
   sortBy: string;
@@ -666,6 +682,8 @@ export function DashboardTopbar({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
   const [compactFilters, setCompactFilters] = useState(false);
+  const [searchHelpOpen, setSearchHelpOpen] = useState(false);
+  const searchHelpRef = useRef<HTMLDivElement>(null);
   const dark = theme === "dark";
   const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
@@ -673,6 +691,9 @@ export function DashboardTopbar({
   const showWorkbar = activeTab !== "detail";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
+  const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
+    ? ` Column ${searchError.position}.`
+    : "";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -695,6 +716,22 @@ export function DashboardTopbar({
       root.style.removeProperty("--topbar-height");
     };
   }, [desktopFiltersCollapsed, showWorkbar]);
+
+  useEffect(() => {
+    if (!searchHelpOpen) return undefined;
+    function closeFromOutside(event: globalThis.PointerEvent) {
+      if (!searchHelpRef.current?.contains(event.target as Node)) setSearchHelpOpen(false);
+    }
+    function closeFromEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setSearchHelpOpen(false);
+    }
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", closeFromEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", closeFromEscape);
+    };
+  }, [searchHelpOpen]);
 
   return (
     <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`}>
@@ -758,14 +795,6 @@ export function DashboardTopbar({
                 <SlidersHorizontal size={15} />
               </button>
             ) : null}
-            <a
-              aria-label="Open docs"
-              className="icon-button framed brandbar-action-desktop"
-              href="/docs"
-              title="Docs"
-            >
-              <BookOpen size={15} />
-            </a>
             <button
               aria-label="Keyboard shortcuts"
               className="icon-button framed brandbar-action-desktop"
@@ -775,6 +804,14 @@ export function DashboardTopbar({
             >
               <CircleHelp size={15} />
             </button>
+            <a
+              aria-label="Open docs"
+              className="icon-button framed brandbar-action-desktop"
+              href="/docs"
+              title="Docs"
+            >
+              <BookOpen size={15} />
+            </a>
             <button
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
               aria-pressed={dark}
@@ -818,10 +855,61 @@ export function DashboardTopbar({
             ]}
           />
           <span className="workbar-divider" aria-hidden="true" />
-          <label className="workbar-search">
-            <Search size={13} />
-            <input id="search" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="runs, tags, notes, config" aria-label="Search runs" />
-          </label>
+          <div
+            className={`workbar-search-group ${searchError ? "has-error" : ""} ${searchErrorStale ? "stale-error" : ""}`}
+            ref={searchHelpRef}
+          >
+            <label className="workbar-search">
+              <Search size={13} />
+              <input
+                aria-describedby={`run-search-help-note${searchError && !searchErrorStale ? " run-search-error" : ""}`}
+                aria-invalid={Boolean(searchError && !searchErrorStale)}
+                id="search"
+                onChange={(event) => onQuery(event.target.value)}
+                placeholder="runs, tags, notes, config"
+                type="search"
+                value={query}
+                aria-label="Search runs"
+              />
+            </label>
+            <button
+              aria-controls="run-search-help"
+              aria-expanded={searchHelpOpen}
+              aria-label="Run search syntax"
+              className="icon-button workbar-search-help"
+              onClick={() => setSearchHelpOpen((open) => !open)}
+              title="Run search syntax"
+              type="button"
+            >
+              <CircleHelp size={14} />
+            </button>
+            <span className="visually-hidden" id="run-search-help-note">
+              Search supports bare text, field filters, uppercase boolean operators, quoted phrases, and explicit regex.
+            </span>
+            {searchHelpOpen ? (
+              <div className="workbar-search-popover" id="run-search-help" role="note" aria-label="Run search syntax">
+                <strong>Run search</strong>
+                <code>reward stability</code>
+                <code>tag:baseline status:finished</code>
+                <code>name:"long context" -tag:debug</code>
+                <code>(tag:baseline OR tag:candidate) notes:ablated</code>
+                <code>re:/seed-(13|14)/</code>
+                <span>Regex requires the Rust API.</span>
+                <span>Fields: all, name, project, notes, config, metadata, tag/tags, status, id.</span>
+              </div>
+            ) : null}
+            {searchError ? (
+              <span
+                className="workbar-search-error"
+                id="run-search-error"
+                role="status"
+                aria-live="polite"
+                title={searchError.message}
+              >
+                {searchError.message}{searchErrorPositionSuffix}
+              </span>
+            ) : null}
+          </div>
           <CustomSelect
             className="compact"
             id="sort-select"

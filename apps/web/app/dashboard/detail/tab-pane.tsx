@@ -6,6 +6,7 @@ import type { Artifact, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries,
 type ChartZoomRange = { min: number; max: number } | null;
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;
+  post(path: string, body?: any, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<any>;
 };
 
 type Props = {
@@ -18,6 +19,7 @@ type Props = {
   onChartMove: (event: MouseEvent<SVGSVGElement>) => void;
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
+  onForkCheckpoint?: (artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) => Promise<void>;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   primaryDomain: any;
@@ -44,6 +46,7 @@ export function DetailTabPane({
   onChartMove,
   onChartPointHover,
   onChartZoomRangeChange,
+  onForkCheckpoint,
   onRunMetadataSave,
   onWorkspaceTabChange,
   primaryDomain,
@@ -81,6 +84,7 @@ export function DetailTabPane({
         onChartMove={onChartMove}
         onChartPointHover={onChartPointHover}
         onChartZoomRangeChange={onChartZoomRangeChange}
+        onForkCheckpoint={onForkCheckpoint}
         onRunMetadataSave={onRunMetadataSave}
         onWorkspaceTabChange={onWorkspaceTabChange}
         run={run}

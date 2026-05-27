@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLocalArtifactStore } from "./artifact-store.js";
-import { ConflictError, ForbiddenError, PlanLimitError, UnauthorizedError, defaultDbPath, NotFoundError, openStore, ValidationError } from "./db.js";
+import { ConflictError, ForbiddenError, PlanLimitError, SearchValidationError, UnauthorizedError, defaultDbPath, NotFoundError, openStore, ValidationError } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_WEB_ROOT = path.resolve(__dirname, "..", "..", "web");
@@ -402,6 +402,11 @@ function writeError(res, error) {
   const message = status === 500 ? "internal server error" : error.message;
   const payload = { error: message };
   if (error instanceof PlanLimitError) payload.code = "plan_limit_exceeded";
+  if (error instanceof SearchValidationError) {
+    payload.code = error.code;
+    payload.field = error.field;
+    if (Number.isInteger(error.position)) payload.position = error.position;
+  }
   const body = Buffer.from(JSON.stringify(payload));
   res.writeHead(status, {
     "Content-Type": "application/json",

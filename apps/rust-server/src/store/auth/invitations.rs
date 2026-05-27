@@ -1699,6 +1699,7 @@ mod tests {
                 credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
@@ -1740,6 +1741,9 @@ mod tests {
             created_at: Utc::now(),
             started_at: Utc::now(),
             finished_at: Some(Utc::now()),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 

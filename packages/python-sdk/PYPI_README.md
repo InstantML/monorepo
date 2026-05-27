@@ -53,6 +53,27 @@ for step, batch in enumerate(loader):
 run.finish()
 ```
 
+## Fork and attach to a checkpoint retry
+
+When the dashboard or API creates a linked fork from a checkpoint, attach the
+SDK to that existing run record and continue logging:
+
+```python
+api = im.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
+child = api.fork_run("source-run-id", checkpoint_artifact_id="artifact-id", step=500)
+run = im.attach_run(child["id"], base_url="http://127.0.0.1:8000", api_key="instantml_...")
+run.log({"loss": 0.12}, step=501)
+run.finish()
+```
+
+Forking creates a same-project linked run record only; it does not start
+training or copy metrics/artifacts. The SDK derives a stable fork idempotency
+key from the request body by default so retrying the same fork call returns the
+same child run instead of creating duplicates. `attach_run()` validates the
+target run by default and uses async uploads; use `validate=False` only for
+write-only credentials or intentionally offline attach flows, and call
+`finish()` or `wait_for_processing()` before short scripts exit.
+
 ## Running on a remote server or CI
 
 Skip `instantml login` and pass credentials explicitly. Two ways:
@@ -119,6 +140,12 @@ pip install "instantml[media]"     # Pillow, imageio, moviepy, soundfile
 pip install "instantml[system]"    # psutil, pynvml
 pip install "instantml[all]"
 ```
+
+`source_tracking=True` uses privacy-safe defaults: entrypoint basename, git
+availability/commit/dirty state, Python version, and platform. Pass
+`im.SourceTracking(...)` to opt into argv, cwd/repo root, branch, host/pid, and
+safe git diff summary/digest capture; raw patch text is not stored in run
+metadata.
 
 The SDK also ships a process-isolated spool uploader for high-throughput offline replay:
 

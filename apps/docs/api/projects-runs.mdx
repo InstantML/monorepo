@@ -67,13 +67,28 @@ Filters:
 | --- | --- |
 | `project` | Project name, omitted or `all` for all projects. |
 | `status` | `running`, `finished`, `failed`, omitted, or `all`. |
-| `q` | Whitespace-token search over run name, tags, config, metadata, and notes. |
+| `q` | Run search query over run name, project, tags, notes, config, metadata, status, and ID. Bare text is implicit `AND`; fields, uppercase booleans, quoted phrases, field/group exclusion with `-`, grouping, and explicit Rust `re:/.../` regex are supported. Literal negative terms such as `-1` remain text searches. |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, or `metric-best`. |
 | `metric_key` | Metric used by metric sorts. |
 | `limit` | Page size. |
 | `offset` | Offset pagination. |
 
 Use `/api/runs/summary` for dashboard-shaped pages with metric summaries.
+
+Search examples:
+
+```text
+reward stability
+tag:baseline status:finished
+name:"long context" -tag:debug
+(tag:baseline OR tag:candidate) notes:ablated
+re:/seed-(13|14)/
+```
+
+Invalid closed search syntax returns HTTP `400` with
+`code: "run_search_invalid"`, `field: "q"`, and an optional 1-based
+`position`. Deprecated Node compatibility rejects completed regex with
+`code: "run_search_regex_unsupported"`.
 
 ## Read one run
 

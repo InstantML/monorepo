@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, CopyPlus, GripVertical, Maximize2, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { averageGroupedSeries, axisTicks, chartDomain, formatAxisValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../../src/charts.js";
@@ -215,8 +215,9 @@ export function WorkspacePanelCard({
   const [panelHover, setPanelHover] = useState<HoverPoint>(null);
   const [panelZoomRange, setPanelZoomRange] = useState<{ min: number; max: number } | null>(null);
   const [resizePreview, setResizePreview] = useState<WorkspacePanelLayout | null>(null);
-  const settings = resolveWorkspaceSettings(view, section, panel);
-  const layout = resizePreview ?? normalizedPanelLayout(panel.layout);
+  const resizeCleanupRef = useRef<() => void>(() => {});
+  const settings = useMemo(() => resolveWorkspaceSettings(view, section, panel), [panel, section, view]);
+  const layout = useMemo(() => resizePreview ?? normalizedPanelLayout(panel.layout), [panel.layout, resizePreview]);
   const isFullscreenPanel = className.split(/\s+/).includes("fullscreen-panel-card");
   const panelChartWidth = isFullscreenPanel ? 920 : chartWidth;
   const panelChartHeight = isFullscreenPanel ? 430 : chartHeight;
@@ -227,20 +228,27 @@ export function WorkspacePanelCard({
     "--panel-min-height": `${layout.h * 78}px`,
     "--panel-chart-min-height": `${layout.h * 54}px`,
   } as CSSProperties;
-  const workspaceRunLookup = new Map(workspacePanelRuns.map((run) => [run.id, run]));
-  const selectedVisibleRuns = selectedRunIds.length
-    ? selectedRunIds.map((runId) => workspaceRunLookup.get(runId)).filter(Boolean) as RunSummary[]
-    : [];
-  const panelRuns = selectedVisibleRuns.length
-    ? selectedVisibleRuns.slice(0, MAX_SELECTED_RUNS)
-    : workspacePanelRuns.slice(0, settings.maxRuns);
+  const selectedRunKey = useMemo(() => selectedRunIds.join("\u0000"), [selectedRunIds]);
+  const workspaceRunLookup = useMemo(() => new Map(workspacePanelRuns.map((run) => [run.id, run])), [workspacePanelRuns]);
+  const selectedVisibleRuns = useMemo(() => (
+    selectedRunIds.length
+      ? selectedRunIds.map((runId) => workspaceRunLookup.get(runId)).filter(Boolean) as RunSummary[]
+      : []
+  ), [selectedRunIds, workspaceRunLookup]);
+  const panelRuns = useMemo(() => (
+    selectedVisibleRuns.length
+      ? selectedVisibleRuns.slice(0, MAX_SELECTED_RUNS)
+      : workspacePanelRuns.slice(0, settings.maxRuns)
+  ), [selectedVisibleRuns, settings.maxRuns, workspacePanelRuns]);
   const selectedOverflow = selectedVisibleRuns.length > panelRuns.length;
-  const panelRunIds = new Set(panelRuns.map((run) => run.id));
-  const runLookup = new Map(panelRuns.map((run) => [run.id, run]));
+  const panelRunIds = useMemo(() => new Set(panelRuns.map((run) => run.id)), [panelRuns]);
+  const runLookup = useMemo(() => new Map(panelRuns.map((run) => [run.id, run])), [panelRuns]);
   const linePanel = panel.type === "line";
   const hasFetchedMetric = !linePanel || Object.prototype.hasOwnProperty.call(workspaceSeries, panel.metricKey);
-  const rawSeries = (workspaceSeries[panel.metricKey] ?? []).filter((item) => panelRunIds.has(item.id) && (item.points?.length ?? 0) > 0);
-  const latestValues = latestMetricValues(panelRuns, panel.metricKey);
+  const rawSeries = useMemo(() => (
+    (workspaceSeries[panel.metricKey] ?? []).filter((item) => panelRunIds.has(item.id) && (item.points?.length ?? 0) > 0)
+  ), [panel.metricKey, panelRunIds, workspaceSeries]);
+  const latestValues = useMemo(() => latestMetricValues(panelRuns, panel.metricKey), [panel.metricKey, panelRuns]);
   const loadingSeries = linePanel && panelRuns.length > 0 && !hasFetchedMetric;
   const plottedSeriesCount = linePanel ? rawSeries.length : latestValues.length;
   const missingSeriesCount = Math.max(0, panelRuns.length - plottedSeriesCount);
@@ -251,19 +259,28 @@ export function WorkspacePanelCard({
     : loadingSeries
       ? `loading ${panelRuns.length} visible`
       : `${plottedSeriesCount}/${panelRuns.length} visible`;
-  const groupedSeries = rawSeries.map((item) => {
+  const groupedSeries = useMemo(() => rawSeries.map((item) => {
     const run = runLookup.get(item.id);
     return { ...item, group: run ? groupKeyForRun(run, settings.groupBy) : item.group ?? "all" };
-  });
-  const preparedSeries = smoothSeries(settings.groupAverage ? averageGroupedSeries(groupedSeries) : groupedSeries, settings.smoothing);
-  const fullDomain = chartDomain(preparedSeries, settings.xMode, panel.metricKey);
-  const rangeSeries = normalizeSeries(preparedSeries, panelChartWidth, panelChartHeight, panelChartPadding, settings.xMode, panel.metricKey);
-  const normalized = normalizeSeries(preparedSeries, panelChartWidth, panelChartHeight, panelChartPadding, settings.xMode, panel.metricKey, panelZoomRange);
-  const domain = chartDomain(preparedSeries, settings.xMode, panel.metricKey, panelZoomRange);
+  }), [rawSeries, runLookup, settings.groupBy]);
+  const preparedSeries = useMemo(() => (
+    smoothSeries(settings.groupAverage ? averageGroupedSeries(groupedSeries) : groupedSeries, settings.smoothing)
+  ), [groupedSeries, settings.groupAverage, settings.smoothing]);
+  const fullDomain = useMemo(() => chartDomain(preparedSeries, settings.xMode, panel.metricKey), [panel.metricKey, preparedSeries, settings.xMode]);
+  const rangeSeries = useMemo(() => (
+    normalizeSeries(preparedSeries, panelChartWidth, panelChartHeight, panelChartPadding, settings.xMode, panel.metricKey)
+  ), [panel.metricKey, panelChartHeight, panelChartPadding, panelChartWidth, preparedSeries, settings.xMode]);
+  const normalized = useMemo(() => (
+    normalizeSeries(preparedSeries, panelChartWidth, panelChartHeight, panelChartPadding, settings.xMode, panel.metricKey, panelZoomRange)
+  ), [panel.metricKey, panelChartHeight, panelChartPadding, panelChartWidth, panelZoomRange, preparedSeries, settings.xMode]);
+  const domain = useMemo(() => chartDomain(preparedSeries, settings.xMode, panel.metricKey, panelZoomRange), [panel.metricKey, panelZoomRange, preparedSeries, settings.xMode]);
   useEffect(() => {
     setPanelHover(null);
     setPanelZoomRange(null);
-  }, [panel.metricKey, panel.type, settings.xMode, settings.groupBy, settings.groupAverage, settings.smoothing, settings.maxRuns, selectedRunIds.join(",")]);
+  }, [panel.metricKey, panel.type, settings.xMode, settings.groupBy, settings.groupAverage, settings.smoothing, settings.maxRuns, selectedRunKey]);
+  useEffect(() => () => {
+    resizeCleanupRef.current();
+  }, []);
   function handlePanelChartMove(event: MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const point = svgPointFromClient(rect, event.clientX, event.clientY, panelChartWidth, panelChartHeight);
@@ -277,6 +294,7 @@ export function WorkspacePanelCard({
     const card = event.currentTarget.closest<HTMLElement>(".workspace-panel-card");
     const grid = event.currentTarget.closest<HTMLElement>(".workspace-panel-grid");
     if (!card || !grid) return;
+    resizeCleanupRef.current();
     const startX = event.clientX;
     const startY = event.clientY;
     const startLayout = normalizedPanelLayout(panel.layout);
@@ -285,9 +303,20 @@ export function WorkspacePanelCard({
     const pointerId = event.pointerId;
     const target = event.currentTarget;
     try {
-      event.currentTarget.setPointerCapture(pointerId);
+      target.setPointerCapture(pointerId);
     } catch {
       // Synthetic pointer events in browser tests may not have an active pointer capture target.
+    }
+    function cleanupResizeListeners() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      try {
+        if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+      } catch {
+        // The target may be gone if React unmounted during a drag.
+      }
+      resizeCleanupRef.current = () => {};
     }
     function handlePointerMove(pointerEvent: globalThis.PointerEvent) {
       const next = {
@@ -303,12 +332,16 @@ export function WorkspacePanelCard({
       };
       setResizePreview(null);
       commitResize(next);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+      cleanupResizeListeners();
     }
+    function handlePointerCancel() {
+      setResizePreview(null);
+      cleanupResizeListeners();
+    }
+    resizeCleanupRef.current = cleanupResizeListeners;
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
   return (
     <article

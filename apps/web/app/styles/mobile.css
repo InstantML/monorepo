@@ -154,7 +154,7 @@
     min-height: 40px;
   }
   /* Long-form / wide controls take the full row. */
-  .topbar--workbar.mobile-filters-open .workbar-search,
+  .topbar--workbar.mobile-filters-open .workbar-search-group,
   .topbar--workbar.mobile-filters-open .workbar .workbar-name,
   .topbar--workbar.mobile-filters-open .workbar #save-view,
   .topbar--workbar.mobile-filters-open .workbar .system-status,
@@ -164,9 +164,21 @@
     grid-column: 1 / -1;
     width: 100%;
   }
+  .topbar--workbar.mobile-filters-open .workbar-search-group {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
   .topbar--workbar.mobile-filters-open .workbar-search {
+    flex: 1 1 calc(100% - 34px);
+    width: auto;
     height: 40px;
     min-height: 40px;
+  }
+  .topbar--workbar.mobile-filters-open .workbar-search-error {
+    position: static;
+    flex: 1 0 100%;
+    max-width: 100%;
+    margin-top: 2px;
   }
   .topbar--workbar.mobile-filters-open .workbar-divider,
   .topbar--workbar.mobile-filters-open .workbar-spacer,
@@ -787,6 +799,9 @@
   .checkpoint-row { grid-template-columns: 1fr; }
   .checkpoint-actions { justify-content: flex-start; }
   .checkpoint-actions > * { flex: 1 1 auto; }
+  .checkpoint-fork-grid { grid-template-columns: 1fr; }
+  .checkpoint-fork-actions { flex-direction: column-reverse; }
+  .lineage-cards { grid-template-columns: 1fr; }
 
   /* ── LOW ────────────────────────────────────────────────────────────── */
 

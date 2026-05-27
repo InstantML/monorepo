@@ -65,28 +65,28 @@ use crate::{
         ClickHouseConnectionValidateRequest, ClickHouseConnectionValidationResponse,
         ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
         CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest, CreateInvitationRequest,
-        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunRequest,
-        CreateUserRequest, CreatedAuthSession, CurrentUserOrganizationCreateResponse,
-        DashboardPreferenceRow, DevGoogleAuthRequest, EmailDeliveryRow,
-        InitialInvitationCreateResult, InitialOrganizationInvitation, InvitationPreviewPayload,
-        InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest, MembershipRow,
-        MetricSeriesRow, OnboardingApiKey, OrgInvitationRow, OrganizationMembershipSummary,
-        OrganizationRoleCapabilities, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
-        RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-        RankReducerPoint, RequestContext, ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest,
-        SeatRow, SeatUserRow, ServiceAccountRow, SessionContext, UpdateDashboardPreferencesRequest,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
-        WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE,
-        BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED,
-        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES,
-        MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES,
-        MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS,
-        MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS,
-        MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE,
-        PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED,
-        STORAGE_STATE_LOCKED, STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED,
-        STORAGE_STATE_VALIDATING,
+        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateRunForkRequest,
+        CreateRunRequest, CreateUserRequest, CreatedAuthSession,
+        CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DevGoogleAuthRequest,
+        EmailDeliveryRow, InitialInvitationCreateResult, InitialOrganizationInvitation,
+        InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
+        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
+        OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
+        ProvisioningStatusPayload, PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint,
+        RankHeatmapPoint, RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse,
+        RankOutlierPoint, RankReducerPoint, RequestContext, ReserveSeatRequest, RunRow,
+        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
+        UpdateDashboardPreferencesRequest, UpdateRunRequest, UploadArtifactRequest, UserRow,
+        UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED,
+        BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
+        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
+        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
+        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
+        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
+        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
+        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
+        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
+        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -145,6 +145,7 @@ pub struct Store {
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     byoc_clickhouse: ByocClickHouseConfig,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
+    customer_tenant_endpoints: Arc<Mutex<HashMap<Uuid, String>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
     /// MetricStore wired to the shared ClickHouse cell.
     /// All personal/free orgs route here instead of getting a dedicated service.
@@ -187,6 +188,7 @@ impl Store {
             hosted_clickhouse,
             byoc_clickhouse,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
@@ -507,7 +509,8 @@ struct StoreData {
     runs: BTreeMap<Uuid, RunRow>,
     runs_by_org_created: BTreeMap<(Uuid, DateTime<Utc>, Uuid), Uuid>,
     runs_by_org_project_created: BTreeMap<(Uuid, String, DateTime<Utc>, Uuid), Uuid>,
-    run_search_texts: HashMap<Uuid, String>,
+    runs_by_parent_created: BTreeMap<(Uuid, Uuid, DateTime<Utc>, Uuid), Uuid>,
+    run_search_documents: HashMap<Uuid, Arc<RunSearchDocument>>,
     attributes: BTreeMap<(Uuid, i64), AttributeRow>,
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
     artifacts: BTreeMap<Uuid, ArtifactRow>,
@@ -662,6 +665,9 @@ impl StoreData {
     }
 
     fn insert_org(&mut self, org: OrganizationRow) {
+        if let Some(existing) = self.organizations.get(&org.id) {
+            self.orgs_by_slug.remove(&existing.slug);
+        }
         self.orgs_by_slug.insert(org.slug.clone(), org.id);
         self.organizations.insert(org.id, org);
     }
@@ -721,6 +727,14 @@ impl StoreData {
                 existing.created_at,
                 existing.id,
             ));
+            if let Some(parent_run_id) = existing.parent_run_id {
+                self.runs_by_parent_created.remove(&(
+                    existing.org_id,
+                    parent_run_id,
+                    existing.created_at,
+                    existing.id,
+                ));
+            }
         }
         self.runs_by_org_created
             .insert((run.org_id, run.created_at, run.id), run.id);
@@ -728,7 +742,12 @@ impl StoreData {
             (run.org_id, run.project.clone(), run.created_at, run.id),
             run.id,
         );
-        self.run_search_texts.insert(run.id, run_search_text(&run));
+        if let Some(parent_run_id) = run.parent_run_id {
+            self.runs_by_parent_created
+                .insert((run.org_id, parent_run_id, run.created_at, run.id), run.id);
+        }
+        self.run_search_documents
+            .insert(run.id, Arc::new(run_search_document(&run)));
         self.runs.insert(run.id, run);
     }
 
@@ -841,7 +860,15 @@ impl StoreData {
                 run.created_at,
                 run.id,
             ));
-            self.run_search_texts.remove(&run.id);
+            if let Some(parent_run_id) = run.parent_run_id {
+                self.runs_by_parent_created.remove(&(
+                    run.org_id,
+                    parent_run_id,
+                    run.created_at,
+                    run.id,
+                ));
+            }
+            self.run_search_documents.remove(&run.id);
         }
     }
 
@@ -1340,6 +1367,9 @@ mod tests {
             created_at: epoch(),
             started_at: epoch(),
             finished_at: None,
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 
