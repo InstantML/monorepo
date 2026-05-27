@@ -153,7 +153,7 @@ The SDK also ships a process-isolated spool uploader for high-throughput offline
 instantml-uploader --spool-dir .instantml/spool
 ```
 
-By default, `instantml.init()` uses durable async metric/log uploads:
+By default, `instantml.init()` uses buffered async metric/log uploads:
 
 ```python
 run = instantml.init(project="cartpole")
@@ -163,14 +163,20 @@ run.wait_for_submission(timeout=30)
 run.finish(timeout=30)
 ```
 
-Async mode stores scalar metrics, rank metrics, console logs, and final status in
-a per-run SQLite WAL queue, then drains that queue in a background uploader
-process. Network and delivery errors are surfaced through `run.upload_status()`
-and warnings instead of raising from the hot logging path. Pass
-`upload_mode="sync"` when a script or CI check needs immediate foreground API
-errors from metric/log calls. Pass `queue_dir="..."` to move the default
-`.instantml/async` local queue. Orphaned queues can be recovered with the same
-environment or `instantml login` credentials:
+Async mode snapshots scalar metrics, rank metrics, console logs, and final
+status into a small process-local producer buffer, group-commits them to a
+per-run SQLite WAL queue, then drains that queue in a background uploader
+process. The default producer flushes at 64 events, 64 KiB, or 20 ms. A returned
+async `log()` can be lost if the Python process is killed before that short
+buffer reaches SQLite, so call `finish()`, `flush()`, or a wait helper before
+short scripts exit. Network and delivery errors are surfaced through
+`run.upload_status()` and warnings instead of raising from the hot logging path.
+Pass `upload_mode="sync"` when a script or CI check needs immediate foreground
+API errors from metric/log calls. Pass `queue_dir="..."` to move the default
+`.instantml/async` local queue. Flushed queue payloads are stored as plaintext
+SQLite WAL files with owner-only permissions where the OS supports them.
+Orphaned flushed queues can be recovered with the same environment or
+`instantml login` credentials:
 
 ```bash
 instantml-uploader --queue-dir .instantml/async

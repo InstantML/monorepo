@@ -33,6 +33,12 @@ DEFAULT_HEALTH_INTERVAL_SECONDS = 5.0
 DEFAULT_ERROR_RETENTION = 1_000
 DEFAULT_SQLITE_JOURNAL_SIZE_LIMIT = 16 * 1024 * 1024
 DEFAULT_LOCK_STALE_SECONDS = 24 * 60 * 60
+DEFAULT_PRODUCER_BATCH_EVENTS = 64
+DEFAULT_PRODUCER_BATCH_BYTES = 64 * 1024
+DEFAULT_PRODUCER_FLUSH_SECONDS = 0.020
+DEFAULT_PRODUCER_MAX_BUFFER_EVENTS = 4_096
+DEFAULT_PRODUCER_MAX_BUFFER_BYTES = 4 * 1024 * 1024
+DEFAULT_PRODUCER_RETRY_SECONDS = 0.020
 ASYNC_HEALTH_PREFIX = "system/instantml/"
 _RETRYABLE_HTTP_STATUSES = {408, 409, 500, 502, 503, 504}
 _TERMINAL_CODES = {
@@ -52,6 +58,25 @@ class AsyncQueueConfig:
     max_queue_bytes: int = DEFAULT_MAX_QUEUE_BYTES
     min_free_disk_bytes: int = DEFAULT_MIN_FREE_DISK_BYTES
     processed_retention: int = DEFAULT_PROCESSED_RETENTION
+
+
+@dataclass(frozen=True)
+class PreparedQueuedEvent:
+    created_at: float
+    method: str
+    path: str
+    body_json: str
+    body_size_bytes: int
+    idempotency_key: str
+
+
+@dataclass(frozen=True)
+class EnqueueBatchResult:
+    inserted: int
+    dropped: int
+    first_sequence_id: int | None = None
+    last_sequence_id: int | None = None
+    message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -245,6 +270,7 @@ class AsyncQueueRepository:
     def init_db(self) -> None:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._harden_file_permissions()
             conn = self._connect()
             conn.executescript(
                 """
@@ -288,35 +314,104 @@ class AsyncQueueRepository:
             )
             conn.execute("insert or ignore into queue_meta (key, value) values (?, ?)", ("version", "1"))
             conn.commit()
+            self._harden_file_permissions()
+
+    def prepare_event(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+        created_at: float | None = None,
+    ) -> PreparedQueuedEvent:
+        payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
+        size_bytes = len(payload.encode("utf-8"))
+        return PreparedQueuedEvent(
+            created_at=time.time() if created_at is None else created_at,
+            method=method,
+            path=path,
+            body_json=payload,
+            body_size_bytes=size_bytes,
+            idempotency_key=idempotency_key or f"instantml-{uuid.uuid4().hex}",
+        )
 
     def enqueue(self, method: str, path: str, body: dict[str, Any], idempotency_key: str | None = None) -> int | None:
+        event = self.prepare_event(method, path, body, idempotency_key=idempotency_key)
+        result = self.enqueue_many_prepared([event])
+        return result.first_sequence_id
+
+    def enqueue_many_prepared(self, events: list[PreparedQueuedEvent]) -> EnqueueBatchResult:
+        if not events:
+            return EnqueueBatchResult(inserted=0, dropped=0)
         with self._lock:
-            payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
-            size_bytes = len(payload.encode("utf-8"))
-            if size_bytes > self.max_event_bytes or self._queue_is_full(size_bytes) or not self._has_disk_space():
-                self.increment_counter("dropped")
-                return None
-            now = time.time()
-            key = idempotency_key or f"instantml-{uuid.uuid4().hex}"
+            oversized = [event for event in events if event.body_size_bytes > self.max_event_bytes]
+            eligible = [event for event in events if event.body_size_bytes <= self.max_event_bytes]
+            dropped = len(oversized)
+            message = "event exceeds async queue max_event_bytes" if oversized else None
+            if eligible and not self._has_disk_space():
+                dropped += len(eligible)
+                eligible = []
+                message = "insufficient free disk space for async queue"
+            if eligible:
+                try:
+                    available_bytes = self._available_queue_bytes()
+                except sqlite3.Error as exc:
+                    raise InstantMLError(f"async queue enqueue failed: {exc}") from exc
+                selected = []
+                selected_bytes = 0
+                for event in eligible:
+                    if selected_bytes + event.body_size_bytes <= available_bytes:
+                        selected.append(event)
+                        selected_bytes += event.body_size_bytes
+                    else:
+                        dropped += len(eligible) - len(selected)
+                        message = "async queue byte limit reached"
+                        break
+                eligible = selected
+            if not eligible:
+                if dropped:
+                    self.increment_counter("dropped", dropped)
+                return EnqueueBatchResult(inserted=0, dropped=dropped, message=message)
             try:
                 conn = self._connect()
-                cursor = conn.execute(
+                conn.executemany(
                     """
                     insert into events (
                       created_at, updated_at, method, path, body_json, body_size_bytes,
                       idempotency_key, status, next_attempt_at
                     ) values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
                     """,
-                    (now, now, method, path, payload, size_bytes, key, now),
+                    [
+                        (
+                            event.created_at,
+                            event.created_at,
+                            event.method,
+                            event.path,
+                            event.body_json,
+                            event.body_size_bytes,
+                            event.idempotency_key,
+                            event.created_at,
+                        )
+                        for event in eligible
+                    ],
                 )
+                if dropped:
+                    self._increment_counter_uncommitted(conn, "dropped", dropped)
+                last_row = conn.execute("select last_insert_rowid()").fetchone()
                 conn.commit()
-                return int(cursor.lastrowid)
+                last_sequence_id = int(last_row[0]) if last_row and last_row[0] is not None else None
+                first_sequence_id = None
+                if last_sequence_id is not None:
+                    first_sequence_id = last_sequence_id - len(eligible) + 1
+                return EnqueueBatchResult(
+                    inserted=len(eligible),
+                    dropped=dropped,
+                    first_sequence_id=first_sequence_id,
+                    last_sequence_id=last_sequence_id,
+                    message=message,
+                )
             except sqlite3.Error as exc:
                 self._rollback_quietly()
-                try:
-                    self.increment_counter("dropped")
-                except sqlite3.Error:
-                    pass
                 raise InstantMLError(f"async queue enqueue failed: {exc}") from exc
 
     def claim_batch(
@@ -550,13 +645,7 @@ class AsyncQueueRepository:
     def increment_counter(self, key: str, amount: int = 1) -> None:
         with self._lock:
             conn = self._connect()
-            conn.execute(
-                """
-                insert into counters (key, value) values (?, ?)
-                on conflict(key) do update set value = value + excluded.value
-                """,
-                (key, amount),
-            )
+            self._increment_counter_uncommitted(conn, key, amount)
             conn.commit()
 
     def counter(self, key: str) -> int:
@@ -595,26 +684,44 @@ class AsyncQueueRepository:
         with self._lock:
             if self._connection is None:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
+                self._harden_file_permissions()
+                if not self.path.exists():
+                    fd = os.open(self.path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+                    os.close(fd)
                 self._connection = sqlite3.connect(self.path, timeout=self._timeout, check_same_thread=False)
                 self._connection.row_factory = sqlite3.Row
                 self._connection.execute("pragma journal_mode=wal")
                 self._connection.execute("pragma synchronous=normal")
                 self._connection.execute(f"pragma busy_timeout={int(self._timeout * 1000)}")
                 self._connection.execute(f"pragma journal_size_limit={DEFAULT_SQLITE_JOURNAL_SIZE_LIMIT}")
+                self._harden_file_permissions()
             return self._connection
 
     def _queue_is_full(self, next_bytes: int) -> bool:
         with self._lock:
             try:
-                row = self._connect().execute(
-                    "select coalesce(sum(body_size_bytes), 0) as bytes from events where status != 'processed'"
-                ).fetchone()
-                queued = int(row["bytes"] if row else 0)
-                logical_full = queued + next_bytes > self.max_queue_bytes
-                physical_full = self._queue_file_size_bytes() + next_bytes > self.max_queue_bytes
-                return logical_full or physical_full
+                available = self._available_queue_bytes()
+                return next_bytes > available
             except sqlite3.Error:
                 return False
+
+    def _available_queue_bytes(self) -> int:
+        row = self._connect().execute(
+            "select coalesce(sum(body_size_bytes), 0) as bytes from events where status != 'processed'"
+        ).fetchone()
+        queued = int(row["bytes"] if row else 0)
+        logical_available = self.max_queue_bytes - queued
+        physical_available = self.max_queue_bytes - self._queue_file_size_bytes()
+        return max(0, min(logical_available, physical_available))
+
+    def _increment_counter_uncommitted(self, conn: sqlite3.Connection, key: str, amount: int = 1) -> None:
+        conn.execute(
+            """
+            insert into counters (key, value) values (?, ?)
+            on conflict(key) do update set value = value + excluded.value
+            """,
+            (key, amount),
+        )
 
     def _has_disk_space(self) -> bool:
         try:
@@ -654,6 +761,18 @@ class AsyncQueueRepository:
             except OSError:
                 pass
         return total
+
+    def _harden_file_permissions(self) -> None:
+        try:
+            self.path.parent.chmod(0o700)
+        except OSError:
+            pass
+        for path in (self.path, self.path.with_name(self.path.name + "-wal"), self.path.with_name(self.path.name + "-shm")):
+            try:
+                if path.exists():
+                    path.chmod(0o600)
+            except OSError:
+                pass
 
     def _checkpoint_wal(self) -> None:
         if self._connection is None:

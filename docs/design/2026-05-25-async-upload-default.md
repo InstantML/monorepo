@@ -2,7 +2,7 @@
 
 Date: 2026-05-25
 
-Status: Accepted after review
+Status: Accepted after review; producer durability timing superseded by `2026-05-27-async-sqlite-batching.md`
 
 Owner: Codex
 
@@ -15,6 +15,11 @@ internal sync-null transport path, but it is still small for normal training
 loops and buys the behavior we want by default: metric/log calls do not wait on
 the network, transient connectivity failures remain queued locally, and
 metric/log delivery errors should not stop user training.
+
+The accepted buffered producer follow-up keeps async as the default but changes
+the producer hot path from one SQLite commit per returned log call to bounded
+group commit. A returned default-async log call may now be lost if the Python
+process dies before the short producer buffer reaches SQLite.
 
 The smallest useful change is to make `instantml.init()` and `Client.init()`
 default to `upload_mode="async"` while preserving `upload_mode="sync"` and
