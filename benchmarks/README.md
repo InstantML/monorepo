@@ -162,8 +162,10 @@ read/query latency. It runs each case in a fresh Python process, compares
 against a no-op training-loop baseline, and reports hot-loop CPU/wall time
 separately from setup, finish, and InstantML uploader-drain work. The current
 matrix includes `instantml-async-queue`, which disables the managed uploader
-during the hot loop so the result isolates SQLite WAL producer overhead, then
-drains the queue through a fake successful transport after finish.
+during the hot loop so the result isolates buffered producer return overhead,
+then forces SQLite durability and drains the queue through a fake successful
+transport after finish. `instantml-async-queue-unbatched` disables the producer
+buffer to compare against the old one-SQLite-transaction-per-event path.
 
 Install the benchmark dependencies into the repo virtualenv:
 
@@ -190,9 +192,10 @@ npm run benchmark:sdk-overhead
 ```
 
 The durable async queue implementation is tracked by
-`docs/design/2026-05-25-durable-async-sdk-logging.md`. Commit dated benchmark
-Markdown when using results to decide whether async should become the default
-upload mode.
+`docs/design/2026-05-25-durable-async-sdk-logging.md`; the buffered producer
+follow-up is tracked by `docs/design/2026-05-27-async-sqlite-batching.md`.
+Commit dated benchmark Markdown when using results to decide whether async
+producer settings should change.
 
 The 2026-05-25 async producer benchmark was used to accept
 `docs/design/2026-05-25-async-upload-default.md`. That default flip also bounds
@@ -208,6 +211,10 @@ The default matrix is:
   internal/null-transport microbenchmark, not a public hosted persistence path.
 - `instantml-log-null`: ergonomic `Run.log()` through the same fake transport,
   including scalar classification.
+- `instantml-async-queue`: default async buffered producer return overhead plus
+  a separately reported forced SQLite durability phase.
+- `instantml-async-queue-unbatched`: the old unbuffered async producer path,
+  kept as a local comparison case.
 - `instantml-spool-durable`: process-spool mode writing one durable local event
   file per log call.
 - `wandb-offline`: W&B offline mode with quiet, no-console, no-git, and no-code
@@ -221,3 +228,29 @@ durability semantics are not identical. `instantml-sync-null` is a hot-path
 SDK/serialization probe, not a remote persistence benchmark. Commit Markdown
 summaries when they are useful; keep raw JSON in `/tmp` unless it has been
 reviewed for size and sanitization.
+
+## Async Queue SQLite I/O Benchmark
+
+`async_queue_io.py` isolates the local SQLite queue path after payloads have
+been snapshotted by the SDK. It reports event preparation separately from
+`AsyncQueueRepository.enqueue_many_prepared()` write cost and from the
+`drain_queue_once()` read/drain loop. The drain loop uses a fake successful
+transport, so it includes SQLite claim reads, JSON decode, fake request
+serialization, processed-row updates, and pruning, but no network latency.
+
+Run the default batch-size comparison:
+
+```bash
+.venv/bin/python benchmarks/async_queue_io.py run \
+  --events 10000 \
+  --metrics-per-event 6 \
+  --samples 5 \
+  --batch-sizes 1,16,64,256 \
+  --output-json /tmp/instantml-async-queue-io.json \
+  --output-markdown benchmarks/2026-05-27-async-queue-io-results.md
+```
+
+Use this benchmark when tuning producer batch thresholds or investigating read
+side uploader costs. The SDK logging overhead benchmark remains the better
+end-to-end hot-loop signal because it includes `Run.log_metrics()` validation,
+buffer append, and lifecycle behavior.

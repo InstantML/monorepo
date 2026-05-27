@@ -2,7 +2,7 @@
 
 Date: 2026-05-25
 
-Status: Implemented; default policy superseded by `2026-05-25-async-upload-default.md`
+Status: Implemented; default policy superseded by `2026-05-25-async-upload-default.md`; producer durability timing superseded by `2026-05-27-async-sqlite-batching.md`
 
 Owner: Codex
 
@@ -10,9 +10,11 @@ Owner: Codex
 
 InstantML should replace the old SSE/live-run streaming PR direction with a
 durable async logging slice inspired by Neptune Scale's client architecture:
-validated training-loop events are written to a local SQLite WAL queue first,
-logging calls return without waiting on the network, and a separate uploader
-process continuously drains the queue to the existing Rust REST API.
+validated training-loop events are written to a local SQLite WAL queue and a
+separate uploader process continuously drains the queue to the existing Rust REST
+API. The initial implementation committed each queued event before returning; the
+accepted batching follow-up now snapshots default async events into a short
+producer buffer before group-committing them to SQLite.
 
 The first slice is intentionally narrower than Neptune's full operation log. It
 supports the hot paths that are already idempotent enough to retry safely:

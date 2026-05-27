@@ -34,6 +34,7 @@ DEFAULT_CASES = [
     "instantml-sync-null",
     "instantml-log-null",
     "instantml-async-queue",
+    "instantml-async-queue-unbatched",
     "instantml-spool-durable",
     "wandb-offline",
 ]
@@ -49,7 +50,8 @@ CASE_DESCRIPTIONS = {
     "noop": "Synthetic metric computation with no SDK logging.",
     "instantml-sync-null": "InstantML internal Run.log_metrics microbenchmark through a fake local transport that serializes bodies and does no network I/O.",
     "instantml-log-null": "InstantML internal ergonomic Run.log microbenchmark through the same fake local transport, including scalar classification.",
-    "instantml-async-queue": "InstantML async mode enqueueing one local SQLite WAL queue event per log call; the background uploader is disabled so the hot path isolates producer overhead.",
+    "instantml-async-queue": "InstantML async mode with buffered SQLite WAL group commit; the background uploader is disabled so the hot path isolates producer return overhead and forced durability is reported separately.",
+    "instantml-async-queue-unbatched": "InstantML async mode using the old one-SQLite-transaction-per-event producer path; the background uploader is disabled so the hot path isolates unbatched SQLite producer overhead.",
     "instantml-spool-durable": "InstantML process-spool mode writing one durable local event file per log call.",
     "wandb-offline": "W&B offline mode with quiet/no-git/no-code/no-console settings.",
 }
@@ -227,9 +229,9 @@ def setup_instantml_run(config: WorkerConfig) -> tuple[Any, FakeClient]:
     from instantml.client import Run
 
     client = FakeClient()
-    if config.case == "instantml-async-queue":
+    if config.case.startswith("instantml-async-queue"):
         Run._start_async_uploader = lambda self: None  # type: ignore[method-assign]
-    upload_mode = "spool" if config.case == "instantml-spool-durable" else "async" if config.case == "instantml-async-queue" else "sync"
+    upload_mode = "spool" if config.case == "instantml-spool-durable" else "async" if config.case.startswith("instantml-async-queue") else "sync"
     run = Run(
         client=client,
         run_id=f"bench-{config.case}-{config.sample_index}",
@@ -238,6 +240,8 @@ def setup_instantml_run(config: WorkerConfig) -> tuple[Any, FakeClient]:
         spool_dir=str(config.tmp_root / "spool"),
         queue_dir=str(config.tmp_root / "async"),
     )
+    if config.case == "instantml-async-queue-unbatched":
+        run._async_buffer = None
     return run, client
 
 
@@ -308,13 +312,23 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
     def hot_loop() -> None:
         nonlocal checksum
         for step in range(active_config.warmup_logs + 1, active_config.warmup_logs + active_config.steps + 1):
+            call_start = time.perf_counter_ns()
             checksum += log_once(active_config.case, target, step, active_config.metrics_per_log)
+            return_latencies_us.append((time.perf_counter_ns() - call_start) / 1_000)
 
+    return_latencies_us: list[float] = []
     _, hot_delta = measure_phase(hot_loop)
+
+    durable_flush_delta: dict[str, Any] | None = None
+    if active_config.case.startswith("instantml-async-queue"):
+        def durable_flush() -> None:
+            target.flush()
+
+        _, durable_flush_delta = measure_phase(durable_flush)
 
     def finish() -> None:
         if active_config.case.startswith("instantml-"):
-            if active_config.case == "instantml-async-queue":
+            if active_config.case.startswith("instantml-async-queue"):
                 target.finish("finished", timeout=0.01)
             else:
                 target.finish("finished")
@@ -337,7 +351,7 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
             fake_client = drain_client
 
         _, drain_delta = measure_phase(drain)
-    elif active_config.case == "instantml-async-queue":
+    elif active_config.case.startswith("instantml-async-queue"):
         sys.path.insert(0, str(SDK_ROOT))
         import instantml.async_queue as async_queue
         from instantml.async_queue import DeliveryResult, drain_async_queues
@@ -369,6 +383,8 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
         "warmup_logs": active_config.warmup_logs,
         "setup": setup_delta,
         "hot_loop": with_per_log(hot_delta, active_config.steps),
+        "return_latency_us": summarize_values(return_latencies_us),
+        "durable_flush": with_per_log(durable_flush_delta, active_config.steps) if durable_flush_delta else None,
         "finish": finish_delta,
         "drain": with_per_log(drain_delta, drain_count) if drain_delta else None,
         "drained_events": drain_count,
@@ -432,11 +448,12 @@ def percentile(sorted_values: list[float], p: float) -> float:
 def summarize_values(values: list[float]) -> dict[str, float | int]:
     sorted_values = sorted(values)
     if not sorted_values:
-        return {"samples": 0, "median": 0.0, "p95": 0.0, "mean": 0.0, "min": 0.0, "max": 0.0}
+        return {"samples": 0, "median": 0.0, "p95": 0.0, "p99": 0.0, "mean": 0.0, "min": 0.0, "max": 0.0}
     return {
         "samples": len(sorted_values),
         "median": round(statistics.median(sorted_values), 3),
         "p95": round(percentile(sorted_values, 0.95), 3),
+        "p99": round(percentile(sorted_values, 0.99), 3),
         "mean": round(statistics.fmean(sorted_values), 3),
         "min": round(sorted_values[0], 3),
         "max": round(sorted_values[-1], 3),
@@ -452,7 +469,22 @@ def summarize_case(case: str, results: list[dict[str, Any]], noop: dict[str, Any
         "wall_us_per_log": summarize_values([float(item["wall_us_per_log"]) for item in hot]),
         "parent_cpu_us_per_log": summarize_values([float(item["parent_cpu_us_per_log"]) for item in hot]),
         "tree_cpu_us_per_log": summarize_values([float(item["tree_cpu_us_per_log"]) for item in hot]),
+        "return_latency_us": summarize_values([
+            float(result.get("return_latency_us", {}).get("median", 0.0))
+            for result in results
+            if isinstance(result.get("return_latency_us"), dict)
+        ]),
+        "return_latency_p99_us": summarize_values([
+            float(result.get("return_latency_us", {}).get("p99", 0.0))
+            for result in results
+            if isinstance(result.get("return_latency_us"), dict)
+        ]),
         "finish_tree_cpu_s": summarize_values([float(result["finish"]["tree_cpu_s"]) for result in results]),
+        "durable_flush_tree_cpu_s": summarize_values([
+            float(result["durable_flush"]["tree_cpu_s"])
+            for result in results
+            if isinstance(result.get("durable_flush"), dict)
+        ]),
         "drain_tree_cpu_s": summarize_values([
             float(result["drain"]["tree_cpu_s"])
             for result in results
@@ -692,7 +724,8 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             "notes": [
                 "Hot-loop timings exclude setup/init and finish/drain phases; those phases are reported separately.",
                 "InstantML sync-null/log-null are internal null-transport microbenchmarks and are not remote persistence benchmarks.",
-                "InstantML async-queue disables the uploader process during the hot loop to isolate SQLite producer cost, then drains the queue through a fake successful transport after finish.",
+                "InstantML async-queue disables the uploader process during the hot loop to isolate buffered producer return cost; forced SQLite durability is measured separately before finish.",
+                "InstantML async-queue-unbatched disables the producer buffer and measures the old one-SQLite-transaction-per-event producer path.",
                 "InstantML spool-durable writes one local durable event file per log call; uploader drain CPU is reported separately.",
                 "W&B offline uses local/offline mode and may perform work in a service process; hot-loop tree CPU is phase-sampled, while total worker CPU is monitored from the parent process.",
                 "Finish and drain columns are case-specific lifecycle costs, not identical provider phases.",
@@ -751,13 +784,13 @@ def render_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Hot Loop Summary",
         "",
-        "| Case | Samples | Median wall us/log | Median tree CPU us/log | p95 tree CPU us/log | Tree CPU overhead vs noop | Median total worker CPU s | Median finish CPU s | Median drain CPU s | Median disk bytes after finish |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Case | Samples | Median return p50 us/log | Median sample p99 return us/log | Median wall us/log | Median tree CPU us/log | p95 tree CPU us/log | Tree CPU overhead vs noop | Median durable flush CPU s | Median total worker CPU s | Median finish CPU s | Median drain CPU s | Median disk bytes after finish |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ])
     for case in protocol["cases"]:
         summary = payload["summaries"].get(case)
         if not summary:
-            lines.append(f"| `{case}` | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
+            lines.append(f"| `{case}` | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
             continue
         overhead = summary.get("overhead_vs_noop", {})
         overhead_text = "baseline" if case == "noop" else f"{overhead.get('tree_cpu_us_per_log', 0):.3f} us/log"
@@ -766,10 +799,13 @@ def render_markdown(payload: dict[str, Any]) -> str:
             + " | ".join([
                 f"`{case}`",
                 str(summary["samples"]),
+                f"{summary['return_latency_us']['median']:.3f}",
+                f"{summary['return_latency_p99_us']['median']:.3f}",
                 f"{summary['wall_us_per_log']['median']:.3f}",
                 f"{summary['tree_cpu_us_per_log']['median']:.3f}",
                 f"{summary['tree_cpu_us_per_log']['p95']:.3f}",
                 overhead_text,
+                f"{summary['durable_flush_tree_cpu_s']['median']:.6f}",
                 f"{summary['worker_tree_cpu_s']['median']:.6f}",
                 f"{summary['finish_tree_cpu_s']['median']:.6f}",
                 f"{summary['drain_tree_cpu_s']['median']:.6f}",
