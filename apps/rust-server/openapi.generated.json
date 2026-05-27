@@ -8121,12 +8121,6 @@
             ],
             "format": "uuid"
           },
-          "template": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "title": {
             "type": [
               "string",

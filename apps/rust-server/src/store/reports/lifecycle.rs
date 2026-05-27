@@ -8,7 +8,6 @@ use super::llm::{
     generate_summary, report_llm_provider_label, LlmMetricAggregate, LlmRunMetricSummary,
     LlmSummaryRequest,
 };
-use super::templates::ablation_template_blocks;
 use super::validation::{ensure_owner_can_write, validate_blocks, validate_visibility};
 
 const REPORT_SCHEMA_VERSION: i32 = 1;
@@ -23,15 +22,7 @@ pub async fn create_report(
     let title = validate_name(input.title.as_deref(), "title")?;
     let description = validate_optional_name(input.description.as_deref(), "description")?;
     let visibility = validate_visibility(input.visibility.as_deref())?;
-    let blocks = match input.template.as_deref().map(str::trim) {
-        Some("ablation") => validate_blocks(Some(ablation_template_blocks(&title)))?,
-        Some(other) if !other.is_empty() => {
-            return Err(AppError::validation(format!(
-                "template `{other}` is not recognized"
-            )))
-        }
-        _ => validate_blocks(input.blocks)?,
-    };
+    let blocks = validate_blocks(input.blocks)?;
     let now = Utc::now();
     let row = ReportRow {
         schema_version: REPORT_SCHEMA_VERSION,

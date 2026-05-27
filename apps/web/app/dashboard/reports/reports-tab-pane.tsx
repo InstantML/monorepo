@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { FileText, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import { ApiClient } from "../../../src/api.js";
 import {
@@ -85,14 +85,13 @@ export function ReportsTabPane() {
   }, [mode, loadReport]);
 
   const handleCreate = useCallback(
-    async (template?: string) => {
+    async () => {
       setBusy(true);
       setError(null);
       try {
         const created = await createReport(api, {
-          title: template === "ablation" ? "Untitled ablation" : "Untitled report",
+          title: "Untitled report",
           visibility: "private",
-          template,
         });
         if (created) {
           await loadList();
@@ -199,7 +198,7 @@ export function ReportsTabPane() {
           busy={busy}
           onOpenView={(reportId) => setMode({ kind: "view", reportId })}
           onOpenEdit={(reportId) => setMode({ kind: "edit", reportId })}
-          onCreate={(template) => void handleCreate(template)}
+          onCreate={() => void handleCreate()}
           onDelete={(reportId) => void handleDelete(reportId)}
         />
       ) : null}
@@ -291,7 +290,7 @@ function ReportsListPane({
   busy: boolean;
   onOpenView: (reportId: string) => void;
   onOpenEdit: (reportId: string) => void;
-  onCreate: (template?: string) => void;
+  onCreate: () => void;
   onDelete: (reportId: string) => void;
 }) {
   return (
@@ -310,15 +309,6 @@ function ReportsListPane({
               disabled={busy}
             >
               <Plus size={14} aria-hidden="true" /> New report
-            </button>
-            <button
-              type="button"
-              className="report-pane__action"
-              onClick={() => onCreate("ablation")}
-              disabled={busy}
-              title="Pre-populated with hypothesis · PanelGrid · LLM summary · conclusions"
-            >
-              <Wand2 size={14} aria-hidden="true" /> Ablation showcase template
             </button>
           </div>
         </div>

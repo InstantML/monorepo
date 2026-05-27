@@ -952,7 +952,6 @@ pub struct CreateReportRequest {
     pub visibility: Option<String>,
     #[schema(value_type = Option<Object>)]
     pub blocks: Option<Value>,
-    pub template: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

@@ -1799,7 +1799,6 @@ export interface components {
             description?: string | null;
             /** Format: uuid */
             project_id?: string | null;
-            template?: string | null;
             title?: string | null;
             visibility?: string | null;
         };

@@ -25,7 +25,6 @@ use super::*;
 mod lifecycle;
 mod llm;
 mod query;
-mod templates;
 mod validation;
 
 pub use lifecycle::{
