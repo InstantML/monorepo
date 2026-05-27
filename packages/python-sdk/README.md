@@ -501,6 +501,17 @@ The SDK is tested against the primary Rust server, the deprecated Node compatibi
 
 Automatic SDK source metadata is reserved under `metadata["_rlobs"]["source"]`. User metadata may still use a top-level `source` key for its own meaning, but `_rlobs` is SDK-owned and `init(metadata={"_rlobs": ...})` raises `ValueError`.
 
+## TODO: v1.5 Reports SDK
+
+The dashboard now ships a Reports surface — Notion-style documents that combine
+prose, code, live PanelGrids (cross-project run queries), and LLM-generated
+summary blocks. Programmatic creation from the SDK lands in v1.5: an
+`instantml.Report(title=..., blocks=[...]).save()` builder mirroring the
+`Runset` / `Panel` / `LLMSummaryBlock` data classes the Rust API already
+accepts. Track this against the wiki `reports-feature` spec when the time
+comes; the operational record kind is `report` and the schema is documented
+under `apps/rust-server/src/store/reports/`.
+
 ## Notes for Future Agents
 
 - Keep the API tiny and obvious.

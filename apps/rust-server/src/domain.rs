@@ -995,6 +995,72 @@ pub struct WorkspaceViewSummary {
     pub updated_at: DateTime<Utc>,
 }
 
+// ============================================================================
+// Reports — Notion-style documents with live PanelGrids + LLM summary blocks.
+// Persisted via the same operational-records pattern as runs/projects/
+// workspace_views (a JSON payload append-logged to ClickHouse and rebuilt
+// into the in-memory index on boot).
+// ============================================================================
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateReportRequest {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub project_id: Option<Uuid>,
+    pub visibility: Option<String>,
+    #[schema(value_type = Option<Object>)]
+    pub blocks: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateReportRequest {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub visibility: Option<String>,
+    #[schema(value_type = Option<Object>)]
+    pub blocks: Option<Value>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ReportRow {
+    pub schema_version: i32,
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub title: String,
+    pub description: Option<String>,
+    /// Ordered list of block JSON objects. Each block has a `kind` discriminator
+    /// (`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,
+    /// `image`, `panel_grid`, `llm_summary`) plus kind-specific fields.
+    #[schema(value_type = Object)]
+    pub blocks: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub author_user_id: Option<Uuid>,
+    pub share_token: Option<String>,
+    /// One of `"private"`, `"org"`, `"public"`.
+    pub visibility: String,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct ReportSummary {
+    pub id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub project_id: Option<Uuid>,
+    pub visibility: String,
+    pub has_share_token: bool,
+    pub author_user_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub block_count: usize,
+}
+
+pub const REPORT_VISIBILITY_PRIVATE: &str = "private";
+pub const REPORT_VISIBILITY_ORG: &str = "org";
+pub const REPORT_VISIBILITY_PUBLIC: &str = "public";
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateRunRequest {
     pub status: Option<String>,

@@ -177,6 +177,26 @@
   white-space: nowrap;
 }
 
+.select-trigger-value > span:first-child,
+.select-option-text > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-trigger-value > span + span,
+.select-option-text > span + span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 520;
+}
+
 .select-trigger svg {
   flex: 0 0 auto;
   color: #6a7684;
@@ -240,7 +260,7 @@
   color: #0a6270;
 }
 
-.select-option span:last-child {
+.select-option-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

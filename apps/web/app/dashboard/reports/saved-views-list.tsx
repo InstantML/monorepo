@@ -2,7 +2,12 @@
 
 import type { ReportRow } from "../../dashboard-types";
 
-export function ReportList({ rows }: { rows: ReportRow[] }) {
+/**
+ * List of locally-saved workspace views. (The block-based Reports feature
+ * lives under `reports-tab-pane.tsx`; this surface is the legacy
+ * saved-views index.)
+ */
+export function SavedViewsList({ rows }: { rows: ReportRow[] }) {
   if (!rows.length) return <div className="empty">No local saved views yet.</div>;
   return (
     <div className="event-list">

@@ -130,6 +130,8 @@ pub fn openapi_path_available_for_plane(
         || path == "/api/dashboard/preferences"
         || path == "/api/workspace-views"
         || path.starts_with("/api/workspace-views/")
+        || path == "/api/reports"
+        || path.starts_with("/api/reports/")
         || path.starts_with("/api/orgs/{org_id}/")
     {
         return service_plane.includes_control();

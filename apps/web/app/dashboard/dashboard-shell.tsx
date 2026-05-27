@@ -30,7 +30,7 @@ import { InsightsTabPane } from "./insights/tab-pane";
 import { IntegrationsTabPane } from "./integrations/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
 import { ModelsTabPane } from "./models/tab-pane";
-import { ReportsTabPane } from "./reports/tab-pane";
+import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
@@ -44,7 +44,6 @@ import {
   buildDatasetRows,
   buildMetricCatalogRows,
   buildModelRows,
-  buildReportRows,
   buildRunMetricRows,
   buildRunTimelineRows,
   buildAutomaticWorkspace,
@@ -669,7 +668,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const modelRows = useMemo(() => buildModelRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
-  const reportRows = useMemo(() => buildReportRows(savedViews), [savedViews]);
   const integrationRows = useMemo(() => buildIntegrationRows(), []);
   const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
@@ -3283,15 +3281,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         </section>
 
         <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
-          {activeTab === "reports" ? (
-            <ReportsTabPane
-              metricKey={metricKey}
-              overview={overview}
-              reportRows={reportRows}
-              selectedRunCount={selectedRunIds.length}
-              totalRuns={summary.total}
-            />
-          ) : null}
+          {activeTab === "reports" ? <ReportsTabPane /> : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">

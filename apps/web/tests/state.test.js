@@ -735,8 +735,11 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabToPath("unknown"), "/dashboard/runs");
   assert.equal(tabFromPath("/dashboard/advanced?x=1"), "advanced");
   assert.equal(tabFromPath("/dashboard/compare?x=1"), "compare");
+  assert.equal(tabFromPath("/dashboard/reports/report_123"), "reports");
   assert.equal(tabFromPath("/dashboard/not-real"), "runs");
   assert.equal(canonicalDashboardPath("/dashboard"), "/dashboard/runs");
+  assert.equal(canonicalDashboardPath("/dashboard/reports/report_123"), "/dashboard/reports/report_123");
+  assert.equal(canonicalDashboardPath("/dashboard/metrics/extra"), "/dashboard/metrics");
   assert.equal(pathFromLegacyHash("#detail"), "/dashboard/detail");
   assert.equal(pathFromLegacyHash("#/detail"), "");
   assert.equal(sanitizeNextPath("/dashboard/metrics"), "/dashboard/metrics");
