@@ -256,6 +256,14 @@ const COUNT_POINTS_FOR_RUNS_SQL: &str = "SELECT toUInt64(sum(count)) \
 const COUNT_SERIES_FOR_ORG_SQL: &str =
     "SELECT count() FROM (SELECT run_id, key FROM metric_series \
                  WHERE org_id = ? GROUP BY run_id, key)";
+const LOAD_OPERATIONAL_RECORDS_SQL: &str = "SELECT kind, org_id, entity_id, payload, created_at \
+                 FROM operational_records \
+                 ORDER BY created_at ASC, kind ASC, entity_id ASC";
+const LOAD_OPERATIONAL_RECORDS_FOR_ORG_SQL: &str =
+    "SELECT kind, org_id, entity_id, payload, created_at \
+                 FROM operational_records \
+                 WHERE org_id = ? \
+                 ORDER BY created_at ASC, kind ASC, entity_id ASC";
 
 /// Wraps a configured ClickHouse client alongside the database it targets.
 ///
@@ -366,11 +374,19 @@ impl MetricStore {
 
     pub async fn load_operational_records(&self) -> AppResult<Vec<OperationalRecordRow>> {
         self.client
-            .query(
-                "SELECT kind, org_id, entity_id, payload, created_at \
-                 FROM operational_records \
-                 ORDER BY created_at ASC, kind ASC, entity_id ASC",
-            )
+            .query(LOAD_OPERATIONAL_RECORDS_SQL)
+            .fetch_all::<OperationalRecordRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn load_operational_records_for_org(
+        &self,
+        org_id: Uuid,
+    ) -> AppResult<Vec<OperationalRecordRow>> {
+        self.client
+            .query(LOAD_OPERATIONAL_RECORDS_FOR_ORG_SQL)
+            .bind(org_id)
             .fetch_all::<OperationalRecordRow>()
             .await
             .map_err(clickhouse_read_error)
@@ -1345,6 +1361,20 @@ mod tests {
             COUNT_POINTS_FOR_PROJECT_SQL.contains("FROM operational_records")
                 && COUNT_POINTS_FOR_PROJECT_SQL.contains("WHERE org_id = ? AND kind = 'run'"),
             "project metric count must scope run metadata by org_id"
+        );
+    }
+
+    #[test]
+    fn tenant_operational_replay_query_is_org_scoped() {
+        assert!(
+            LOAD_OPERATIONAL_RECORDS_SQL.contains("FROM operational_records")
+                && !LOAD_OPERATIONAL_RECORDS_SQL.contains("WHERE org_id = ?"),
+            "full operational replay remains available for single-tenant/local startup"
+        );
+        assert!(
+            LOAD_OPERATIONAL_RECORDS_FOR_ORG_SQL.contains("FROM operational_records")
+                && LOAD_OPERATIONAL_RECORDS_FOR_ORG_SQL.contains("WHERE org_id = ?"),
+            "tenant/shared-cell replay must avoid loading records from sibling orgs"
         );
     }
 

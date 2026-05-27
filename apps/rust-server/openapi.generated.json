@@ -452,7 +452,7 @@
           "auth"
         ],
         "summary": "Re-point the caller's session at a different org they belong to.",
-        "description": "Used by the dashboard org-switcher. The session token is unchanged — only\nthe bound `org_id` on the session row is updated, so subsequent requests\nfrom the same cookie scope to the newly selected org.",
+        "description": "Used by the dashboard org-switcher. The route preserves its response shape\nwhile the store mints a fresh browser session cookie for the selected org.",
         "operationId": "auth_switch_organization",
         "requestBody": {
           "content": {
@@ -762,6 +762,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner or admin role required",
             "content": {
               "application/json": {
                 "schema": {
@@ -1713,6 +1723,71 @@
         "security": [
           {
             "bootstrapToken": []
+          }
+        ]
+      }
+    },
+    "/api/orgs/current-user": {
+      "post": {
+        "tags": [
+          "orgs"
+        ],
+        "operationId": "create_current_user_org",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCurrentUserOrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created organization for the current browser user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserOrganizationCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Organization or personal workspace already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
           }
         ]
       }
@@ -8013,6 +8088,50 @@
           }
         }
       },
+      "CreateCurrentUserOrganizationRequest": {
+        "type": "object",
+        "properties": {
+          "account_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "initial_invitations": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/InitialOrganizationInvitation"
+            }
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "storage_choice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "switch_on_create": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
       "CreateInvitationRequest": {
         "type": "object",
         "properties": {
@@ -8316,6 +8435,64 @@
           }
         }
       },
+      "CurrentUserOrganizationCreateResponse": {
+        "type": "object",
+        "required": [
+          "organization",
+          "membership",
+          "memberships"
+        ],
+        "properties": {
+          "billing_checkout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BillingCheckoutInfo"
+              }
+            ]
+          },
+          "invitations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InitialInvitationCreateResult"
+            }
+          },
+          "membership": {
+            "$ref": "#/components/schemas/MembershipRow"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationMembershipSummary"
+            }
+          },
+          "onboarding_api_key": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OnboardingApiKey"
+              }
+            ]
+          },
+          "organization": {
+            "$ref": "#/components/schemas/OrganizationRow"
+          },
+          "session": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuthSessionPayload"
+              }
+            ]
+          }
+        }
+      },
       "DashboardPreferenceRow": {
         "type": "object",
         "required": [
@@ -8594,6 +8771,46 @@
         "properties": {
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "InitialInvitationCreateResult": {
+        "type": "object",
+        "required": [
+          "invitation"
+        ],
+        "properties": {
+          "delivery_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invitation": {
+            "$ref": "#/components/schemas/PublicInvitationRow"
+          },
+          "preview_link": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InitialOrganizationInvitation": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -9048,14 +9265,27 @@
           "org_id",
           "name",
           "slug",
+          "account_type",
+          "is_personal",
           "plan_tier",
           "role",
+          "role_label",
           "status",
           "member_count",
-          "is_current"
+          "is_current",
+          "capabilities"
         ],
         "properties": {
+          "account_type": {
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/OrganizationRoleCapabilities"
+          },
           "is_current": {
+            "type": "boolean"
+          },
+          "is_personal": {
             "type": "boolean"
           },
           "member_count": {
@@ -9073,6 +9303,9 @@
             "type": "string"
           },
           "role": {
+            "type": "string"
+          },
+          "role_label": {
             "type": "string"
           },
           "slug": {
@@ -9095,6 +9328,29 @@
           },
           "slug": {
             "type": "string"
+          }
+        }
+      },
+      "OrganizationRoleCapabilities": {
+        "type": "object",
+        "required": [
+          "manage_billing",
+          "manage_members",
+          "write_runs",
+          "manage_api_keys"
+        ],
+        "properties": {
+          "manage_api_keys": {
+            "type": "boolean"
+          },
+          "manage_billing": {
+            "type": "boolean"
+          },
+          "manage_members": {
+            "type": "boolean"
+          },
+          "write_runs": {
+            "type": "boolean"
           }
         }
       },

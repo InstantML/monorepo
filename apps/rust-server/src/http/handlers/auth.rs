@@ -20,9 +20,9 @@ use crate::{
 
 use super::super::AppState;
 use super::helpers::{
-    clear_session_cookie, header_value, json_with_session_cookie, read_json, request_rate_key,
-    session_context, session_cookie, validate_clerk_signup_allowed, validate_mutation_origin,
-    validate_mutation_origin_required,
+    clear_session_cookie, header_value, json_with_session_cookie, read_json,
+    reject_demo_session_mutation, request_rate_key, session_context, session_cookie,
+    validate_clerk_signup_allowed, validate_mutation_origin, validate_mutation_origin_required,
 };
 
 #[utoipa::path(
@@ -61,7 +61,20 @@ pub async fn auth_dev_google(
     }
     let created =
         store::create_dev_google_session(&state.store, input, Some(&state.config.billing)).await?;
-    json_with_session_cookie(&state, &headers, created.payload, &created.token)
+    let mut response_body = serde_json::to_value(&created.payload)
+        .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
+    if created.auto_provisioned {
+        if let Some(obj) = response_body.as_object_mut() {
+            // Mirror the Clerk handler so the web frontend can detect when the
+            // new first-time-signin auto-provision path fired and route to the
+            // onboarding view.
+            obj.insert(
+                "auto_provisioned".to_string(),
+                serde_json::Value::Bool(true),
+            );
+        }
+    }
+    json_with_session_cookie(&state, &headers, response_body, &created.token)
 }
 
 #[utoipa::path(
@@ -116,17 +129,36 @@ pub async fn auth_clerk(
         .await?;
     }
     validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
-    let created =
-        store::create_clerk_session(&state.store, principal, input, Some(&state.config.billing))
-            .await?;
+    let signup_allowlist = store::SignupAllowlist {
+        allowed_emails: state.config.signup_allowed_emails.clone(),
+        allowed_domains: state.config.signup_allowed_domains.clone(),
+    };
+    let created = store::create_clerk_session(
+        &state.store,
+        principal,
+        input,
+        Some(&state.config.billing),
+        signup_allowlist,
+    )
+    .await?;
     let mut response_body = serde_json::to_value(&created.payload)
         .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
-    if let Some(onboarding_key) = &created.onboarding_api_key {
-        if let Some(obj) = response_body.as_object_mut() {
+    if let Some(obj) = response_body.as_object_mut() {
+        if let Some(onboarding_key) = &created.onboarding_api_key {
             obj.insert(
                 "onboarding_api_key".to_string(),
                 serde_json::to_value(onboarding_key)
                     .map_err(|_| AppError::internal("failed to serialize onboarding key"))?,
+            );
+        }
+        // Signal to the web frontend that this call just auto-created the
+        // workspace (the new first-time-signin auto-provision path). Lets the
+        // dashboard route the response to /onboarding instead of stranding the
+        // user on the signin card when the request used `mode="signin"`.
+        if created.auto_provisioned {
+            obj.insert(
+                "auto_provisioned".to_string(),
+                serde_json::Value::Bool(true),
             );
         }
     }
@@ -188,9 +220,8 @@ pub async fn auth_logout(
 
 /// Re-point the caller's session at a different org they belong to.
 ///
-/// Used by the dashboard org-switcher. The session token is unchanged — only
-/// the bound `org_id` on the session row is updated, so subsequent requests
-/// from the same cookie scope to the newly selected org.
+/// Used by the dashboard org-switcher. The route preserves its response shape
+/// while the store mints a fresh browser session cookie for the selected org.
 #[utoipa::path(
     post,
     path = "/api/auth/switch-organization",
@@ -219,8 +250,8 @@ pub async fn auth_switch_organization(
     let target_org_id = input
         .org_id
         .ok_or_else(|| AppError::validation("org_id is required"))?;
-    let payload = store::switch_session_organization(&state.store, &token, target_org_id).await?;
-    Ok(Json(payload).into_response())
+    let created = store::switch_session_organization(&state.store, &token, target_org_id).await?;
+    json_with_session_cookie(&state, &headers, created.payload, &created.token)
 }
 
 // --- Device-code (RFC 8628) handlers ---
@@ -301,13 +332,20 @@ pub async fn device_code_confirm(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
     let input =
         read_json::<DeviceCodeConfirmRequest>(&headers, bytes, state.config.max_body_bytes)?;
     let raw_user_code = input
         .user_code
         .ok_or_else(|| AppError::validation("user_code is required"))?;
-    // Requires a valid browser session.
     let session_payload = session_context(&state, &headers).await?;
+    store::require_org_admin(
+        &state.store,
+        session_payload.user.id,
+        session_payload.organization.id,
+    )
+    .await?;
     let result = store::device_code_confirm(
         &state.store,
         session_payload.user.id,

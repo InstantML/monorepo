@@ -35,8 +35,8 @@ pub(super) use invitations::{
 };
 pub(super) use metrics::metrics_series;
 pub(super) use orgs::{
-    create_api_key, create_customer_clickhouse_connection, create_org, create_user,
-    customer_clickhouse_connection_status, disable_service_account, list_api_keys,
+    create_api_key, create_current_user_org, create_customer_clickhouse_connection, create_org,
+    create_user, customer_clickhouse_connection_status, disable_service_account, list_api_keys,
     list_org_memberships, list_orgs, list_seats, list_users, org_name_availability, reserve_seat,
     revoke_api_key, rotate_customer_clickhouse_credentials,
     validate_customer_clickhouse_connection,
@@ -219,6 +219,7 @@ mod tests {
             // users / orgs
             "/api/users",
             "/api/orgs",
+            "/api/orgs/current-user",
             "/api/orgs/memberships",
             "/api/orgs/name-availability",
             "/api/orgs/{org_id}/seats",
@@ -418,6 +419,7 @@ mod tests {
 
         for path in [
             "/api/auth/switch-organization",
+            "/api/orgs/current-user",
             "/api/orgs/memberships",
             "/api/admin/overview",
             "/api/invitations/preview",

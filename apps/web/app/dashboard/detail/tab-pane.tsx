@@ -20,7 +20,7 @@ type Props = {
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onForkCheckpoint?: (artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) => Promise<void>;
-  onRunMetadataSave: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
+  onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   primaryDomain: any;
   primaryFullDomain: any;

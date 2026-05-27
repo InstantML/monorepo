@@ -65,6 +65,12 @@ Current implemented design sequence:
 - `2026-05-25-async-upload-default.md`: accepted follow-up that makes durable
   async the SDK `init()` default, keeps `Run(...)` sync by default, bounds idle
   health traffic, and documents the `upload_mode="sync"` escape hatch.
+- `2026-05-27-async-sqlite-batching.md`: accepted buffered group-commit
+  follow-up for default async SDK logging, with private 64-event/64 KiB/20 ms
+  producer flush thresholds and an explicit short in-memory durability window.
+- `2026-05-27-python-sdk-client-decomposition.md`: accepted first slice to split
+  Python SDK rich objects, media helpers, and log-payload classification from
+  the large `client.py` module while preserving the existing import surface.
 - `2026-05-22-customer-owned-clickhouse.md`: implemented first slice for
   Premium BYOC ClickHouse onboarding, updated so customer-facing BYOC now
   recommends customer-owned self-hosted GCP ClickHouse with direct database

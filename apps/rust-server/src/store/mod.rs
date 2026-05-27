@@ -66,16 +66,18 @@ use crate::{
         ClickHouseConnectionRotateCredentialsRequest, ClickHouseConnectionStatus,
         ClickHouseConnectionValidateRequest, ClickHouseConnectionValidationResponse,
         ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
-        CreateConsoleLogsRequest, CreateInvitationRequest, CreateObjectRequest,
-        CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest, CreateRunForkRequest,
-        CreateRunRequest, CreateUserRequest, CreatedAuthSession, DashboardPreferenceRow,
-        DevGoogleAuthRequest, EmailDeliveryRow, InvitationPreviewPayload, InvitationTokenRequest,
-        LogMetricsRequest, LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey,
-        OrgInvitationRow, OrganizationMembershipSummary, OrganizationRow, ProjectRow,
+        CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest, CreateInvitationRequest,
+        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
+        CreateRunForkRequest, CreateRunRequest, CreateUserRequest, CreatedAuthSession,
+        CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DevGoogleAuthRequest,
+        EmailDeliveryRow, InitialInvitationCreateResult, InitialOrganizationInvitation,
+        InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
+        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
+        OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
         ProvisioningStatusPayload, PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint,
         RankHeatmapPoint, RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse,
         RankOutlierPoint, RankReducerPoint, ReportRow, RequestContext, ReserveSeatRequest, RunRow,
-        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
         UpdateDashboardPreferencesRequest, UpdateReportRequest, UpdateRunRequest,
         UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
         BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
@@ -431,6 +433,10 @@ impl Store {
                 .map_err(|_| AppError::internal("operational payload serialization failed"))?,
             created_at: self.next_record_created_at().await,
         };
+        #[cfg(test)]
+        if self.control_store.is_none() && self.metric_store.database().ends_with("_test") {
+            return Ok(());
+        }
         if self.is_control_record_kind(kind) {
             if let Some(control_store) = &self.control_store {
                 let scope = control_record_scope(kind);
@@ -663,6 +669,9 @@ impl StoreData {
     }
 
     fn insert_org(&mut self, org: OrganizationRow) {
+        if let Some(existing) = self.organizations.get(&org.id) {
+            self.orgs_by_slug.remove(&existing.slug);
+        }
         self.orgs_by_slug.insert(org.slug.clone(), org.id);
         self.organizations.insert(org.id, org);
     }

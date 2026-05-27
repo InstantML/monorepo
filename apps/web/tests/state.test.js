@@ -34,7 +34,7 @@ import {
 } from "../src/state.js";
 import { ApiClient, ApiError, isAbortError, isTransientApiError, queryString, retryTransientRequest } from "../src/api.js";
 import { buildCheckpointForkBody, buildCheckpointResumeCode, checkpointForkIdempotencyKey, defaultForkRunName } from "../src/checkpoints.js";
-import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, isStorageReadyState, normalizeDeviceUserCode, onboardingRedirectPath, pathFromLegacyHash, postAuthRedirectPath, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, sessionRequiresStorageOnboarding, tabFromPath, tabToPath } from "../src/routes.js";
+import { DEFAULT_DASHBOARD_TAB, canonicalDashboardPath, isStorageReadyState, normalizeDeviceUserCode, onboardingRedirectPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, sessionRequiresStorageOnboarding, tabFromPath, tabToPath } from "../src/routes.js";
 import { evaluationCards, groupedRunReducers, insightsRunUniverse, kMeansClusters, numericFieldRows } from "../src/research-insights.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../src/shortcuts.js";
 import { ansiTokens, terminalWindow } from "../src/terminal.js";
@@ -271,6 +271,12 @@ test("redirect URL helpers allow only intended destinations", () => {
   assert.equal(safeStripeRedirectUrl("http://checkout.stripe.com/c/pay/cs_test"), "");
   assert.equal(safeStripeRedirectUrl("https://checkout.stripe.evil.example/c/pay/cs_test"), "");
   assert.equal(safeStripeRedirectUrl("javascript:alert(1)"), "");
+
+  assert.equal(safeCheckoutRedirectUrl("/billing/return?session_id=cs_test_instantml__abc12345", "https://app.instantml.ai"), "https://app.instantml.ai/billing/return?session_id=cs_test_instantml__abc12345");
+  assert.equal(safeCheckoutRedirectUrl("https://app.instantml.ai/billing/return?session_id=cs_live_12345678", "https://app.instantml.ai"), "https://app.instantml.ai/billing/return?session_id=cs_live_12345678");
+  assert.equal(safeCheckoutRedirectUrl("/billing/return?session_id=bad", "https://app.instantml.ai"), "");
+  assert.equal(safeCheckoutRedirectUrl("/billing/return?session_id=cs_test_12345678&next=//evil.example", "https://app.instantml.ai"), "");
+  assert.equal(safeCheckoutRedirectUrl("/dashboard/settings?session_id=cs_test_12345678", "https://app.instantml.ai"), "");
 });
 
 test("summary helpers format stable UI values", () => {
@@ -345,6 +351,7 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.match(formatAxisValue(new Date("2026-01-01T00:00:00.000Z").getTime(), "time"), /:/);
   assert.equal(formatAxisValue(null), "-");
   assert.equal(nearestPoint(normalized, normalized[0].normalizedPoints[0].x, normalized[0].normalizedPoints[0].y).runName, "run-a");
+  assert.equal(nearestPoint(normalized, 50, 40, 1).runName, "run-a");
   assert.equal(nearestPoint(normalized, 999, 999), null);
   assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 560, height: 360 }, 290, 200, 560, 640), { x: 280, y: 320 });
   assert.deepEqual(chartDomain([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/accuracy"), { minX: 0, maxX: 1, minY: 0, maxY: 1 });

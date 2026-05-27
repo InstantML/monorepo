@@ -6,7 +6,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../src/api.js";
 import { clerkIssuerConfigError } from "../src/clerk-config.js";
-import { organizationRequiresStorageOnboarding, postAuthRedirectPath, safeStripeRedirectUrl, sanitizeNextPath } from "../src/routes.js";
+import { roleLabel } from "../src/roles.js";
+import { organizationRequiresStorageOnboarding, postAuthRedirectPath, safeCheckoutRedirectUrl, sanitizeNextPath } from "../src/routes.js";
 import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
 
@@ -29,6 +30,12 @@ type SessionPayload = {
   membership?: { role: string; status: string };
   onboarding_api_key?: { plaintext: string; prefix: string; id: string } | null;
   billing_checkout?: { intent_id?: string; status?: string; session_id?: string | null; url?: string | null } | null;
+  // Set by the backend when a signin-mode request just auto-provisioned a
+  // brand-new workspace (the first-time-Clerk-signin path). The frontend
+  // routes auto-provisioned sessions to the onboarding view even when the
+  // original request was `mode="signin"`, so the user lands directly in the
+  // SDK-key step instead of the signin card.
+  auto_provisioned?: boolean;
 };
 type DevGoogleAuthPayload = {
   email: string;
@@ -152,7 +159,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const { user } = useUser();
   const [config, setConfig] = useState<AuthConfig>({ dev_auth_enabled: false, managed_clerk_enabled: false, loaded: false });
   const [session, setSession] = useState<SessionPayload | null>(null);
-  const [accountType, setAccountType] = useState("customer");
+  const [accountType, setAccountType] = useState("personal");
   const [planTier, setPlanTier] = useState<PlanTier>("free");
   const [storageChoice, setStorageChoice] = useState<StorageChoice>(STORAGE_HOSTED);
   const [email, setEmail] = useState("");
@@ -183,9 +190,17 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   // Route-based onboarding, plus the in-place post-signup reveal: after a
   // managed Clerk sign-up exchange we replaceState to /onboarding WITHOUT a
   // reload (to preserve the copy-once key in memory), so signup+authenticated
-  // must also render the onboarding view. Sign-in stays route-only so a
-  // returning signed-in visitor is still redirected to the app, not onboarding.
-  const isOnboarding = mode === "onboarding" || (signupMode && Boolean(session?.authenticated));
+  // must also render the onboarding view. The third case is the new
+  // first-time-signin auto-provision path: when the user lands on /signin but
+  // the backend just created their workspace (signaled by
+  // session.auto_provisioned), we render the onboarding view too so they get
+  // the SDK-key step immediately instead of being stranded on the signin card.
+  // A returning signed-in visitor (auto_provisioned=undefined/false) is still
+  // redirected to the app, not onboarding.
+  const isOnboarding =
+    mode === "onboarding"
+    || (signupMode && Boolean(session?.authenticated))
+    || Boolean(session?.auto_provisioned);
 
   // For managed Clerk signups the server auto-derives the workspace slug from
   // the Clerk profile; mirror it for a live preview + optional override.
@@ -393,19 +408,29 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     try {
       const sessionPayload = await api.post("/api/auth/dev/google", payload);
       setSession(sessionPayload as SessionPayload);
-      const checkoutUrl = safeStripeRedirectUrl((sessionPayload as SessionPayload).billing_checkout?.url);
+      const checkoutUrl = safeCheckoutRedirectUrl((sessionPayload as SessionPayload).billing_checkout?.url);
       if (checkoutUrl) {
         note("Workspace created. Opening Stripe Checkout...");
         window.location.assign(checkoutUrl);
         return;
       }
       if ((sessionPayload as SessionPayload).billing_checkout?.url) throw new Error("Billing checkout URL was not trusted.");
+      if ((sessionPayload as SessionPayload).billing_checkout) {
+        note("Workspace created, but checkout could not be opened. Opening billing settings...");
+        window.location.assign("/dashboard/settings");
+        return;
+      }
       if (isSharedDemoSession(sessionPayload as SessionPayload)) {
         note("Signed in to the read-only demo. Opening the dashboard...");
         window.location.replace("/dashboard/runs");
         return;
       }
       if (payload.mode === "signin") {
+        // `postAuthRedirectPath` already routes auto-provisioned workspaces
+        // to /onboarding via the organization.storage_state check, so the
+        // mode==="signin" path no longer needs to special-case auto_provisioned
+        // explicitly here. The `auto_provisioned` flag is still used elsewhere
+        // (the in-page onboardingView render) for the SDK-key step.
         const destination = postAuthRedirectPath(sessionPayload, nextPath);
         note(destination.startsWith("/onboarding") ? "Signed in. Opening storage setup..." : "Signed in. Opening your dashboard...");
         window.location.replace(destination);
@@ -460,16 +485,26 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         payload = await exchangeManagedClerkSession(true);
       }
       setSession(payload);
-      const checkoutUrl = safeStripeRedirectUrl(payload.billing_checkout?.url);
+      const checkoutUrl = safeCheckoutRedirectUrl(payload.billing_checkout?.url);
       if (checkoutUrl) {
         note("Workspace created. Opening Stripe Checkout...");
         window.location.assign(checkoutUrl);
         return;
       }
       if (payload.billing_checkout?.url) throw new Error("Billing checkout URL was not trusted.");
+      if (payload.billing_checkout) {
+        note("Workspace created, but checkout could not be opened. Opening billing settings...");
+        window.location.assign("/dashboard/settings");
+        return;
+      }
       // If the server auto-issued an onboarding key, reveal it immediately
       // in-place (no reload — keeps the copy-once plaintext in memory).
       const onboardingKey = payload.onboarding_api_key?.plaintext;
+      // `auto_provisioned` is set when the backend just created the workspace
+      // for a first-time user — this matters for the new signin auto-provision
+      // path: even when `mode="signin"` was sent, the user should land in the
+      // onboarding view (not the dashboard) so they pick up the SDK-key step.
+      const onboardingView = signupMode || Boolean(payload.auto_provisioned);
       if (onboardingKey) {
         setApiKey(onboardingKey);
         stashOnboardingKey(onboardingKey);
@@ -677,7 +712,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         : <>Finish <span className="iml-em">storage setup</span></>)
       : apiKey ? <>Save it, then <span className="iml-em">go.</span></> : <>Create your <span className="iml-em">SDK key</span></>)
     : signupMode
-      ? <>Set up your <span className="iml-em">{accountType === "business" ? "team org" : "org"}</span></>
+      ? <>Set up your <span className="iml-em">{accountType === "business" ? "team org" : "personal workspace"}</span></>
       : <>Sign in to your <span className="iml-em">workspace</span></>;
 
   const statusRole = isError ? "alert" : "status";
@@ -928,7 +963,7 @@ function SignupAside({ accountType }: { accountType: string }) {
           : <>The training tool you keep <span className="iml-em">open all day.</span></>}
       </p>
       <ol className="iml-steps" aria-label="Sign-up steps">
-        <li className="iml-step is-active"><span className="idx" aria-hidden="true">01</span><div><div className="st-t">Name your workspace</div><div className="st-s">Account type + org</div></div></li>
+        <li className="iml-step is-active"><span className="idx" aria-hidden="true">01</span><div><div className="st-t">Name your workspace</div><div className="st-s">Personal or org</div></div></li>
         <li className="iml-step"><span className="idx" aria-hidden="true">02</span><div><div className="st-t">Verify with Clerk</div><div className="st-s">Google / email</div></div></li>
         <li className="iml-step"><span className="idx" aria-hidden="true">03</span><div><div className="st-t">Create an SDK key</div><div className="st-s">Start logging</div></div></li>
       </ol>
@@ -1027,7 +1062,7 @@ function OnboardingBody({
         </span>
         <div className="iml-org-m">
           <strong>{session?.organization?.name ?? "Workspace ready"}</strong>
-          <span>{session?.user?.primary_email ?? "Signed in"} · {demo ? "read-only" : (session?.membership?.role ?? "owner")}{demo ? null : ` · ${planLabel(session?.organization?.plan_tier)} plan`}</span>
+          <span>{session?.user?.primary_email ?? "Signed in"} · {demo ? "Read only" : roleLabel(session?.membership?.role ?? "owner")}{demo ? null : ` · ${planLabel(session?.organization?.plan_tier)} plan`}</span>
         </div>
       </div>
 
@@ -1365,8 +1400,8 @@ function SignupFields({
         <legend className="iml-legend">Account type</legend>
         <div className="iml-seg">
           <label className="iml-seg-opt">
-            <input checked={accountType === "customer"} name="iml-account-type" onChange={() => onAccountType("customer")} type="radio" />
-            <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span> Customer</span>
+            <input checked={accountType === "personal"} name="iml-account-type" onChange={() => onAccountType("personal")} type="radio" />
+            <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span> Personal</span>
             <span className="iml-seg-d">Personal workspace · 1 seat</span>
           </label>
           <label className="iml-seg-opt">
@@ -1378,7 +1413,7 @@ function SignupFields({
       </fieldset>
 
       <div className="iml-field">
-        <label htmlFor="iml-org">Organization <span className="iml-hint">required</span></label>
+        <label htmlFor="iml-org">{accountType === "business" ? "Organization" : "Workspace"} <span className="iml-hint">required</span></label>
         <input
           className="iml-input"
           id="iml-org"

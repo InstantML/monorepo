@@ -398,7 +398,10 @@ impl AppConfig {
             allowed_frontend_origins,
             frontend_base_url,
             auth_mode,
-            request_timeout: Duration::from_secs(env_u64("INSTANTML_REQUEST_TIMEOUT_SECONDS", 30)?),
+            request_timeout: Duration::from_secs(env_u64(
+                "INSTANTML_REQUEST_TIMEOUT_SECONDS",
+                900,
+            )?),
             slow_request_threshold: Duration::from_millis(env_u64(
                 "INSTANTML_SLOW_REQUEST_MS",
                 1000,

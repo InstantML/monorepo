@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useState } from "react";
 import { X } from "lucide-react";
 
 import { workspacePanelTypeLabel } from "../../dashboard-models";
@@ -45,8 +46,9 @@ export function PanelEditDrawer({
 }) {
   const settings = resolveWorkspaceSettings(view, section, panel);
   const drawerRef = useFocusTrap<HTMLElement>(true, onClose, "input, button[aria-label='Close edit panel']");
+  const side = useDrawerSide(panel.id);
   return (
-    <aside className="panel-drawer edit-drawer" role="dialog" aria-modal="true" aria-label="Edit panel" ref={drawerRef} tabIndex={-1}>
+    <aside className="panel-drawer edit-drawer" data-side={side} role="dialog" aria-modal="true" aria-label="Edit panel" ref={drawerRef} tabIndex={-1}>
       <div className="drawer-head">
         <h2>{workspacePanelTypeLabel(panel.type)} panel</h2>
         <button className="icon-button" type="button" aria-label="Close edit panel" onClick={onClose}><X size={16} /></button>
@@ -112,4 +114,28 @@ export function PanelEditDrawer({
       </label>
     </aside>
   );
+}
+
+const DRAWER_WIDTH = 410;
+const DRAWER_MARGIN = 18;
+
+function useDrawerSide(panelId: string): "left" | "right" {
+  const [side, setSide] = useState<"left" | "right">("right");
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const compute = () => {
+      const card = document.querySelector<HTMLElement>(`[data-panel-id="${CSS.escape(panelId)}"]`);
+      if (!card) return;
+      const rect = card.getBoundingClientRect();
+      const drawerSpan = DRAWER_WIDTH + DRAWER_MARGIN * 2;
+      const overlapsRight = rect.right > window.innerWidth - drawerSpan;
+      const overlapsLeft = rect.left < drawerSpan;
+      if (overlapsRight && !overlapsLeft) setSide("left");
+      else setSide("right");
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [panelId]);
+  return side;
 }

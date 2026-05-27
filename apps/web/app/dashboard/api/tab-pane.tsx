@@ -1,9 +1,7 @@
 import { Code2, Copy, KeyRound, Plus, RefreshCw, X } from "lucide-react";
 
 import { ApiTable } from "./api-table";
-import { CustomSelect } from "../ui/select";
 import { PageHead } from "../ui/page-head";
-import { formatNumber } from "../../../src/state.js";
 import type { ApiRow } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 

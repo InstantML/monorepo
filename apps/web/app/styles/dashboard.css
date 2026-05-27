@@ -492,9 +492,6 @@
   transition: grid-template-columns 160ms ease;
 }
 
-.shell.nav-auto-open,
-.shell:has(.tabs:hover),
-.shell:has(.tabs:focus-within),
 .shell.nav-pinned {
   --sidebar-width: 150px;
 }
@@ -566,8 +563,6 @@
 }
 
 .shell.nav-auto-open .tab-button,
-.shell:has(.tabs:hover) .tab-button,
-.shell:has(.tabs:focus-within) .tab-button,
 .shell.nav-pinned .tab-button {
   justify-content: flex-start;
   gap: 8px;
@@ -588,8 +583,6 @@
 }
 
 .shell.nav-auto-open .tab-label,
-.shell:has(.tabs:hover) .tab-label,
-.shell:has(.tabs:focus-within) .tab-label,
 .shell.nav-pinned .tab-label {
   max-width: 120px;
   opacity: 1;
@@ -628,8 +621,6 @@
 }
 
 .shell.nav-auto-open .nav-pin-button,
-.shell:has(.tabs:hover) .nav-pin-button,
-.shell:has(.tabs:focus-within) .nav-pin-button,
 .shell.nav-pinned .nav-pin-button {
   justify-content: flex-start;
 }

@@ -409,6 +409,13 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: 0 24px 70px rgba(24, 34, 45, 0.2);
+  transition: left 0.18s ease, right 0.18s ease;
+}
+
+.edit-drawer[data-side="left"] {
+  right: auto;
+  left: 18px;
+  border-left: 1px solid var(--line);
 }
 
 .drawer-head {
