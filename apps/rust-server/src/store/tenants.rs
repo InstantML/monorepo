@@ -124,7 +124,9 @@ impl Store {
         let metric_store = self.metric_store_from_route(&route).await?;
         self.persist_upgraded_route_schema_version_if_needed(&route)
             .await?;
-        let records = metric_store.load_operational_records().await?;
+        let records = metric_store
+            .load_operational_records_for_org(org_id)
+            .await?;
         let stats = {
             let mut data = self.data.lock().await;
             data.apply_operational_records(records, ReplayScope::Tenant(org_id))?
@@ -741,6 +743,7 @@ impl Store {
         let org_id = input
             .org_id
             .ok_or_else(|| AppError::validation("org_id is required"))?;
+        ensure_billing_write_allowed(self, org_id, "configure customer ClickHouse").await?;
         let connection = customer_connection_from_input(
             input.endpoint.as_deref(),
             input.database.as_deref(),
@@ -770,6 +773,7 @@ impl Store {
         let org_id = input
             .org_id
             .ok_or_else(|| AppError::validation("org_id is required"))?;
+        ensure_billing_write_allowed(self, org_id, "configure customer ClickHouse").await?;
         let connection = customer_connection_from_input(
             input.endpoint.as_deref(),
             input.database.as_deref(),
@@ -852,6 +856,7 @@ impl Store {
         let org_id = input
             .org_id
             .ok_or_else(|| AppError::validation("org_id is required"))?;
+        ensure_billing_write_allowed(self, org_id, "configure customer ClickHouse").await?;
         let (org, mut route) = {
             let data = self.data.lock().await;
             let org = data
@@ -2153,5 +2158,61 @@ mod tests {
             updated_at: now,
             error: None,
         }
+    }
+
+    #[tokio::test]
+    async fn customer_clickhouse_setup_respects_billing_gate() {
+        let user_id = Uuid::new_v4();
+        let org_id = Uuid::new_v4();
+        let mut org = test_org(
+            org_id,
+            "checkout-pending-byoc",
+            "business",
+            "customer-clickhouse",
+            STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
+        );
+        org.created_by_user_id = Some(user_id);
+        org.storage_state = STORAGE_STATE_UNCONFIGURED.to_string();
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        data.insert_billing_account(BillingAccountProjection {
+            schema_version: 1,
+            org_id,
+            access_state: BILLING_CHECKOUT_PENDING.to_string(),
+            plan_tier: "premium".to_string(),
+            effective_plan_tier: "free".to_string(),
+            requested_plan_tier: Some("premium".to_string()),
+            paid_extra_seats: 0,
+            stripe_customer_id: None,
+            stripe_subscription_id: None,
+            subscription_status: None,
+            current_period_start: None,
+            current_period_end: None,
+            cancel_at_period_end: false,
+            grace_until: None,
+            pending_intent_id: Some(Uuid::new_v4()),
+            message: Some("Complete checkout.".to_string()),
+            updated_at: Utc::now(),
+        });
+        let store = test_hosted_store(data, false);
+
+        let error = store
+            .validate_customer_clickhouse(
+                ClickHouseConnectionValidateRequest {
+                    org_id: Some(org_id),
+                    endpoint: Some("http://127.0.0.1:8123".to_string()),
+                    database: Some("instantml_byoc_test".to_string()),
+                    username: Some("default".to_string()),
+                    password: Some("password".to_string()),
+                    storage_choice: Some(STORAGE_CHOICE_CUSTOMER_CLICKHOUSE.to_string()),
+                    allow_create_database: Some(false),
+                },
+                &store.byoc_clickhouse,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status(), axum::http::StatusCode::PAYMENT_REQUIRED);
+        assert!(!store.data.lock().await.tenant_routes.contains_key(&org_id));
     }
 }

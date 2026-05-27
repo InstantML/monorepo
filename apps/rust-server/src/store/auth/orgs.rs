@@ -1,5 +1,20 @@
 use super::super::*;
 use super::helpers::*;
+use super::invitations::create_org_invitation;
+use super::sessions::create_session_for_org;
+use crate::config::{BillingConfig, EmailConfig, EmailProvider};
+
+#[derive(Clone, Debug)]
+pub struct CreatedCurrentUserOrganization {
+    pub response: CurrentUserOrganizationCreateResponse,
+    pub token: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct NormalizedInitialInvitation {
+    email: String,
+    role: String,
+}
 
 pub async fn create_organization(
     store: &Store,
@@ -81,6 +96,185 @@ pub async fn create_organization(
     Ok(org)
 }
 
+pub async fn create_current_user_organization(
+    store: &Store,
+    user_id: Uuid,
+    current_org_id: Uuid,
+    input: CreateCurrentUserOrganizationRequest,
+    billing_config: &BillingConfig,
+    email_config: &EmailConfig,
+) -> AppResult<CreatedCurrentUserOrganization> {
+    let name = validate_name(input.name.as_deref(), "organization name")?;
+    let slug = slugify(&name);
+    let account_type = validate_account_type(input.account_type.as_deref().or(Some("business")))?;
+    if account_type == "customer" {
+        return Err(AppError::validation(
+            "account_type must be one of: business, personal",
+        ));
+    }
+    let plan_id = validate_plan_tier(input.plan_tier.as_deref())?;
+    let plan = plan_tier(&plan_id);
+    let storage_choice = validate_storage_choice(input.storage_choice.as_deref())?;
+    if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE && plan_id != "premium" {
+        return Err(AppError::forbidden(
+            "customer-owned ClickHouse is available for Premium workspaces",
+        ));
+    }
+    if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+        store.require_customer_clickhouse_signup_ready()?;
+    }
+    let switch_on_create = input.switch_on_create.unwrap_or(true);
+    let initial_invitations =
+        normalize_initial_invitations(input.initial_invitations.unwrap_or_default())?;
+    if account_type == "personal" && !initial_invitations.is_empty() {
+        return Err(AppError::validation(
+            "personal workspaces cannot invite teammates; create an organization workspace instead",
+        ));
+    }
+    let paid_checkout_required = require_paid_checkout_for_plan(Some(billing_config), plan.id)?;
+    if paid_checkout_required && !initial_invitations.is_empty() {
+        return Err(AppError::validation(
+            "initial invitations for paid workspaces can be sent after checkout completes",
+        ));
+    }
+    if 1 + initial_invitations.len() > plan.included_seats.max(0) as usize {
+        return Err(AppError::conflict("organization seat limit reached"));
+    }
+    if !initial_invitations.is_empty() && matches!(email_config.provider, EmailProvider::Disabled) {
+        return Err(AppError::with_code(
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "email_delivery_unavailable",
+            "email delivery is not configured",
+        ));
+    }
+
+    let (org, owner, user) = {
+        let mut data = store.data.lock().await;
+        let user = data
+            .users
+            .get(&user_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("user not found"))?;
+        if data.orgs_by_slug.contains_key(&slug) {
+            return Err(AppError::conflict("organization already exists"));
+        }
+        if account_type == "personal" && user_has_personal_workspace(&data, user_id) {
+            return Err(AppError::conflict(
+                "personal workspace already exists for this user",
+            ));
+        }
+        if initial_invitations
+            .iter()
+            .any(|invitation| invitation.email.eq_ignore_ascii_case(&user.primary_email))
+        {
+            return Err(AppError::conflict(
+                "workspace owner cannot be invited to the same workspace",
+            ));
+        }
+        let stored_plan = plan_tier(plan.id);
+        let tenant_routing_tier = if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+            "customer-clickhouse".to_string()
+        } else if is_personal_account_type(&account_type) {
+            "shared".to_string()
+        } else {
+            "dedicated".to_string()
+        };
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug,
+            name,
+            plan_tier: stored_plan.id.to_string(),
+            account_type: account_type.clone(),
+            seat_limit: if account_type == "personal" {
+                1
+            } else {
+                stored_plan.included_seats
+            },
+            created_by_user_id: Some(user_id),
+            created_at: Utc::now(),
+            tenant_routing_tier,
+            storage_choice: storage_choice.clone(),
+            storage_state: if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+                STORAGE_STATE_UNCONFIGURED.to_string()
+            } else {
+                STORAGE_STATE_READY.to_string()
+            },
+        };
+        store
+            .persist_locked("organization", org.id, &org.id.to_string(), &org)
+            .await?;
+        data.insert_org(org.clone());
+        let owner = membership_row(org.id, user_id, "owner", "active");
+        store
+            .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
+            .await?;
+        data.insert_membership(owner.clone());
+        (org, owner, user)
+    };
+
+    let mut created_invitations = Vec::new();
+    let billing_checkout = if paid_checkout_required {
+        Some(
+            create_checkout_for_org(
+                store,
+                billing_config,
+                org.id,
+                user_id,
+                plan.id,
+                "new_org",
+                Vec::new(),
+            )
+            .await?,
+        )
+    } else {
+        if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
+            if let Err(error) = store.ensure_tenant_route(&org).await {
+                let _ = abandon_current_user_org_create(store, &org, &owner).await;
+                return Err(error);
+            }
+        }
+        for invitation in &initial_invitations {
+            let outcome = create_org_invitation(
+                store,
+                Some(user_id),
+                org.id,
+                CreateInvitationRequest {
+                    email: Some(invitation.email.clone()),
+                    role: Some(invitation.role.clone()),
+                },
+                email_config,
+            )
+            .await?;
+            created_invitations.push(InitialInvitationCreateResult {
+                invitation: outcome.invitation,
+                preview_link: outcome.preview_link,
+                delivery_error: outcome.delivery_error,
+            });
+        }
+        None
+    };
+
+    let (session, token, active_org_id) = if switch_on_create {
+        let created = create_session_for_org(store, user, org.clone()).await?;
+        (Some(created.payload), Some(created.token), org.id)
+    } else {
+        (None, None, current_org_id)
+    };
+    let memberships = list_user_org_memberships(store, user_id, active_org_id).await?;
+    Ok(CreatedCurrentUserOrganization {
+        response: CurrentUserOrganizationCreateResponse {
+            organization: org,
+            membership: owner,
+            memberships,
+            invitations: created_invitations,
+            session,
+            billing_checkout,
+            onboarding_api_key: None,
+        },
+        token,
+    })
+}
+
 pub async fn list_organizations(store: &Store) -> AppResult<Vec<OrganizationRow>> {
     Ok(store
         .data
@@ -112,6 +306,75 @@ pub async fn organization_name_availability(
     }))
 }
 
+async fn abandon_current_user_org_create(
+    store: &Store,
+    org: &OrganizationRow,
+    owner: &MembershipRow,
+) -> AppResult<()> {
+    let mut abandoned_org = org.clone();
+    abandoned_org.slug = format!("failed-{}", org.id);
+    abandoned_org.created_by_user_id = None;
+    abandoned_org.storage_state = STORAGE_STATE_UNCONFIGURED.to_string();
+
+    let mut revoked_owner = owner.clone();
+    revoked_owner.status = "revoked".to_string();
+
+    store
+        .persist_locked(
+            "organization",
+            abandoned_org.id,
+            &abandoned_org.id.to_string(),
+            &abandoned_org,
+        )
+        .await?;
+    store
+        .persist_locked(
+            "membership",
+            revoked_owner.org_id,
+            &revoked_owner.id.to_string(),
+            &revoked_owner,
+        )
+        .await?;
+    let mut data = store.data.lock().await;
+    data.insert_org(abandoned_org);
+    data.insert_membership(revoked_owner);
+    Ok(())
+}
+
+fn normalize_initial_invitations(
+    raw: Vec<InitialOrganizationInvitation>,
+) -> AppResult<Vec<NormalizedInitialInvitation>> {
+    let mut seen = BTreeSet::new();
+    let mut invitations = Vec::new();
+    for invitation in raw {
+        let email = validate_email(Some(&invitation.email))?;
+        if !seen.insert(email.clone()) {
+            continue;
+        }
+        let role = validate_membership_role(invitation.role.as_deref().or(Some("member")))?;
+        if role == "owner" {
+            return Err(AppError::validation(
+                "initial invitations can use admin, member, or viewer roles",
+            ));
+        }
+        invitations.push(NormalizedInitialInvitation { email, role });
+    }
+    Ok(invitations)
+}
+
+fn user_has_personal_workspace(data: &StoreData, user_id: Uuid) -> bool {
+    data.organizations.values().any(|org| {
+        is_personal_account_type(&org.account_type)
+            && (org.created_by_user_id == Some(user_id)
+                || data.memberships.values().any(|membership| {
+                    membership.org_id == org.id
+                        && membership.user_id == user_id
+                        && membership.role == "owner"
+                        && membership.status == "active"
+                }))
+    })
+}
+
 pub fn is_shared_demo_org(org: &OrganizationRow) -> bool {
     org.name == SHARED_DEMO_NAME && org.slug == slugify(SHARED_DEMO_NAME)
 }
@@ -140,11 +403,15 @@ pub(super) fn collect_user_org_memberships(
                 org_id: org.id,
                 name: org.name.clone(),
                 slug: org.slug.clone(),
+                account_type: org.account_type.clone(),
+                is_personal: is_personal_account_type(&org.account_type),
                 plan_tier: org.plan_tier.clone(),
                 role: membership.role.clone(),
+                role_label: membership_role_label(&membership.role).to_string(),
                 status: membership.status.clone(),
                 member_count,
                 is_current: org.id == current_org_id,
+                capabilities: membership_role_capabilities(&membership.role),
             })
         })
         .collect();
@@ -170,6 +437,27 @@ pub async fn list_user_org_memberships(
 ) -> AppResult<Vec<OrganizationMembershipSummary>> {
     let data = store.data.lock().await;
     Ok(collect_user_org_memberships(&data, user_id, current_org_id))
+}
+
+pub fn membership_role_label(role: &str) -> &'static str {
+    match role {
+        "owner" => "Owner",
+        "admin" => "Admin",
+        "member" => "Write/read",
+        "viewer" => "Read only",
+        _ => "Unknown",
+    }
+}
+
+pub fn membership_role_capabilities(role: &str) -> OrganizationRoleCapabilities {
+    let admin = matches!(role, "owner" | "admin");
+    let write_runs = matches!(role, "owner" | "admin" | "member");
+    OrganizationRoleCapabilities {
+        manage_billing: admin,
+        manage_members: admin,
+        write_runs,
+        manage_api_keys: admin,
+    }
 }
 
 /// Pure authorization gate for the switch-organization handler.
@@ -201,20 +489,16 @@ pub(super) fn validate_session_org_switch(
     Ok(())
 }
 
-/// Re-point an existing session row at a different org the user belongs to.
+/// Switch a browser session to a different org the user belongs to.
 ///
-/// Returns the refreshed session payload (same shape as `authenticate_session`).
-/// Returns `forbidden` if the user has no *active* membership in the target
-/// org, `not_found` if the session token doesn't resolve, and `unauthorized`
-/// if the session has been revoked or expired.
-///
-/// The session cookie does not change — it carries the session token, which
-/// maps to the same `session_id` regardless of the bound org.
+/// The switch mints a fresh session token for the target org and revokes the
+/// previous session row. Returning a new cookie avoids stale split-plane session
+/// bindings while preserving the route's JSON payload shape for callers.
 pub async fn switch_session_organization(
     store: &Store,
     token: &str,
     target_org_id: Uuid,
-) -> AppResult<AuthSessionPayload> {
+) -> AppResult<CreatedAuthSession> {
     let token_hash = hash_secret(token);
     let mut data = store.data.lock().await;
     let session_id = data
@@ -222,30 +506,52 @@ pub async fn switch_session_organization(
         .get(&token_hash)
         .copied()
         .ok_or_else(|| AppError::unauthorized("invalid session"))?;
-    let mut session = data
+    let session = data
         .sessions
         .get(&session_id)
         .cloned()
         .ok_or_else(|| AppError::unauthorized("invalid session"))?;
     validate_session_org_switch(&data, &session.row, target_org_id)?;
-    // Short-circuit if the session is already pointing at the target org —
-    // skips a needless disk write while still returning a fresh payload.
-    if session.row.org_id != target_org_id {
-        session.row.org_id = target_org_id;
-        session.row.last_seen_at = Some(Utc::now());
-        store
-            .persist_locked(
-                "session",
-                session.row.org_id,
-                &session.row.id.to_string(),
-                &session,
-            )
-            .await?;
-        data.insert_session(session.clone());
-    } else {
-        session.row.last_seen_at = Some(Utc::now());
+    if session.row.org_id == target_org_id {
+        let mut row = session.row.clone();
+        row.last_seen_at = Some(Utc::now());
+        let payload = session_payload_from_data(&data, row)?;
+        return Ok(CreatedAuthSession {
+            token: token.to_string(),
+            payload,
+            onboarding_api_key: None,
+        });
     }
-    session_payload_from_data(&data, session.row)
+
+    let (new_session, new_token) = new_session(session.row.user_id, target_org_id);
+    store
+        .persist_locked(
+            "session",
+            target_org_id,
+            &new_session.row.id.to_string(),
+            &new_session,
+        )
+        .await?;
+    data.insert_session(new_session.clone());
+
+    let mut revoked = session.clone();
+    revoked.row.revoked_at = Some(Utc::now());
+    revoked.row.last_seen_at = Some(Utc::now());
+    store
+        .persist_locked(
+            "session",
+            revoked.row.org_id,
+            &revoked.row.id.to_string(),
+            &revoked,
+        )
+        .await?;
+    data.insert_session(revoked);
+    let payload = session_payload_from_data(&data, new_session.row)?;
+    Ok(CreatedAuthSession {
+        token: new_token,
+        payload,
+        onboarding_api_key: None,
+    })
 }
 
 #[cfg(test)]
@@ -278,6 +584,81 @@ mod tests {
             last_seen_at: Some(Utc::now()),
             expires_at: Utc::now() + ChronoDuration::days(SESSION_TTL_DAYS),
             revoked_at: None,
+        }
+    }
+
+    fn store_with_data(data: StoreData) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_orgs_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn hosted_store_with_data(data: StoreData) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_orgs_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: Some(crate::config::HostedClickHouseConfig {
+                user_data_url: "http://default:@127.0.0.1:8123/instantml_user_data_test"
+                    .to_string(),
+                tenant_base_url: "http://default:@127.0.0.1:9/instantml_tenant_route_failure"
+                    .to_string(),
+                provisioner: crate::config::ClickHouseProvisioner::Database,
+                allow_stored_tenant_passwords: false,
+                cloud: None,
+                shared_cell_url: None,
+            }),
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn email_config() -> EmailConfig {
+        EmailConfig {
+            provider: EmailProvider::Log,
+            from: "InstantML <invites@instantml.ai>".to_string(),
+            reply_to: None,
+            frontend_base_url: "http://localhost:3000".to_string(),
+            resend_api_key: None,
         }
     }
 
@@ -391,6 +772,388 @@ mod tests {
         assert_eq!(summaries[0].role, "admin");
         // member_count counts active memberships across all users.
         assert_eq!(summaries[0].member_count, 2);
+    }
+
+    #[test]
+    fn membership_summaries_include_labels_capabilities_and_personal_flag() {
+        let user_id = Uuid::new_v4();
+        let mut personal = org_fixture("Ada", "ada");
+        personal.account_type = "customer".to_string();
+        let business = org_fixture("Acme", "acme");
+        let mut data = StoreData::default();
+        data.insert_org(personal.clone());
+        data.insert_org(business.clone());
+        data.insert_membership(membership_row(personal.id, user_id, "viewer", "active"));
+        data.insert_membership(membership_row(business.id, user_id, "member", "active"));
+
+        let summaries = collect_user_org_memberships(&data, user_id, business.id);
+        let personal_summary = summaries
+            .iter()
+            .find(|summary| summary.org_id == personal.id)
+            .expect("personal summary");
+        assert!(personal_summary.is_personal);
+        assert_eq!(personal_summary.role_label, "Read only");
+        assert!(!personal_summary.capabilities.write_runs);
+        assert!(!personal_summary.capabilities.manage_billing);
+
+        let business_summary = summaries
+            .iter()
+            .find(|summary| summary.org_id == business.id)
+            .expect("business summary");
+        assert_eq!(business_summary.role_label, "Write/read");
+        assert!(business_summary.capabilities.write_runs);
+        assert!(!business_summary.capabilities.manage_api_keys);
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_second_personal_workspace() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "Ada@Example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut personal = org_fixture("Ada", "ada");
+        personal.account_type = "personal".to_string();
+        personal.created_by_user_id = Some(user.id);
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.insert_org(personal.clone());
+        data.insert_membership(membership_row(personal.id, user.id, "owner", "active"));
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            personal.id,
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Lab".to_string()),
+                account_type: Some("personal".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: None,
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_personal_initial_invitations() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Personal".to_string()),
+                account_type: Some("personal".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: Some(vec![InitialOrganizationInvitation {
+                    email: "teammate@example.com".to_string(),
+                    role: Some("member".to_string()),
+                }]),
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+        assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_paid_plan_without_billing() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Paid Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("pro".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: None,
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_legacy_customer_owner_workspace() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut personal = org_fixture("Ada", "ada");
+        personal.account_type = "customer".to_string();
+        personal.created_by_user_id = None;
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.insert_org(personal.clone());
+        data.insert_membership(membership_row(personal.id, user.id, "owner", "active"));
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            personal.id,
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Lab".to_string()),
+                account_type: Some("personal".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: None,
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_owner_initial_invite_before_persisting() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: Some(vec![InitialOrganizationInvitation {
+                    email: "ada@example.com".to_string(),
+                    role: Some("member".to_string()),
+                }]),
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+        assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_surfaces_initial_invitation_delivery_failure() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+        let failing_email = EmailConfig {
+            provider: EmailProvider::Resend,
+            resend_api_key: None,
+            ..email_config()
+        };
+
+        let created = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: Some(vec![InitialOrganizationInvitation {
+                    email: "teammate@example.com".to_string(),
+                    role: Some("member".to_string()),
+                }]),
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &failing_email,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.response.invitations.len(), 1);
+        let invite = &created.response.invitations[0];
+        assert_eq!(invite.invitation.email, "teammate@example.com");
+        assert_eq!(invite.invitation.delivery_status, "send_failed");
+        assert_eq!(
+            invite.delivery_error.as_deref(),
+            Some("email delivery failed")
+        );
+        assert!(invite.preview_link.is_none());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_abandons_active_membership_when_tenant_route_fails() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = hosted_store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Broken Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: None,
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.status().is_server_error());
+
+        let data = store.data.lock().await;
+        assert!(
+            !data.orgs_by_slug.contains_key("broken-lab"),
+            "failed user-facing creates should free the requested slug"
+        );
+        assert!(
+            data.memberships
+                .values()
+                .all(|membership| membership.user_id != user.id || membership.status != "active"),
+            "failed user-facing creates should not leave a switchable workspace"
+        );
+        assert!(collect_user_org_memberships(&data, user.id, Uuid::new_v4()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_paid_initial_invitations_before_persisting() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+        let mut billing = crate::config::BillingConfig::disabled(Some("http://localhost:3000"));
+        billing.enabled = true;
+        billing.stripe_secret_key = Some("sk_test_fake".to_string());
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Paid Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("pro".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: Some(vec![InitialOrganizationInvitation {
+                    email: "teammate@example.com".to_string(),
+                    role: Some("member".to_string()),
+                }]),
+                switch_on_create: Some(false),
+            },
+            &billing,
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+        assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_legacy_customer_account_type() {
+        let store = store_with_data(StoreData::default());
+        let error = create_current_user_organization(
+            &store,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Customer Legacy".to_string()),
+                account_type: Some("customer".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: None,
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
     }
 
     #[test]

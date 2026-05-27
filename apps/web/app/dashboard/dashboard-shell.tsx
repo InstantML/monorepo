@@ -7,10 +7,11 @@ import type { MouseEvent } from "react";
 
 import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest } from "../../src/api.js";
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
-import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeSameOriginInviteUrl, safeStripeRedirectUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
+import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
+import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
 import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
@@ -21,6 +22,7 @@ import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
 import { DashboardTopbar } from "./chrome/topbar";
+import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
@@ -65,7 +67,7 @@ import {
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
 import type { RunWorkspaceTabId } from "./components/run-workspace";
-import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY } from "./state/storage-keys";
+import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
 import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "./state/workspace-view-api";
 import type { components } from "../../src/types/api.generated";
@@ -282,6 +284,41 @@ function localSavedViewOptions(scope = ""): SavedViewOption[] {
   }));
 }
 
+function legacyOrgSavedViewPrefix(orgId: string) {
+  return `${SAVED_VIEW_PREFIX}${orgId}:`;
+}
+
+function legacyWorkspaceStorageKeys(project: string, orgId: string) {
+  const projectKey = project || "all";
+  return [
+    orgId ? `${WORKSPACE_VIEW_PREFIX}${orgId}:${projectKey}` : "",
+    `${WORKSPACE_VIEW_PREFIX}${projectKey}`,
+  ].filter(Boolean);
+}
+
+function migrateLegacySavedViewsToScope(orgId: string, scope: string) {
+  if (!scope) return;
+  const targetPrefix = scopedSavedViewPrefix(scope);
+  const legacyOrgPrefix = orgId ? legacyOrgSavedViewPrefix(orgId) : "";
+  for (const key of Object.keys(localStorage)) {
+    let label = "";
+    if (legacyOrgPrefix && key.startsWith(legacyOrgPrefix)) {
+      label = key.slice(legacyOrgPrefix.length);
+    } else if (key.startsWith(LEGACY_SAVED_VIEW_PREFIX)) {
+      label = key.slice(LEGACY_SAVED_VIEW_PREFIX.length);
+    } else if (key.startsWith(SAVED_VIEW_PREFIX)) {
+      const suffix = key.slice(SAVED_VIEW_PREFIX.length);
+      if (!suffix.includes(":")) label = suffix;
+    }
+    if (!label) continue;
+    const target = `${targetPrefix}${label}`;
+    if (!localStorage.getItem(target)) {
+      const payload = localStorage.getItem(key);
+      if (payload !== null) localStorage.setItem(target, payload);
+    }
+  }
+}
+
 function localSavedViewKey(name: string, scope = "") {
   return `${scopedSavedViewPrefix(scope)}${name}`;
 }
@@ -493,6 +530,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       .map((id) => selectedRunDetails[id] ?? directory.get(id) ?? sortedRuns.find((run) => run.id === id))
       .filter(Boolean) as RunSummary[];
   }, [selectedRunDetails, selectedRunIds, sortedRuns]);
+  const metricSeriesRuns = useMemo(
+    () => (selectedRunIds.length ? selectedRuns : sortedRuns).slice(0, MAX_SELECTED_RUNS),
+    [selectedRunIds.length, selectedRuns, sortedRuns],
+  );
   const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
   const selectedFetchRunKey = selectedRuns.map((run) => run.id).join("\u0000");
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
@@ -571,7 +612,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const normalizedSeries = useMemo(() => normalizeSeries(displaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
   const domain = useMemo(() => chartDomain(displaySeries, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
   const chartSummaries = useMemo(() => chartSummary(displaySeries), [displaySeries]);
-  const metricCatalogRows = useMemo(() => buildMetricCatalogRows(sortedRuns, metricOptions, selectedRunIds), [metricOptions, selectedRunIds, sortedRuns]);
+  const metricCatalogSelectionIds = useMemo(
+    () => selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id),
+    [selectedRunIds, sortedRuns],
+  );
+  const metricCatalogRows = useMemo(() => buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds), [metricCatalogSelectionIds, metricOptions, sortedRuns]);
   const visibleMetricCatalogRows = useMemo(() => metricCatalogRows.slice(0, MAX_METRIC_CATALOG_ROWS), [metricCatalogRows]);
   const activeMetricCatalogRow = useMemo(() => metricCatalogRows.find((row) => row.key === metricKey) ?? null, [metricCatalogRows, metricKey]);
   const primaryDisplaySeries = useMemo(() => {
@@ -633,8 +678,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     [localSavedViewProjectScope, localSavedViewScope, project],
   );
   const activeMembershipRole = sessionPayload?.membership?.role ?? "";
-  const canManageOrg = activeMembershipRole === "owner" || activeMembershipRole === "admin";
-  const activeUsageOrg = useMemo(() => usagePayload?.organizations?.find((org) => org.org_id === activeOrgId) ?? usagePayload?.organizations?.[0] ?? null, [activeOrgId, usagePayload]);
+  const canManageOrg = roleCanManageOrg(activeMembershipRole);
+  const canWriteRuns = roleCanWriteRuns(activeMembershipRole);
+  const activeMembershipSummary = useMemo(
+    () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
+      ?? orgMemberships.find((membership) => membership.is_current)
+      ?? null,
+    [activeOrgId, orgMemberships],
+  );
+  const activeUsageOrg = useMemo(() => {
+    if (!usagePayload) return null;
+    if (!activeOrgId) return usagePayload.organizations?.[0] ?? null;
+    return usagePayload.organizations?.find((org) => org.org_id === activeOrgId) ?? null;
+  }, [activeOrgId, usagePayload]);
   const activeUsage = activeUsageOrg?.usage ?? {};
   const activeLimits = activeUsageOrg?.limits ?? {};
   const usageAvailable = Boolean(activeUsageOrg);
@@ -863,14 +919,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   const loadProjects = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     try {
-      const projectPayload = await api.get("/projects", options);
+      const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
+      const projectPayload = await retryTransientRequest(() => api.get("/projects", options), retryOptions);
       const names = (projectPayload.projects ?? []).map((item: { name: string }) => item.name);
       setProjects(names);
       setProject((current) => current && !names.includes(current) ? "" : current);
       if (!projectPreferenceLoadedRef.current) {
         projectPreferenceLoadedRef.current = true;
         try {
-          const preferencePayload = await api.get("/api/dashboard/preferences", options);
+          const preferencePayload = await retryTransientRequest(() => api.get("/api/dashboard/preferences", options), retryOptions);
           const selectedProject = preferencePayload?.preferences?.selected_project;
           if (typeof selectedProject === "string" && names.includes(selectedProject) && !userTouchedDashboardFiltersRef.current) {
             setProject((current) => current || selectedProject);
@@ -888,6 +945,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [api]);
 
   const loadSavedViews = useCallback(async (options: { signal?: AbortSignal } = {}) => {
+    if (activeOrgId) migrateLegacySavedViewsToScope(activeOrgId, localSavedViewProjectScope);
     const localOptions = localSavedViewOptions(localSavedViewProjectScope);
     try {
       const payload = await api.get("/api/workspace-views", options);
@@ -901,7 +959,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } catch (error) {
       if (!isAbortError(error)) setSavedViews(withSystemSavedViews(localOptions));
     }
-  }, [api, localSavedViewProjectScope]);
+  }, [activeOrgId, api, localSavedViewProjectScope]);
 
   const loadDashboard = useCallback(async (options: { signal?: AbortSignal; silent?: boolean } = {}) => {
     const silent = Boolean(options.silent);
@@ -1045,11 +1103,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     [api],
   );
 
-  // Switch the session's bound org. The backend updates the session row in
-  // place; we refresh the local session payload from the returned body and
-  // reload memberships so the dropdown reflects the new `is_current` flags.
-  // Then we force a hard reload so every panel re-queries against the new
-  // org_id — cheaper than threading a "reload everything" signal through.
+  // Switch the session's bound org. The backend returns a refreshed session
+  // cookie and payload; the hard reload makes every org-scoped panel re-query
+  // instead of carrying run or metric selection across workspace boundaries.
   const switchOrganization = useCallback(
     async (targetOrgId: string) => {
       if (!targetOrgId) return;
@@ -1066,6 +1122,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       } catch (error) {
         const detail = error instanceof Error ? error.message : "Unable to switch organization.";
         setOrgSwitchError(detail);
+        setMessage(detail);
         if (error instanceof ApiError && error.status === 403) {
           // Membership was revoked mid-session — refresh the list so the
           // dropdown drops the now-unreachable org instead of showing it.
@@ -1076,6 +1133,44 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
     },
     [api, loadOrgMemberships, sessionPayload?.organization?.id],
+  );
+
+  const checkWorkspaceName = useCallback(
+    async (name: string): Promise<WorkspaceNameAvailability> => {
+      return await api.get(`/api/orgs/name-availability${queryString({ name })}`) as WorkspaceNameAvailability;
+    },
+    [api],
+  );
+
+  const createWorkspace = useCallback(
+    async (input: CreateWorkspaceInput) => {
+      setOrgSwitchBusy(true);
+      setOrgSwitchError("");
+      setMessage(input.plan_tier === "free" ? "Creating workspace..." : "Opening checkout...");
+      try {
+        const payload = await api.post("/api/orgs/current-user", input);
+        const checkoutUrl = safeCheckoutRedirectUrl(payload?.billing_checkout?.url);
+        if (checkoutUrl) {
+          window.location.assign(checkoutUrl);
+          return;
+        }
+        if (payload?.billing_checkout?.url) throw new Error("Billing checkout URL was not trusted.");
+        if (payload?.billing_checkout) {
+          setMessage("Workspace created, but checkout could not be opened. Retry from billing settings.");
+          window.location.assign("/dashboard/settings");
+          return;
+        }
+        window.location.assign(window.location.pathname);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unable to create workspace.";
+        setOrgSwitchError(detail);
+        setMessage(detail);
+        throw error;
+      } finally {
+        setOrgSwitchBusy(false);
+      }
+    },
+    [api],
   );
 
   useEffect(() => {
@@ -1253,6 +1348,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [localSavedViewProjectScope]);
 
   useEffect(() => {
+    if (!activeOrgId || !localSavedViewProjectScope) return;
+    migrateLegacySavedViewsToScope(activeOrgId, localSavedViewProjectScope);
+    setSavedViews((current) => {
+      const localOptions = localSavedViewOptions(localSavedViewProjectScope);
+      const nonLocalOptions = current.filter((option) => option.source !== "local");
+      const seen = new Set(nonLocalOptions.map((option) => option.value));
+      return withSystemSavedViews([
+        ...nonLocalOptions,
+        ...localOptions.filter((option) => !seen.has(option.value)),
+      ]);
+    });
+  }, [activeOrgId, localSavedViewProjectScope]);
+
+  useEffect(() => {
     workspaceViewRef.current = workspaceView;
   }, [workspaceView]);
 
@@ -1262,8 +1371,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setWorkspaceSeries({});
       return;
     }
-    const raw = safeSavedView(localStorage.getItem(scopedWorkspaceStorageKey))
-      ?? (localSavedViewScope ? null : safeSavedView(localStorage.getItem(workspaceStorageKey(project))));
+    let raw = safeSavedView(localStorage.getItem(scopedWorkspaceStorageKey));
+    if (!raw && localSavedViewScope) {
+      for (const legacyKey of legacyWorkspaceStorageKeys(project, activeOrgId)) {
+        const legacyRaw = safeSavedView(localStorage.getItem(legacyKey));
+        if (!legacyRaw) continue;
+        raw = legacyRaw;
+        localStorage.setItem(scopedWorkspaceStorageKey, JSON.stringify(legacyRaw));
+        break;
+      }
+    } else if (!raw) {
+      raw = safeSavedView(localStorage.getItem(workspaceStorageKey(project)));
+    }
     setWorkspaceView(sanitizeWorkspaceView(raw, actualMetricOptions, project));
     setWorkspaceReady(Boolean(raw) || actualMetricOptions.length > 0);
     setWorkspaceSeries({});
@@ -1272,7 +1391,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setFullscreenPanelRef(null);
     setWorkspaceUndoStack([]);
     setWorkspaceRedoStack([]);
-  }, [actualMetricOptions, actualMetricSignature, localSavedViewScope, project, scopedWorkspaceStorageKey, summaryMatchesProject]);
+  }, [activeOrgId, actualMetricOptions, actualMetricSignature, localSavedViewScope, project, scopedWorkspaceStorageKey, summaryMatchesProject]);
 
   useEffect(() => {
     if (!summaryMatchesProject || !actualMetricOptions.length) return;
@@ -1354,8 +1473,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setSelectedRunIds((current) => {
         const retained = current.filter((id) => !invalidIds.has(id));
         if (retained.length) return retained;
-        if (current.length) return current;
-        const next = defaultRunSelection(current, sortedRuns, defaultSelectionInitializedRef.current);
+        if (current.length) return [];
+        const next = defaultRunSelection([], sortedRuns, defaultSelectionInitializedRef.current);
         defaultSelectionInitializedRef.current = next.initialized;
         return next.ids;
       });
@@ -1390,7 +1509,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const controller = new AbortController();
     async function loadMetricSeries() {
       const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
-      const runsForFetch = selectedRunsRef.current;
+      const runsForFetch = metricSeriesRuns;
       if (!shouldLoad || !metricKey || !runsForFetch.length) {
         setSeries([]);
         return;
@@ -1408,14 +1527,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, metricKey, runWorkspaceTab, selectedFetchRunKey, selectedRunKey]);
+  }, [activeTab, api, metricKey, metricSeriesRuns, runWorkspaceTab, selectedFetchRunKey, selectedRunKey]);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     async function loadPinnedMetricSeries() {
       const metricsToLoad = pinnedMetrics.filter((metric) => metric && metric !== metricKey);
-      const runsForFetch = selectedRunsRef.current;
+      const runsForFetch = metricSeriesRuns;
       if (activeTab !== "metrics" || !metricsToLoad.length || !runsForFetch.length) {
         setPanelSeries({});
         return;
@@ -1433,7 +1552,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, metricKey, pinnedMetrics, selectedFetchRunKey, selectedRunKey]);
+  }, [activeTab, api, metricKey, metricSeriesRuns, pinnedMetrics, selectedFetchRunKey, selectedRunKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1472,7 +1591,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setArtifacts([]);
       setArtifactsRunId(runId);
       try {
-        const artifactPayload = await api.get(`/api/runs/${runId}/artifacts${queryString({ limit: ARTIFACT_PAGE_LIMIT })}`, { signal: controller.signal });
+        const artifactPayload = await retryTransientRequest(
+          () => api.get(`/api/runs/${runId}/artifacts${queryString({ limit: ARTIFACT_PAGE_LIMIT })}`, { signal: controller.signal }),
+          { signal: controller.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS },
+        );
         const rows = (artifactPayload.artifacts ?? []).slice(0, ARTIFACT_PAGE_LIMIT);
         if (!cancelled) {
           setArtifacts(rows);
@@ -1513,7 +1635,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setLoggedObjects([]);
       setObjectRowsById({});
       try {
-        const payload = await api.get(`/api/runs/${primaryRun.id}/objects${queryString({ limit: 100 })}`, { signal: controller.signal });
+        const payload = await retryTransientRequest(
+          () => api.get(`/api/runs/${primaryRun.id}/objects${queryString({ limit: 100 })}`, { signal: controller.signal }),
+          { signal: controller.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS },
+        );
         if (!cancelled) setLoggedObjects((payload.objects ?? []).slice(0, 100));
       } catch (error) {
         if (isAbortError(error)) return;
@@ -1551,7 +1676,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return;
       }
       const entries = await Promise.all(tableObjectIds.map(async (objectId) => {
-        const payload = await api.get(`/api/objects/${objectId}/rows${queryString({ limit: 20 })}`, { signal: controller.signal });
+        const payload = await retryTransientRequest(
+          () => api.get(`/api/objects/${objectId}/rows${queryString({ limit: 20 })}`, { signal: controller.signal }),
+          { signal: controller.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS },
+        );
         return [objectId, payload.rows ?? []] as const;
       }));
       if (!cancelled && tableObjectKey === tableObjectIds.join(",")) setObjectRowsById(Object.fromEntries(entries));
@@ -1634,7 +1762,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         setSideBySide(null);
         return;
       }
-      const sidePayload = await api.get(`/api/runs/side-by-side${queryString({ run_ids: compareRunKey, reference_run_id: referenceRun?.id, diff_only: diffOnly })}`, { signal: controller.signal });
+      const sidePayload = await retryTransientRequest(
+        () => api.get(`/api/runs/side-by-side${queryString({ run_ids: compareRunKey, reference_run_id: referenceRun?.id, diff_only: diffOnly })}`, { signal: controller.signal }),
+        { signal: controller.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS },
+      );
       if (!cancelled) setSideBySide(sidePayload);
     }
     loadSideBySide().catch((error) => {
@@ -1680,28 +1811,38 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [resetRunPagination]);
 
   const loadUsage = useCallback(async (options: { signal?: AbortSignal } = {}) => {
-    if (!activeOrgId) return;
+    if (!activeOrgId || !canManageOrg) {
+      setUsagePayload(null);
+      return;
+    }
     try {
-      const usage = await api.get("/api/usage", options);
+      const usage = await retryTransientRequest(
+        () => api.get("/api/usage", options),
+        { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS },
+      );
       setUsagePayload(usage as UsagePayload);
     } catch (error) {
       if (!isAbortError(error)) setUsagePayload(null);
     }
-  }, [activeOrgId, api]);
+  }, [activeOrgId, api, canManageOrg]);
 
   const loadOrgSettings = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     if (!activeOrgId) return;
+    if (!canManageOrg) {
+      setSeats([]);
+      setInvitations([]);
+      setBillingPayload(null);
+      setUsagePayload(null);
+      return;
+    }
     const [usageResult, seatResult, invitationResult, billingResult] = await Promise.allSettled([
-      api.get("/api/usage", options),
-      api.get(`/api/orgs/${activeOrgId}/seats`, options),
-      api.get(`/api/orgs/${activeOrgId}/invitations`, options),
-      api.get("/api/billing/status", options),
+      retryTransientRequest(() => api.get("/api/usage", options), { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS }),
+      retryTransientRequest(() => api.get(`/api/orgs/${activeOrgId}/seats`, options), { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS }),
+      retryTransientRequest(() => api.get(`/api/orgs/${activeOrgId}/invitations`, options), { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS }),
+      retryTransientRequest(() => api.get("/api/billing/status", options), { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS }),
     ]);
     if (options.signal?.aborted) return;
-    const shouldSurfaceError = (error: unknown) => (
-      !isAbortError(error)
-        && !(error instanceof ApiError && error.status === 403 && !canManageOrg)
-    );
+    const shouldSurfaceError = (error: unknown) => !isAbortError(error);
     let loadError = "";
     if (usageResult.status === "fulfilled") {
       setUsagePayload(usageResult.value as UsagePayload);
@@ -1780,6 +1921,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
+    if (!canManageOrg) {
+      setMessage("Seat management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Sending invitation...");
     try {
@@ -1805,6 +1950,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function resendInvitation(invitationId: string) {
     if (!activeOrgId) return;
+    if (!canManageOrg) {
+      setMessage("Seat management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Resending invitation...");
     try {
@@ -1825,6 +1974,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function revokeInvitation(invitationId: string) {
     if (!activeOrgId) return;
+    if (!canManageOrg) {
+      setMessage("Seat management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Revoking invitation...");
     try {
@@ -1867,11 +2020,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function openBillingPortal() {
+    if (!canManageOrg) {
+      setMessage("Billing management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Opening billing portal...");
     try {
       const payload = await api.post("/api/billing/portal", {});
-      const url = safeStripeRedirectUrl(payload.url);
+      const url = safeCheckoutRedirectUrl(payload.url);
       if (!url) throw new Error("Billing portal URL was not trusted.");
       window.location.assign(url);
     } catch (error) {
@@ -1881,16 +2038,25 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function changeBillingPlan(plan: "free" | "pro" | "premium") {
+    if (!canManageOrg) {
+      setMessage("Billing management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage(`Changing billing plan to ${planDisplayName(plan)}...`);
     try {
       const payload = await api.post("/api/billing/change-plan", { plan_tier: plan });
-      const checkoutUrl = safeStripeRedirectUrl(payload?.checkout?.url);
+      const checkoutUrl = safeCheckoutRedirectUrl(payload?.checkout?.url);
       if (checkoutUrl) {
         window.location.assign(checkoutUrl);
         return;
       }
       if (payload?.checkout?.url) throw new Error("Billing checkout URL was not trusted.");
+      if (payload?.checkout) {
+        await loadOrgSettings();
+        setMessage("Checkout could not be opened. Retry from billing settings.");
+        return;
+      }
       await loadOrgSettings();
       setMessage("Billing plan updated.");
     } catch (error) {
@@ -1901,6 +2067,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function cancelBilling() {
+    if (!canManageOrg) {
+      setMessage("Billing management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Scheduling cancellation...");
     try {
@@ -1915,7 +2085,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function createDashboardApiKey() {
-    if (!activeOrgId || !canManageOrg) return;
+    if (!activeOrgId || !canManageOrg) {
+      setMessage("API key management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setNewApiKey("");
     setMessage("Creating API key...");
@@ -1934,7 +2107,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function revokeDashboardApiKey(keyId: string) {
-    if (!activeOrgId || !keyId || !canManageOrg) return;
+    if (!activeOrgId || !keyId || !canManageOrg) {
+      setMessage("API key management is available to workspace admins.");
+      return;
+    }
     setAdminBusy(true);
     setMessage("Revoking API key...");
     try {
@@ -1955,6 +2131,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function saveView() {
+    if (!canWriteRuns) {
+      setMessage("Read only workspaces can view runs and metrics but cannot save shared views.");
+      return;
+    }
     const fallbackName = `${project || "all"}:${metricKey || "metric"}`;
     const name = (viewName.trim() || fallbackName).replace(/[^A-Za-z0-9._:-]+/g, "-").slice(0, 64);
     setViewName(name);
@@ -2276,6 +2456,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function updateRunTagsAndNotes(runId: string, patch: { tags: string[]; notes: string }) {
+    if (!canWriteRuns) {
+      throw new Error("Read only workspaces can view run data but cannot edit run metadata.");
+    }
     const tags = patch.tags.map((tag) => tag.trim()).filter(Boolean).slice(0, 16);
     const notes = patch.notes.trim();
     const payload = await api.patch(`/runs/${runId}`, { tags, notes });
@@ -2712,6 +2895,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       <DashboardTopbar
         activeIcon={ActiveIcon}
         activeTab={activeTab}
+        accountUser={sessionPayload?.user ?? null}
         detailRunName={primaryRun?.name ?? ""}
         message={message}
         mobileNavOpen={mobileNavOpen}
@@ -2722,10 +2906,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onQuickSearch={() => setQuickSearchOpen(true)}
         onRefresh={loadDashboard}
         onSaveView={saveView}
+        canSaveView={canWriteRuns}
+        onCheckWorkspaceName={checkWorkspaceName}
+        onCreateWorkspace={createWorkspace}
+        onOpenBilling={() => selectTab("settings")}
+        onOpenSettings={() => selectTab("settings")}
         onSelectTab={selectTab}
+        onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
         onSortBy={changeRunSort}
         onStatus={changeStatus}
+        onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onViewName={setViewName}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
@@ -2744,6 +2935,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         sortBy={sortBy}
         status={status}
         storageUsagePercent={storagePercent}
+        theme={theme}
         tone={currentMessageTone}
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
@@ -2893,7 +3085,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               pinnedChartPanels={pinnedChartPanels}
               pinnedMetrics={pinnedMetrics}
               rangeSeries={rangeSeries}
-              selectedRuns={selectedRuns}
+              selectedRuns={metricSeriesRuns}
               smoothing={smoothing}
               sortedRuns={sortedRuns}
               visibleMetricCatalogRows={visibleMetricCatalogRows}
@@ -2952,8 +3144,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
-              onForkCheckpoint={forkCheckpointRun}
-              onRunMetadataSave={updateRunTagsAndNotes}
+              onForkCheckpoint={canWriteRuns ? forkCheckpointRun : undefined}
+              onRunMetadataSave={canWriteRuns ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primaryDomain={primaryDomain}
               primaryFullDomain={primaryFullDomain}
@@ -3007,7 +3199,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onResetCompareTableMetrics={resetCompareTableMetrics}
               onRunSortMetricKey={setCompareSortMetricKey}
               onRunSort={setCompareRunSort}
-              onUpdateRunTagsAndNotes={updateRunTagsAndNotes}
+              onUpdateRunTagsAndNotes={canWriteRuns ? updateRunTagsAndNotes : undefined}
               referenceRun={referenceRun}
               removeCompareTableMetric={removeCompareTableMetric}
               selectedRunIds={selectedRunIds}
@@ -3107,7 +3299,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               orgName={sessionPayload?.organization?.name ?? ""}
               orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
               project={project}
-              reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? seats.length)}
+              reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
               seats={seats}
               selectedRunCount={selectedRunIds.length}
               status={status}

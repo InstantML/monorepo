@@ -7,7 +7,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
-- Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric and API-request usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, apply plan-aware short-window API rate limits, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready.
+- Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric and API-request usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, apply plan-aware short-window API rate limits, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready. Browser sessions can also create additional organization workspaces through `POST /api/orgs/current-user`; the bootstrap `POST /api/orgs` route remains operator/admin-only.
 - Support Premium customer-owned GCP ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
 - Store artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, R2 references, exact byte counts, hashes, and MIME types. Artifact byte downloads always add defensive `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: sandbox` headers because artifact MIME metadata is user-provided.
@@ -117,6 +117,18 @@ invite and reconciles the current verified Clerk email before creating or
 activating a membership. Legacy `/seats` invited rows still count as reserved
 seats, but a token invite for the same email/org reuses that reservation
 instead of double-counting.
+
+Organization workspaces are represented by `OrganizationRow`; v1 does not have
+a separate workspace table. A signed-in user may own one personal workspace and
+belong to many business organization workspaces. `GET /api/orgs/memberships`
+returns switcher summaries with role labels and capabilities, while
+`POST /api/auth/switch-organization` mints a fresh browser session cookie for
+the selected active membership. The user-facing create route rejects legacy
+`customer` account type, enforces personal workspace uniqueness, creates
+token-backed initial invitations for immediately active workspaces, and leaves
+paid plan writes locked in `checkout_pending` until Stripe confirms payment.
+Paid create requests reject inline invitations before persistence; owners can
+send token-backed invites after checkout activates the workspace.
 
 Logical control/data-plane division is available before deployment:
 
@@ -286,7 +298,7 @@ frontend-compatible empty summary fields. Batched metric-series reads accept up
 to 2,000 run IDs, but the server clamps `effective_limit` so a single response
 cannot exceed 120,000 metric points.
 
-Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a browser session and mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
+Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a mutation-origin-validated non-demo browser session for an owner/admin in a billing- and storage-ready workspace, then mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and
 the durable control/data-plane schema reference lives in
@@ -431,7 +443,7 @@ Coverage exception (multi-writer):
 - `src/http/observability.rs`: structured request logging, header normalization, sanitized error/workflow outcome helpers, and observability unit tests.
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.
 - `src/store/mod.rs`: ClickHouse-backed operational index core, deterministic replay helpers, tenant replay validation, and module re-exports.
-- `src/store/auth.rs`: users, organizations, sessions, API keys, and admin authorization helpers.
+- `src/store/auth.rs`: users, organizations-as-workspaces, memberships, invitations, browser sessions, API keys, and admin authorization helpers.
 - `src/store/console_logs.rs`: stdout/stderr validation, idempotent writes, cursor encoding, and read response shaping.
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, same-project fork lineage, scalar metric writes, and metric read endpoints.
 - `src/store/objects.rs`: typed attributes, rich objects, table rows, artifacts, and artifact metadata writes after local/R2 byte preflight.
@@ -471,6 +483,7 @@ Coverage exception (multi-writer):
 - `docs/product/pricing-and-margins.md`
 - `docs/design/2026-05-19-utoipa-migration.md`
 - `docs/design/2026-05-21-rust-server-observability.md`
+- `docs/design/2026-05-26-organization-workspace-selector.md`
 
 ## Adding a new endpoint (utoipa + codegen pipeline)
 

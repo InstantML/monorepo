@@ -24,6 +24,7 @@ const DASHBOARD_TABS = new Set(DASHBOARD_TAB_IDS);
 const SAFE_NEXT_PREFIXES = ["/dashboard", "/onboarding"];
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
 const STRIPE_REDIRECT_ORIGINS = new Set(["https://checkout.stripe.com", "https://billing.stripe.com"]);
+const LOCAL_CHECKOUT_SESSION_PATTERN = /^cs_(?:test|live)_[A-Za-z0-9_=-]{8,}$/;
 
 export function normalizeDeviceUserCode(value) {
   const raw = String(value ?? "").trim();
@@ -126,15 +127,22 @@ export function safeSameOriginInviteUrl(value, baseOrigin = globalThis.location?
   }
 }
 
-export function safeStripeRedirectUrl(value) {
+export function safeCheckoutRedirectUrl(value, baseOrigin = globalThis.location?.origin ?? "http://localhost") {
   const raw = String(value ?? "").trim();
   if (!raw || CONTROL_CHAR_PATTERN.test(raw)) return "";
   try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:") return "";
-    if (!STRIPE_REDIRECT_ORIGINS.has(url.origin)) return "";
+    const url = new URL(raw, baseOrigin);
+    if (url.origin === baseOrigin) {
+      if (url.pathname !== "/billing/return" || url.hash) return "";
+      const keys = [...url.searchParams.keys()];
+      if (keys.length !== 1 || keys[0] !== "session_id") return "";
+      return LOCAL_CHECKOUT_SESSION_PATTERN.test(url.searchParams.get("session_id") ?? "") ? url.href : "";
+    }
+    if (url.protocol !== "https:" || !STRIPE_REDIRECT_ORIGINS.has(url.origin)) return "";
     return url.href;
   } catch {
     return "";
   }
 }
+
+export const safeStripeRedirectUrl = safeCheckoutRedirectUrl;

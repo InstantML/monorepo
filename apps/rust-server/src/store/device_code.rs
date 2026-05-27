@@ -210,6 +210,9 @@ pub async fn device_code_confirm(
         (org, record.user_code.clone())
     };
 
+    require_org_admin(store, user_id, org_id).await?;
+    ensure_billing_write_allowed(store, org_id, "create API keys").await?;
+    require_org_storage_ready(&org)?;
     store.ensure_tenant_route(&org).await?;
 
     let plaintext = generate_api_key();
@@ -322,6 +325,61 @@ fn insert_test_device_code(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn store_with_data(data: StoreData) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_device_code_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn user_fixture(email: &str) -> UserRow {
+        UserRow {
+            id: Uuid::new_v4(),
+            primary_email: email.to_string(),
+            display_name: None,
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        }
+    }
+
+    fn org_fixture(user_id: Uuid) -> OrganizationRow {
+        OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "device-lab".to_string(),
+            name: "Device Lab".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: PLAN_FREE.included_seats,
+            created_by_user_id: Some(user_id),
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        }
+    }
 
     #[test]
     fn user_code_format_is_xxxx_hyphen_xxxx() {
@@ -445,5 +503,62 @@ mod tests {
         let base = "https://app.instantml.ai/";
         let uri = format!("{}/auth/device", base.trim_end_matches('/'));
         assert_eq!(uri, "https://app.instantml.ai/auth/device");
+    }
+
+    #[tokio::test]
+    async fn device_code_confirm_requires_admin_membership() {
+        let user = user_fixture("viewer@example.com");
+        let org = org_fixture(user.id);
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.insert_org(org.clone());
+        data.insert_membership(membership_row(org.id, user.id, "viewer", "active"));
+        insert_test_device_code(&mut data, "device-code", "ABCD-EFGH", "pending", 900);
+        let store = store_with_data(data);
+
+        let error = device_code_confirm(&store, user.id, org.id, "ABCD-EFGH")
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status(), axum::http::StatusCode::FORBIDDEN);
+        assert_eq!(store.data.lock().await.api_keys.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn device_code_confirm_respects_billing_write_gate() {
+        let user = user_fixture("owner@example.com");
+        let org = org_fixture(user.id);
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.insert_org(org.clone());
+        data.insert_membership(membership_row(org.id, user.id, "owner", "active"));
+        data.insert_billing_account(BillingAccountProjection {
+            schema_version: 1,
+            org_id: org.id,
+            access_state: BILLING_CHECKOUT_PENDING.to_string(),
+            plan_tier: "pro".to_string(),
+            effective_plan_tier: "free".to_string(),
+            requested_plan_tier: Some("pro".to_string()),
+            paid_extra_seats: 0,
+            stripe_customer_id: None,
+            stripe_subscription_id: None,
+            subscription_status: None,
+            current_period_start: None,
+            current_period_end: None,
+            cancel_at_period_end: false,
+            grace_until: None,
+            pending_intent_id: Some(Uuid::new_v4()),
+            message: Some("Complete checkout.".to_string()),
+            updated_at: Utc::now(),
+        });
+        insert_test_device_code(&mut data, "device-code", "ABCD-EFGH", "pending", 900);
+        let store = store_with_data(data);
+
+        let error = device_code_confirm(&store, user.id, org.id, "ABCD-EFGH")
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status(), axum::http::StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(store.data.lock().await.api_keys.len(), 0);
     }
 }

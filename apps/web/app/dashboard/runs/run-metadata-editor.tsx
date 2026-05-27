@@ -90,9 +90,9 @@ export function RunMetadataEditor({
             }} disabled={saving}><X size={14} /> Cancel</button>
             <button className="primary compact-button" type="button" onClick={save} disabled={disabled}><Save size={14} /> {saving ? "Saving" : "Save"}</button>
           </span>
-        ) : (
+        ) : onSave ? (
           <button className="secondary compact-button" type="button" onClick={() => setEditing(true)}><Pencil size={14} /> Edit</button>
-        )}
+        ) : null}
       </div>
       {editing ? (
         <div className="metadata-edit-grid">

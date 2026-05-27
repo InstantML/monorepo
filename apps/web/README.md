@@ -20,7 +20,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
   `/docs/quickstart` and `/docs/quickstart.md` so users can follow the guide or
   paste the agent-readable version into an assistant.
 - Clerk hosted sign-in/sign-up, local Google-style dev auth fallback, Free/Pro/Premium signup plan selection, hosted-vs-BYOC storage choice, Stripe Checkout redirect for paid signup, onboarding, organization invitation acceptance at `/invite#t=...`, and copy-once SDK API-key creation. For managed Clerk signups, the org-name input and account-type picker are hidden; the server auto-derives the workspace name and Free/Pro/Premium selection remains visible. Paid signups return a `billing_checkout.url` and redirect to Stripe before writes/API-key creation are unlocked; free hosted signups can still receive a ready-to-use `onboarding_api_key` rendered immediately without a separate button click. Premium BYOC signups go to onboarding without an SDK key until an owner/admin validates and saves a customer-owned self-hosted GCP ClickHouse connection. Sign-in, invite acceptance, and direct `/dashboard/*` entry all redirect unready storage sessions back to onboarding until `storage_state` is `storage_ready` or `storage_locked`. If a returning browser still has a Clerk session but InstantML cannot mint a scoped session from it, `app/auth-flow.tsx` retries with a non-cached Clerk token and then shows an explicit "refresh your sign-in" recovery path with a sign-out/restart action.
-- RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
+- RFC 8628 device-code confirmation page at `/auth/device`: requires a Clerk browser session for an owner/admin in a billing- and storage-ready workspace, pre-fills the `user_code` from a `?code=` query parameter, auto-formats the code as `XXXX-XXXX`, and POSTs to `POST /api/auth/device-code/confirm`. On success it shows a "you can close this tab" message; on error it shows an accessible `role="alert"` banner.
 - Runs workspace with run selector, sections, line/bar/histogram/dot panels, control-plane saved views, and local workspace layout fallback.
 - Run detail view.
 - Run comparison view.
@@ -30,9 +30,11 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 - Checkpoint timeline.
 - Import workflow UI when needed.
 
-Current navigation and comparison controls:
+Current navigation, workspace, and comparison controls:
 
 - Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Advanced`, `Run Detail`, `Compare`, `Insights`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
+- The top-right account/workspace menu is the primary organization selector. Its trigger shows the current workspace next to the account avatar, the menu searches all active memberships, groups personal and business workspaces, shows role/plan/member metadata, launches create-workspace, and links to settings, billing, and sign out. The left brandbar workspace text is passive context only.
+- Create-workspace keeps organization/workspace as the same backend entity. Free workspaces can invite teammates inline; paid workspaces defer invitations until after Stripe Checkout so unpaid orgs stay billing-blocked.
 - The topbar account badge uses the signed-in user's managed-auth avatar when available, then falls back to initials derived from the display name or email handle.
 - Unauthenticated visitors land on `/`, can sign in or sign up through Clerk in hosted mode, or through the explicitly labeled local dev Google-style flow in local mode. Signup chooses Free, Pro, or Premium, chooses either InstantML-provisioned storage or Premium BYOC ClickHouse, can reserve included teammate seats by email, creates a copy-once SDK API key, and then enters `/dashboard/runs`. BYOC onboarding displays copy-ready self-hosted GCP ClickHouse setup SQL, the configured InstantML data-plane egress CIDRs to allowlist in the customer GCP firewall/load balancer, and an endpoint/database/user/password validation form before SDK key creation is enabled. The shared demo action signs in as `hello@instantml.ai`, reuses the Premium-tier `InstantML Demo` org/service, skips SDK-key reveal, and is enforced read-only server-side so demo visitors browse sample data instead of pushing data. In hosted ClickHouse mode, auth writes users/orgs/sessions/API keys and tenant-route plan metadata to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
@@ -73,7 +75,7 @@ Current navigation and comparison controls:
 - Inspect chart points with visible markers, axis labels, ticks, and hover readouts that show the run name and metric value in both metric charts and Runs workspace panel charts.
 - Browse available metrics by namespace, coverage, point count, goal-aware best/lowest value, and selected-run presence.
 - Inspect selected runs through a detail dossier with a per-run metric chart, timeline, reproducibility fields, metric aggregate table, source metadata, config, tags, and artifact preview/copy actions.
-- Save dashboard project preference and named workspace views through the Rust control-plane API, with validated `localStorage` fallback when the API is unavailable during local development. Project preference loading gates the initial runs query so the first dashboard read does not fetch all projects and then immediately refetch the preferred project. Local saved views and workspace layouts are scoped by active org, user email, and project; legacy project-only workspace keys are read only before an authenticated org/user scope is available.
+- Save dashboard project preference and named workspace views through the Rust control-plane API, with validated `localStorage` fallback when the API is unavailable during local development. Project preference loading gates the initial runs query so the first dashboard read does not fetch all projects and then immediately refetch the preferred project. Local saved views and workspace layouts are scoped by active org, user email, and project; old org-only and project-only local keys are copied into the scoped key on first authenticated load so existing browser layouts remain visible.
 - Compare selected runs in either a column-oriented matrix or row-oriented run scan mode. Compare includes diff-only mode, row search, row sorting, addable metric columns, clickable sorting for run/metric/annotation/artifact/config columns, run sorting by name/status/duration/tags/notes/config/artifact/metric values, reference highlighting, saved-view persistence, visible tags/notes, and a 50-run cap that matches the current Rust side-by-side endpoint.
 - Copy selected-run artifact IDs and API route snippets directly from the `Artifacts` and `API` tabs. Run Detail and Compare render only safe same-origin media previews from an explicit PNG/JPEG/WebP/GIF, MP3/WAV/AAC/M4A, and MP4/WebM/MOV allowlist when stored bytes are available, including R2-backed hosted artifacts served through `/api/artifacts/:id/download`; SVG/HTML and unsupported or external-reference artifacts fall back to copy-only/unavailable actions. Raw artifact URIs are redacted in the UI so object-storage URLs, signed query strings, and bucket paths do not leak.
 - Browse active-run rich logged objects in Run Detail and Artifacts. The first slice renders table previews, histogram bars, and media cards from `GET /api/runs/:id/objects` plus bounded `GET /api/objects/:id/rows` table reads. Hidden tabs do not fetch object manifests, and Compare keeps using existing artifact context to avoid extra selected-run fan-out.
@@ -148,8 +150,19 @@ npm run dev:api
 Start the Next app in another terminal against that local API:
 
 ```bash
-INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:build
-INSTANTML_API_BASE=http://127.0.0.1:8000 npm run web:start
+INSTANTML_WEB_EXPLICIT_API_BASES=1 \
+INSTANTML_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_CONTROL_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_DATA_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_API_ALLOWED_ORIGINS=http://127.0.0.1:8000 \
+npm run web:build
+
+INSTANTML_WEB_EXPLICIT_API_BASES=1 \
+INSTANTML_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_CONTROL_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_DATA_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_API_ALLOWED_ORIGINS=http://127.0.0.1:8000 \
+npm run web:start
 ```
 
 Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create the copy-once SDK key, and enter the dashboard. Choose a Free/Pro/Premium plan, choose hosted storage or Premium BYOC ClickHouse, and optionally invite included seats. BYOC signups must first validate the customer-owned GCP ClickHouse endpoint from onboarding; any unready storage state keeps the browser on onboarding and the API key/dashboard paths stay blocked until the Rust data-plane route is ready.
@@ -342,6 +355,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 
 ## Relevant Design Docs
 
+- `docs/design/2026-05-26-organization-workspace-selector.md` — organization-as-workspace model, account/workspace menu, user-facing create-org route, role labels/capabilities
 - `docs/design/2026-05-17-landing-merge-into-web.md` — landing port, auth-aware `/` route, CSS scoping, migration plan, coverage exceptions
 - `docs/design/2026-05-07-next-react-ui-migration.md`
 - `docs/design/2026-05-08-full-navigation-tabs.md`

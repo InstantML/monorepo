@@ -2,6 +2,7 @@
 
 import { Columns3, RefreshCw, Search } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useRef } from "react";
 
 import { shortMetricName } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
@@ -47,6 +48,30 @@ export function RunsCommandbar({
   pinnedMetrics: string[];
   tableColumns: TableColumns;
 }) {
+  const columnsMenuRef = useRef<HTMLDivElement>(null);
+  const columnsTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!columnsOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && columnsMenuRef.current?.contains(target)) return;
+      onColumnsOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onColumnsOpen(false);
+        columnsTriggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [columnsOpen, onColumnsOpen]);
+
   return (
     <div className="runs-commandbar">
       <CustomSelect
@@ -60,8 +85,8 @@ export function RunsCommandbar({
         value={metricOptions.length ? metricKey : ""}
       />
       <div className="command-spacer" />
-      <div className="columns-menu">
-        <button className="secondary compact-button" type="button" aria-expanded={columnsOpen} aria-controls="columns-popover" onClick={() => onColumnsOpen((current) => !current)}><Columns3 size={15} /> Columns</button>
+      <div className="columns-menu" ref={columnsMenuRef}>
+        <button className="secondary compact-button" type="button" aria-expanded={columnsOpen} aria-controls="columns-popover" onClick={() => onColumnsOpen((current) => !current)} ref={columnsTriggerRef}><Columns3 size={15} /> Columns</button>
         {columnsOpen ? (
           <div className="column-popover" id="columns-popover">
             <strong>Visible columns</strong>

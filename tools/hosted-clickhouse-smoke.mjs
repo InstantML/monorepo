@@ -56,7 +56,12 @@ try {
   assert.ok(orgId, "signup should return an organization id");
   assert.equal(signup.body.organization.plan_tier, "pro");
   assert.equal(signup.body.organization.seat_limit, 3);
+  assert.match(signup.body.billing_checkout?.session_id ?? "", /^cs_test_instantml__/);
   assertNoSensitiveProvisioningFields(signup.body);
+
+  await postJson(controlBaseUrl, "/api/billing/checkout/sync", {
+    session_id: signup.body.billing_checkout.session_id,
+  }, { cookie });
 
   let seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
   assert.equal(seats.seats.length, 2);
@@ -216,9 +221,9 @@ try {
   assert.equal(usage.plans.pro.included_seats, 3);
   assert.equal(usage.organizations[0].plan_tier, "pro");
   assert.equal(usage.organizations[0].usage.seats, 2);
-  // One onboarding key is minted at signup, and one SDK key is created below;
-  // the revoked key should not count as active usage.
-  assert.equal(usage.organizations[0].usage.api_keys, 2);
+  // Paid checkout signups do not mint an onboarding key; the revoked key should
+  // not count as active usage.
+  assert.equal(usage.organizations[0].usage.api_keys, 1);
   assert.equal(usage.organizations[0].limits.included_storage_bytes, 1024 ** 4);
 
   const finalKinds = await controlKinds();
@@ -301,7 +306,9 @@ async function startServer(servicePlane) {
       INSTANTML_SERVICE_PLANE: servicePlane,
       INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
       INSTANTML_AUTH_MODE: "local",
-      INSTANTML_BILLING_ENABLED: "false",
+      INSTANTML_BILLING_ENABLED: "true",
+      INSTANTML_STRIPE_MOCK_CHECKOUT: "true",
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "sk_test_instantml_mock",
       INSTANTML_ARTIFACT_ROOT: path.join(tempDir, `${servicePlane}-artifacts`),
     },
     stdio: ["ignore", output, output],
@@ -324,7 +331,7 @@ async function stopServer(servicePlane) {
 }
 
 async function postJson(baseUrl, pathname, body, options = {}) {
-  const headers = { "content-type": "application/json" };
+  const headers = { "content-type": "application/json", origin: baseUrl };
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
   const response = await fetch(baseUrl + pathname, {
@@ -341,7 +348,7 @@ async function postJson(baseUrl, pathname, body, options = {}) {
 }
 
 async function assertPostStatus(baseUrl, pathname, body, options, status) {
-  const headers = { "content-type": "application/json" };
+  const headers = { "content-type": "application/json", origin: baseUrl };
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
   const response = await fetch(baseUrl + pathname, {

@@ -33,20 +33,20 @@ use handlers::{
     auth_session, auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
     billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
     billing_report_usage_overage, billing_status, billing_webhook, create_api_key, create_artifact,
-    create_attributes, create_customer_clickhouse_connection, create_invitation, create_object,
-    create_org, create_project, create_run, create_user, create_workspace_view,
-    customer_clickhouse_connection_status, device_code_confirm, device_code_poll,
-    device_code_start, disable_service_account, download_artifact, export_data, fork_run,
-    get_dashboard_preferences, get_metrics, get_run, get_run_lineage, get_workspace_view, health,
-    import_mlflow, import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
-    list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
-    list_org_memberships, list_orgs, list_projects, list_runs, list_seats, list_users,
-    list_workspace_views, log_console_logs, log_metrics, log_rank_metrics, metrics_handler,
-    metrics_series, not_found, openapi_json, org_name_availability, overview, preview_invitation,
-    rank_metrics_summary, readyz, resend_invitation, reserve_seat, reset_demo, revoke_api_key,
-    revoke_invitation, rotate_customer_clickhouse_credentials, runs_summary, side_by_side,
-    update_dashboard_preferences, update_run, update_workspace_view, upload_artifact, usage_export,
-    usage_summary, validate_customer_clickhouse_connection,
+    create_attributes, create_current_user_org, create_customer_clickhouse_connection,
+    create_invitation, create_object, create_org, create_project, create_run, create_user,
+    create_workspace_view, customer_clickhouse_connection_status, device_code_confirm,
+    device_code_poll, device_code_start, disable_service_account, download_artifact, export_data,
+    fork_run, get_dashboard_preferences, get_metrics, get_run, get_run_lineage, get_workspace_view,
+    health, import_mlflow, import_neptune, import_wandb, list_api_keys, list_artifacts,
+    list_attributes, list_console_logs, list_imports, list_invitations, list_object_rows,
+    list_objects, list_org_memberships, list_orgs, list_projects, list_runs, list_seats,
+    list_users, list_workspace_views, log_console_logs, log_metrics, log_rank_metrics,
+    metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
+    preview_invitation, rank_metrics_summary, readyz, resend_invitation, reserve_seat, reset_demo,
+    revoke_api_key, revoke_invitation, rotate_customer_clickhouse_credentials, runs_summary,
+    side_by_side, update_dashboard_preferences, update_run, update_workspace_view, upload_artifact,
+    usage_export, usage_summary, validate_customer_clickhouse_connection,
 };
 
 const SESSION_COOKIE: &str = "instantml_session";
@@ -185,6 +185,7 @@ fn control_routes() -> Router<Arc<AppState>> {
         )
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
+        .route("/api/orgs/current-user", post(create_current_user_org))
         .route("/api/orgs/memberships", get(list_org_memberships))
         .route("/api/orgs/name-availability", get(org_name_availability))
         .route(

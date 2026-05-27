@@ -189,6 +189,22 @@ pub struct CreateOrganizationRequest {
     pub storage_choice: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+pub struct InitialOrganizationInvitation {
+    pub email: String,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateCurrentUserOrganizationRequest {
+    pub name: Option<String>,
+    pub account_type: Option<String>,
+    pub plan_tier: Option<String>,
+    pub storage_choice: Option<String>,
+    pub initial_invitations: Option<Vec<InitialOrganizationInvitation>>,
+    pub switch_on_create: Option<bool>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct OrganizationRow {
     pub id: Uuid,
@@ -280,6 +296,30 @@ pub struct CreatedAuthSession {
     pub token: String,
     pub payload: AuthSessionPayload,
     pub onboarding_api_key: Option<OnboardingApiKey>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct CurrentUserOrganizationCreateResponse {
+    pub organization: OrganizationRow,
+    pub membership: MembershipRow,
+    pub memberships: Vec<OrganizationMembershipSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invitations: Vec<InitialInvitationCreateResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<AuthSessionPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_checkout: Option<BillingCheckoutInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub onboarding_api_key: Option<OnboardingApiKey>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct InitialInvitationCreateResult {
+    pub invitation: PublicInvitationRow,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_error: Option<String>,
 }
 
 pub const BILLING_FREE_ACTIVE: &str = "free_active";
@@ -626,11 +666,23 @@ pub struct OrganizationMembershipSummary {
     pub org_id: Uuid,
     pub name: String,
     pub slug: String,
+    pub account_type: String,
+    pub is_personal: bool,
     pub plan_tier: String,
     pub role: String,
+    pub role_label: String,
     pub status: String,
     pub member_count: usize,
     pub is_current: bool,
+    pub capabilities: OrganizationRoleCapabilities,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct OrganizationRoleCapabilities {
+    pub manage_billing: bool,
+    pub manage_members: bool,
+    pub write_runs: bool,
+    pub manage_api_keys: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

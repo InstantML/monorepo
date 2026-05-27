@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../../src/api.js";
 import { clerkIssuerConfigError } from "../../src/clerk-config.js";
+import { roleLabel } from "../../src/roles.js";
 import { postAuthRedirectPath } from "../../src/routes.js";
 import type { components } from "../../src/types/api.generated";
 import { InstantMlMark } from "../instantml-mark";
@@ -261,7 +262,7 @@ export default function InvitePage() {
                 InstantML
               </div>
               <p className={`iml-eyebrow${isError ? " is-danger" : " is-accent"}`}>
-                {preview?.role ? `${preview.role} invite` : "Workspace invite"}
+                {preview?.role ? `${roleLabel(preview.role)} invite` : "Workspace invite"}
               </p>
               <h1 className="iml-headline">{preview ? <>Join <span className="iml-em">{preview.org_name}</span></> : "Open invitation"}</h1>
               <p className="iml-sub">

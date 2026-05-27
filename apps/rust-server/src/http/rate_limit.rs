@@ -477,6 +477,16 @@ mod tests {
                 .class,
             RequestClass::General
         );
+        assert!(
+            !classify_route(&Method::GET, "/api/storage/clickhouse-connections/current")
+                .expect("policy")
+                .monthly_enforced
+        );
+        assert!(
+            !classify_route(&Method::POST, "/api/storage/clickhouse-connections")
+                .expect("policy")
+                .monthly_enforced
+        );
         assert!(classify_route(&Method::OPTIONS, "/api/usage").is_none());
     }
 
