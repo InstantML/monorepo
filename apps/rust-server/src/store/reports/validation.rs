@@ -195,6 +195,9 @@ fn validate_image(index: usize, object: &Map<String, Value>) -> AppResult<()> {
     Ok(())
 }
 
+const SUPPORTED_PANEL_TYPES: &[&str] = &["line", "bar", "scalar", "scatter"];
+const SUPPORTED_SCALAR_AGGS: &[&str] = &["min", "max", "mean", "latest"];
+
 fn validate_panel_grid(index: usize, object: &Map<String, Value>) -> AppResult<()> {
     let runsets = object
         .get("runsets")
@@ -236,6 +239,30 @@ fn validate_panel_grid(index: usize, object: &Map<String, Value>) -> AppResult<(
                 )));
             }
         }
+        // `pinned_run_ids` is optional but if present must be a string array.
+        if let Some(pinned) = runset_obj.get("pinned_run_ids") {
+            if pinned.is_null() {
+                // null is allowed as a sentinel for "no pins".
+            } else {
+                let pinned_array = pinned.as_array().ok_or_else(|| {
+                    AppError::validation(format!(
+                        "panel_grid block {index}: runset {runset_index} `pinned_run_ids` must be an array"
+                    ))
+                })?;
+                for entry in pinned_array {
+                    let value = entry.as_str().ok_or_else(|| {
+                        AppError::validation(format!(
+                            "panel_grid block {index}: runset {runset_index} `pinned_run_ids` entries must be strings"
+                        ))
+                    })?;
+                    if value.trim().is_empty() {
+                        return Err(AppError::validation(format!(
+                            "panel_grid block {index}: runset {runset_index} `pinned_run_ids` entries must be non-empty"
+                        )));
+                    }
+                }
+            }
+        }
     }
     let panels = object
         .get("panels")
@@ -252,20 +279,66 @@ fn validate_panel_grid(index: usize, object: &Map<String, Value>) -> AppResult<(
             ))
         })?;
         let panel_type = panel_obj.get("type").and_then(Value::as_str).unwrap_or("");
-        if panel_type != "line" {
+        if !SUPPORTED_PANEL_TYPES.contains(&panel_type) {
             return Err(AppError::validation(format!(
-                "panel_grid block {index}: panel {panel_index} type `{panel_type}` is not supported in v1 (only `line`)"
+                "panel_grid block {index}: panel {panel_index} type `{panel_type}` is not supported"
             )));
         }
-        let metric_key = panel_obj
-            .get("metric_key")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .trim();
-        if metric_key.is_empty() {
+        // Every panel references a runset by index — must be present and
+        // nonnegative; runset_index out-of-bounds is enforced at render time
+        // (so a runset can be removed without immediately invalidating the
+        // report).
+        let runset_index = panel_obj
+            .get("runset_index")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        if runset_index < 0 {
             return Err(AppError::validation(format!(
-                "panel_grid block {index}: panel {panel_index} requires `metric_key`"
+                "panel_grid block {index}: panel {panel_index} `runset_index` must be nonnegative"
             )));
+        }
+        match panel_type {
+            "line" | "bar" | "scalar" => {
+                let metric_key = panel_obj
+                    .get("metric_key")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                if metric_key.is_empty() {
+                    return Err(AppError::validation(format!(
+                        "panel_grid block {index}: panel {panel_index} requires `metric_key`"
+                    )));
+                }
+                if panel_type == "scalar" {
+                    let agg = panel_obj
+                        .get("agg")
+                        .and_then(Value::as_str)
+                        .unwrap_or("latest");
+                    if !SUPPORTED_SCALAR_AGGS.contains(&agg) {
+                        return Err(AppError::validation(format!(
+                            "panel_grid block {index}: scalar panel {panel_index} `agg` `{agg}` is not supported"
+                        )));
+                    }
+                }
+            }
+            "scatter" => {
+                let x_metric = panel_obj
+                    .get("x_metric")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                let y_metric = panel_obj
+                    .get("y_metric")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                if x_metric.is_empty() || y_metric.is_empty() {
+                    return Err(AppError::validation(format!(
+                        "panel_grid block {index}: scatter panel {panel_index} requires both `x_metric` and `y_metric`"
+                    )));
+                }
+            }
+            _ => unreachable!("panel type set is enumerated above"),
         }
     }
     Ok(())
@@ -365,10 +438,94 @@ mod tests {
         let err = validate_blocks(Some(json!([{
             "kind": "panel_grid",
             "runsets": [{ "name": "x", "projects": ["p"] }],
-            "panels": [{ "type": "scatter", "metric_key": "loss", "runset_index": 0 }]
+            "panels": [{ "type": "heatmap", "metric_key": "loss", "runset_index": 0 }]
         }])))
         .unwrap_err();
         assert!(err.message().contains("not supported"));
+    }
+
+    #[test]
+    fn accepts_bar_scalar_scatter_panels() {
+        let blocks = json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "base", "projects": ["proj-a"] }],
+            "panels": [
+                { "type": "bar", "metric_key": "eval/return_mean", "runset_index": 0, "group_by": "project" },
+                { "type": "scalar", "metric_key": "loss", "runset_index": 0, "agg": "mean" },
+                { "type": "scatter", "x_metric": "loss", "y_metric": "eval/return_mean", "runset_index": 0 }
+            ]
+        }]);
+        let canonical = validate_blocks(Some(blocks)).expect("blocks ok");
+        assert_eq!(
+            canonical.as_array().unwrap()[0]["panels"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn bar_panel_requires_metric_key() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "x", "projects": ["p"] }],
+            "panels": [{ "type": "bar", "runset_index": 0 }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("metric_key"));
+    }
+
+    #[test]
+    fn scalar_panel_rejects_unknown_aggregation() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "x", "projects": ["p"] }],
+            "panels": [{ "type": "scalar", "metric_key": "loss", "runset_index": 0, "agg": "median" }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("agg"));
+    }
+
+    #[test]
+    fn scatter_panel_requires_both_axes() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "x", "projects": ["p"] }],
+            "panels": [{ "type": "scatter", "x_metric": "loss", "runset_index": 0 }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("x_metric") || err.message().contains("y_metric"));
+    }
+
+    #[test]
+    fn pinned_run_ids_round_trip_on_runset() {
+        let blocks = json!([{
+            "kind": "panel_grid",
+            "runsets": [{
+                "name": "with-pins",
+                "projects": ["proj-a"],
+                "pinned_run_ids": ["run-uuid-1", "proj-a/baseline"]
+            }],
+            "panels": [{ "type": "line", "metric_key": "loss", "runset_index": 0 }]
+        }]);
+        let canonical = validate_blocks(Some(blocks.clone())).expect("blocks ok");
+        let runset = &canonical.as_array().unwrap()[0]["runsets"][0];
+        let pinned = runset["pinned_run_ids"].as_array().expect("pinned array");
+        assert_eq!(pinned.len(), 2);
+        assert_eq!(pinned[0].as_str(), Some("run-uuid-1"));
+        assert_eq!(pinned[1].as_str(), Some("proj-a/baseline"));
+    }
+
+    #[test]
+    fn pinned_run_ids_rejects_non_string_entries() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "x", "projects": ["p"], "pinned_run_ids": [42] }],
+            "panels": []
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("pinned_run_ids"));
     }
 
     #[test]

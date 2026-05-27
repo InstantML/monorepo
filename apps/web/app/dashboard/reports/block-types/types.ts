@@ -81,6 +81,12 @@ export interface RunsetData {
   groupby?: string[] | null;
   limit?: number | null;
   frozen_at?: string | null;
+  /**
+   * Optional explicit list of run IDs to include in the runset regardless of
+   * the projects filter. Lets a user pin a specific run (paste a UUID) into
+   * a chart so it stays in the view across re-renders.
+   */
+  pinned_run_ids?: string[] | null;
 }
 
 export interface LinePanelData {
@@ -90,7 +96,74 @@ export interface LinePanelData {
   smoothing?: number | null;
 }
 
-export type PanelData = LinePanelData;
+export interface BarPanelData {
+  type: "bar";
+  metric_key: string;
+  runset_index: number;
+  group_by?: string | null;
+}
+
+export type ScalarAggregation = "min" | "max" | "mean" | "latest";
+
+export interface ScalarPanelData {
+  type: "scalar";
+  metric_key: string;
+  runset_index: number;
+  agg: ScalarAggregation;
+}
+
+export interface ScatterPanelData {
+  type: "scatter";
+  x_metric: string;
+  y_metric: string;
+  runset_index: number;
+  color_by?: string | null;
+}
+
+export type PanelData =
+  | LinePanelData
+  | BarPanelData
+  | ScalarPanelData
+  | ScatterPanelData;
+
+export type PanelType = PanelData["type"];
+
+export const SUPPORTED_PANEL_TYPES: PanelType[] = [
+  "line",
+  "bar",
+  "scalar",
+  "scatter",
+];
+
+export const SUPPORTED_SCALAR_AGGREGATIONS: ScalarAggregation[] = [
+  "min",
+  "max",
+  "mean",
+  "latest",
+];
+
+export function defaultPanel(type: PanelType): PanelData {
+  switch (type) {
+    case "line":
+      return { type: "line", metric_key: "", runset_index: 0 };
+    case "bar":
+      return { type: "bar", metric_key: "", runset_index: 0 };
+    case "scalar":
+      return {
+        type: "scalar",
+        metric_key: "",
+        runset_index: 0,
+        agg: "latest",
+      };
+    case "scatter":
+      return {
+        type: "scatter",
+        x_metric: "",
+        y_metric: "",
+        runset_index: 0,
+      };
+  }
+}
 
 export interface PanelGridBlockData {
   kind: "panel_grid";

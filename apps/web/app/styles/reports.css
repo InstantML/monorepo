@@ -948,3 +948,111 @@ a.report-pane__action:hover {
   gap: 8px;
   align-items: center;
 }
+
+/* Panel-grid inline charts — line / bar / scalar / scatter */
+
+.report-block__panel-palette {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.report-block__panel-editor {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.report-block__pinned-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.report-block__pinned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font: 540 11px/1 var(--f-mono, monospace);
+}
+
+.report-block__pinned-chip code {
+  font-size: 11px;
+}
+
+.report-block__pinned-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.report-block__pinned-remove:hover {
+  color: var(--text);
+}
+
+.panel-chart {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  min-height: 56px;
+}
+
+.panel-chart--empty,
+.panel-chart--loading,
+.panel-chart--error {
+  font: 540 12px/1.5 var(--f-sans);
+  color: var(--muted);
+}
+
+.panel-chart--error {
+  color: var(--warm, #dc5b55);
+}
+
+.panel-chart--scalar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.panel-chart__scalar-value {
+  font: 700 32px/1 var(--f-sans);
+  color: var(--text);
+}
+
+.panel-chart__scalar-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font: 540 12px/1.4 var(--f-sans);
+  color: var(--muted);
+}
+
+.panel-chart__scalar-meta strong {
+  color: var(--text);
+}
+
+.panel-chart .metric-chart {
+  width: 100%;
+  height: auto;
+}
+
+.series-bar.series-0 { fill: var(--accent, #5d89dd); }
+.series-bar.series-1 { fill: #dc5b55; }
+.series-bar.series-2 { fill: var(--warm, #f59e0b); }
+.series-bar.series-3 { fill: #8b7cf6; }
+.series-bar.series-4 { fill: #2ec4b6; }
+
