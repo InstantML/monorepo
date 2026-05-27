@@ -215,6 +215,8 @@ export function WorkspacePanelCard({
   const [panelHover, setPanelHover] = useState<HoverPoint>(null);
   const [panelZoomRange, setPanelZoomRange] = useState<{ min: number; max: number } | null>(null);
   const [resizePreview, setResizePreview] = useState<WorkspacePanelLayout | null>(null);
+  const hoverFrameRef = useRef<number | null>(null);
+  const pendingHoverRef = useRef<{ x: number; y: number } | null>(null);
   const resizeCleanupRef = useRef<() => void>(() => {});
   const settings = useMemo(() => resolveWorkspaceSettings(view, section, panel), [panel, section, view]);
   const layout = useMemo(() => resizePreview ?? normalizedPanelLayout(panel.layout), [panel.layout, resizePreview]);
@@ -279,12 +281,28 @@ export function WorkspacePanelCard({
     setPanelZoomRange(null);
   }, [panel.metricKey, panel.type, settings.xMode, settings.groupBy, settings.groupAverage, settings.smoothing, settings.maxRuns, selectedRunKey]);
   useEffect(() => () => {
+    if (hoverFrameRef.current !== null) window.cancelAnimationFrame(hoverFrameRef.current);
     resizeCleanupRef.current();
   }, []);
   function handlePanelChartMove(event: MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const point = svgPointFromClient(rect, event.clientX, event.clientY, panelChartWidth, panelChartHeight);
-    setPanelHover(nearestPoint(normalized, point.x, point.y, 28) as HoverPoint);
+    pendingHoverRef.current = { x: point.x, y: point.y };
+    if (hoverFrameRef.current !== null) return;
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = null;
+      const pending = pendingHoverRef.current;
+      if (!pending) return;
+      setPanelHover(nearestPoint(normalized, pending.x, pending.y, 28) as HoverPoint);
+    });
+  }
+  function clearPanelHover() {
+    pendingHoverRef.current = null;
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+      hoverFrameRef.current = null;
+    }
+    setPanelHover(null);
   }
   function handleResizeStart(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!onResize) return;
@@ -427,7 +445,7 @@ export function WorkspacePanelCard({
             normalizedSeries={normalized}
             onMove={handlePanelChartMove}
             onPointHover={setPanelHover}
-            onLeave={() => setPanelHover(null)}
+            onLeave={clearPanelHover}
             onZoomRangeChange={setPanelZoomRange}
             padding={panelChartPadding}
             rangeSeries={rangeSeries}

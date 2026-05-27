@@ -151,6 +151,12 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   const workspacePanelCard = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
   assert.match(workspacePanelCard, /resizeCleanupRef/, "panel resize listeners should be cleaned up on unmount or interrupted resize");
   assert.match(workspacePanelCard, /addEventListener\("pointercancel"/, "panel resize should handle pointer cancellation");
+  assert.match(workspacePanelCard, /hoverFrameRef/, "workspace panel chart hover should be animation-frame throttled for dense selections");
+  assert.match(workspacePanelCard, /cancelAnimationFrame\(hoverFrameRef\.current\)/, "workspace panel chart hover should cancel pending work on leave/unmount");
+
+  const metricChart = readFileSync(`${root}app/dashboard/metrics/metric-chart.tsx`, "utf8");
+  assert.doesNotMatch(metricChart, /visibleHover\s*=\s*denseChart\s*\?\s*null/, "dense canvas charts should keep hover marker and tooltip rendering");
+  assert.doesNotMatch(metricChart, /onMouseMove=\{denseChart\s*\?\s*undefined\s*:\s*onMove\}/, "dense canvas charts should keep the SVG hover hit target");
 
   const distributedPane = readFileSync(`${root}app/dashboard/distributed/tab-pane.tsx`, "utf8");
   assert.doesNotMatch(distributedPane, /if \(!rankKey && next\.key\) setRankKey\(next\.key\)/, "rank metrics should not double-fetch the server default key");

@@ -96,14 +96,24 @@ export function axisTicks(min, max, count = 5) {
 
 export function nearestPoint(normalizedSeries, x, y, maxDistance = 18) {
   let nearest = null;
+  const consider = (item, point, distance) => {
+    if (distance <= maxDistance && (!nearest || distance < nearest.distance)) {
+      nearest = { runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance };
+    }
+  };
   for (const item of normalizedSeries) {
+    let previous = null;
     for (const point of item.normalizedPoints ?? []) {
       // Hit-test against the displayed line: the smoothed curve when smoothing
       // is on, otherwise the raw line.
-      const distance = Math.hypot(point.x - x, (point.displayY ?? point.y) - y);
-      if (distance <= maxDistance && (!nearest || distance < nearest.distance)) {
-        nearest = { runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance };
+      const pointY = point.displayY ?? point.y;
+      consider(item, point, Math.hypot(point.x - x, pointY - y));
+      if (previous) {
+        const previousY = previous.displayY ?? previous.y;
+        const segmentHit = distanceToSegment(x, y, previous.x, previousY, point.x, pointY);
+        consider(item, segmentHit.t <= 0.5 ? previous : point, segmentHit.distance);
       }
+      previous = point;
     }
   }
   return nearest;
@@ -262,6 +272,19 @@ function boundedXRange(range, minX, maxX) {
 function pointInRange(point, xKey, range) {
   const value = xValue(point, xKey);
   return value >= range.min && value <= range.max;
+}
+
+function distanceToSegment(x, y, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSq = dx * dx + dy * dy;
+  if (!Number.isFinite(lengthSq) || lengthSq <= 0) {
+    return { distance: Math.hypot(x - x1, y - y1), t: 0 };
+  }
+  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lengthSq));
+  const px = x1 + t * dx;
+  const py = y1 + t * dy;
+  return { distance: Math.hypot(x - px, y - py), t };
 }
 
 function valueDomain(points, metricKey = "") {

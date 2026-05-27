@@ -351,6 +351,7 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.match(formatAxisValue(new Date("2026-01-01T00:00:00.000Z").getTime(), "time"), /:/);
   assert.equal(formatAxisValue(null), "-");
   assert.equal(nearestPoint(normalized, normalized[0].normalizedPoints[0].x, normalized[0].normalizedPoints[0].y).runName, "run-a");
+  assert.equal(nearestPoint(normalized, 50, 40, 1).runName, "run-a");
   assert.equal(nearestPoint(normalized, 999, 999), null);
   assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 560, height: 360 }, 290, 200, 560, 640), { x: 280, y: 320 });
   assert.deepEqual(chartDomain([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/accuracy"), { minX: 0, maxX: 1, minY: 0, maxY: 1 });
