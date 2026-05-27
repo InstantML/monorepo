@@ -400,19 +400,34 @@ function ReportsListPane({
                     className="report-list__title-button"
                     onClick={() => onOpenView(summary.id)}
                   >
-                    <strong>{summary.title}</strong>
+                    <span className="report-list__title-text">
+                      {summary.title || "Untitled report"}
+                    </span>
                     {summary.description ? (
-                      <small>{summary.description}</small>
+                      <span className="report-list__description">{summary.description}</span>
                     ) : null}
-                    <small className="report-list__meta">
-                      {summary.block_count} blocks · {summary.visibility}
+                    <span className="report-list__meta">
+                      <span>{summary.block_count} blocks</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{summary.visibility}</span>
                       {summary.has_share_token ? (
-                        <span className="report-list__pill">
-                          <Sparkles size={11} aria-hidden="true" /> shared
-                        </span>
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="report-list__pill">
+                            <Sparkles size={11} aria-hidden="true" /> shared
+                          </span>
+                        </>
                       ) : null}
-                    </small>
+                    </span>
                   </button>
+                  <div className="report-list__timestamps" aria-label="Report timestamps">
+                    <span className="report-list__timestamp" title={absoluteTime(summary.updated_at)}>
+                      Edited {relativeTime(summary.updated_at)}
+                    </span>
+                    <span className="report-list__timestamp report-list__timestamp--muted" title={absoluteTime(summary.created_at)}>
+                      Created {relativeTime(summary.created_at)}
+                    </span>
+                  </div>
                   <div className="report-list__actions">
                     <button
                       type="button"
@@ -444,4 +459,42 @@ function messageFromError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "Something went wrong loading reports.";
+}
+
+/**
+ * Compact "edited 2m ago" / "created yesterday" style. ISO string in,
+ * humanized string out. Used by the reports list and the editor toolbar.
+ */
+function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "—";
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 45) return "just now";
+  if (diffSec < 90) return "1m ago";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 45) return `${diffMin}m ago`;
+  if (diffMin < 90) return "1h ago";
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffHr < 36) return "yesterday";
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  const diffMo = Math.round(diffDay / 30);
+  if (diffMo < 12) return `${diffMo}mo ago`;
+  const diffYr = Math.round(diffMo / 12);
+  return `${diffYr}y ago`;
+}
+
+function absoluteTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
