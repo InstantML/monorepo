@@ -213,19 +213,28 @@ jobs:
             topology="${DEFAULT_TOPOLOGY:-split}"
             public_router="${PUBLIC_ROUTER:-false}"
           fi
-          # Resolve the hosted-frontend URL for the chosen environment.
-          # The deploy script needs this set (non-localhost) when Resend is
-          # configured so invitation accept links are correct. Source of
-          # truth: the actual user-facing domain per environment.
+          # Per-environment values mirroring what the live Cloud Run services
+          # already have inline. Sourced here once so the deploy step env
+          # block can pass them through verbatim without re-branching.
           case "${environment}" in
-            prod)    frontend_base_url="https://instantml.ai" ;;
-            staging) frontend_base_url="https://staging.instantml.ai" ;;
-            *)       frontend_base_url="https://instantml.ai" ;;
+            prod)
+              frontend_base_url="https://instantml.ai"
+              allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
+              ;;
+            staging)
+              frontend_base_url="https://staging.instantml.ai"
+              allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://staging.instantml.ai"
+              ;;
+            *)
+              frontend_base_url="https://instantml.ai"
+              allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
+              ;;
           esac
           echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
           echo "topology=${topology}" >> "${GITHUB_OUTPUT}"
           echo "public_router=${public_router}" >> "${GITHUB_OUTPUT}"
           echo "frontend_base_url=${frontend_base_url}" >> "${GITHUB_OUTPUT}"
+          echo "allowed_frontend_origins=${allowed_frontend_origins}" >> "${GITHUB_OUTPUT}"
 
       - name: Reuse Pre-Built Image Tag
         id: image
@@ -249,9 +258,59 @@ jobs:
           INSTANTML_DEPLOY_ENV: ${{ steps.inputs.outputs.environment }}
           INSTANTML_CLOUD_RUN_TOPOLOGY: ${{ steps.inputs.outputs.topology }}
           INSTANTML_IMAGE_TAG: ${{ steps.image.outputs.image_tag }}
-          # Hosted frontend origin, required when Resend is loaded from SM so
-          # the deploy helper can stamp invitation accept links correctly.
+
+          # ------------------------------------------------------------------
+          # Service-config env block. The deploy helper stamps each of these
+          # onto the resulting Cloud Run services; anything NOT passed here
+          # gets wiped from the live service on the next deploy. Values
+          # mirror what `gcloud run services describe instantml-control`
+          # showed inline on the live prod control plane so production stays
+          # behavior-identical post-deploy. Per-env differences come from
+          # the Resolve Deploy Inputs step outputs.
+          # ------------------------------------------------------------------
+
+          # Hosted-frontend origin (also used by Resend invite links).
           INSTANTML_FRONTEND_BASE_URL: ${{ steps.inputs.outputs.frontend_base_url }}
+          INSTANTML_EMAIL_FROM: "noreply@instantml.ai"
+          INSTANTML_ALLOWED_FRONTEND_ORIGINS: ${{ steps.inputs.outputs.allowed_frontend_origins }}
+
+          # Self-hosted ClickHouse VM topology — must be set explicitly or
+          # the helper falls back to the cloud-service provisioner that we
+          # have already deprovisioned.
+          INSTANTML_CLICKHOUSE_PROVISIONER: "database"
+          INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true"
+
+          # Auth + signup gating (Clerk hosted, allowlist by email).
+          # AUTH_MODE differs between local dev (`local`) and prod
+          # (`api-key`); keep it set explicitly here.
+          # SIGNUP_ALLOWED_EMAILS lives in a repo Variable so the pilot
+          # list isn't checked into source. Edit via the Actions UI or
+          # `gh variable set INSTANTML_SIGNUP_ALLOWED_EMAILS`.
+          INSTANTML_AUTH_MODE: "api-key"
+          INSTANTML_MANAGED_CLERK_ENABLED: "true"
+          INSTANTML_SIGNUP_ALLOWED_EMAILS: ${{ vars.INSTANTML_SIGNUP_ALLOWED_EMAILS }}
+          CLERK_JWT_ISSUER: "https://clerk.instantml.ai"
+
+          # Server runtime config. BIND_ADDR and LOG_FORMAT differ
+          # legitimately between dev (127.0.0.1:8001/pretty) and prod;
+          # everything else with a matching default lives in config.rs.
+          INSTANTML_BIND_ADDR: "0.0.0.0:8000"
+          INSTANTML_LOG_FORMAT: "json"
+
+          # Billing toggle. Stripe API version, secret keys, etc. live in
+          # config defaults / Secret Manager.
+          INSTANTML_BILLING_ENABLED: "true"
+
+          # BYOC secret backend config (non-secret pointers; the actual
+          # tenant-supplied secrets live in the customer project).
+          # PROJECT_ID lives in a repo Variable so the GCP project ID
+          # isn't checked into source.
+          INSTANTML_BYOC_SECRET_BACKEND: "gcp-secret-manager"
+          INSTANTML_BYOC_SECRET_PROJECT_ID: ${{ vars.INSTANTML_BYOC_SECRET_PROJECT_ID }}
+          INSTANTML_BYOC_SECRET_PREFIX: "instantml-byoc-clickhouse"
+          INSTANTML_BYOC_EGRESS_CIDRS: "136.115.243.188/32"
+          INSTANTML_BYOC_EGRESS_SET_VERSION: "prod-us-central1-c419c85"
+
           # Skip the local-env rewrite step entirely; CI has no apps/web/.env.local.
           INSTANTML_WRITE_LOCAL_FRONTEND_ENV: "0"
           # Allow downstream tools to recognize this code path.
