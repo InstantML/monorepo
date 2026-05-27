@@ -2696,6 +2696,44 @@
         ]
       }
     },
+    "/api/reports/panels": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "list_org_panels",
+        "responses": {
+          "200": {
+            "description": "Org-wide panel inventory flattened across every report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelInventoryEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
     "/api/reports/share/{share_token}": {
       "get": {
         "tags": [
@@ -9125,6 +9163,45 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/OrganizationRow"
+            }
+          }
+        }
+      },
+      "PanelInventoryEntry": {
+        "type": "object",
+        "required": [
+          "report_id",
+          "report_title",
+          "panel_index",
+          "panel_spec"
+        ],
+        "properties": {
+          "panel_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "panel_spec": {
+            "type": "object"
+          },
+          "report_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "report_title": {
+            "type": "string"
+          }
+        }
+      },
+      "PanelInventoryEnvelope": {
+        "type": "object",
+        "required": [
+          "panels"
+        ],
+        "properties": {
+          "panels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PanelInventoryEntry"
             }
           }
         }

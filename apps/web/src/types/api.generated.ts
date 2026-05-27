@@ -720,6 +720,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/panels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_org_panels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/share/{share_token}": {
         parameters: {
             query?: never;
@@ -2077,6 +2093,16 @@ export interface components {
         };
         OrganizationsEnvelope: {
             organizations: components["schemas"]["OrganizationRow"][];
+        };
+        PanelInventoryEntry: {
+            panel_index: number;
+            panel_spec: Record<string, never>;
+            /** Format: uuid */
+            report_id: string;
+            report_title: string;
+        };
+        PanelInventoryEnvelope: {
+            panels: components["schemas"]["PanelInventoryEntry"][];
         };
         ProjectEnvelope: {
             project: components["schemas"]["ProjectRow"];
@@ -4420,6 +4446,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_org_panels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Org-wide panel inventory flattened across every report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PanelInventoryEnvelope"];
                 };
             };
             /** @description Authentication required */

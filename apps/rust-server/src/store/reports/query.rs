@@ -108,6 +108,52 @@ pub async fn get_report_by_share_token(store: &Store, share_token: &str) -> AppR
         .ok_or_else(|| AppError::not_found("report not found"))
 }
 
+/// Returns every panel defined inside every PanelGrid block across the
+/// caller's org, flattened. The dashboard's "Add panel" picker exposes this
+/// list under the "From other reports" tab so a user (or agent) can clone an
+/// existing panel spec into the current report.
+pub async fn list_org_panels(store: &Store, ctx: &RequestContext) -> AppResult<Value> {
+    require_report_read(store, ctx)?;
+    let data = store.data.lock().await;
+    let entries = panels_inventory(&data, ctx.org_id);
+    Ok(json!({ "panels": entries }))
+}
+
+/// Pure flattening helper used by [`list_org_panels`]. Extracted so it can be
+/// tested without standing up a `Store` instance — the surrounding handler is
+/// a thin auth + lock wrapper.
+pub(crate) fn panels_inventory(data: &StoreData, org_id: Uuid) -> Vec<Value> {
+    let mut entries: Vec<Value> = Vec::new();
+    for row in data.reports.values() {
+        if row.org_id != org_id || row.deleted_at.is_some() {
+            continue;
+        }
+        let Some(blocks) = row.blocks.as_array() else {
+            continue;
+        };
+        for block in blocks {
+            let Some(block_obj) = block.as_object() else {
+                continue;
+            };
+            if block_obj.get("kind").and_then(Value::as_str) != Some("panel_grid") {
+                continue;
+            }
+            let Some(panels) = block_obj.get("panels").and_then(Value::as_array) else {
+                continue;
+            };
+            for (panel_index, panel_spec) in panels.iter().enumerate() {
+                entries.push(json!({
+                    "report_id": row.id,
+                    "report_title": row.title,
+                    "panel_index": panel_index,
+                    "panel_spec": panel_spec.clone(),
+                }));
+            }
+        }
+    }
+    entries
+}
+
 pub fn report_summary(row: &ReportRow) -> ReportSummary {
     let block_count = row.blocks.as_array().map(|array| array.len()).unwrap_or(0);
     ReportSummary {
@@ -309,5 +355,91 @@ mod tests {
         row.share_token = Some("instantml_share_xxx".to_string());
         let summary = report_summary(&row);
         assert!(summary.has_share_token);
+    }
+
+    #[test]
+    fn panels_inventory_flattens_panel_grids_across_reports() {
+        let mut data = StoreData::default();
+        let org_id = Uuid::from_u128(99);
+        let mut report_a = row(
+            10,
+            json!([
+                { "kind": "paragraph", "text": "intro" },
+                {
+                    "kind": "panel_grid",
+                    "runsets": [{ "name": "rs", "projects": ["proj-a"] }],
+                    "panels": [
+                        { "type": "line", "metric_key": "loss", "runset_index": 0 },
+                        { "type": "scalar", "metric_key": "loss", "runset_index": 0, "agg": "latest" }
+                    ]
+                }
+            ]),
+        );
+        report_a.org_id = org_id;
+        let mut report_b = row(
+            11,
+            json!([{
+                "kind": "panel_grid",
+                "runsets": [{ "name": "rs", "projects": ["proj-b"] }],
+                "panels": [
+                    { "type": "bar", "metric_key": "eval/return_mean", "runset_index": 0 }
+                ]
+            }]),
+        );
+        report_b.org_id = org_id;
+        data.insert_report(report_a);
+        data.insert_report(report_b);
+
+        // A report from a different org must not leak.
+        let mut foreign = row(
+            12,
+            json!([{
+                "kind": "panel_grid",
+                "runsets": [{ "name": "x", "projects": ["p"] }],
+                "panels": [{ "type": "line", "metric_key": "foreign", "runset_index": 0 }]
+            }]),
+        );
+        foreign.org_id = Uuid::from_u128(123);
+        data.insert_report(foreign);
+
+        let entries = panels_inventory(&data, org_id);
+        assert_eq!(entries.len(), 3);
+        let metric_keys: Vec<String> = entries
+            .iter()
+            .map(|entry| {
+                entry["panel_spec"]["metric_key"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect();
+        assert!(metric_keys.contains(&"loss".to_string()));
+        assert!(metric_keys.contains(&"eval/return_mean".to_string()));
+        assert!(!metric_keys.contains(&"foreign".to_string()));
+        // Each entry carries the report id, title, and panel index.
+        for entry in &entries {
+            assert!(entry["report_id"].as_str().is_some());
+            assert!(entry["report_title"].as_str().is_some());
+            assert!(entry["panel_index"].as_i64().is_some());
+        }
+    }
+
+    #[test]
+    fn panels_inventory_skips_deleted_reports() {
+        let mut data = StoreData::default();
+        let org_id = Uuid::from_u128(99);
+        let mut report = row(
+            20,
+            json!([{
+                "kind": "panel_grid",
+                "runsets": [{ "name": "rs", "projects": ["p"] }],
+                "panels": [{ "type": "line", "metric_key": "loss", "runset_index": 0 }]
+            }]),
+        );
+        report.org_id = org_id;
+        report.deleted_at = Some(chrono::Utc::now());
+        data.insert_report(report);
+        let entries = panels_inventory(&data, org_id);
+        assert!(entries.is_empty());
     }
 }

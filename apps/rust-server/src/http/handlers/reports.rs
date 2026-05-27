@@ -240,6 +240,24 @@ pub async fn get_report_by_share_token(
 
 #[utoipa::path(
     get,
+    path = "/api/reports/panels",
+    tag = "reports",
+    security(("browserSession" = []), ("bearerApiKey" = [])),
+    responses(
+        (status = 200, description = "Org-wide panel inventory flattened across every report", body = crate::http::openapi::PanelInventoryEnvelope),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn list_org_panels(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, false).await?;
+    Ok(Json(store::list_org_panels(&state.store, &ctx).await?))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/reports/{report_id}/markdown",
     tag = "reports",
     params(

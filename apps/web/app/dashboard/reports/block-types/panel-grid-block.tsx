@@ -3,13 +3,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../../../../src/api.js";
+import { AddPanelModal, cloneInventoryPanel } from "./add-panel-modal";
 import { PanelChartRenderer } from "./panel-chart-renderer";
+import { RunSetTable } from "./run-set-table";
 import type {
   BarPanelData,
+  CodePanelData,
+  ImagePanelData,
   LinePanelData,
+  MarkdownPanelData,
   PanelData,
   PanelGridBlockData,
+  PanelInventoryEntry,
   PanelType,
+  ParallelCoordinatesPanelData,
+  RunComparerPanelData,
   RunsetData,
   ScalarPanelData,
   ScatterPanelData,
@@ -31,6 +39,11 @@ const PANEL_TYPE_LABEL: Record<PanelType, string> = {
   bar: "Bar",
   scalar: "Scalar",
   scatter: "Scatter",
+  parallel_coordinates: "Parallel coords",
+  run_comparer: "Run comparer",
+  markdown_panel: "Markdown",
+  code_panel: "Code",
+  image_panel: "Image",
 };
 
 /**
@@ -88,6 +101,15 @@ export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
     },
     [block, onChange],
   );
+  const addInventoryPanel = useCallback(
+    (entry: PanelInventoryEntry) => {
+      if (!onChange) return;
+      const cloned = cloneInventoryPanel(entry);
+      onChange({ ...block, panels: [...block.panels, cloned] });
+      setPaletteOpen(false);
+    },
+    [block, onChange],
+  );
   const updatePanel = useCallback(
     (index: number, patch: Partial<PanelData>) => {
       if (!onChange) return;
@@ -105,7 +127,10 @@ export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
       const next = defaultPanel(type);
       // Preserve runset_index across type swaps so charts stay aimed at the
       // same runset; metric keys reset because shapes differ across types.
-      next.runset_index = previous?.runset_index ?? 0;
+      // Static panels (markdown/code/image) don't carry a runset_index — skip.
+      if ("runset_index" in next && previous && "runset_index" in previous) {
+        (next as { runset_index: number }).runset_index = previous.runset_index;
+      }
       const panels = block.panels.map((panel, current) => (current === index ? next : panel));
       onChange({ ...block, panels });
     },
@@ -159,36 +184,14 @@ export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
         <div className="report-block__section-head">
           <h4>Panels</h4>
           {!readOnly ? (
-            paletteOpen ? (
-              <div className="report-block__panel-palette" role="group" aria-label="Add panel">
-                {SUPPORTED_PANEL_TYPES.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className="report-block__action"
-                    onClick={() => addPanel(type)}
-                  >
-                    {PANEL_TYPE_LABEL[type]}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="report-block__action report-block__action--secondary"
-                  onClick={() => setPaletteOpen(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="report-block__action"
-                onClick={() => setPaletteOpen(true)}
-                aria-label="Add panel"
-              >
-                + Panel
-              </button>
-            )
+            <button
+              type="button"
+              className="report-block__action"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Add panel"
+            >
+              + Panel
+            </button>
           ) : null}
         </div>
         {block.panels.length === 0 ? (
@@ -208,7 +211,9 @@ export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
                 />
                 <PanelChartRenderer
                   panel={panel}
-                  runset={block.runsets[panel.runset_index]}
+                  runset={
+                    "runset_index" in panel ? block.runsets[panel.runset_index] : undefined
+                  }
                   api={api}
                 />
               </li>
@@ -216,6 +221,36 @@ export function PanelGridBlock({ block, readOnly = false, onChange }: Props) {
           </ul>
         )}
       </div>
+      {block.runsets.length > 0 ? (
+        <div className="report-block__section">
+          <div className="report-block__section-head">
+            <h4>Runs</h4>
+          </div>
+          {block.runsets.map((_, index) => (
+            <div key={`table-${index}`} className="report-block__runset-table">
+              {block.runsets.length > 1 ? (
+                <div className="report-block__runset-table-head">
+                  Runset {index + 1}: {block.runsets[index]?.name}
+                </div>
+              ) : null}
+              <RunSetTable
+                block={block}
+                runsetIndex={index}
+                readOnly={readOnly}
+                api={api}
+                onChange={onChange}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <AddPanelModal
+        open={paletteOpen}
+        api={api}
+        onClose={() => setPaletteOpen(false)}
+        onPickType={(type) => addPanel(type)}
+        onPickFromInventory={(entry) => addInventoryPanel(entry)}
+      />
     </div>
   );
 }
@@ -419,22 +454,26 @@ function PanelEditor({
           </button>
         ) : null}
       </div>
-      <div className="report-block__row">
-        <label className="report-block__label">Runset</label>
-        <select
-          className="report-block__select"
-          value={panel.runset_index}
-          onChange={(event) => onChange({ runset_index: Number(event.target.value) })}
-          disabled={readOnly}
-          aria-label={`Panel ${panelIndex + 1} runset`}
-        >
-          {Array.from({ length: Math.max(1, runsetCount) }, (_, index) => (
-            <option key={index} value={index}>
-              Runset {index + 1}
-            </option>
-          ))}
-        </select>
-      </div>
+      {"runset_index" in panel ? (
+        <div className="report-block__row">
+          <label className="report-block__label">Runset</label>
+          <select
+            className="report-block__select"
+            value={panel.runset_index}
+            onChange={(event) =>
+              onChange({ runset_index: Number(event.target.value) } as Partial<PanelData>)
+            }
+            disabled={readOnly}
+            aria-label={`Panel ${panelIndex + 1} runset`}
+          >
+            {Array.from({ length: Math.max(1, runsetCount) }, (_, index) => (
+              <option key={index} value={index}>
+                Runset {index + 1}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <PanelKindFields panel={panel} readOnly={readOnly} onChange={onChange} />
     </div>
   );
@@ -458,7 +497,333 @@ function PanelKindFields({
       return <ScalarPanelFields panel={panel} readOnly={readOnly} onChange={(patch) => onChange(patch)} />;
     case "scatter":
       return <ScatterPanelFields panel={panel} readOnly={readOnly} onChange={(patch) => onChange(patch)} />;
+    case "parallel_coordinates":
+      return (
+        <ParallelCoordsFields panel={panel} readOnly={readOnly} onChange={(patch) => onChange(patch)} />
+      );
+    case "run_comparer":
+      return (
+        <RunComparerFields panel={panel} readOnly={readOnly} onChange={(patch) => onChange(patch)} />
+      );
+    case "markdown_panel":
+      return (
+        <MarkdownPanelFields panel={panel} readOnly={readOnly} onChange={(patch) => onChange(patch)} />
+      );
+    case "code_panel":
+      return (
+        <CodePanelFields panel={panel} readOnly={readOnly} onChange={(patch) => onChange(patch)} />
+      );
+    case "image_panel":
+      return (
+        <ImagePanelFields panel={panel} readOnly={readOnly} onChange={(patch) => onChange(patch)} />
+      );
   }
+}
+
+function ParallelCoordsFields({
+  panel,
+  readOnly,
+  onChange,
+}: {
+  panel: ParallelCoordinatesPanelData;
+  readOnly: boolean;
+  onChange: (patch: Partial<ParallelCoordinatesPanelData>) => void;
+}) {
+  const [draftKind, setDraftKind] = useState<"metric_key" | "config_key">("metric_key");
+  const [draftValue, setDraftValue] = useState("");
+  const addDimension = () => {
+    const value = draftValue.trim();
+    if (!value) return;
+    const next = [...panel.dimensions, { [draftKind]: value }];
+    onChange({ dimensions: next });
+    setDraftValue("");
+  };
+  const removeDimension = (target: number) => {
+    onChange({ dimensions: panel.dimensions.filter((_, idx) => idx !== target) });
+  };
+  return (
+    <div className="report-block__panel-fields">
+      <label className="report-block__label">Dimensions</label>
+      <ul className="report-block__pinned-list">
+        {panel.dimensions.map((dim, index) => {
+          const label = dim.metric_key
+            ? `metric: ${dim.metric_key}`
+            : `config: ${dim.config_key ?? ""}`;
+          return (
+            <li key={`${label}-${index}`} className="report-block__pinned-chip">
+              <code>{label}</code>
+              {!readOnly ? (
+                <button
+                  type="button"
+                  className="report-block__pinned-remove"
+                  onClick={() => removeDimension(index)}
+                  aria-label={`Remove dimension ${label}`}
+                >
+                  ×
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+        {panel.dimensions.length === 0 ? (
+          <li className="report-block__hint">Add at least one dimension to render.</li>
+        ) : null}
+      </ul>
+      {!readOnly ? (
+        <div className="report-block__row">
+          <select
+            className="report-block__select"
+            value={draftKind}
+            onChange={(event) => setDraftKind(event.target.value as "metric_key" | "config_key")}
+            aria-label="Dimension kind"
+          >
+            <option value="metric_key">Metric</option>
+            <option value="config_key">Config</option>
+          </select>
+          <input
+            className="report-block__input"
+            value={draftValue}
+            placeholder={draftKind === "metric_key" ? "eval/return_mean" : "lr"}
+            onChange={(event) => setDraftValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addDimension();
+              }
+            }}
+            aria-label="Dimension value"
+          />
+          <button type="button" className="report-block__action" onClick={addDimension}>
+            + Dim
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RunComparerFields({
+  panel,
+  readOnly,
+  onChange,
+}: {
+  panel: RunComparerPanelData;
+  readOnly: boolean;
+  onChange: (patch: Partial<RunComparerPanelData>) => void;
+}) {
+  const [runDraft, setRunDraft] = useState("");
+  const [fieldDraft, setFieldDraft] = useState("");
+  return (
+    <div className="report-block__panel-fields">
+      <label className="report-block__label">Run IDs to compare</label>
+      <ul className="report-block__pinned-list">
+        {panel.run_ids.map((id) => (
+          <li key={id} className="report-block__pinned-chip">
+            <code>{id}</code>
+            {!readOnly ? (
+              <button
+                type="button"
+                className="report-block__pinned-remove"
+                onClick={() =>
+                  onChange({ run_ids: panel.run_ids.filter((entry) => entry !== id) })
+                }
+                aria-label={`Remove run ${id}`}
+              >
+                ×
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {!readOnly ? (
+        <div className="report-block__row">
+          <input
+            className="report-block__input"
+            value={runDraft}
+            placeholder="run-uuid"
+            onChange={(event) => setRunDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                const value = runDraft.trim();
+                if (value && !panel.run_ids.includes(value)) {
+                  onChange({ run_ids: [...panel.run_ids, value] });
+                  setRunDraft("");
+                }
+              }
+            }}
+            aria-label="Run id"
+          />
+          <button
+            type="button"
+            className="report-block__action"
+            onClick={() => {
+              const value = runDraft.trim();
+              if (value && !panel.run_ids.includes(value)) {
+                onChange({ run_ids: [...panel.run_ids, value] });
+                setRunDraft("");
+              }
+            }}
+          >
+            + Run
+          </button>
+        </div>
+      ) : null}
+      <label className="report-block__label">Fields (e.g. config.lr, summary.val_acc)</label>
+      <ul className="report-block__pinned-list">
+        {panel.fields.map((field) => (
+          <li key={field} className="report-block__pinned-chip">
+            <code>{field}</code>
+            {!readOnly ? (
+              <button
+                type="button"
+                className="report-block__pinned-remove"
+                onClick={() =>
+                  onChange({ fields: panel.fields.filter((entry) => entry !== field) })
+                }
+                aria-label={`Remove field ${field}`}
+              >
+                ×
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {!readOnly ? (
+        <div className="report-block__row">
+          <input
+            className="report-block__input"
+            value={fieldDraft}
+            placeholder="config.lr"
+            onChange={(event) => setFieldDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                const value = fieldDraft.trim();
+                if (value && !panel.fields.includes(value)) {
+                  onChange({ fields: [...panel.fields, value] });
+                  setFieldDraft("");
+                }
+              }
+            }}
+            aria-label="Field path"
+          />
+          <button
+            type="button"
+            className="report-block__action"
+            onClick={() => {
+              const value = fieldDraft.trim();
+              if (value && !panel.fields.includes(value)) {
+                onChange({ fields: [...panel.fields, value] });
+                setFieldDraft("");
+              }
+            }}
+          >
+            + Field
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MarkdownPanelFields({
+  panel,
+  readOnly,
+  onChange,
+}: {
+  panel: MarkdownPanelData;
+  readOnly: boolean;
+  onChange: (patch: Partial<MarkdownPanelData>) => void;
+}) {
+  return (
+    <div className="report-block__panel-fields">
+      <label className="report-block__label">Markdown</label>
+      <textarea
+        className="report-block__textarea report-block__textarea--mono"
+        rows={Math.min(12, Math.max(3, panel.text.split("\n").length + 1))}
+        value={panel.text}
+        placeholder="# Section title"
+        onChange={(event) => onChange({ text: event.target.value })}
+        readOnly={readOnly}
+        aria-label="Markdown panel text"
+      />
+    </div>
+  );
+}
+
+function CodePanelFields({
+  panel,
+  readOnly,
+  onChange,
+}: {
+  panel: CodePanelData;
+  readOnly: boolean;
+  onChange: (patch: Partial<CodePanelData>) => void;
+}) {
+  return (
+    <div className="report-block__panel-fields">
+      <div className="report-block__row">
+        <label className="report-block__label">Language</label>
+        <input
+          className="report-block__input"
+          value={panel.language}
+          placeholder="python"
+          onChange={(event) => onChange({ language: event.target.value })}
+          readOnly={readOnly}
+          aria-label="Code panel language"
+        />
+      </div>
+      <label className="report-block__label">Code</label>
+      <textarea
+        className="report-block__textarea report-block__textarea--mono"
+        rows={Math.min(15, Math.max(4, panel.code.split("\n").length + 1))}
+        value={panel.code}
+        placeholder="// code"
+        onChange={(event) => onChange({ code: event.target.value })}
+        readOnly={readOnly}
+        aria-label="Code panel body"
+        spellCheck={false}
+      />
+    </div>
+  );
+}
+
+function ImagePanelFields({
+  panel,
+  readOnly,
+  onChange,
+}: {
+  panel: ImagePanelData;
+  readOnly: boolean;
+  onChange: (patch: Partial<ImagePanelData>) => void;
+}) {
+  return (
+    <div className="report-block__panel-fields">
+      <div className="report-block__row">
+        <label className="report-block__label">URL</label>
+        <input
+          className="report-block__input"
+          value={panel.url}
+          placeholder="https://example.com/figure.png"
+          onChange={(event) => onChange({ url: event.target.value })}
+          readOnly={readOnly}
+          aria-label="Image panel url"
+        />
+      </div>
+      <div className="report-block__row">
+        <label className="report-block__label">Caption</label>
+        <input
+          className="report-block__input"
+          value={panel.caption ?? ""}
+          placeholder="Optional caption"
+          onChange={(event) => onChange({ caption: event.target.value || null })}
+          readOnly={readOnly}
+          aria-label="Image panel caption"
+        />
+      </div>
+    </div>
+  );
 }
 
 function MetricInput({

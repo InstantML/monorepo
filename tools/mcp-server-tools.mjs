@@ -35,6 +35,20 @@ export const BLOCK_SCHEMA_EXAMPLE = {
         { type: "bar", metric_key: "eval/return_mean", runset_index: 0, group_by: "project" },
         { type: "scalar", metric_key: "eval/return_mean", runset_index: 0, agg: "mean" },
         { type: "scatter", x_metric: "train/loss", y_metric: "eval/return_mean", runset_index: 0 },
+        {
+          type: "parallel_coordinates",
+          runset_index: 0,
+          dimensions: [{ config_key: "lr" }, { metric_key: "eval/return_mean" }],
+        },
+        {
+          type: "run_comparer",
+          runset_index: 0,
+          run_ids: ["run-uuid-1"],
+          fields: ["config.lr", "summary.val_acc"],
+        },
+        { type: "markdown_panel", text: "## Notes\nFreeform commentary alongside the charts." },
+        { type: "code_panel", code: "import instantml as ml", language: "python" },
+        { type: "image_panel", url: "https://example.com/fig.png", caption: "Optional caption" },
       ],
     },
     { kind: "llm_summary", panelgrid_index: 7, angle: "what-worked" },
@@ -42,10 +56,22 @@ export const BLOCK_SCHEMA_EXAMPLE = {
   notes: {
     panelgrid_index: "Zero-based index pointing at the panel_grid block this summary should consume.",
     angles: ["what-worked", "outliers", "config-diffs", "next-steps", "free-form"],
-    panel_types: ["line", "bar", "scalar", "scatter"],
+    panel_types: [
+      "line",
+      "bar",
+      "scalar",
+      "scatter",
+      "parallel_coordinates",
+      "run_comparer",
+      "markdown_panel",
+      "code_panel",
+      "image_panel",
+    ],
     scalar_aggs: ["min", "max", "mean", "latest"],
     runset_pinned_ids:
       "Optional list of run IDs (UUID or 'project/run-name' shorthand) to pin to the runset. Unioned with the projects query.",
+    runset_run_settings:
+      "Optional map keyed by run id: { color?: string, disabled?: bool, hidden?: bool }. Power the run-set table widget.",
     visibility: ["private", "org", "public"],
   },
 };
@@ -390,6 +416,55 @@ export function buildTools({ apiUrl, apiKey }) {
         "Return a single JSON example demonstrating every supported block kind with all fields populated. Use this as the canonical reference when authoring `blocks` for tracker.create_report / tracker.update_report.",
       inputSchema: { type: "object", properties: {} },
       handler: async () => textResult(BLOCK_SCHEMA_EXAMPLE),
+    },
+    {
+      name: "tracker.list_org_panels",
+      description:
+        "Return every panel spec defined inside every PanelGrid across the caller's org. Use to find a panel to clone into a new report. Each entry is `{ report_id, report_title, panel_index, panel_spec }`.",
+      inputSchema: { type: "object", properties: {} },
+      handler: async () => {
+        const payload = await api("/api/reports/panels");
+        return textResult({ panels: payload?.panels ?? [] });
+      },
+    },
+    {
+      name: "tracker.add_panel_to_report",
+      description:
+        "Append a panel to an existing PanelGrid block inside a report. `panel_grid_block_index` is the zero-based index of the target `panel_grid` block in the report's `blocks` array. `panel_spec` must match a supported panel shape (see tracker.report_block_schema). Returns the updated report.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          report_id: { type: "string" },
+          panel_grid_block_index: { type: "integer", minimum: 0 },
+          panel_spec: { type: "object" },
+        },
+        required: ["report_id", "panel_grid_block_index", "panel_spec"],
+      },
+      handler: async (args) => {
+        const reportPayload = await api(
+          `/api/reports/${encodeURIComponent(args.report_id)}`,
+        );
+        const report = reportFromPayload(reportPayload);
+        if (!report) {
+          throw new Error(`report ${args.report_id} not found`);
+        }
+        const blocks = Array.isArray(report.blocks) ? [...report.blocks] : [];
+        const target = blocks[args.panel_grid_block_index];
+        if (!target || target.kind !== "panel_grid") {
+          throw new Error(
+            `block at index ${args.panel_grid_block_index} is not a panel_grid block`,
+          );
+        }
+        const nextPanels = Array.isArray(target.panels) ? [...target.panels] : [];
+        nextPanels.push(args.panel_spec);
+        blocks[args.panel_grid_block_index] = { ...target, panels: nextPanels };
+        const updated = await apiJson(
+          "PATCH",
+          `/api/reports/${encodeURIComponent(args.report_id)}`,
+          { blocks },
+        );
+        return textResult(reportFromPayload(updated));
+      },
     },
   ];
 }

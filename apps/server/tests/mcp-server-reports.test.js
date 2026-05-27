@@ -84,11 +84,110 @@ test("MCP server exposes the report tool surface", () => {
     "tracker.refresh_llm_summary",
     "tracker.share_report",
     "tracker.report_block_schema",
+    "tracker.list_org_panels",
+    "tracker.add_panel_to_report",
   ]) {
     assert.ok(
       names.includes(expected),
       `expected ${expected} in MCP tool surface (got ${names.join(", ")})`,
     );
+  }
+});
+
+test("tracker.list_org_panels returns the panel inventory envelope", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /api/reports/panels": {
+      panels: [
+        {
+          report_id: "rep-1",
+          report_title: "First",
+          panel_index: 0,
+          panel_spec: { type: "line", metric_key: "loss", runset_index: 0 },
+        },
+        {
+          report_id: "rep-2",
+          report_title: "Second",
+          panel_index: 3,
+          panel_spec: { type: "markdown_panel", text: "notes" },
+        },
+      ],
+    },
+  });
+  try {
+    const tool = findTool("tracker.list_org_panels", tools);
+    const payload = parseTextResult(await tool.handler({}));
+    assert.equal(payload.panels.length, 2);
+    assert.equal(payload.panels[0].panel_spec.type, "line");
+    assert.equal(payload.panels[1].panel_spec.type, "markdown_panel");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].pathname, "/api/reports/panels");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.add_panel_to_report appends a panel to the named panel_grid block", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const initialReport = {
+    id: "rep-42",
+    blocks: [
+      { kind: "paragraph", text: "Intro" },
+      {
+        kind: "panel_grid",
+        runsets: [{ name: "rs", projects: ["proj-a"] }],
+        panels: [{ type: "line", metric_key: "loss", runset_index: 0 }],
+      },
+    ],
+  };
+  const calls = installFetchStub({
+    "GET /api/reports/rep-42": { report: initialReport },
+    "PATCH /api/reports/rep-42": ({ body }) => ({
+      report: { ...initialReport, blocks: body.blocks },
+    }),
+  });
+  try {
+    const tool = findTool("tracker.add_panel_to_report", tools);
+    const updated = parseTextResult(
+      await tool.handler({
+        report_id: "rep-42",
+        panel_grid_block_index: 1,
+        panel_spec: { type: "scalar", metric_key: "loss", runset_index: 0, agg: "mean" },
+      }),
+    );
+    const targetGrid = updated.blocks[1];
+    assert.equal(targetGrid.panels.length, 2);
+    assert.equal(targetGrid.panels[1].type, "scalar");
+    // Verify only PATCH'd the report once after a GET to read existing blocks.
+    assert.equal(calls.filter((call) => call.method === "GET").length, 1);
+    assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.add_panel_to_report rejects a non-panel_grid block_index", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  installFetchStub({
+    "GET /api/reports/rep-7": {
+      report: {
+        id: "rep-7",
+        blocks: [{ kind: "paragraph", text: "Hi" }],
+      },
+    },
+  });
+  try {
+    const tool = findTool("tracker.add_panel_to_report", tools);
+    await assert.rejects(
+      tool.handler({
+        report_id: "rep-7",
+        panel_grid_block_index: 0,
+        panel_spec: { type: "line", metric_key: "loss", runset_index: 0 },
+      }),
+      /not a panel_grid block/,
+    );
+  } finally {
+    restoreFetch();
   }
 });
 
@@ -114,7 +213,22 @@ test("tracker.report_block_schema returns a JSON example covering every block ki
   }
   const panelGrid = payload.blocks.find((block) => block.kind === "panel_grid");
   const panelTypes = panelGrid.panels.map((panel) => panel.type).sort();
-  assert.deepEqual(panelTypes, ["bar", "line", "scalar", "scatter"]);
+  // v1.2 added 5 more panel types beyond the original {line, bar, scalar,
+  // scatter}. The schema example must cover them so agents discover the
+  // expanded vocabulary.
+  for (const expected of [
+    "bar",
+    "code_panel",
+    "image_panel",
+    "line",
+    "markdown_panel",
+    "parallel_coordinates",
+    "run_comparer",
+    "scalar",
+    "scatter",
+  ]) {
+    assert.ok(panelTypes.includes(expected), `schema example missing panel type ${expected}`);
+  }
   // Verify the runset documents pinned_run_ids so agents discover it.
   assert.ok(Array.isArray(panelGrid.runsets[0].pinned_run_ids));
 });

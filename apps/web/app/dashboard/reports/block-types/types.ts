@@ -70,6 +70,26 @@ export interface ImageBlockData {
   caption?: string;
 }
 
+/**
+ * Per-run rendering settings persisted on a Runset. `color` picks the chart
+ * color; `disabled` excludes a run from chart aggregations entirely (also
+ * unchecks it in the run-set table); `hidden` keeps the run in the runset
+ * spec but suppresses it from chart rendering (eye-closed in the table).
+ */
+export interface RunsetRunSettings {
+  color?: string | null;
+  disabled?: boolean | null;
+  hidden?: boolean | null;
+}
+
+export interface RunsetFilters {
+  /** Subset of run.status values to include. Empty / undefined ⇒ no filter. */
+  status?: string[] | null;
+  /** Subset of run.project values to include (in addition to projects[]). */
+  projects?: string[] | null;
+  [key: string]: unknown;
+}
+
 export interface RunsetData {
   name: string;
   /**
@@ -77,8 +97,15 @@ export interface RunsetData {
    * to project rows in the org. Empty list = no projects bound yet.
    */
   projects: string[];
-  filters?: Record<string, unknown> | null;
-  groupby?: string[] | null;
+  filters?: RunsetFilters | null;
+  /**
+   * Optional grouping key: a config field path (e.g. `config.lr`) or a
+   * summary metric (`summary.val_acc`). When set, chart renderers aggregate
+   * to one series per group instead of one per run.
+   */
+  groupby?: string | null;
+  /** Sort order key, applied to the resolved run list. */
+  order?: string | null;
   limit?: number | null;
   frozen_at?: string | null;
   /**
@@ -87,6 +114,11 @@ export interface RunsetData {
    * a chart so it stays in the view across re-renders.
    */
   pinned_run_ids?: string[] | null;
+  /**
+   * Per-run render settings keyed by run id (UUID or pinned shorthand). Used
+   * by the run-set table to persist color, disabled, hidden flags.
+   */
+  run_settings?: Record<string, RunsetRunSettings> | null;
 }
 
 export interface LinePanelData {
@@ -120,11 +152,52 @@ export interface ScatterPanelData {
   color_by?: string | null;
 }
 
+export interface ParallelCoordinatesDimension {
+  /** Either a metric key (`summary.val_acc`) or a config key (`config.lr`). */
+  metric_key?: string | null;
+  config_key?: string | null;
+}
+
+export interface ParallelCoordinatesPanelData {
+  type: "parallel_coordinates";
+  dimensions: ParallelCoordinatesDimension[];
+  runset_index: number;
+}
+
+export interface RunComparerPanelData {
+  type: "run_comparer";
+  run_ids: string[];
+  fields: string[];
+  runset_index: number;
+}
+
+export interface MarkdownPanelData {
+  type: "markdown_panel";
+  text: string;
+}
+
+export interface CodePanelData {
+  type: "code_panel";
+  code: string;
+  language: string;
+}
+
+export interface ImagePanelData {
+  type: "image_panel";
+  url: string;
+  caption?: string | null;
+}
+
 export type PanelData =
   | LinePanelData
   | BarPanelData
   | ScalarPanelData
-  | ScatterPanelData;
+  | ScatterPanelData
+  | ParallelCoordinatesPanelData
+  | RunComparerPanelData
+  | MarkdownPanelData
+  | CodePanelData
+  | ImagePanelData;
 
 export type PanelType = PanelData["type"];
 
@@ -133,6 +206,55 @@ export const SUPPORTED_PANEL_TYPES: PanelType[] = [
   "bar",
   "scalar",
   "scatter",
+  "parallel_coordinates",
+  "run_comparer",
+  "markdown_panel",
+  "code_panel",
+  "image_panel",
+];
+
+/**
+ * Catalog of every panel cell shown in the add-panel picker. Cells that are
+ * not yet shipped render disabled with a "v1.3" tooltip — keeping users
+ * informed of the roadmap without hiding the future.
+ */
+export type PanelPickerCategory = "charts" | "media" | "data";
+
+export interface PanelPickerEntry {
+  type: PanelType | string;
+  label: string;
+  category: PanelPickerCategory;
+  /** When true, the cell is interactive and adds a real panel. */
+  implemented: boolean;
+}
+
+export const PANEL_PICKER_CATALOG: PanelPickerEntry[] = [
+  { type: "line", label: "Line", category: "charts", implemented: true },
+  { type: "bar", label: "Bar", category: "charts", implemented: true },
+  { type: "scalar", label: "Scalar", category: "charts", implemented: true },
+  { type: "scatter", label: "Scatter", category: "charts", implemented: true },
+  {
+    type: "parallel_coordinates",
+    label: "Parallel coords",
+    category: "charts",
+    implemented: true,
+  },
+  {
+    type: "parameter_importance",
+    label: "Parameter importance",
+    category: "charts",
+    implemented: false,
+  },
+  { type: "run_comparer", label: "Run comparer", category: "charts", implemented: true },
+  { type: "code_panel", label: "Code", category: "charts", implemented: true },
+  { type: "markdown_panel", label: "Markdown", category: "charts", implemented: true },
+  { type: "custom_chart", label: "Custom chart", category: "charts", implemented: false },
+  { type: "image_panel", label: "Image", category: "media", implemented: true },
+  { type: "video_panel", label: "Video", category: "media", implemented: false },
+  { type: "audio_panel", label: "Audio", category: "media", implemented: false },
+  { type: "html_panel", label: "HTML", category: "media", implemented: false },
+  { type: "data_table", label: "Data table", category: "data", implemented: false },
+  { type: "table_plot", label: "Table plot", category: "data", implemented: false },
 ];
 
 export const SUPPORTED_SCALAR_AGGREGATIONS: ScalarAggregation[] = [
@@ -162,7 +284,37 @@ export function defaultPanel(type: PanelType): PanelData {
         y_metric: "",
         runset_index: 0,
       };
+    case "parallel_coordinates":
+      return {
+        type: "parallel_coordinates",
+        dimensions: [],
+        runset_index: 0,
+      };
+    case "run_comparer":
+      return {
+        type: "run_comparer",
+        run_ids: [],
+        fields: [],
+        runset_index: 0,
+      };
+    case "markdown_panel":
+      return { type: "markdown_panel", text: "" };
+    case "code_panel":
+      return { type: "code_panel", code: "", language: "python" };
+    case "image_panel":
+      return { type: "image_panel", url: "", caption: "" };
   }
+}
+
+/**
+ * Org-wide panel inventory entry surfaced by `/api/reports/panels` and the
+ * "from other reports" tab of the add-panel picker.
+ */
+export interface PanelInventoryEntry {
+  report_id: string;
+  report_title: string;
+  panel_index: number;
+  panel_spec: PanelData;
 }
 
 export interface PanelGridBlockData {
@@ -218,6 +370,22 @@ export interface ReportSummary {
   updated_at: string;
   block_count: number;
 }
+
+/**
+ * 8-color accent palette for the run-set table color dot picker. First slot
+ * is the dashboard's primary accent token (Bolt-green); the rest are
+ * distinguishable hues that pair well against the surface tokens.
+ */
+export const RUN_COLOR_PALETTE: string[] = [
+  "#5d89dd",
+  "#dc5b55",
+  "#f59e0b",
+  "#8b7cf6",
+  "#2ec4b6",
+  "#10b981",
+  "#ec4899",
+  "#6366f1",
+];
 
 export const SUPPORTED_CALLOUT_VARIANTS: CalloutVariant[] = ["info", "warn", "success"];
 export const SUPPORTED_HEADING_LEVELS: HeadingLevel[] = [1, 2, 3];

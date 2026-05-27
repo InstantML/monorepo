@@ -195,7 +195,17 @@ fn validate_image(index: usize, object: &Map<String, Value>) -> AppResult<()> {
     Ok(())
 }
 
-const SUPPORTED_PANEL_TYPES: &[&str] = &["line", "bar", "scalar", "scatter"];
+const SUPPORTED_PANEL_TYPES: &[&str] = &[
+    "line",
+    "bar",
+    "scalar",
+    "scatter",
+    "parallel_coordinates",
+    "run_comparer",
+    "markdown_panel",
+    "code_panel",
+    "image_panel",
+];
 const SUPPORTED_SCALAR_AGGS: &[&str] = &["min", "max", "mean", "latest"];
 
 fn validate_panel_grid(index: usize, object: &Map<String, Value>) -> AppResult<()> {
@@ -259,6 +269,44 @@ fn validate_panel_grid(index: usize, object: &Map<String, Value>) -> AppResult<(
                         return Err(AppError::validation(format!(
                             "panel_grid block {index}: runset {runset_index} `pinned_run_ids` entries must be non-empty"
                         )));
+                    }
+                }
+            }
+        }
+        // `run_settings` (added in v1.2 for the run-set table widget) is an
+        // optional map keyed by run id whose values are `{ color?, disabled?,
+        // hidden? }`. The widget mutates this map when a user toggles a row's
+        // checkbox / eye icon / color dot.
+        if let Some(settings) = runset_obj.get("run_settings") {
+            if settings.is_null() {
+                // Null sentinel allowed.
+            } else {
+                let settings_obj = settings.as_object().ok_or_else(|| {
+                    AppError::validation(format!(
+                        "panel_grid block {index}: runset {runset_index} `run_settings` must be an object"
+                    ))
+                })?;
+                for (run_id, entry) in settings_obj {
+                    let entry_obj = entry.as_object().ok_or_else(|| {
+                        AppError::validation(format!(
+                            "panel_grid block {index}: runset {runset_index} `run_settings[{run_id}]` must be an object"
+                        ))
+                    })?;
+                    if let Some(color) = entry_obj.get("color") {
+                        if !color.is_null() && !color.is_string() {
+                            return Err(AppError::validation(format!(
+                                "panel_grid block {index}: runset {runset_index} `run_settings[{run_id}].color` must be a string"
+                            )));
+                        }
+                    }
+                    for flag in ["disabled", "hidden"] {
+                        if let Some(value) = entry_obj.get(flag) {
+                            if !value.is_null() && !value.is_boolean() {
+                                return Err(AppError::validation(format!(
+                                    "panel_grid block {index}: runset {runset_index} `run_settings[{run_id}].{flag}` must be a boolean"
+                                )));
+                            }
+                        }
                     }
                 }
             }
@@ -335,6 +383,104 @@ fn validate_panel_grid(index: usize, object: &Map<String, Value>) -> AppResult<(
                 if x_metric.is_empty() || y_metric.is_empty() {
                     return Err(AppError::validation(format!(
                         "panel_grid block {index}: scatter panel {panel_index} requires both `x_metric` and `y_metric`"
+                    )));
+                }
+            }
+            "parallel_coordinates" => {
+                let dimensions = panel_obj
+                    .get("dimensions")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| {
+                        AppError::validation(format!(
+                            "panel_grid block {index}: parallel_coordinates panel {panel_index} requires `dimensions` array"
+                        ))
+                    })?;
+                for (dim_index, dim) in dimensions.iter().enumerate() {
+                    let dim_obj = dim.as_object().ok_or_else(|| {
+                        AppError::validation(format!(
+                            "panel_grid block {index}: parallel_coordinates panel {panel_index} dimension {dim_index} must be an object"
+                        ))
+                    })?;
+                    let metric = dim_obj
+                        .get("metric_key")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .trim();
+                    let config = dim_obj
+                        .get("config_key")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .trim();
+                    if metric.is_empty() && config.is_empty() {
+                        return Err(AppError::validation(format!(
+                            "panel_grid block {index}: parallel_coordinates panel {panel_index} dimension {dim_index} requires `metric_key` or `config_key`"
+                        )));
+                    }
+                }
+            }
+            "run_comparer" => {
+                let run_ids = panel_obj.get("run_ids").and_then(Value::as_array).ok_or_else(|| {
+                    AppError::validation(format!(
+                        "panel_grid block {index}: run_comparer panel {panel_index} requires `run_ids` array"
+                    ))
+                })?;
+                for entry in run_ids {
+                    if !entry.is_string() {
+                        return Err(AppError::validation(format!(
+                            "panel_grid block {index}: run_comparer panel {panel_index} `run_ids` entries must be strings"
+                        )));
+                    }
+                }
+                let fields = panel_obj.get("fields").and_then(Value::as_array).ok_or_else(|| {
+                    AppError::validation(format!(
+                        "panel_grid block {index}: run_comparer panel {panel_index} requires `fields` array"
+                    ))
+                })?;
+                for entry in fields {
+                    let value = entry.as_str().ok_or_else(|| {
+                        AppError::validation(format!(
+                            "panel_grid block {index}: run_comparer panel {panel_index} `fields` entries must be strings"
+                        ))
+                    })?;
+                    if value.trim().is_empty() {
+                        return Err(AppError::validation(format!(
+                            "panel_grid block {index}: run_comparer panel {panel_index} `fields` entries must be non-empty"
+                        )));
+                    }
+                }
+            }
+            "markdown_panel" => {
+                if !panel_obj.get("text").map(Value::is_string).unwrap_or(false) {
+                    return Err(AppError::validation(format!(
+                        "panel_grid block {index}: markdown_panel {panel_index} requires `text`"
+                    )));
+                }
+            }
+            "code_panel" => {
+                let language = panel_obj
+                    .get("language")
+                    .and_then(Value::as_str)
+                    .unwrap_or("plain");
+                if !SUPPORTED_CODE_LANGUAGES.contains(&language) {
+                    return Err(AppError::validation(format!(
+                        "panel_grid block {index}: code_panel {panel_index} `language` `{language}` is not supported"
+                    )));
+                }
+                if !panel_obj.get("code").map(Value::is_string).unwrap_or(false) {
+                    return Err(AppError::validation(format!(
+                        "panel_grid block {index}: code_panel {panel_index} requires `code`"
+                    )));
+                }
+            }
+            "image_panel" => {
+                let url = panel_obj
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                if url.is_empty() {
+                    return Err(AppError::validation(format!(
+                        "panel_grid block {index}: image_panel {panel_index} requires non-empty `url`"
                     )));
                 }
             }
@@ -537,6 +683,167 @@ mod tests {
         }])))
         .unwrap_err();
         assert!(err.message().contains("projects"));
+    }
+
+    #[test]
+    fn run_settings_round_trip_with_hidden_flag() {
+        let blocks = json!([{
+            "kind": "panel_grid",
+            "runsets": [{
+                "name": "rs",
+                "projects": ["proj-a"],
+                "run_settings": {
+                    "run-1": { "color": "#5d89dd", "disabled": false, "hidden": true },
+                    "run-2": { "hidden": false, "disabled": true }
+                }
+            }],
+            "panels": []
+        }]);
+        let canonical = validate_blocks(Some(blocks)).expect("blocks ok");
+        let settings = &canonical.as_array().unwrap()[0]["runsets"][0]["run_settings"];
+        assert_eq!(settings["run-1"]["hidden"].as_bool(), Some(true));
+        assert_eq!(settings["run-1"]["disabled"].as_bool(), Some(false));
+        assert_eq!(settings["run-2"]["disabled"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn run_settings_rejects_non_boolean_hidden() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{
+                "name": "rs",
+                "projects": ["p"],
+                "run_settings": { "run-1": { "hidden": "yes" } }
+            }],
+            "panels": []
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("hidden"));
+    }
+
+    #[test]
+    fn run_settings_rejects_non_string_color() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{
+                "name": "rs",
+                "projects": ["p"],
+                "run_settings": { "run-1": { "color": 42 } }
+            }],
+            "panels": []
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("color"));
+    }
+
+    #[test]
+    fn parallel_coordinates_panel_round_trips() {
+        let blocks = json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [{
+                "type": "parallel_coordinates",
+                "runset_index": 0,
+                "dimensions": [
+                    { "config_key": "lr" },
+                    { "metric_key": "eval/return_mean" }
+                ]
+            }]
+        }]);
+        validate_blocks(Some(blocks)).expect("blocks ok");
+    }
+
+    #[test]
+    fn parallel_coordinates_panel_requires_at_least_one_key_per_dimension() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [{
+                "type": "parallel_coordinates",
+                "runset_index": 0,
+                "dimensions": [{ "metric_key": "" }]
+            }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("metric_key") || err.message().contains("config_key"));
+    }
+
+    #[test]
+    fn run_comparer_panel_round_trips() {
+        let blocks = json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [{
+                "type": "run_comparer",
+                "runset_index": 0,
+                "run_ids": ["run-1", "run-2"],
+                "fields": ["config.lr", "summary.val_acc"]
+            }]
+        }]);
+        validate_blocks(Some(blocks)).expect("blocks ok");
+    }
+
+    #[test]
+    fn run_comparer_rejects_empty_field_strings() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [{
+                "type": "run_comparer",
+                "runset_index": 0,
+                "run_ids": ["r-1"],
+                "fields": [""]
+            }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("fields"));
+    }
+
+    #[test]
+    fn markdown_code_image_panels_round_trip() {
+        let blocks = json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [
+                { "type": "markdown_panel", "text": "## hello" },
+                { "type": "code_panel", "code": "x = 1", "language": "python" },
+                { "type": "image_panel", "url": "https://example.com/x.png", "caption": "fig 1" }
+            ]
+        }]);
+        validate_blocks(Some(blocks)).expect("blocks ok");
+    }
+
+    #[test]
+    fn markdown_panel_requires_text_field() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [{ "type": "markdown_panel" }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("text"));
+    }
+
+    #[test]
+    fn code_panel_rejects_unknown_language() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [{ "type": "code_panel", "code": "x", "language": "brainfuck" }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("language"));
+    }
+
+    #[test]
+    fn image_panel_requires_url() {
+        let err = validate_blocks(Some(json!([{
+            "kind": "panel_grid",
+            "runsets": [{ "name": "rs", "projects": ["p"] }],
+            "panels": [{ "type": "image_panel", "url": "" }]
+        }])))
+        .unwrap_err();
+        assert!(err.message().contains("url"));
     }
 
     #[test]

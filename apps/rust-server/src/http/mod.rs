@@ -41,8 +41,8 @@ use handlers::{
     get_report_by_share_token, get_run, get_run_lineage, get_workspace_view, health, import_mlflow,
     import_neptune, import_wandb, list_api_keys, list_artifacts, list_attributes,
     list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
-    list_org_memberships, list_orgs, list_projects, list_reports, list_runs, list_seats,
-    list_users, list_workspace_views, log_console_logs, log_metrics, log_rank_metrics,
+    list_org_memberships, list_org_panels, list_orgs, list_projects, list_reports, list_runs,
+    list_seats, list_users, list_workspace_views, log_console_logs, log_metrics, log_rank_metrics,
     metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
     preview_invitation, rank_metrics_summary, readyz, refresh_report_block, resend_invitation,
     reserve_seat, reset_demo, revoke_api_key, revoke_invitation,
@@ -186,6 +186,7 @@ fn control_routes() -> Router<Arc<AppState>> {
             get(get_workspace_view).put(update_workspace_view),
         )
         .route("/api/reports", get(list_reports).post(create_report))
+        .route("/api/reports/panels", get(list_org_panels))
         .route(
             "/api/reports/share/:share_token",
             get(get_report_by_share_token),

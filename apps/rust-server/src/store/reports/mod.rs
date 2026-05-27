@@ -32,7 +32,8 @@ pub use lifecycle::{
 };
 pub use llm::{report_llm_provider_label, ReportLlmProvider};
 pub use query::{
-    export_report_markdown, get_report, get_report_by_share_token, list_reports, report_summary,
+    export_report_markdown, get_report, get_report_by_share_token, list_org_panels, list_reports,
+    report_summary,
 };
 pub use validation::{
     ensure_owner_can_write, validate_blocks, validate_visibility, MAX_REPORT_BLOCKS,

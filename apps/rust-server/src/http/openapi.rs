@@ -276,6 +276,20 @@ pub struct ReportSummariesEnvelope {
     pub total: usize,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct PanelInventoryEntry {
+    pub report_id: Uuid,
+    pub report_title: String,
+    pub panel_index: usize,
+    #[schema(value_type = Object)]
+    pub panel_spec: serde_json::Value,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PanelInventoryEnvelope {
+    pub panels: Vec<PanelInventoryEntry>,
+}
+
 /// Wrapper for `auth_dev_google` / `auth_clerk` responses, which serialize
 /// `AuthSessionPayload` plus an optional `onboarding_api_key` produced for
 /// brand-new accounts.
@@ -476,6 +490,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::reports::refresh_report_block,
         crate::http::handlers::reports::get_report_by_share_token,
         crate::http::handlers::reports::export_report_markdown,
+        crate::http::handlers::reports::list_org_panels,
         // admin
         crate::http::handlers::admin::admin_overview,
         // orgs / users
@@ -584,6 +599,8 @@ impl Modify for SecurityAddon {
         WorkspaceViewSummariesEnvelope,
         ReportEnvelope,
         ReportSummariesEnvelope,
+        PanelInventoryEnvelope,
+        PanelInventoryEntry,
         AttributesEnvelope,
         ObjectEnvelope,
         ArtifactEnvelope,
