@@ -126,7 +126,12 @@ pub async fn create_current_user_organization(
     let switch_on_create = input.switch_on_create.unwrap_or(true);
     let initial_invitations =
         normalize_initial_invitations(input.initial_invitations.unwrap_or_default())?;
-    let paid_checkout_required = billing_config.enabled && plan.id != "free";
+    if account_type == "personal" && !initial_invitations.is_empty() {
+        return Err(AppError::validation(
+            "personal workspaces cannot invite teammates; create an organization workspace instead",
+        ));
+    }
+    let paid_checkout_required = require_paid_checkout_for_plan(Some(billing_config), plan.id)?;
     if paid_checkout_required && !initial_invitations.is_empty() {
         return Err(AppError::validation(
             "initial invitations for paid workspaces can be sent after checkout completes",
@@ -166,12 +171,7 @@ pub async fn create_current_user_organization(
                 "workspace owner cannot be invited to the same workspace",
             ));
         }
-        let stored_plan_id = if paid_checkout_required {
-            "free"
-        } else {
-            plan.id
-        };
-        let stored_plan = plan_tier(stored_plan_id);
+        let stored_plan = plan_tier(plan.id);
         let tenant_routing_tier = if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
             "customer-clickhouse".to_string()
         } else if is_personal_account_type(&account_type) {
@@ -185,7 +185,11 @@ pub async fn create_current_user_organization(
             name,
             plan_tier: stored_plan.id.to_string(),
             account_type: account_type.clone(),
-            seat_limit: stored_plan.included_seats,
+            seat_limit: if account_type == "personal" {
+                1
+            } else {
+                stored_plan.included_seats
+            },
             created_by_user_id: Some(user_id),
             created_at: Utc::now(),
             tenant_routing_tier,
@@ -208,6 +212,7 @@ pub async fn create_current_user_organization(
         (org, owner, user)
     };
 
+    let mut created_invitations = Vec::new();
     let billing_checkout = if paid_checkout_required {
         Some(
             create_checkout_for_org(
@@ -226,7 +231,7 @@ pub async fn create_current_user_organization(
             store.ensure_tenant_route(&org).await?;
         }
         for invitation in &initial_invitations {
-            create_org_invitation(
+            let outcome = create_org_invitation(
                 store,
                 Some(user_id),
                 org.id,
@@ -237,6 +242,11 @@ pub async fn create_current_user_organization(
                 email_config,
             )
             .await?;
+            created_invitations.push(InitialInvitationCreateResult {
+                invitation: outcome.invitation,
+                preview_link: outcome.preview_link,
+                delivery_error: outcome.delivery_error,
+            });
         }
         None
     };
@@ -253,6 +263,7 @@ pub async fn create_current_user_organization(
             organization: org,
             membership: owner,
             memberships,
+            invitations: created_invitations,
             session,
             billing_checkout,
             onboarding_api_key: None,
@@ -758,6 +769,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn current_user_create_org_rejects_personal_initial_invitations() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Personal".to_string()),
+                account_type: Some("personal".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: Some(vec![InitialOrganizationInvitation {
+                    email: "teammate@example.com".to_string(),
+                    role: Some("member".to_string()),
+                }]),
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+        assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_rejects_paid_plan_without_billing() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+
+        let error = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Paid Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("pro".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: None,
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &email_config(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
     async fn current_user_create_org_rejects_legacy_customer_owner_workspace() {
         let user = UserRow {
             id: Uuid::new_v4(),
@@ -832,6 +916,57 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
         assert!(store.data.lock().await.organizations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn current_user_create_org_surfaces_initial_invitation_delivery_failure() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "ada@example.com".to_string(),
+            display_name: Some("Ada".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        let store = store_with_data(data);
+        let failing_email = EmailConfig {
+            provider: EmailProvider::Resend,
+            resend_api_key: None,
+            ..email_config()
+        };
+
+        let created = create_current_user_organization(
+            &store,
+            user.id,
+            Uuid::new_v4(),
+            CreateCurrentUserOrganizationRequest {
+                name: Some("Ada Lab".to_string()),
+                account_type: Some("business".to_string()),
+                plan_tier: Some("free".to_string()),
+                storage_choice: Some(STORAGE_CHOICE_HOSTED.to_string()),
+                initial_invitations: Some(vec![InitialOrganizationInvitation {
+                    email: "teammate@example.com".to_string(),
+                    role: Some("member".to_string()),
+                }]),
+                switch_on_create: Some(false),
+            },
+            &crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            &failing_email,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.response.invitations.len(), 1);
+        let invite = &created.response.invitations[0];
+        assert_eq!(invite.invitation.email, "teammate@example.com");
+        assert_eq!(invite.invitation.delivery_status, "send_failed");
+        assert_eq!(
+            invite.delivery_error.as_deref(),
+            Some("email delivery failed")
+        );
+        assert!(invite.preview_link.is_none());
     }
 
     #[tokio::test]

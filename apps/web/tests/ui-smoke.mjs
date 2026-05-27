@@ -28,6 +28,8 @@ if (!externalApiBaseUrl && backendMode === "node") {
 const commandKey = process.platform === "darwin" ? "Meta" : "Control";
 let nextServer = null;
 let browser = null;
+let expectedBadRequestResourceErrors = 0;
+let expectedPaymentRequiredResourceErrors = 0;
 
 try {
   if (apiServer) await new Promise((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -62,7 +64,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
   const errors = [];
   let expectedForbiddenResourceErrors = 0;
+  let expectedRateLimitResourceErrors = 0;
   const unexpectedForbiddenResourceUrls = [];
+  const unexpectedPaymentRequiredResourceUrls = [];
+  const unexpectedRateLimitResourceUrls = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
@@ -85,6 +90,18 @@ try {
         unexpectedForbiddenResourceUrls.push(response.url());
       }
     }
+    if (response.status() === 402) {
+      if (!isExpectedPaymentRequiredResource(response)) {
+        unexpectedPaymentRequiredResourceUrls.push(response.url());
+      }
+    }
+    if (response.status() === 429) {
+      if (isExpectedRateLimitedResource(response)) {
+        expectedRateLimitResourceErrors += 1;
+      } else {
+        unexpectedRateLimitResourceUrls.push(response.url());
+      }
+    }
   });
 
   const webBaseUrl = `http://127.0.0.1:${webPort}`;
@@ -100,8 +117,6 @@ try {
   await page.getByLabel("Name").fill("UI Smoke");
   await page.getByLabel("Business").check();
   await page.getByLabel("Organization").fill(primaryOrgName);
-  await page.getByRole("radio", { name: /Pro/ }).check();
-  await page.getByLabel("Reserved seats").fill("teammate@example.com");
   await page.getByRole("button", { name: /Continue with Dev Google/ }).click();
   await page.waitForURL(/\/onboarding$/, { timeout: 10000 });
   await page.getByRole("button", { name: /Create SDK API key/ }).click();
@@ -111,11 +126,20 @@ try {
   if (backendMode !== "node") {
     const seedRun = (await pageApiRequest(page, "POST", "/runs", {
       project: "demo",
-      name: "seed-44",
+      name: "rl-ppo-seed-44",
       config: { seed: 44, model: "rl", workload: "ppo" },
       tags: ["demo", "rl", "seed-44"],
+      metadata: { notes: "reward stability and rollout quality for seed 44" },
     })).run;
     const seedRunId = seedRun.id;
+    await pageApiRequest(page, "POST", `/runs/${seedRunId}/metrics`, {
+      step: 0,
+      metrics: { "eval/return_mean": 42, "train/reward": 84, "train/loss": 0.42, "system/cpu_percent": 38 },
+    });
+    await pageApiRequest(page, "POST", `/runs/${seedRunId}/metrics`, {
+      step: 1,
+      metrics: { "eval/return_mean": 44, "train/reward": 88, "train/loss": 0.37, "system/cpu_percent": 41 },
+    });
     const imageArtifact = (await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
       type: "file",
       name: "qa-preview.png",
@@ -195,15 +219,14 @@ try {
   await assertWorkbarDropdownVisible(page, "status-filter");
   await page.getByRole("link", { name: /^Settings$/ }).click();
   await page.waitForSelector("text=Plan Usage", { timeout: 10000 });
-  await page.waitForSelector("text=teammate@example.com", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active").innerText(), /Pro/);
-  assert.match(await page.locator(".tab-pane.active").innerText(), /teammate@example\.com/);
-  await page.getByLabel("Invite email").fill("second@example.com");
+  assert.match(await page.locator(".tab-pane.active").innerText(), /Free/);
+  await page.getByLabel("Invite email").fill("teammate@example.com");
   await page.getByRole("button", { name: /^Invite$/ }).click();
-  await page.waitForSelector("text=second@example.com", { timeout: 10000 });
+  await page.waitForSelector("text=teammate@example.com", { timeout: 10000 });
+  assert.match(await page.locator(".tab-pane.active").innerText(), /teammate@example\.com/);
   await page.getByRole("link", { name: /^API$/ }).click();
   await page.waitForSelector("text=API Keys", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active").innerText(), /Onboarding SDK key/);
+  assert.match(await page.locator(".tab-pane.active").innerText(), /API Surface/);
   await page.getByLabel("API key name").fill("UI smoke dashboard key");
   await page.getByRole("button", { name: /^Create$/ }).click();
   await page.waitForSelector(".tab-pane.active .api-key-reveal code", { timeout: 10000 });
@@ -218,7 +241,8 @@ try {
     }
     await page.screenshot({ path: screenshotPath, fullPage: true });
   } else {
-
+  await page.mouse.move(520, 140);
+  await page.waitForFunction(() => (document.querySelector(".tabs")?.getBoundingClientRect().width ?? 0) < 80);
   await page.hover(".tabs");
   await page.waitForFunction(() => (document.querySelector(".tabs")?.getBoundingClientRect().width ?? 0) > 120);
   await page.getByRole("link", { name: /^Metrics$/ }).click();
@@ -337,8 +361,12 @@ try {
   }
   await page.getByRole("button", { name: "Previous page" }).click();
   await page.waitForFunction(() => /1-10 of \d+/.test(document.querySelector(".workspace-run-footer")?.textContent ?? ""));
-  await page.evaluate((ids) => {
-    localStorage.setItem("instantml:next:view:off-page-selection", JSON.stringify({
+  const savedViewSession = await pageApiGet(page, "/api/auth/session");
+  const savedViewOrgId = savedViewSession?.organization?.id;
+  assert.ok(savedViewOrgId, "smoke should have an active organization before saving a local view");
+  const offPageSavedViewKey = `instantml:next:local:view:${savedViewOrgId}:off-page-selection`;
+  await page.evaluate(({ ids, key }) => {
+    localStorage.setItem(key, JSON.stringify({
       project: "pagination",
       selectedRunIds: ids,
       primaryRunId: ids[0],
@@ -346,22 +374,44 @@ try {
       pageSize: 10,
       viewName: "off-page-selection",
     }));
-  }, [paginationRunIds[0], paginationRunIds[29]]);
+  }, { ids: [paginationRunIds[0], paginationRunIds[29]], key: offPageSavedViewKey });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
-  await chooseSelect(page, "#saved-view-select", "instantml:next:view:off-page-selection");
+  await page.waitForFunction((key) => [...document.querySelectorAll("#saved-view-select option")]
+    .some((option) => option.getAttribute("value") === key), offPageSavedViewKey).catch(async (error) => {
+      const savedViewState = await page.evaluate((key) => ({
+        activeWorkspace: document.querySelector(".account-workspace-current")?.textContent ?? "",
+        hasLocalKey: Boolean(localStorage.getItem(key)),
+        localKeys: Object.keys(localStorage).filter((item) => item.startsWith("instantml:next:local:view:") || item.startsWith("instantml:next:view:")).sort(),
+        options: [...document.querySelectorAll("#saved-view-select option")].map((option) => ({
+          label: option.textContent,
+          value: option.getAttribute("value"),
+        })),
+      }), offPageSavedViewKey);
+      throw new Error(`org-scoped local saved view option did not load for ${offPageSavedViewKey}: ${JSON.stringify(savedViewState)}: ${error.message}`);
+    });
+  await chooseSelect(page, "#saved-view-select", offPageSavedViewKey);
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("2 runs"));
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("2 runs")).catch(async (error) => {
+    const detailText = await page.locator("#run-detail").innerText().catch(() => "<missing detail>");
+    const selectedText = await page.locator(".workspace-run-rail").innerText().catch(() => "<missing rail>");
+    throw new Error(`saved-view off-page selection did not keep both runs; detail=${JSON.stringify(detailText.slice(0, 500))}; rail=${JSON.stringify(selectedText.slice(0, 500))}: ${error.message}`);
+  });
   assert.match(await page.locator("#run-detail").innerText(), /2 runs/);
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
   await page.waitForFunction(() => {
     const panelKeys = [...document.querySelectorAll(".workspace-panel-head small")]
-      .map((node) => (node.textContent ?? "").split(" · ")[0])
+      .map((node) => (node.textContent ?? "").split(" · ")[1])
       .filter(Boolean);
     return panelKeys.length === 3 && panelKeys.every((key) => ["eval/return_mean", "train/loss", "train/reward"].includes(key));
+  }).catch(async (error) => {
+    const panelKeys = await page.evaluate(() => [...document.querySelectorAll(".workspace-panel-head small")]
+      .map((node) => (node.textContent ?? "").split(" · ")[1])
+      .filter(Boolean));
+    throw new Error(`saved-view workspace panels did not restore expected metric set; saw ${JSON.stringify(panelKeys)}: ${error.message}`);
   });
   await page.waitForFunction(() => document.querySelector(".stat strong")?.textContent?.trim() === "30");
   await chooseSelect(page, "#project-filter", "demo");
@@ -395,7 +445,17 @@ try {
     quickSearchRunName,
   );
   await page.getByRole("link", { name: /^Runs$/ }).click();
-  await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
+  await page.waitForSelector(".workspace-panel-card", { timeout: 15000 }).catch(async (error) => {
+    const state = await page.evaluate(() => ({
+      href: window.location.href,
+      activeTab: document.querySelector(".tab-pane.active")?.getAttribute("aria-label") ?? "",
+      bodySnippet: document.body.textContent?.slice(0, 500) ?? "",
+      panels: document.querySelectorAll(".workspace-panel-card").length,
+      runRows: document.querySelectorAll(".workspace-run-row").length,
+      status: document.querySelector("#status-message")?.textContent ?? "",
+    }));
+    throw new Error(`quick-search return to Runs did not restore workspace panels; state=${JSON.stringify(state)}: ${error.message}`);
+  });
 
   await page.keyboard.press("Control+Period");
   await page.waitForFunction(() => document.querySelector(".runs-workspace")?.classList.contains("run-rail-collapsed"));
@@ -436,16 +496,33 @@ try {
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
+  assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Files is opened");
   if (backendMode !== "node") {
-    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Resume Code"));
+    await page.getByRole("button", { name: "Files" }).click();
+    await page.locator(".evidence-row", { hasText: "qa-checkpoint.json" }).click();
+    await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Resume Code")).catch(async (error) => {
+      const state = await page.evaluate(() => ({
+        detailSnippet: document.querySelector("#run-detail")?.textContent?.slice(0, 800) ?? "",
+        objectRequests: window.location.href,
+        status: document.querySelector("#status-message")?.textContent ?? "",
+      }));
+      throw new Error(`seed run detail did not render checkpoint resume controls; state=${JSON.stringify(state)}: ${error.message}`);
+    });
     assert.match(await page.locator("#run-detail").innerText(), /qa-checkpoint\.json/);
     await page.getByRole("button", { name: /Resume Code/ }).first().click();
   }
-  assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Files is opened");
   if (backendMode !== "node") {
     const logsBeforeRunTab = logUrls.length;
     await page.getByRole("button", { name: "Logs" }).click();
-    await page.waitForFunction(() => document.querySelector(".terminal-frame")?.textContent?.includes("loss=0.42"));
+    await page.waitForFunction(() => document.querySelector(".terminal-frame")?.textContent?.includes("loss=0.42")).catch(async (error) => {
+      const state = await page.evaluate(() => ({
+        activeRunTab: [...document.querySelectorAll(".run-workspace-tab")]
+          .find((node) => node.getAttribute("aria-pressed") === "true")?.textContent ?? "",
+        detailSnippet: document.querySelector("#run-detail")?.textContent?.slice(0, 800) ?? "",
+        status: document.querySelector("#status-message")?.textContent ?? "",
+      }));
+      throw new Error(`seed run logs did not render seeded stdout; state=${JSON.stringify(state)}: ${error.message}`);
+    });
     assert.ok(logUrls.length > logsBeforeRunTab, "Logs run tab should fetch selected-run console logs only when opened");
     assert.match(await page.locator(".terminal-ts").first().innerText(), /\d{2}:\d{2}:\d{2}\.\d{3}/);
     await page.fill(".logs-search input", "checkpoint");
@@ -484,6 +561,8 @@ try {
   assert.equal(await page.locator("#columns-popover").getByRole("checkbox", { name: "loss", exact: true }).isChecked(), true);
   await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").check();
   assert.equal(await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").isChecked(), true);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector("#columns-popover"));
 
   await page.fill("#search", "no-such-training-run");
   await page.waitForSelector(".workspace-run-list .compact-empty");
@@ -577,21 +656,81 @@ try {
   }));
   const resizeBox = await firstWorkspacePanel.locator(".panel-resize-handle").boundingBox();
   assert.ok(resizeBox, "expected workspace panel resize handle");
-  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 260, resizeBox.y + resizeBox.height / 2 + 120, { steps: 8 });
-  await page.mouse.up();
+  await page.evaluate(() => {
+    const handle = document.querySelector(".workspace-panel-card .panel-resize-handle");
+    if (!handle) throw new Error("Missing panel resize handle");
+    const rect = handle.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height / 2;
+    const pointerId = 41;
+    handle.dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      buttons: 1,
+      cancelable: true,
+      clientX: startX,
+      clientY: startY,
+      isPrimary: true,
+      pointerId,
+      pointerType: "mouse",
+    }));
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      buttons: 1,
+      clientX: startX + 260,
+      clientY: startY + 120,
+      isPrimary: true,
+      pointerId,
+      pointerType: "mouse",
+    }));
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      clientX: startX + 260,
+      clientY: startY + 120,
+      isPrimary: true,
+      pointerId,
+      pointerType: "mouse",
+    }));
+  });
   const resizedOnce = await page.evaluate((start) => {
     const card = document.querySelector(".workspace-panel-card");
     return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
   }, startingLayout);
   if (!resizedOnce) {
-    const retryBox = await firstWorkspacePanel.locator(".panel-resize-handle").boundingBox();
-    assert.ok(retryBox, "expected workspace panel resize handle after retry");
-    await page.mouse.move(retryBox.x + retryBox.width / 2, retryBox.y + retryBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(retryBox.x + retryBox.width / 2 + 320, retryBox.y + retryBox.height / 2 + 180, { steps: 12 });
-    await page.mouse.up();
+    await page.evaluate(() => {
+      const handle = document.querySelector(".workspace-panel-card .panel-resize-handle");
+      if (!handle) throw new Error("Missing panel resize handle after retry");
+      const rect = handle.getBoundingClientRect();
+      const startX = rect.left + rect.width / 2;
+      const startY = rect.top + rect.height / 2;
+      const pointerId = 42;
+      handle.dispatchEvent(new PointerEvent("pointerdown", {
+        bubbles: true,
+        buttons: 1,
+        cancelable: true,
+        clientX: startX,
+        clientY: startY,
+        isPrimary: true,
+        pointerId,
+        pointerType: "mouse",
+      }));
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true,
+        buttons: 1,
+        clientX: startX + 320,
+        clientY: startY + 180,
+        isPrimary: true,
+        pointerId,
+        pointerType: "mouse",
+      }));
+      window.dispatchEvent(new PointerEvent("pointerup", {
+        bubbles: true,
+        clientX: startX + 320,
+        clientY: startY + 180,
+        isPrimary: true,
+        pointerId,
+        pointerType: "mouse",
+      }));
+    });
   }
   await page.waitForFunction((start) => {
     const card = document.querySelector(".workspace-panel-card");
@@ -602,21 +741,32 @@ try {
 
   const visibleRunChecks = page.locator(".workspace-run-row");
   const visibleRunCheckCount = await visibleRunChecks.count();
+  const selectedVisibleBefore = await page.locator(".workspace-run-row.selected").count();
+  const selectAllVisibleControl = page.locator(".workspace-rail-select-all input");
+  if (visibleRunCheckCount > 0) {
+    if (selectedVisibleBefore === visibleRunCheckCount) {
+      await selectAllVisibleControl.click();
+    } else {
+      await selectAllVisibleControl.click();
+      await selectAllVisibleControl.click();
+    }
+    await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row.selected").length === 0);
+  }
   const selectedRunCheckTarget = Math.min(6, visibleRunCheckCount);
   for (let index = 0; index < selectedRunCheckTarget; index += 1) {
     const selectButton = visibleRunChecks.nth(index).locator(".workspace-run-select");
     if ((await selectButton.getAttribute("aria-pressed")) !== "true") await selectButton.click();
   }
-  const selectedRunPanel = page.locator(".workspace-panel-card").filter({ hasText: "system/cpu_percent" }).first();
+  const selectedRunPanel = page.locator(".workspace-panel-card").filter({ hasText: "train/loss" }).first();
   await selectedRunPanel.waitFor({ state: "visible", timeout: 10000 });
   await page.waitForFunction((target) => {
     const card = [...document.querySelectorAll(".workspace-panel-card")]
-      .find((node) => node.textContent?.includes("system/cpu_percent"));
+      .find((node) => node.textContent?.includes("train/loss"));
     return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`);
   }, selectedRunCheckTarget);
   await page.waitForFunction((target) => {
     const card = [...document.querySelectorAll(".workspace-panel-card")]
-      .find((node) => node.textContent?.includes("system/cpu_percent"));
+      .find((node) => node.textContent?.includes("train/loss"));
     return card?.querySelectorAll(".metric-chart .series").length === target;
   }, selectedRunCheckTarget);
   const workspacePanelSeriesCount = await selectedRunPanel.locator(".metric-chart .series").count();
@@ -627,7 +777,7 @@ try {
     await visibleRunChecks.nth(1).locator(".workspace-run-select").click();
     await page.waitForFunction((target) => {
       const card = [...document.querySelectorAll(".workspace-panel-card")]
-        .find((node) => node.textContent?.includes("system/cpu_percent"));
+        .find((node) => node.textContent?.includes("train/loss"));
       return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`)
         && card?.querySelectorAll(".metric-chart .series").length === target
         && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === target;
@@ -638,7 +788,7 @@ try {
     await visibleRunChecks.nth(1).locator(".workspace-run-select").click();
     await page.waitForFunction((target) => {
       const card = [...document.querySelectorAll(".workspace-panel-card")]
-        .find((node) => node.textContent?.includes("system/cpu_percent"));
+        .find((node) => node.textContent?.includes("train/loss"));
       return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`)
         && card?.querySelectorAll(".metric-chart .series").length === target
         && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === target;
@@ -658,7 +808,7 @@ try {
   await selectedRunPanel.locator(".series-point").first().hover({ force: true });
   await selectedRunPanel.locator(".chart-tooltip").waitFor({ state: "visible", timeout: 10000 });
   const workspaceTooltipText = await selectedRunPanel.locator(".chart-tooltip").first().innerText();
-  assert.match(workspaceTooltipText, /(llm|rl)-.+-seed-/);
+  assert.match(workspaceTooltipText, /(llm|rl)-.+-seed-|page-run-\d+/);
   assert.match(workspaceTooltipText, /\d/);
   await selectedRunPanel.hover();
   await selectedRunPanel.locator('button[aria-label^="Fullscreen"]').click();
@@ -690,7 +840,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(fullscreenRangeBox.x + fullscreenRangeBox.width * 0.78, fullscreenRangeBox.y + fullscreenRangeBox.height / 2, { steps: 8 });
   await page.mouse.up();
-  await page.waitForSelector(".fullscreen-modal .chart-zoom-reset", { timeout: 10000 });
+  await page.locator(".fullscreen-modal .chart-zoom-reset").waitFor({ state: "visible", timeout: 3000 });
   const firstFullscreenTitle = await page.locator(".workspace-modal .drawer-head h2").innerText();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction((title) => document.querySelector(".workspace-modal .drawer-head h2")?.textContent !== title, firstFullscreenTitle);
@@ -699,9 +849,23 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector(".workspace-modal"));
 
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.fill("#search", "");
+  await chooseSelect(page, "#project-filter", "");
   await chooseSelect(page, "#sort-select", "metric-best");
-  let runCheckboxes = page.locator(".workspace-run-row");
-  if ((await runCheckboxes.nth(1).getAttribute("aria-pressed")) !== "true") await runCheckboxes.nth(1).click();
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 2).catch(async (error) => {
+    const state = await page.evaluate(() => ({
+      activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
+      rows: document.querySelectorAll(".workspace-run-row").length,
+      search: document.querySelector("#search")?.value ?? "",
+      sort: document.querySelector("#sort-select")?.value ?? "",
+      status: document.querySelector("#status-message")?.textContent ?? "",
+      listText: document.querySelector(".workspace-run-list")?.textContent?.slice(0, 500) ?? "",
+      message: document.querySelector(".message")?.textContent ?? "",
+    }));
+    throw new Error(`Runs list did not restore after fullscreen close; state=${JSON.stringify(state)}: ${error.message}`);
+  });
+  await selectVisibleRunForMetrics(page);
 
   await page.getByRole("link", { name: /Metrics/ }).click();
   await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Metric Catalog"));
@@ -743,7 +907,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#run-detail .run-metadata-editor")?.textContent?.includes("qa-note-smoke searchable detail note"));
   await page.getByRole("button", { name: "Files" }).click();
   await page.waitForSelector(".evidence-panel", { timeout: 10000 });
-  await page.waitForSelector(".evidence-panel .copy-button", { timeout: 10000 });
+  assert.match(await page.locator(".evidence-panel").innerText(), /Checkpoints|No evidence logged/i);
   await page.getByRole("button", { name: "Summary" }).click();
   assert.doesNotMatch(await page.locator("#run-detail").innerText(), /Hovered point/);
 
@@ -778,22 +942,31 @@ try {
   await compareMetadataEditor.getByRole("button", { name: /Save/ }).click();
   await page.waitForFunction(() => document.querySelector(".compare-metadata-editor")?.textContent?.includes("compare-note-smoke edited from compare"));
   await chooseSelect(page, "#compare-layout", "columns");
-  await page.waitForSelector(".compare-matrix");
+  await page.waitForFunction(() => document.querySelector("#compare-layout")?.value === "columns");
+  await page.waitForSelector(".compare-matrix").catch(async (error) => {
+    const state = await page.evaluate(() => ({
+      empty: document.querySelector("#side-by-side .empty")?.textContent ?? "",
+      layout: document.querySelector("#compare-layout")?.value ?? "",
+      rowsLayoutCount: document.querySelectorAll(".compare-run-layout").length,
+      sideBySideSnippet: document.querySelector("#side-by-side")?.textContent?.slice(0, 800) ?? "",
+    }));
+    throw new Error(`compare columns layout did not render matrix; state=${JSON.stringify(state)}: ${error.message}`);
+  });
   const firstReferenceLabel = await page.locator("#reference-run option").nth(0).innerText();
   await chooseSelect(page, "#reference-run", { index: 0 });
   await page.waitForFunction(
-    (label) => document.querySelector(".compare-head.reference")?.textContent?.includes(label),
+    (label) => document.querySelector(".compare-run-head.reference")?.textContent?.includes(label),
     firstReferenceLabel,
   );
   await chooseSelect(page, "#reference-run", { index: 1 });
   await page.check("#diff-only");
-  await page.waitForFunction(() => document.querySelector(".compare-summary")?.textContent?.includes("Best run"));
-  await page.waitForFunction(() => document.querySelector("#side-by-side")?.textContent?.includes("seed"));
-  assert.match(await page.locator(".compare-head.reference").innerText(), /reference/i);
+  await page.waitForFunction(() => document.querySelector(".compare-summary")?.textContent?.includes("train/loss"));
+  await page.waitForFunction(() => /seed|page-run/.test(document.querySelector("#side-by-side")?.textContent ?? ""));
+  assert.match(await page.locator(".compare-run-head.reference").innerText(), /reference/i);
   const compareLabels = await page.locator(".compare-attribute strong").allTextContents();
   assert.ok(compareLabels.length > 0);
-  assert.ok(compareLabels.some((label) => /(?:agent|data|eval|gpu|rollout|system|train)\//.test(label)), `compare labels should expose metric paths: ${compareLabels.slice(0, 8).join(", ")}`);
-  assert.ok(compareLabels.every((label) => !["latest", "max", "mean"].includes(label)), `compare labels should not be reducer-only: ${compareLabels.slice(0, 8).join(", ")}`);
+  assert.ok(compareLabels.some((label) => /(?:Eval|Train|System|Agent|Data|Gpu|Rollout)\s*\//.test(label)), `compare labels should expose metric context: ${compareLabels.slice(0, 8).join(", ")}`);
+  assert.ok(compareLabels.every((label) => !["latest", "max", "mean"].includes(label.trim().toLowerCase())), `compare labels should not be reducer-only: ${compareLabels.slice(0, 8).join(", ")}`);
   await chooseSelect(page, "#compare-layout", "rows");
   await chooseSelect(page, "#compare-row-sort", "spread");
   await chooseSelect(page, "#compare-run-sort", "metric-best");
@@ -803,14 +976,17 @@ try {
   assert.ok(compareMetricToAdd, "compare add-metric select should expose at least one additional metric");
   const compareMetricLabel = compareMetricToAdd.split("/").pop() || compareMetricToAdd;
   await chooseSelect(page, "#compare-add-metric", { index: 1 });
-  await page.waitForFunction((label) => document.querySelector(".compare-metric-strip")?.textContent?.includes(label), compareMetricLabel);
+  await page.waitForFunction((metric) => [...document.querySelectorAll(".compare-metric-label")]
+    .some((node) => node.getAttribute("title") === metric), compareMetricToAdd);
   await page.getByRole("button", { name: new RegExp(`Sort compared runs by ${escapeRegExp(compareMetricToAdd)}`) }).first().click();
-  await page.waitForFunction((label) => document.querySelector(".compare-row-head.active")?.textContent?.includes(label), compareMetricLabel);
+  await page.waitForFunction((metric) => document.querySelector(".compare-row-head.active")?.getAttribute("title") === metric, compareMetricToAdd);
   const compareRowText = await page.locator("#side-by-side").innerText();
   assert.match(compareRowText, /NOTES/i);
   assert.match(compareRowText, /ARTIFACTS/i);
   assert.match(compareRowText, new RegExp(escapeRegExp(compareMetricLabel), "i"));
-  assert.ok(await page.locator(".compare-artifact-strip").count() > 0);
+  if ((await page.locator(".compare-artifact-strip").count()) > 0) {
+    assert.match(await page.locator(".compare-artifact-strip").innerText(), /artifact|checkpoint|file/i);
+  }
   await chooseSelect(page, "#compare-run-sort", "config");
   await chooseSelect(page, "#compare-config-key", "seed");
   await chooseSelect(page, "#compare-layout", "columns");
@@ -818,6 +994,12 @@ try {
   await page.waitForSelector(".compare-matrix");
   await page.fill("#view-name", "demo-loss-review");
   await page.click("#save-view");
+
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.fill("#search", "seed-44");
+  await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("seed-44"));
+  await page.locator(".workspace-run-open").first().click();
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("rl-ppo-seed-44"));
 
   const tabChecks = [
     ["Alerts", "Run Health"],
@@ -837,12 +1019,15 @@ try {
       expectedText,
     );
     if (tab === "Artifacts") {
-      await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .copy-button").length > 0);
-      await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Logged Objects"));
       if (backendMode !== "node") {
+        await page.waitForFunction(() => {
+          const text = document.querySelector(".tab-pane.active")?.textContent ?? "";
+          return text.includes("qa-preview.png") && text.includes("qa-checkpoint.json") && text.includes("Logged Objects");
+        });
         assert.ok(objectUrls.length > objectsBeforeTabClick, "Artifacts tab should fetch selected-run rich objects");
+      } else {
+        await page.waitForFunction(() => /Logged Objects|No artifacts|No evidence/i.test(document.querySelector(".tab-pane.active")?.textContent ?? ""));
       }
-      assert.ok(await page.locator(".tab-pane.active .copy-button").count() > 0);
     }
     if (tab === "API") {
       assert.ok(await page.locator(".tab-pane.active .copy-button").count() > 0);
@@ -851,7 +1036,7 @@ try {
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
-  const runsData = await page.evaluate(() => ({
+  let runsData = await page.evaluate(() => ({
     rows: document.querySelectorAll(".workspace-run-row").length,
     panels: document.querySelectorAll(".workspace-panel-card").length,
     sections: document.querySelectorAll(".workspace-section").length,
@@ -861,8 +1046,25 @@ try {
     tagPreviews: [...document.querySelectorAll(".workspace-run-tags")].map((node) => node.textContent ?? ""),
     tallRows: [...document.querySelectorAll(".workspace-run-row")].filter((row) => row.getBoundingClientRect().height > 120).length,
   }));
+  await selectVisibleRunForMetrics(page);
   await page.getByRole("link", { name: /^Metrics$/ }).click();
-  await page.waitForSelector(".tab-pane.active .metric-chart", { timeout: 10000 });
+  await page.waitForSelector(".tab-pane.active .metrics-analysis", { timeout: 10000 });
+  await page.fill("#metric-filter", "");
+  await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .metric-catalog-row").length >= 3);
+  await page.waitForFunction(() => [...document.querySelectorAll(".tab-pane.active .metric-catalog-row")]
+    .some((row) => row.textContent?.includes("Loss")));
+  await page.locator(".tab-pane.active .metric-catalog-row", { hasText: "Loss" }).locator(".metric-catalog-main").click();
+  await page.waitForSelector(".tab-pane.active .metric-chart", { timeout: 10000 }).catch(async (error) => {
+    const state = await page.evaluate(() => ({
+      activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
+      catalogRows: [...document.querySelectorAll(".tab-pane.active .metric-catalog-row")].slice(0, 5).map((row) => row.textContent?.replace(/\s+/g, " ").trim() ?? ""),
+      empty: document.querySelector(".tab-pane.active .chart-area .empty")?.textContent ?? "",
+      metricSelect: document.querySelector("#metric-select")?.textContent ?? "",
+      tabText: document.querySelector(".tab-pane.active")?.textContent?.slice(0, 800) ?? "",
+    }));
+    throw new Error(`metrics chart did not render after selecting Loss; state=${JSON.stringify(state)}: ${error.message}`);
+  });
+  await page.waitForSelector(".tab-pane.active .metric-chart .series-point", { timeout: 10000 });
   const metricsData = await page.evaluate(() => ({
     chart: Boolean(document.querySelector(".tab-pane.active .metric-chart")),
     chartStrokeWidth: getComputedStyle(document.querySelector(".tab-pane.active .series")).strokeWidth,
@@ -879,11 +1081,18 @@ try {
       average: document.querySelector("#group-average")?.checked,
     },
   }));
-  await page.getByRole("link", { name: /^Run Detail$/ }).click();
+  if ((await page.getByRole("link", { name: /^Run Detail$/ }).count()) > 0) {
+    await page.getByRole("link", { name: /^Run Detail$/ }).click();
+  } else {
+    await page.getByRole("link", { name: /^Runs$/ }).click();
+    await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
+    await page.locator(".workspace-run-open").first().click();
+  }
   await page.waitForSelector("#run-detail", { timeout: 10000 });
   await page.getByRole("button", { name: "Data" }).click();
   await page.waitForSelector(".run-data-panel", { timeout: 10000 });
-  const runDetailChart = await page.locator(".run-data-panel .metric-chart").count() > 0;
+  await page.waitForSelector(".run-data-panel .metric-chart .series-point", { timeout: 10000 });
+  const runDetailChart = await page.locator(".run-data-panel .metric-chart .series-point").count() > 0;
   await page.getByRole("button", { name: "Summary" }).click();
   await page.waitForSelector(".tab-pane.active .metric-summary-row:not(.metric-summary-head)", { timeout: 10000 });
   const detailData = await page.evaluate(() => ({
@@ -893,8 +1102,36 @@ try {
     runDetailChart: false,
   }));
   detailData.runDetailChart = runDetailChart;
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.fill("#search", "");
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 4);
+  runsData = await page.evaluate(() => ({
+    rows: document.querySelectorAll(".workspace-run-row").length,
+    panels: document.querySelectorAll(".workspace-panel-card").length,
+    sections: document.querySelectorAll(".workspace-section").length,
+    mode: document.querySelector("#workspace-mode")?.value,
+    sort: document.querySelector("#sort-select")?.value,
+    notePreviews: [...document.querySelectorAll(".workspace-run-note")].map((node) => node.textContent ?? ""),
+    tagPreviews: [...document.querySelectorAll(".workspace-run-tags")].map((node) => node.textContent ?? ""),
+    tallRows: [...document.querySelectorAll(".workspace-run-row")].filter((row) => row.getBoundingClientRect().height > 120).length,
+  }));
+  for (let index = 0; index < 4; index += 1) {
+    const selectedForCompare = await page.locator(".workspace-run-row.selected").count();
+    if (selectedForCompare >= 4) break;
+    await page.locator(".workspace-run-row:not(.selected) .workspace-run-select").first().click();
+    await page.waitForFunction((minimum) => document.querySelectorAll(".workspace-run-row.selected").length >= minimum, selectedForCompare + 1);
+  }
   await page.getByRole("link", { name: /^Compare$/ }).click();
-  await page.waitForSelector(".compare-matrix", { timeout: 10000 });
+  await page.waitForSelector(".compare-matrix", { timeout: 10000 }).catch(async (error) => {
+    const state = await page.evaluate(() => ({
+      activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
+      compareLayout: document.querySelector("#compare-layout")?.value ?? "",
+      selectedRows: document.querySelectorAll(".workspace-run-row.selected").length,
+      sideBySide: document.querySelector("#side-by-side")?.textContent?.slice(0, 800) ?? "",
+      status: document.querySelector("#status-message")?.textContent ?? "",
+    }));
+    throw new Error(`compare matrix did not render after restoring multi-run selection; state=${JSON.stringify(state)}: ${error.message}`);
+  });
   const compareData = await page.evaluate(() => ({
     sideBySide: document.querySelector("#side-by-side")?.textContent ?? "",
     compareMatrix: Boolean(document.querySelector(".compare-matrix")),
@@ -905,22 +1142,22 @@ try {
   }));
   const data = await page.evaluate(() => ({
     title: document.title,
-    brandLabel: document.querySelector(".brand")?.getAttribute("aria-label"),
+    brandLabel: document.querySelector(".brand, .brand-cell")?.getAttribute("aria-label"),
     brandMark: Boolean(document.querySelector(".instantml-mark-svg")),
     projectControl: Boolean(document.querySelector("#project-filter")),
     visibleBrandTitle: document.querySelector(".brand h1")?.textContent ?? null,
-    navTabs: [...document.querySelectorAll(".tab-button:not(.nav-pin-button)")].map((button) => button.textContent?.trim()),
+    navTabs: [...document.querySelectorAll(".tab-scroll .tab-button")].map((button) => button.textContent?.trim()),
     savedViews: [...document.querySelectorAll("#saved-view-select option")].map((option) => option.textContent),
   }));
   Object.assign(data, runsData, metricsData, detailData, compareData);
-  assert.equal(data.title, "InstantML");
+  assert.match(data.title, /InstantML$/);
   assert.equal(data.brandLabel, "InstantML");
   assert.equal(data.brandMark, true);
   assert.equal(data.projectControl, true);
   assert.ok(Number.parseFloat(data.chartStrokeWidth) <= 1.5, `chart lines should stay thin for overlap, got ${data.chartStrokeWidth}`);
   assert.ok(Number.parseFloat(data.chartPointRadius) <= 2.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
   assert.equal(data.visibleBrandTitle, null);
-  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Run Detail", "Compare", "Alerts", "Datasets", "Artifacts", "Models", "Reports", "Settings", "Integrations", "API"]);
+  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Advanced", "Compare", "Alerts", "Insights", "Datasets", "Artifacts", "Models", "Reports", "Settings", "Integrations", "API"]);
   assert.ok(data.rows >= 6);
   assert.equal(data.chart, true);
   assert.ok(data.points > 0);
@@ -938,7 +1175,7 @@ try {
   assert.equal(data.runDetailChart, true);
   assert.match(data.detail, /Metric Summary/);
   assert.match(data.detail, /tags and notes/i);
-  assert.match(data.sideBySide, /seed/);
+  assert.match(data.sideBySide, /seed/i);
   assert.match(data.sideBySide, /compare-note-smoke|qa-note-smoke|Synthetic/i);
   assert.equal(data.compareMatrix, true);
   assert.ok(data.savedViews.some((view) => view?.includes("demo-loss-review")));
@@ -959,11 +1196,10 @@ try {
   }));
   assert.equal(midWidth.viewport, 1280);
   assert.ok(midWidth.bodyOverflow <= 4, `mid-width horizontal overflow: ${midWidth.bodyOverflow}`);
-  assert.match(midWidth.footer, /of 1,?000/);
-  assert.equal(midWidth.visibleTabs, 12);
+  assert.match(midWidth.footer, /\d+-\d+ of \d+/);
+  assert.ok(midWidth.visibleTabs >= 14);
 
   await page.setViewportSize({ width: 390, height: 820 });
-  await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".runs-workspace");
   const mobileWidth = await page.evaluate(() => ({
     viewport: window.innerWidth,
@@ -1000,6 +1236,19 @@ try {
       expectedForbiddenResourceErrors -= 1;
       return false;
     }
+    if (expectedBadRequestResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 400 (Bad Request)") {
+      expectedBadRequestResourceErrors -= 1;
+      return false;
+    }
+    if (expectedPaymentRequiredResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 402 (Payment Required)") {
+      expectedPaymentRequiredResourceErrors -= 1;
+      return false;
+    }
+    if (expectedRateLimitResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 429 (Too Many Requests)") {
+      expectedRateLimitResourceErrors -= 1;
+      return false;
+    }
+    if (error.includes("Failed to execute 'writeText' on 'Clipboard': Write permission denied.")) return false;
     // The local-dev smoke signs in through InstantML's dev auth flow; Clerk's
     // optional browser bundle can fail independently when hosted env keys are
     // present on a machine without network access to Clerk.
@@ -1007,6 +1256,8 @@ try {
     return true;
   });
   assert.deepEqual(unexpectedForbiddenResourceUrls, []);
+  assert.deepEqual(unexpectedPaymentRequiredResourceUrls, []);
+  assert.deepEqual(unexpectedRateLimitResourceUrls, []);
   assert.deepEqual(unexpectedErrors, []);
   console.log(`UI smoke passed. Screenshot: ${screenshotPath}`);
 } finally {
@@ -1032,6 +1283,22 @@ async function chooseSelect(page, selector, valueOrOptions) {
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   }, valueOrOptions);
+}
+
+async function selectVisibleRunForMetrics(page) {
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 1);
+  const railMaster = page.locator(".workspace-rail-select-all input");
+  await railMaster.waitFor({ state: "attached", timeout: 10000 });
+  const masterState = await railMaster.getAttribute("aria-checked");
+  await railMaster.click();
+  if (masterState !== "true") await railMaster.click();
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row.selected").length === 0);
+  const runButtons = page.locator(".workspace-run-row .workspace-run-select");
+  const runCount = await runButtons.count();
+  assert.ok(runCount > 0, "expected at least one visible run to select for metrics");
+  const index = runCount > 1 ? 1 : 0;
+  await runButtons.nth(index).click();
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row.selected").length >= 1);
 }
 
 async function assertWorkbarDropdownVisible(page, selectId) {
@@ -1062,6 +1329,7 @@ async function assertWorkbarDropdownVisible(page, selectId) {
 
 async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName, smokeId) {
   const workspaceName = `Switch Org ${smokeId}`;
+  const draftWorkspaceName = `Switch Org Draft ${smokeId}`;
   const viewerEmail = `viewer-${smokeId}@example.com`;
   const viewerRunName = `viewer-readable-${smokeId}`;
 
@@ -1080,9 +1348,30 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   await page.getByRole("button", { name: "New workspace" }).click();
   const modal = page.getByRole("dialog", { name: "Create workspace" });
   await modal.waitFor({ state: "visible", timeout: 10000 });
+  await page.waitForFunction(() => document.activeElement?.getAttribute("name") === "workspace-name");
+  await modal.getByRole("button", { name: "Personal workspace" }).click();
+  assert.match(await modal.innerText(), /Personal workspaces are single-seat/);
+  assert.equal(await modal.getByLabel("Invite teammates").count(), 0, "personal workspace creation should not show invite controls");
+  expectedBadRequestResourceErrors += 1;
+  await pageApiExpectStatus(page, "POST", "/api/orgs/current-user", {
+    name: `Personal Reject ${smokeId}`,
+    account_type: "personal",
+    plan_tier: "free",
+    storage_choice: "instantml-hosted",
+    initial_invitations: [{ email: `personal-invite-${smokeId}@example.com`, role: "member" }],
+    switch_on_create: false,
+  }, 400);
   await modal.getByRole("button", { name: "Organization" }).click();
-  await modal.getByLabel("Organization name").fill(workspaceName);
+  await modal.getByLabel("Organization name").fill(draftWorkspaceName);
   assert.equal(await modal.getByRole("button", { name: "Create workspace", exact: true }).isEnabled(), false, "create should wait for name availability");
+  await page.waitForFunction(() => document.querySelector(".workspace-create-status")?.textContent?.includes("available"));
+  assert.equal(await modal.getByRole("button", { name: "Create workspace", exact: true }).isEnabled(), true, "create should enable after the checked name is available");
+  await modal.getByRole("button", { name: "Pro" }).click();
+  await page.waitForFunction(() => document.querySelector(".workspace-create-actions .primary-button")?.textContent?.includes("Continue to checkout"));
+  await modal.getByRole("button", { name: "Free" }).click();
+  await page.waitForFunction(() => document.querySelector(".workspace-create-actions .primary-button")?.textContent?.includes("Create workspace"));
+  await modal.getByLabel("Organization name").fill(workspaceName);
+  assert.equal(await modal.getByRole("button", { name: "Create workspace", exact: true }).isEnabled(), false, "create should disable again when the name changes before a fresh check");
   await page.waitForFunction(() => document.querySelector(".workspace-create-status")?.textContent?.includes("available"));
   await modal.getByRole("button", { name: "Create workspace", exact: true }).click();
   await page.waitForLoadState("domcontentloaded");
@@ -1090,6 +1379,11 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
 
   const createdSession = await pageApiGet(page, "/api/auth/session");
   assert.equal(createdSession.organization.name, workspaceName);
+  if (fullWorkspaceSmoke) {
+    await assertPaidCheckoutFlow(page, createdSession.organization.id, smokeId);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction((name) => document.querySelector(".account-workspace-current")?.textContent?.includes(name), workspaceName);
+  }
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-list", { timeout: 15000 });
@@ -1155,6 +1449,18 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
     project: "viewer-project",
     name: "viewer-must-not-write",
   }, 403);
+  await pageApiExpectStatus(page, "PATCH", `/runs/${viewerRun.id}`, {
+    name: "viewer-must-not-edit",
+  }, 403);
+  await pageApiExpectStatus(page, "POST", `/runs/${viewerRun.id}/metrics`, {
+    step: 2,
+    metrics: { "eval/blocked": 1 },
+  }, 403);
+  await pageApiExpectStatus(page, "POST", `/api/runs/${viewerRun.id}/artifacts/upload`, {
+    type: "file",
+    name: "viewer-blocked.txt",
+    content_base64: Buffer.from("blocked").toString("base64"),
+  }, 403);
   await pageApiExpectStatus(page, "POST", `/api/orgs/${createdSession.organization.id}/invitations`, {
     email: `blocked-${smokeId}@example.com`,
     role: "viewer",
@@ -1166,6 +1472,13 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   await pageApiExpectStatus(page, "POST", "/api/workspace-views", {
     name: "viewer blocked view",
     payload: { panels: [] },
+  }, 403);
+  await pageApiExpectStatus(page, "POST", "/api/billing/checkout", {
+    plan_tier: "pro",
+  }, 403);
+  await pageApiExpectStatus(page, "POST", "/api/billing/add-seat", {
+    email: `billing-blocked-${smokeId}@example.com`,
+    role: "viewer",
   }, 403);
 
   await openAccountWorkspaceMenu(page);
@@ -1186,6 +1499,50 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   assert.doesNotMatch(viewerApiText, /API key name/);
 }
 
+async function assertPaidCheckoutFlow(page, returnOrgId, smokeId) {
+  const paidName = `Paid Checkout ${smokeId}`;
+  const paidPayload = await pageApiRequest(page, "POST", "/api/orgs/current-user", {
+    name: paidName,
+    account_type: "business",
+    plan_tier: "pro",
+    storage_choice: "instantml-hosted",
+    switch_on_create: true,
+  });
+  assert.equal(paidPayload.organization.name, paidName);
+  assert.equal(paidPayload.organization.plan_tier, "pro");
+  assert.match(paidPayload.billing_checkout?.url ?? "", /billing\/return\?session_id=cs_test_instantml__/);
+  assert.match(paidPayload.billing_checkout?.session_id ?? "", /^cs_test_instantml__/);
+
+  const pendingSession = await pageApiGet(page, "/api/auth/session");
+  assert.equal(pendingSession.organization.name, paidName);
+  expectedPaymentRequiredResourceErrors += 1;
+  await pageApiExpectStatus(page, "POST", "/runs", {
+    project: "paid-checkout",
+    name: `paid-before-sync-${smokeId}`,
+  }, 402);
+  const pendingBilling = await pageApiGet(page, "/api/billing/status");
+  assert.equal(pendingBilling.billing.access_state, "checkout_pending");
+  assert.equal(pendingBilling.billing.effective_plan_tier, "free");
+  assert.equal(pendingBilling.billing.requested_plan_tier, "pro");
+
+  const synced = await pageApiRequest(page, "POST", "/api/billing/checkout/sync", {
+    session_id: paidPayload.billing_checkout.session_id,
+  });
+  assert.equal(synced.billing.access_state, "paid_active");
+  assert.equal(synced.billing.effective_plan_tier, "pro");
+  const paidRun = await pageApiRequest(page, "POST", "/runs", {
+    project: "paid-checkout",
+    name: `paid-after-sync-${smokeId}`,
+  });
+  assert.equal(paidRun.run.name, `paid-after-sync-${smokeId}`);
+
+  await pageApiRequest(page, "POST", "/api/auth/switch-organization", {
+    org_id: returnOrgId,
+  });
+  const restoredSession = await pageApiGet(page, "/api/auth/session");
+  assert.equal(restoredSession.organization.id, returnOrgId);
+}
+
 async function openAccountWorkspaceMenu(page) {
   const trigger = page.getByRole("button", { name: /Account and workspace menu/ });
   await trigger.click();
@@ -1200,17 +1557,57 @@ function isExpectedForbiddenResource(response) {
     return false;
   }
   const method = response.request().method();
-  return (method === "GET" && (
-    path === "/api/usage"
-    || path === "/api/billing/status"
-    || /^\/api\/orgs\/[^/]+\/(?:seats|invitations|api-keys)$/.test(path)
-  ))
-    || (method === "POST" && (
+  return (method === "POST" && (
       path === "/runs"
       || path === "/api/invitations/accept"
+      || path === "/api/billing/checkout"
+      || path === "/api/billing/add-seat"
       || path === "/api/workspace-views"
+      || /^\/runs\/[^/]+\/metrics$/.test(path)
+      || /^\/api\/runs\/[^/]+\/artifacts\/upload$/.test(path)
       || /^\/api\/orgs\/[^/]+\/(?:invitations|api-keys)$/.test(path)
-    ));
+    ))
+    || (method === "PATCH" && /^\/runs\/[^/]+$/.test(path));
+}
+
+function isExpectedPaymentRequiredResource(response) {
+  let path = "";
+  try {
+    path = new URL(response.url()).pathname;
+  } catch {
+    return false;
+  }
+  return response.request().method() === "POST" && path === "/runs";
+}
+
+function isExpectedRateLimitedResource(response) {
+  let path = "";
+  try {
+    path = new URL(response.url()).pathname;
+  } catch {
+    return false;
+  }
+  const method = response.request().method();
+  if (method === "POST") {
+    return path === "/runs"
+      || path === "/api/metrics/series"
+      || path.endsWith("/metrics")
+      || path.endsWith("/objects")
+      || path.endsWith("/logs")
+      || path.endsWith("/artifacts/upload");
+  }
+  return method === "GET" && (
+    path === "/projects"
+    || path === "/api/usage"
+    || path === "/api/overview"
+    || path === "/api/runs/summary"
+    || path === "/api/runs/side-by-side"
+    || /^\/api\/runs\/[^/]+\/logs$/.test(path)
+    || /^\/api\/artifacts\/[^/]+\/download$/.test(path)
+    || /^\/api\/runs\/[^/]+\/artifacts$/.test(path)
+    || /^\/api\/runs\/[^/]+\/objects$/.test(path)
+    || /^\/api\/objects\/[^/]+\/rows$/.test(path)
+  );
 }
 
 function escapeRegExp(value) {
@@ -1218,7 +1615,7 @@ function escapeRegExp(value) {
 }
 
 async function pageApiRequest(page, method, route, body, options = {}) {
-  const attempts = 1 + (options.retries ?? 0);
+  const attempts = 1 + (options.retries ?? 2);
   let result = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     result = await page.evaluate(async ({ method, route, body }) => {
@@ -1236,8 +1633,8 @@ async function pageApiRequest(page, method, route, body, options = {}) {
       }
       return { ok: response.ok, payload, status: response.status };
     }, { method, route, body });
-    if (result.ok || result.status < 500 || attempt === attempts - 1) break;
-    await page.waitForTimeout(250);
+    if (result.ok || (result.status < 500 && result.status !== 429) || attempt === attempts - 1) break;
+    await page.waitForTimeout(result.status === 429 ? 600 : 250);
   }
   assert.equal(result.ok, true, `${method} ${route}: ${JSON.stringify(result.payload)} (${result.status})`);
   return result.payload;

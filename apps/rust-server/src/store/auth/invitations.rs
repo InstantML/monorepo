@@ -127,6 +127,13 @@ pub async fn create_org_invitation(
             .get(&org_id)
             .cloned()
             .ok_or_else(|| AppError::not_found("organization not found"))?;
+        if org.account_type == "personal" {
+            return Err(AppError::with_code(
+                StatusCode::BAD_REQUEST,
+                "personal_workspace_invite_forbidden",
+                "personal workspaces cannot invite teammates; create an organization workspace instead",
+            ));
+        }
         if let Some(user_id) = actor_user_id {
             require_admin_in_data(&data, user_id, org_id)?;
         }
@@ -578,11 +585,19 @@ pub async fn reserve_seat(
         ));
     }
     let mut data = store.data.lock().await;
-    let seat_limit = data
+    let org = data
         .organizations
         .get(&org_id)
-        .ok_or_else(|| AppError::not_found("organization not found"))?
-        .seat_limit as usize;
+        .cloned()
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    if org.account_type == "personal" {
+        return Err(AppError::with_code(
+            StatusCode::BAD_REQUEST,
+            "personal_workspace_invite_forbidden",
+            "personal workspaces cannot invite teammates; create an organization workspace instead",
+        ));
+    }
+    let seat_limit = org.seat_limit as usize;
     if let Some(user_id) = user_id {
         require_admin_in_data(&data, user_id, org_id)?;
     }
@@ -1208,6 +1223,50 @@ mod tests {
         data.insert_org_invitation(invitation);
 
         assert_eq!(reserved_seat_count_in_data(&data, org_id, now), 2);
+    }
+
+    #[tokio::test]
+    async fn reserve_seat_rejects_personal_workspace_even_with_legacy_capacity() {
+        let owner_id = Uuid::new_v4();
+        let org_id = Uuid::new_v4();
+        let mut org = org_row(org_id, "Personal Legacy", owner_id);
+        org.account_type = "personal".to_string();
+        org.seat_limit = 2;
+        let now = Utc::now();
+        let mut data = StoreData::default();
+        data.insert_org(org);
+        data.insert_user(UserRow {
+            id: owner_id,
+            primary_email: "owner@example.com".to_string(),
+            display_name: Some("Owner".to_string()),
+            avatar_url: None,
+            created_at: now,
+            last_seen_at: None,
+        });
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id,
+            user_id: owner_id,
+            role: "owner".to_string(),
+            status: "active".to_string(),
+            created_at: now,
+        });
+        let store = store_with_data(data);
+
+        let error = reserve_seat(
+            &store,
+            Some(owner_id),
+            org_id,
+            ReserveSeatRequest {
+                email: Some("teammate@example.com".to_string()),
+                role: Some("member".to_string()),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(error.code(), Some("personal_workspace_invite_forbidden"));
     }
 
     #[test]

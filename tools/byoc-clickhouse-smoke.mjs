@@ -47,7 +47,9 @@ try {
       INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
       INSTANTML_AUTH_MODE: "local",
       INSTANTML_DEV_AUTH_ENABLED: "true",
-      INSTANTML_BILLING_ENABLED: "false",
+      INSTANTML_BILLING_ENABLED: "true",
+      INSTANTML_STRIPE_MOCK_CHECKOUT: "true",
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "sk_test_instantml_mock",
       INSTANTML_ARTIFACT_ROOT: path.join(tempDir, "artifacts"),
       INSTANTML_ARTIFACT_UPLOADS_ENABLED: "true",
       INSTANTML_BYOC_ALLOW_PRIVATE_ENDPOINTS: "true",
@@ -73,7 +75,12 @@ try {
   assert.ok(orgId, "signup should return org id");
   assert.equal(signup.body.organization.storage_choice, "customer-clickhouse");
   assert.equal(signup.body.organization.storage_state, "storage_unconfigured");
+  assert.match(signup.body.billing_checkout?.session_id ?? "", /^cs_test_instantml__/);
   assert.equal(signup.body.onboarding_api_key, undefined);
+
+  await apiJson("POST", "/api/billing/checkout/sync", {
+    session_id: signup.body.billing_checkout.session_id,
+  });
 
   const blockedKey = await apiJson(
     "POST",
@@ -162,6 +169,7 @@ try {
 
 async function apiJson(method, pathname, body, options = {}) {
   const headers = { "content-type": "application/json" };
+  if (method !== "GET") headers.origin = baseUrl;
   if (sessionCookie) headers.cookie = sessionCookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
   const response = await fetch(baseUrl + pathname, {

@@ -7515,6 +7515,12 @@
               }
             ]
           },
+          "invitations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InitialInvitationCreateResult"
+            }
+          },
           "membership": {
             "$ref": "#/components/schemas/MembershipRow"
           },
@@ -7823,6 +7829,29 @@
         "properties": {
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "InitialInvitationCreateResult": {
+        "type": "object",
+        "required": [
+          "invitation"
+        ],
+        "properties": {
+          "delivery_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invitation": {
+            "$ref": "#/components/schemas/PublicInvitationRow"
+          },
+          "preview_link": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

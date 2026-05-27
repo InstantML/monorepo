@@ -233,7 +233,7 @@ function WorkspaceCreateModal({
   onClose: () => void;
   onCreate: (input: CreateWorkspaceInput) => Promise<void>;
 }) {
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "input[name='workspace-name']");
   const [kind, setKind] = useState<"personal" | "business">("business");
   const [name, setName] = useState("");
   const [plan, setPlan] = useState<"free" | "pro" | "premium">("free");
@@ -247,6 +247,7 @@ function WorkspaceCreateModal({
   const personalBlocked = kind === "personal" && hasPersonal;
   const byocBlocked = plan !== "premium";
   const inviteDeferred = plan !== "free";
+  const invitesAllowed = kind === "business" && !inviteDeferred;
   const normalizedStorage = byocBlocked ? "instantml-hosted" : storage;
   const trimmedName = name.trim();
   const nameAvailable = availability?.available === true && availability.checkedName === trimmedName;
@@ -294,7 +295,7 @@ function WorkspaceCreateModal({
         account_type: kind,
         plan_tier: plan,
         storage_choice: normalizedStorage,
-        initial_invitations: !inviteDeferred && inviteEmail.trim() ? [{ email: inviteEmail.trim(), role: inviteRole }] : [],
+        initial_invitations: invitesAllowed && inviteEmail.trim() ? [{ email: inviteEmail.trim(), role: inviteRole }] : [],
         switch_on_create: true,
       });
     } catch (createError) {
@@ -321,7 +322,7 @@ function WorkspaceCreateModal({
           {personalBlocked ? <p className="form-error">You already have a personal workspace.</p> : null}
           <label className="workspace-create-field">
             {kind === "personal" ? "Workspace name" : "Organization name"}
-            <input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
+            <input autoFocus name="workspace-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
           </label>
           {trimmedName ? (
             <p className={`workspace-create-status ${availability?.available === false ? "error" : ""}`} role={availability?.available === false ? "alert" : "status"}>
@@ -346,25 +347,29 @@ function WorkspaceCreateModal({
               Advanced: connect my ClickHouse
             </label>
           </div>
-          <div className="workspace-invite-row">
-            <label className="workspace-create-field">
-              Invite teammates
-              <input autoComplete="email" disabled={inviteDeferred} value={inviteDeferred ? "" : inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder={inviteDeferred ? "Invite after checkout" : "teammate@example.com"} type="email" />
-            </label>
-            <CustomSelect
-              id="workspace-create-role"
-              label="Role"
-              disabled={inviteDeferred}
-              onChange={(value) => setInviteRole(value === "admin" || value === "viewer" ? value : "member")}
-              options={[
-                { value: "member", label: "Write/read" },
-                { value: "admin", label: "Admin" },
-                { value: "viewer", label: "Read only" },
-              ]}
-              value={inviteRole}
-            />
-          </div>
-          {inviteDeferred ? <p className="setting-hint">Invite teammates after checkout unlocks the workspace.</p> : null}
+          {kind === "business" ? (
+            <div className="workspace-invite-row">
+              <label className="workspace-create-field">
+                Invite teammates
+                <input autoComplete="email" disabled={inviteDeferred} value={inviteDeferred ? "" : inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder={inviteDeferred ? "Invite after checkout" : "teammate@example.com"} type="email" />
+              </label>
+              <CustomSelect
+                id="workspace-create-role"
+                label="Role"
+                disabled={inviteDeferred}
+                onChange={(value) => setInviteRole(value === "admin" || value === "viewer" ? value : "member")}
+                options={[
+                  { value: "member", label: "Write/read" },
+                  { value: "admin", label: "Admin" },
+                  { value: "viewer", label: "Read only" },
+                ]}
+                value={inviteRole}
+              />
+            </div>
+          ) : (
+            <p className="setting-hint">Personal workspaces are single-seat. Create an organization to invite teammates.</p>
+          )}
+          {kind === "business" && inviteDeferred ? <p className="setting-hint">Invite teammates after checkout unlocks the workspace.</p> : null}
           {error ? <p className="form-error" role="alert">{error}</p> : null}
         </div>
         <div className="workspace-create-actions">
@@ -407,6 +412,8 @@ function AccountWorkspaceMenu({
   const [filter, setFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const displayName = accountDisplayLabel(accountUser?.display_name ?? "", accountUser?.primary_email ?? "");
   const currentMembership = memberships.find((membership) => membership.is_current) ?? memberships.find((membership) => membership.org_id === current?.id) ?? null;
@@ -427,22 +434,42 @@ function AccountWorkspaceMenu({
         triggerRef.current?.focus();
       }
     }
-    function closeFromEscape(event: globalThis.KeyboardEvent) {
+    function handleKeydown(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
         triggerRef.current?.focus();
+        return;
+      }
+      if (event.key !== "Tab" || !menuRef.current) return;
+      const focusable = Array.from(menuRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      )).filter((node) => node.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
       }
     }
     document.addEventListener("pointerdown", closeFromOutside);
-    document.addEventListener("keydown", closeFromEscape);
+    document.addEventListener("keydown", handleKeydown);
     return () => {
       document.removeEventListener("pointerdown", closeFromOutside);
-      document.removeEventListener("keydown", closeFromEscape);
+      document.removeEventListener("keydown", handleKeydown);
     };
   }, [open]);
 
   useEffect(() => {
     if (!open) setFilter("");
+  }, [open]);
+
+  useEffect(() => {
+    if (open) window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [open]);
 
   function renderMembership(membership: OrgMembershipSummary) {
@@ -456,8 +483,6 @@ function AccountWorkspaceMenu({
           setOpen(false);
           if (!membership.is_current) onSelect(membership.org_id);
         }}
-        role="option"
-        aria-selected={membership.is_current}
         type="button"
       >
         <span className="org-switcher-check" aria-hidden="true">{membership.is_current ? <Check size={13} /> : null}</span>
@@ -489,7 +514,7 @@ function AccountWorkspaceMenu({
         <ChevronDown size={13} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="account-workspace-menu" id="account-workspace-menu" role="dialog" aria-label="Account and workspace">
+        <div className="account-workspace-menu" id="account-workspace-menu" ref={menuRef} role="dialog" aria-label="Account and workspace">
           <div className="account-workspace-identity">
             <AccountAvatar user={accountUser} />
             <span>
@@ -506,9 +531,9 @@ function AccountWorkspaceMenu({
           ) : null}
           <label className="account-workspace-search">
             <Search size={13} aria-hidden="true" />
-            <input aria-label="Search workspaces" onChange={(event) => setFilter(event.target.value)} placeholder="Search workspaces" type="search" value={filter} />
+            <input aria-label="Search workspaces" onChange={(event) => setFilter(event.target.value)} placeholder="Search workspaces" ref={searchRef} type="search" value={filter} />
           </label>
-          <div className="account-workspace-list" role="listbox" aria-label="Switch workspace">
+          <div className="account-workspace-list" aria-label="Switch workspace">
             {personal.length ? <span className="account-workspace-section">Personal</span> : null}
             {personal.map(renderMembership)}
             {organizations.length ? <span className="account-workspace-section">Organizations</span> : null}

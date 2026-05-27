@@ -15,6 +15,9 @@ type UsageWarning = { code?: string; message?: string };
 type BillingStatus = {
   access_state?: string;
   effective_plan_tier?: string;
+  plan_tier?: string;
+  requested_plan_tier?: string | null;
+  stripe_subscription_id?: string | null;
   subscription_status?: string | null;
   cancel_at_period_end?: boolean;
   message?: string | null;
@@ -139,8 +142,29 @@ export function SettingsTabPane({
   xMode,
   billingStatus,
 }: Props) {
-  const billingState = billingStatus?.access_state ?? "free_active";
+  const adminOnlyValue = "Available to admins";
+  const billingState = canManageOrg ? billingStatus?.access_state ?? "free_active" : adminOnlyValue;
+  const billingSubscription = canManageOrg ? billingStatus?.subscription_status ?? "none" : adminOnlyValue;
+  const effectivePlan = canManageOrg ? billingStatus?.effective_plan_tier ?? orgPlanTier ?? "free" : orgPlanTier || activePlan || "free";
+  const storageUsageValue = canManageOrg ? `${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}` : adminOnlyValue;
+  const metricUsageValue = canManageOrg ? `${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}` : adminOnlyValue;
+  const apiRequestUsageValue = canManageOrg ? `${formatNumber(apiRequestsUsed, 0)} / ${apiRequestsLimit ? formatNumber(apiRequestsLimit, 0) : "-"}` : adminOnlyValue;
+  const storageMeterPercent = canManageOrg ? storagePercent : 0;
+  const metricMeterPercent = canManageOrg ? metricPercent : 0;
+  const apiRequestMeterPercent = canManageOrg ? apiRequestsPercent : 0;
   const visibleInvitations = invitations.filter((invitation) => invitation.status !== "accepted");
+  const checkoutRetryPlan = billingStatus?.access_state === "checkout_pending"
+    ? billingStatus.requested_plan_tier ?? billingStatus.plan_tier ?? orgPlanTier
+    : "";
+  const canRetryPlanCheckout = (plan: "pro" | "premium") => (
+    canManageOrg &&
+    checkoutRetryPlan === plan &&
+    billingStatus?.effective_plan_tier !== plan &&
+    !billingStatus?.stripe_subscription_id
+  );
+  const planButtonDisabled = (plan: "free" | "pro" | "premium") => (
+    adminBusy || (orgPlanTier === plan && (plan === "free" || !canRetryPlanCheckout(plan)))
+  );
   return (
     <>
       <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
@@ -148,28 +172,29 @@ export function SettingsTabPane({
         <section className="panel">
           <div className="panel-head">
             <h2><Gauge size={15} /> Plan Usage</h2>
-            <button className="ghost" disabled={adminBusy} onClick={onLoadOrgSettings} type="button"><RefreshCw size={14} /> Refresh</button>
+            <button className="ghost" disabled={adminBusy || !canManageOrg} onClick={onLoadOrgSettings} type="button"><RefreshCw size={14} /> Refresh</button>
           </div>
           <div className="panel-body insight-stack">
             <MetricCard label="Plan" value={activePlan} tone="good" />
             <MetricCard label="Seats" value={`${formatNumber(reservedSeatCount, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} tone="neutral" />
-            <MetricCard label={storageUsageLabel} value={`${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}`} tone={storagePercent > 90 ? "bad" : storagePercent > 70 ? "live" : "neutral"} />
-            {storageUsageDescription ? <p className="setting-hint">{storageUsageDescription}</p> : null}
+            <MetricCard label={storageUsageLabel} value={storageUsageValue} tone={canManageOrg && storagePercent > 90 ? "bad" : canManageOrg && storagePercent > 70 ? "live" : "neutral"} />
+            {canManageOrg && storageUsageDescription ? <p className="setting-hint">{storageUsageDescription}</p> : null}
+            {!canManageOrg ? <p className="setting-hint">Usage reporting is available to workspace admins.</p> : null}
             <div className="usage-meter" aria-label={`${storageUsageLabel} usage`}>
-              <span style={{ width: `${storagePercent}%` }} />
+              <span style={{ width: `${storageMeterPercent}%` }} />
             </div>
-            <MetricCard label="Metric points this month" value={`${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}`} tone={metricPercent > 90 ? "bad" : metricPercent > 70 ? "live" : "neutral"} />
+            <MetricCard label="Metric points this month" value={metricUsageValue} tone={canManageOrg && metricPercent > 90 ? "bad" : canManageOrg && metricPercent > 70 ? "live" : "neutral"} />
             <div className="usage-meter" aria-label="Metric point usage">
-              <span style={{ width: `${metricPercent}%` }} />
+              <span style={{ width: `${metricMeterPercent}%` }} />
             </div>
-            <MetricCard label="API requests this month" value={`${formatNumber(apiRequestsUsed, 0)} / ${apiRequestsLimit ? formatNumber(apiRequestsLimit, 0) : "-"}`} tone={apiRequestsPercent > 90 ? "bad" : apiRequestsPercent > 70 ? "live" : "neutral"} />
+            <MetricCard label="API requests this month" value={apiRequestUsageValue} tone={canManageOrg && apiRequestsPercent > 90 ? "bad" : canManageOrg && apiRequestsPercent > 70 ? "live" : "neutral"} />
             <div className="usage-meter" aria-label="API request usage">
-              <span style={{ width: `${apiRequestsPercent}%` }} />
+              <span style={{ width: `${apiRequestMeterPercent}%` }} />
             </div>
-            <SettingRow label="General API rate" value={generalRateLimitLabel || "-"} />
-            <SettingRow label="Ingest API rate" value={ingestRateLimitLabel || "-"} />
-            <SettingRow label="Monthly reset" value={usageResetLabel ? `${usageResetLabel} UTC` : "-"} />
-            {activeUsageWarnings.length ? (
+            <SettingRow label="General API rate" value={canManageOrg ? generalRateLimitLabel || "-" : adminOnlyValue} />
+            <SettingRow label="Ingest API rate" value={canManageOrg ? ingestRateLimitLabel || "-" : adminOnlyValue} />
+            <SettingRow label="Monthly reset" value={canManageOrg && usageResetLabel ? `${usageResetLabel} UTC` : canManageOrg ? "-" : adminOnlyValue} />
+            {canManageOrg && activeUsageWarnings.length ? (
               <div className="admin-alert-list">
                 {activeUsageWarnings.map((warning, index) => (
                   <div className="api-row" key={`${warning.code ?? "warning"}-${index}`}>
@@ -185,9 +210,9 @@ export function SettingsTabPane({
           <div className="panel-head"><h2><CreditCard size={15} /> Billing</h2></div>
           <div className="panel-body settings-list">
             <SettingRow label="Access" value={billingState.replace(/_/g, " ")} />
-            <SettingRow label="Subscription" value={billingStatus?.subscription_status ?? "none"} />
-            <SettingRow label="Effective plan" value={billingStatus?.effective_plan_tier ?? orgPlanTier ?? "free"} />
-            {billingStatus?.message ? (
+            <SettingRow label="Subscription" value={billingSubscription} />
+            <SettingRow label="Effective plan" value={effectivePlan} />
+            {canManageOrg && billingStatus?.message ? (
               <div className="api-row">
                 <AlertTriangle size={14} />
                 <strong>{billingStatus.message}</strong>
@@ -196,9 +221,9 @@ export function SettingsTabPane({
             {canManageOrg ? (
               <div className="admin-form-row">
                 <button className="ghost" disabled={adminBusy} onClick={onOpenBillingPortal} type="button"><CreditCard size={14} /> Portal</button>
-                <button className="ghost" disabled={adminBusy || orgPlanTier === "pro"} onClick={() => onChangeBillingPlan("pro")} type="button">Pro</button>
-                <button className="ghost" disabled={adminBusy || orgPlanTier === "premium"} onClick={() => onChangeBillingPlan("premium")} type="button">Premium</button>
-                <button className="ghost" disabled={adminBusy || orgPlanTier === "free"} onClick={() => onChangeBillingPlan("free")} type="button">Free</button>
+                <button className="ghost" disabled={planButtonDisabled("pro")} onClick={() => onChangeBillingPlan("pro")} type="button">{canRetryPlanCheckout("pro") ? "Retry Pro" : "Pro"}</button>
+                <button className="ghost" disabled={planButtonDisabled("premium")} onClick={() => onChangeBillingPlan("premium")} type="button">{canRetryPlanCheckout("premium") ? "Retry Premium" : "Premium"}</button>
+                <button className="ghost" disabled={planButtonDisabled("free")} onClick={() => onChangeBillingPlan("free")} type="button">Free</button>
                 <button className="ghost" disabled={adminBusy || !billingStatus?.subscription_status} onClick={onCancelBilling} type="button">Cancel</button>
               </div>
             ) : null}

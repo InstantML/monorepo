@@ -292,7 +292,7 @@ frontend-compatible empty summary fields. Batched metric-series reads accept up
 to 2,000 run IDs, but the server clamps `effective_limit` so a single response
 cannot exceed 120,000 metric points.
 
-Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a browser session and mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
+Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a mutation-origin-validated non-demo browser session for an owner/admin in a billing- and storage-ready workspace, then mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and
 the durable control/data-plane schema reference lives in

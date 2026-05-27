@@ -266,7 +266,18 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
 }
 
 fn is_monthly_quota_exempt_route(method: &Method, path: &str) -> bool {
-    *method == Method::GET && matches!(path, "/api/usage" | "/api/usage/export")
+    matches!(
+        (method.as_str(), path),
+        ("GET", "/api/usage")
+            | ("GET", "/api/usage/export")
+            | ("GET", "/api/storage/clickhouse-connections/current")
+            | ("POST", "/api/storage/clickhouse-connections")
+            | ("POST", "/api/storage/clickhouse-connections/validate")
+            | (
+                "POST",
+                "/api/storage/clickhouse-connections/rotate-credentials"
+            )
+    )
 }
 
 fn plan_limit(plan: PlanTier, class: RequestClass) -> RateLimitSpec {
@@ -455,6 +466,16 @@ mod tests {
                 .expect("policy")
                 .class,
             RequestClass::General
+        );
+        assert!(
+            !classify_route(&Method::GET, "/api/storage/clickhouse-connections/current")
+                .expect("policy")
+                .monthly_enforced
+        );
+        assert!(
+            !classify_route(&Method::POST, "/api/storage/clickhouse-connections")
+                .expect("policy")
+                .monthly_enforced
         );
         assert!(classify_route(&Method::OPTIONS, "/api/usage").is_none());
     }

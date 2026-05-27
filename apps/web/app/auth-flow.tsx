@@ -395,6 +395,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
         window.location.assign(checkoutUrl);
         return;
       }
+      if ((sessionPayload as SessionPayload).billing_checkout) {
+        note("Workspace created, but checkout could not be opened. Opening billing settings...");
+        window.location.assign("/dashboard/settings");
+        return;
+      }
       if (isSharedDemoSession(sessionPayload as SessionPayload)) {
         note("Signed in to the read-only demo. Opening the dashboard...");
         window.location.assign("/dashboard/runs");
@@ -457,6 +462,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
       if (payload.billing_checkout?.url) {
         note("Workspace created. Opening Stripe Checkout...");
         window.location.assign(payload.billing_checkout.url);
+        return;
+      }
+      if (payload.billing_checkout) {
+        note("Workspace created, but checkout could not be opened. Opening billing settings...");
+        window.location.assign("/dashboard/settings");
         return;
       }
       // If the server auto-issued an onboarding key, reveal it immediately

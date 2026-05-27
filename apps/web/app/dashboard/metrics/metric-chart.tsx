@@ -98,12 +98,16 @@ function MiniRange({
   const activeMinX = activeRange ? miniX(activeRange.min) : 0;
   const activeMaxX = activeRange ? miniX(activeRange.max) : 0;
 
-  function valueFromPointer(event: ReactPointerEvent<SVGSVGElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, miniWidth, miniHeight);
+  function valueFromClient(target: SVGSVGElement, clientX: number, clientY: number) {
+    const rect = target.getBoundingClientRect();
+    const point = svgPointFromClient(rect, clientX, clientY, miniWidth, miniHeight);
     const plotX = Math.max(padX, Math.min(miniWidth - padX, point.x));
     const ratio = (plotX - padX) / Math.max(1, miniWidth - padX * 2);
     return domain.minX + ratio * (domain.maxX - domain.minX);
+  }
+
+  function valueFromPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    return valueFromClient(event.currentTarget, event.clientX, event.clientY);
   }
 
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
@@ -112,7 +116,11 @@ function MiniRange({
     const value = valueFromPointer(event);
     setDragAnchor(value);
     setDraftRange({ min: value, max: value });
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic pointer events in browser tests may not have an active pointer capture target.
+    }
   }
 
   function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
@@ -126,7 +134,32 @@ function MiniRange({
     setDragAnchor(null);
     setDraftRange(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (!next || (next.max - next.min) < Math.max(1, (domain.maxX - domain.minX) * 0.03)) {
+    if (!next || (next.max - next.min) < Math.max(Number.EPSILON, (domain.maxX - domain.minX) * 0.03)) {
+      onZoomRangeChange(null);
+      return;
+    }
+    onZoomRangeChange(next);
+  }
+
+  function handleMouseDown(event: MouseEvent<SVGSVGElement>) {
+    if (!onZoomRangeChange) return;
+    event.preventDefault();
+    const value = valueFromClient(event.currentTarget, event.clientX, event.clientY);
+    setDragAnchor(value);
+    setDraftRange({ min: value, max: value });
+  }
+
+  function handleMouseMove(event: MouseEvent<SVGSVGElement>) {
+    if (dragAnchor === null) return;
+    setDraftRange({ min: dragAnchor, max: valueFromClient(event.currentTarget, event.clientX, event.clientY) });
+  }
+
+  function finishMouseRange(event: MouseEvent<SVGSVGElement>) {
+    if (!onZoomRangeChange || dragAnchor === null) return;
+    const next = sanitizeRange({ min: dragAnchor, max: valueFromClient(event.currentTarget, event.clientX, event.clientY) }, domain);
+    setDragAnchor(null);
+    setDraftRange(null);
+    if (!next || (next.max - next.min) < Math.max(Number.EPSILON, (domain.maxX - domain.minX) * 0.03)) {
       onZoomRangeChange(null);
       return;
     }
@@ -138,6 +171,9 @@ function MiniRange({
       <svg
         viewBox={`0 0 ${miniWidth} ${miniHeight}`}
         aria-label={`Drag to zoom ${xMode === "time" ? "time" : "step"} range`}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={finishMouseRange}
         onPointerCancel={finishPointerRange}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

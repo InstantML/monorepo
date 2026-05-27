@@ -4,6 +4,7 @@ import {
   Activity,
   BarChart3,
   Box,
+  Copy,
   Database,
   FileText,
   Folder,
@@ -17,7 +18,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 
-import { isAbortError, queryString } from "../../../src/api.js";
+import { isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
+import { buildCheckpointResumeCode } from "../../../src/checkpoints.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../../../src/evidence.js";
 import { ansiTokens, terminalWindow } from "../../../src/terminal.js";
 import { formatNumber, statusTone } from "../../../src/state.js";
@@ -43,6 +45,12 @@ type ChartZoomRange = { min: number; max: number } | null;
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;
 };
+const RUN_WORKSPACE_REQUEST_RETRY_DELAYS_MS = [250, 700, 1_500];
+
+function copyText(value: string) {
+  if (!value) return;
+  void navigator.clipboard?.writeText(value);
+}
 type ConsoleLogLine = {
   created_at: string;
   line_number: number;
@@ -233,7 +241,10 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
     setLoading(true);
     setError("");
     setScrollTop(0);
-    api.get(`/api/runs/${run.id}/logs${queryString({ stream, limit: 250, q: query.trim() })}`, { signal: controller.signal })
+    retryTransientRequest(
+      () => api.get(`/api/runs/${run.id}/logs${queryString({ stream, limit: 250, q: query.trim() })}`, { signal: controller.signal }),
+      { signal: controller.signal, delays: RUN_WORKSPACE_REQUEST_RETRY_DELAYS_MS },
+    )
       .then((payload) => {
         if (requestKey !== requestKeyRef.current) return;
         setLines(payload.lines ?? []);
@@ -258,7 +269,10 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
     setLoading(true);
     setError("");
     try {
-      const payload = await api.get(`/api/runs/${run.id}/logs${queryString({ stream, limit: 250, q: query.trim(), cursor })}`);
+      const payload = await retryTransientRequest(
+        () => api.get(`/api/runs/${run.id}/logs${queryString({ stream, limit: 250, q: query.trim(), cursor })}`),
+        { delays: RUN_WORKSPACE_REQUEST_RETRY_DELAYS_MS },
+      );
       if (requestKey !== requestKeyRef.current) return;
       setLines((current) => [...current, ...(payload.lines ?? [])]);
       setNextCursor(payload.next_cursor ?? null);
@@ -372,7 +386,7 @@ function RunEvidenceExplorer({
         ))}
       </aside>
       <div className="evidence-preview">
-        {selected ? <EvidencePreview item={selected} rowsByObjectId={rowsByObjectId} /> : (
+        {selected ? <EvidencePreview item={selected} rowsByObjectId={rowsByObjectId} run={run} /> : (
           <div className="empty">No evidence logged for {run.name}.</div>
         )}
       </div>
@@ -380,8 +394,9 @@ function RunEvidenceExplorer({
   );
 }
 
-function EvidencePreview({ item, rowsByObjectId }: { item: any; rowsByObjectId: Record<number, LoggedObjectRow[]> }) {
+function EvidencePreview({ item, rowsByObjectId, run }: { item: any; rowsByObjectId: Record<number, LoggedObjectRow[]>; run: RunSummary }) {
   if (item.artifact) {
+    const resumeCode = item.artifact.type === "checkpoint" ? buildCheckpointResumeCode(item.artifact, run) : "";
     return (
       <div className="evidence-preview-stack">
         <div className="evidence-preview-head">
@@ -390,6 +405,11 @@ function EvidencePreview({ item, rowsByObjectId }: { item: any; rowsByObjectId: 
             <h3>{item.artifact.name}</h3>
             <p>{item.artifact.type} · {item.artifact.step === null ? "no step" : `step ${item.artifact.step}`}</p>
           </div>
+          {resumeCode ? (
+            <button className="copy-button" onClick={() => copyText(resumeCode)} type="button">
+              <Copy size={13} /> Resume Code
+            </button>
+          ) : null}
         </div>
         <ArtifactBrowser artifacts={[item.artifact]} />
         <div className="evidence-quicklook">

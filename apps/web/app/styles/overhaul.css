@@ -155,16 +155,14 @@
   border-right: 1px solid var(--line);
 }
 .tabs.pinned,
-.tabs:hover,
-.tabs:focus-within {
+.shell.nav-auto-open .tabs {
   /* Expanded state: stay fully opaque + cast a subtle shadow so labels
    * never overlap visibly with the underlying content. */
   background: var(--bg);
   box-shadow: 2px 0 16px 0 rgba(0, 0, 0, 0.35);
 }
 :root[data-theme="light"] .tabs.pinned,
-:root[data-theme="light"] .tabs:hover,
-:root[data-theme="light"] .tabs:focus-within {
+:root[data-theme="light"] .shell.nav-auto-open .tabs {
   box-shadow: 2px 0 16px 0 rgba(15, 23, 42, 0.08);
 }
 .tab-button {
@@ -748,6 +746,11 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-2);
+}
+.account-workspace-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--line-strong);
 }
 .account-workspace-search input {
   flex: 1;
@@ -2125,25 +2128,13 @@ button.compare-row-head.active {
  * Sidebar de-clunk + Pluto-style run rows + tokenized chrome leaks
  * ══════════════════════════════════════════════════════════════════════════ */
 
-/* Nav never reflows the page: fixed 56px grid cell; the rail expands as an
- * overlay that floats over content on hover/pin (no layout shift = smooth). */
+/* Nav defaults to a compact 56px rail. Pinned mode reserves grid space;
+ * auto-open overlays labels without moving the dashboard content. */
 .shell {
   --sidebar-width: 56px;
   grid-template-columns: 56px minmax(0, 1fr);
   transition: none;
 }
-/* Hover / focus auto-open stays a floating overlay — the grid column
- * stays 56px so a transient peek never reflows the page. Scoped to the
- * non-pinned state: when pinned these :has(:hover) rules would otherwise
- * out-specify .shell.nav-pinned and collapse the docked column on hover. */
-.shell:not(.nav-pinned).nav-auto-open,
-.shell:not(.nav-pinned):has(.tabs:hover),
-.shell:not(.nav-pinned):has(.tabs:focus-within) {
-  --sidebar-width: 56px;
-  grid-template-columns: 56px minmax(0, 1fr);
-}
-/* Pinned = docked: the rail reserves its own grid column so it never
- * covers page content (the bug was the pinned rail overlaying the canvas). */
 .shell.nav-pinned {
   --sidebar-width: 212px;
   grid-template-columns: 212px minmax(0, 1fr);
@@ -2158,19 +2149,13 @@ button.compare-row-head.active {
 }
 :root[data-theme="dark"] .tabs { background: var(--color-ink); }
 
-/* Hover/focus expand the .tabs element itself to 212px so its opaque
- * background covers the tab labels (which would otherwise extend past
- * the 56px column and let page content show through gaps between
- * buttons). Grid column stays 56px so the canvas doesn't reflow — the
- * rail floats over the canvas instead. */
-.shell:not(.nav-pinned):has(.tabs:hover) .tabs,
-.shell:not(.nav-pinned):has(.tabs:focus-within) .tabs,
+/* Auto-open expands the .tabs element itself to 212px so its opaque
+ * background covers tab labels without leaking page content through gaps
+ * between buttons. */
 .shell:not(.nav-pinned).nav-auto-open .tabs {
   width: 212px;
   box-shadow: 22px 0 46px -12px rgba(0, 0, 0, 0.55);
 }
-:root[data-theme="light"] .shell:not(.nav-pinned):has(.tabs:hover) .tabs,
-:root[data-theme="light"] .shell:not(.nav-pinned):has(.tabs:focus-within) .tabs,
 :root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs {
   box-shadow: 22px 0 46px -12px rgba(15, 23, 42, 0.18);
 }
@@ -2234,6 +2219,15 @@ button.compare-row-head.active {
 .shell:not(.nav-pinned) .tab-label {
   max-width: 0;
   opacity: 0;
+}
+.shell:not(.nav-pinned).nav-auto-open .tab-button {
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+}
+.shell:not(.nav-pinned).nav-auto-open .tab-label {
+  max-width: 120px;
+  opacity: 1;
 }
 .tab-button {
   min-height: 36px;

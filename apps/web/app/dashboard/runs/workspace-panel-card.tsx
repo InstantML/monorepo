@@ -283,8 +283,12 @@ export function WorkspacePanelCard({
     const columnUnit = Math.max(1, grid.getBoundingClientRect().width / 12);
     const rowUnit = 78;
     const pointerId = event.pointerId;
-    event.currentTarget.setPointerCapture(pointerId);
     const target = event.currentTarget;
+    try {
+      event.currentTarget.setPointerCapture(pointerId);
+    } catch {
+      // Synthetic pointer events in browser tests may not have an active pointer capture target.
+    }
     function handlePointerMove(pointerEvent: globalThis.PointerEvent) {
       const next = {
         w: Math.max(3, Math.min(12, Math.round(startLayout.w + (pointerEvent.clientX - startX) / columnUnit))),

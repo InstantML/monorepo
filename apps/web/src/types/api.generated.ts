@@ -1707,6 +1707,7 @@ export interface components {
         };
         CurrentUserOrganizationCreateResponse: {
             billing_checkout?: null | components["schemas"]["BillingCheckoutInfo"];
+            invitations?: components["schemas"]["InitialInvitationCreateResult"][];
             membership: components["schemas"]["MembershipRow"];
             memberships: components["schemas"]["OrganizationMembershipSummary"][];
             onboarding_api_key?: null | components["schemas"]["OnboardingApiKey"];
@@ -1780,6 +1781,11 @@ export interface components {
         };
         HealthResponse: {
             status: string;
+        };
+        InitialInvitationCreateResult: {
+            delivery_error?: string | null;
+            invitation: components["schemas"]["PublicInvitationRow"];
+            preview_link?: string | null;
         };
         InitialOrganizationInvitation: {
             email: string;

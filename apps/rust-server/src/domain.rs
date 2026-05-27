@@ -303,12 +303,23 @@ pub struct CurrentUserOrganizationCreateResponse {
     pub organization: OrganizationRow,
     pub membership: MembershipRow,
     pub memberships: Vec<OrganizationMembershipSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invitations: Vec<InitialInvitationCreateResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<AuthSessionPayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_checkout: Option<BillingCheckoutInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub onboarding_api_key: Option<OnboardingApiKey>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct InitialInvitationCreateResult {
+    pub invitation: PublicInvitationRow,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_error: Option<String>,
 }
 
 pub const BILLING_FREE_ACTIVE: &str = "free_active";

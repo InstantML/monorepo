@@ -27,6 +27,7 @@ pub async fn update_dashboard_preferences(
     input: UpdateDashboardPreferencesRequest,
 ) -> AppResult<Value> {
     let user_id = require_dashboard_write(store, ctx)?;
+    ensure_billing_write_allowed(store, ctx.org_id, "save dashboard preferences").await?;
     let selected_project = validate_optional_nonempty(input.selected_project, "selected_project")?;
     let row = DashboardPreferenceRow {
         schema_version: DASHBOARD_PREFERENCE_SCHEMA_VERSION,
@@ -101,6 +102,7 @@ pub async fn create_workspace_view(
     input: SaveWorkspaceViewRequest,
 ) -> AppResult<Value> {
     let user_id = require_dashboard_write(store, ctx)?;
+    ensure_billing_write_allowed(store, ctx.org_id, "create workspace views").await?;
     let name = validate_name(input.name.as_deref(), "view name")?;
     let project = validate_optional_nonempty(input.project, "project")?;
     let payload = validate_workspace_view_payload(input.payload)?;
@@ -143,6 +145,7 @@ pub async fn update_workspace_view(
     input: SaveWorkspaceViewRequest,
 ) -> AppResult<Value> {
     let user_id = require_dashboard_write(store, ctx)?;
+    ensure_billing_write_allowed(store, ctx.org_id, "update workspace views").await?;
     let mut data = store.data.lock().await;
     let existing = workspace_view_for_user(&data, ctx.org_id, user_id, view_id)?;
     let name = input
@@ -253,6 +256,34 @@ fn workspace_view_summary(view: &WorkspaceViewRow) -> WorkspaceViewSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::SessionContext;
+
+    fn store_with_data(data: StoreData) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_workspace_views_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
 
     #[test]
     fn workspace_view_payload_must_be_small_object() {
@@ -322,5 +353,75 @@ mod tests {
         assert!(workspace_view_for_user(&data, other_org_id, owner_user_id, view_id).is_err());
         assert!(workspace_view_for_user(&data, org_id, other_user_id, view_id).is_err());
         assert!(workspace_view_for_user(&data, org_id, owner_user_id, deleted_view_id).is_err());
+    }
+
+    #[tokio::test]
+    async fn workspace_view_writes_respect_billing_block() {
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "owner@example.com".to_string(),
+            display_name: Some("Owner".to_string()),
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "paid-lab".to_string(),
+            name: "Paid Lab".to_string(),
+            plan_tier: "pro".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: PLAN_PRO.included_seats,
+            created_by_user_id: Some(user.id),
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        };
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.insert_org(org.clone());
+        data.insert_membership(membership_row(org.id, user.id, "owner", "active"));
+        let store = store_with_data(data);
+        let ctx = RequestContext {
+            org_id: org.id,
+            auth: None,
+            session: Some(SessionContext {
+                session_id: Uuid::new_v4(),
+                user_id: user.id,
+                role: "owner".to_string(),
+                demo_read_only: false,
+            }),
+        };
+
+        let preference_error = update_dashboard_preferences(
+            &store,
+            &ctx,
+            UpdateDashboardPreferencesRequest {
+                selected_project: Some("demo".to_string()),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            preference_error.status(),
+            axum::http::StatusCode::PAYMENT_REQUIRED
+        );
+
+        let view_error = create_workspace_view(
+            &store,
+            &ctx,
+            SaveWorkspaceViewRequest {
+                name: Some("Daily".to_string()),
+                project: None,
+                payload: Some(json!({ "tab": "runs" })),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            view_error.status(),
+            axum::http::StatusCode::PAYMENT_REQUIRED
+        );
     }
 }

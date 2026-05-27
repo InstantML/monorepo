@@ -74,6 +74,11 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
   assert.match(shell, /ADVANCED_REDUCERS_VIEW_KEY\s*=\s*"system:advanced-reducers"/, "advanced reducer preset should be a built-in view, not the default route");
   assert.match(shell, /selectTab\("advanced"\)/, "advanced reducer preset should open the advanced route");
+  assert.match(shell, /setOrgSwitchError\(detail\);[\s\S]*?setMessage\(detail\);/, "failed workspace switches should remain visible after the menu closes");
+  assert.match(shell, /metricCatalogSelectionIds/, "metric catalog counts should use the effective chart run scope");
+  assert.match(shell, /selectedRunIds\.length \? selectedRunIds : sortedRuns\.map/, "no explicit run selection should count visible runs as selected for metrics");
+  assert.match(shell, /migrateLegacySavedViewsToOrg\(activeOrgId\)/, "legacy local saved views should migrate into the active org scope");
+  assert.match(shell, /if \(payload\?\.checkout\) \{[\s\S]*?Retry from billing settings/, "checkout failures should leave a retry path in settings");
 
   const quickSearch = readFileSync(`${root}app/dashboard/chrome/quick-search.tsx`, "utf8");
   assert.match(quickSearch, /className="workspace-modal command-modal"/, "quick search should keep a full-screen backdrop");
@@ -104,8 +109,12 @@ test("workspace creation UI keeps the active workspace visible and waits for ava
 
   assert.match(topbar, /availability\?\.available === true && availability\.checkedName === trimmedName/, "create-workspace should wait for positive availability for the current name before submit");
   assert.match(topbar, /disabled=\{busy \|\| personalBlocked \|\| !trimmedName \|\| !nameAvailable\}/, "create button should stay disabled while availability is unknown");
+  assert.match(topbar, /useFocusTrap<HTMLDivElement>\(true, onClose, "input\[name='workspace-name'\]"\)/, "create modal should initially focus the workspace name field");
   assert.match(topbar, /kind === "personal" \? "Workspace name" : "Organization name"/, "personal creation should use workspace-oriented copy");
+  assert.match(topbar, /initial_invitations: invitesAllowed && inviteEmail\.trim\(\)/, "personal workspace creation should not submit teammate invitations");
   assert.match(topbar, /> New workspace</, "menu action should match the mixed personal/org creation modal");
+  assert.equal(/account-workspace-list" role="listbox"/.test(topbar), false, "account workspace menu should not claim listbox semantics without arrow-key handling");
+  assert.match(css, /\.account-workspace-search:focus-within/, "account workspace search should have a visible keyboard focus state");
   assert.match(css, /@media \(max-width: 720px\) \{[\s\S]*?\.account-workspace-current \{[\s\S]*?display: block;/, "mobile account trigger should keep the current workspace visible");
 });
 
@@ -122,4 +131,6 @@ test("dashboard plan usage surfaces API request usage", () => {
   assert.match(settings, /Ingest API rate/, "Settings should show the per-second ingest rate policy");
   assert.match(settings, /Monthly reset/, "Settings should show monthly reset timing");
   assert.match(topbar, /apiRequestPercent/, "topbar plan badge should include API request pressure");
+  assert.match(settings, /Retry Pro/, "Settings should expose a retry action for failed Pro checkout");
+  assert.match(settings, /Retry Premium/, "Settings should expose a retry action for failed Premium checkout");
 });

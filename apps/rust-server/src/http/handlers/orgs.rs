@@ -252,6 +252,12 @@ pub async fn validate_customer_clickhouse_connection(
     reject_demo_session_mutation(&state, &headers).await?;
     let session = session_context(&state, &headers).await?;
     store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    store::ensure_billing_write_allowed(
+        &state.store,
+        session.organization.id,
+        "configure customer ClickHouse",
+    )
+    .await?;
     let mut input = read_json::<ClickHouseConnectionValidateRequest>(
         &headers,
         bytes,
@@ -298,6 +304,12 @@ pub async fn create_customer_clickhouse_connection(
     reject_demo_session_mutation(&state, &headers).await?;
     let session = session_context(&state, &headers).await?;
     store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    store::ensure_billing_write_allowed(
+        &state.store,
+        session.organization.id,
+        "configure customer ClickHouse",
+    )
+    .await?;
     let mut input = read_json::<ClickHouseConnectionCreateRequest>(
         &headers,
         bytes,
@@ -344,6 +356,12 @@ pub async fn rotate_customer_clickhouse_credentials(
     reject_demo_session_mutation(&state, &headers).await?;
     let session = session_context(&state, &headers).await?;
     store::require_org_admin(&state.store, session.user.id, session.organization.id).await?;
+    store::ensure_billing_write_allowed(
+        &state.store,
+        session.organization.id,
+        "configure customer ClickHouse",
+    )
+    .await?;
     let mut input = read_json::<ClickHouseConnectionRotateCredentialsRequest>(
         &headers,
         bytes,

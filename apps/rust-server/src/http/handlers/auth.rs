@@ -20,9 +20,9 @@ use crate::{
 
 use super::super::AppState;
 use super::helpers::{
-    clear_session_cookie, header_value, json_with_session_cookie, read_json, request_rate_key,
-    session_context, session_cookie, validate_clerk_signup_allowed, validate_mutation_origin,
-    validate_mutation_origin_required,
+    clear_session_cookie, header_value, json_with_session_cookie, read_json,
+    reject_demo_session_mutation, request_rate_key, session_context, session_cookie,
+    validate_clerk_signup_allowed, validate_mutation_origin, validate_mutation_origin_required,
 };
 
 #[utoipa::path(
@@ -300,13 +300,20 @@ pub async fn device_code_confirm(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
+    validate_mutation_origin(&state, &headers)?;
+    reject_demo_session_mutation(&state, &headers).await?;
     let input =
         read_json::<DeviceCodeConfirmRequest>(&headers, bytes, state.config.max_body_bytes)?;
     let raw_user_code = input
         .user_code
         .ok_or_else(|| AppError::validation("user_code is required"))?;
-    // Requires a valid browser session.
     let session_payload = session_context(&state, &headers).await?;
+    store::require_org_admin(
+        &state.store,
+        session_payload.user.id,
+        session_payload.organization.id,
+    )
+    .await?;
     let result = store::device_code_confirm(
         &state.store,
         session_payload.user.id,
