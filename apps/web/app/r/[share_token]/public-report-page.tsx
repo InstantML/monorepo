@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../../../src/api.js";
-import { ReportViewer } from "../../dashboard/reports/report-viewer";
+import { ReportEditor } from "../../dashboard/reports/report-editor";
 import type { ReportRecord } from "../../dashboard/reports/block-types";
 import { reportFromPayload } from "../../../src/reports-api.js";
 
@@ -14,6 +14,10 @@ type Props = {
 /**
  * Public, unauthenticated read-only view of a report. Fetches via the
  * magic-link share token; no session or org membership is required.
+ *
+ * Renders the same `<ReportEditor>` as the in-dashboard surface, in
+ * `readOnly` mode — the editor and viewer share one renderer so visuals
+ * stay in lockstep without a second component drifting.
  */
 export function PublicReportPage({ shareToken }: Props) {
   const api = useMemo(() => new ApiClient(), []);
@@ -71,7 +75,7 @@ export function PublicReportPage({ shareToken }: Props) {
   }
   return (
     <main className="public-report">
-      <ReportViewer report={report} />
+      <ReportEditor report={report} readOnly />
     </main>
   );
 }

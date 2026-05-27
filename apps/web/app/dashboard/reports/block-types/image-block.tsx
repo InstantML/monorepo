@@ -8,6 +8,12 @@ type Props = {
   onChange?: (next: ImageBlockData) => void;
 };
 
+/**
+ * One-mode image block. At rest renders the figure exactly as the published
+ * view; clicking the URL placeholder (when empty) reveals the URL input so
+ * the user can paste a link. The caption is an inline text input that
+ * looks like a `<figcaption>` until you focus it.
+ */
 export function ImageBlock({ block, readOnly = false, onChange }: Props) {
   if (readOnly) {
     return (
@@ -23,23 +29,27 @@ export function ImageBlock({ block, readOnly = false, onChange }: Props) {
     );
   }
   return (
-    <div className="report-block report-block--image">
-      <label className="report-block__label">Image URL</label>
+    <figure className="report-render__figure report-block--image-edit">
+      {block.url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className="report-render__image" src={block.url} alt={block.caption ?? ""} />
+      ) : (
+        <div className="report-block__image-placeholder">No image yet</div>
+      )}
       <input
-        className="report-block__input"
+        className="report-block__inline-input report-block__inline-input--url"
         value={block.url}
-        placeholder="https://..."
+        placeholder="Paste an image URL…"
         onChange={(event) => onChange?.({ ...block, url: event.target.value })}
         aria-label="Image URL"
       />
-      <label className="report-block__label">Caption</label>
       <input
-        className="report-block__input"
+        className="report-block__inline-input report-block__inline-input--caption"
         value={block.caption ?? ""}
-        placeholder="Optional caption"
+        placeholder="Add a caption"
         onChange={(event) => onChange?.({ ...block, caption: event.target.value })}
         aria-label="Image caption"
       />
-    </div>
+    </figure>
   );
 }

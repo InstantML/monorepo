@@ -315,6 +315,8 @@ a.report-pane__action:hover {
   margin: -4px -8px;
   color: var(--muted);
   font: 540 14px/1.55 var(--f-sans);
+  resize: none;
+  overflow: hidden;
   transition: background 0.14s, border-color 0.14s, color 0.14s;
 }
 
@@ -2324,3 +2326,359 @@ a.report-pane__icon-button:focus-visible {
     transition: none;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * v1.4 — one-mode (inline-editing) polish.
+ *
+ * The editor and the viewer share a single rendering surface. At-rest a
+ * block looks identical to its published form (a heading really looks like
+ * a heading, a paragraph like prose); on focus the same element gains a
+ * cursor with a soft accent ring. There is zero visual jump.
+ *
+ * Strategy: text-bearing blocks render inside `.report-block--inline`,
+ * which strips the rest-state border, background and padding that the
+ * configurator-style blocks need. The actual `<input>`/`<textarea>` does
+ * the heavy lifting — it's already styled to match the rendered prose.
+ *
+ * Configurator-heavy blocks (PanelGrid, LLM-summary, etc.) keep their
+ * existing chrome — they're inherently editor-first.
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* Inline blocks: container is transparent, no padding, no border. The
+ * input inside is what supplies the visible surface. */
+.report-block--inline {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  gap: 0;
+}
+
+.report-block--inline:focus-within {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Heading: at rest the level pill is hidden; it surfaces on hover/focus
+ * of the surrounding block wrap so the heading text alone reads at rest. */
+.report-block--heading .report-block__heading-controls {
+  position: absolute;
+  top: -8px;
+  left: 8px;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.report-editor__block-wrap:hover .report-block--heading .report-block__heading-controls,
+.report-editor__block-wrap:focus-within .report-block--heading .report-block__heading-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The heading wrap needs to be a positioning context so the level pill
+ * can float above the heading without shifting layout. */
+.report-block--heading {
+  position: relative;
+}
+
+/* Paragraph: at-rest = looks like a <p> rendered by report-render__paragraph.
+ * Override the global .report-block__textarea baseline (which has a soft
+ * background and 88px min-height) for the paragraph variant so the
+ * textarea blends with the document flow. */
+.report-block__textarea--paragraph {
+  display: block;
+  font: 540 14.5px/1.7 var(--f-sans);
+  color: var(--text);
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 4px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.report-block__textarea--paragraph:hover {
+  background: var(--bg-soft);
+}
+
+.report-block__textarea--paragraph:focus {
+  outline: none;
+  background: var(--bg-soft);
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+.report-block__textarea--paragraph::placeholder {
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* Markdown: at-rest textarea mirrors the <pre>-rendered output — same
+ * monospace, same background tint, same border treatment so focusing
+ * just shows the cursor. */
+.report-block__textarea--markdown {
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.report-block__textarea--markdown:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+/* Code: same surface as the rendered <pre>. The language pill floats over
+ * the top-right corner and only fully reveals on hover/focus. */
+.report-block--code.report-block--inline {
+  position: relative;
+  padding: 0;
+  background: transparent;
+}
+
+.report-block--code .report-block__inline-pill--code {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.report-editor__block-wrap:hover .report-block--code .report-block__inline-pill--code,
+.report-editor__block-wrap:focus-within .report-block--code .report-block__inline-pill--code {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.report-block__textarea--code {
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.report-block__textarea--code:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+/* Inline select for code language / heading level / callout variant.
+ * Mono variant for the code language pill — matches `report-render__code`. */
+.report-block__select--mono {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  padding: 3px 22px 3px 8px;
+}
+
+/* Callout (edit) — the rest container already uses report-render__callout
+ * styling. We just need to make the embedded textarea blend in and put a
+ * tiny variant pill in the top-right corner. */
+.report-block--callout-edit {
+  position: relative;
+  padding-top: 26px;
+}
+
+.report-block__callout-variant-pill {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.report-editor__block-wrap:hover .report-block__callout-variant-pill,
+.report-editor__block-wrap:focus-within .report-block__callout-variant-pill {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.report-block__textarea--callout {
+  display: block;
+  font: 540 13.5px/1.6 var(--f-sans);
+  color: var(--accent-strong);
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 4px 6px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.report-block__textarea--callout:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.4);
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+.report-block__textarea--callout::placeholder {
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* Image — edit mode keeps the figure layout; URL and caption inputs sit
+ * underneath the image as inline ghost fields that only ink on hover. */
+.report-block--image-edit {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.report-block__image-placeholder {
+  display: grid;
+  place-items: center;
+  height: 120px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font: 540 12.5px/1.4 var(--f-sans);
+}
+
+.report-block__inline-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 4px 8px;
+  font: 540 12.5px/1.5 var(--f-sans);
+  color: var(--text);
+  border-radius: 6px;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.report-block__inline-input--url {
+  font-family: var(--f-mono);
+  color: var(--text-2);
+}
+
+.report-block__inline-input--caption {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.report-block__inline-input--num {
+  width: 64px;
+  text-align: right;
+  font-family: var(--f-mono);
+  font-size: 11.5px;
+}
+
+.report-block__inline-input:hover {
+  background: var(--bg-soft);
+}
+
+.report-block__inline-input:focus {
+  outline: none;
+  background: var(--bg-soft);
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+.report-block__inline-input::placeholder {
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* LLM-summary: at rest the synthesized text IS the rendering. Edit
+ * chrome (angle picker + refresh) lives in the header and surfaces on
+ * hover/focus. */
+.report-block__llm-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.report-editor__block-wrap:hover .report-block__llm-controls,
+.report-editor__block-wrap:focus-within .report-block__llm-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.report-block__llm-grid-label {
+  font: 540 11px/1 var(--f-sans);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.report-block__textarea--inline-prompt {
+  font: 540 13px/1.55 var(--f-sans);
+  color: var(--text);
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-height: 0;
+  resize: vertical;
+}
+
+.report-block__textarea--inline-prompt:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+}
+
+/* Read-only surface — used by the public share page. We share the same
+ * editor DOM, so we just suppress the interactive affordances. */
+.report-editor--readonly .report-editor__block-wrap {
+  padding-left: 0;
+}
+
+.report-editor--readonly .report-editor__title,
+.report-editor--readonly .report-editor__description {
+  cursor: default;
+}
+
+.report-editor--readonly .report-editor__title:hover,
+.report-editor--readonly .report-editor__description:hover {
+  background: transparent;
+}
+
+/* The block-wrap--readonly variant has no controls and no drag handle, so
+ * remove its left padding to align with the surrounding prose. */
+.report-editor__block-wrap--readonly {
+  padding-left: 0;
+}
+
+/* No additional wrap-level focus styling — the individual block element
+ * supplies the focus affordance (soft bg + accent ring). Doubling up here
+ * would create a visible jump on focus. */

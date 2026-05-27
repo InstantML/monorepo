@@ -16,7 +16,6 @@ import {
 } from "../../../src/reports-api.js";
 import { PageHead } from "../ui/page-head";
 import { ReportEditor } from "./report-editor";
-import { ReportViewer } from "./report-viewer";
 import { AutoSavePill } from "./auto-save-pill";
 import type { AutoSaveStatus } from "./auto-save-pill";
 import { createAutoSaveScheduler } from "./auto-save";
@@ -24,8 +23,7 @@ import type { ReportRecord, ReportSummary } from "./block-types";
 
 type Mode =
   | { kind: "list" }
-  | { kind: "edit"; reportId: string; autoFocus?: boolean }
-  | { kind: "view"; reportId: string };
+  | { kind: "open"; reportId: string; autoFocus?: boolean };
 
 const AUTO_SAVE_DELAY_MS = 800;
 
@@ -37,10 +35,12 @@ interface SavePayload {
 }
 
 /**
- * Top-level Reports tab. Owns the list/editor/viewer flow plus the
- * auto-save scheduler — the editor itself is a controlled component that
- * fires `onChange` for every edit; this pane debounces those into one
- * PATCH per 800 ms of quiet.
+ * Top-level Reports tab. Owns the list + editor flow plus the auto-save
+ * scheduler. There is exactly one editing surface — the editor is always
+ * interactive, no separate "preview" mode (matching the inline-editing
+ * pattern of modern doc tools). The editor itself is a controlled
+ * component that fires `onChange` for every edit; this pane debounces
+ * those into one PATCH per 800 ms of quiet.
  */
 export function ReportsTabPane() {
   const api = useMemo(() => new ApiClient(), []);
@@ -96,9 +96,9 @@ export function ReportsTabPane() {
     [api],
   );
 
-  // Build (or rebuild) the scheduler whenever we enter edit mode for a new id.
+  // Build (or rebuild) the scheduler whenever we open a new report id.
   useEffect(() => {
-    if (mode.kind !== "edit") {
+    if (mode.kind !== "open") {
       schedulerRef.current?.dispose();
       schedulerRef.current = null;
       return;
@@ -151,7 +151,7 @@ export function ReportsTabPane() {
       });
       if (created) {
         await loadList();
-        setMode({ kind: "edit", reportId: created.id, autoFocus: true });
+        setMode({ kind: "open", reportId: created.id, autoFocus: true });
       }
     } catch (createError) {
       setError(messageFromError(createError));
@@ -239,7 +239,7 @@ export function ReportsTabPane() {
     }
   }, [activeReport, api]);
 
-  // Flush pending save before leaving edit mode.
+  // Flush pending save before leaving the editor.
   const flushAndLeave = useCallback(async (next: Mode) => {
     if (schedulerRef.current && schedulerRef.current.hasPending()) {
       await schedulerRef.current.flushNow();
@@ -260,13 +260,12 @@ export function ReportsTabPane() {
         <ReportsListPane
           summaries={summaries}
           busy={busy}
-          onOpenView={(reportId) => setMode({ kind: "view", reportId })}
-          onOpenEdit={(reportId) => setMode({ kind: "edit", reportId })}
+          onOpen={(reportId) => setMode({ kind: "open", reportId })}
           onCreate={() => void handleCreate()}
           onDelete={(reportId) => void handleDelete(reportId)}
         />
       ) : null}
-      {mode.kind === "edit" && activeReport ? (
+      {mode.kind === "open" && activeReport ? (
         <section className="report-pane">
           <div className="report-pane__toolbar">
             <button
@@ -281,16 +280,6 @@ export function ReportsTabPane() {
             </button>
             <div className="report-pane__toolbar-spacer" />
             <AutoSavePill status={autoSave} onRetry={handleRetry} />
-            <button
-              type="button"
-              className="report-pane__icon-button"
-              onClick={() =>
-                void flushAndLeave({ kind: "view", reportId: activeReport.id })
-              }
-              title="Preview"
-            >
-              Preview
-            </button>
             <button
               type="button"
               className="report-pane__icon-button"
@@ -317,35 +306,10 @@ export function ReportsTabPane() {
           <ReportEditor
             report={activeReport}
             refreshingBlockIndex={refreshingBlockIndex}
-            autoFocusTitle={Boolean(mode.kind === "edit" && mode.autoFocus)}
+            autoFocusTitle={Boolean(mode.kind === "open" && mode.autoFocus)}
             onChange={handleEditorChange}
             onRefreshBlock={(index) => void handleRefreshBlock(index)}
           />
-        </section>
-      ) : null}
-      {mode.kind === "view" && activeReport ? (
-        <section className="report-pane">
-          <div className="report-pane__toolbar">
-            <button
-              type="button"
-              className="report-pane__icon-button"
-              onClick={() => setMode({ kind: "list" })}
-              title="Back to all reports"
-              aria-label="Back to all reports"
-            >
-              <ChevronLeft size={15} aria-hidden="true" />
-              <span className="report-pane__toolbar-label">All reports</span>
-            </button>
-            <div className="report-pane__toolbar-spacer" />
-            <button
-              type="button"
-              className="report-pane__icon-button"
-              onClick={() => setMode({ kind: "edit", reportId: activeReport.id })}
-            >
-              Edit
-            </button>
-          </div>
-          <ReportViewer report={activeReport} />
         </section>
       ) : null}
     </>
@@ -355,15 +319,13 @@ export function ReportsTabPane() {
 function ReportsListPane({
   summaries,
   busy,
-  onOpenView,
-  onOpenEdit,
+  onOpen,
   onCreate,
   onDelete,
 }: {
   summaries: ReportSummary[];
   busy: boolean;
-  onOpenView: (reportId: string) => void;
-  onOpenEdit: (reportId: string) => void;
+  onOpen: (reportId: string) => void;
   onCreate: () => void;
   onDelete: (reportId: string) => void;
 }) {
@@ -398,7 +360,7 @@ function ReportsListPane({
                   <button
                     type="button"
                     className="report-list__title-button"
-                    onClick={() => onOpenView(summary.id)}
+                    onClick={() => onOpen(summary.id)}
                   >
                     <span className="report-list__title-text">
                       {summary.title || "Untitled report"}
@@ -429,13 +391,6 @@ function ReportsListPane({
                     </span>
                   </div>
                   <div className="report-list__actions">
-                    <button
-                      type="button"
-                      className="report-pane__icon-button"
-                      onClick={() => onOpenEdit(summary.id)}
-                    >
-                      Edit
-                    </button>
                     <button
                       type="button"
                       className="report-pane__icon-button report-pane__icon-button--danger"

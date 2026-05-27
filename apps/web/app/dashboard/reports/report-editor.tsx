@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,13 +15,13 @@ import {
   CalloutBlock,
   CodeBlock,
   defaultBlock,
-  HeadingBlock,
   HorizontalRuleBlock,
   ImageBlock,
   LlmSummaryBlock,
   MarkdownBlock,
   PanelGridBlock,
   ParagraphBlock,
+  HeadingBlock,
 } from "./block-types";
 import type {
   HeadingBlockData,
@@ -49,7 +50,14 @@ type Props = {
   refreshingBlockIndex?: number | null;
   /** When true the title input auto-focuses on mount (new-report flow). */
   autoFocusTitle?: boolean;
-  onChange: (next: EditorReport) => void;
+  /**
+   * Read-only surface (used by the public `/r/<token>` share view). When set
+   * all inputs are inert, no slash menu, no drag handles, no controls, no
+   * auto-save scheduling. The DOM still matches the editor — same single
+   * renderer per block — so visual fidelity stays the same.
+   */
+  readOnly?: boolean;
+  onChange?: (next: EditorReport) => void;
   onRefreshBlock?: (blockIndex: number) => void;
 };
 
@@ -91,7 +99,12 @@ function collectSiblingPanelGrids(
 }
 
 /**
- * block-based block editor. Five behaviors:
+ * One-mode (inline-editing) block editor. Every block renders with the
+ * exact typography of its published form; focusing reveals a cursor, hover
+ * reveals controls (drag handle + delete + per-block knobs). There is no
+ * separate "preview" mode — the same surface is the editor and the viewer.
+ *
+ * Five interaction behaviors:
  *
  *   - Hover-line `+` between every adjacent pair of blocks opens the same
  *     BlockPicker the slash command uses.
@@ -103,11 +116,15 @@ function collectSiblingPanelGrids(
  *
  * Auto-save lives in the parent (reports-tab-pane) — the editor is a
  * controlled component; every `onChange` triggers a debounce there.
+ *
+ * In `readOnly` mode all of the above is suppressed; the same DOM and
+ * styling render but inputs are inert (this is what powers `/r/<token>`).
  */
 export function ReportEditor({
   report,
   refreshingBlockIndex,
   autoFocusTitle = false,
+  readOnly = false,
   onChange,
   onRefreshBlock,
 }: Props) {
@@ -116,28 +133,50 @@ export function ReportEditor({
   const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    if (autoFocusTitle && titleRef.current) titleRef.current.focus();
-  }, [autoFocusTitle]);
+    if (!readOnly && autoFocusTitle && titleRef.current) titleRef.current.focus();
+  }, [autoFocusTitle, readOnly]);
+
+  // Auto-size the description textarea so it grows with content (no resize
+  // grip, no visible scrollbar — matches the at-rest paragraph rhythm).
+  const autoSizeDescription = useCallback(() => {
+    const el = descriptionRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+  useLayoutEffect(() => {
+    autoSizeDescription();
+  }, [report.description, autoSizeDescription]);
+
+  // ── Controlled-update helpers (no-ops in readOnly) ──────────────────────
+  const emit = useCallback(
+    (next: EditorReport) => {
+      if (readOnly) return;
+      onChange?.(next);
+    },
+    [onChange, readOnly],
+  );
 
   const replaceBlock = useCallback(
     (index: number, next: ReportBlock) => {
       const blocks = report.blocks.map((block, current) =>
         current === index ? next : block,
       );
-      onChange({ ...report, blocks });
+      emit({ ...report, blocks });
     },
-    [report, onChange],
+    [report, emit],
   );
 
   const insertBlockAt = useCallback(
     (index: number, block: ReportBlock) => {
       const next = [...report.blocks];
       next.splice(index, 0, block);
-      onChange({ ...report, blocks: next });
+      emit({ ...report, blocks: next });
     },
-    [report, onChange],
+    [report, emit],
   );
 
   const insertKindAt = useCallback(
@@ -155,9 +194,9 @@ export function ReportEditor({
   const removeBlock = useCallback(
     (index: number) => {
       const next = report.blocks.filter((_, current) => current !== index);
-      onChange({ ...report, blocks: next });
+      emit({ ...report, blocks: next });
     },
-    [report, onChange],
+    [report, emit],
   );
 
   const moveBlock = useCallback(
@@ -166,9 +205,9 @@ export function ReportEditor({
       const next = [...report.blocks];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
-      onChange({ ...report, blocks: next });
+      emit({ ...report, blocks: next });
     },
-    [report, onChange],
+    [report, emit],
   );
 
   const handlePickerSelect = useCallback(
@@ -190,15 +229,13 @@ export function ReportEditor({
       element: HTMLInputElement | HTMLTextAreaElement,
       committedText: string,
     ) => {
+      if (readOnly) return;
       const caret = element.selectionStart ?? committedText.length;
       const trigger = detectSlashTrigger(committedText, caret);
       if (!trigger.active) {
         setSlashMenu(null);
         return;
       }
-      // Anchor the picker near the caret using the input's bounding rect.
-      // For textareas we approximate with the input's top-right corner so the
-      // menu stays visible without needing a per-character caret measurer.
       const rect = element.getBoundingClientRect();
       setSlashMenu({
         blockIndex,
@@ -207,7 +244,7 @@ export function ReportEditor({
         caretAnchor: { top: rect.top + rect.height + 6, left: rect.left + 8 },
       });
     },
-    [],
+    [readOnly],
   );
 
   // When the slash menu picks an entry: strip the `/query` text from the
@@ -225,8 +262,6 @@ export function ReportEditor({
         current.kind === "paragraph" ||
         current.kind === "markdown" ||
         current.kind === "heading";
-      // Strip the `/query` prefix from the source so the user sees the new
-      // block, not the slash they typed.
       const stripFrom = (text: string) =>
         text.slice(0, slashMenu.triggerOffset) +
         text.slice(slashMenu.triggerOffset + 1 + slashMenu.query.length);
@@ -243,8 +278,6 @@ export function ReportEditor({
           text: stripFrom(text),
         } as ReportBlock;
       }
-      // If the source block is an empty text block (or the only content was
-      // the slash query), convert in place. Otherwise insert below.
       const isEmpty =
         isTextBlock &&
         (stripped.kind === "paragraph" ||
@@ -262,21 +295,19 @@ export function ReportEditor({
         return b;
       })();
       if (isEmpty) {
-        // Replace in place.
         const next = report.blocks.map((block, current2) =>
           current2 === slashMenu.blockIndex ? newBlock : block,
         );
-        onChange({ ...report, blocks: next });
+        emit({ ...report, blocks: next });
       } else {
-        // Keep the stripped source, insert new block after it.
         const next = [...report.blocks];
         next.splice(slashMenu.blockIndex, 1, stripped);
         next.splice(slashMenu.blockIndex + 1, 0, newBlock);
-        onChange({ ...report, blocks: next });
+        emit({ ...report, blocks: next });
       }
       setSlashMenu(null);
     },
-    [slashMenu, report, onChange],
+    [slashMenu, report, emit],
   );
 
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
@@ -284,7 +315,6 @@ export function ReportEditor({
     setSlashActiveIndex(0);
   }, [slashMenu?.query]);
 
-  // Forward Up/Down/Enter from a text input to the slash menu while open.
   const handleSlashKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (!slashMenu) return false;
@@ -329,12 +359,9 @@ export function ReportEditor({
   const onDropAtGap = useCallback(
     (gapIndex: number) => {
       if (dragSourceIndex === null) return;
-      // Dropping at a gap index N moves the source into position N. If the
-      // source is above the gap we need to compensate for the splice removal.
       let target = gapIndex;
       if (dragSourceIndex < gapIndex) target = gapIndex - 1;
       if (target === dragSourceIndex) {
-        // No-op drop on self.
         setDragSourceIndex(null);
         setDropIndex(null);
         return;
@@ -346,9 +373,14 @@ export function ReportEditor({
     [dragSourceIndex, moveBlock],
   );
 
-  // Keyboard reorder: Cmd/Ctrl+Shift+Arrow.
+  // Keyboard reorder: Cmd/Ctrl+Shift+Arrow. Esc blurs the focused element.
   const onBlockKeyDown = useCallback(
     (index: number, event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "Escape") {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) active.blur();
+        return;
+      }
       const meta = event.metaKey || event.ctrlKey;
       if (!meta || !event.shiftKey) return;
       if (event.key === "ArrowUp") {
@@ -362,8 +394,10 @@ export function ReportEditor({
     [moveBlock],
   );
 
+  const rootClass = `report-editor${readOnly ? " report-editor--readonly" : ""}`;
+
   return (
-    <div className="report-editor">
+    <div className={rootClass}>
       <header className="report-editor__head">
         <input
           ref={titleRef}
@@ -371,74 +405,80 @@ export function ReportEditor({
           className="report-editor__title"
           value={report.title}
           placeholder="Untitled report"
-          onChange={(event) => onChange({ ...report, title: event.target.value })}
+          readOnly={readOnly}
+          onChange={(event) => emit({ ...report, title: event.target.value })}
           aria-label="Report title"
         />
-        <input
+        <textarea
+          ref={descriptionRef}
           id="report-description"
           className="report-editor__description"
           value={report.description ?? ""}
           placeholder="One-line summary"
-          onChange={(event) =>
-            onChange({ ...report, description: event.target.value })
-          }
+          rows={1}
+          readOnly={readOnly}
+          onChange={(event) => emit({ ...report, description: event.target.value })}
+          onInput={autoSizeDescription}
           aria-label="Report description"
         />
-        <div className="report-editor__visibility">
-          <label className="report-block__label" htmlFor="report-visibility">
-            Visibility
-          </label>
-          <select
-            id="report-visibility"
-            className="report-block__select"
-            value={report.visibility}
-            onChange={(event) =>
-              onChange({
-                ...report,
-                visibility: event.target.value as ReportRecord["visibility"],
-              })
-            }
-          >
-            <option value="private">Private — only you</option>
-            <option value="org">Organization — your team</option>
-            <option value="public">Public — anyone with the link</option>
-          </select>
-        </div>
+        {!readOnly ? (
+          <div className="report-editor__visibility">
+            <label className="report-block__label" htmlFor="report-visibility">
+              Visibility
+            </label>
+            <select
+              id="report-visibility"
+              className="report-block__select"
+              value={report.visibility}
+              onChange={(event) =>
+                emit({
+                  ...report,
+                  visibility: event.target.value as ReportRecord["visibility"],
+                })
+              }
+            >
+              <option value="private">Private — only you</option>
+              <option value="org">Organization — your team</option>
+              <option value="public">Public — anyone with the link</option>
+            </select>
+          </div>
+        ) : null}
       </header>
 
       <div className="report-editor__blocks">
-        {report.blocks.length === 0 ? (
+        {report.blocks.length === 0 && !readOnly ? (
           <EmptyEditorPrompt onPick={(id) => handlePickerSelect(id, 0)} />
         ) : null}
-        <HoverGap
-          index={0}
-          open={gapPickerAt === 0}
-          dropActive={dragSourceIndex !== null && dropIndex === 0}
-          onOpen={() => setGapPickerAt(0)}
-          onDismiss={() => setGapPickerAt(null)}
-          onPick={(id) => handlePickerSelect(id, 0)}
-          onDragOver={() => setDropIndex(0)}
-          onDragLeave={() => setDropIndex((current) => (current === 0 ? null : current))}
-          onDrop={() => onDropAtGap(0)}
-          dragActive={dragSourceIndex !== null}
-        />
+        {!readOnly ? (
+          <HoverGap
+            index={0}
+            open={gapPickerAt === 0}
+            dropActive={dragSourceIndex !== null && dropIndex === 0}
+            onOpen={() => setGapPickerAt(0)}
+            onDismiss={() => setGapPickerAt(null)}
+            onPick={(id) => handlePickerSelect(id, 0)}
+            onDragOver={() => setDropIndex(0)}
+            onDragLeave={() =>
+              setDropIndex((current) => (current === 0 ? null : current))
+            }
+            onDrop={() => onDropAtGap(0)}
+            dragActive={dragSourceIndex !== null}
+          />
+        ) : null}
         {report.blocks.map((block, index) => {
           const isDragging = dragSourceIndex === index;
-          // Build the sibling list lazily for panel-grid blocks only — the
-          // computation is otherwise pure overhead per render. We also try
-          // to label siblings with the nearest preceding heading so the
-          // user sees "Llama 8B vs 12B comparison" rather than "PanelGrid #2".
           const siblingsForGrid =
             block.kind === "panel_grid"
               ? collectSiblingPanelGrids(report.blocks, index)
               : undefined;
           return (
             <div key={index}>
-              <DraggableBlock
+              <BlockRow
                 block={block}
                 index={index}
                 refreshing={refreshingBlockIndex === index}
                 dragging={isDragging}
+                readOnly={readOnly}
                 onChange={(next) => replaceBlock(index, next)}
                 onRemove={() => removeBlock(index)}
                 onRefresh={
@@ -456,30 +496,32 @@ export function ReportEditor({
                 slashOpen={slashMenu?.blockIndex === index}
                 siblingPanelGrids={siblingsForGrid}
               />
-              <HoverGap
-                index={index + 1}
-                open={gapPickerAt === index + 1}
-                dropActive={
-                  dragSourceIndex !== null && dropIndex === index + 1
-                }
-                onOpen={() => setGapPickerAt(index + 1)}
-                onDismiss={() => setGapPickerAt(null)}
-                onPick={(id) => handlePickerSelect(id, index + 1)}
-                onDragOver={() => setDropIndex(index + 1)}
-                onDragLeave={() =>
-                  setDropIndex((current) =>
-                    current === index + 1 ? null : current,
-                  )
-                }
-                onDrop={() => onDropAtGap(index + 1)}
-                dragActive={dragSourceIndex !== null}
-              />
+              {!readOnly ? (
+                <HoverGap
+                  index={index + 1}
+                  open={gapPickerAt === index + 1}
+                  dropActive={
+                    dragSourceIndex !== null && dropIndex === index + 1
+                  }
+                  onOpen={() => setGapPickerAt(index + 1)}
+                  onDismiss={() => setGapPickerAt(null)}
+                  onPick={(id) => handlePickerSelect(id, index + 1)}
+                  onDragOver={() => setDropIndex(index + 1)}
+                  onDragLeave={() =>
+                    setDropIndex((current) =>
+                      current === index + 1 ? null : current,
+                    )
+                  }
+                  onDrop={() => onDropAtGap(index + 1)}
+                  dragActive={dragSourceIndex !== null}
+                />
+              ) : null}
             </div>
           );
         })}
       </div>
 
-      {slashMenu && slashMenu.caretAnchor ? (
+      {!readOnly && slashMenu && slashMenu.caretAnchor ? (
         <div
           className="block-picker-floating"
           style={
@@ -597,11 +639,12 @@ function HoverGap({
   );
 }
 
-function DraggableBlock({
+function BlockRow({
   block,
   index,
   refreshing,
   dragging,
+  readOnly,
   onChange,
   onRemove,
   onRefresh,
@@ -617,6 +660,7 @@ function DraggableBlock({
   index: number;
   refreshing: boolean;
   dragging: boolean;
+  readOnly: boolean;
   onChange: (next: ReportBlock) => void;
   onRemove: () => void;
   onRefresh?: () => void;
@@ -637,45 +681,48 @@ function DraggableBlock({
     block: import("./block-types/types").PanelGridBlockData;
   }[];
 }) {
+  const wrapClass = `report-editor__block-wrap${dragging ? " report-editor__block-wrap--dragging" : ""}${readOnly ? " report-editor__block-wrap--readonly" : ""}`;
   return (
-    <div
-      className={`report-editor__block-wrap${dragging ? " report-editor__block-wrap--dragging" : ""}`}
-      tabIndex={-1}
-      onKeyDown={onKeyDown}
-    >
-      <div
-        className="report-block-handle"
-        draggable
-        onDragStart={(event) => {
-          // Native DnD requires a payload to enable drop targets across the doc.
-          if (event.dataTransfer) {
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", `block:${index}`);
-          }
-          onDragStart();
-        }}
-        onDragEnd={onDragEnd}
-        title="Drag to reorder (or Cmd/Ctrl+Shift+↑/↓)"
-        aria-label={`Drag block ${index + 1}`}
-      >
-        <GripVertical size={14} aria-hidden="true" />
-      </div>
-      <div className="report-editor__block-controls">
-        <span className="report-editor__block-kind">{block.kind.replace("_", " ")}</span>
-        <button
-          type="button"
-          className="report-editor__control report-editor__control--danger"
-          aria-label="Delete block"
-          onClick={onRemove}
-          title="Delete block"
-        >
-          <Trash2 size={13} />
-        </button>
-      </div>
-      <BlockEditor
+    <div className={wrapClass} tabIndex={-1} onKeyDown={onKeyDown}>
+      {!readOnly ? (
+        <>
+          <div
+            className="report-block-handle"
+            draggable
+            onDragStart={(event) => {
+              if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", `block:${index}`);
+              }
+              onDragStart();
+            }}
+            onDragEnd={onDragEnd}
+            title="Drag to reorder (or Cmd/Ctrl+Shift+↑/↓)"
+            aria-label={`Drag block ${index + 1}`}
+          >
+            <GripVertical size={14} aria-hidden="true" />
+          </div>
+          <div className="report-editor__block-controls">
+            <span className="report-editor__block-kind">
+              {block.kind.replace("_", " ")}
+            </span>
+            <button
+              type="button"
+              className="report-editor__control report-editor__control--danger"
+              aria-label="Delete block"
+              onClick={onRemove}
+              title="Delete block"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </>
+      ) : null}
+      <BlockBody
         block={block}
         busy={refreshing}
         slashOpen={slashOpen}
+        readOnly={readOnly}
         onChange={onChange}
         onTextChange={onTextChange}
         onSlashKeyDown={onSlashKeyDown}
@@ -686,10 +733,11 @@ function DraggableBlock({
   );
 }
 
-function BlockEditor({
+function BlockBody({
   block,
   busy,
   slashOpen,
+  readOnly,
   onChange,
   onTextChange,
   onSlashKeyDown,
@@ -699,6 +747,7 @@ function BlockEditor({
   block: ReportBlock;
   busy: boolean;
   slashOpen: boolean;
+  readOnly: boolean;
   onChange: (next: ReportBlock) => void;
   onTextChange: (
     element: HTMLInputElement | HTMLTextAreaElement,
@@ -714,6 +763,33 @@ function BlockEditor({
     block: import("./block-types/types").PanelGridBlockData;
   }[];
 }) {
+  // Read-only path: pass straight through to the block components' readOnly
+  // rendering. They already render the published view.
+  if (readOnly) {
+    switch (block.kind) {
+      case "heading":
+        return <HeadingBlock block={block as HeadingBlockData} readOnly />;
+      case "paragraph":
+        return <ParagraphBlock block={block as ParagraphBlockData} readOnly />;
+      case "markdown":
+        return <MarkdownBlock block={block as MarkdownBlockData} readOnly />;
+      case "code":
+        return <CodeBlock block={block} readOnly />;
+      case "callout":
+        return <CalloutBlock block={block} readOnly />;
+      case "horizontal_rule":
+        return <HorizontalRuleBlock readOnly />;
+      case "image":
+        return <ImageBlock block={block} readOnly />;
+      case "panel_grid":
+        return <PanelGridBlock block={block} readOnly />;
+      case "llm_summary":
+        return <LlmSummaryBlock block={block} readOnly />;
+    }
+  }
+  // Editable path. Text blocks (paragraph / markdown / heading) get the
+  // slash-command-aware wrapper so users can type `/h2` to convert. Other
+  // blocks render their normal editor.
   switch (block.kind) {
     case "heading":
       return (
@@ -737,9 +813,9 @@ function BlockEditor({
       );
     case "markdown":
       return (
-        <MarkdownTextWrap
+        <MarkdownBlock
           block={block as MarkdownBlockData}
-          onChange={onChange}
+          onChange={(next) => onChange(next)}
         />
       );
     case "code":
@@ -770,7 +846,10 @@ function BlockEditor({
   }
 }
 
-// Thin wrappers that route slash-trigger events back up to the editor.
+// Slash-aware wrappers — these duplicate the rendering of HeadingBlock /
+// ParagraphBlock in editable mode, but with an `onKeyDown` and `onInput`
+// hook that lets the editor watch the caret for `/`.
+
 function ParagraphTextWrap({
   block,
   onChange,
@@ -789,10 +868,21 @@ function ParagraphTextWrap({
   ) => boolean;
   slashOpen: boolean;
 }) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const autoSize = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+  useLayoutEffect(() => {
+    autoSize();
+  }, [block.text, autoSize]);
   return (
     <textarea
+      ref={ref}
       className="report-block__textarea report-block__textarea--paragraph"
-      rows={Math.min(8, Math.max(2, block.text.split("\n").length + 1))}
+      rows={1}
       value={block.text}
       placeholder="Type / for commands, or write a paragraph…"
       onChange={(event) => {
@@ -800,6 +890,7 @@ function ParagraphTextWrap({
         onChange(next);
         onTextChange(event.currentTarget, event.target.value);
       }}
+      onInput={autoSize}
       onKeyDown={(event) => {
         if (slashOpen) {
           if (onSlashKeyDown(event)) return;
@@ -808,19 +899,6 @@ function ParagraphTextWrap({
       aria-label="Paragraph text"
     />
   );
-}
-
-function MarkdownTextWrap({
-  block,
-  onChange,
-}: {
-  block: MarkdownBlockData;
-  onChange: (next: ReportBlock) => void;
-}) {
-  // Slash-command for markdown blocks intentionally deferred — markdown is
-  // for users who already know what they want. The hover-line `+` and the
-  // paragraph slash flow cover the discovery path.
-  return <MarkdownBlock block={block} onChange={(next) => onChange(next)} />;
 }
 
 function HeadingTextWrap({
@@ -841,13 +919,14 @@ function HeadingTextWrap({
   ) => boolean;
   slashOpen: boolean;
 }) {
-  const headingClass = block.level === 1
-    ? "report-block__heading-input report-block__heading-input--h1"
-    : block.level === 2
-      ? "report-block__heading-input report-block__heading-input--h2"
-      : "report-block__heading-input report-block__heading-input--h3";
+  const headingClass =
+    block.level === 1
+      ? "report-block__heading-input report-block__heading-input--h1"
+      : block.level === 2
+        ? "report-block__heading-input report-block__heading-input--h2"
+        : "report-block__heading-input report-block__heading-input--h3";
   return (
-    <div className="report-block report-block--heading">
+    <div className="report-block report-block--heading report-block--inline">
       <div className="report-block__heading-controls">
         <select
           className="report-block__select report-block__select--inline"
@@ -881,7 +960,6 @@ function HeadingTextWrap({
     </div>
   );
 }
-
 
 function SlashMenuList({
   query,

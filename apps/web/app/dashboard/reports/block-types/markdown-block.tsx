@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useLayoutEffect, useRef } from "react";
+
 import type { MarkdownBlockData } from "./types";
 
 type Props = {
@@ -10,9 +12,12 @@ type Props = {
 
 /**
  * Markdown-aware textarea. We deliberately do NOT pull in a markdown parser
- * for v1 — the renderer just preserves line breaks and bold/italic syntax
- * literally. A real syntax-highlighting editor + parser lands in v1.5 once
- * we know which renderer we're standardizing on.
+ * for v1 — the renderer just preserves whitespace as <pre>. A real syntax-
+ * highlighting editor + parser lands in v1.5 once we know which renderer
+ * we're standardizing on.
+ *
+ * One-mode polish: the editor textarea uses the same monospace surface as
+ * the renderer's <pre>, so there's no visual jump on focus.
  */
 export function MarkdownBlock({ block, readOnly = false, onChange }: Props) {
   if (readOnly) {
@@ -22,17 +27,37 @@ export function MarkdownBlock({ block, readOnly = false, onChange }: Props) {
       </pre>
     );
   }
+  return <MarkdownEditor block={block} onChange={onChange} />;
+}
+
+function MarkdownEditor({
+  block,
+  onChange,
+}: {
+  block: MarkdownBlockData;
+  onChange?: (next: MarkdownBlockData) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const autoSize = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+  useLayoutEffect(() => {
+    autoSize();
+  }, [block.text, autoSize]);
   return (
-    <div className="report-block report-block--markdown">
-      <div className="report-block__hint">Markdown</div>
-      <textarea
-        className="report-block__textarea report-block__textarea--mono"
-        rows={Math.min(20, Math.max(4, block.text.split("\n").length + 1))}
-        value={block.text}
-        placeholder="# Heading\n\nWrite markdown..."
-        onChange={(event) => onChange?.({ ...block, text: event.target.value })}
-        aria-label="Markdown content"
-      />
-    </div>
+    <textarea
+      ref={ref}
+      className="report-block__textarea report-block__textarea--markdown"
+      rows={1}
+      value={block.text}
+      placeholder="# Heading…  (markdown)"
+      onChange={(event) => onChange?.({ ...block, text: event.target.value })}
+      onInput={autoSize}
+      aria-label="Markdown content"
+      spellCheck={false}
+    />
   );
 }
