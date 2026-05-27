@@ -146,7 +146,22 @@ export function ReportsTabPane() {
         try {
           const updated = await patchReport(api, reportId, payload);
           if (updated) {
-            setActiveReport((current) => (current ? { ...current, ...updated } : current));
+            // Critical: only update server-derived fields. NEVER overwrite
+            // title / description / blocks / visibility from the response —
+            // by the time the response lands (50–500 ms), the user has
+            // typically typed more characters and the response represents a
+            // stale snapshot. Spreading `...updated` would clobber those
+            // newest keystrokes. Only `updated_at` / `share_token` /
+            // metadata fields the server actually mutated need refreshing.
+            setActiveReport((current) =>
+              current
+                ? {
+                    ...current,
+                    updated_at: updated.updated_at,
+                    share_token: updated.share_token,
+                  }
+                : current,
+            );
           }
           setAutoSave({ state: "saved", at: Date.now() });
           // Refresh the list silently so summaries reflect the new title.

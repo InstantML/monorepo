@@ -276,11 +276,11 @@ a.report-pane__action:hover {
 
 .report-editor__head {
   display: grid;
-  gap: 14px;
-  padding: 22px 24px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  margin-bottom: 12px;
 }
 
 .report-editor__title {
@@ -382,13 +382,14 @@ a.report-pane__action:hover {
 
 .report-editor__blocks {
   display: grid;
-  gap: 0;
+  gap: 4px;
 }
 
 .report-editor__block-wrap {
   position: relative;
   display: grid;
   gap: 0;
+  padding: 2px 0;
 }
 
 .report-editor__block-controls {
@@ -541,22 +542,27 @@ a.report-pane__action:hover {
 }
 
 /* ─── Individual block surface ────────────────────────────────────────── */
+/*
+ * Block-based editor convention: blocks at rest look identical to the
+ * published view — no card chrome, no input borders, no background. Just
+ * text in the page. Interactive affordances (drag handle, controls,
+ * insert pill) surface on hover. Focus shows a subtle accent ring on the
+ * input itself, not a halo on the whole block.
+ */
 
 .report-block {
   position: relative;
-  padding: 16px 20px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  transition: border-color 0.14s, box-shadow 0.14s;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  transition: background 0.14s;
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 
-.report-block:focus-within {
-  border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
-}
+/* No global focus-within card glow — each block's own input handles its
+ * own focus styling. */
 
 .report-block--horizontal-rule {
   padding: 8px 0;
@@ -582,13 +588,15 @@ a.report-pane__action:hover {
 .report-block__textarea,
 .report-block__select {
   width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg-soft);
-  padding: 9px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 2px 4px;
+  margin: -2px -4px;
   color: var(--text);
-  font: 540 13.5px/1.5 var(--f-sans);
-  transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
+  font: 540 14.5px/1.7 var(--f-sans);
+  transition: background 0.14s;
+  outline: none;
 }
 
 .report-block__input--heading {
@@ -602,29 +610,44 @@ a.report-pane__action:hover {
 }
 
 .report-block__textarea {
-  resize: vertical;
-  min-height: 88px;
+  resize: none;
+  min-height: 0;
+  overflow: hidden;
+  display: block;
+}
+
+.report-block__textarea--paragraph {
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--text);
 }
 
 .report-block__textarea--mono {
   font-family: var(--f-mono);
   font-size: 12.5px;
   line-height: 1.55;
+  background: var(--bg-soft);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
+.report-block__input:hover,
+.report-block__textarea:hover,
+.report-block__select:hover {
+  background: var(--surface-hover);
 }
 
 .report-block__input:focus,
 .report-block__textarea:focus,
 .report-block__select:focus {
-  outline: none;
-  border-color: var(--accent-line);
-  background: var(--surface);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.12);
+  background: var(--accent-soft);
 }
 
 .report-block__input::placeholder,
 .report-block__textarea::placeholder {
   color: var(--dim);
-  font-style: italic;
+  font-weight: 540;
 }
 
 .report-block__select {
@@ -758,31 +781,44 @@ a.report-pane__action:hover {
   margin: 0;
 }
 
-/* Block-kind variants — subtle tinting so each kind reads at a glance */
+/* Block-kind variants — only the kinds that NEED a distinct surface get
+ * one. Headings / paragraphs / markdown / image stay naked (matching the
+ * published view). Code / callout / panel-grid / llm-summary get their
+ * own framing since their content needs structural boundaries. */
 
 .report-block--heading {
-  background: var(--surface);
+  /* naked — same as paragraph */
 }
 
 .report-block--callout {
+  padding: 12px 16px;
   border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 8px 8px 0;
 }
 
 .report-block--code {
+  padding: 12px 14px;
   background: var(--bg-soft);
+  border-radius: 8px;
 }
 
 .report-block--panel-grid {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--surface);
 }
 
 .report-block--llm-summary {
-  border-color: var(--accent-line);
+  padding: 14px 16px;
+  border: 1px solid var(--accent-line);
+  border-radius: 10px;
   background: linear-gradient(180deg, var(--accent-soft), var(--surface) 40%);
 }
 
 .report-block--image {
-  background: var(--surface);
+  /* naked — image fills the column */
 }
 
 /* ─── Viewer ─────────────────────────────────────────────────────────── */

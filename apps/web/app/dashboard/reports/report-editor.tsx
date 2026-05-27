@@ -173,8 +173,13 @@ export function ReportEditor({
         onRedo?.();
       }
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    // Capture-phase so we run BEFORE the focused textarea/input fires its
+    // native undo, which would otherwise consume Cmd-Z and leave our React
+    // history untouched. We preventDefault to suppress the native behavior
+    // entirely; our undo stack is the only one that knows about cross-block
+    // structural changes anyway.
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
   }, [readOnly, onUndo, onRedo, slashMenu]);
 
   // Auto-size the description textarea so it grows with content (no resize
