@@ -139,7 +139,14 @@ async fn connect_store_with_retry(
             Err(error) if attempt < max_attempts => {
                 let delay = retry_delays[attempt - 1];
                 tracing::warn!(
-                    error = %error.message(),
+                    workflow = "startup",
+                    operation = "store_connect",
+                    outcome = "failure",
+                    status = error.status().as_u16(),
+                    code = error.safe_code(),
+                    error_kind = error.safe_code(),
+                    retryable = error.retryable(),
+                    safe_summary = error.safe_summary(),
                     attempt,
                     max_attempts,
                     delay_ms = delay.as_millis() as u64,
@@ -149,7 +156,14 @@ async fn connect_store_with_retry(
             }
             Err(error) => {
                 tracing::error!(
-                    error = %error.message(),
+                    workflow = "startup",
+                    operation = "store_connect",
+                    outcome = "failure",
+                    status = error.status().as_u16(),
+                    code = error.safe_code(),
+                    error_kind = error.safe_code(),
+                    retryable = error.retryable(),
+                    safe_summary = error.safe_summary(),
                     attempt,
                     max_attempts,
                     "store startup projection rebuild failed after retries"

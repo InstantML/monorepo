@@ -328,6 +328,7 @@ fn cors_layer_for_origins(allowed: Vec<String>) -> CorsLayer {
             Method::POST,
             Method::PUT,
             Method::PATCH,
+            Method::DELETE,
             Method::OPTIONS,
         ])
         .allow_headers([
@@ -388,7 +389,7 @@ mod tests {
                     .method(Method::OPTIONS)
                     .uri("/api/auth/config")
                     .header(header::ORIGIN, "http://127.0.0.1:3000")
-                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "DELETE")
                     .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "x-request-id")
                     .body(Body::empty())
                     .unwrap(),

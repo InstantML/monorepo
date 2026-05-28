@@ -265,10 +265,16 @@ function isSecretLikeRequestId(value) {
   const lower = value.toLowerCase();
   return lower.startsWith("bearer:")
     || lower.startsWith("bearer.")
+    || lower.startsWith("instantml_")
     || lower.startsWith("instantml_live_")
     || lower.startsWith("instantml_test_")
     || lower.startsWith("sk-live-")
     || lower.startsWith("sk-test-")
+    || lower.startsWith("sk_live_")
+    || lower.startsWith("sk_test_")
+    || lower.startsWith("rk_live_")
+    || lower.startsWith("rk_test_")
+    || lower.startsWith("whsec_")
     || lower.startsWith("gho_")
     || lower.startsWith("ghp_")
     || lower.startsWith("github_pat_")
@@ -413,7 +419,7 @@ function redactUnknownPathSegment(segment) {
   if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(segment)) {
     return ":id";
   }
-  if (segment.length > 16 || /[=@%:]/.test(segment)) return ":token";
+  if (segment.length > 16 || /[=@%:]/.test(segment) || isSecretLikeRequestId(segment)) return ":token";
   return segment;
 }
 

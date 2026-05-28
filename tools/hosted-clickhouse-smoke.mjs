@@ -19,10 +19,12 @@ const dataBaseUrl = `http://127.0.0.1:${dataPort}`;
 const clickhouseBase = `http://default:@127.0.0.1:${clickhouseHttpPort}`;
 const controlUrl = `${clickhouseBase}/instantml_user_data_smoke`;
 const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
+const smokeCfRay = "8a1b2c3d4e5f6789-SJC";
 let controlServer = null;
 let dataServer = null;
 let clickhouse = null;
 const serverLogs = {};
+let smokeRequestSequence = 0;
 
 try {
   clickhouse = await ensureLocalClickHouse({
@@ -264,6 +266,8 @@ try {
 function assertObservabilityLogs() {
   const controlLog = readServiceLogs("control");
   const dataLog = readServiceLogs("data");
+  const controlEvents = readServiceLogEvents("control");
+  const dataEvents = readServiceLogEvents("data");
   for (const [servicePlane, log] of [
     ["control", controlLog],
     ["data", dataLog],
@@ -275,6 +279,26 @@ function assertObservabilityLogs() {
     assert.doesNotMatch(log, /hosted-smoke@example\.com|teammate@example\.com/);
     assert.doesNotMatch(log, /eval\/return_mean|train\/loss/);
   }
+  for (const [servicePlane, events] of [
+    ["control", controlEvents],
+    ["data", dataEvents],
+  ]) {
+    const completed = events.find((event) => (
+      event.fields?.message === "http_request_completed"
+      && event.span?.request_id?.startsWith("smoke-")
+    ));
+    assert.ok(completed, `${servicePlane} logs should include a parsed request completion`);
+    assert.equal(completed.span.trace_id, completed.span.request_id);
+    assert.equal(completed.span.cf_ray, smokeCfRay);
+    assert.ok(["[Platform]", "[Control]", "[Data]"].includes(completed.span.plane_tag));
+    assert.ok(["platform", "control", "data"].includes(completed.span.route_plane));
+  }
+  const errorEvent = [...controlEvents, ...dataEvents].find((event) => (
+    event.fields?.message === "error response"
+    && event.fields?.workflow === "http_error"
+    && event.fields?.status === 404
+  ));
+  assert.ok(errorEvent, "logs should include parsed sanitized http_error events");
   assert.match(dataLog, /run mutation outcome/);
   assert.match(dataLog, /metric ingestion outcome/);
 }
@@ -283,6 +307,14 @@ function readServiceLogs(servicePlane) {
   return (serverLogs[servicePlane] ?? [])
     .map((logPath) => fs.readFileSync(logPath, "utf8"))
     .join("\n");
+}
+
+function readServiceLogEvents(servicePlane) {
+  return (serverLogs[servicePlane] ?? [])
+    .flatMap((logPath) => fs.readFileSync(logPath, "utf8").split("\n"))
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
 }
 
 function runPythonSdk(apiKey) {
@@ -365,7 +397,7 @@ async function stopServer(servicePlane) {
 }
 
 async function postJson(baseUrl, pathname, body, options = {}) {
-  const headers = { "content-type": "application/json", origin: baseUrl };
+  const headers = requestHeaders(baseUrl, { "content-type": "application/json" });
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
   const response = await fetch(baseUrl + pathname, {
@@ -382,7 +414,7 @@ async function postJson(baseUrl, pathname, body, options = {}) {
 }
 
 async function assertPostStatus(baseUrl, pathname, body, options, status) {
-  const headers = { "content-type": "application/json", origin: baseUrl };
+  const headers = requestHeaders(baseUrl, { "content-type": "application/json" });
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
   const response = await fetch(baseUrl + pathname, {
@@ -395,7 +427,7 @@ async function assertPostStatus(baseUrl, pathname, body, options, status) {
 }
 
 async function getJson(baseUrl, pathname, options = {}) {
-  const headers = {};
+  const headers = requestHeaders(baseUrl);
   if (options.cookie) headers.cookie = options.cookie;
   const response = await fetch(baseUrl + pathname, { headers });
   const text = await response.text();
@@ -418,9 +450,22 @@ async function assertServicePlane(baseUrl, expected) {
 }
 
 async function assertRouteStatus(baseUrl, pathname, options, status) {
-  const response = await fetch(baseUrl + pathname, options);
+  const response = await fetch(baseUrl + pathname, {
+    ...options,
+    headers: requestHeaders(baseUrl, options.headers),
+  });
   const text = await response.text();
   assert.equal(response.status, status, `${pathname} expected ${status}, got ${response.status}: ${text}`);
+}
+
+function requestHeaders(baseUrl, extra = {}) {
+  smokeRequestSequence += 1;
+  return {
+    origin: baseUrl,
+    "x-request-id": `smoke-${smokeRequestSequence}`,
+    "cf-ray": smokeCfRay,
+    ...extra,
+  };
 }
 
 async function controlKinds() {

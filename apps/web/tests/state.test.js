@@ -717,7 +717,7 @@ test("api client handles query strings and malformed responses", async (t) => {
   globalThis.fetch = async () => ({
     ok: false,
     status: 503,
-    headers: new Headers({ "x-request-id": "sk-test-abc123" }),
+    headers: new Headers({ "x-request-id": "sk_test_abc123" }),
     json: async () => ({ code: "service_unavailable" }),
   });
   await assert.rejects(() => new ApiClient().post("/api/storage/clickhouse-connections/validate", { endpoint: "secret" }), (error) => {
@@ -726,6 +726,19 @@ test("api client handles query strings and malformed responses", async (t) => {
     return /InstantML API is starting/.test(error.message);
   });
   assert.equal(loggedApiEvents.at(-1).event.path, "/api/storage/clickhouse-connections/validate");
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    headers: new Headers({ "x-request-id": "instantml_abc123" }),
+    json: async () => ({}),
+  });
+  await assert.rejects(() => new ApiClient().get("/api/unknown/sk_test_short?secret=true"), (error) => {
+    assert(error instanceof ApiError);
+    assert.match(error.requestId, /^web-/);
+    return /do not have access/.test(error.message);
+  });
+  assert.equal(loggedApiEvents.at(-1).event.requestId.startsWith("instantml_"), false);
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/unknown/:token");
   globalThis.fetch = async () => ({
     ok: false,
     status: 400,

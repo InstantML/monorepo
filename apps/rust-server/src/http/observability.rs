@@ -66,7 +66,7 @@ pub fn request_span<B>(request: &Request<B>, service_plane: ServicePlaneRole) ->
     let route_plane = route_plane_for_path(request.uri().path());
     let request_id = request_id_for_logs(headers).unwrap_or_default();
     let trace_id = request_id.clone();
-    let cf_ray = header_value_for_logs(headers, "cf-ray").unwrap_or_default();
+    let cf_ray = cf_ray_for_logs(headers).unwrap_or_default();
     let cf_connecting_ip_present = headers.contains_key("cf-connecting-ip");
     let user_agent_family = user_agent_family(headers);
     tracing::info_span!(
@@ -189,9 +189,11 @@ pub fn error_response(
 }
 
 pub struct RateLimitRejection<'a> {
+    pub org_id: Option<Uuid>,
     pub request_class: &'a str,
     pub scope: &'static str,
     pub code: &'static str,
+    pub retryable: bool,
     pub retry_after_secs: u64,
     pub limit: i64,
     pub remaining: i64,
@@ -209,8 +211,9 @@ pub fn rate_limit_rejected(rejection: RateLimitRejection<'_>) {
         status = 429,
         code = rejection.code,
         error_kind = rejection.code,
-        retryable = true,
+        retryable = rejection.retryable,
         safe_summary = "rate_limited",
+        org_id = %rejection.org_id.map(|id| id.to_string()).unwrap_or_default(),
         request_class = rejection.request_class,
         scope = rejection.scope,
         retry_after_secs = rejection.retry_after_secs,
@@ -829,6 +832,7 @@ fn redact_unknown_segment(segment: &str) -> &str {
         || segment.contains('%')
         || segment.contains('@')
         || segment.contains(':')
+        || is_secret_like_log_token(segment)
     {
         return ":token";
     }
@@ -859,20 +863,26 @@ pub fn normalize_request_id(value: &str) -> Option<String> {
     {
         return None;
     }
-    if is_secret_like_request_id(trimmed) {
+    if is_secret_like_log_token(trimmed) {
         return None;
     }
     Some(trimmed.to_string())
 }
 
-fn is_secret_like_request_id(value: &str) -> bool {
+fn is_secret_like_log_token(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     lower.starts_with("bearer:")
         || lower.starts_with("bearer.")
+        || lower.starts_with("instantml_")
         || lower.starts_with("instantml_live_")
         || lower.starts_with("instantml_test_")
         || lower.starts_with("sk-live-")
         || lower.starts_with("sk-test-")
+        || lower.starts_with("sk_live_")
+        || lower.starts_with("sk_test_")
+        || lower.starts_with("rk_live_")
+        || lower.starts_with("rk_test_")
+        || lower.starts_with("whsec_")
         || lower.starts_with("gho_")
         || lower.starts_with("ghp_")
         || lower.starts_with("github_pat_")
@@ -880,21 +890,29 @@ fn is_secret_like_request_id(value: &str) -> bool {
         || lower.starts_with("xoxp-")
 }
 
-pub fn header_value_for_logs(headers: &HeaderMap, name: &str) -> Option<String> {
-    let value = headers.get(name)?.to_str().ok()?;
-    normalize_header_value(value)
+pub fn cf_ray_for_logs(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get("cf-ray")?.to_str().ok()?.trim();
+    normalize_cf_ray(value)
 }
 
-pub fn normalize_header_value(value: &str) -> Option<String> {
+pub fn normalize_cf_ray(value: &str) -> Option<String> {
     let trimmed = value.trim();
-    if trimmed.is_empty() || trimmed.len() > MAX_LOGGED_HEADER_BYTES {
+    if trimmed.is_empty() || trimmed.len() > 64 || is_secret_like_log_token(trimmed) {
         return None;
     }
-    if !trimmed
-        .bytes()
-        .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-    {
+    let (ray, colo) = trimmed
+        .split_once('-')
+        .map_or((trimmed, None), |(ray, colo)| (ray, Some(colo)));
+    if !(16..=32).contains(&ray.len()) || !ray.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
+    }
+    if let Some(colo) = colo {
+        if colo.is_empty()
+            || colo.len() > 8
+            || !colo.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return None;
+        }
     }
     Some(trimmed.to_string())
 }
@@ -981,6 +999,18 @@ mod tests {
             safe_path_for_logs("/api/billing/cs_test_secret_token_123"),
             "/api/billing/:token"
         );
+        assert_eq!(
+            safe_path_for_logs("/api/unknown/sk_test_secret"),
+            "/api/unknown/:token"
+        );
+        assert_eq!(
+            safe_path_for_logs("/api/unknown/instantml_abc123"),
+            "/api/unknown/:token"
+        );
+        assert_eq!(
+            safe_path_for_logs("/api/unknown/ghp_abc123"),
+            "/api/unknown/:token"
+        );
     }
 
     #[test]
@@ -1024,14 +1054,6 @@ mod tests {
     }
 
     #[test]
-    fn normalize_header_value_rejects_empty_long_and_control_values() {
-        assert_eq!(normalize_header_value(" req-1 "), Some("req-1".to_string()));
-        assert_eq!(normalize_header_value(""), None);
-        assert_eq!(normalize_header_value("bad\nvalue"), None);
-        assert_eq!(normalize_header_value(&"a".repeat(129)), None);
-    }
-
-    #[test]
     fn normalize_request_id_accepts_only_safe_tokens() {
         assert_eq!(
             normalize_request_id("web_018faabb-0000-7000-9000-000000000001"),
@@ -1040,25 +1062,42 @@ mod tests {
         assert_eq!(normalize_request_id("user@example.com"), None);
         assert_eq!(normalize_request_id("Bearer abc"), None);
         assert_eq!(normalize_request_id("Bearer:abc123"), None);
+        assert_eq!(normalize_request_id("instantml_abc123"), None);
         assert_eq!(normalize_request_id("instantml_live_abc123"), None);
         assert_eq!(normalize_request_id("instantml_test_abc123"), None);
         assert_eq!(normalize_request_id("sk-test-abc123"), None);
+        assert_eq!(normalize_request_id("sk_test_abc123"), None);
+        assert_eq!(normalize_request_id("sk_live_abc123"), None);
+        assert_eq!(normalize_request_id("rk_test_abc123"), None);
+        assert_eq!(normalize_request_id("whsec_abc123"), None);
         assert_eq!(normalize_request_id("gho_abc123"), None);
         assert_eq!(normalize_request_id("bad\nvalue"), None);
         assert_eq!(normalize_request_id(&"a".repeat(129)), None);
     }
 
     #[test]
-    fn header_value_for_logs_extracts_safe_values_only() {
-        let mut headers = HeaderMap::new();
-        headers.insert("x-request-id", HeaderValue::from_static("req_123"));
-        headers.insert("cf-ray", HeaderValue::from_str(&"a".repeat(129)).unwrap());
-
+    fn cf_ray_for_logs_accepts_only_ray_shaped_values() {
         assert_eq!(
-            header_value_for_logs(&headers, "x-request-id"),
-            Some("req_123".to_string())
+            normalize_cf_ray("8a1b2c3d4e5f6789-SJC"),
+            Some("8a1b2c3d4e5f6789-SJC".to_string())
         );
-        assert_eq!(header_value_for_logs(&headers, "cf-ray"), None);
+        assert_eq!(
+            normalize_cf_ray("8a1b2c3d4e5f67898a1b2c3d4e5f6789"),
+            Some("8a1b2c3d4e5f67898a1b2c3d4e5f6789".to_string())
+        );
+        assert_eq!(normalize_cf_ray("user@example.com"), None);
+        assert_eq!(normalize_cf_ray("instantml_secret"), None);
+        assert_eq!(normalize_cf_ray("not-a-ray"), None);
+        assert_eq!(normalize_cf_ray("8a1b2c3d4e5f6789-too-long-colo"), None);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-ray", HeaderValue::from_static("8a1b2c3d4e5f6789-SJC"));
+        assert_eq!(
+            cf_ray_for_logs(&headers),
+            Some("8a1b2c3d4e5f6789-SJC".to_string())
+        );
+        headers.insert("cf-ray", HeaderValue::from_static("instantml_secret"));
+        assert_eq!(cf_ray_for_logs(&headers), None);
     }
 
     #[test]

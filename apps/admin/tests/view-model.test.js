@@ -54,6 +54,13 @@ test("admin API fetch carries request-id instrumentation without logging secrets
   assert.match(source, /"x-request-id"/);
   assert.match(source, /instantml_admin_api_request/);
   assert(source.includes('path: "/api/admin/overview"'));
+  assert.match(source, /lower\.startsWith\("instantml_"\)/);
+  assert.match(source, /lower\.startsWith\("sk_test_"\)/);
+  assert.match(source, /lower\.startsWith\("whsec_"\)/);
+  const eventObject = source.slice(source.indexOf("const event = {"), source.indexOf("if (outcome ==="));
+  for (const forbidden of ["token", "url", "apiBase", "email", "body"]) {
+    assert.equal(eventObject.includes(forbidden), false);
+  }
   for (const line of source.split("\n").filter((line) => line.includes("console."))) {
     assert.equal(line.includes("token"), false);
     assert.equal(line.includes("url"), false);
