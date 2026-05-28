@@ -1476,6 +1476,8 @@ pathMatchers:
     - /api/orgs/*
     - /api/workspace-views
     - /api/workspace-views/*
+    - /api/reports
+    - /api/reports/*
     service: ${controlBackend}
 tests:
 - description: Auth routes use control plane
@@ -1493,6 +1495,14 @@ tests:
 - description: Workspace view routes use control plane
   host: instantml.local
   path: /api/workspace-views
+  service: ${controlBackend}
+- description: Report routes use control plane
+  host: instantml.local
+  path: /api/reports
+  service: ${controlBackend}
+- description: Report subpaths use control plane
+  host: instantml.local
+  path: /api/reports/panels
   service: ${controlBackend}
 - description: Data routes use data plane
   host: instantml.local
