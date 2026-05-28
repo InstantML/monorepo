@@ -680,6 +680,14 @@ class AsyncQueueRepository:
                 self._connection.close()
                 self._connection = None
 
+    def _reset_after_fork(self) -> None:
+        # In a forked child, drop the inherited connection reference without
+        # closing it — the underlying fd is shared with the parent and closing
+        # it (or writing through it) corrupts the WAL. A fresh connection is
+        # opened lazily on next use via ``_connect``.
+        self._lock = threading.RLock()
+        self._connection = None
+
     def _connect(self) -> sqlite3.Connection:
         with self._lock:
             if self._connection is None:

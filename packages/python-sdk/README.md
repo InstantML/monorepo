@@ -246,6 +246,48 @@ when you want a longer wait. See
 `docs/design/2026-05-25-durable-async-sdk-logging.md` and
 `docs/design/2026-05-27-async-sqlite-batching.md`.
 
+On the async path, invalid payloads never crash the training loop either:
+`log()`, `log_metrics()`, `log_rank_metrics()`, and `log_console()` warn-and-drop
+a bad value (a `NaN`/`inf` scalar, a raw tensor, an unsupported type) and count
+it under `Run.upload_status()["dropped"]` instead of raising. Use
+`upload_mode="sync"` when you want validation errors to raise in the foreground
+(scripts and CI).
+
+## Process lifecycle, signals, and forked workers
+
+The SDK installs best-effort shutdown handling the first time a run is created:
+
+- **`atexit`** flushes buffered events and PATCHes the run to `finished` if you
+  forget to call `finish()`, so a short script that exits early does not silently
+  drop its last buffered metrics.
+- **`SIGTERM`/`SIGINT`** (SLURM/Kubernetes preemption, Ctrl-C) flush buffered
+  events and PATCH the run to `failed` before chaining to any pre-existing
+  handler and re-raising — a preempted job stops being stuck in `running`
+  forever. Signal handlers are only installed from the main thread; chained
+  handlers and `SIG_IGN`/`SIG_DFL` dispositions are preserved.
+- **`os.register_at_fork`** resets inherited SQLite connections, locks, and the
+  uploader-process handle in forked children. A PyTorch
+  `DataLoader(num_workers>0)` worker therefore never writes through the parent's
+  queue file descriptor (which would corrupt the WAL); each process opens its own
+  connection lazily.
+
+`finish()` is idempotent, so an explicit `finish()` plus the lifecycle handlers
+never double-PATCH or double-drain.
+
+### Distributed (DDP / multi-process) training
+
+All ranks sharing a single `run_id` also share one per-run queue file guarded by
+a single-holder uploader lock, so only one rank can drain it. For distributed
+runs:
+
+- **Log from rank 0 only.** Call `init()`/`log()` solely on the rank-0 process
+  and let other ranks skip logging. This is the simplest and recommended pattern.
+- **Or give each rank its own queue.** If every rank must log to the same run,
+  pass a distinct `queue_dir` per rank (e.g. `queue_dir=f".instantml/async/rank{rank}"`)
+  so each rank owns an independent queue and uploader.
+- Use `log_rank_metrics(..., rank=rank, world_size=world_size)` from rank 0 to
+  attribute per-rank scalars without spinning up a queue per rank.
+
 ## Design Requirement
 
 Before implementation, create or update design docs for:

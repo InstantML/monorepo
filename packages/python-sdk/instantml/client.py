@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import atexit
 import base64
+import functools
 import hashlib
 import json
 import math
 import mimetypes
 import os
+import signal
 import sqlite3
 import sys
 import subprocess
@@ -19,6 +22,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -680,6 +684,132 @@ class _AsyncProducerBuffer:
             return False, False, message, last_sequence
 
 
+# --- Process lifecycle: flush and close out runs on interpreter exit, on
+# SIGTERM/SIGINT (SLURM/k8s preemption), and reset inherited connections after
+# os.fork() (PyTorch DataLoader workers). Without this a forgotten finish()
+# silently loses buffered data, a preempted job stays "running" forever, and a
+# forked child sharing the parent's SQLite file descriptor corrupts the queue.
+
+_ACTIVE_RUNS: "weakref.WeakSet[Run]" = weakref.WeakSet()
+_ACTIVE_RUNS_LOCK = threading.Lock()
+_LIFECYCLE_INSTALLED = False
+_PREVIOUS_SIGNAL_HANDLERS: dict[int, Any] = {}
+
+
+def _register_active_run(run: "Run") -> None:
+    with _ACTIVE_RUNS_LOCK:
+        _ACTIVE_RUNS.add(run)
+    _install_lifecycle_handlers()
+
+
+def _unregister_active_run(run: "Run") -> None:
+    with _ACTIVE_RUNS_LOCK:
+        _ACTIVE_RUNS.discard(run)
+
+
+def _active_runs_snapshot() -> list["Run"]:
+    with _ACTIVE_RUNS_LOCK:
+        return list(_ACTIVE_RUNS)
+
+
+def _flush_active_runs(status: str) -> None:
+    for run in _active_runs_snapshot():
+        try:
+            run._finish_from_lifecycle(status)
+        except Exception:  # noqa: BLE001 - shutdown must stay best-effort
+            pass
+
+
+def _atexit_flush() -> None:
+    _flush_active_runs("finished")
+
+
+def _handle_termination_signal(signum: int, frame: Any) -> None:
+    # A preempted run is interrupted, not cleanly finished.
+    _flush_active_runs("failed")
+    previous = _PREVIOUS_SIGNAL_HANDLERS.get(signum, signal.SIG_DFL)
+    if callable(previous):
+        previous(signum, frame)
+        return
+    if previous == signal.SIG_IGN:
+        return
+    # Restore default disposition and re-raise so normal termination semantics
+    # (KeyboardInterrupt for SIGINT, process exit for SIGTERM) still apply.
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+def _before_fork() -> None:
+    _ACTIVE_RUNS_LOCK.acquire()
+
+
+def _after_fork_parent() -> None:
+    _ACTIVE_RUNS_LOCK.release()
+
+
+def _after_fork_child() -> None:
+    try:
+        runs = list(_ACTIVE_RUNS)
+    finally:
+        _ACTIVE_RUNS_LOCK.release()
+    for run in runs:
+        try:
+            run._reset_after_fork()
+        except Exception:  # noqa: BLE001 - never let a fork hook crash the child
+            pass
+
+
+def _install_lifecycle_handlers() -> None:
+    global _LIFECYCLE_INSTALLED
+    if _LIFECYCLE_INSTALLED:
+        return
+    _LIFECYCLE_INSTALLED = True
+    atexit.register(_atexit_flush)
+    if hasattr(os, "register_at_fork"):
+        os.register_at_fork(
+            before=_before_fork,
+            after_in_parent=_after_fork_parent,
+            after_in_child=_after_fork_child,
+        )
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            try:
+                previous = signal.getsignal(signum)
+                signal.signal(signum, _handle_termination_signal)
+                _PREVIOUS_SIGNAL_HANDLERS[signum] = previous
+            except (ValueError, OSError, RuntimeError):
+                # Signals can only be set from the main thread of the main
+                # interpreter; skip quietly when that is not the case.
+                pass
+
+
+def _async_hot_path(method):
+    """Make a public ``log*`` method warn-and-drop instead of raising on the async path.
+
+    The README promises that async ``log_metrics``/``log_rank_metrics``/``log_console``
+    (and ``log()`` which dispatches to them) surface problems through
+    ``upload_status()`` rather than raising into the training loop. Validation and
+    classification errors (``TypeError``/``ValueError``) — e.g. ``log({"loss": float('nan')})``
+    or logging a raw tensor — would otherwise crash the loop. Sync and spool modes
+    keep raising so scripts and CI still fail fast.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: "Run", *args: Any, **kwargs: Any) -> Any:
+        if self.upload_mode != "async":
+            return method(self, *args, **kwargs)
+        try:
+            return method(self, *args, **kwargs)
+        except (TypeError, ValueError) as exc:
+            self._warn_async_drop(
+                f"{method.__name__}() dropped an invalid payload on the async path: {exc}",
+                count_local=True,
+            )
+            return None
+
+    return wrapper
+
+
 class Run:
     def __init__(
         self,
@@ -723,6 +853,7 @@ class Run:
         self._auto_step: int | float = 0
         self._finished = False
         self._local_store: "_LocalStore | None" = _local_store
+        _register_active_run(self)
         self._system_sampler: "_SystemMetricsSampler | None" = None
         self._console_capture: "_ConsoleCapture | None" = None
         self._init_done = threading.Event()
@@ -956,6 +1087,7 @@ class Run:
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
         self.finish("failed" if exc_type else "finished")
 
+    @_async_hot_path
     def log(self, data: dict[str, Any], step: int | float | None = None) -> None:
         metrics, text, objects, files = _classify_log_payload(data)
         log_step = self._resolve_log_step(step)
@@ -1040,6 +1172,7 @@ class Run:
             data={"config": data},
         )
 
+    @_async_hot_path
     def log_metrics(
         self,
         data: dict[str, float],
@@ -1078,6 +1211,7 @@ class Run:
         if self._shadow is not None:
             self._shadow.log(metrics, step=step)
 
+    @_async_hot_path
     def log_rank_metrics(
         self,
         data: dict[str, float],
@@ -1129,6 +1263,7 @@ class Run:
             event_timestamp=timestamp,
         )
 
+    @_async_hot_path
     def log_console(self, lines: str | list[str] | tuple[str, ...], stream: str = "stdout", timestamp: str | None = None) -> None:
         stream = _validate_console_stream(stream)
         messages = _normalize_console_lines(lines)
@@ -1615,6 +1750,12 @@ class Run:
         return replayed
 
     def finish(self, status: str = "finished", timeout: float | None = None) -> None:
+        with self._lock:
+            if self._finished:
+                return
+            # Claim the finish atomically so a concurrent atexit/signal flush
+            # (or a second finish() call) cannot double-PATCH or double-drain.
+            self._finished = True
         async_processed = True
         async_finish_timeout = max(0.0, getattr(self.client, "timeout", 10.0) if timeout is None else timeout)
         sampler = self._system_sampler
@@ -1647,9 +1788,9 @@ class Run:
             self._request_or_spool("PATCH", f"/runs/{self.run_id}", {"status": status})
         finally:
             with self._lock:
-                self._finished = True
                 self._system_sampler = None
                 self._console_capture = None
+            _unregister_active_run(self)
             if self._local_store is not None:
                 self._local_store.close()
             if self.upload_mode == "async":
@@ -1673,6 +1814,47 @@ class Run:
                     self._stop_async_uploader(timeout=async_finish_timeout)
             if self._shadow is not None:
                 self._shadow.finish(status)
+
+    def _finish_from_lifecycle(self, status: str) -> None:
+        """Best-effort finish triggered by atexit / SIGTERM / SIGINT.
+
+        Never blocks shutdown indefinitely: a run whose async init has not yet
+        resolved is given a short grace period, then skipped if still pending.
+        """
+        with self._lock:
+            if self._finished:
+                return
+        if not self._init_done.is_set():
+            if not self._init_done.wait(timeout=2.0):
+                return
+        if self._init_error is not None or self._run_id == _PENDING_RUN_ID:
+            return
+        try:
+            self.finish(status)
+        except Exception:  # noqa: BLE001 - shutdown must stay best-effort
+            pass
+
+    def _reset_after_fork(self) -> None:
+        """Reset inherited state in a forked child (DataLoader workers, DDP spawn).
+
+        The child inherits this run's locks — possibly held by parent threads
+        that no longer exist in the child — plus SQLite connections and the
+        uploader subprocess handle that belong to the parent. Reusing the
+        parent's file descriptors corrupts the WAL queue, so swap in fresh locks,
+        drop the inherited connections (reopened lazily per process), and forget
+        the parent's uploader instead of reaping it.
+        """
+        self._lock = threading.RLock()
+        self._async_process_lock = threading.RLock()
+        self._async_process = None
+        if self._async_queue is not None:
+            self._async_queue._reset_after_fork()
+        if self._async_buffer is not None:
+            # The producer worker thread does not survive fork; its condition
+            # variable may be left locked. Replace the buffer wholesale.
+            self._async_buffer = _AsyncProducerBuffer(self)
+        if self._local_store is not None:
+            self._local_store._reset_after_fork()
 
     def _submit(
         self,
@@ -1990,6 +2172,15 @@ class _LocalStore:
     def close(self) -> None:
         with self._lock:
             self._connection.close()
+
+    def _reset_after_fork(self) -> None:
+        # Drop the parent's connection without closing it (closing would flush
+        # through the shared fd and corrupt the WAL); open a fresh per-process
+        # connection against the already-created schema.
+        self._lock = threading.RLock()
+        self._connection = sqlite3.connect(self.path, timeout=1.0, check_same_thread=False)
+        self._connection.execute("pragma journal_mode=wal")
+        self._connection.execute("pragma busy_timeout=1000")
 
 
 class _SystemMetricsSampler:

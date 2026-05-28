@@ -1,0 +1,245 @@
+"""Tests for SDK process-lifecycle safety: async warn-and-drop validation,
+idempotent finish, atexit/signal flushing, and fork-safe connection reset."""
+
+import signal
+
+import pytest
+
+import instantml.client as client_module
+from instantml.client import Run, _LocalStore
+
+
+class _RecordingClient:
+    base_url = "http://example.test"
+    timeout = 1.0
+    offline_dir = None
+
+    def __init__(self):
+        self.requests = []
+
+    def _resolve_api_key(self):
+        return None
+
+    def _request(self, method, path, body=None):
+        self.requests.append((method, path, body))
+        return {"run": {"id": "run-1"}}
+
+
+# --- Async hot path: validation warns-and-drops instead of raising ---------
+
+
+def test_async_log_warns_and_drops_invalid_payload(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    try:
+        with pytest.warns(RuntimeWarning, match="dropped an invalid payload"):
+            run.log({"loss": float("nan")})
+        # Subsequent drops are warn-rate-limited but still counted.
+        run.log({"weights": object()})
+        run.log_metrics({"loss": float("inf")}, step=1)
+        run.log_rank_metrics({"x": float("nan")}, step=1, rank=0, world_size=1)
+        run.log_console(123)
+        assert run.upload_status()["dropped"] >= 5
+        # A valid metric still queues normally.
+        run.log_metrics({"ok": 1.0}, step=2)
+        assert run.upload_status()["pending"] == 1
+    finally:
+        run.finish("finished", timeout=0)
+
+
+def test_sync_log_still_raises_invalid_payload():
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+    try:
+        with pytest.raises(TypeError):
+            run.log({"loss": float("nan")})
+        with pytest.raises(TypeError):
+            run.log_metrics({"loss": float("nan")}, step=1)
+    finally:
+        run.finish()
+
+
+# --- finish() is idempotent ------------------------------------------------
+
+
+def test_finish_is_idempotent():
+    client = _RecordingClient()
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    run.finish("finished")
+    run.finish("finished")
+    run.finish("failed")
+    patches = [request for request in client.requests if request[0] == "PATCH"]
+    assert patches == [("PATCH", "/runs/run-1", {"status": "finished"})]
+
+
+# --- atexit / signal lifecycle flushing ------------------------------------
+
+
+def test_atexit_flush_finishes_and_unregisters_active_runs():
+    client = _RecordingClient()
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    assert run in client_module._active_runs_snapshot()
+    client_module._atexit_flush()
+    patches = [request for request in client.requests if request[0] == "PATCH"]
+    assert patches[-1] == ("PATCH", "/runs/run-1", {"status": "finished"})
+    assert run not in client_module._active_runs_snapshot()
+
+
+def test_finish_from_lifecycle_handles_all_states(monkeypatch):
+    client = _RecordingClient()
+
+    # Success path then early-return when already finished.
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    run._finish_from_lifecycle("finished")
+    assert run._is_finished()
+    assert ("PATCH", "/runs/run-1", {"status": "finished"}) in client.requests
+    run._finish_from_lifecycle("failed")  # no-op, already finished
+
+    # Init resolved with an error -> skipped without finishing.
+    errored = Run(client=client, run_id=client_module._PENDING_RUN_ID, upload_mode="sync")
+    errored._init_done.set()
+    errored._init_error = RuntimeError("boom")
+    errored._finish_from_lifecycle("finished")
+    assert not errored._is_finished()
+    client_module._unregister_active_run(errored)
+
+    # Init never resolves -> skipped after the grace period.
+    pending = Run(client=client, run_id=client_module._PENDING_RUN_ID, upload_mode="sync")
+    monkeypatch.setattr(pending._init_done, "wait", lambda timeout=None: False)
+    pending._finish_from_lifecycle("finished")
+    assert not pending._is_finished()
+    client_module._unregister_active_run(pending)
+
+    # finish() raising is swallowed so shutdown stays best-effort.
+    class _BoomClient(_RecordingClient):
+        def _request(self, method, path, body=None):
+            raise client_module.InstantMLError("network down")
+
+    boom = Run(client=_BoomClient(), run_id="run-2", upload_mode="sync")
+    boom._finish_from_lifecycle("failed")
+
+
+def test_flush_active_runs_swallows_errors(monkeypatch):
+    class _Boom:
+        def _finish_from_lifecycle(self, status):
+            raise RuntimeError("nope")
+
+    monkeypatch.setattr(client_module, "_active_runs_snapshot", lambda: [_Boom()])
+    client_module._flush_active_runs("finished")  # must not raise
+
+
+def test_termination_signal_chains_to_previous_handler(monkeypatch):
+    called = []
+    monkeypatch.setitem(
+        client_module._PREVIOUS_SIGNAL_HANDLERS,
+        signal.SIGTERM,
+        lambda signum, frame: called.append((signum, frame)),
+    )
+    client_module._handle_termination_signal(signal.SIGTERM, None)
+    assert called == [(signal.SIGTERM, None)]
+
+
+def test_termination_signal_respects_sig_ign(monkeypatch):
+    monkeypatch.setitem(client_module._PREVIOUS_SIGNAL_HANDLERS, signal.SIGTERM, signal.SIG_IGN)
+    client_module._handle_termination_signal(signal.SIGTERM, None)  # returns without raising
+
+
+def test_termination_signal_reraises_on_default(monkeypatch):
+    monkeypatch.setitem(client_module._PREVIOUS_SIGNAL_HANDLERS, signal.SIGTERM, signal.SIG_DFL)
+    reset = []
+    killed = []
+    monkeypatch.setattr(client_module.signal, "signal", lambda sig, handler: reset.append((sig, handler)))
+    monkeypatch.setattr(client_module.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    client_module._handle_termination_signal(signal.SIGTERM, None)
+    assert reset == [(signal.SIGTERM, signal.SIG_DFL)]
+    assert killed and killed[0][1] == signal.SIGTERM
+
+
+def test_install_lifecycle_handlers_is_idempotent():
+    client_module._install_lifecycle_handlers()  # already installed -> early return
+
+
+def test_install_lifecycle_handlers_survives_signal_errors(monkeypatch):
+    monkeypatch.setattr(client_module, "_LIFECYCLE_INSTALLED", False)
+    monkeypatch.setattr(client_module.atexit, "register", lambda fn: None)
+    monkeypatch.setattr(client_module.os, "register_at_fork", lambda **kwargs: None)
+
+    def _boom(signum, handler):
+        raise ValueError("signal only works in the main thread")
+
+    monkeypatch.setattr(client_module.signal, "signal", _boom)
+    client_module._install_lifecycle_handlers()
+    assert client_module._LIFECYCLE_INSTALLED is True
+
+
+# --- Fork safety: reset inherited connections / locks in the child ---------
+
+
+def test_reset_after_fork_resets_connections(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+    store = _LocalStore(str(tmp_path / "local"), "run-1")
+    run = Run(
+        client=_RecordingClient(),
+        run_id="run-1",
+        upload_mode="async",
+        queue_dir=str(tmp_path / "q"),
+        _local_store=store,
+    )
+    try:
+        queue = run._async_queue
+        assert queue._connection is not None
+        old_lock = run._lock
+        old_buffer = run._async_buffer
+        # The parent's connections are dropped (not closed) on purpose; capture
+        # them so this in-process test can close the orphaned handles itself.
+        orphaned_queue_conn = queue._connection
+        orphaned_store_conn = store._connection
+        run._async_process = object()  # pretend we hold the parent's uploader handle
+
+        run._reset_after_fork()
+
+        assert run._lock is not old_lock
+        assert run._async_process is None
+        assert queue._connection is None
+        assert run._async_buffer is not old_buffer
+        # The local store is reopened with a fresh per-process connection.
+        store.record_metrics("run-1", 2, {"y": 2.0}, "2026-01-01T00:00:00Z")
+        orphaned_queue_conn.close()
+        orphaned_store_conn.close()
+    finally:
+        run.finish("finished", timeout=0)
+
+
+def test_after_fork_child_resets_registered_runs(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path / "q"))
+    try:
+        queue = run._async_queue
+        assert queue._connection is not None
+        orphaned_conn = queue._connection
+        client_module._before_fork()
+        client_module._after_fork_child()
+        assert queue._connection is None
+        orphaned_conn.close()
+    finally:
+        run.finish("finished", timeout=0)
+
+
+def test_after_fork_child_swallows_reset_errors(monkeypatch):
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+
+    def _raise():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(run, "_reset_after_fork", _raise)
+    try:
+        client_module._before_fork()
+        client_module._after_fork_child()  # must not raise
+    finally:
+        run.finish()
+
+
+def test_after_fork_parent_releases_lock():
+    client_module._before_fork()
+    client_module._after_fork_parent()
+    assert client_module._ACTIVE_RUNS_LOCK.acquire(blocking=False)
+    client_module._ACTIVE_RUNS_LOCK.release()
