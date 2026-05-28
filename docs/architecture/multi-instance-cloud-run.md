@@ -91,21 +91,23 @@ stdout/stderr. Hosted deploys should keep `INSTANTML_LOG_FORMAT=json`,
 `INSTANTML_SLOW_REQUEST_MS=1000` unless an incident needs a temporary override.
 
 Request completion logs include the service plane, method, path without query
-string, status, latency, generated/propagated `x-request-id`, and observed
-`cf-ray` when Cloudflare sends one. First-slice workflow logs cover readiness,
-metric/log ingestion, artifacts, imports, startup, and worker cleanup. They use
-stable product IDs only and do not include tokens, cookies, session IDs,
-project/run names, metric values or keys, console messages, artifact filenames,
+string, status, latency, generated/propagated `x-request-id`, matching
+`trace_id`, route-plane tag, and observed `cf-ray` when Cloudflare sends one.
+First-slice workflow logs cover readiness, project/run mutations, metric/log
+ingestion, artifacts, imports, startup, and worker cleanup. They use stable
+product IDs only and do not include tokens, cookies, session IDs, project/run
+names, metric values or keys, console messages, artifact filenames,
 object-storage keys, signed URLs, or raw request bodies.
 
 When the public API URL is behind Cloudflare, use Cloudflare Log Explorer or
-Logpush for edge/request logs and join them to Cloud Run origin logs with
-`x-request-id` where custom response-header fields are configured. Observed
-`cf-ray` is useful for narrowing an incident but must be paired with timestamp,
-host, path, and status. Prefer path-only Cloudflare fields such as
-`ClientRequestPath`; full URI fields can contain user query strings and should
-only be enabled with restricted retention/access or a separately reviewed debug
-job.
+Logpush for edge/request logs and join them to Cloud Run origin logs with the
+request `x-request-id` header first. Custom response-header capture is useful
+when available but can be absent when Cloudflare rejects or fails a request
+before origin response. Observed `cf-ray` is useful for narrowing an incident
+but must be paired with timestamp, host, path, and status. Prefer path-only
+Cloudflare fields such as `ClientRequestPath`; full URI fields can contain user
+query strings and should only be enabled with restricted retention/access or a
+separately reviewed debug job.
 
 ## Request Flow
 

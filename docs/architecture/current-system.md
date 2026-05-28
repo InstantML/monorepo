@@ -56,12 +56,12 @@ monorepo/
 
 The Rust service emits structured observability logs through `tracing`. Local
 development defaults to pretty logs, while hosted Cloud Run deploys use JSON
-logs. Origin logs include request completion events, sanitized server-error
+logs. Origin logs include request completion events, sanitized handled-error
 fields, slow-request warnings, and the current first-slice workflow outcomes
-for metric/log ingestion, artifacts, imports, readiness, startup, and worker
-cleanup. Logs deliberately avoid request bodies, query strings, user emails,
-tokens, session IDs, object-storage keys, project/run names, metric values,
-console messages, and artifact filenames.
+for project/run mutations, metric/log ingestion, artifacts, imports, readiness,
+startup, and worker cleanup. Logs deliberately avoid request bodies, query
+strings, user emails, tokens, session IDs, object-storage keys, project/run
+names, metric values, console messages, and artifact filenames.
 
 ## Runtime Topology
 
@@ -154,17 +154,20 @@ Hosted observability has two log sources:
 
 ```text
 Cloud Run stdout/stderr JSON logs
-  -> request_id, observed cf_ray, method, path, status, latency, service_plane, safe workflow fields
+  -> request_id, trace_id, observed cf_ray, method, redacted path, status, latency, service_plane, route_plane, safe workflow fields
 
 Cloudflare Log Explorer / Logpush, when the API domain is proxied by Cloudflare
-  -> RayID, host, method, path-only request field, edge/origin status, timestamps, optional custom ResponseHeaders.x-request-id
+  -> RayID, host, method, path-only request field, edge/origin status, timestamps, custom request header x-request-id, optional custom ResponseHeaders.x-request-id
 ```
 
-Use `x-request-id` as the primary application correlation key. Use observed
-`cf-ray` only as an additional Cloudflare edge correlation field, paired with a
-time window, host, path, and status because Ray IDs are not a unique request
-database key. Avoid Cloudflare Logpush fields that store full request URI unless
-retention/access controls explicitly account for query strings.
+Use the request `x-request-id` header as the primary application correlation
+key because edge-only failures may never receive an origin response header. Use
+the response header as a secondary lookup path when the Cloudflare plan/job
+captures it. Use observed `cf-ray` only as an additional Cloudflare edge
+correlation field, paired with a time window, host, path, and status because
+Ray IDs are not a unique request database key. Avoid Cloudflare Logpush fields
+that store full request URI unless retention/access controls explicitly account
+for query strings.
 
 ## Storage
 

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   clampPercent,
@@ -9,6 +12,9 @@ import {
   storageLine,
   toneForStatus,
 } from "../src/view-model.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const adminRoot = path.join(__dirname, "..");
 
 test("formatBytes keeps operator storage values readable", () => {
   assert.equal(formatBytes(null), "Unavailable");
@@ -40,4 +46,16 @@ test("status helpers keep risk and storage language consistent", () => {
     }),
     "instantml-hosted / storage ready / route ready",
   );
+});
+
+test("admin API fetch carries request-id instrumentation without logging secrets", () => {
+  const source = fs.readFileSync(path.join(adminRoot, "src", "admin-data.ts"), "utf8");
+
+  assert.match(source, /"x-request-id"/);
+  assert.match(source, /instantml_admin_api_request/);
+  assert(source.includes('path: "/api/admin/overview"'));
+  for (const line of source.split("\n").filter((line) => line.includes("console."))) {
+    assert.equal(line.includes("token"), false);
+    assert.equal(line.includes("url"), false);
+  }
 });

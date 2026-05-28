@@ -176,7 +176,15 @@ async fn authenticate_api_key_with_auth_miss_refresh(
         Err(error) if state.config.service_plane.runs_background_control_refresh() => {
             if let Err(refresh_error) = state.store.refresh_control_records_for_auth_miss().await {
                 tracing::warn!(
-                    error = %refresh_error.message(),
+                    workflow = "control_refresh",
+                    operation = "auth_miss_refresh",
+                    outcome = "failure",
+                    auth_kind = "api_key",
+                    status = refresh_error.status().as_u16(),
+                    code = refresh_error.safe_code(),
+                    error_kind = refresh_error.safe_code(),
+                    retryable = refresh_error.retryable(),
+                    safe_summary = refresh_error.safe_summary(),
                     "control-record refresh after API-key auth miss failed"
                 );
                 return Err(error);
@@ -196,7 +204,15 @@ async fn authenticate_session_with_auth_miss_refresh(
         Err(error) if state.config.service_plane.runs_background_control_refresh() => {
             if let Err(refresh_error) = state.store.refresh_control_records_for_auth_miss().await {
                 tracing::warn!(
-                    error = %refresh_error.message(),
+                    workflow = "control_refresh",
+                    operation = "auth_miss_refresh",
+                    outcome = "failure",
+                    auth_kind = "session",
+                    status = refresh_error.status().as_u16(),
+                    code = refresh_error.safe_code(),
+                    error_kind = refresh_error.safe_code(),
+                    retryable = refresh_error.retryable(),
+                    safe_summary = refresh_error.safe_summary(),
                     "control-record refresh after session auth miss failed"
                 );
                 return Err(error);

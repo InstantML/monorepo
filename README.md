@@ -124,7 +124,7 @@ Training-observability roadmap first slice is implemented:
 - Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
 - Docker Compose for a one-command local Rust/ClickHouse API and artifact-storage stack.
 - Internal Cloud Run deployment for the Rust API with Secret Manager secrets, bounded single-instance control/data cells, private VPC access to the self-hosted GCP ClickHouse VM, and local frontend-only development against the hosted API.
-- Structured Rust server observability: JSON Cloud Run logs include request completion events, sanitized 5xx error fields, slow-request warnings, and first-slice workflow outcomes for metric/log ingestion, artifacts, imports, readiness, and worker cleanup. Hosted edge correlation uses `x-request-id` and observed Cloudflare `cf-ray` when the API is proxied through Cloudflare.
+- Structured Rust server observability: JSON Cloud Run logs include request completion events, sanitized handled-error fields, slow-request warnings, and first-slice workflow outcomes for project/run mutations, metric/log ingestion, artifacts, imports, readiness, and worker cleanup. Hosted edge correlation uses the request `x-request-id` header and observed Cloudflare `cf-ray` when the API is proxied through Cloudflare.
 
 Known follow-ups before broadening the roadmap:
 
@@ -276,8 +276,9 @@ Hosted Rust logs should run with `INSTANTML_LOG_FORMAT=json`,
 `INSTANTML_SLOW_REQUEST_MS=1000` unless an incident needs a temporary override.
 Origin logs are Cloud Run stdout/stderr; Cloudflare Log Explorer or Logpush
 captures edge request logs separately and should be joined with origin logs by
-`x-request-id` plus time/host/path/status, with observed `cf-ray` as an
-additional correlation key.
+the request `x-request-id` header plus time/host/path/status. Response-header
+capture for `x-request-id` is helpful when available, but it can be missing for
+edge-only failures. Use observed `cf-ray` as an additional correlation key.
 
 The explicit aliases are:
 

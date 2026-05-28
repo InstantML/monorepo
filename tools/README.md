@@ -85,13 +85,15 @@ Do not run this from CI. It can create paid cloud resources, add Secret Manager 
 Hosted Rust origin logs are Cloud Run stdout/stderr JSON logs. They include
 request completion events with redacted route-template paths, `request_id`,
 `trace_id`, `service_plane`, `route_plane`, and `plane_tag`; sanitized handled
-error fields; slow-request warnings; and first-slice workflow outcomes for
-metric/log ingestion, artifacts, imports, readiness, startup, and worker
-cleanup. If the public API domain is proxied through Cloudflare, configure
-Cloudflare Log Explorer or Logpush separately for edge request logs. Prefer
-path-only fields and custom `ResponseHeaders.x-request-id` capture; avoid full
-URI fields in normal jobs because query strings can contain user data. Treat
-observed `cf-ray` as a correlation field, not a unique join key.
+error fields; rate-limit rejection events; slow-request warnings; and
+first-slice workflow outcomes for project/run mutations, metric/log ingestion,
+artifacts, imports, readiness, startup, and worker cleanup. If the public API
+domain is proxied through Cloudflare, configure Cloudflare Log Explorer or
+Logpush separately for edge request logs. Prefer path-only fields and custom
+request-header capture for `x-request-id`; response-header capture is useful
+when available but can be absent for edge-only failures. Avoid full URI fields
+in normal jobs because query strings can contain user data. Treat observed
+`cf-ray` as a correlation field, not a unique join key.
 
 ## Self-Hosted ClickHouse Migration Helper
 

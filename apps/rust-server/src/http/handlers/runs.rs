@@ -8,6 +8,7 @@ use axum::{
     Json,
 };
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use crate::{
     domain::{
@@ -45,9 +46,15 @@ pub async fn create_project(
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateProjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
-    Ok(Json(
-        json!({ "project": store::create_project(&state.store, &ctx, input).await? }),
-    ))
+    let result = store::create_project(&state.store, &ctx, input).await;
+    observability::project_mutation_outcome(
+        ctx.org_id,
+        "create_project",
+        result.as_ref().ok().map(|project| project.id),
+        result.as_ref().err(),
+    );
+    let project = result?;
+    Ok(Json(json!({ "project": project })))
 }
 
 #[utoipa::path(
@@ -92,9 +99,17 @@ pub async fn create_run(
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
-    Ok(Json(
-        json!({ "run": store::create_run(&state.store, &ctx, input).await? }),
-    ))
+    let result = store::create_run(&state.store, &ctx, input).await;
+    observability::run_mutation_outcome(
+        ctx.org_id,
+        "create_run",
+        result.as_ref().ok().map(|run| run.project_id),
+        result.as_ref().ok().map(|run| run.id),
+        false,
+        result.as_ref().err(),
+    );
+    let run = result?;
+    Ok(Json(json!({ "run": run })))
 }
 
 #[utoipa::path(
@@ -210,18 +225,32 @@ pub async fn fork_run(
     let (input, raw) =
         read_json_with_raw::<CreateRunForkRequest>(&headers, bytes, state.config.max_body_bytes)?;
     let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
-    Ok(Json(
-        store::fork_run(
-            &state.store,
-            &ctx,
-            run_id,
-            raw,
-            input,
-            idempotency_key,
-            state.config.max_body_bytes,
-        )
-        .await?,
-    ))
+    let idempotency_key_present = idempotency_key.is_some();
+    let result = store::fork_run(
+        &state.store,
+        &ctx,
+        run_id,
+        raw,
+        input,
+        idempotency_key,
+        state.config.max_body_bytes,
+    )
+    .await;
+    observability::run_mutation_outcome(
+        ctx.org_id,
+        "fork_run",
+        result
+            .as_ref()
+            .ok()
+            .and_then(|payload| uuid_from_value(payload, &["run", "project_id"])),
+        result
+            .as_ref()
+            .ok()
+            .and_then(|payload| uuid_from_value(payload, &["run", "id"])),
+        idempotency_key_present,
+        result.as_ref().err(),
+    );
+    Ok(Json(result?))
 }
 
 #[utoipa::path(
@@ -250,9 +279,17 @@ pub async fn update_run(
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<UpdateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
-    Ok(Json(
-        json!({ "run": store::update_run(&state.store, &ctx, run_id, input).await? }),
-    ))
+    let result = store::update_run(&state.store, &ctx, run_id, input).await;
+    observability::run_mutation_outcome(
+        ctx.org_id,
+        "update_run",
+        result.as_ref().ok().map(|run| run.project_id),
+        Some(run_id),
+        false,
+        result.as_ref().err(),
+    );
+    let run = result?;
+    Ok(Json(json!({ "run": run })))
 }
 
 #[utoipa::path(
@@ -329,10 +366,37 @@ pub async fn log_rank_metrics(
     let run_id = parse_uuid(&run_id, "run not found")?;
     let (input, raw) =
         read_json_with_raw::<LogRankMetricsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let metric_count = input
+        .metrics
+        .as_object()
+        .map(|metrics| metrics.len())
+        .unwrap_or(0);
+    let rank = i64::from(input.rank);
     let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
-    let inserted =
-        store::log_rank_metrics(&state.store, &ctx, run_id, raw, input, idempotency_key).await?;
+    let idempotency_key_present = idempotency_key.is_some();
+    let result =
+        store::log_rank_metrics(&state.store, &ctx, run_id, raw, input, idempotency_key).await;
+    observability::rank_metric_ingest(
+        ctx.org_id,
+        run_id,
+        rank,
+        metric_count,
+        result.as_ref().ok().copied(),
+        idempotency_key_present,
+        result.as_ref().err(),
+    );
+    let inserted = result?;
     Ok(Json(json!({ "inserted": inserted })))
+}
+
+fn uuid_from_value(value: &Value, path: &[&str]) -> Option<Uuid> {
+    let mut current = value;
+    for segment in path {
+        current = current.get(*segment)?;
+    }
+    current
+        .as_str()
+        .and_then(|value| Uuid::parse_str(value).ok())
 }
 
 #[utoipa::path(

@@ -139,7 +139,7 @@ pub fn error_response(
     position: Option<usize>,
 ) {
     let code = safe_error_code(status, code);
-    let retryable = status == 503 || code == "warehouse_unavailable";
+    let retryable = status == 429 || status == 503 || code == "warehouse_unavailable";
     let safe_summary = safe_error_summary(status, code);
     let field = safe_error_field(field).unwrap_or("");
     let position = position.unwrap_or(0);
@@ -188,6 +188,42 @@ pub fn error_response(
     }
 }
 
+pub struct RateLimitRejection<'a> {
+    pub request_class: &'a str,
+    pub scope: &'static str,
+    pub code: &'static str,
+    pub retry_after_secs: u64,
+    pub limit: i64,
+    pub remaining: i64,
+    pub usage: Option<i64>,
+    pub projected_usage: Option<i64>,
+    pub plan_tier: Option<&'a str>,
+    pub overage_mode: Option<&'a str>,
+}
+
+pub fn rate_limit_rejected(rejection: RateLimitRejection<'_>) {
+    warn!(
+        workflow = "rate_limit",
+        operation = "reject",
+        outcome = "failure",
+        status = 429,
+        code = rejection.code,
+        error_kind = rejection.code,
+        retryable = true,
+        safe_summary = "rate_limited",
+        request_class = rejection.request_class,
+        scope = rejection.scope,
+        retry_after_secs = rejection.retry_after_secs,
+        limit = rejection.limit,
+        remaining = rejection.remaining,
+        usage = rejection.usage.unwrap_or(0),
+        projected_usage = rejection.projected_usage.unwrap_or(0),
+        plan_tier = rejection.plan_tier.unwrap_or(""),
+        overage_mode = rejection.overage_mode.unwrap_or(""),
+        "rate limit rejected request"
+    );
+}
+
 fn safe_error_code(status: u16, code: Option<&'static str>) -> &'static str {
     code.unwrap_or(if status == 503 {
         "service_unavailable"
@@ -224,7 +260,10 @@ pub fn readiness_failure(service_plane: ServicePlaneRole, store: &'static str, e
     warn!(
         service_plane = %service_plane.as_str(),
         status = error.status().as_u16(),
-        code = error.code().unwrap_or("service_unavailable"),
+        code = error.safe_code(),
+        error_kind = error.safe_code(),
+        retryable = error.retryable(),
+        safe_summary = error.safe_summary(),
         store,
         workflow = "readiness",
         operation = "readyz",
@@ -264,6 +303,99 @@ pub fn metric_ingest(
         idempotency_key_present,
         duplicate_request = false,
         "metric ingestion outcome"
+    );
+}
+
+pub fn rank_metric_ingest(
+    org_id: Uuid,
+    run_id: Uuid,
+    rank: i64,
+    metric_count: usize,
+    inserted: Option<usize>,
+    idempotency_key_present: bool,
+    error: Option<&AppError>,
+) {
+    let outcome = outcome(error);
+    let stage = if error.is_some() {
+        "rank_metric_insert"
+    } else {
+        "complete"
+    };
+    let (status, code, retryable) = error_fields(error);
+    info!(
+        workflow = "metrics",
+        operation = "log_rank_metrics",
+        outcome,
+        stage,
+        status,
+        code,
+        retryable,
+        org_id = %org_id,
+        run_id = %run_id,
+        rank,
+        metric_count,
+        inserted = inserted.unwrap_or(0),
+        idempotency_key_present,
+        duplicate_request = false,
+        "rank metric ingestion outcome"
+    );
+}
+
+pub fn project_mutation_outcome(
+    org_id: Uuid,
+    operation: &'static str,
+    project_id: Option<Uuid>,
+    error: Option<&AppError>,
+) {
+    let outcome = outcome(error);
+    let stage = if error.is_some() {
+        "project_mutation"
+    } else {
+        "complete"
+    };
+    let (status, code, retryable) = error_fields(error);
+    info!(
+        workflow = "projects",
+        operation,
+        outcome,
+        stage,
+        status,
+        code,
+        retryable,
+        org_id = %org_id,
+        project_id = %project_id.map(|id| id.to_string()).unwrap_or_default(),
+        "project mutation outcome"
+    );
+}
+
+pub fn run_mutation_outcome(
+    org_id: Uuid,
+    operation: &'static str,
+    project_id: Option<Uuid>,
+    run_id: Option<Uuid>,
+    idempotency_key_present: bool,
+    error: Option<&AppError>,
+) {
+    let outcome = outcome(error);
+    let stage = if error.is_some() {
+        "run_mutation"
+    } else {
+        "complete"
+    };
+    let (status, code, retryable) = error_fields(error);
+    info!(
+        workflow = "runs",
+        operation,
+        outcome,
+        stage,
+        status,
+        code,
+        retryable,
+        org_id = %org_id,
+        project_id = %project_id.map(|id| id.to_string()).unwrap_or_default(),
+        run_id = %run_id.map(|id| id.to_string()).unwrap_or_default(),
+        idempotency_key_present,
+        "run mutation outcome"
     );
 }
 
@@ -417,16 +549,11 @@ fn error_fields(error: Option<&AppError>) -> (u16, &'static str, bool) {
     let Some(error) = error else {
         return (200, "ok", false);
     };
-    let status = error.status().as_u16();
-    let code = error.code().unwrap_or(if status == 503 {
-        "service_unavailable"
-    } else if status >= 500 {
-        "internal_server_error"
-    } else {
-        "request_rejected"
-    });
-    let retryable = status == 503 || code == "warehouse_unavailable";
-    (status, code, retryable)
+    (
+        error.status().as_u16(),
+        error.safe_code(),
+        error.retryable(),
+    )
 }
 
 fn outcome(error: Option<&AppError>) -> &'static str {
@@ -496,11 +623,20 @@ fn known_route_template(segments: &[&str]) -> Option<String> {
         }
         ["api", "invitations", "preview"] => vec!["api", "invitations", "preview"],
         ["api", "invitations", "accept"] => vec!["api", "invitations", "accept"],
-        ["api", "billing", tail @ ..] if !tail.is_empty() => {
-            let mut parts = vec!["api", "billing"];
-            parts.extend_from_slice(tail);
-            parts
+        ["api", "billing", "status"] => vec!["api", "billing", "status"],
+        ["api", "billing", "checkout"] => vec!["api", "billing", "checkout"],
+        ["api", "billing", "checkout", "sync"] => vec!["api", "billing", "checkout", "sync"],
+        ["api", "billing", "portal"] => vec!["api", "billing", "portal"],
+        ["api", "billing", "change-plan"] => vec!["api", "billing", "change-plan"],
+        ["api", "billing", "add-seat"] => vec!["api", "billing", "add-seat"],
+        ["api", "billing", "cancel"] => vec!["api", "billing", "cancel"],
+        ["api", "billing", "storage-overage", "report"] => {
+            vec!["api", "billing", "storage-overage", "report"]
         }
+        ["api", "billing", "usage-overage", "report"] => {
+            vec!["api", "billing", "usage-overage", "report"]
+        }
+        ["api", "billing", "webhook"] => vec!["api", "billing", "webhook"],
         ["api", "dashboard", "preferences"] => vec!["api", "dashboard", "preferences"],
         ["api", "workspace-views"] => vec!["api", "workspace-views"],
         ["api", "workspace-views", _] => vec!["api", "workspace-views", ":view_id"],
@@ -723,7 +859,25 @@ pub fn normalize_request_id(value: &str) -> Option<String> {
     {
         return None;
     }
+    if is_secret_like_request_id(trimmed) {
+        return None;
+    }
     Some(trimmed.to_string())
+}
+
+fn is_secret_like_request_id(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.starts_with("bearer:")
+        || lower.starts_with("bearer.")
+        || lower.starts_with("instantml_live_")
+        || lower.starts_with("instantml_test_")
+        || lower.starts_with("sk-live-")
+        || lower.starts_with("sk-test-")
+        || lower.starts_with("gho_")
+        || lower.starts_with("ghp_")
+        || lower.starts_with("github_pat_")
+        || lower.starts_with("xoxb-")
+        || lower.starts_with("xoxp-")
 }
 
 pub fn header_value_for_logs(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -823,6 +977,10 @@ mod tests {
             safe_path_for_logs("/api/unknown/short-static"),
             "/api/unknown/short-static"
         );
+        assert_eq!(
+            safe_path_for_logs("/api/billing/cs_test_secret_token_123"),
+            "/api/billing/:token"
+        );
     }
 
     #[test]
@@ -881,6 +1039,11 @@ mod tests {
         );
         assert_eq!(normalize_request_id("user@example.com"), None);
         assert_eq!(normalize_request_id("Bearer abc"), None);
+        assert_eq!(normalize_request_id("Bearer:abc123"), None);
+        assert_eq!(normalize_request_id("instantml_live_abc123"), None);
+        assert_eq!(normalize_request_id("instantml_test_abc123"), None);
+        assert_eq!(normalize_request_id("sk-test-abc123"), None);
+        assert_eq!(normalize_request_id("gho_abc123"), None);
         assert_eq!(normalize_request_id("bad\nvalue"), None);
         assert_eq!(normalize_request_id(&"a".repeat(129)), None);
     }
@@ -911,6 +1074,14 @@ mod tests {
     fn error_fields_are_static_and_safe() {
         assert_eq!(safe_error_code(500, None), "internal_server_error");
         assert_eq!(safe_error_code(400, None), "request_rejected");
+        assert!(
+            error_fields(Some(&AppError::with_code(
+                axum::http::StatusCode::TOO_MANY_REQUESTS,
+                "rate_limit_exceeded",
+                "too many requests"
+            )))
+            .2
+        );
         assert_eq!(
             safe_error_summary(400, "run_search_invalid"),
             "search_validation_failed"

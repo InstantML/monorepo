@@ -278,7 +278,9 @@ Product API calls should go through `src/api.js`'s `ApiClient` so browser,
 Rust, Cloud Run, and Cloudflare logs share a safe correlation value. The client
 adds a sanitized `x-request-id` when a caller does not provide one, reads the
 sanitized response header when available, and includes `Request <id>` only in
-client-safe `ApiError` messages.
+client-safe `ApiError` messages. Request IDs that look like emails, bearer
+values, InstantML/Stripe/GitHub-style secrets, or other token-like credentials
+are discarded and replaced before logging or display.
 
 Frontend console logging is user-facing, so the payload is intentionally small:
 event name, request/trace ID, method, redacted route-template path, status,
@@ -289,6 +291,13 @@ opt-in with `NEXT_PUBLIC_INSTANTML_API_LOGS=1` or
 response bodies, query strings, auth headers, cookies, emails, metric keys or
 values, artifact names, object-storage URLs, or user content from frontend API
 helpers.
+
+Artifact byte previews and downloads are same-origin browser navigations or
+media loads to `/api/artifacts/:id/download`, so they cannot always attach the
+frontend-generated header. The Rust origin still generates and logs a safe
+request ID for those byte requests; use the surrounding artifact metadata
+`ApiClient` call, artifact ID, time window, and Cloud Run download workflow log
+to correlate a user report.
 
 ## Test
 

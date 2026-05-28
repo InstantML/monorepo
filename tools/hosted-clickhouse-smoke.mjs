@@ -229,6 +229,9 @@ try {
   const finalKinds = await controlKinds();
   assert.ok(finalKinds.includes("api_key"), "User Data should contain api_key");
   assert.ok(finalKinds.includes("service_account"), "User Data should contain service_account");
+  await stopServer("data");
+  await stopServer("control");
+  assertObservabilityLogs();
   console.log(
     JSON.stringify(
       {
@@ -243,9 +246,11 @@ try {
   );
 } catch (error) {
   if (process.env.INSTANTML_HOSTED_SMOKE_DEBUG === "1") {
-    for (const [servicePlane, logPath] of Object.entries(serverLogs)) {
-      const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "(missing)";
-      console.error(`\n--- ${servicePlane} log: ${logPath} ---\n${log}`);
+    for (const [servicePlane, logPaths] of Object.entries(serverLogs)) {
+      for (const logPath of logPaths) {
+        const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "(missing)";
+        console.error(`\n--- ${servicePlane} log: ${logPath} ---\n${log}`);
+      }
     }
   }
   throw error;
@@ -254,6 +259,30 @@ try {
   await stopServer("control");
   if (clickhouse) await clickhouse.stop();
   fs.rmSync(tempDir, { recursive: true, force: true });
+}
+
+function assertObservabilityLogs() {
+  const controlLog = readServiceLogs("control");
+  const dataLog = readServiceLogs("data");
+  for (const [servicePlane, log] of [
+    ["control", controlLog],
+    ["data", dataLog],
+  ]) {
+    assert.match(log, /http_request_completed/, `${servicePlane} logs should include request completions`);
+    assert.match(log, /request_id/, `${servicePlane} logs should include request IDs`);
+    assert.match(log, /trace_id/, `${servicePlane} logs should include trace IDs`);
+    assert.match(log, /route_plane/, `${servicePlane} logs should include route plane tags`);
+    assert.doesNotMatch(log, /hosted-smoke@example\.com|teammate@example\.com/);
+    assert.doesNotMatch(log, /eval\/return_mean|train\/loss/);
+  }
+  assert.match(dataLog, /run mutation outcome/);
+  assert.match(dataLog, /metric ingestion outcome/);
+}
+
+function readServiceLogs(servicePlane) {
+  return (serverLogs[servicePlane] ?? [])
+    .map((logPath) => fs.readFileSync(logPath, "utf8"))
+    .join("\n");
 }
 
 function runPythonSdk(apiKey) {
@@ -292,7 +321,8 @@ async function startServer(servicePlane) {
   const port = servicePlane === "control" ? controlPort : dataPort;
   const baseUrl = servicePlane === "control" ? controlBaseUrl : dataBaseUrl;
   const serverLog = path.join(tempDir, `${servicePlane}-api-${Date.now()}.log`);
-  serverLogs[servicePlane] = serverLog;
+  serverLogs[servicePlane] ??= [];
+  serverLogs[servicePlane].push(serverLog);
   const output = fs.openSync(serverLog, "w");
   const child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
@@ -306,6 +336,10 @@ async function startServer(servicePlane) {
       INSTANTML_SERVICE_PLANE: servicePlane,
       INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
       INSTANTML_AUTH_MODE: "local",
+      INSTANTML_LOG_FORMAT: process.env.INSTANTML_HOSTED_SMOKE_LOG_FORMAT || "json",
+      RUST_LOG:
+        process.env.INSTANTML_HOSTED_SMOKE_RUST_LOG
+        || "instantml_rust_server=info,tower_http=info",
       INSTANTML_BILLING_ENABLED: "true",
       INSTANTML_STRIPE_MOCK_CHECKOUT: "true",
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "sk_test_instantml_mock",

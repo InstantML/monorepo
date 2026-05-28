@@ -704,6 +704,31 @@ test("api client handles query strings and malformed responses", async (t) => {
   globalThis.fetch = async () => ({
     ok: false,
     status: 400,
+    headers: new Headers({ "x-request-id": "instantml_live_secret" }),
+    json: async () => ({ code: "validation_error" }),
+  });
+  await assert.rejects(() => new ApiClient().get("/api/orgs/name-availability?name=secret"), (error) => {
+    assert(error instanceof ApiError);
+    assert.match(error.requestId, /^web-/);
+    return /Request was invalid/.test(error.message);
+  });
+  assert.equal(loggedApiEvents.at(-1).event.requestId.startsWith("instantml_live_"), false);
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/orgs/name-availability");
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 503,
+    headers: new Headers({ "x-request-id": "sk-test-abc123" }),
+    json: async () => ({ code: "service_unavailable" }),
+  });
+  await assert.rejects(() => new ApiClient().post("/api/storage/clickhouse-connections/validate", { endpoint: "secret" }), (error) => {
+    assert(error instanceof ApiError);
+    assert.match(error.requestId, /^web-/);
+    return /InstantML API is starting/.test(error.message);
+  });
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/storage/clickhouse-connections/validate");
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
     json: async () => ({ error: "Invalid run search: regex is invalid at column 6.", code: "run_search_invalid", field: "q", position: 6 }),
   });
   await assert.rejects(

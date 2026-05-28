@@ -277,7 +277,14 @@ impl Store {
             loop {
                 if let Err(error) = store.refresh_control_records().await {
                     tracing::warn!(
-                        error = %error.message(),
+                        workflow = "control_refresh",
+                        operation = "background_refresh",
+                        outcome = "failure",
+                        status = error.status().as_u16(),
+                        code = error.safe_code(),
+                        error_kind = error.safe_code(),
+                        retryable = error.retryable(),
+                        safe_summary = error.safe_summary(),
                         "background control-record refresh failed; will retry"
                     );
                 }

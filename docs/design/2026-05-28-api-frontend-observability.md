@@ -103,8 +103,10 @@ Use `x-request-id` as the practical trace ID for this slice.
   is available.
 - Frontend-generated, response-header, and caller-provided IDs are accepted only
   when they match a strict token rule: ASCII alphanumeric plus `._:-`, length
-  `1..=128`. Unsafe response IDs are not shown to users; unsafe caller-provided
-  IDs are replaced with a generated ID before logging or display.
+  `1..=128`, and no common secret-looking prefix such as bearer,
+  InstantML/Stripe/GitHub/Slack token patterns. Unsafe response IDs are not
+  shown to users; unsafe caller-provided IDs are replaced with a generated ID
+  before logging or display.
 - Rust normalizes incoming `x-request-id` before the request-id layer logs or
   echoes it. Invalid IDs are removed so `SetRequestIdLayer` generates a safe
   UUID. Tests must cover overlong IDs, control characters, email-looking values,
@@ -298,8 +300,11 @@ client supplies `x-request-id` before the request enters Cloudflare.
 Operators should still prefer:
 
 - Cloud Run logs for Rust origin request/workflow/error events.
-- Cloudflare Log Explorer/Logpush for edge status, Ray ID, path, host, and
-  response `x-request-id` where plan support exists.
+- Cloudflare Log Explorer/Logpush for edge status, Ray ID, path, host, and the
+  request `x-request-id` header where plan support exists.
+- Cloudflare response-header `x-request-id` capture as a secondary lookup path;
+  it may be absent when Cloudflare rejects or fails a request before origin
+  response.
 
 ## Component Impact
 
@@ -310,6 +315,8 @@ Backend:
   extraction, and `error_response`.
 - Update CORS to allow and expose `x-request-id`.
 - Audit existing typed workflow helpers for field safety; defer new helpers.
+- Add narrow workflow helpers for reviewed zero-visibility mutation paths when
+  they can be implemented without payload logging.
 - Keep public route shapes unchanged.
 
 Frontend:
@@ -502,6 +509,21 @@ Fresh reviewer 3:
   segment-aware, and parse captured logs in local verification.
 - Decision: Accepted. The design now includes those requirements.
 
+Post-implementation review pass:
+
+- Finding: Several important paths still had low visibility or unsafe edge
+  cases: rate-limit rejections, rank metric ingest, project/run mutations,
+  secret-looking request IDs, arbitrary billing path tails, and raw
+  `AppError.message()` in warning logs.
+- Risk: Incidents could lack a typed workflow event, and secret-like caller
+  values could be echoed into user-facing errors or logs.
+- Recommended edit: Add targeted sanitized workflow logs, reject
+  secret-looking request IDs in Rust and frontend code, make rate-limit errors
+  retryable in log fields, template only known billing routes, and replace raw
+  warning messages with safe error facts.
+- Decision: Accepted as a narrow hardening slice because it closes concrete
+  zero-visibility gaps without adding payload logging or a new logging backend.
+
 ## Coverage Exceptions
 
 None expected.
@@ -514,9 +536,11 @@ Accepted for Phase 1 after reviewer-requested revisions:
 - Redacted route path/template logging.
 - Route-plane tags and trace ID aliases on every Rust request.
 - Sanitized `AppError` events for all handled errors.
+- Sanitized rate-limit, project/run mutation, and rank-metric ingest workflow
+  events.
 - Frontend `ApiClient` correlation, safe console logging, abort/network-error
   handling, and request ID user-facing messages.
 - CORS allow/expose support for `x-request-id`.
 
-New handler-level workflow helpers beyond the existing first-slice helpers are
-deferred to Phase 2.
+Broad per-route handler logging remains deferred; only reviewed mutation paths
+with concrete visibility gaps are included in this phase.

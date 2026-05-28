@@ -257,7 +257,23 @@ function safeRequestId(value) {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 128) return "";
-  return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : "";
+  if (!/^[A-Za-z0-9._:-]+$/.test(trimmed)) return "";
+  return isSecretLikeRequestId(trimmed) ? "" : trimmed;
+}
+
+function isSecretLikeRequestId(value) {
+  const lower = value.toLowerCase();
+  return lower.startsWith("bearer:")
+    || lower.startsWith("bearer.")
+    || lower.startsWith("instantml_live_")
+    || lower.startsWith("instantml_test_")
+    || lower.startsWith("sk-live-")
+    || lower.startsWith("sk-test-")
+    || lower.startsWith("gho_")
+    || lower.startsWith("ghp_")
+    || lower.startsWith("github_pat_")
+    || lower.startsWith("xoxb-")
+    || lower.startsWith("xoxp-");
 }
 
 function safeApiPathForLogs(path) {
@@ -287,6 +303,7 @@ function safeKnownRouteSegments(segments) {
     }
   }
   if (segments[0] !== "api") return null;
+  if (STATIC_API_ROUTE_KEYS.has(segments.slice(1).join("/"))) return segments;
 
   if (segments[1] === "workspace-views" && segments.length === 3) {
     return ["api", "workspace-views", ":view_id"];
@@ -341,6 +358,56 @@ function safeKnownRouteSegments(segments) {
   }
   return null;
 }
+
+const STATIC_API_ROUTE_KEYS = new Set([
+  "admin/overview",
+  "auth/config",
+  "auth/dev/google",
+  "auth/clerk",
+  "auth/session",
+  "auth/logout",
+  "auth/switch-organization",
+  "auth/device-code/start",
+  "auth/device-code/poll",
+  "auth/device-code/confirm",
+  "invitations/preview",
+  "invitations/accept",
+  "billing/status",
+  "billing/checkout",
+  "billing/checkout/sync",
+  "billing/portal",
+  "billing/change-plan",
+  "billing/add-seat",
+  "billing/cancel",
+  "billing/storage-overage/report",
+  "billing/usage-overage/report",
+  "billing/webhook",
+  "dashboard/preferences",
+  "workspace-views",
+  "reports",
+  "reports/panels",
+  "users",
+  "orgs",
+  "orgs/current-user",
+  "orgs/memberships",
+  "orgs/name-availability",
+  "metrics/series",
+  "overview",
+  "runs/summary",
+  "runs/side-by-side",
+  "export",
+  "usage",
+  "usage/export",
+  "storage/clickhouse-connections/current",
+  "storage/clickhouse-connections/validate",
+  "storage/clickhouse-connections",
+  "storage/clickhouse-connections/rotate-credentials",
+  "demo/reset",
+  "imports",
+  "imports/neptune",
+  "imports/wandb",
+  "imports/mlflow",
+]);
 
 function redactUnknownPathSegment(segment) {
   if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(segment)) {

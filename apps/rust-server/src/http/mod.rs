@@ -315,7 +315,10 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
 }
 
 fn cors_layer(config: &AppConfig) -> CorsLayer {
-    let allowed = config.allowed_frontend_origins.clone();
+    cors_layer_for_origins(config.allowed_frontend_origins.clone())
+}
+
+fn cors_layer_for_origins(allowed: Vec<String>) -> CorsLayer {
     CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             origin_allowed_for_cors(origin, &allowed)
@@ -351,4 +354,82 @@ fn origin_allowed_for_cors(origin: &HeaderValue, allowed: &[String]) -> bool {
         .ok()
         .and_then(|url| url.host_str().map(str::to_string))
         .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1"))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{body::Body, http::Request, routing::get};
+    use tower::Service;
+
+    use super::*;
+
+    async fn ok() -> &'static str {
+        "ok"
+    }
+
+    #[tokio::test]
+    async fn cors_allows_and_exposes_request_id_headers() {
+        let app = Router::new().route("/api/auth/config", get(ok)).layer(
+            ServiceBuilder::new()
+                .layer(middleware::from_fn(
+                    observability::normalize_request_id_header,
+                ))
+                .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+                .layer(PropagateRequestIdLayer::x_request_id())
+                .layer(cors_layer_for_origins(vec![
+                    "http://127.0.0.1:3000".to_string()
+                ])),
+        );
+
+        let mut preflight_app = app.clone();
+        let preflight = preflight_app
+            .call(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/api/auth/config")
+                    .header(header::ORIGIN, "http://127.0.0.1:3000")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                    .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "x-request-id")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(preflight.status().is_success());
+        assert!(preflight
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .contains("x-request-id"));
+
+        let mut request_app = app;
+        let response = request_app
+            .call(
+                Request::builder()
+                    .uri("/api/auth/config")
+                    .header(header::ORIGIN, "http://127.0.0.1:3000")
+                    .header("x-request-id", "user@example.com")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+                .and_then(|value| value.to_str().ok()),
+            Some("x-request-id")
+        );
+        let response_request_id = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        assert_ne!(response_request_id, "user@example.com");
+        assert!(observability::normalize_request_id(response_request_id).is_some());
+    }
 }

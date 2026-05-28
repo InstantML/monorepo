@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::{domain::PlanTier, store};
 
-use super::{handlers::helpers, AppState};
+use super::{handlers::helpers, observability, AppState};
 
 const UNAUTH_RATE_LIMIT_RPS: u32 = 25;
 const UNAUTH_RATE_LIMIT_BURST: u32 = 100;
@@ -213,7 +213,14 @@ pub async fn data_plane_rate_limit(
         .await
         {
             tracing::warn!(
-                error = %error.message(),
+                workflow = "usage",
+                operation = "record_api_request_usage",
+                outcome = "failure",
+                status = error.status().as_u16(),
+                code = error.safe_code(),
+                error_kind = error.safe_code(),
+                retryable = error.retryable(),
+                safe_summary = error.safe_summary(),
                 org_id = %ctx.org_id,
                 class = policy.class.as_str(),
                 "api request usage rollup persist failed"
@@ -327,6 +334,18 @@ fn stable_fingerprint(value: &str) -> u64 {
 }
 
 fn rate_limited_response(class: &str, decision: RateLimitDecision) -> Response {
+    observability::rate_limit_rejected(observability::RateLimitRejection {
+        request_class: class,
+        scope: "second",
+        code: "rate_limit_exceeded",
+        retry_after_secs: decision.retry_after.as_secs(),
+        limit: i64::from(decision.limit.rps),
+        remaining: i64::from(decision.remaining),
+        usage: None,
+        projected_usage: None,
+        plan_tier: None,
+        overage_mode: None,
+    });
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
         Json(json!({
@@ -341,6 +360,18 @@ fn rate_limited_response(class: &str, decision: RateLimitDecision) -> Response {
 
 fn monthly_rate_limited_response(class: &str, quota: store::ApiRequestMonthlyQuota) -> Response {
     let retry_after = monthly_retry_after_secs(quota.reset_at);
+    observability::rate_limit_rejected(observability::RateLimitRejection {
+        request_class: class,
+        scope: "monthly",
+        code: "api_request_monthly_limit_exceeded",
+        retry_after_secs: retry_after,
+        limit: quota.limit,
+        remaining: 0,
+        usage: Some(quota.current_requests),
+        projected_usage: Some(quota.projected_requests),
+        plan_tier: Some(&quota.plan_tier),
+        overage_mode: Some(quota.overage_mode.as_str()),
+    });
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
         Json(json!({
