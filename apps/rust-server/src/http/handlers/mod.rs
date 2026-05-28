@@ -394,6 +394,7 @@ mod tests {
             slow_request_threshold: std::time::Duration::from_millis(1000),
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
+            control_database_url: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
                 egress_cidrs: Vec::new(),
                 egress_set_version: "local-dev".to_string(),

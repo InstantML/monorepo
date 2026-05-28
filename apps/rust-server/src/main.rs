@@ -2,6 +2,7 @@ use std::{net::SocketAddr, process::ExitCode, time::Duration};
 
 use instantml_rust_server::{
     config::{AppConfig, ClickHouseProvisioner, ServicePlaneRole},
+    control_db::ControlDb,
     control_store::ControlStore,
     domain::{DevGoogleAuthRequest, RequestContext},
     http::AppState,
@@ -32,13 +33,14 @@ async fn run() -> instantml_rust_server::AppResult<()> {
         "migrate" => migrate_all(config).await,
         "worker" => worker(config).await,
         "seed-demo" => seed_demo(config).await,
+        "backfill-control" => backfill_control(config).await,
         "emit-openapi" => emit_openapi(),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
         }
         other => Err(instantml_rust_server::AppError::config(format!(
-            "unknown command {other}; expected serve, worker, migrate, seed-demo, emit-openapi, or all"
+            "unknown command {other}; expected serve, worker, migrate, seed-demo, backfill-control, emit-openapi, or all"
         ))),
     }
 }
@@ -77,9 +79,14 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
     }
+    let control_db = ControlDb::connect(config.control_database_url.as_deref()).await?;
+    if let Some(control_db) = &control_db {
+        control_db.migrate().await?;
+    }
     let store = connect_store_with_retry(
         metrics.clone(),
         control_store,
+        control_db,
         config.hosted_clickhouse.clone(),
         config.byoc_clickhouse.clone(),
     )
@@ -117,6 +124,7 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
 async fn connect_store_with_retry(
     metrics: metric_store::MetricStore,
     control_store: Option<ControlStore>,
+    control_db: Option<ControlDb>,
     hosted_clickhouse: Option<instantml_rust_server::config::HostedClickHouseConfig>,
     byoc_clickhouse: instantml_rust_server::config::ByocClickHouseConfig,
 ) -> instantml_rust_server::AppResult<store::Store> {
@@ -130,6 +138,7 @@ async fn connect_store_with_retry(
         match store::Store::connect(
             metrics.clone(),
             control_store.clone(),
+            control_db.clone(),
             hosted_clickhouse.clone(),
             byoc_clickhouse.clone(),
         )
@@ -171,7 +180,59 @@ async fn migrate_all(config: AppConfig) -> instantml_rust_server::AppResult<()> 
     if let Some(control_store) = ControlStore::connect(&config)? {
         control_store.migrate().await?;
     }
+    if let Some(control_db) = ControlDb::connect(config.control_database_url.as_deref()).await? {
+        control_db.migrate().await?;
+    }
     Ok(())
+}
+
+/// One-shot cutover step: copy the ClickHouse control log into Postgres. Run
+/// during the maintenance window, after `migrate` has created the schema and
+/// before `DATABASE_URL` is turned on for the serving instances. Idempotent.
+/// Exits non-zero if any rows could not be written so the operator resolves
+/// collisions before flipping over.
+async fn backfill_control(config: AppConfig) -> instantml_rust_server::AppResult<()> {
+    let control_store = ControlStore::connect(&config)?.ok_or_else(|| {
+        instantml_rust_server::AppError::config(
+            "backfill-control requires the hosted ClickHouse control store (source)",
+        )
+    })?;
+    let control_db = ControlDb::connect(config.control_database_url.as_deref())
+        .await?
+        .ok_or_else(|| {
+            instantml_rust_server::AppError::config(
+                "backfill-control requires DATABASE_URL (destination)",
+            )
+        })?;
+    control_db.migrate().await?;
+
+    let report = store::run_control_backfill(&control_store, &control_db).await?;
+    tracing::info!(
+        written = report.written,
+        issues = report.issues.len(),
+        "control backfill complete"
+    );
+    for issue in &report.issues {
+        tracing::warn!(
+            kind = %issue.kind,
+            entity_id = %issue.entity_id,
+            message = %issue.message,
+            "control backfill could not write a record"
+        );
+    }
+    println!(
+        "Backfill wrote {} record(s); {} issue(s) needing resolution.",
+        report.written,
+        report.issues.len()
+    );
+    if report.issues.is_empty() {
+        Ok(())
+    } else {
+        Err(instantml_rust_server::AppError::internal(format!(
+            "control backfill left {} unresolved issue(s); fix the source data and re-run",
+            report.issues.len()
+        )))
+    }
 }
 
 async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
@@ -183,9 +244,14 @@ async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
     }
+    let control_db = ControlDb::connect(config.control_database_url.as_deref()).await?;
+    if let Some(control_db) = &control_db {
+        control_db.migrate().await?;
+    }
     let store = store::Store::connect(
         metrics,
         control_store,
+        control_db,
         config.hosted_clickhouse.clone(),
         config.byoc_clickhouse.clone(),
     )
@@ -233,9 +299,14 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     if let Some(control_store) = &control_store {
         control_store.migrate().await?;
     }
+    let control_db = ControlDb::connect(config.control_database_url.as_deref()).await?;
+    if let Some(control_db) = &control_db {
+        control_db.migrate().await?;
+    }
     let store = store::Store::connect(
         metrics,
         control_store,
+        control_db,
         config.hosted_clickhouse.clone(),
         config.byoc_clickhouse.clone(),
     )
