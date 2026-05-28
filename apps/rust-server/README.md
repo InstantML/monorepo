@@ -239,21 +239,27 @@ deploys set `INSTANTML_LOG_FORMAT=json`; keep
 `RUST_LOG=instantml_rust_server=info,tower_http=info` unless an incident needs
 temporary debug-level detail.
 
-Every HTTP request emits a structured completion event with method, path only
-(no query string), status, latency, service plane, generated/propagated
-`x-request-id`, observed `cf-ray` when present, a coarse user-agent family, and
+Every HTTP request emits a structured completion event with method, redacted
+route-template path (no query string or raw dynamic token), status, latency,
+service plane, logical route plane, `plane_tag` (`[Platform]`, `[Control]`,
+`[Data]`, or `[Unknown]`), generated/propagated `x-request-id`, matching
+`trace_id`, observed `cf-ray` when present, a coarse user-agent family, and
 whether Cloudflare's connecting-IP header was present. Slow requests at or
-above `INSTANTML_SLOW_REQUEST_MS` emit an additional warning.
+above `INSTANTML_SLOW_REQUEST_MS` emit an additional warning. Incoming
+`x-request-id` values are accepted only when they are short ASCII log tokens;
+invalid values are replaced before propagation.
 
-Server-error logs are sanitized: they include status, stable code, retryability,
-and a static safe summary instead of raw provider or storage error text. The
-first workflow slice logs batch-level outcomes for metric ingestion, console-log
-ingestion, artifact upload/download, imports, readiness failures, startup, and
-worker cleanup. These events may include stable product IDs such as `org_id`,
-`project_id`, `run_id`, `artifact_id`, and `import_id`; they must not include
-emails, bearer tokens, session IDs, API-key plaintext, object-storage keys,
-signed URLs, query strings, project/run names, metric values, metric keys,
-config/metadata JSON, console line messages, or artifact filenames.
+Handled `AppError` responses are sanitized and logged for all status classes:
+they include status, stable code, retryability, allowlisted static field/position
+metadata, and a static safe summary instead of raw provider, storage, SQL, or
+user-payload text. The first workflow slice logs batch-level outcomes for metric
+ingestion, console-log ingestion, artifact upload/download, imports, readiness
+failures, startup, and worker cleanup. These events may include stable product
+IDs such as `org_id`, `project_id`, `run_id`, `artifact_id`, and `import_id`;
+they must not include emails, bearer tokens, session IDs, API-key plaintext,
+object-storage keys, signed URLs, query strings, project/run names, metric
+values, metric keys, config/metadata JSON, console line messages, or artifact
+filenames.
 
 Cloudflare captures edge/request logs separately from Rust origin logs. When an
 API domain is proxied through Cloudflare, configure Log Explorer or Logpush for
@@ -262,7 +268,9 @@ response-header capture for `x-request-id` before relying on that search path.
 Avoid normal Logpush jobs that store full `ClientRequestURI`, because it can
 include user query strings. Treat observed `cf-ray` as a correlation field, not
 a unique join key; pair it with time window, host, path, status, and
-`x-request-id` whenever possible.
+`x-request-id` whenever possible. Browser CORS responses allow and expose
+`x-request-id` so direct staging/Cloud Run frontend calls can join frontend
+console errors to Rust origin logs.
 
 Root helper-only environment variables:
 

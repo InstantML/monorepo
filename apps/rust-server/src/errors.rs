@@ -133,13 +133,24 @@ impl AppError {
     pub fn code(&self) -> Option<&'static str> {
         self.code
     }
+
+    pub fn field(&self) -> Option<&'static str> {
+        self.field
+    }
+
+    pub fn position(&self) -> Option<usize> {
+        self.position
+    }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        if self.status.is_server_error() {
-            crate::http::observability::server_error(self.status.as_u16(), self.code);
-        }
+        crate::http::observability::error_response(
+            self.status.as_u16(),
+            self.code,
+            self.field,
+            self.position,
+        );
         let public_error = if self.code == Some("warehouse_unavailable") {
             "data warehouse unavailable"
         } else if self.status.is_server_error() {
@@ -165,8 +176,18 @@ impl IntoResponse for AppError {
 }
 
 impl From<std::io::Error> for AppError {
-    fn from(error: std::io::Error) -> Self {
-        tracing::error!(error = ?error, "io error");
+    fn from(_error: std::io::Error) -> Self {
+        tracing::error!(
+            workflow = "io",
+            operation = "convert_error",
+            outcome = "failure",
+            status = 500,
+            code = "internal_server_error",
+            error_kind = "io_error",
+            retryable = false,
+            safe_summary = "io_error",
+            "io error"
+        );
         AppError::internal("internal server error")
     }
 }

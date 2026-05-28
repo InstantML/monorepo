@@ -98,6 +98,9 @@ pub fn router(state: AppState) -> Router {
         .with_state(shared)
         .layer(
             ServiceBuilder::new()
+                .layer(middleware::from_fn(
+                    observability::normalize_request_id_header,
+                ))
                 .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
                 .layer(PropagateRequestIdLayer::x_request_id())
                 .layer(
@@ -330,7 +333,9 @@ fn cors_layer(config: &AppConfig) -> CorsLayer {
             header::CONTENT_TYPE,
             HeaderName::from_static("idempotency-key"),
             HeaderName::from_static("x-instantml-bootstrap-token"),
+            HeaderName::from_static("x-request-id"),
         ])
+        .expose_headers([HeaderName::from_static("x-request-id")])
         .allow_credentials(true)
 }
 

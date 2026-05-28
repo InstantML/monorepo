@@ -37,6 +37,10 @@ Current implemented design sequence:
 - `2026-05-21-stripe-billing-platform.md`: Stripe Checkout/Billing/Portal integration, payment-verified paid signup, billing access gates, subscription projection records, and webhook/reconciliation flows.
 - `2026-05-21-sdk-logging-overhead-benchmarks.md`: SDK logging overhead benchmark protocol for no-op deltas, InstantML process spool/uploader CPU, W&B offline comparison, and safe hot-path optimization review.
 - `2026-05-21-rust-server-observability.md`: narrowed Rust server structured logging slice, safe field contract, sanitized error/request correlation, and Cloudflare edge-log capture plan.
+- `2026-05-28-api-frontend-observability.md`: accepted follow-up for frontend
+  request IDs, safe browser API logging, redacted route-template paths,
+  route-plane tags, and sanitized handled-error events across all Rust API
+  calls.
 - `2026-05-22-staging-cloud-run-environment.md`: production router cleanup, backend timeout alignment, and isolated staging Cloud Run services/router under `staging.api.instantml.ai`.
 - `2026-05-22-organization-invites-email-verification.md`: app-owned organization invite tokens, Resend send-only email delivery, verified-email acceptance, fresh-session control-plane membership activation, pending-invite seat accounting, seven-day expiration, and recorded fresh-agent review notes.
 - `2026-05-18-m4-chart-aggregation.md`: spike-preserving M4 chart downsampling for high-density series via an optional `buckets` body field on `POST /api/metrics/series`, with raw-path fallback when zoomed and a per-run threshold gate.

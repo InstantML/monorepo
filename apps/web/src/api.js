@@ -35,19 +35,93 @@ export class ApiClient {
   }
 
   async request(path, options = {}) {
-    const response = await fetch(this.baseUrl + path, options);
-    const payload = await readPayload(response);
-    if (!response.ok) throw new ApiError(clientSafeError(response.status, payload), {
-      code: typeof payload?.code === "string" ? payload.code : "",
-      field: typeof payload?.field === "string" ? payload.field : "",
-      position: Number.isInteger(payload?.position) ? payload.position : null,
-      requestId: typeof payload?.request_id === "string" ? payload.request_id : "",
-      status: response.status,
-    });
-    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-      throw new ApiError("Server returned malformed payload");
+    const method = String(options.method ?? "GET").toUpperCase();
+    const { headers, requestId } = headersWithRequestId(options.headers);
+    const url = this.baseUrl + path;
+    const safePath = safeApiPathForLogs(path);
+    const startedAt = nowMs();
+    let response = null;
+    let payload = null;
+    let finalRequestId = requestId;
+    try {
+      response = await fetch(url, { ...options, headers });
+      finalRequestId = responseRequestId(response, payload, requestId);
+      payload = await readPayload(response);
+      finalRequestId = responseRequestId(response, payload, requestId);
+      if (!response.ok) {
+        const error = new ApiError(clientSafeError(response.status, payload), {
+          code: typeof payload?.code === "string" ? payload.code : "",
+          field: typeof payload?.field === "string" ? payload.field : "",
+          position: Number.isInteger(payload?.position) ? payload.position : null,
+          requestId: finalRequestId,
+          status: response.status,
+        });
+        logApiRequest("failure", {
+          requestId: finalRequestId,
+          method,
+          path: safePath,
+          status: response.status,
+          durationMs: elapsedMs(startedAt),
+          code: error.code,
+          retryable: isTransientApiError(error),
+        });
+        throw error;
+      }
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new ApiError("Server returned malformed payload", {
+          requestId: finalRequestId,
+          status: response.status,
+        });
+      }
+      logApiRequest("success", {
+        requestId: finalRequestId,
+        method,
+        path: safePath,
+        status: response.status,
+        durationMs: elapsedMs(startedAt),
+        code: "ok",
+        retryable: false,
+      });
+      return payload;
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      if (error instanceof ApiError) {
+        const traced = error.requestId ? error : new ApiError(error.safeMessage, {
+          code: error.code,
+          field: error.field,
+          position: error.position,
+          requestId: finalRequestId,
+          status: error.status,
+        });
+        if (response?.ok) {
+          logApiRequest("failure", {
+            requestId: traced.requestId,
+            method,
+            path: safePath,
+            status: traced.status || response.status,
+            durationMs: elapsedMs(startedAt),
+            code: traced.code || "malformed_response",
+            retryable: false,
+          });
+        }
+        throw traced;
+      }
+      const networkError = new ApiError("Network request failed. Check your connection and try again.", {
+        code: "network_error",
+        requestId: finalRequestId,
+        status: 0,
+      });
+      logApiRequest("failure", {
+        requestId: finalRequestId,
+        method,
+        path: safePath,
+        status: 0,
+        durationMs: elapsedMs(startedAt),
+        code: "network_error",
+        retryable: true,
+      });
+      throw networkError;
     }
-    return payload;
   }
 }
 
@@ -82,7 +156,7 @@ export function isAbortError(error) {
 }
 
 export function isTransientApiError(error) {
-  if (error instanceof ApiError) return error.status === 408 || error.status === 429 || error.status >= 500;
+  if (error instanceof ApiError) return error.code === "network_error" || error.status === 408 || error.status === 429 || error.status >= 500;
   const message = error instanceof Error ? error.message : String(error ?? "");
   return /fetch failed|network|timeout|timed out|etimedout|econnreset|server is unavailable/i.test(message);
 }
@@ -146,6 +220,181 @@ function isSafeSearchValidationError(status, payload) {
   if (field !== "q") return false;
   if (code !== "run_search_invalid" && code !== "run_search_regex_unsupported") return false;
   return typeof payload?.error === "string" && payload.error.length > 0 && payload.error.length <= 240;
+}
+
+function headersWithRequestId(input) {
+  const headers = new Headers(input ?? {});
+  const existing = safeRequestId(headers.get("x-request-id"));
+  if (existing) {
+    if (headers.get("x-request-id") !== existing) headers.set("x-request-id", existing);
+    return { headers, requestId: existing };
+  }
+  const requestId = generateRequestId();
+  headers.set("x-request-id", requestId);
+  return { headers, requestId };
+}
+
+function responseRequestId(response, payload, fallback) {
+  const headerValue = typeof response?.headers?.get === "function"
+    ? response.headers.get("x-request-id")
+    : "";
+  return safeRequestId(headerValue)
+    || safeRequestId(payload?.request_id)
+    || safeRequestId(fallback)
+    || generateRequestId();
+}
+
+function generateRequestId() {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return `web-${cryptoApi.randomUUID()}`;
+  }
+  const random = Math.random().toString(36).slice(2, 10);
+  return `web-${Date.now().toString(36)}-${random}`;
+}
+
+function safeRequestId(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 128) return "";
+  return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : "";
+}
+
+function safeApiPathForLogs(path) {
+  let pathname = "/";
+  try {
+    pathname = new URL(String(path), "https://instantml.local").pathname;
+  } catch {
+    pathname = String(path || "/").split("?")[0].split("#")[0] || "/";
+  }
+  return safeRoutePathname(pathname);
+}
+
+function safeRoutePathname(pathname) {
+  const segments = String(pathname || "/")
+    .split("/")
+    .filter(Boolean);
+  const known = safeKnownRouteSegments(segments);
+  return joinSafePath(known ?? segments.map(redactUnknownPathSegment));
+}
+
+function safeKnownRouteSegments(segments) {
+  if (segments.length === 0) return [];
+  if (segments[0] === "runs") {
+    if (segments.length === 2) return ["runs", ":run_id"];
+    if (segments.length === 3 && (segments[2] === "metrics" || segments[2] === "rank-metrics")) {
+      return ["runs", ":run_id", segments[2]];
+    }
+  }
+  if (segments[0] !== "api") return null;
+
+  if (segments[1] === "workspace-views" && segments.length === 3) {
+    return ["api", "workspace-views", ":view_id"];
+  }
+  if (segments[1] === "reports") {
+    if (segments.length === 2) return ["api", "reports"];
+    if (segments.length === 3 && segments[2] === "panels") return ["api", "reports", "panels"];
+    if (segments.length === 4 && segments[2] === "share") {
+      return ["api", "reports", "share", ":share_token"];
+    }
+    if (segments.length === 4 && (segments[3] === "share" || segments[3] === "markdown")) {
+      return ["api", "reports", ":report_id", segments[3]];
+    }
+    if (segments.length === 6 && segments[3] === "blocks" && segments[5] === "refresh") {
+      return ["api", "reports", ":report_id", "blocks", ":block_index", "refresh"];
+    }
+    if (segments.length === 3) return ["api", "reports", ":report_id"];
+  }
+  if (segments[1] === "orgs") {
+    if (segments.length === 4 && ["api-keys", "seats", "invitations"].includes(segments[3])) {
+      return ["api", "orgs", ":org_id", segments[3]];
+    }
+    if (segments.length === 6 && segments[3] === "api-keys" && segments[5] === "revoke") {
+      return ["api", "orgs", ":org_id", "api-keys", ":api_key_id", "revoke"];
+    }
+    if (segments.length === 6 && segments[3] === "invitations" && ["resend", "revoke"].includes(segments[5])) {
+      return ["api", "orgs", ":org_id", "invitations", ":invitation_id", segments[5]];
+    }
+    if (segments.length === 6 && segments[3] === "service-accounts" && segments[5] === "disable") {
+      return ["api", "orgs", ":org_id", "service-accounts", ":service_account_id", "disable"];
+    }
+  }
+  if (segments[1] === "runs") {
+    if (segments.length === 3 && ["summary", "side-by-side"].includes(segments[2])) {
+      return ["api", "runs", segments[2]];
+    }
+    if (segments.length === 4 && segments[2] !== "rank-metrics" && ["forks", "lineage", "logs", "attributes", "objects", "artifacts"].includes(segments[3])) {
+      return ["api", "runs", ":run_id", segments[3]];
+    }
+    if (segments.length === 5 && segments[3] === "artifacts" && segments[4] === "upload") {
+      return ["api", "runs", ":run_id", "artifacts", "upload"];
+    }
+    if (segments.length === 5 && segments[3] === "rank-metrics" && segments[4] === "summary") {
+      return ["api", "runs", ":run_id", "rank-metrics", "summary"];
+    }
+  }
+  if (segments.length === 4 && segments[1] === "objects" && segments[3] === "rows") {
+    return ["api", "objects", ":object_id", "rows"];
+  }
+  if (segments.length === 4 && segments[1] === "artifacts" && segments[3] === "download") {
+    return ["api", "artifacts", ":artifact_id", "download"];
+  }
+  return null;
+}
+
+function redactUnknownPathSegment(segment) {
+  if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(segment)) {
+    return ":id";
+  }
+  if (segment.length > 16 || /[=@%:]/.test(segment)) return ":token";
+  return segment;
+}
+
+function joinSafePath(segments) {
+  return segments.length ? `/${segments.join("/")}` : "/";
+}
+
+function logApiRequest(outcome, detail) {
+  const event = {
+    event: "instantml_api_request",
+    outcome,
+    requestId: detail.requestId,
+    traceId: detail.requestId,
+    method: detail.method,
+    path: detail.path,
+    status: detail.status,
+    durationMs: detail.durationMs,
+    code: detail.code || "",
+    retryable: Boolean(detail.retryable),
+  };
+  if (outcome === "success") {
+    if (frontendApiLogsEnabled()) console.info?.("instantml_api_request", event);
+    return;
+  }
+  if (detail.status >= 500 || detail.status === 0) {
+    console.error?.("instantml_api_request", event);
+  } else {
+    console.warn?.("instantml_api_request", event);
+  }
+}
+
+function frontendApiLogsEnabled() {
+  if (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_INSTANTML_API_LOGS === "1") return true;
+  try {
+    return globalThis.localStorage?.getItem("instantml:api-logs") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function nowMs() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function elapsedMs(startedAt) {
+  return Math.max(0, Math.round(nowMs() - startedAt));
 }
 
 export function queryString(params) {
