@@ -32,9 +32,9 @@ function ArtifactBrowserPreview({ artifact }: { artifact: Artifact }) {
     return <img alt={artifact.name} className="artifact-media artifact-image browser-artifact-media" loading="lazy" src={src} />;
   }
   if (kind === "audio") {
-    return <audio className="artifact-media browser-artifact-media" controls preload="metadata" src={src} />;
+    return <audio aria-label={`Audio preview for ${artifact.name}`} className="artifact-media browser-artifact-media" controls preload="metadata" src={src} />;
   }
-  return <video className="artifact-media browser-artifact-media" controls preload="metadata" src={src} />;
+  return <video aria-label={`Video preview for ${artifact.name}`} className="artifact-media browser-artifact-media" controls preload="metadata" src={src} />;
 }
 
 export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { BookOpen, CircleHelp, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import Link from "next/link";
 import { useRef } from "react";
 import type { MouseEvent } from "react";
 
@@ -88,10 +89,10 @@ export function DashboardNav({
         </button>
       </div>
       <div className="nav-mobile-actions">
-        <a className="tab-button" href="/docs" aria-label="Docs">
+        <Link className="tab-button" href="/docs" aria-label="Docs">
           <BookOpen size={15} />
           <span className="tab-label">Docs</span>
-        </a>
+        </Link>
         {onShortcutHelp ? (
           <button className="tab-button" type="button" onClick={onShortcutHelp} aria-label="Keyboard shortcuts">
             <CircleHelp size={15} />

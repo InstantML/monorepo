@@ -378,7 +378,7 @@ export function RunsWorkspace({
         <div className="workspace-panel-toolbar">
           <label className="control workspace-panel-search">
             <span><Search size={14} /> Search panels</span>
-            <input id="panel-search" type="search" value={panelSearch} onChange={(event) => onPanelSearch(event.target.value)} placeholder="Search panels" />
+            <input aria-label="Search panels" id="panel-search" type="search" value={panelSearch} onChange={(event) => onPanelSearch(event.target.value)} placeholder="Search panels" />
           </label>
           <CustomSelect
             className="workspace-mode-select"

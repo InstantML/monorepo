@@ -30,9 +30,9 @@ export function ArtifactMediaPreview({ artifact, compact = false, fallback = fal
     return <img alt={artifact.name} className="artifact-media artifact-image" loading="lazy" src={src} />;
   }
   return kind === "audio" ? (
-    <audio className="artifact-media" controls preload="metadata" src={src} />
+    <audio aria-label={`Audio preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
   ) : (
-    <video className="artifact-media" controls preload="metadata" src={src} />
+    <video aria-label={`Video preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
   );
 }
 

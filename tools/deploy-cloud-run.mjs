@@ -51,6 +51,9 @@ Environment:
   INSTANTML_CLOUD_RUN_SECRET_PREFIX     Secret Manager prefix for non-prod deploys. Default: <service-prefix>-.
   INSTANTML_BYOC_SECRET_BACKEND         BYOC credential store. Default: gcp-secret-manager for Cloud Run deploys.
   INSTANTML_BYOC_SECRET_PREFIX          BYOC Secret Manager secret id prefix. Default: <service-prefix>-byoc-clickhouse.
+  INSTANTML_CLOUD_RUN_PROJECT_IAM_PROVISIONING
+                                      Project-level IAM setup mode: grant or skip. Defaults to skip
+                                      for CI/Secret Manager deploys and grant for local operator deploys.
   INSTANTML_STAGING_USER_DATA_DATABASE  User Data database path for staging. Default: instantml_user_data_staging.
   INSTANTML_STAGING_USER_DATA_ENDPOINT  Full staging User Data endpoint override.
   INSTANTML_PUBLIC_API_BASE            Optional public LB/router URL written to local frontend env.
@@ -688,17 +691,24 @@ function ensureArtifactRepository() {
 function ensureServiceAccount() {
   const email = `${serviceAccountName}@${project}.iam.gserviceaccount.com`;
   if (!quiet(["iam", "service-accounts", "describe", email])) {
+    if (skipProjectIamProvisioning()) {
+      fail(`Runtime service account ${email} does not exist. Create it with a one-time operator provisioning step before CI deploys.`);
+    }
     run(["iam", "service-accounts", "create", serviceAccountName, "--display-name", "InstantML Rust API"]);
   }
-  run(["projects", "add-iam-policy-binding", project, "--member", `serviceAccount:${email}`, "--role", "roles/logging.logWriter"], { quietOutput: true });
+  ensureProjectIamBinding(`serviceAccount:${email}`, "roles/logging.logWriter");
   if (byocSecretBackendForDeployment() === "gcp-secret-manager") {
     // Runtime creates per-org BYOC ClickHouse password secrets on demand.
-    run(["projects", "add-iam-policy-binding", project, "--member", `serviceAccount:${email}`, "--role", "roles/secretmanager.admin"], { quietOutput: true });
+    ensureProjectIamBinding(`serviceAccount:${email}`, "roles/secretmanager.admin");
   }
   return email;
 }
 
 function ensureCloudBuildServiceAccount() {
+  if (skipProjectIamProvisioning()) {
+    console.log("Assuming Cloud Build project IAM bindings already provisioned (CI mode).");
+    return;
+  }
   const projectNumber = capture(["projects", "describe", project, "--format=value(projectNumber)"]).trim();
   if (!projectNumber) fail("Could not resolve GCP project number for Cloud Build IAM setup.");
   const builderEmail = `${projectNumber}-compute@developer.gserviceaccount.com`;
@@ -708,8 +718,23 @@ function ensureCloudBuildServiceAccount() {
     "roles/artifactregistry.writer",
     "roles/logging.logWriter",
   ]) {
-    run(["projects", "add-iam-policy-binding", project, "--member", `serviceAccount:${builderEmail}`, "--role", role], { quietOutput: true });
+    ensureProjectIamBinding(`serviceAccount:${builderEmail}`, role);
   }
+}
+
+function skipProjectIamProvisioning() {
+  const mode = value("INSTANTML_CLOUD_RUN_PROJECT_IAM_PROVISIONING").toLowerCase();
+  if (mode === "grant") return false;
+  if (mode === "skip") return true;
+  return fromSecretManager;
+}
+
+function ensureProjectIamBinding(member, role) {
+  if (skipProjectIamProvisioning()) {
+    console.log(`Assuming project IAM binding already provisioned (CI mode): ${member} -> ${role}.`);
+    return;
+  }
+  run(["projects", "add-iam-policy-binding", project, "--member", member, "--role", role], { quietOutput: true });
 }
 
 function ensureStaticEgress() {
@@ -1803,6 +1828,9 @@ function run(args, options = {}) {
     writeCommandOutput(result);
   }
   if (result.status !== 0) {
+    if (options.quietOutput) {
+      writeCommandOutput(result);
+    }
     fail(`gcloud ${args.join(" ")} failed with status ${result.status}`);
   }
   return result.stdout;

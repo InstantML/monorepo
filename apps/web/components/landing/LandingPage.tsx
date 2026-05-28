@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LogoMark } from "./LogoMark";
@@ -12,6 +13,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const DEMO_EMAIL =
   "mailto:hello@instantml.ai?subject=InstantML%20design%20partner&body=Hi%20%E2%80%94%20I%27d%20like%20to%20try%20InstantML.%0A%0ATeam%3A%0AStack%3A%0AModel%2Fworkflow%3A%0ARun%20volume%3A%0ABiggest%20pain%20with%20current%20tool%3A";
+const COPYRIGHT_YEAR = new Date().getFullYear();
 
 function useSectionObserver() {
   const ref = useRef<HTMLDivElement>(null);
@@ -367,7 +369,11 @@ function FooterCol({ title, links }: { title: string; links: [string, string][] 
       <ul className="landing-footer-links">
         {links.map(([label, href]) => (
           <li key={label}>
-            <a href={href} className="landing-footer-link">{label}</a>
+            {href.startsWith("/") ? (
+              <Link href={href} className="landing-footer-link">{label}</Link>
+            ) : (
+              <a href={href} className="landing-footer-link">{label}</a>
+            )}
           </li>
         ))}
       </ul>
@@ -386,12 +392,12 @@ export function LandingPage() {
             <a href="#how" className="landing-nav__link">How it works</a>
             <a href="#capabilities" className="landing-nav__link">Capabilities</a>
             <a href="#developers" className="landing-nav__link landing-nav__link--md">Developers</a>
-            <a href="/docs" className="landing-nav__link">Docs</a>
-            <a href="/pricing" className="landing-nav__link">Pricing</a>
+            <Link href="/docs" className="landing-nav__link">Docs</Link>
+            <Link href="/pricing" className="landing-nav__link">Pricing</Link>
             <ThemeToggle />
-            <a href="/signup" className="landing-cta-primary landing-cta-primary--sm">
+            <Link href="/signup" className="landing-cta-primary landing-cta-primary--sm">
               Get early access
-            </a>
+            </Link>
           </div>
         </div>
       </nav>
@@ -424,10 +430,10 @@ export function LandingPage() {
             </p>
 
             <div className="hero-rise-4 landing-cta-row">
-              <a href="/signup" className="landing-cta-primary">
+              <Link href="/signup" className="landing-cta-primary">
                 Become a design partner
                 <IconArrow />
-              </a>
+              </Link>
               <a href="#developers" className="landing-cta-ghost">
                 See the SDK
               </a>
@@ -725,10 +731,10 @@ export function LandingPage() {
               your real runs, ingested, with our team helping you compare.
             </p>
             <div className="landing-cta-row">
-              <a href="/signup" className="landing-cta-primary">
+              <Link href="/signup" className="landing-cta-primary">
                 Become a design partner
                 <IconArrow />
-              </a>
+              </Link>
               <a href="#developers" className="landing-cta-ghost">
                 See the SDK
               </a>
@@ -783,7 +789,7 @@ export function LandingPage() {
 
           <div className="landing-footer__bottom">
             <span className="landing-footer__copy">
-              &copy; {new Date().getFullYear()} InstantML
+              &copy; {COPYRIGHT_YEAR} InstantML
             </span>
             <span className="landing-footer__status">
               <span className="status-live" />

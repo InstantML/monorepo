@@ -333,7 +333,7 @@ function WorkspaceCreateModal({
             {personalBlocked ? <p className="form-error">You already have a personal workspace.</p> : null}
             <label className="workspace-create-field">
               {kind === "personal" ? "Workspace name" : "Organization name"}
-              <input autoFocus name="workspace-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
+              <input aria-label={kind === "personal" ? "Workspace name" : "Organization name"} autoFocus name="workspace-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "personal" ? "Alex's workspace" : "Acme Research"} />
             </label>
             {trimmedName ? (
               <p className={`workspace-create-status ${availability?.available === false ? "error" : ""}`} role={availability?.available === false ? "alert" : "status"}>
@@ -350,11 +350,11 @@ function WorkspaceCreateModal({
             </div>
             <div className="workspace-storage-choice" role="group" aria-label="Storage">
               <label>
-                <input checked={normalizedStorage === "instantml-hosted"} name="workspace-storage" onChange={() => setStorage("instantml-hosted")} type="radio" />
+                <input aria-label="InstantML-hosted storage" checked={normalizedStorage === "instantml-hosted"} name="workspace-storage" onChange={() => setStorage("instantml-hosted")} type="radio" />
                 InstantML-hosted
               </label>
               <label className={byocBlocked ? "disabled" : ""}>
-                <input checked={normalizedStorage === "customer-clickhouse"} disabled={byocBlocked} name="workspace-storage" onChange={() => setStorage("customer-clickhouse")} type="radio" />
+                <input aria-label="Customer ClickHouse storage" checked={normalizedStorage === "customer-clickhouse"} disabled={byocBlocked} name="workspace-storage" onChange={() => setStorage("customer-clickhouse")} type="radio" />
                 Advanced: connect my ClickHouse
               </label>
             </div>
@@ -362,7 +362,7 @@ function WorkspaceCreateModal({
               <div className="workspace-invite-row">
                 <label className="workspace-create-field">
                   Invite teammates
-                  <input autoComplete="email" disabled={inviteDeferred} value={inviteDeferred ? "" : inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder={inviteDeferred ? "Invite after checkout" : "teammate@example.com"} type="email" />
+                  <input aria-label="Invite teammate email" autoComplete="email" disabled={inviteDeferred} value={inviteDeferred ? "" : inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder={inviteDeferred ? "Invite after checkout" : "teammate@example.com"} type="email" />
                 </label>
                 <CustomSelect
                   id="workspace-create-role"
@@ -739,7 +739,15 @@ export function DashboardTopbar({
         >
           {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
-        <a className="brand-cell" href="/dashboard/runs" aria-label="InstantML">
+        <a
+          className="brand-cell"
+          href={tabToPath("runs")}
+          aria-label="InstantML"
+          onClick={(event) => {
+            event.preventDefault();
+            onSelectTab("runs");
+          }}
+        >
           <span className="brand-mark" aria-hidden="true">
             <InstantMlMark size={24} />
           </span>
@@ -769,6 +777,7 @@ export function DashboardTopbar({
               plan={planLabel}
               resetLabel={usageResetLabel}
               storagePercent={storageUsagePercent}
+              onSelectTab={onSelectTab}
               usageAvailable={usageAvailable}
             />
             <button className="ghost-kbd" type="button" onClick={onQuickSearch} aria-label="Quick search">
@@ -905,7 +914,7 @@ export function DashboardTopbar({
           <div className="workbar-spacer" />
           <label className="control compact workbar-name">
             Name
-            <input id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
+            <input aria-label="Saved view name" id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
           </label>
           <button className="primary-button" disabled={!canSaveView} id="save-view" title={canSaveView ? "Save view" : "Read only workspaces cannot save shared views"} type="button" onClick={onSaveView}><Save size={14} /> Save view</button>
           <CustomSelect
@@ -927,6 +936,7 @@ export function DashboardTopbar({
 function PlanUsageBadge({
   apiRequestPercent,
   metricPercent,
+  onSelectTab,
   plan,
   resetLabel,
   storagePercent,
@@ -934,6 +944,7 @@ function PlanUsageBadge({
 }: {
   apiRequestPercent: number;
   metricPercent: number;
+  onSelectTab: (tabId: TabId) => void;
   plan: string;
   resetLabel: string;
   storagePercent: number;
@@ -945,7 +956,15 @@ function PlanUsageBadge({
     ? resetLabel ? `${percent}% used · resets ${resetLabel}` : `${percent}% used`
     : "Usage unavailable";
   return (
-    <a className={`plan-usage-badge ${tone}`} href={tabToPath("settings")} title={`Plan usage: ${detail}`}>
+    <a
+      className={`plan-usage-badge ${tone}`}
+      href={tabToPath("settings")}
+      title={`Plan usage: ${detail}`}
+      onClick={(event) => {
+        event.preventDefault();
+        onSelectTab("settings");
+      }}
+    >
       <span className="plan-usage-ring" style={{ "--plan-usage-percent": `${percent}%` } as CSSProperties} aria-hidden="true" />
       <span className="plan-usage-copy">
         <strong>{plan}</strong>

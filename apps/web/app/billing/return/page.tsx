@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "../../../src/api.js";
@@ -58,7 +59,7 @@ export default function BillingReturnPage() {
             </p>
             {state === "error" ? (
               <div className="iml-actions">
-                <a className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href="/dashboard/settings">Open billing settings</a>
+                <Link className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href="/dashboard/settings">Open billing settings</Link>
               </div>
             ) : null}
           </div>

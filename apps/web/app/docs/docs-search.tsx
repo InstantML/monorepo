@@ -132,6 +132,7 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
   }
 
   const showResults = open && query.trim().length > 0;
+  const activeResultId = showResults && results[activeIndex] ? `docs-search-result-${activeIndex}` : undefined;
 
   return (
     <div className="docs-route-search" role="search" ref={rootRef}>
@@ -141,7 +142,13 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
         type="search"
         placeholder="Search the docs"
         aria-label="Search the docs"
+        aria-activedescendant={activeResultId}
+        aria-autocomplete="list"
+        aria-controls="docs-search-results"
+        aria-expanded={showResults}
+        aria-haspopup="listbox"
         autoComplete="off"
+        role="combobox"
         spellCheck={false}
         value={query}
         onChange={(event) => {
@@ -150,8 +157,6 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        aria-expanded={showResults}
-        aria-controls="docs-search-results"
       />
       {!query ? <kbd className="docs-route-search-kbd">/</kbd> : null}
       {showResults ? (
@@ -172,6 +177,7 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
                     : "docs-route-search-result"
                 }
                 href={pageUrl(result.path)}
+                id={`docs-search-result-${index}`}
                 key={result.path}
                 role="option"
                 aria-selected={index === activeIndex}
