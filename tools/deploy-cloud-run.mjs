@@ -1021,6 +1021,20 @@ function secretEnvForTarget(secretEnv, target) {
 }
 
 function buildImage() {
+  // If the image tag already exists in Artifact Registry, skip the rebuild.
+  // CI builds + pushes the image in a separate job (with --async polling that
+  // doesn't need log-bucket read perms) and passes the tag here via
+  // INSTANTML_IMAGE_TAG; rebuilding the same tag would both waste ~10 min and
+  // trip the synchronous `gcloud builds submit` log-streaming permission
+  // check. Local deploys without a pre-pushed tag fall through to a build.
+  const describe = runResult(
+    ["artifacts", "docker", "images", "describe", image],
+    { timeout: 60 * 1000 },
+  );
+  if (describe.status === 0) {
+    console.log(`Reusing pre-built image ${image} (already in Artifact Registry).`);
+    return;
+  }
   // Cloud Build can be quiet for several minutes while uploading the Docker
   // context and building the Rust image. Sparse output is expected on hosted
   // deploys, so the command timeout is intentionally long.
