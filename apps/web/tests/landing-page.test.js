@@ -117,8 +117,9 @@ test("NavLogo avoids invalid SVG auto dimensions", () => {
 
 test("LandingPage top navigation links to docs", () => {
   const src = fs.readFileSync(path.join(componentsDir, "LandingPage.tsx"), "utf8");
+  assert.match(src, /import Link from "next\/link"/);
   assert.match(src, /href="\/docs"/);
-  assert.match(src, />Docs<\/a>/);
+  assert.match(src, />Docs<\/Link>/);
 });
 
 // ── page.tsx: server component wiring ────────────────────────────────────────

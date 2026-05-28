@@ -211,14 +211,14 @@ function CheckpointList({
               </div>
               <label className="checkpoint-fork-field">
                 <span>Run name</span>
-                <input id="fork-run-name" value={forkName} onChange={(event) => setForkName(event.target.value)} />
+                <input aria-label="Fork run name" id="fork-run-name" value={forkName} onChange={(event) => setForkName(event.target.value)} />
               </label>
               <label className="checkpoint-fork-field">
                 <span>Reason</span>
-                <textarea rows={3} value={forkReason} onChange={(event) => setForkReason(event.target.value)} placeholder="Retry reason" />
+                <textarea aria-label="Fork reason" rows={3} value={forkReason} onChange={(event) => setForkReason(event.target.value)} placeholder="Retry reason" />
               </label>
               <label className="checkpoint-fork-toggle">
-                <input type="checkbox" checked={inheritConfig} onChange={(event) => setInheritConfig(event.target.checked)} />
+                <input aria-label="Inherit source config" type="checkbox" checked={inheritConfig} onChange={(event) => setInheritConfig(event.target.checked)} />
                 <span>Inherit source config</span>
               </label>
               {error ? <div className="checkpoint-fork-error" role="alert">{error}</div> : null}

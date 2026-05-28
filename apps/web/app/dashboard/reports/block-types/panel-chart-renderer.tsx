@@ -6,7 +6,6 @@ import type { MouseEvent } from "react";
 import {
   axisTicks,
   chartDomain,
-  chartSummary,
   formatAxisTick,
   formatMetricValue,
   nearestPoint,
@@ -682,7 +681,3 @@ function lastFiniteValue(points: MetricSeries["points"] | undefined): number | n
   }
   return null;
 }
-
-// chartSummary export reused so the chart helpers tree-shake correctly even
-// when only a subset of panel types are rendered.
-export const __unused_chart_summary = chartSummary;

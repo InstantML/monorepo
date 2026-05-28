@@ -2,6 +2,7 @@
 
 import { useClerk } from "@clerk/nextjs";
 import { Activity } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
@@ -2916,7 +2917,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           <p className="eyebrow">Session</p>
           <h1>Sign in required</h1>
           <p>{dashboardAuthMessage}</p>
-          <a className="button-link" href={`/signin?next=${encodeURIComponent("/dashboard/runs")}`}>Open sign in</a>
+          <Link className="button-link" href={`/signin?next=${encodeURIComponent("/dashboard/runs")}`}>Open sign in</Link>
         </section>
       </main>
     );

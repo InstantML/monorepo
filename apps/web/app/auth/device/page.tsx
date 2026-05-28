@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowRight, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
@@ -128,9 +129,9 @@ function DeviceConfirmForm() {
         sub="You must be signed into InstantML to authorize the CLI for this account."
       >
         <div className="iml-actions">
-          <a className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href={`/signin?next=${nextParam}`}>
+          <Link className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href={`/signin?next=${nextParam}`}>
             <ShieldCheck size={16} /> Sign in <ArrowRight className="iml-arrow" size={15} />
-          </a>
+          </Link>
         </div>
       </CardShell>
     );
@@ -166,6 +167,7 @@ function DeviceConfirmForm() {
         <div className="iml-field">
           <label htmlFor="user-code">Confirmation code</label>
           <input
+            aria-label="Confirmation code"
             className="iml-input"
             id="user-code"
             type="text"

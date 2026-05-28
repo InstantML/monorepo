@@ -286,9 +286,9 @@ export function RunSetTable({ block, runsetIndex, readOnly = false, api, onChang
         <table className="runset-table__grid">
           <thead>
             <tr>
-              <th className="runset-table__col-select" />
-              <th className="runset-table__col-eye" />
-              <th className="runset-table__col-color" />
+              <th aria-label="Selected" className="runset-table__col-select" />
+              <th aria-label="Visibility" className="runset-table__col-eye" />
+              <th aria-label="Color" className="runset-table__col-color" />
               <th>Name</th>
               <th>Project</th>
               <th>State</th>
@@ -560,6 +560,7 @@ function FilterMenuContent({
         {availableStatuses.map((value) => (
           <label key={value} className="runset-table__check-row">
             <input
+              aria-label={`Filter status ${STATUS_LABELS[value] ?? value}`}
               type="checkbox"
               checked={statusSet.has(value)}
               onChange={() => onStatusToggle(value)}
@@ -573,8 +574,9 @@ function FilterMenuContent({
           <div className="runset-table__menu-label">Project</div>
           {availableProjects.map((value) => (
             <label key={value} className="runset-table__check-row">
-              <input
-                type="checkbox"
+            <input
+              aria-label={`Filter project ${value}`}
+              type="checkbox"
                 checked={projectSet.has(value)}
                 onChange={() => onProjectToggle(value)}
               />
@@ -605,6 +607,7 @@ function GroupMenuContent({
     <div className="runset-table__menu-body">
       <div className="runset-table__menu-label">Group by</div>
       <input
+        aria-label="Group runs by"
         className="report-block__input"
         type="text"
         value={value}
@@ -635,6 +638,7 @@ function SortMenuContent({
       {(["created", "name", "state", "runtime"] as const).map((option) => (
         <label key={option} className="runset-table__check-row">
           <input
+            aria-label={`Sort by ${SORT_LABELS[option]}`}
             type="radio"
             checked={value === option}
             onChange={() => onChange(option)}

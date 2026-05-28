@@ -279,11 +279,17 @@ From the repo root:
 ```bash
 npm run test:node
 npm run web:build
+npx react-doctor@latest
 npm run test:ui
 npm run test:ui:direct
 npm run test:rust:ui
 npm run test:hosted-clickhouse
 ```
+
+React Doctor is configured at the repo root. It keeps existing broad
+frontend-advisory categories visible in the CLI but out of the score gate, and
+it skips generic dead-code analysis because Next routes, generated files, tests,
+and scripts are reached through framework/tool entrypoints in this monorepo.
 
 `apps/web/tests/landing-page.test.js` covers: all 8 ported component exports, `"use client"` directives, ThemeToggle localStorage key alignment, `app/page.tsx` server-component wiring (no `"use client"`, imports `auth` and `redirect`, redirects signed-in users, renders `LandingPage` for signed-out), polyline helper correctness, timestamp helper correctness, TtlRing circumference math, CSS selector presence, and logo.svg + design doc existence. `apps/web/tests/auth-flow-recovery.test.js` locks the stale hosted-Clerk recovery contract: 401 retry with `skipCache`, visible user instructions, and responsive recovery actions. These tests run via `node --test` without a browser.
 

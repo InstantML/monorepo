@@ -93,6 +93,7 @@ export function RunsCommandbar({
             {tableColumnLabels.map(([key, label]) => (
               <label key={key}>
                 <input
+                  aria-label={`Show ${label} column`}
                   checked={tableColumns[key]}
                   onChange={(event) => onTableColumns((current) => ({ ...current, [key]: event.target.checked }))}
                   type="checkbox"
@@ -103,11 +104,12 @@ export function RunsCommandbar({
             <strong>Pinned metrics</strong>
             <label className={`metric-filter-row ${pinnedMetricFilterValid ? "" : "invalid"}`}>
               <Search size={13} />
-              <input id="column-metric-filter" type="search" value={pinnedMetricFilter} onChange={(event) => onPinnedMetricFilter(event.target.value)} placeholder="metric regex" />
+              <input aria-label="Pinned metric filter" id="column-metric-filter" type="search" value={pinnedMetricFilter} onChange={(event) => onPinnedMetricFilter(event.target.value)} placeholder="metric regex" />
             </label>
             {pinnedMetricOptions.slice(0, 8).map((metric) => (
               <label key={metric} title={metric}>
                 <input
+                  aria-label={`Pin ${metric}`}
                   checked={pinnedMetrics.includes(metric)}
                   onChange={() => onPinnedMetric(metric)}
                   type="checkbox"

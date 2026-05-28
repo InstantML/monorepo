@@ -30,7 +30,7 @@ export function ChartControls(props: {
     <div className="panel-controls">
       <label className={`control metric-filter-control ${props.metricFilterValid ? "" : "invalid"}`}>
         Metric filter
-        <input id={`${idPrefix}metric-filter`} type="search" value={props.metricFilter} onChange={(event) => props.onMetricFilter(event.target.value)} placeholder="train/.*" />
+        <input aria-label="Metric filter" id={`${idPrefix}metric-filter`} type="search" value={props.metricFilter} onChange={(event) => props.onMetricFilter(event.target.value)} placeholder="train/.*" />
       </label>
       <CustomSelect
         disabled={!props.metricOptions.length}
@@ -85,11 +85,11 @@ export function ChartControls(props: {
       />
       <label className="control">
         Smooth {props.smoothing}
-        <input id={`${idPrefix}smoothing`} type="range" min="0" max="90" step="10" value={props.smoothing} onChange={(event) => props.onSmoothing(Number(event.target.value))} />
+        <input aria-label="Smoothing" id={`${idPrefix}smoothing`} type="range" min="0" max="90" step="10" value={props.smoothing} onChange={(event) => props.onSmoothing(Number(event.target.value))} />
       </label>
       <label className="control">
         Avg
-        <input id={`${idPrefix}group-average`} type="checkbox" checked={props.groupAverage} onChange={(event) => props.onGroupAverage(event.target.checked)} />
+        <input aria-label="Group average" id={`${idPrefix}group-average`} type="checkbox" checked={props.groupAverage} onChange={(event) => props.onGroupAverage(event.target.checked)} />
       </label>
     </div>
   );

@@ -186,6 +186,22 @@ npm run docs:validate
 CI runs `npm run docs:validate`, so public docs fail when their filtered
 OpenAPI copy is stale or when public pages link into internal planning docs.
 
+React Doctor can be run from the repo root when using Node `^20.19.0` or
+`>=22.12.0`:
+
+```bash
+npx react-doctor@latest
+```
+
+`react-doctor.config.json` disables the dead-code pass because the monorepo root
+is the React package while Next App Router entries, generated API types, tests,
+tools, and legacy compatibility modules are reached through framework or
+script entrypoints that the generic dead-code scanner does not model. The score
+surface also treats the existing broad advisory categories as visible CLI
+findings rather than score gates; make planned fixes in narrow design-backed
+slices instead of churning the dashboard shell to satisfy every advisory at
+once.
+
 Pull requests run the stable CI subset from `.github/workflows/ci.yml` as
 parallel jobs: Rust format, Rust lint, Rust unit tests/API type drift, docs
 validation, Node tests, and Python tests/SDK packaging. The final `Stable

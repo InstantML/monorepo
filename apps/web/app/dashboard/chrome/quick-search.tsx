@@ -72,6 +72,9 @@ export function QuickSearchModal({
           onClose();
         }
       }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
       ref={dialogRef}
       tabIndex={-1}
     >
@@ -79,6 +82,7 @@ export function QuickSearchModal({
         <div className="quick-search-input">
           <Search size={18} />
           <input
+            aria-label="Quick search"
             autoFocus
             id="quick-search-input"
             onChange={(event) => {

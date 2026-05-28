@@ -107,7 +107,7 @@ export function CompareTabPane({
         <div className="analysis-toolbar compare-toolbar">
           <label className="control compare-search-control">
             Search
-            <input id="compare-search" placeholder="runs, evidence, tags, notes, artifacts" value={compareSearch} onChange={(event) => onChangeCompareSearch(event.target.value)} />
+            <input aria-label="Compare search" id="compare-search" placeholder="runs, evidence, tags, notes, artifacts" value={compareSearch} onChange={(event) => onChangeCompareSearch(event.target.value)} />
           </label>
           <CustomSelect
             id="reference-run"
@@ -169,7 +169,7 @@ export function CompareTabPane({
           />
           <label className="control checkbox-control">
             Diff only
-            <input id="diff-only" type="checkbox" checked={diffOnly} onChange={(event) => onDiffOnly(event.target.checked)} />
+            <input aria-label="Show differences only" id="diff-only" type="checkbox" checked={diffOnly} onChange={(event) => onDiffOnly(event.target.checked)} />
           </label>
         </div>
         <div className="compare-metric-strip" aria-label="Compare table metric columns">

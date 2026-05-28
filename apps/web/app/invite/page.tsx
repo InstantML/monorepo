@@ -323,7 +323,7 @@ export default function InvitePage() {
                     {managedClerkAvailable ? <p className="iml-hint" style={{ textAlign: "center" }}>— or use local development auth —</p> : null}
                     <div className="iml-field">
                       <label htmlFor="invite-dev-email">Email</label>
-                      <input className="iml-input" id="invite-dev-email" required type="email" value={devEmail} onChange={(event) => setDevEmail(event.target.value)} />
+                      <input aria-label="Invitation email" className="iml-input" id="invite-dev-email" required type="email" value={devEmail} onChange={(event) => setDevEmail(event.target.value)} />
                     </div>
                     <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy || !devEmail.trim()} type="submit">
                       <UserPlus size={15} /> Accept invitation

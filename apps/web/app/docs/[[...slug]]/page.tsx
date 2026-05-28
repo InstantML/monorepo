@@ -57,12 +57,8 @@ export async function generateMetadata({ params }: DocsParams): Promise<Metadata
 
 export default async function DocsPage({ params }: DocsParams) {
   const { slug = [] } = await params;
-  let page;
-  try {
-    page = await loadDocsPage(slug);
-  } catch {
-    notFound();
-  }
+  const page = await loadDocsPage(slug).catch(() => null);
+  if (!page) notFound();
   const blocks = "blocks" in page && Array.isArray(page.blocks) ? (page.blocks as DocsBlock[]) : [];
   const endpoints = "endpoints" in page && Array.isArray(page.endpoints) ? page.endpoints : [];
   const markdownHref = docsMarkdownUrl(page.path);
