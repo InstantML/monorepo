@@ -3675,6 +3675,30 @@ def test_system_metrics_collection_and_sampler_lifecycle(monkeypatch):
         Run(client=FakeClient(), run_id="run-2").start_system_metrics(interval=0)
 
 
+def test_async_init_with_system_metrics_does_not_deadlock_on_run_id_property(monkeypatch):
+    """Regression: _SystemMetricsSampler.__init__ must not read run.run_id (the
+    property), which blocks on _init_done. _resolve_init() calls
+    start_system_metrics before setting _init_done, so any access to the
+    property from inside the sampler constructor deadlocks the init thread.
+    """
+
+    def fake_request(self, method, path, body=None):
+        return {"run": {"id": "run-async-sys"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(client_module, "_collect_system_metrics", lambda: {})
+
+    run = Client(base_url="http://example.test").init(
+        project="demo",
+        system_metrics=True,
+        system_metrics_interval=60.0,
+        upload_mode="sync",
+    )
+    assert run.wait_for_init(timeout=2.0) == "run-async-sys"
+    assert run._system_sampler is not None
+    run.finish()
+
+
 def test_console_capture_writes_through_logs_and_restores(monkeypatch):
     calls = []
 

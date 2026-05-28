@@ -33,14 +33,16 @@ normal dashboard entry does not fan out log requests.
 
 ## System metrics
 
-Enable periodic system metrics:
+System metrics are collected automatically. `ro.init()` samples CPU, memory,
+disk, network, and GPU stats every 15 seconds by default; pass
+`system_metrics=False` to disable, or `system_metrics_interval=<seconds>` to
+change the cadence:
 
 ```python
 run = ro.init(
     project="train-loop",
     name="seed-7",
-    system_metrics=True,
-    system_metrics_interval=15.0,
+    system_metrics_interval=30.0,
 )
 ```
 
