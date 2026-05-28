@@ -164,6 +164,9 @@ const MAX_COMPARE_TABLE_METRICS = 12;
 const ARTIFACT_PAGE_LIMIT = 100;
 const WORKSPACE_HISTORY_LIMIT = 50;
 const WAREHOUSE_RETRY_MS = 5_000;
+// Cadence for refreshing metric series of in-flight (running) runs so charts
+// extend live during training. Matches the dashboard metadata poll cadence.
+const LIVE_SERIES_REFRESH_MS = 5_000;
 const DASHBOARD_REQUEST_RETRY_DELAYS_MS = [250, 700, 1_500];
 const METRIC_SERIES_RETRY_DELAYS_MS = [350, 900, 1_800];
 // M4 bucket count passed with every /api/metrics/series request.
@@ -376,6 +379,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const userTouchedDashboardFiltersRef = useRef(false);
   const defaultSelectionInitializedRef = useRef(false);
   const runDirectoryRef = useRef<Map<string, RunSummary>>(new Map());
+  // Signatures of the last series fetch per chart group. When only the live
+  // refresh tick changes (signature unchanged), we refetch in place without
+  // clearing, so running charts extend smoothly instead of blanking.
+  const seriesSignatureRef = useRef("");
+  const panelSeriesSignatureRef = useRef("");
+  const workspaceSeriesSignatureRef = useRef("");
+  // Tracks whether the live-refresh loop was active, so we can issue one final
+  // refresh when a run stops to capture the tail of the curve.
+  const liveSeriesActiveRef = useRef(false);
   const preserveRunWorkspaceTabOnceRef = useRef(false);
   const selectedRunsRef = useRef<RunSummary[]>([]);
   const dashboardSelectionFilterKeyRef = useRef("");
@@ -439,6 +451,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
   const [primaryRunId, setPrimaryRunId] = useState("");
   const [series, setSeries] = useState<MetricSeries[]>([]);
+  const [liveSeriesTick, setLiveSeriesTick] = useState(0);
   const [panelSeries, setPanelSeries] = useState<Record<string, MetricSeries[]>>({});
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [artifactsRunId, setArtifactsRunId] = useState("");
@@ -527,8 +540,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     () => (selectedRunIds.length ? selectedRuns : sortedRuns).slice(0, MAX_SELECTED_RUNS),
     [selectedRunIds.length, selectedRuns, sortedRuns],
   );
+  // Stable identity for the runs feeding the metric charts: changes only when
+  // the set of run ids changes, not on every metadata poll (which replaces the
+  // run objects). Lets the series effects gate on selection, not poll churn.
+  const metricSeriesRunKey = useMemo(() => metricSeriesRuns.map((run) => run.id).join(","), [metricSeriesRuns]);
+  const hasLiveMetricSeriesRun = useMemo(() => metricSeriesRuns.some((run) => run.status === "running"), [metricSeriesRuns]);
   const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
-  const selectedFetchRunKey = selectedRuns.map((run) => run.id).join("\u0000");
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
     // Remember runs after commit so interrupted renders do not mutate the
@@ -799,6 +816,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return sortedRuns.slice(0, maxWorkspacePanelRuns);
   }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
   const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
+  const hasLiveWorkspaceRun = useMemo(() => workspaceFetchRuns.some((run) => run.status === "running"), [workspaceFetchRuns]);
   const editingPanelContext = useMemo(() => {
     if (!editingPanelRef) return null;
     const section = workspaceView.sections.find((item) => item.id === editingPanelRef.sectionId);
@@ -1223,6 +1241,32 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     };
   }, [dashboardAuthorized, initialLoadDone, loadDashboard]);
 
+  // Drive live chart refreshes while runs are training. Bumping the tick on a
+  // timer re-runs the series effects below, which refetch in place (no clear)
+  // so loss curves extend live. Only runs when a charted run is "running" and
+  // the relevant tab is visible, so idle dashboards stay quiet.
+  useEffect(() => {
+    if (!dashboardAuthorized || !initialLoadDone) return undefined;
+    const onMetricChart = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
+    const onWorkspaceChart = activeTab === "runs";
+    const live = (onMetricChart && hasLiveMetricSeriesRun) || (onWorkspaceChart && hasLiveWorkspaceRun);
+    if (!live) {
+      // A run just stopped (or we left a chart tab): one last refresh so the
+      // curve shows its final points instead of freezing a tick short.
+      if (liveSeriesActiveRef.current) {
+        liveSeriesActiveRef.current = false;
+        setLiveSeriesTick((value) => value + 1);
+      }
+      return undefined;
+    }
+    liveSeriesActiveRef.current = true;
+    const tick = () => {
+      if (document.visibilityState === "visible") setLiveSeriesTick((value) => value + 1);
+    };
+    const interval = window.setInterval(tick, LIVE_SERIES_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [activeTab, dashboardAuthorized, hasLiveMetricSeriesRun, hasLiveWorkspaceRun, initialLoadDone, runWorkspaceTab]);
+
   useEffect(() => {
     if (queryInput === query) return undefined;
     const timer = window.setTimeout(() => {
@@ -1518,6 +1562,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    const signature = `${activeTab}|${runWorkspaceTab}|${metricKey}|${metricSeriesRunKey}`;
+    const isLiveRefresh = signature === seriesSignatureRef.current;
+    seriesSignatureRef.current = signature;
     async function loadMetricSeries() {
       const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
       const runsForFetch = metricSeriesRuns;
@@ -1525,8 +1572,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         setSeries([]);
         return;
       }
-      setSeries([]);
-      const metricPayloads = await fetchBatchedMetricSeries(api, metricKey, runsForFetch, controller.signal, (patch) => {
+      // Live refreshes (only the tick changed) keep the current curve on screen
+      // and swap in the new points atomically; selection/metric changes clear
+      // first and stream chunks for responsiveness.
+      if (!isLiveRefresh) setSeries([]);
+      const metricPayloads = await fetchBatchedMetricSeries(api, metricKey, runsForFetch, controller.signal, isLiveRefresh ? undefined : (patch) => {
         if (!cancelled) setSeries(patch);
       });
       if (!cancelled) setSeries(metricPayloads);
@@ -1538,11 +1588,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, metricKey, metricSeriesRuns, runWorkspaceTab, selectedFetchRunKey, selectedRunKey]);
+  }, [activeTab, api, metricKey, metricSeriesRunKey, runWorkspaceTab, liveSeriesTick]);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    const pinnedKey = pinnedMetrics.join(",");
+    const signature = `${activeTab}|${metricKey}|${metricSeriesRunKey}|${pinnedKey}`;
+    const isLiveRefresh = signature === panelSeriesSignatureRef.current;
+    panelSeriesSignatureRef.current = signature;
     async function loadPinnedMetricSeries() {
       const metricsToLoad = pinnedMetrics.filter((metric) => metric && metric !== metricKey);
       const runsForFetch = metricSeriesRuns;
@@ -1550,9 +1604,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         setPanelSeries({});
         return;
       }
-      setPanelSeries({});
+      if (!isLiveRefresh) setPanelSeries({});
       const next = await fetchMetricSeriesForMetrics(api, metricsToLoad, runsForFetch, controller.signal, (metric, patch) => {
-        if (!cancelled) setPanelSeries((current) => ({ ...current, [metric]: patch }));
+        if (!cancelled && !isLiveRefresh) setPanelSeries((current) => ({ ...current, [metric]: patch }));
       });
       if (!cancelled) setPanelSeries(next);
     }
@@ -1563,19 +1617,22 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, metricKey, metricSeriesRuns, pinnedMetrics, selectedFetchRunKey, selectedRunKey]);
+  }, [activeTab, api, metricKey, metricSeriesRunKey, pinnedMetrics, liveSeriesTick]);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    const signature = `${activeTab}|${workspaceFetchRunKey}|${workspacePanelMetricKey}`;
+    const isLiveRefresh = signature === workspaceSeriesSignatureRef.current;
+    workspaceSeriesSignatureRef.current = signature;
     async function loadWorkspaceSeries() {
       if (activeTab !== "runs" || !workspacePanelMetrics.length || !workspaceFetchRuns.length) {
         setWorkspaceSeries({});
         return;
       }
-      setWorkspaceSeries({});
+      if (!isLiveRefresh) setWorkspaceSeries({});
       const next = await fetchMetricSeriesForMetrics(api, workspacePanelMetrics, workspaceFetchRuns, controller.signal, (metric, patch) => {
-        if (!cancelled) setWorkspaceSeries((current) => ({ ...current, [metric]: patch }));
+        if (!cancelled && !isLiveRefresh) setWorkspaceSeries((current) => ({ ...current, [metric]: patch }));
       });
       if (!cancelled) setWorkspaceSeries(next);
     }
@@ -1586,7 +1643,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey]);
+  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey, liveSeriesTick]);
 
   useEffect(() => {
     let cancelled = false;
