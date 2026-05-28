@@ -183,11 +183,16 @@ npm run docs:sync-openapi
 npm run docs:validate
 ```
 
-CI runs `npm run docs:validate` after API type drift checks, so public docs fail
-when their filtered OpenAPI copy is stale or when public pages link into
-internal planning docs.
+CI runs `npm run docs:validate`, so public docs fail when their filtered
+OpenAPI copy is stale or when public pages link into internal planning docs.
 
-Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust format/lint/unit tests, Node tests, and Python tests. The Rust service, SDK, and UI smokes still run locally because they require disposable service dependencies and are being hardened alongside the ClickHouse metric-store harness.
+Pull requests run the stable CI subset from `.github/workflows/ci.yml` as
+parallel jobs: Rust format, Rust lint, Rust unit tests/API type drift, docs
+validation, Node tests, and Python tests/SDK packaging. The final `Stable
+Quality Gates` job aggregates those split checks and preserves the deploy and
+branch-protection check name. The Rust service, SDK, and UI smokes still run
+locally because they require disposable service dependencies and are being
+hardened alongside the ClickHouse metric-store harness.
 
 Default smoke behavior is Rust/ClickHouse-first: `npm run test:contract`, `npm run test:contract:direct`, `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocations of `tools/contract-smoke.mjs` or `apps/web/tests/ui-smoke.mjs` all start disposable ClickHouse and `apps/rust-server`. The deprecated Node backend is opt-in for contract compatibility through `npm run test:contract:node` or `INSTANTML_CONTRACT_BACKEND=node`; full UI smoke now depends on Rust session/auth endpoints.
 
