@@ -278,6 +278,8 @@ test("deploy helper keeps public router control paths and backend timeout comple
     "/api/users/*",
     "/api/orgs/*",
     "/api/workspace-views/*",
+    "/api/reports",
+    "/api/reports/*",
   ]) {
     assert.match(source, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }
