@@ -705,6 +705,10 @@ function ensureServiceAccount() {
 }
 
 function ensureCloudBuildServiceAccount() {
+  if (skipProjectIamProvisioning()) {
+    console.log("Assuming Cloud Build project IAM bindings already provisioned (CI mode).");
+    return;
+  }
   const projectNumber = capture(["projects", "describe", project, "--format=value(projectNumber)"]).trim();
   if (!projectNumber) fail("Could not resolve GCP project number for Cloud Build IAM setup.");
   const builderEmail = `${projectNumber}-compute@developer.gserviceaccount.com`;
