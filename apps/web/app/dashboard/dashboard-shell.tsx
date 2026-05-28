@@ -2948,7 +2948,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onShortcutHelp={openShortcutHelp}
         onSortBy={changeRunSort}
         onStatus={changeStatus}
-        onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onViewName={setViewName}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
@@ -2967,7 +2966,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         sortBy={sortBy}
         status={status}
         storageUsagePercent={storagePercent}
-        theme={theme}
         tone={currentMessageTone}
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
