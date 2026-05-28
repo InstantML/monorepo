@@ -19,10 +19,12 @@ const dataBaseUrl = `http://127.0.0.1:${dataPort}`;
 const clickhouseBase = `http://default:@127.0.0.1:${clickhouseHttpPort}`;
 const controlUrl = `${clickhouseBase}/instantml_user_data_smoke`;
 const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
+const smokeCfRay = "8a1b2c3d4e5f6789-SJC";
 let controlServer = null;
 let dataServer = null;
 let clickhouse = null;
 const serverLogs = {};
+let smokeRequestSequence = 0;
 
 try {
   clickhouse = await ensureLocalClickHouse({
@@ -229,6 +231,9 @@ try {
   const finalKinds = await controlKinds();
   assert.ok(finalKinds.includes("api_key"), "User Data should contain api_key");
   assert.ok(finalKinds.includes("service_account"), "User Data should contain service_account");
+  await stopServer("data");
+  await stopServer("control");
+  assertObservabilityLogs();
   console.log(
     JSON.stringify(
       {
@@ -243,9 +248,11 @@ try {
   );
 } catch (error) {
   if (process.env.INSTANTML_HOSTED_SMOKE_DEBUG === "1") {
-    for (const [servicePlane, logPath] of Object.entries(serverLogs)) {
-      const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "(missing)";
-      console.error(`\n--- ${servicePlane} log: ${logPath} ---\n${log}`);
+    for (const [servicePlane, logPaths] of Object.entries(serverLogs)) {
+      for (const logPath of logPaths) {
+        const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "(missing)";
+        console.error(`\n--- ${servicePlane} log: ${logPath} ---\n${log}`);
+      }
     }
   }
   throw error;
@@ -254,6 +261,60 @@ try {
   await stopServer("control");
   if (clickhouse) await clickhouse.stop();
   fs.rmSync(tempDir, { recursive: true, force: true });
+}
+
+function assertObservabilityLogs() {
+  const controlLog = readServiceLogs("control");
+  const dataLog = readServiceLogs("data");
+  const controlEvents = readServiceLogEvents("control");
+  const dataEvents = readServiceLogEvents("data");
+  for (const [servicePlane, log] of [
+    ["control", controlLog],
+    ["data", dataLog],
+  ]) {
+    assert.match(log, /http_request_completed/, `${servicePlane} logs should include request completions`);
+    assert.match(log, /request_id/, `${servicePlane} logs should include request IDs`);
+    assert.match(log, /trace_id/, `${servicePlane} logs should include trace IDs`);
+    assert.match(log, /route_plane/, `${servicePlane} logs should include route plane tags`);
+    assert.doesNotMatch(log, /hosted-smoke@example\.com|teammate@example\.com/);
+    assert.doesNotMatch(log, /eval\/return_mean|train\/loss/);
+  }
+  for (const [servicePlane, events] of [
+    ["control", controlEvents],
+    ["data", dataEvents],
+  ]) {
+    const completed = events.find((event) => (
+      event.fields?.message === "http_request_completed"
+      && event.span?.request_id?.startsWith("smoke-")
+    ));
+    assert.ok(completed, `${servicePlane} logs should include a parsed request completion`);
+    assert.equal(completed.span.trace_id, completed.span.request_id);
+    assert.equal(completed.span.cf_ray, smokeCfRay);
+    assert.ok(["[Platform]", "[Control]", "[Data]"].includes(completed.span.plane_tag));
+    assert.ok(["platform", "control", "data"].includes(completed.span.route_plane));
+  }
+  const errorEvent = [...controlEvents, ...dataEvents].find((event) => (
+    event.fields?.message === "error response"
+    && event.fields?.workflow === "http_error"
+    && event.fields?.status === 404
+  ));
+  assert.ok(errorEvent, "logs should include parsed sanitized http_error events");
+  assert.match(dataLog, /run mutation outcome/);
+  assert.match(dataLog, /metric ingestion outcome/);
+}
+
+function readServiceLogs(servicePlane) {
+  return (serverLogs[servicePlane] ?? [])
+    .map((logPath) => fs.readFileSync(logPath, "utf8"))
+    .join("\n");
+}
+
+function readServiceLogEvents(servicePlane) {
+  return (serverLogs[servicePlane] ?? [])
+    .flatMap((logPath) => fs.readFileSync(logPath, "utf8").split("\n"))
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
 }
 
 function runPythonSdk(apiKey) {
@@ -292,7 +353,8 @@ async function startServer(servicePlane) {
   const port = servicePlane === "control" ? controlPort : dataPort;
   const baseUrl = servicePlane === "control" ? controlBaseUrl : dataBaseUrl;
   const serverLog = path.join(tempDir, `${servicePlane}-api-${Date.now()}.log`);
-  serverLogs[servicePlane] = serverLog;
+  serverLogs[servicePlane] ??= [];
+  serverLogs[servicePlane].push(serverLog);
   const output = fs.openSync(serverLog, "w");
   const child = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
     cwd: repo,
@@ -306,6 +368,10 @@ async function startServer(servicePlane) {
       INSTANTML_SERVICE_PLANE: servicePlane,
       INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
       INSTANTML_AUTH_MODE: "local",
+      INSTANTML_LOG_FORMAT: process.env.INSTANTML_HOSTED_SMOKE_LOG_FORMAT || "json",
+      RUST_LOG:
+        process.env.INSTANTML_HOSTED_SMOKE_RUST_LOG
+        || "instantml_rust_server=info,tower_http=info",
       INSTANTML_BILLING_ENABLED: "true",
       INSTANTML_STRIPE_MOCK_CHECKOUT: "true",
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "sk_test_instantml_mock",
@@ -331,7 +397,7 @@ async function stopServer(servicePlane) {
 }
 
 async function postJson(baseUrl, pathname, body, options = {}) {
-  const headers = { "content-type": "application/json", origin: baseUrl };
+  const headers = requestHeaders(baseUrl, { "content-type": "application/json" });
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
   const response = await fetch(baseUrl + pathname, {
@@ -348,7 +414,7 @@ async function postJson(baseUrl, pathname, body, options = {}) {
 }
 
 async function assertPostStatus(baseUrl, pathname, body, options, status) {
-  const headers = { "content-type": "application/json", origin: baseUrl };
+  const headers = requestHeaders(baseUrl, { "content-type": "application/json" });
   if (options.cookie) headers.cookie = options.cookie;
   if (options.apiKey) headers.authorization = `Bearer ${options.apiKey}`;
   const response = await fetch(baseUrl + pathname, {
@@ -361,7 +427,7 @@ async function assertPostStatus(baseUrl, pathname, body, options, status) {
 }
 
 async function getJson(baseUrl, pathname, options = {}) {
-  const headers = {};
+  const headers = requestHeaders(baseUrl);
   if (options.cookie) headers.cookie = options.cookie;
   const response = await fetch(baseUrl + pathname, { headers });
   const text = await response.text();
@@ -384,9 +450,22 @@ async function assertServicePlane(baseUrl, expected) {
 }
 
 async function assertRouteStatus(baseUrl, pathname, options, status) {
-  const response = await fetch(baseUrl + pathname, options);
+  const response = await fetch(baseUrl + pathname, {
+    ...options,
+    headers: requestHeaders(baseUrl, options.headers),
+  });
   const text = await response.text();
   assert.equal(response.status, status, `${pathname} expected ${status}, got ${response.status}: ${text}`);
+}
+
+function requestHeaders(baseUrl, extra = {}) {
+  smokeRequestSequence += 1;
+  return {
+    origin: baseUrl,
+    "x-request-id": `smoke-${smokeRequestSequence}`,
+    "cf-ray": smokeCfRay,
+    ...extra,
+  };
 }
 
 async function controlKinds() {

@@ -624,7 +624,7 @@ test("comparison helpers sort, aggregate, group, smooth, and average runs", () =
   assert.deepEqual(averageGroupedSeries(series)[0].points.map((point) => point.created_at), ["2026-01-01T00:00:01.000Z", "2026-01-01T00:00:11.000Z"]);
 });
 
-test("api client handles query strings and malformed responses", async () => {
+test("api client handles query strings and malformed responses", async (t) => {
   assert.equal(queryString({ a: 1, b: "", c: "x", d: null, e: undefined }), "?a=1&c=x");
   assert.equal(queryString({ a: "" }), "");
   assert.equal(isAbortError({ name: "AbortError" }), true);
@@ -638,23 +638,45 @@ test("api client handles query strings and malformed responses", async () => {
   assert.equal(apiError.requestId, "req_test");
   assert.match(apiError.message, /req_test/);
   const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const originalInfo = console.info;
+  const originalApiLogs = process.env.NEXT_PUBLIC_INSTANTML_API_LOGS;
+  const restoreApiTestGlobals = () => {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+    console.error = originalError;
+    console.info = originalInfo;
+    if (originalApiLogs === undefined) {
+      delete process.env.NEXT_PUBLIC_INSTANTML_API_LOGS;
+    } else {
+      process.env.NEXT_PUBLIC_INSTANTML_API_LOGS = originalApiLogs;
+    }
+  };
+  t.after(restoreApiTestGlobals);
+  const loggedApiEvents = [];
+  console.warn = (label, event) => loggedApiEvents.push({ level: "warn", label, event });
+  console.error = (label, event) => loggedApiEvents.push({ level: "error", label, event });
+  console.info = (label, event) => loggedApiEvents.push({ level: "info", label, event });
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url, options });
-    return { ok: true, json: async () => ({ ok: true }) };
+    return { ok: true, status: 200, headers: new Headers({ "x-request-id": "srv_req" }), json: async () => ({ ok: true }) };
   };
   assert.deepEqual(await new ApiClient("/base").post("/runs", { a: 1 }, { headers: { "X-Test": "1" } }), { ok: true });
   assert.equal(calls[0].url, "/base/runs");
   assert.equal(calls[0].options.method, "POST");
-  assert.equal(calls[0].options.headers["X-Test"], "1");
+  assert.equal(calls[0].options.headers.get("X-Test"), "1");
+  assert.match(calls[0].options.headers.get("x-request-id"), /^web-/);
   assert.deepEqual(await new ApiClient("/base").patch("/runs/run-1", { notes: "ready" }), { ok: true });
   assert.equal(calls[1].url, "/base/runs/run-1");
   assert.equal(calls[1].options.method, "PATCH");
-  assert.equal(calls[1].options.headers["Content-Type"], "application/json");
+  assert.equal(calls[1].options.headers.get("Content-Type"), "application/json");
   assert.deepEqual(await new ApiClient("/base").put("/api/dashboard/preferences", { selected_project: "demo" }), { ok: true });
   assert.equal(calls[2].url, "/base/api/dashboard/preferences");
   assert.equal(calls[2].options.method, "PUT");
-  assert.equal(calls[2].options.headers["Content-Type"], "application/json");
+  assert.equal(calls[2].options.headers.get("Content-Type"), "application/json");
+  assert.equal(loggedApiEvents.some((event) => event.level === "info"), false);
   globalThis.fetch = async () => ({ ok: true, text: async () => "[]" });
   await assert.rejects(() => new ApiClient().get("/bad"), /malformed/);
   globalThis.fetch = async () => ({ ok: true, text: async () => "not json" });
@@ -665,6 +687,58 @@ test("api client handles query strings and malformed responses", async () => {
   await assert.rejects(() => new ApiClient().get("/html-error"), /Server is unavailable/);
   globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "validation_error", request_id: "req_1" }) });
   await assert.rejects(() => new ApiClient().get("/bad-request"), /Request was invalid.+req_1/);
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    headers: new Headers({ "x-request-id": "user@example.com" }),
+    json: async () => ({ error: "internal secret", request_id: "also unsafe" }),
+  });
+  await assert.rejects(() => new ApiClient().get("/api/reports/share/sensitive-token?debug=secret"), (error) => {
+    assert(error instanceof ApiError);
+    assert.match(error.requestId, /^web-/);
+    return /do not have access/.test(error.message);
+  });
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/reports/share/:share_token");
+  assert.equal(loggedApiEvents.at(-1).event.path.includes("sensitive-token"), false);
+  assert.equal(loggedApiEvents.at(-1).event.path.includes("debug"), false);
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
+    headers: new Headers({ "x-request-id": "instantml_live_secret" }),
+    json: async () => ({ code: "validation_error" }),
+  });
+  await assert.rejects(() => new ApiClient().get("/api/orgs/name-availability?name=secret"), (error) => {
+    assert(error instanceof ApiError);
+    assert.match(error.requestId, /^web-/);
+    return /Request was invalid/.test(error.message);
+  });
+  assert.equal(loggedApiEvents.at(-1).event.requestId.startsWith("instantml_live_"), false);
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/orgs/name-availability");
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 503,
+    headers: new Headers({ "x-request-id": "sk_test_abc123" }),
+    json: async () => ({ code: "service_unavailable" }),
+  });
+  await assert.rejects(() => new ApiClient().post("/api/storage/clickhouse-connections/validate", { endpoint: "secret" }), (error) => {
+    assert(error instanceof ApiError);
+    assert.match(error.requestId, /^web-/);
+    return /InstantML API is starting/.test(error.message);
+  });
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/storage/clickhouse-connections/validate");
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    headers: new Headers({ "x-request-id": "instantml_abc123" }),
+    json: async () => ({}),
+  });
+  await assert.rejects(() => new ApiClient().get("/api/unknown/sk_test_short?secret=true"), (error) => {
+    assert(error instanceof ApiError);
+    assert.match(error.requestId, /^web-/);
+    return /do not have access/.test(error.message);
+  });
+  assert.equal(loggedApiEvents.at(-1).event.requestId.startsWith("instantml_"), false);
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/unknown/:token");
   globalThis.fetch = async () => ({
     ok: false,
     status: 400,
@@ -702,7 +776,32 @@ test("api client handles query strings and malformed responses", async () => {
   await assert.rejects(() => new ApiClient().get("/nope"), /Server is unavailable/);
   globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
   await assert.rejects(() => new ApiClient().get("/nope"), /Server is unavailable/);
-  globalThis.fetch = originalFetch;
+  globalThis.fetch = async () => {
+    throw new TypeError("fetch failed");
+  };
+  await assert.rejects(() => new ApiClient().get("/api/runs/summary?q=secret"), (error) => (
+    error instanceof ApiError
+      && error.code === "network_error"
+      && error.status === 0
+      && isTransientApiError(error)
+  ));
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/runs/summary");
+  await assert.rejects(() => new ApiClient().get("/api/unknown/a@b.co?token=secret"), /Network request failed/);
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/unknown/:token");
+  const abortError = new Error("aborted");
+  abortError.name = "AbortError";
+  const beforeAbortLogCount = loggedApiEvents.length;
+  globalThis.fetch = async () => {
+    throw abortError;
+  };
+  await assert.rejects(() => new ApiClient().get("/api/runs/summary"), (error) => error.name === "AbortError");
+  assert.equal(loggedApiEvents.length, beforeAbortLogCount);
+  process.env.NEXT_PUBLIC_INSTANTML_API_LOGS = "1";
+  globalThis.fetch = async () => ({ ok: true, status: 200, headers: new Headers({ "x-request-id": "srv_success" }), json: async () => ({ ok: true }) });
+  await new ApiClient().get("/runs/run-secret/metrics?key=secret");
+  assert.equal(loggedApiEvents.at(-1).level, "info");
+  assert.equal(loggedApiEvents.at(-1).event.path, "/runs/:run_id/metrics");
+  restoreApiTestGlobals();
 });
 
 test("retryTransientRequest retries only recoverable API failures", async () => {

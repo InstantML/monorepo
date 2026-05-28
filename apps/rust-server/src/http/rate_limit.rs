@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::{domain::PlanTier, store};
 
-use super::{handlers::helpers, AppState};
+use super::{handlers::helpers, observability, AppState};
 
 const UNAUTH_RATE_LIMIT_RPS: u32 = 25;
 const UNAUTH_RATE_LIMIT_BURST: u32 = 100;
@@ -160,7 +160,7 @@ pub async fn data_plane_rate_limit(
         )
         .await;
     if !unauth_decision.allowed {
-        return rate_limited_response("unauthenticated", unauth_decision);
+        return rate_limited_response("unauthenticated", unauth_decision, None);
     }
 
     if state.config.auth_mode.requires_api_key()
@@ -188,13 +188,13 @@ pub async fn data_plane_rate_limit(
         )
         .await;
     if !org_decision.allowed {
-        return rate_limited_response(policy.class.as_str(), org_decision);
+        return rate_limited_response(policy.class.as_str(), org_decision, Some(ctx.org_id));
     }
 
     if policy.metered && policy.monthly_enforced {
         match store::api_request_monthly_quota(&state.store, ctx.org_id).await {
             Ok(monthly) if !monthly.allowed => {
-                return monthly_rate_limited_response(policy.class.as_str(), monthly);
+                return monthly_rate_limited_response(policy.class.as_str(), monthly, ctx.org_id);
             }
             Ok(_) => {}
             Err(error) => return error.into_response(),
@@ -213,7 +213,14 @@ pub async fn data_plane_rate_limit(
         .await
         {
             tracing::warn!(
-                error = %error.message(),
+                workflow = "usage",
+                operation = "record_api_request_usage",
+                outcome = "failure",
+                status = error.status().as_u16(),
+                code = error.safe_code(),
+                error_kind = error.safe_code(),
+                retryable = error.retryable(),
+                safe_summary = error.safe_summary(),
                 org_id = %ctx.org_id,
                 class = policy.class.as_str(),
                 "api request usage rollup persist failed"
@@ -326,7 +333,25 @@ fn stable_fingerprint(value: &str) -> u64 {
     hasher.finish()
 }
 
-fn rate_limited_response(class: &str, decision: RateLimitDecision) -> Response {
+fn rate_limited_response(
+    class: &str,
+    decision: RateLimitDecision,
+    org_id: Option<Uuid>,
+) -> Response {
+    observability::rate_limit_rejected(observability::RateLimitRejection {
+        org_id,
+        request_class: class,
+        scope: "second",
+        code: "rate_limit_exceeded",
+        retryable: true,
+        retry_after_secs: retry_after_secs(decision.retry_after),
+        limit: i64::from(decision.limit.rps),
+        remaining: i64::from(decision.remaining),
+        usage: None,
+        projected_usage: None,
+        plan_tier: None,
+        overage_mode: None,
+    });
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
         Json(json!({
@@ -339,8 +364,26 @@ fn rate_limited_response(class: &str, decision: RateLimitDecision) -> Response {
     response
 }
 
-fn monthly_rate_limited_response(class: &str, quota: store::ApiRequestMonthlyQuota) -> Response {
+fn monthly_rate_limited_response(
+    class: &str,
+    quota: store::ApiRequestMonthlyQuota,
+    org_id: Uuid,
+) -> Response {
     let retry_after = monthly_retry_after_secs(quota.reset_at);
+    observability::rate_limit_rejected(observability::RateLimitRejection {
+        org_id: Some(org_id),
+        request_class: class,
+        scope: "monthly",
+        code: "api_request_monthly_limit_exceeded",
+        retryable: false,
+        retry_after_secs: retry_after,
+        limit: quota.limit,
+        remaining: 0,
+        usage: Some(quota.current_requests),
+        projected_usage: Some(quota.projected_requests),
+        plan_tier: Some(&quota.plan_tier),
+        overage_mode: Some(quota.overage_mode.as_str()),
+    });
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
         Json(json!({
@@ -560,6 +603,7 @@ mod tests {
                 remaining: 0,
                 retry_after: Duration::from_millis(250),
             },
+            Some(Uuid::new_v4()),
         );
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(response.headers()["ratelimit-limit"], "2");
@@ -592,6 +636,7 @@ mod tests {
                 overage_mode: store::ApiRequestOverageMode::Blocked,
                 plan_tier: "free".to_string(),
             },
+            Uuid::new_v4(),
         );
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(response.headers()["x-instantml-ratelimit-scope"], "monthly");

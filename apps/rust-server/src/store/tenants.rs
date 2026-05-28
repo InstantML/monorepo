@@ -924,8 +924,15 @@ impl Store {
         .await
         {
             tracing::warn!(
+                workflow = "byoc_clickhouse",
+                operation = "destroy_old_secret_version",
+                outcome = "failure",
                 org_id = %org_id,
-                error = %error.message(),
+                status = error.status().as_u16(),
+                code = error.safe_code(),
+                error_kind = error.safe_code(),
+                retryable = error.retryable(),
+                safe_summary = error.safe_summary(),
                 "failed to destroy previous BYOC ClickHouse credential version after rotation"
             );
         }

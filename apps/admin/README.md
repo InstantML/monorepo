@@ -64,6 +64,16 @@ npm run admin:build
 npm run verify:api-types
 ```
 
+## Observability
+
+`src/admin-data.ts` is the admin app's server-only Rust API boundary. It adds a
+safe `x-request-id` to `GET /api/admin/overview`, includes that request ID in
+operator-facing failure messages, and writes a server-side
+`instantml_admin_api_request` event with method, redacted route path, status,
+duration, code, retryability, and trace/request ID. Do not log the bootstrap
+token, full URL/query string, raw API response body, user emails, API-key
+plaintext, tenant credentials, or provider error text from the admin app.
+
 ## Coverage Expectations
 
 Keep meaningful first-party logic covered. The current covered logic lives in
