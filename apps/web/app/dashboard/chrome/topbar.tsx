@@ -1,7 +1,6 @@
 "use client";
 
-import { BookOpen, Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Moon, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Sun, X } from "lucide-react";
-import Link from "next/link";
+import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -603,7 +602,6 @@ export function DashboardTopbar({
   onShortcutHelp,
   onSortBy,
   onStatus,
-  onThemeToggle,
   onViewName,
   orgMemberships,
   orgSwitchBusy,
@@ -622,7 +620,6 @@ export function DashboardTopbar({
   metricUsagePercent,
   apiRequestUsagePercent,
   storageUsagePercent,
-  theme,
   tone,
   usageAvailable,
   usageResetLabel,
@@ -653,7 +650,6 @@ export function DashboardTopbar({
   onShortcutHelp: () => void;
   onSortBy: (value: string) => void;
   onStatus: (status: string) => void;
-  onThemeToggle: () => void;
   onViewName: (value: string) => void;
   orgMemberships: OrgMembershipSummary[];
   orgSwitchBusy: boolean;
@@ -672,7 +668,6 @@ export function DashboardTopbar({
   metricUsagePercent: number;
   apiRequestUsagePercent: number;
   storageUsagePercent: number;
-  theme: "light" | "dark";
   tone: "error" | "loading" | "ok";
   usageAvailable: boolean;
   usageResetLabel: string;
@@ -685,8 +680,6 @@ export function DashboardTopbar({
   const [compactFilters, setCompactFilters] = useState(false);
   const [searchHelpOpen, setSearchHelpOpen] = useState(false);
   const searchHelpRef = useRef<HTMLDivElement>(null);
-  const dark = theme === "dark";
-  const operationalLabel = tone === "error" ? "API issue" : tone === "loading" ? "Syncing" : "Operational";
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
   const showWorkbar = activeTab !== "detail";
@@ -814,24 +807,6 @@ export function DashboardTopbar({
             >
               <CircleHelp size={15} />
             </button>
-            <Link
-              aria-label="Open docs"
-              className="icon-button framed brandbar-action-desktop"
-              href="/docs"
-              title="Docs"
-            >
-              <BookOpen size={15} />
-            </Link>
-            <button
-              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-              aria-pressed={dark}
-              className="icon-button framed brandbar-action-desktop"
-              onClick={onThemeToggle}
-              title={dark ? "Light mode" : "Dark mode"}
-              type="button"
-            >
-              {dark ? <Sun size={15} /> : <Moon size={15} />}
-            </button>
             <AccountWorkspaceMenu
               accountUser={accountUser}
               busy={orgSwitchBusy}
@@ -935,7 +910,6 @@ export function DashboardTopbar({
             ]}
             value={sortBy}
           />
-          <span className={`system-status ${tone}`} title={message}><span /> {operationalLabel}</span>
           <span className={`status-message ${tone}`} id="status-message" role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} tabIndex={-1} title={message}>{message}</span>
           <div className="workbar-spacer" />
           <label className="control compact workbar-name">
