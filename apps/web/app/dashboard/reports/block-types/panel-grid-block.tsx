@@ -6,16 +6,19 @@ import { Trash2 } from "lucide-react";
 import { ApiClient } from "../../../../src/api.js";
 import {
   AddPanelModal,
+} from "./add-panel-modal";
+import {
+  cloneInReportPanel,
   cloneInventoryPanel,
   defaultPanelWithMetric,
-} from "./add-panel-modal";
-import type { InRunsetCandidate } from "./add-panel-modal";
+} from "./panel-factories";
 import { PanelChartRenderer } from "./panel-chart-renderer";
 import { RunSetTable } from "./run-set-table";
 import type {
   BarPanelData,
   CodePanelData,
   ImagePanelData,
+  InRunsetCandidate,
   LinePanelData,
   MarkdownPanelData,
   PanelData,
@@ -116,10 +119,7 @@ export function PanelGridBlock({ block, readOnly = false, onChange, siblingPanel
   const addFromCandidate = useCallback(
     (candidate: InRunsetCandidate) => {
       if (!onChange) return;
-      const cloned = JSON.parse(JSON.stringify(candidate.panel)) as PanelData;
-      if ("runset_index" in cloned) {
-        (cloned as { runset_index: number }).runset_index = 0;
-      }
+      const cloned = cloneInReportPanel(candidate);
       onChange({ ...block, panels: [...block.panels, cloned] });
       setPaletteOpen(false);
     },

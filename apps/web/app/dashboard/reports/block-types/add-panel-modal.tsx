@@ -10,20 +10,11 @@ import type {
   PanelPickerEntry,
   PanelType,
   RunsetData,
+  InRunsetCandidate,
 } from "./types";
-import { defaultPanel, PANEL_PICKER_CATALOG } from "./types";
+import { PANEL_PICKER_CATALOG } from "./types";
 
 type Tab = "panels" | "from-other-reports" | "from-this-report";
-
-export interface InRunsetCandidate {
-  /** Index in the parent report's blocks array. */
-  blockIndex: number;
-  /** Display title — typically a heading nearby or just "PanelGrid #N". */
-  label: string;
-  /** Index of the panel inside that grid. */
-  panelIndex: number;
-  panel: PanelData;
-}
 
 type Props = {
   open: boolean;
@@ -542,44 +533,3 @@ function categoryLabel(category: string): string {
       return category;
   }
 }
-
-/**
- * Helper to clone a panel spec into the local PanelGrid. Strips the runset
- * index because the donor and recipient grids can have different runset
- * topologies; rest of the spec carries over.
- */
-export function cloneInventoryPanel(entry: PanelInventoryEntry): PanelData {
-  const next = JSON.parse(JSON.stringify(entry.panel_spec)) as PanelData;
-  if ("runset_index" in next) {
-    (next as { runset_index: number }).runset_index = 0;
-  }
-  return next;
-}
-
-/** Shallow clone a panel from a sibling PanelGrid. */
-export function cloneInReportPanel(candidate: InRunsetCandidate): PanelData {
-  const next = JSON.parse(JSON.stringify(candidate.panel)) as PanelData;
-  if ("runset_index" in next) {
-    (next as { runset_index: number }).runset_index = 0;
-  }
-  return next;
-}
-
-/**
- * Build a default panel of `type`, seeded with the picker's metric key if
- * the panel kind has one.
- */
-export function defaultPanelWithMetric(type: PanelType, metricKey?: string): PanelData {
-  const panel = defaultPanel(type);
-  if (!metricKey) return panel;
-  if ("metric_key" in panel) {
-    (panel as { metric_key: string }).metric_key = metricKey;
-  } else if (panel.type === "scatter") {
-    panel.x_metric = metricKey;
-  }
-  return panel;
-}
-
-// Re-export the default factory so callers can build a fresh panel from a
-// picker type without importing types.ts directly.
-export { defaultPanel };

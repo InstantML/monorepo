@@ -21,7 +21,10 @@ for (let runIndex = 0; runIndex < runCount; runIndex += 1) {
     for (let metricIndex = 0; metricIndex < metricCount; metricIndex += 1) {
       metrics[`metric/${metricIndex}`] = Math.sin(step / 25 + metricIndex) + runIndex * 0.01;
     }
-    store.logMetrics(run.id, { step, metrics });
+    // This smoke targets metric-summary/chart scale. Dedicated tests cover
+    // attribute mirroring and plan-capacity accounting, which are intentionally
+    // skipped here so the 1M-point workload stays a fast local signal.
+    store.logMetrics(run.id, { step, metrics }, { skipMetricAttributes: true, skipPlanCapacity: true });
   }
 }
 const ingestMs = performance.now() - ingestStart;

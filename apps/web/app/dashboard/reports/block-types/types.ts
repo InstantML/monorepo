@@ -323,6 +323,16 @@ export interface PanelGridBlockData {
   panels: PanelData[];
 }
 
+export interface InRunsetCandidate {
+  /** Index in the parent report's blocks array. */
+  blockIndex: number;
+  /** Display title, typically a nearby heading or "PanelGrid #N". */
+  label: string;
+  /** Index of the panel inside that grid. */
+  panelIndex: number;
+  panel: PanelData;
+}
+
 export interface LlmSummaryBlockData {
   kind: "llm_summary";
   panelgrid_index: number;

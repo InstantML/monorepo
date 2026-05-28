@@ -187,6 +187,22 @@ CI runs `npm run docs:validate` after API type drift checks, so public docs fail
 when their filtered OpenAPI copy is stale or when public pages link into
 internal planning docs.
 
+React Doctor can be run from the repo root when using Node `^20.19.0` or
+`>=22.12.0`:
+
+```bash
+npx react-doctor@latest
+```
+
+`react-doctor.config.json` disables the dead-code pass because the monorepo root
+is the React package while Next App Router entries, generated API types, tests,
+tools, and legacy compatibility modules are reached through framework or
+script entrypoints that the generic dead-code scanner does not model. The score
+surface also treats the existing broad advisory categories as visible CLI
+findings rather than score gates; make planned fixes in narrow design-backed
+slices instead of churning the dashboard shell to satisfy every advisory at
+once.
+
 Pull requests run the stable CI subset from `.github/workflows/ci.yml`: Rust format/lint/unit tests, Node tests, and Python tests. The Rust service, SDK, and UI smokes still run locally because they require disposable service dependencies and are being hardened alongside the ClickHouse metric-store harness.
 
 Default smoke behavior is Rust/ClickHouse-first: `npm run test:contract`, `npm run test:contract:direct`, `npm run test:ui`, `npm run test:ui:direct`, and direct no-env invocations of `tools/contract-smoke.mjs` or `apps/web/tests/ui-smoke.mjs` all start disposable ClickHouse and `apps/rust-server`. The deprecated Node backend is opt-in for contract compatibility through `npm run test:contract:node` or `INSTANTML_CONTRACT_BACKEND=node`; full UI smoke now depends on Rust session/auth endpoints.
