@@ -16,7 +16,7 @@ import {
 } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { CustomSelect } from "../ui/select";
-import { resolveWorkspaceSettings, normalizedPanelLayout } from "./panel-edit-drawer";
+import { normalizedPanelLayout, resolveWorkspaceSettings } from "./panel-settings";
 import type { HoverPoint, MetricSeries, RunSummary, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceSection, WorkspaceView } from "../../dashboard-types";
 
 const chartPalette = [

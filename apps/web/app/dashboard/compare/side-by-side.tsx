@@ -311,7 +311,11 @@ function ArtifactMediaPreview({ artifact, compact = false, fallback = false }: {
   if (!artifactHasStoredBytes(artifact)) return <small className="artifact-media-fallback">{compact ? "Preview unavailable" : "Media preview unavailable; download or copy ID."}</small>;
   const src = artifactDownloadUrl(artifact);
   if (kind === "image") return <img alt={artifact.name} className="artifact-media artifact-image" loading="lazy" src={src} />;
-  return kind === "audio" ? <audio className="artifact-media" controls preload="metadata" src={src} /> : <video className="artifact-media" controls preload="metadata" src={src} />;
+  return kind === "audio" ? (
+    <audio aria-label={`Audio preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
+  ) : (
+    <video aria-label={`Video preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
+  );
 }
 
 function TagList({ tags }: { tags: string[] }) {
@@ -413,17 +417,25 @@ function SortHead({
   title?: string;
 }) {
   const Chevron = !active ? ChevronsUpDown : dir === "asc" ? ArrowUp : ArrowDown;
+  const sortLabel = active ? `${label}, sorted ${dir === "asc" ? "ascending" : "descending"}` : `Sort by ${label}`;
+  const sortState = active ? (dir === "asc" ? "ascending" : "descending") : "none";
   return (
-    <button
-      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
-      className={`cmp-th ${active ? "sorted" : ""} ${align === "num" ? "num" : ""} ${sticky ? "sticky" : ""}`}
-      onClick={onSort}
-      title={title ?? `Sort by ${label}`}
-      type="button"
+    <div
+      aria-sort={sortState}
+      className={`cmp-th-cell ${sticky ? "sticky" : ""}`}
+      role="columnheader"
     >
-      <span className="cmp-th-label">{label}<Chevron className="cmp-th-chev" size={12} /></span>
-      {meta ? <span className="cmp-th-meta">{meta}</span> : null}
-    </button>
+      <button
+        aria-label={sortLabel}
+        className={`cmp-th ${active ? "sorted" : ""} ${align === "num" ? "num" : ""}`}
+        onClick={onSort}
+        title={title ?? `Sort by ${label}`}
+        type="button"
+      >
+        <span className="cmp-th-label">{label}<Chevron className="cmp-th-chev" size={12} /></span>
+        {meta ? <span className="cmp-th-meta">{meta}</span> : null}
+      </button>
+    </div>
   );
 }
 

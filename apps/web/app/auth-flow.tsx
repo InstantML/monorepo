@@ -2,6 +2,7 @@
 
 import { Show, SignInButton, SignUpButton, UserButton, useAuth, useClerk, useUser } from "@clerk/nextjs";
 import { AlertCircle, ArrowRight, CheckCircle2, Cloud, Copy, Crown, Database, HardDrive, KeyRound, LogOut, RefreshCw, Rocket, ServerCog, ShieldCheck, UserPlus, Users } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient, ApiError } from "../src/api.js";
@@ -900,16 +901,16 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                     </button>
                     <div className="iml-field">
                       <label htmlFor="iml-email">Email</label>
-                      <input className="iml-input" id="iml-email" required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+                      <input aria-label="Email" className="iml-input" id="iml-email" required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
                     </div>
                     <div className="iml-field">
                       <label htmlFor="iml-name">Name</label>
-                      <input className="iml-input" id="iml-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Ada Lovelace" />
+                      <input aria-label="Name" className="iml-input" id="iml-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Ada Lovelace" />
                     </div>
                     {!signupMode ? (
                       <div className="iml-field">
                         <label htmlFor="iml-org-dev">Organization</label>
-                        <input className="iml-input" id="iml-org-dev" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Personal Workspace" />
+                        <input aria-label="Organization" className="iml-input" id="iml-org-dev" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Personal Workspace" />
                       </div>
                     ) : null}
                     <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy || orgUnavailable} type="submit">
@@ -940,7 +941,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
             {!isOnboarding ? (
               <p className="iml-foot">
                 {signupMode ? "Already have a workspace?" : "New to InstantML?"}
-                <a href={signupMode ? "/signin" : "/signup"}>{signupMode ? "Sign in" : "Create a workspace"}</a>
+                <Link href={signupMode ? "/signin" : "/signup"}>{signupMode ? "Sign in" : "Create a workspace"}</Link>
               </p>
             ) : null}
           </div>
@@ -1068,10 +1069,10 @@ function OnboardingBody({
 
       {demo ? (
         <div className="iml-actions">
-          <a className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href="/dashboard/runs">
+          <Link className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href="/dashboard/runs">
             Open the demo dashboard <ArrowRight className="iml-arrow" size={15} />
-          </a>
-          <a className="iml-btn iml-btn--ghost iml-btn--block" href="/signup">Create a real workspace instead</a>
+          </Link>
+          <Link className="iml-btn iml-btn--ghost iml-btn--block" href="/signup">Create a real workspace instead</Link>
         </div>
       ) : byocRequired && !canManageStorage ? (
         <StorageSetupBlocked />
@@ -1118,15 +1119,15 @@ function OnboardingBody({
           </div>
           <div className="iml-doc-hint">
             <span>Need the full setup path?</span>
-            <a href="/docs/quickstart">Open Quickstart</a>
+            <Link href="/docs/quickstart">Open Quickstart</Link>
             <span>or paste</span>
-            <a href="/docs/quickstart.md">quickstart.md</a>
+            <Link href="/docs/quickstart.md">quickstart.md</Link>
             <span>to your agent.</span>
           </div>
           <div className="iml-actions">
-            <a className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href={nextPath}>
+            <Link className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href={nextPath}>
               Open dashboard <ArrowRight className="iml-arrow" size={15} />
-            </a>
+            </Link>
           </div>
         </>
       )}
@@ -1231,6 +1232,7 @@ function ByocSetup({
       <div className="iml-field">
         <label htmlFor="iml-byoc-endpoint">ClickHouse HTTPS endpoint</label>
         <input
+          aria-label="ClickHouse HTTPS endpoint"
           className="iml-input"
           id="iml-byoc-endpoint"
           inputMode="url"
@@ -1244,17 +1246,17 @@ function ByocSetup({
       <div className="iml-byoc-grid">
         <div className="iml-field">
           <label htmlFor="iml-byoc-db">Database</label>
-          <input className="iml-input" id="iml-byoc-db" value={form.database} onChange={(event) => onField("database", event.target.value)} placeholder="instantml" />
+          <input aria-label="ClickHouse database" className="iml-input" id="iml-byoc-db" value={form.database} onChange={(event) => onField("database", event.target.value)} placeholder="instantml" />
         </div>
         <div className="iml-field">
           <label htmlFor="iml-byoc-user">Username</label>
-          <input className="iml-input" id="iml-byoc-user" value={form.username} onChange={(event) => onField("username", event.target.value)} placeholder="instantml_writer" />
+          <input aria-label="ClickHouse username" className="iml-input" id="iml-byoc-user" value={form.username} onChange={(event) => onField("username", event.target.value)} placeholder="instantml_writer" />
         </div>
       </div>
 
       <div className="iml-field">
         <label htmlFor="iml-byoc-password">Password</label>
-        <input className="iml-input" id="iml-byoc-password" value={form.password} onChange={(event) => onField("password", event.target.value)} placeholder="ClickHouse user password" type="password" autoComplete="off" />
+        <input aria-label="ClickHouse password" className="iml-input" id="iml-byoc-password" value={form.password} onChange={(event) => onField("password", event.target.value)} placeholder="ClickHouse user password" type="password" autoComplete="off" />
       </div>
 
       {validation ? (
@@ -1332,7 +1334,7 @@ function PlanPicker({ planTier, onPlanTier }: { planTier: PlanTier; onPlanTier: 
           const Icon = plan.icon;
           return (
             <label className="iml-plan" key={plan.id}>
-              <input checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
+              <input aria-label={plan.label} checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
               <span className="iml-plan-h"><Icon size={15} aria-hidden="true" /> {plan.label}</span>
               <strong className="iml-plan-p">{plan.price}<small>/mo</small></strong>
               <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {plan.seats}</span>
@@ -1356,12 +1358,12 @@ function StorageChoicePicker({
       <legend className="iml-legend">Storage</legend>
       <div className="iml-seg">
         <label className="iml-seg-opt">
-          <input checked={storageChoice === STORAGE_HOSTED} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_HOSTED)} type="radio" />
+          <input aria-label="InstantML-hosted storage" checked={storageChoice === STORAGE_HOSTED} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_HOSTED)} type="radio" />
           <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span><Cloud size={14} aria-hidden="true" /> InstantML-hosted</span>
           <span className="iml-seg-d">InstantML-managed ClickHouse and R2 artifacts.</span>
         </label>
         <label className="iml-seg-opt">
-          <input checked={storageChoice === STORAGE_BYOC} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_BYOC)} type="radio" />
+          <input aria-label="Connect my ClickHouse storage" checked={storageChoice === STORAGE_BYOC} name="iml-storage-choice" onChange={() => onStorageChoice(STORAGE_BYOC)} type="radio" />
           <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span><Database size={14} aria-hidden="true" /> Connect my ClickHouse</span>
           <span className="iml-seg-d">Premium BYOC. Run data goes to your GCP ClickHouse; InstantML counts only R2 artifact bytes.</span>
         </label>
@@ -1400,12 +1402,12 @@ function SignupFields({
         <legend className="iml-legend">Account type</legend>
         <div className="iml-seg">
           <label className="iml-seg-opt">
-            <input checked={accountType === "personal"} name="iml-account-type" onChange={() => onAccountType("personal")} type="radio" />
+            <input aria-label="Personal workspace" checked={accountType === "personal"} name="iml-account-type" onChange={() => onAccountType("personal")} type="radio" />
             <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span> Personal</span>
             <span className="iml-seg-d">Personal workspace · 1 seat</span>
           </label>
           <label className="iml-seg-opt">
-            <input checked={accountType === "business"} name="iml-account-type" onChange={() => onAccountType("business")} type="radio" />
+            <input aria-label="Business workspace" checked={accountType === "business"} name="iml-account-type" onChange={() => onAccountType("business")} type="radio" />
             <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span> Business</span>
             <span className="iml-seg-d">Team org · 3 seats, reservable</span>
           </label>
@@ -1415,6 +1417,7 @@ function SignupFields({
       <div className="iml-field">
         <label htmlFor="iml-org">{accountType === "business" ? "Organization" : "Workspace"} <span className="iml-hint">required</span></label>
         <input
+          aria-label={accountType === "business" ? "Organization" : "Workspace"}
           className="iml-input"
           id="iml-org"
           required
@@ -1437,6 +1440,7 @@ function SignupFields({
             <span className={`iml-chip ${overLimit ? "" : "is-muted"}`}>{seatCount} / {seatLimit} reserved</span>
           </label>
           <textarea
+            aria-label="Reserved seats"
             className="iml-input"
             id="iml-seats"
             value={seatEmails}

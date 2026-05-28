@@ -12,10 +12,14 @@ export function DocsAgentMarkdownButton({ href }: DocsAgentMarkdownButtonProps) 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
+    return clearCopiedTimer;
   }, []);
+
+  function clearCopiedTimer() {
+    const timeout = timeoutRef.current;
+    if (timeout) clearTimeout(timeout);
+    timeoutRef.current = null;
+  }
 
   async function copyMarkdown() {
     try {
@@ -25,7 +29,7 @@ export function DocsAgentMarkdownButton({ href }: DocsAgentMarkdownButtonProps) 
     } catch {
       return;
     }
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    clearCopiedTimer();
     setCopied(true);
     timeoutRef.current = setTimeout(() => setCopied(false), 1600);
   }
