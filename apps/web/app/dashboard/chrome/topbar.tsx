@@ -355,7 +355,7 @@ function WorkspaceCreateModal({
               </label>
               <label className={byocBlocked ? "disabled" : ""}>
                 <input aria-label="Customer ClickHouse storage" checked={normalizedStorage === "customer-clickhouse"} disabled={byocBlocked} name="workspace-storage" onChange={() => setStorage("customer-clickhouse")} type="radio" />
-                Advanced: connect my ClickHouse
+                Connect my ClickHouse
               </label>
             </div>
             {kind === "business" ? (

@@ -363,7 +363,6 @@
 :root[data-theme="dark"] .event-row strong,
 :root[data-theme="dark"] .browser-row strong,
 :root[data-theme="dark"] .timeline-row strong,
-:root[data-theme="dark"] .integration-card strong,
 :root[data-theme="dark"] .compare-attribute strong,
 :root[data-theme="dark"] .api-row code,
 :root[data-theme="dark"] .inspector .detail-row strong,

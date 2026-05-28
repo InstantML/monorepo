@@ -9,7 +9,7 @@
  */
 
 const BLOCK_SCHEMA_HINT =
-  " The `blocks` array must match the shape returned by tracker.report_block_schema (heading / paragraph / markdown / code / callout / horizontal_rule / image / panel_grid / llm_summary).";
+  " The `blocks` array must match the shape returned by tracker.report_block_schema (heading / paragraph / markdown / code / callout / horizontal_rule / image / panel_grid).";
 
 export const BLOCK_SCHEMA_EXAMPLE = {
   blocks: [
@@ -51,11 +51,8 @@ export const BLOCK_SCHEMA_EXAMPLE = {
         { type: "image_panel", url: "https://example.com/fig.png", caption: "Optional caption" },
       ],
     },
-    { kind: "llm_summary", panelgrid_index: 7, angle: "what-worked" },
   ],
   notes: {
-    panelgrid_index: "Zero-based index pointing at the panel_grid block this summary should consume.",
-    angles: ["what-worked", "outliers", "config-diffs", "next-steps", "free-form"],
     panel_types: [
       "line",
       "bar",
@@ -360,27 +357,6 @@ export function buildTools({ apiUrl, apiKey }) {
           `/api/reports/${encodeURIComponent(args.report_id)}`,
         );
         return textResult({ deleted: true, report_id: args.report_id });
-      },
-    },
-    {
-      name: "tracker.refresh_llm_summary",
-      description:
-        "Re-run the LLM summary generation for a single `llm_summary` block in a report. `block_index` is the zero-based position of the target block in the report's `blocks` array.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          report_id: { type: "string" },
-          block_index: { type: "integer", minimum: 0 },
-        },
-        required: ["report_id", "block_index"],
-      },
-      handler: async (args) => {
-        const result = await apiJson(
-          "POST",
-          `/api/reports/${encodeURIComponent(args.report_id)}/blocks/${args.block_index}/refresh`,
-          {},
-        );
-        return textResult(reportFromPayload(result));
       },
     },
     {

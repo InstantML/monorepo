@@ -49,7 +49,6 @@ type EditorReport = Pick<
 
 type Props = {
   report: EditorReport;
-  refreshingBlockIndex?: number | null;
   /** When true the title input auto-focuses on mount (new-report flow). */
   autoFocusTitle?: boolean;
   /**
@@ -60,7 +59,6 @@ type Props = {
    */
   readOnly?: boolean;
   onChange?: (next: EditorReport) => void;
-  onRefreshBlock?: (blockIndex: number) => void;
   /**
    * Cmd-Z handlers. Wired by the parent (which owns the history stack);
    * the editor only listens for the keystroke. When `readOnly` is set the
@@ -139,11 +137,9 @@ function collectSiblingPanelGrids(
  */
 export function ReportEditor({
   report,
-  refreshingBlockIndex,
   autoFocusTitle = false,
   readOnly = false,
   onChange,
-  onRefreshBlock,
   onUndo,
   onRedo,
 }: Props) {
@@ -525,16 +521,10 @@ export function ReportEditor({
               <BlockRow
                 block={block}
                 index={index}
-                refreshing={refreshingBlockIndex === index}
                 dragging={isDragging}
                 readOnly={readOnly}
                 onChange={(next) => replaceBlock(index, next)}
                 onRemove={() => removeBlock(index)}
-                onRefresh={
-                  block.kind === "llm_summary" && onRefreshBlock
-                    ? () => onRefreshBlock(index)
-                    : undefined
-                }
                 onDragStart={() => onDragStart(index)}
                 onDragEnd={onDragEnd}
                 onKeyDown={(event) => onBlockKeyDown(index, event)}
@@ -691,12 +681,10 @@ function HoverGap({
 function BlockRow({
   block,
   index,
-  refreshing,
   dragging,
   readOnly,
   onChange,
   onRemove,
-  onRefresh,
   onDragStart,
   onDragEnd,
   onKeyDown,
@@ -707,12 +695,10 @@ function BlockRow({
 }: {
   block: ReportBlock;
   index: number;
-  refreshing: boolean;
   dragging: boolean;
   readOnly: boolean;
   onChange: (next: ReportBlock) => void;
   onRemove: () => void;
-  onRefresh?: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
@@ -769,13 +755,11 @@ function BlockRow({
       ) : null}
       <BlockBody
         block={block}
-        busy={refreshing}
         slashOpen={slashOpen}
         readOnly={readOnly}
         onChange={onChange}
         onTextChange={onTextChange}
         onSlashKeyDown={onSlashKeyDown}
-        onRefresh={onRefresh}
         siblingPanelGrids={siblingPanelGrids}
       />
     </div>
@@ -784,17 +768,14 @@ function BlockRow({
 
 function BlockBody({
   block,
-  busy,
   slashOpen,
   readOnly,
   onChange,
   onTextChange,
   onSlashKeyDown,
-  onRefresh,
   siblingPanelGrids,
 }: {
   block: ReportBlock;
-  busy: boolean;
   slashOpen: boolean;
   readOnly: boolean;
   onChange: (next: ReportBlock) => void;
@@ -805,7 +786,6 @@ function BlockBody({
   onSlashKeyDown: (
     event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => boolean;
-  onRefresh?: () => void;
   siblingPanelGrids?: {
     blockIndex: number;
     label: string;
@@ -887,14 +867,7 @@ function BlockBody({
         />
       );
     case "llm_summary":
-      return (
-        <LlmSummaryBlock
-          block={block}
-          busy={busy}
-          onChange={onChange}
-          onRefresh={onRefresh}
-        />
-      );
+      return <LlmSummaryBlock block={block} />;
   }
 }
 

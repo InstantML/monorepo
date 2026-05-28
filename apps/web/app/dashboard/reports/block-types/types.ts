@@ -29,8 +29,7 @@ export type ReportBlockKind =
   | "callout"
   | "horizontal_rule"
   | "image"
-  | "panel_grid"
-  | "llm_summary";
+  | "panel_grid";
 
 export interface HeadingBlockData {
   kind: "heading";
@@ -214,9 +213,9 @@ export const SUPPORTED_PANEL_TYPES: PanelType[] = [
 ];
 
 /**
- * Catalog of every panel cell shown in the add-panel picker. Cells that are
- * not yet shipped render disabled with a "v1.3" tooltip — keeping users
- * informed of the roadmap without hiding the future.
+ * Catalog of panel cells shown in the add-panel picker. Keep this limited to
+ * implemented panels so the report editor does not advertise placeholder
+ * roadmap surface.
  */
 export type PanelPickerCategory = "charts" | "media" | "data";
 
@@ -239,22 +238,10 @@ export const PANEL_PICKER_CATALOG: PanelPickerEntry[] = [
     category: "charts",
     implemented: true,
   },
-  {
-    type: "parameter_importance",
-    label: "Parameter importance",
-    category: "charts",
-    implemented: false,
-  },
   { type: "run_comparer", label: "Run comparer", category: "charts", implemented: true },
   { type: "code_panel", label: "Code", category: "charts", implemented: true },
   { type: "markdown_panel", label: "Markdown", category: "charts", implemented: true },
-  { type: "custom_chart", label: "Custom chart", category: "charts", implemented: false },
   { type: "image_panel", label: "Image", category: "media", implemented: true },
-  { type: "video_panel", label: "Video", category: "media", implemented: false },
-  { type: "audio_panel", label: "Audio", category: "media", implemented: false },
-  { type: "html_panel", label: "HTML", category: "media", implemented: false },
-  { type: "data_table", label: "Data table", category: "data", implemented: false },
-  { type: "table_plot", label: "Table plot", category: "data", implemented: false },
 ];
 
 export const SUPPORTED_SCALAR_AGGREGATIONS: ScalarAggregation[] = [
@@ -399,13 +386,6 @@ export const RUN_COLOR_PALETTE: string[] = [
 
 export const SUPPORTED_CALLOUT_VARIANTS: CalloutVariant[] = ["info", "warn", "success"];
 export const SUPPORTED_HEADING_LEVELS: HeadingLevel[] = [1, 2, 3];
-export const SUPPORTED_LLM_ANGLES: LlmSummaryAngle[] = [
-  "what-worked",
-  "outliers",
-  "config-diffs",
-  "next-steps",
-  "free-form",
-];
 export const SUPPORTED_CODE_LANGUAGES: CodeLanguage[] = [
   "python",
   "javascript",
@@ -441,7 +421,5 @@ export function defaultBlock(kind: ReportBlockKind): ReportBlock {
         runsets: [{ name: "runset-1", projects: [] }],
         panels: [],
       };
-    case "llm_summary":
-      return { kind: "llm_summary", panelgrid_index: 0, angle: "what-worked" };
   }
 }

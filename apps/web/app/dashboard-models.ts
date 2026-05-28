@@ -8,7 +8,7 @@ import type {
   Artifact,
   DatasetRow,
   MetricCatalogRow,
-  ModelRow,
+  CheckpointRow,
   ReportRow,
   RunMetricRow,
   RunSummary,
@@ -642,7 +642,7 @@ export function runNoteText(run: RunSummary) {
   return "";
 }
 
-export function buildModelRows(run: RunSummary | null, artifacts: Artifact[]): ModelRow[] {
+export function buildCheckpointRows(run: RunSummary | null, artifacts: Artifact[]): CheckpointRow[] {
   if (!run) return [];
   return artifacts
     .filter((artifact) => artifact.type === "checkpoint")

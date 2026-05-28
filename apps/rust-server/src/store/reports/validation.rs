@@ -11,9 +11,9 @@ use serde_json::Map;
 use crate::domain::{REPORT_VISIBILITY_ORG, REPORT_VISIBILITY_PRIVATE, REPORT_VISIBILITY_PUBLIC};
 
 /// Hard cap on a report's serialized block array. 256 KiB is plenty for the
-/// Notion-style documents we expect (markdown + a handful of panels + a few
-/// LLM summary paragraphs) and keeps the operational-record payload small
-/// enough to round-trip cheaply through ClickHouse.
+/// Notion-style documents we expect (markdown + a handful of panels) and
+/// keeps the operational-record payload small enough to round-trip cheaply
+/// through ClickHouse.
 pub const MAX_REPORT_BLOCKS_PAYLOAD_BYTES: usize = 256 * 1024;
 /// Hard cap on the number of blocks per report. Mirrors editor UX limits;
 /// well-designed reports rarely exceed a few dozen blocks.

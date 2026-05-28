@@ -1,27 +1,28 @@
 ---
-title: "Reports and saved views"
-description: "Understand the current Reports tab and saved-view snapshot workflow."
+title: "Reports"
+description: "Create shareable report documents with prose and live run panels."
 ---
 
-# Reports and saved views
+# Reports
 
-The Reports tab currently surfaces saved dashboard views and a small snapshot of
-the current run context. It is not a long-form collaborative report editor.
+The Reports tab creates persisted report documents for experiment recaps,
+ablation notes, and teammate handoffs. Reports can combine prose, markdown,
+code snippets, images, callouts, and live PanelGrids that query run data.
 
 ## What appears
 
-- Saved view names and scopes.
-- Current run count and selected-run count.
-- The selected metric.
-- A compact best-value card for the current overview.
+- A list of reports in the workspace.
+- A block editor for each report.
+- Live PanelGrid blocks that render charts from runsets.
+- Share links for read-only report viewing.
+- Markdown export for copying a report outside InstantML.
 
-## Save a useful view
+## Create a useful report
 
-1. Open Runs.
-2. Choose project, search, status, metric, chart mode, selected runs, and panel
-   layout.
-3. Save the view from the dashboard controls.
-4. Open Reports to see the saved view listed.
+1. Open Reports.
+2. Create a report and add prose blocks for the narrative.
+3. Add a PanelGrid block for charts that should stay live.
+4. Share the report link or export it as Markdown.
 
-Use saved views for repeatable daily comparisons, sweep checkpoints, or a
-stable demo setup.
+Use reports for concise experiment reviews rather than as a replacement for the
+main Runs and Compare workspaces.

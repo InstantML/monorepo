@@ -11,7 +11,6 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   Minus,
-  Sparkles,
   Type,
 } from "lucide-react";
 
@@ -46,11 +45,10 @@ const ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   paragraph: Type,
   markdown: Hash,
   code: Code2,
-  callout: Sparkles,
+  callout: FileText,
   horizontal_rule: Minus,
   image: ImageIcon,
   panel_grid: LayoutGrid,
-  llm_summary: FileText,
 };
 
 /**

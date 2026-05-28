@@ -77,8 +77,6 @@ test("AddPanelModal module exists and exposes both tabs", () => {
   assert.ok(/export function AddPanelModal/.test(src));
   assert.ok(src.includes("From other reports"), "modal must offer the org panel tab");
   assert.ok(src.includes("/api/reports/panels"), "modal must fetch the new endpoint");
-  // Disabled-cell w/ v1.3 tooltip — not hidden.
-  assert.ok(src.includes("v1.3"));
 });
 
 test("Panel renderers ship for the 5 new types", () => {
@@ -111,11 +109,9 @@ test("PanelChartRenderer dispatches the new panel types", () => {
   }
 });
 
-test("Picker catalog declares v1.3 placeholders for unshipped panels", () => {
+test("Picker catalog omits unshipped panel placeholders", () => {
   const src = read("types.ts");
-  // Confirm parameter_importance is in the picker but flagged unimplemented,
-  // matching the brief's "don't hide future panels" requirement.
-  assert.ok(src.includes("parameter_importance"));
-  assert.ok(src.includes("custom_chart"));
-  assert.ok(src.includes("video_panel"));
+  assert.equal(src.includes("parameter_importance"), false);
+  assert.equal(src.includes("custom_chart"), false);
+  assert.equal(src.includes("video_panel"), false);
 });

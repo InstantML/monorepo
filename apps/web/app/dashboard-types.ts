@@ -1,5 +1,3 @@
-import type { LucideIcon } from "lucide-react";
-
 export type RunSummary = {
   id: string;
   project: string;
@@ -152,17 +150,15 @@ export type TabId =
   | "runs"
   | "metrics"
   | "distributed"
-  | "advanced"
   | "detail"
   | "compare"
   | "alerts"
   | "datasets"
   | "insights"
   | "artifacts"
-  | "models"
+  | "checkpoints"
   | "reports"
   | "settings"
-  | "integrations"
   | "api";
 
 export type Tone = "good" | "bad" | "live" | "neutral";
@@ -183,7 +179,7 @@ export type DatasetRow = {
   best: number | null;
 };
 
-export type ModelRow = {
+export type CheckpointRow = {
   id: string;
   name: string;
   uri: string;
@@ -195,14 +191,6 @@ export type ReportRow = {
   id: string;
   name: string;
   scope: string;
-};
-
-export type IntegrationRow = {
-  name: string;
-  status: string;
-  tone: Tone;
-  icon: LucideIcon;
-  detail: string;
 };
 
 export type ApiRow = {

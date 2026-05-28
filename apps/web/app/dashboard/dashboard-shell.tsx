@@ -16,7 +16,6 @@ import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } fr
 import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
-import { AdvancedTabPane } from "./advanced/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
 import { ArtifactsTabPane } from "./artifacts/tab-pane";
 import { CompareTabPane } from "./compare/tab-pane";
@@ -28,23 +27,22 @@ import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
-import { IntegrationsTabPane } from "./integrations/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
-import { ModelsTabPane } from "./models/tab-pane";
+import { CheckpointsTabPane } from "./checkpoints/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { useFocusTrap } from "./ui/use-focus-trap";
-import { buildIntegrationRows, isTabId, tabs } from "../dashboard-config";
+import { isTabId, tabs } from "../dashboard-config";
 import {
   artifactTotalsForRuns,
   buildAlertRows,
   buildApiRows,
   buildDatasetRows,
   buildMetricCatalogRows,
-  buildModelRows,
+  buildCheckpointRows,
   buildRunMetricRows,
   buildRunTimelineRows,
   buildAutomaticWorkspace,
@@ -177,15 +175,6 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const ADVANCED_REDUCERS_VIEW_KEY = "system:advanced-reducers";
-const SYSTEM_SAVED_VIEWS: SavedViewOption[] = [
-  { label: "Advanced reducers", source: "system", value: ADVANCED_REDUCERS_VIEW_KEY },
-];
-
-function withSystemSavedViews(options: SavedViewOption[]) {
-  const systemValues = new Set(SYSTEM_SAVED_VIEWS.map((view) => view.value));
-  return [...SYSTEM_SAVED_VIEWS, ...options.filter((option) => !systemValues.has(option.value))];
-}
 
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
@@ -334,10 +323,6 @@ function controlSavedViewKey(id: string) {
 
 function controlSavedViewId(key: string) {
   return key.startsWith("control:") ? key.slice("control:".length) : "";
-}
-
-function systemSavedViewId(key: string) {
-  return key.startsWith("system:") ? key.slice("system:".length) : "";
 }
 
 function savedViewString(value: unknown, fallback = "") {
@@ -666,10 +651,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
-  const modelRows = useMemo(() => buildModelRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
+  const checkpointRows = useMemo(() => buildCheckpointRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
-  const integrationRows = useMemo(() => buildIntegrationRows(), []);
   const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
   const localSavedViewScope = useMemo(
@@ -974,9 +958,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           source: "control" as const,
           value: controlSavedViewKey(view.id),
         }));
-      setSavedViews(withSystemSavedViews([...controlOptions, ...localOptions]));
+      setSavedViews([...controlOptions, ...localOptions]);
     } catch (error) {
-      if (!isAbortError(error)) setSavedViews(withSystemSavedViews(localOptions));
+      if (!isAbortError(error)) setSavedViews(localOptions);
     }
   }, [activeOrgId, api, localSavedViewProjectScope]);
 
@@ -1363,7 +1347,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [allMetricOptions]);
 
   useEffect(() => {
-    setSavedViews(withSystemSavedViews(localSavedViewOptions(localSavedViewProjectScope)));
+    setSavedViews(localSavedViewOptions(localSavedViewProjectScope));
     setNavPinned(localStorage.getItem(NAV_PINNED_KEY) === "true");
     setRunsRailCollapsed(localStorage.getItem(RUNS_RAIL_COLLAPSED_KEY) === "true");
     const storedTheme = localStorage.getItem(THEME_KEY);
@@ -1381,10 +1365,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const localOptions = localSavedViewOptions(localSavedViewProjectScope);
       const nonLocalOptions = current.filter((option) => option.source !== "local");
       const seen = new Set(nonLocalOptions.map((option) => option.value));
-      return withSystemSavedViews([
+      return [
         ...nonLocalOptions,
         ...localOptions.filter((option) => !seen.has(option.value)),
-      ]);
+      ];
     });
   }, [activeOrgId, localSavedViewProjectScope]);
 
@@ -1608,7 +1592,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "artifacts" || activeTab === "models";
+      const shouldLoad = activeTab === "detail" || activeTab === "artifacts" || activeTab === "checkpoints";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         setArtifactsRunId("");
@@ -2199,7 +2183,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const upsertOption = (option: SavedViewOption) => {
       setSavedViews((current) => {
         const withoutSame = current.filter((item) => item.source === "system" || (item.value !== option.value && item.label !== option.label));
-        return withSystemSavedViews([option, ...withoutSame]);
+        return [option, ...withoutSame];
       });
       setSavedViewKey(option.value);
     };
@@ -2228,20 +2212,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (!key) {
       applyingSavedViewRef.current = false;
       setSearchError(null);
-      return;
-    }
-    if (systemSavedViewId(key) === "advanced-reducers") {
-      applyingSavedViewRef.current = false;
-      userTouchedDashboardFiltersRef.current = true;
-      resetRunPagination();
-      setSortBy("metric-best");
-      setGroupAverage(true);
-      setCompareRunSort("metric-best");
-      setCompareRowSort("signal");
-      setCompareSortMetricKey(metricKey);
-      setViewName("Advanced reducers");
-      selectTab("advanced");
-      setMessage("Advanced reducers view applied.");
       return;
     }
     applyingSavedViewRef.current = true;
@@ -3134,18 +3104,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "advanced" ? "active" : ""}`} aria-label="Advanced">
-          {activeTab === "advanced" ? (
-            <AdvancedTabPane
-              api={api}
-              metricKey={metricKey}
-              primaryRun={primaryRun}
-              selectedRunIds={selectedRunIds}
-              sortedRuns={sortedRuns}
-            />
-          ) : null}
-        </section>
-
         <section className={`tab-pane ${activeTab === "detail" ? "active" : ""}`} aria-label="Run Detail">
           {activeTab === "detail" ? (
             <DetailTabPane
@@ -3273,9 +3231,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "models" ? "active" : ""}`} aria-label="Models">
-          {activeTab === "models" ? (
-            <ModelsTabPane modelRows={modelRows} primaryRun={primaryRun} />
+        <section className={`tab-pane ${activeTab === "checkpoints" ? "active" : ""}`} aria-label="Checkpoints">
+          {activeTab === "checkpoints" ? (
+            <CheckpointsTabPane checkpointRows={checkpointRows} primaryRun={primaryRun} />
           ) : null}
         </section>
 
@@ -3335,12 +3293,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               xMode={xMode}
               billingStatus={billingPayload?.billing ?? null}
             />
-          ) : null}
-        </section>
-
-        <section className={`tab-pane ${activeTab === "integrations" ? "active" : ""}`} aria-label="Integrations">
-          {activeTab === "integrations" ? (
-            <IntegrationsTabPane integrationRows={integrationRows} />
           ) : null}
         </section>
 

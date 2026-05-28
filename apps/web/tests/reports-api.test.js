@@ -7,7 +7,6 @@ import {
   fetchReport,
   listReports,
   patchReport,
-  refreshReportBlock,
   reportFromPayload,
   reportSummariesFromPayload,
   reportMarkdownUrl,
@@ -136,21 +135,6 @@ test("rotateReportShareToken posts to the share endpoint", async () => {
   });
   const result = await rotateReportShareToken(api, sample.id);
   assert.equal(result?.share_token, "instantml_share_abc");
-});
-
-test("refreshReportBlock hits the per-block refresh endpoint", async () => {
-  const sample = {
-    id: "00000000-0000-0000-0000-000000000010",
-    title: "x",
-    blocks: [{ kind: "llm_summary", angle: "what-worked", generated_text: "ok" }],
-  };
-  const api = fakeApi({
-    "POST /api/reports/00000000-0000-0000-0000-000000000010/blocks/3/refresh": {
-      report: sample,
-    },
-  });
-  const result = await refreshReportBlock(api, sample.id, 3);
-  assert.equal(result?.blocks[0].kind, "llm_summary");
 });
 
 test("reportSummariesFromPayload tolerates legacy / empty shapes", () => {

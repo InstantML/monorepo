@@ -21,7 +21,6 @@ test("block-picker catalog covers every block kind the editor can insert", () =>
     "horizontal_rule",
     "image",
     "panel_grid",
-    "llm_summary",
   ]) {
     assert.ok(kinds.has(required), `picker missing required kind: ${required}`);
   }

@@ -45,11 +45,10 @@ use handlers::{
     list_projects, list_reports, list_runs, list_seats, list_users, list_workspace_views,
     log_console_logs, log_metrics, log_rank_metrics, metrics_handler, metrics_series, not_found,
     openapi_json, org_name_availability, overview, preview_invitation, rank_metrics_summary,
-    readyz, refresh_report_block, resend_invitation, reserve_seat, reset_demo, revoke_api_key,
-    revoke_invitation, rotate_customer_clickhouse_credentials, rotate_report_share_token,
-    runs_summary, side_by_side, update_dashboard_preferences, update_report, update_run,
-    update_workspace_view, upload_artifact, usage_export, usage_summary,
-    validate_customer_clickhouse_connection,
+    readyz, resend_invitation, reserve_seat, reset_demo, revoke_api_key, revoke_invitation,
+    rotate_customer_clickhouse_credentials, rotate_report_share_token, runs_summary, side_by_side,
+    update_dashboard_preferences, update_report, update_run, update_workspace_view,
+    upload_artifact, usage_export, usage_summary, validate_customer_clickhouse_connection,
 };
 
 const SESSION_COOKIE: &str = "instantml_session";
@@ -199,10 +198,6 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route(
             "/api/reports/:report_id/share",
             post(rotate_report_share_token),
-        )
-        .route(
-            "/api/reports/:report_id/blocks/:block_index/refresh",
-            post(refresh_report_block),
         )
         .route(
             "/api/reports/:report_id/markdown",

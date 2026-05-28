@@ -13,7 +13,7 @@ function InfoRows({ rows }: { rows: string[][] }) {
   );
 }
 
-export function ModelContext({ run }: { run: RunSummary | null }) {
+export function CheckpointContext({ run }: { run: RunSummary | null }) {
   if (!run) return <div className="empty">No run selected.</div>;
   const rows = [
     ["Run", run.name],

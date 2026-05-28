@@ -6,21 +6,22 @@ export const DASHBOARD_TAB_IDS = [
   "runs",
   "metrics",
   "distributed",
-  "advanced",
   "detail",
   "compare",
   "alerts",
   "insights",
   "datasets",
   "artifacts",
-  "models",
+  "checkpoints",
   "reports",
   "settings",
-  "integrations",
   "api",
 ];
 
 const DASHBOARD_TABS = new Set(DASHBOARD_TAB_IDS);
+const DASHBOARD_TAB_ALIASES = new Map([
+  ["models", "checkpoints"],
+]);
 const SAFE_NEXT_PREFIXES = ["/dashboard", "/onboarding"];
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
 const STRIPE_REDIRECT_ORIGINS = new Set(["https://checkout.stripe.com", "https://billing.stripe.com"]);
@@ -37,27 +38,36 @@ export function normalizeDeviceUserCode(value) {
 }
 
 export function isDashboardTab(value) {
-  return DASHBOARD_TABS.has(String(value ?? ""));
+  const tab = String(value ?? "");
+  return DASHBOARD_TABS.has(tab) || DASHBOARD_TAB_ALIASES.has(tab);
+}
+
+function canonicalDashboardTab(value) {
+  const tab = String(value ?? "");
+  return DASHBOARD_TAB_ALIASES.get(tab) ?? tab;
 }
 
 export function tabToPath(tab) {
-  return `/dashboard/${isDashboardTab(tab) ? tab : DEFAULT_DASHBOARD_TAB}`;
+  const canonical = canonicalDashboardTab(tab);
+  return `/dashboard/${DASHBOARD_TABS.has(canonical) ? canonical : DEFAULT_DASHBOARD_TAB}`;
 }
 
 export function tabFromPath(pathname) {
   const urlPath = String(pathname ?? "").split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
   const match = urlPath.match(/^\/dashboard(?:\/([^/]+))?(?:\/.*)?$/);
   if (!match) return DEFAULT_DASHBOARD_TAB;
-  return isDashboardTab(match[1]) ? match[1] : DEFAULT_DASHBOARD_TAB;
+  const tab = canonicalDashboardTab(match[1]);
+  return DASHBOARD_TABS.has(tab) ? tab : DEFAULT_DASHBOARD_TAB;
 }
 
 export function canonicalDashboardPath(pathname) {
   const urlPath = String(pathname ?? "").split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
   const match = urlPath.match(/^\/dashboard(?:\/([^/]+))?(\/.*)?$/);
   if (!match) return tabToPath(DEFAULT_DASHBOARD_TAB);
-  const tab = isDashboardTab(match[1]) ? match[1] : DEFAULT_DASHBOARD_TAB;
-  if (tab === "reports" && match[2]) return `/dashboard/reports${match[2]}`;
-  return tabToPath(tab);
+  const tab = canonicalDashboardTab(match[1]);
+  const safeTab = DASHBOARD_TABS.has(tab) ? tab : DEFAULT_DASHBOARD_TAB;
+  if (safeTab === "reports" && match[2]) return `/dashboard/reports${match[2]}`;
+  return tabToPath(safeTab);
 }
 
 export function pathFromLegacyHash(hash) {

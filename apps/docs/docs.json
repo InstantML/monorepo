@@ -81,9 +81,8 @@
               "dashboard/artifacts-files",
               "dashboard/alerts",
               "dashboard/datasets",
-              "dashboard/checkpoints-models",
+              "dashboard/checkpoints",
               "dashboard/reports",
-              "dashboard/integrations",
               "dashboard/settings-api-keys",
               "dashboard/api-tab",
               "dashboard/onboarding-team-billing"
