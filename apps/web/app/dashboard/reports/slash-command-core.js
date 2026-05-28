@@ -60,12 +60,6 @@ export const BLOCK_PICKER_CATALOG = Object.freeze([
     hint: "Live runset + charts",
     keywords: ["chart", "panels"],
   },
-  {
-    id: "llm_summary",
-    label: "LLM summary",
-    hint: "AI-generated synthesis",
-    keywords: ["ai", "summary"],
-  },
 ]);
 
 export function resolvePickerKind(id) {
@@ -90,8 +84,6 @@ export function resolvePickerKind(id) {
       return { kind: "image" };
     case "panel_grid":
       return { kind: "panel_grid" };
-    case "llm_summary":
-      return { kind: "llm_summary" };
     default:
       return null;
   }

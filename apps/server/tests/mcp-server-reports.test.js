@@ -81,7 +81,6 @@ test("MCP server exposes the report tool surface", () => {
     "tracker.create_report",
     "tracker.update_report",
     "tracker.delete_report",
-    "tracker.refresh_llm_summary",
     "tracker.share_report",
     "tracker.report_block_schema",
     "tracker.list_org_panels",
@@ -207,7 +206,6 @@ test("tracker.report_block_schema returns a JSON example covering every block ki
     "horizontal_rule",
     "image",
     "panel_grid",
-    "llm_summary",
   ]) {
     assert.ok(kinds.includes(kind), `schema example missing block kind ${kind}`);
   }
@@ -265,26 +263,6 @@ test("tracker.create_report posts /api/reports with the supplied blocks", async 
     assert.equal(calls[0].pathname, "/api/reports");
     assert.equal(calls[0].body.blocks.length, 2);
     assert.equal(calls[0].body.blocks[0].kind, "heading");
-  } finally {
-    restoreFetch();
-  }
-});
-
-test("tracker.refresh_llm_summary posts to the per-block refresh endpoint", async () => {
-  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
-  const calls = installFetchStub({
-    "POST /api/reports/rep-7/blocks/4/refresh": () => ({
-      report: { id: "rep-7", blocks: [{ kind: "llm_summary", panelgrid_index: 0, angle: "what-worked", generated_text: "ok" }] },
-    }),
-  });
-  try {
-    const tool = findTool("tracker.refresh_llm_summary", tools);
-    const payload = parseTextResult(
-      await tool.handler({ report_id: "rep-7", block_index: 4 }),
-    );
-    assert.equal(payload.id, "rep-7");
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].pathname, "/api/reports/rep-7/blocks/4/refresh");
   } finally {
     restoreFetch();
   }

@@ -489,7 +489,6 @@ impl Modify for SecurityAddon {
         crate::http::handlers::reports::update_report,
         crate::http::handlers::reports::delete_report,
         crate::http::handlers::reports::rotate_report_share_token,
-        crate::http::handlers::reports::refresh_report_block,
         crate::http::handlers::reports::get_report_by_share_token,
         crate::http::handlers::reports::export_report_markdown,
         crate::http::handlers::reports::list_org_panels,
@@ -724,7 +723,7 @@ impl Modify for SecurityAddon {
         (name = "invitations", description = "Token-backed organization invitations."),
         (name = "runs", description = "Experiment runs, metrics, attributes, objects, artifacts."),
         (name = "dashboard", description = "Browser dashboard preferences and saved workspace views."),
-        (name = "reports", description = "Notion-style report documents with live PanelGrids and LLM summary blocks."),
+        (name = "reports", description = "Notion-style report documents with live PanelGrids."),
     ),
 )]
 pub struct ApiDoc;

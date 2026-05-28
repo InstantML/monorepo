@@ -34,8 +34,7 @@ export interface ResolvedPickerKind {
     | "callout"
     | "horizontal_rule"
     | "image"
-    | "panel_grid"
-    | "llm_summary";
+    | "panel_grid";
   headingLevel?: 1 | 2 | 3;
 }
 

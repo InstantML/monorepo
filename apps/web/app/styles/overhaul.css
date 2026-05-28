@@ -1642,8 +1642,8 @@ textarea:focus {
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Secondary surfaces — every page inlined with the mock flat language
- * (Alerts / Datasets / Artifacts / Models / Reports / Settings /
- *  Integrations / API + their cards, lists, KPI tiles, code blocks)
+ * (Alerts / Datasets / Artifacts / Checkpoints / Reports / Settings /
+ *  API + their cards, lists, KPI tiles, code blocks)
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* Page-head spacing on secondary panes (PageHead component) */
@@ -1734,15 +1734,13 @@ textarea:focus {
 .api-row:hover { border-color: var(--line-strong); background: var(--surface-hover); }
 .event-row strong,
 .browser-row strong,
-.timeline-row strong,
-.integration-card strong {
+.timeline-row strong {
   color: var(--text);
   font: 600 13px/1.2 var(--font-sans);
 }
 .event-row small,
 .browser-row small,
-.timeline-row small,
-.integration-card small {
+.timeline-row small {
   color: var(--muted);
   font: 500 11.5px/1.3 var(--font-mono);
 }
@@ -1768,17 +1766,6 @@ textarea:focus {
   font-family: var(--font-mono);
   color: var(--text-2);
 }
-
-/* Integration tiles → flat bordered card with status chip */
-.integration-grid { gap: 12px; }
-.integration-card {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  padding: 16px;
-}
-.integration-card:hover { border-color: var(--line-strong); }
-.integration-card strong { font-size: 14px; }
 
 /* Code / request-context blocks */
 .panel-body pre,

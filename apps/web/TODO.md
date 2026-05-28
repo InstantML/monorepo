@@ -34,11 +34,11 @@ Implemented today:
 - Tab navigation through native buttons, inputs, selects, and checkboxes.
 - Focus traps and focus restoration for shortcut help, quick search, add-panel drawer, panel-edit drawer, and fullscreen panel inspection.
 - Production UI polish from Computer Use QA: compact run rows, visible panel action affordances, actionable add-panel empty state, unclipped fullscreen charts, responsive Run Detail KPIs, horizontally contained Compare matrices, safer quick-search routing while typing, and tokenized run search such as `seed 13`.
-- Route-backed dashboard tab routing for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Models`, `Reports`, `Settings`, `Integrations`, and `API`, with legacy hash normalization for old links.
+- Route-backed dashboard tab routing for `Runs`, `Metrics`, `Run Detail`, `Compare`, `Alerts`, `Datasets`, `Artifacts`, `Checkpoints`, `Reports`, `Settings`, and `API`, with legacy hash normalization for old links.
 - Public landing, local dev Google-style sign-in/sign-up, onboarding, and copy-once SDK key creation before dashboard entry.
 - Runs workspace with run selector, sections, add/edit/remove/duplicate/fullscreen line panels, local workspace layout storage, and add-panel drawer.
 - Collapsible left app rail that expands on hover/focus and can be pinned.
-- Reports tab that lists local saved views, but no report editor.
+- Reports tab with persisted report documents, block editing, live PanelGrids, markdown export, and sharing.
 - Artifacts/checkpoints/rollouts UI, but no media panel viewer or image zoom/pan controls.
 - Root/Rust/SDK TODOs now track W&B-informed API and SDK expansion; this file tracks the UI slices that become possible as those surfaces land.
 
@@ -84,8 +84,8 @@ These items came from a UI sweep for controls that looked clickable or product-c
   - UI rule: do not add promote/alias/lineage/TTL buttons until those Rust artifact contracts exist.
 
 - [ ] Add honest creation/edit actions for derived tabs.
-  - Current app: Alerts, Datasets, Models, Reports, and Integrations are derived read surfaces or admin snippets.
-  - Missing backend/product surface: persistent alert rules, dataset registry records, model registry entries, report editor documents, and integration credentials.
+  - Current app: Alerts, Datasets, and Checkpoints are derived read surfaces.
+  - Missing backend/product surface: persistent alert rules, dataset registry records, and checkpoint registry entries.
   - UI rule: refresh/copy/navigation actions are allowed now; create/edit/delete controls should wait for persisted route contracts.
 
 ## Priority Definitions
@@ -545,7 +545,7 @@ These items came from the full frontend audit for issues like fixed minimum grid
   - Build: rich-object media cards reuse the safe same-origin media helper; unsupported/external/demo URIs fall back safely.
   - Remaining: workspace media panels, fullscreen handoff for video, image zoom, and step sliders.
 
-## P2: Artifacts, Lineage, Registry, And Models UI
+## P2: Artifacts, Lineage, Registry, And Checkpoints UI
 
 - [ ] Add artifact versions and aliases UI.
   - W&B gap alignment: users expect `latest`, `vN`, and custom aliases to be visible and navigable.
@@ -567,7 +567,7 @@ These items came from the full frontend audit for issues like fixed minimum grid
 
 - [ ] Add model registry first slice only after artifact versions are stable.
   - W&B gap alignment: registry is a curated org-level artifact lifecycle surface.
-  - Current app: `Models` is derived from checkpoint artifacts only.
+  - Current app: `Checkpoints` is derived from checkpoint artifacts only.
   - Build: collections, promoted versions, aliases, tags, lineage, and audit summary if customer validation confirms demand.
   - Tests: role-based edit/delete affordances match auth state.
 
@@ -590,7 +590,7 @@ These items came from the full frontend audit for issues like fixed minimum grid
   - Build: audited edit flows for notes, tags, display name, safe metadata/config fields, and summary overrides after Rust supports mutation routes.
   - Tests: validation errors preserve edits, read-only users cannot see save affordances.
 
-## P2: Sweeps, Automations, And Integrations UI
+## P2: Sweeps And Automations UI
 
 - [ ] Add minimal sweeps dashboard after Rust sweep routes exist.
   - W&B gap alignment: sweeps include config, agents, run assignments, results, and best-run lookup.
@@ -605,14 +605,8 @@ These items came from the full frontend audit for issues like fixed minimum grid
   - Tests: webhook secrets are never displayed, failed deliveries are visible.
 
 - [ ] Add artifact-event automation UI later.
-  - Build: trigger when a version is created or an alias/tag changes, with webhook/Slack destination once integrations exist.
+  - Build: trigger when a version is created or an alias/tag changes, with webhook/Slack destination after delivery integrations exist.
   - Tests: registry/artifact permissions control available actions.
-
-- [ ] Add integrations status and setup guides.
-  - W&B gap alignment: framework integrations are a major adoption path.
-  - Current app: Integrations tab is mostly implementation-backed cards and snippets.
-  - Build: status cards and copyable setup snippets for Python SDK, PyTorch Lightning, Hugging Face, Keras, TensorBoard, Gym/RL, W&B dual logging, and MLflow import as those SDK features land.
-  - Tests: snippets reflect current package/API names and Rust default backend.
 
 ## P2: Accessibility And Keyboard Polish
 

@@ -64,10 +64,10 @@ test("filterBlockPicker ranks exact match above prefix", () => {
   assert.equal(result[0].id, "paragraph");
 });
 
-test("filterBlockPicker matches keywords (h1, hr, ai)", () => {
+test("filterBlockPicker matches keywords (h1, hr, chart)", () => {
   assert.equal(filterBlockPicker("h1", BLOCK_PICKER_CATALOG)[0].id, "heading-1");
   assert.equal(filterBlockPicker("hr", BLOCK_PICKER_CATALOG)[0].id, "horizontal_rule");
-  assert.equal(filterBlockPicker("ai", BLOCK_PICKER_CATALOG)[0].id, "llm_summary");
+  assert.equal(filterBlockPicker("chart", BLOCK_PICKER_CATALOG)[0].id, "panel_grid");
 });
 
 test("filterBlockPicker returns empty when nothing matches", () => {

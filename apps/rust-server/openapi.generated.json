@@ -3056,85 +3056,6 @@
         ]
       }
     },
-    "/api/reports/{report_id}/blocks/{block_index}/refresh": {
-      "post": {
-        "tags": [
-          "reports"
-        ],
-        "operationId": "refresh_report_block",
-        "parameters": [
-          {
-            "name": "report_id",
-            "in": "path",
-            "description": "Report UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "block_index",
-            "in": "path",
-            "description": "0-indexed block position",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Report with refreshed LLM summary block",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReportEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Block does not support refresh",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Report or block not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "bearerApiKey": []
-          }
-        ]
-      }
-    },
     "/api/reports/{report_id}/markdown": {
       "get": {
         "tags": [
@@ -10057,7 +9978,7 @@
           },
           "blocks": {
             "type": "object",
-            "description": "Ordered list of block JSON objects. Each block has a `kind` discriminator\n(`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,\n`image`, `panel_grid`, `llm_summary`) plus kind-specific fields."
+            "description": "Ordered list of block JSON objects. Each block has a `kind` discriminator\n(`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,\n`image`, `panel_grid`) plus kind-specific fields. Legacy stored\nreports may still contain `llm_summary` blocks so old documents keep\nrendering."
           },
           "created_at": {
             "type": "string",
@@ -11180,7 +11101,7 @@
     },
     {
       "name": "reports",
-      "description": "Notion-style report documents with live PanelGrids and LLM summary blocks."
+      "description": "Notion-style report documents with live PanelGrids."
     }
   ]
 }

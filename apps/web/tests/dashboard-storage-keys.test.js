@@ -94,8 +94,8 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /legacyWorkspaceStorageKeys\(project, activeOrgId\)/, "authenticated workspace layout loads should migrate old org/project layout keys into the scoped key");
   assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
-  assert.match(shell, /ADVANCED_REDUCERS_VIEW_KEY\s*=\s*"system:advanced-reducers"/, "advanced reducer preset should be a built-in view, not the default route");
-  assert.match(shell, /selectTab\("advanced"\)/, "advanced reducer preset should open the advanced route");
+  assert.equal(/ADVANCED_REDUCERS_VIEW_KEY/.test(shell), false, "advanced reducer preset should be removed with the Advanced tab");
+  assert.equal(/selectTab\("advanced"\)/.test(shell), false, "advanced route should not be opened from saved views");
   assert.match(shell, /setOrgSwitchError\(detail\);[\s\S]*?setMessage\(detail\);/, "failed workspace switches should remain visible after the menu closes");
   assert.match(shell, /metricCatalogSelectionIds/, "metric catalog counts should use the effective chart run scope");
   assert.match(shell, /selectedRunIds\.length \? selectedRunIds : sortedRuns\.map/, "no explicit run selection should count visible runs as selected for metrics");

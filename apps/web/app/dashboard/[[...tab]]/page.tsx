@@ -9,22 +9,21 @@ const tabIds = new Set([
   "runs",
   "metrics",
   "distributed",
-  "advanced",
   "detail",
   "compare",
   "alerts",
   "datasets",
   "insights",
   "artifacts",
-  "models",
+  "checkpoints",
   "reports",
   "settings",
-  "integrations",
   "api",
 ]);
 
 export default async function DashboardPage({ params }: DashboardPageProps) {
   const { tab = [] } = await params;
-  const initialTab = tabIds.has(tab[0] ?? "") ? (tab[0] as TabId) : "runs";
+  const requestedTab = tab[0] === "models" ? "checkpoints" : (tab[0] ?? "");
+  const initialTab = tabIds.has(requestedTab) ? (requestedTab as TabId) : "runs";
   return <DashboardShell initialTab={initialTab} />;
 }

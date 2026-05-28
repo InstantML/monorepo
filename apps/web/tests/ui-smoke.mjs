@@ -1086,10 +1086,9 @@ try {
     ["Alerts", "Run Health"],
     ["Datasets", "Config-derived Datasets"],
     ["Artifacts", "Selected-run Artifacts"],
-    ["Models", "Checkpoint Lineage"],
+    ["Checkpoints", "Checkpoint Lineage"],
     ["Reports", "Local Saved Views"],
     ["Settings", "Workspace"],
-    ["Integrations", "Python SDK"],
     ["API", "API Surface"],
   ];
   for (const [tab, expectedText] of tabChecks) {
@@ -1238,7 +1237,7 @@ try {
   assert.ok(Number.parseFloat(data.chartStrokeWidth) <= 1.5, `chart lines should stay thin for overlap, got ${data.chartStrokeWidth}`);
   assert.ok(Number.parseFloat(data.chartPointRadius) <= 2.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
   assert.equal(data.visibleBrandTitle, null);
-  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Advanced", "Compare", "Alerts", "Insights", "Datasets", "Artifacts", "Models", "Reports", "Settings", "Integrations", "API"]);
+  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Compare", "Alerts", "Insights", "Datasets", "Artifacts", "Checkpoints", "Reports", "Settings", "API"]);
   assert.ok(data.rows >= 6);
   assert.equal(data.chart, true);
   assert.ok(data.points > 0);

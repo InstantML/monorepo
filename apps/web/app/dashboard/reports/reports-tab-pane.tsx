@@ -28,7 +28,6 @@ import {
   fetchReport,
   listReports,
   patchReport,
-  refreshReportBlock,
   reportMarkdownUrl,
   rotateReportShareToken,
 } from "../../../src/reports-api.js";
@@ -83,7 +82,6 @@ export function ReportsTabPane() {
   });
   const [activeReport, setActiveReport] = useState<ReportRecord | null>(null);
   const [busy, setBusy] = useState(false);
-  const [refreshingBlockIndex, setRefreshingBlockIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoSave, setAutoSave] = useState<AutoSaveStatus>({ state: "idle" });
 
@@ -376,24 +374,6 @@ export function ReportsTabPane() {
     }
   }, []);
 
-  const handleRefreshBlock = useCallback(
-    async (blockIndex: number) => {
-      if (!activeReport) return;
-      setRefreshingBlockIndex(blockIndex);
-      setError(null);
-      try {
-        await flushPendingEdits();
-        const refreshed = await refreshReportBlock(api, activeReport.id, blockIndex);
-        if (refreshed) setActiveReport(refreshed);
-      } catch (refreshError) {
-        setError(messageFromError(refreshError));
-      } finally {
-        setRefreshingBlockIndex(null);
-      }
-    },
-    [activeReport, api, flushPendingEdits],
-  );
-
   const handleShare = useCallback(async () => {
     if (!activeReport) return;
     setBusy(true);
@@ -444,7 +424,7 @@ export function ReportsTabPane() {
         eyebrow="Workspace"
         title="Reports"
         emphasis="for collaboration"
-        lede="Block-based documents · live PanelGrids · LLM summaries"
+        lede="Block-based documents · live PanelGrids · shareable recaps"
       />
       {error ? <div className="report-error" role="alert">{error}</div> : null}
       {mode.kind === "list" ? (
@@ -530,10 +510,8 @@ export function ReportsTabPane() {
           ) : null}
           <ReportEditor
             report={activeReport}
-            refreshingBlockIndex={refreshingBlockIndex}
             autoFocusTitle={Boolean(mode.kind === "open" && mode.autoFocus)}
             onChange={handleEditorChange}
-            onRefreshBlock={(index) => void handleRefreshBlock(index)}
             onUndo={handleUndo}
             onRedo={handleRedo}
           />

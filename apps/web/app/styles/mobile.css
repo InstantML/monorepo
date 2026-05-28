@@ -484,31 +484,18 @@
     white-space: normal;
   }
 
-  /* ── Secondary tabs (alerts / artifacts / datasets / models /
-   *    reports / settings / integrations)
+  /* ── Secondary tabs (alerts / artifacts / datasets / checkpoints /
+   *    reports / settings)
    *
    * Until now these tabs inherited their desktop multi-column grids on
    * mobile, with no overrides. Every rule below collapses one of those
    * grids to a stacked or scrollable mobile-friendly layout.
    * ─────────────────────────────────────────────────────────────────── */
 
-  /* Models tab: 2-col grid (main + 332px sidebar) → stacked. */
+  /* Checkpoints tab: 2-col grid (main + 332px sidebar) → stacked. */
   .tab-grid.two-col {
     grid-template-columns: 1fr;
     gap: 12px;
-  }
-
-  /* Integrations tab: 3-col card grid → 1 column. */
-  .integration-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-  .integration-card {
-    padding: 12px;
-  }
-  .integration-top {
-    gap: 8px;
-    flex-wrap: wrap;
   }
 
   /* Datasets table: desktop is a 4-col grid (≥480px). Scroll
@@ -600,7 +587,6 @@
   .compact-row { min-width: 440px; }
   .panel-body { padding: 10px; }
   .panel-head { padding: 8px 10px; }
-  .integration-card { padding: 10px; }
 }
 
 /* Prevent body scroll while the nav drawer is open on mobile */

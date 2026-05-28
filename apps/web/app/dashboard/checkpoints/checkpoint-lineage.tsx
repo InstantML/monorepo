@@ -1,9 +1,9 @@
 "use client";
 
 import { safeArtifactUri } from "../../dashboard-models";
-import type { ModelRow } from "../../dashboard-types";
+import type { CheckpointRow } from "../../dashboard-types";
 
-export function ModelLineage({ rows }: { rows: ModelRow[] }) {
+export function CheckpointLineage({ rows }: { rows: CheckpointRow[] }) {
   if (!rows.length) return <div className="empty">No checkpoints logged for the selected run.</div>;
   return (
     <div className="timeline-list">

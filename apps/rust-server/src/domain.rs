@@ -996,7 +996,7 @@ pub struct WorkspaceViewSummary {
 }
 
 // ============================================================================
-// Reports — Notion-style documents with live PanelGrids + LLM summary blocks.
+// Reports — Notion-style documents with live PanelGrids.
 // Persisted via the same operational-records pattern as runs/projects/
 // workspace_views (a JSON payload append-logged to ClickHouse and rebuilt
 // into the in-memory index on boot).
@@ -1031,7 +1031,9 @@ pub struct ReportRow {
     pub description: Option<String>,
     /// Ordered list of block JSON objects. Each block has a `kind` discriminator
     /// (`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,
-    /// `image`, `panel_grid`, `llm_summary`) plus kind-specific fields.
+    /// `image`, `panel_grid`) plus kind-specific fields. Legacy stored
+    /// reports may still contain `llm_summary` blocks so old documents keep
+    /// rendering.
     #[schema(value_type = Object)]
     pub blocks: Value,
     pub created_at: DateTime<Utc>,

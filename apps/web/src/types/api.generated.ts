@@ -783,22 +783,6 @@ export interface paths {
         patch: operations["update_report"];
         trace?: never;
     };
-    "/api/reports/{report_id}/blocks/{block_index}/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["refresh_report_block"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/reports/{report_id}/markdown": {
         parameters: {
             query?: never;
@@ -2326,7 +2310,9 @@ export interface components {
             author_user_id?: string | null;
             /** @description Ordered list of block JSON objects. Each block has a `kind` discriminator
              *     (`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,
-             *     `image`, `panel_grid`, `llm_summary`) plus kind-specific fields. */
+             *     `image`, `panel_grid`) plus kind-specific fields. Legacy stored
+             *     reports may still contain `llm_summary` blocks so old documents keep
+             *     rendering. */
             blocks: Record<string, never>;
             /** Format: date-time */
             created_at: string;
@@ -4760,58 +4746,6 @@ export interface operations {
                 };
             };
             /** @description Report not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    refresh_report_block: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Report UUID */
-                report_id: string;
-                /** @description 0-indexed block position */
-                block_index: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Report with refreshed LLM summary block */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReportEnvelope"];
-                };
-            };
-            /** @description Block does not support refresh */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Report or block not found */
             404: {
                 headers: {
                     [name: string]: unknown;

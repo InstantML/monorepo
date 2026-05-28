@@ -18,14 +18,13 @@
  *   - tracker.create_report(title, description?, blocks, visibility?, project_id?)
  *   - tracker.update_report(report_id, title?, description?, blocks?, visibility?)
  *   - tracker.delete_report(report_id)
- *   - tracker.refresh_llm_summary(report_id, block_index)
  *   - tracker.share_report(report_id) → { share_token, share_url }
  *   - tracker.report_block_schema() → JSON example covering every block type
  *
  * The report tools take a `blocks` array that the agent authors directly. See
  * `tracker.report_block_schema` for the exact shape of every block type
  * (heading / paragraph / markdown / code / callout / horizontal_rule / image
- * / panel_grid / llm_summary). The PanelGrid block accepts four panel kinds
+ * / panel_grid). The PanelGrid block accepts four panel kinds
  * (line / bar / scalar / scatter) and runsets that can pin specific run IDs.
  *
  * Usage:

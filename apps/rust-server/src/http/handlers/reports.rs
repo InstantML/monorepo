@@ -186,40 +186,6 @@ pub async fn rotate_report_share_token(
 }
 
 #[utoipa::path(
-    post,
-    path = "/api/reports/{report_id}/blocks/{block_index}/refresh",
-    tag = "reports",
-    params(
-        ("report_id" = String, Path, description = "Report UUID"),
-        ("block_index" = i64, Path, description = "0-indexed block position"),
-    ),
-    security(("browserSession" = []), ("bearerApiKey" = [])),
-    responses(
-        (status = 200, description = "Report with refreshed LLM summary block", body = crate::http::openapi::ReportEnvelope),
-        (status = 400, description = "Block does not support refresh", body = crate::http::openapi::ErrorResponse),
-        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
-        (status = 404, description = "Report or block not found", body = crate::http::openapi::ErrorResponse),
-    ),
-)]
-pub async fn refresh_report_block(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Path((report_id, block_index)): Path<(String, i64)>,
-) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
-    validate_session_mutation_origin(&state, &headers, &ctx)?;
-    let report_id = parse_uuid(&report_id, "report not found")?;
-    if block_index < 0 {
-        return Err(crate::errors::AppError::validation(
-            "block_index must be nonnegative",
-        ));
-    }
-    let row =
-        store::refresh_report_block(&state.store, &ctx, report_id, block_index as usize).await?;
-    Ok(Json(json!({ "report": row })))
-}
-
-#[utoipa::path(
     get,
     path = "/api/reports/share/{share_token}",
     tag = "reports",

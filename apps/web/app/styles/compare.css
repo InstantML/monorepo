@@ -317,8 +317,7 @@ button.compare-row-head.active {
 
 .event-row strong,
 .browser-row strong,
-.timeline-row strong,
-.integration-card strong {
+.timeline-row strong {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -330,8 +329,7 @@ button.compare-row-head.active {
 
 .event-row small,
 .browser-row small,
-.timeline-row small,
-.integration-card small {
+.timeline-row small {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -441,28 +439,6 @@ button.compare-row-head.active {
   width: 100%;
 }
 
-.integration-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.integration-card {
-  display: grid;
-  gap: 10px;
-  min-height: 150px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--control-radius);
-  background: var(--surface-soft);
-  padding: 12px;
-}
-
-.integration-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
 
 .api-row {
   grid-template-columns: 60px minmax(0, 1fr) auto;
@@ -739,8 +715,7 @@ button.compare-row-head.active {
   .artifact-grid,
   .stat-grid,
   .tab-grid.two-col,
-  .settings-grid,
-  .integration-grid {
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 

@@ -13,7 +13,6 @@ and live chart panels — the same way a human does in the dashboard.
 | `tracker.create_report`           | Create a new report from a title + ordered `blocks` array.              |
 | `tracker.update_report`           | Patch any of title / description / visibility / blocks.                 |
 | `tracker.delete_report`           | Delete a report.                                                        |
-| `tracker.refresh_llm_summary`     | Re-run the LLM summarizer for an `llm_summary` block at a given index.  |
 | `tracker.share_report`            | Generate or rotate a share token; returns `share_token` and `share_url`.|
 | `tracker.report_block_schema`     | Return a canonical JSON example covering every supported block kind.    |
 
@@ -33,7 +32,6 @@ Every block carries a `kind` discriminator. The supported kinds are:
 - `horizontal_rule`
 - `image` (`url`, `caption?`)
 - `panel_grid` (live charts — see below)
-- `llm_summary` (`panelgrid_index`, `angle`)
 
 A `panel_grid` is the load-bearing live-data block. It owns:
 
@@ -60,11 +58,9 @@ const report = await call("tracker.create_report", {
     { kind: "paragraph", text: "Live charts pull current values on every page load." },
     { kind: "panel_grid", runsets: [{ name: "recent", projects: ["proj-a"], limit: 10 }],
       panels: [{ type: "line", metric_key: "train/loss", runset_index: 0 }] },
-    { kind: "llm_summary", panelgrid_index: 2, angle: "what-worked" },
   ],
 });
 ```
 
-After creation, call `tracker.refresh_llm_summary` on the `llm_summary`
-block index to populate it; call `tracker.share_report` to mint a public
-link for teammates.
+After creation, call `tracker.share_report` to mint a public link for
+teammates.

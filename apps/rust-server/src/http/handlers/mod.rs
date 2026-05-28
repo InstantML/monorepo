@@ -46,7 +46,7 @@ pub(super) use platform::{
 };
 pub(super) use reports::{
     create_report, delete_report, export_report_markdown, get_report, get_report_by_share_token,
-    list_org_panels, list_reports, refresh_report_block, rotate_report_share_token, update_report,
+    list_org_panels, list_reports, rotate_report_share_token, update_report,
 };
 pub(super) use runs::{
     create_attributes, create_object, create_project, create_run, fork_run, get_metrics, get_run,
@@ -269,7 +269,6 @@ mod tests {
             "/api/reports/panels",
             "/api/reports/{report_id}",
             "/api/reports/{report_id}/share",
-            "/api/reports/{report_id}/blocks/{block_index}/refresh",
             "/api/reports/{report_id}/markdown",
             "/api/reports/share/{share_token}",
         ] {

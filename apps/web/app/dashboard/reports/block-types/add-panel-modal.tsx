@@ -297,25 +297,17 @@ function PanelsTab({
           <h4 className="add-panel-modal__category-label">{categoryLabel(category)}</h4>
           <div className="add-panel-modal__cells">
             {entries.map((entry) => {
-              const active = entry.implemented && selectedType === entry.type;
+              const active = selectedType === entry.type;
               return (
                 <button
                   key={entry.type}
                   type="button"
-                  className={`add-panel-modal__cell${entry.implemented ? "" : " add-panel-modal__cell--disabled"}${active ? " add-panel-modal__cell--active" : ""}`}
+                  className={`add-panel-modal__cell${active ? " add-panel-modal__cell--active" : ""}`}
                   onClick={() => onPick(entry)}
-                  disabled={!entry.implemented}
-                  title={entry.implemented ? entry.label : `${entry.label} — coming in v1.3`}
-                  aria-label={
-                    entry.implemented
-                      ? `Pick ${entry.label} panel`
-                      : `${entry.label} not yet implemented`
-                  }
+                  title={entry.label}
+                  aria-label={`Pick ${entry.label} panel`}
                 >
                   <span className="add-panel-modal__cell-label">{entry.label}</span>
-                  {!entry.implemented ? (
-                    <span className="add-panel-modal__cell-tag">v1.3</span>
-                  ) : null}
                 </button>
               );
             })}

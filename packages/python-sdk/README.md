@@ -503,13 +503,13 @@ Automatic SDK source metadata is reserved under `metadata["_rlobs"]["source"]`. 
 ## TODO: v1.5 Reports SDK
 
 The dashboard now ships a Reports surface — Notion-style documents that combine
-prose, code, live PanelGrids (cross-project run queries), and LLM-generated
-summary blocks. Programmatic creation from the SDK lands in v1.5: an
+prose, code, and live PanelGrids for cross-project run queries. Programmatic
+creation from the SDK lands in v1.5: an
 `instantml.Report(title=..., blocks=[...]).save()` builder mirroring the
-`Runset` / `Panel` / `LLMSummaryBlock` data classes the Rust API already
-accepts. Track this against the wiki `reports-feature` spec when the time
-comes; the operational record kind is `report` and the schema is documented
-under `apps/rust-server/src/store/reports/`.
+`Runset` / `Panel` data classes the Rust API already accepts. Track this
+against the wiki `reports-feature` spec when the time comes; the operational
+record kind is `report` and the schema is documented under
+`apps/rust-server/src/store/reports/`.
 
 ## Notes for Future Agents
 

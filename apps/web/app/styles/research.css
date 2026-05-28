@@ -1,8 +1,6 @@
 /* ── research.css — Distributed and Insights dashboard panels ───────────────
  * Consumes the canonical design tokens from tokens.css and reuses the shared
- * .analysis-* / .panel layout language defined in overhaul.css. The Advanced
- * tab composes the Distributed and Insights panes under one page header with
- * lightweight section bands instead of repeating full page headers.
+ * .analysis-* / .panel layout language defined in overhaul.css.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 .analysis-page {
@@ -24,8 +22,7 @@
   padding: 0;
 }
 
-/* ── Section band — separates the two analysis modes inside the Advanced
- *    page without a second heavy page header. ─────────────────────────────── */
+/* ── Section band — used by compact embedded analysis panes. ─────────────── */
 .advanced-section-band {
   display: flex;
   align-items: center;

@@ -83,14 +83,6 @@ export async function rotateReportShareToken(api, reportId) {
   return reportFromPayload(payload);
 }
 
-export async function refreshReportBlock(api, reportId, blockIndex) {
-  const payload = await api.post(
-    `/api/reports/${reportId}/blocks/${blockIndex}/refresh`,
-    {},
-  );
-  return reportFromPayload(payload);
-}
-
 export function reportMarkdownUrl(reportId, { shareToken } = {}) {
   const params = new URLSearchParams();
   if (shareToken) params.set("share", shareToken);
