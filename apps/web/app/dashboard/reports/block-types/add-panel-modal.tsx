@@ -166,7 +166,7 @@ export function AddPanelModal({
       pickedType === "scatter");
 
   return (
-    <div className="add-panel-modal-overlay" onMouseDown={onClose}>
+    <div className="add-panel-modal-overlay" onMouseDown={onClose} role="presentation">
       <div
         className="add-panel-modal"
         role="dialog"
@@ -359,11 +359,12 @@ function MetricKeyCombobox({
 
   return (
     <div className="add-panel-modal__combo">
-      <label className="add-panel-modal__combo-label">
+      <span className="add-panel-modal__combo-label">
         Metric key{optional ? " (optional)" : ""}
-      </label>
+      </span>
       <div className="add-panel-modal__combo-shell">
         <input
+          aria-label={optional ? "Metric key optional" : "Metric key"}
           ref={inputRef}
           className="add-panel-modal__combo-input"
           type="text"
@@ -405,29 +406,28 @@ function MetricKeyCombobox({
           }}
         />
         {open && filtered.length > 0 ? (
-          <ul className="add-panel-modal__combo-list" role="listbox">
+          <div className="add-panel-modal__combo-list" role="listbox">
             {filtered.map((key, index) => {
               const active = index === activeIndex;
               return (
-                <li key={key}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    className={`add-panel-modal__combo-row${active ? " add-panel-modal__combo-row--active" : ""}`}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      onChange(key);
-                      setOpen(false);
-                    }}
-                    onMouseEnter={() => setActiveIndex(index)}
-                  >
-                    {key}
-                  </button>
-                </li>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={`add-panel-modal__combo-row${active ? " add-panel-modal__combo-row--active" : ""}`}
+                  key={key}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    onChange(key);
+                    setOpen(false);
+                  }}
+                  onMouseEnter={() => setActiveIndex(index)}
+                >
+                  {key}
+                </button>
               );
             })}
-          </ul>
+          </div>
         ) : null}
       </div>
     </div>

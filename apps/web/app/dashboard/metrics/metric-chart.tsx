@@ -331,7 +331,7 @@ export function MetricChart({
         {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow" title={normalizedSeries.slice(legendSeries.length).map((item) => item.identifier ?? item.name).join(", ")}>+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
       </div>
       <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }}>
-        {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
+        {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
             <g key={`y-${tick}`}>

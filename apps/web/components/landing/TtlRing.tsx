@@ -4,7 +4,7 @@
 // benchmark p95 for project summary (78 ms) — see
 // apps/rust-server README. Visual sweep is CSS-driven and cosmetic.
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 const MAX_MS = 200;
 const TARGET_MS = 78;
@@ -21,12 +21,12 @@ export function TtlRing() {
   const startedRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  function updateDial(nextMs: number) {
+  const updateDial = useCallback((nextMs: number) => {
     const fillFraction = Math.min(1, nextMs / MAX_MS);
     const offset = circumference * (1 - fillFraction);
     if (valueRef.current) valueRef.current.textContent = String(Math.round(nextMs));
     progressRef.current?.setAttribute("stroke-dashoffset", String(offset));
-  }
+  }, [circumference]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -47,7 +47,7 @@ export function TtlRing() {
       rafRef.current = null;
       startedRef.current = null;
     };
-  }, []);
+  }, [updateDial]);
 
   const fillFraction = Math.min(1, TARGET_MS / MAX_MS);
   const offset = circumference * (1 - fillFraction);

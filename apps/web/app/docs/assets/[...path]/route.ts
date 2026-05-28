@@ -6,6 +6,11 @@ import { docsImagesRoot } from "../../../../src/docs";
 type AssetParams = {
   params: Promise<{ path?: string[] }>;
 };
+type CachedAsset = {
+  body: Buffer;
+  contentType: string;
+  isSvg: boolean;
+};
 
 const contentTypes: Record<string, string> = {
   ".gif": "image/gif",
@@ -18,6 +23,8 @@ const contentTypes: Record<string, string> = {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const assetCache = new Map<string, CachedAsset>();
 
 export async function GET(_request: Request, { params }: AssetParams) {
   const { path: assetPath = [] } = await params;
@@ -35,25 +42,43 @@ export async function GET(_request: Request, { params }: AssetParams) {
     return new Response("Not found", { status: 404 });
   }
 
+  const asset = await loadDocsAsset(filePath);
+  if (!asset) return new Response("Not found", { status: 404 });
+
   try {
-    const info = await stat(filePath);
-    if (!info.isFile()) return new Response("Not found", { status: 404 });
-    const body = await readFile(filePath);
-    const contentType = contentTypeFor(filePath, body);
     const headers = new Headers({
       "Cache-Control": "public, max-age=3600",
-      "Content-Type": contentType,
+      "Content-Type": asset.contentType,
     });
-    if (path.extname(filePath).toLowerCase() === ".svg") {
+    if (asset.isSvg) {
       headers.set("Content-Disposition", "attachment");
       headers.set("Content-Security-Policy", "sandbox");
       headers.set("X-Content-Type-Options", "nosniff");
     }
-    return new Response(body, {
+    return new Response(asset.body, {
       headers,
     });
   } catch {
     return new Response("Not found", { status: 404 });
+  }
+}
+
+async function loadDocsAsset(filePath: string): Promise<CachedAsset | null> {
+  const cached = assetCache.get(filePath);
+  if (cached) return cached;
+  try {
+    const info = await stat(filePath);
+    if (!info.isFile()) return null;
+    const body = await readFile(filePath);
+    const asset = {
+      body,
+      contentType: contentTypeFor(filePath, body),
+      isSvg: path.extname(filePath).toLowerCase() === ".svg",
+    };
+    assetCache.set(filePath, asset);
+    return asset;
+  } catch {
+    return null;
   }
 }
 

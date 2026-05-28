@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Activity,
   BarChart3,
@@ -137,7 +138,7 @@ export function RunWorkspace({
       <div className="empty compact-empty run-detail-empty">
         <strong>No run open</strong>
         <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics.</span>
-        <a className="secondary compact-button" href="/dashboard/runs">Go to Runs</a>
+        <Link className="secondary compact-button" href="/dashboard/runs">Go to Runs</Link>
       </div>
     );
   }
@@ -325,7 +326,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
         </div>
         <label className="logs-search">
           <Search size={14} />
-          <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Filter logs" />
+          <input aria-label="Filter logs" value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Filter logs" />
         </label>
         <button className="icon-button framed" aria-label="Refresh logs" onClick={() => setRefreshKey((current) => current + 1)} type="button">
           <RefreshCw size={15} />
@@ -397,7 +398,7 @@ function RunEvidenceExplorer({
       <aside className="evidence-tree">
         <label className="evidence-search">
           <Search size={14} />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search files" />
+          <input aria-label="Search files" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search files" />
         </label>
         {sections.map((section) => (
           <div className="evidence-section" key={section.id}>

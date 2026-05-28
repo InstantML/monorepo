@@ -98,14 +98,14 @@ export function RunMetadataEditor({
         <div className="metadata-edit-grid">
           <label className="control">
             Tags
-            <textarea className="tag-textarea" value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="baseline, needs-review" rows={compact ? 2 : 3} />
+            <textarea aria-label="Run tags" className="tag-textarea" value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="baseline, needs-review" rows={compact ? 2 : 3} />
           </label>
           <div className="metadata-tag-preview" aria-label="Parsed tags">
             {parsedTags.length ? parsedTags.map((tag) => <span className="chip" key={tag} title={tag}>{tag}</span>) : <span className="compare-empty">No tags</span>}
           </div>
           <label className="control notes-control">
             Notes
-            <textarea value={notesText} onChange={(event) => setNotesText(event.target.value)} placeholder="Why this run matters" rows={compact ? 2 : 4} />
+            <textarea aria-label="Run notes" value={notesText} onChange={(event) => setNotesText(event.target.value)} placeholder="Why this run matters" rows={compact ? 2 : 4} />
           </label>
           {noteTooLong ? <small className="form-error">Notes must be at most 512 bytes.</small> : null}
           {error ? <small className="form-error">{error}</small> : null}

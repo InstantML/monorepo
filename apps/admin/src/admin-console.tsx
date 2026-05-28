@@ -98,7 +98,7 @@ export function AdminConsole({ overview, environment, apiBase, query }: AdminCon
           </div>
           <form className="search-form" action="/" role="search">
             <Search size={16} aria-hidden="true" />
-            <input name="q" defaultValue={query} placeholder="Search users, orgs, keys" />
+            <input aria-label="Search users, orgs, keys" name="q" defaultValue={query} placeholder="Search users, orgs, keys" />
             <button type="submit">Search</button>
           </form>
           <a className="icon-action" href={`/${query ? `?q=${encodeURIComponent(query)}` : ""}`}>

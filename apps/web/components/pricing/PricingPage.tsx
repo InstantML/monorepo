@@ -23,10 +23,13 @@
  *     marketing push. Marked PLACEHOLDER inline below.
  */
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { NavLogo } from "../landing/NavLogo";
 import { LogoMark } from "../landing/LogoMark";
 import { ThemeToggle } from "../landing/ThemeToggle";
+
+const COPYRIGHT_YEAR = new Date().getFullYear();
 
 function IconArrow() {
   return (
@@ -428,9 +431,15 @@ function FooterCol({
       <ul className="landing-footer-links">
         {links.map(([label, href]) => (
           <li key={label}>
-            <a href={href} className="landing-footer-link">
-              {label}
-            </a>
+            {href.startsWith("/") ? (
+              <Link href={href} className="landing-footer-link">
+                {label}
+              </Link>
+            ) : (
+              <a href={href} className="landing-footer-link">
+                {label}
+              </a>
+            )}
           </li>
         ))}
       </ul>
@@ -444,22 +453,22 @@ function Nav() {
       <div className="landing-nav__inner">
         <NavLogo size={22} />
         <div className="landing-nav__links">
-          <a href="/#how" className="landing-nav__link">
+          <Link href="/#how" className="landing-nav__link">
             How it works
-          </a>
-          <a href="/#capabilities" className="landing-nav__link">
+          </Link>
+          <Link href="/#capabilities" className="landing-nav__link">
             Capabilities
-          </a>
-          <a href="/#developers" className="landing-nav__link landing-nav__link--md">
+          </Link>
+          <Link href="/#developers" className="landing-nav__link landing-nav__link--md">
             Developers
-          </a>
-          <a href="/pricing" className="landing-nav__link pricing-nav__link--active">
+          </Link>
+          <Link href="/pricing" className="landing-nav__link pricing-nav__link--active">
             Pricing
-          </a>
+          </Link>
           <ThemeToggle />
-          <a href="/signup" className="landing-cta-primary landing-cta-primary--sm">
+          <Link href="/signup" className="landing-cta-primary landing-cta-primary--sm">
             Get early access
-          </a>
+          </Link>
         </div>
       </div>
     </nav>
@@ -651,13 +660,13 @@ export function PricingPage() {
               charges, no tracked-hour meter.
             </p>
             <div className="landing-cta-row">
-              <a href="/signup" className="landing-cta-primary">
+              <Link href="/signup" className="landing-cta-primary">
                 Get started
                 <IconArrow />
-              </a>
-              <a href="/#developers" className="landing-cta-ghost">
+              </Link>
+              <Link href="/#developers" className="landing-cta-ghost">
                 See the SDK
-              </a>
+              </Link>
             </div>
             <p className="landing-cta-note">
               hello@instantml.ai · we reply same business day
@@ -708,7 +717,7 @@ export function PricingPage() {
           </div>
           <div className="landing-footer__bottom">
             <span className="landing-footer__copy">
-              &copy; {new Date().getFullYear()} InstantML
+              &copy; {COPYRIGHT_YEAR} InstantML
             </span>
             <span className="landing-footer__status">
               <span className="status-live" />

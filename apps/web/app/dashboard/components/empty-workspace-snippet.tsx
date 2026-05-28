@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, Check, Copy, Terminal } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 // First-run SDK snippet for the empty-workspace state. Three-step layout:
@@ -163,22 +164,22 @@ export function EmptyWorkspaceSnippet({ orgName }: { orgName: string }) {
               use <button className="empty-workspace-snippet__inline-link" onClick={onCopySnippetWithKey} type="button">
                 {copied === "snippet-with-key" ? "copied with your key" : "copy a version with your key embedded"}
               </button>, or set <code>INSTANTML_API_KEY</code> from the{" "}
-              <a className="empty-workspace-snippet__link" href="/dashboard/api">API tab</a>.
+              <Link className="empty-workspace-snippet__link" href="/dashboard/api">API tab</Link>.
             </>
           ) : (
             <>
               set <code>INSTANTML_API_KEY</code> from the{" "}
-              <a className="empty-workspace-snippet__link" href="/dashboard/api">API tab</a>.
+              <Link className="empty-workspace-snippet__link" href="/dashboard/api">API tab</Link>.
             </>
           )}
         </span>
         <span className="empty-workspace-snippet__docs">
-          Need the full walkthrough? <a className="empty-workspace-snippet__link" href="/docs/quickstart">Open Quickstart</a>.
-          {" "}Also feel free to paste <a className="empty-workspace-snippet__link" href="/docs/quickstart.md">quickstart.md</a> to your agent.
+          Need the full walkthrough? <Link className="empty-workspace-snippet__link" href="/docs/quickstart">Open Quickstart</Link>.
+          {" "}Also feel free to paste <Link className="empty-workspace-snippet__link" href="/docs/quickstart.md">quickstart.md</Link> to your agent.
         </span>
-        <a className="empty-workspace-snippet__import" href="/dashboard/integrations">
+        <Link className="empty-workspace-snippet__import" href="/dashboard/integrations">
           Or import from W&amp;B / MLflow / Neptune <ArrowRight size={12} aria-hidden="true" />
-        </a>
+        </Link>
       </footer>
     </section>
   );

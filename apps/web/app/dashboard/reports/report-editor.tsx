@@ -732,7 +732,7 @@ function BlockRow({
 }) {
   const wrapClass = `report-editor__block-wrap${dragging ? " report-editor__block-wrap--dragging" : ""}${readOnly ? " report-editor__block-wrap--readonly" : ""}`;
   return (
-    <div className={wrapClass} tabIndex={-1} onKeyDown={onKeyDown}>
+    <div aria-label={`Report block ${index + 1}`} className={wrapClass} role="group" tabIndex={-1} onKeyDown={onKeyDown}>
       {!readOnly ? (
         <>
           <div

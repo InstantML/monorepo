@@ -361,9 +361,9 @@ function RunsetEditor({
           </button>
         ) : null}
       </div>
-      <label className="report-block__label">
+      <span className="report-block__label">
         Projects (comma-separated, supports cross-project)
-      </label>
+      </span>
       <input
         className="report-block__input"
         value={runset.projects.join(", ")}
@@ -383,11 +383,11 @@ function RunsetEditor({
       {projectOptions.length ? (
         <datalist id={projectListId}>
           {projectOptions.map((option) => (
-            <option key={option} value={option} />
+            <option key={option} value={option}>{option}</option>
           ))}
         </datalist>
       ) : null}
-      <label className="report-block__label">Pinned run IDs (UUID or project/name)</label>
+      <span className="report-block__label">Pinned run IDs (UUID or project/name)</span>
       <ul className="report-block__pinned-list">
         {pinnedRunIds.map((id) => (
           <li key={id} className="report-block__pinned-chip">
@@ -468,7 +468,7 @@ function PanelEditor({
         </button>
       ) : null}
       <div className="report-block__row">
-        <label className="report-block__label">Panel type</label>
+        <span className="report-block__label">Panel type</span>
         <select
           className="report-block__select"
           value={panel.type}
@@ -485,7 +485,7 @@ function PanelEditor({
       </div>
       {"runset_index" in panel ? (
         <div className="report-block__row">
-          <label className="report-block__label">Runset</label>
+          <span className="report-block__label">Runset</span>
           <select
             className="report-block__select"
             value={panel.runset_index}
@@ -572,7 +572,7 @@ function ParallelCoordsFields({
   };
   return (
     <div className="report-block__panel-fields">
-      <label className="report-block__label">Dimensions</label>
+      <span className="report-block__label">Dimensions</span>
       <ul className="report-block__pinned-list">
         {panel.dimensions.map((dim, index) => {
           const label = dim.metric_key
@@ -644,7 +644,7 @@ function RunComparerFields({
   const [fieldDraft, setFieldDraft] = useState("");
   return (
     <div className="report-block__panel-fields">
-      <label className="report-block__label">Run IDs to compare</label>
+      <span className="report-block__label">Run IDs to compare</span>
       <ul className="report-block__pinned-list">
         {panel.run_ids.map((id) => (
           <li key={id} className="report-block__pinned-chip">
@@ -698,7 +698,7 @@ function RunComparerFields({
           </button>
         </div>
       ) : null}
-      <label className="report-block__label">Fields (e.g. config.lr, summary.val_acc)</label>
+      <span className="report-block__label">Fields (e.g. config.lr, summary.val_acc)</span>
       <ul className="report-block__pinned-list">
         {panel.fields.map((field) => (
           <li key={field} className="report-block__pinned-chip">
@@ -767,7 +767,7 @@ function MarkdownPanelFields({
 }) {
   return (
     <div className="report-block__panel-fields">
-      <label className="report-block__label">Markdown</label>
+      <span className="report-block__label">Markdown</span>
       <textarea
         className="report-block__textarea report-block__textarea--mono"
         rows={Math.min(12, Math.max(3, panel.text.split("\n").length + 1))}
@@ -793,7 +793,7 @@ function CodePanelFields({
   return (
     <div className="report-block__panel-fields">
       <div className="report-block__row">
-        <label className="report-block__label">Language</label>
+        <span className="report-block__label">Language</span>
         <input
           className="report-block__input"
           value={panel.language}
@@ -803,7 +803,7 @@ function CodePanelFields({
           aria-label="Code panel language"
         />
       </div>
-      <label className="report-block__label">Code</label>
+      <span className="report-block__label">Code</span>
       <textarea
         className="report-block__textarea report-block__textarea--mono"
         rows={Math.min(15, Math.max(4, panel.code.split("\n").length + 1))}
@@ -830,7 +830,7 @@ function ImagePanelFields({
   return (
     <div className="report-block__panel-fields">
       <div className="report-block__row">
-        <label className="report-block__label">URL</label>
+        <span className="report-block__label">URL</span>
         <input
           className="report-block__input"
           value={panel.url}
@@ -841,7 +841,7 @@ function ImagePanelFields({
         />
       </div>
       <div className="report-block__row">
-        <label className="report-block__label">Caption</label>
+        <span className="report-block__label">Caption</span>
         <input
           className="report-block__input"
           value={panel.caption ?? ""}
@@ -870,7 +870,7 @@ function MetricInput({
 }) {
   return (
     <div className="report-block__row">
-      <label className="report-block__label">{label}</label>
+      <span className="report-block__label">{label}</span>
       <input
         className="report-block__input"
         value={value}
@@ -902,7 +902,7 @@ function LinePanelFields({
         ariaLabel="Line panel metric key"
       />
       <div className="report-block__row">
-        <label className="report-block__label">Smoothing</label>
+        <span className="report-block__label">Smoothing</span>
         <input
           className="report-block__input report-block__input--narrow"
           type="number"
@@ -937,7 +937,7 @@ function BarPanelFields({
         ariaLabel="Bar panel metric key"
       />
       <div className="report-block__row">
-        <label className="report-block__label">Group by (optional)</label>
+        <span className="report-block__label">Group by (optional)</span>
         <input
           className="report-block__input"
           value={panel.group_by ?? ""}
@@ -970,7 +970,7 @@ function ScalarPanelFields({
         ariaLabel="Scalar panel metric key"
       />
       <div className="report-block__row">
-        <label className="report-block__label">Aggregation</label>
+        <span className="report-block__label">Aggregation</span>
         <select
           className="report-block__select"
           value={panel.agg}
@@ -1015,7 +1015,7 @@ function ScatterPanelFields({
         ariaLabel="Scatter panel y metric"
       />
       <div className="report-block__row">
-        <label className="report-block__label">Color by (optional)</label>
+        <span className="report-block__label">Color by (optional)</span>
         <input
           className="report-block__input"
           value={panel.color_by ?? ""}

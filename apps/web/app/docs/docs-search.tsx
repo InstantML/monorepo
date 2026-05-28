@@ -141,6 +141,7 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
         type="search"
         placeholder="Search the docs"
         aria-label="Search the docs"
+        aria-autocomplete="list"
         autoComplete="off"
         spellCheck={false}
         value={query}
@@ -150,8 +151,6 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        aria-expanded={showResults}
-        aria-controls="docs-search-results"
       />
       {!query ? <kbd className="docs-route-search-kbd">/</kbd> : null}
       {showResults ? (

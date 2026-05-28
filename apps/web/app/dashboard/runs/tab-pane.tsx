@@ -319,6 +319,9 @@ export function RunsTabPane({
               onFullscreenPanelClose();
             }
           }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") onFullscreenPanelClose();
+          }}
         >
           <div className="workspace-modal-card fullscreen-modal-card">
             <div className="drawer-head">
