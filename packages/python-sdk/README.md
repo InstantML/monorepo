@@ -384,13 +384,12 @@ run = ro.init(
     project="cartpole",
     local_store=True,
     local_store_dir=".instantml/local",
-    system_metrics=True,
     system_metrics_interval=15.0,
     capture_console=True,
 )
 ```
 
-The SQLite store records attempted SDK events before submit; it is not replay and not proof the server accepted the event. System metrics log under `system/...` at the current step without incrementing it. Console capture writes through to the original streams and logs non-empty lines under `console/stdout` and `console/stderr`.
+The SQLite store records attempted SDK events before submit; it is not replay and not proof the server accepted the event. System metrics are enabled by default and log under `system/...` at the current step without incrementing it; pass `system_metrics=False` to disable. Console capture writes through to the original streams and logs non-empty lines under `console/stdout` and `console/stderr`.
 
 Framework adapters stay deliberately small:
 

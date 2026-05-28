@@ -143,7 +143,7 @@ class Client:
         spool_dir: str | None = None,
         local_store: bool = False,
         local_store_dir: str | None = None,
-        system_metrics: bool = False,
+        system_metrics: bool = True,
         system_metrics_interval: float = 15.0,
         capture_console: bool = False,
         async_init: bool = True,
@@ -249,7 +249,7 @@ class Client:
         spool_dir: str | None = None,
         local_store: bool = False,
         local_store_dir: str | None = None,
-        system_metrics: bool = False,
+        system_metrics: bool = True,
         system_metrics_interval: float = 15.0,
         capture_console: bool = False,
         queue_dir: str | None = None,
@@ -1773,7 +1773,7 @@ def init(
     spool_dir: str | None = None,
     local_store: bool = False,
     local_store_dir: str | None = None,
-    system_metrics: bool = False,
+    system_metrics: bool = True,
     system_metrics_interval: float = 15.0,
     capture_console: bool = False,
     async_init: bool = True,
@@ -1824,7 +1824,7 @@ def attach_run(
     spool_dir: str | None = None,
     local_store: bool = False,
     local_store_dir: str | None = None,
-    system_metrics: bool = False,
+    system_metrics: bool = True,
     system_metrics_interval: float = 15.0,
     capture_console: bool = False,
     queue_dir: str | None = None,
@@ -1997,7 +1997,7 @@ class _SystemMetricsSampler:
         self._run = run
         self._interval = interval
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._loop, name=f"instantml-system-{run.run_id}", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name=f"instantml-system-{run._run_id}", daemon=True)
 
     def start(self) -> None:
         self._thread.start()
