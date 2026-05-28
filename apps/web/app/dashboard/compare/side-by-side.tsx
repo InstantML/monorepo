@@ -418,17 +418,24 @@ function SortHead({
 }) {
   const Chevron = !active ? ChevronsUpDown : dir === "asc" ? ArrowUp : ArrowDown;
   const sortLabel = active ? `${label}, sorted ${dir === "asc" ? "ascending" : "descending"}` : `Sort by ${label}`;
+  const sortState = active ? (dir === "asc" ? "ascending" : "descending") : "none";
   return (
-    <button
-      aria-label={sortLabel}
-      className={`cmp-th ${active ? "sorted" : ""} ${align === "num" ? "num" : ""} ${sticky ? "sticky" : ""}`}
-      onClick={onSort}
-      title={title ?? `Sort by ${label}`}
-      type="button"
+    <div
+      aria-sort={sortState}
+      className={`cmp-th-cell ${sticky ? "sticky" : ""}`}
+      role="columnheader"
     >
-      <span className="cmp-th-label">{label}<Chevron className="cmp-th-chev" size={12} /></span>
-      {meta ? <span className="cmp-th-meta">{meta}</span> : null}
-    </button>
+      <button
+        aria-label={sortLabel}
+        className={`cmp-th ${active ? "sorted" : ""} ${align === "num" ? "num" : ""}`}
+        onClick={onSort}
+        title={title ?? `Sort by ${label}`}
+        type="button"
+      >
+        <span className="cmp-th-label">{label}<Chevron className="cmp-th-chev" size={12} /></span>
+        {meta ? <span className="cmp-th-meta">{meta}</span> : null}
+      </button>
+    </div>
   );
 }
 

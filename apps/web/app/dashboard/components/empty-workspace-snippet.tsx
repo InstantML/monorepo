@@ -164,12 +164,12 @@ export function EmptyWorkspaceSnippet({ orgName }: { orgName: string }) {
               use <button className="empty-workspace-snippet__inline-link" onClick={onCopySnippetWithKey} type="button">
                 {copied === "snippet-with-key" ? "copied with your key" : "copy a version with your key embedded"}
               </button>, or set <code>INSTANTML_API_KEY</code> from the{" "}
-              <Link className="empty-workspace-snippet__link" href="/dashboard/api">API tab</Link>.
+              <a className="empty-workspace-snippet__link" href="/dashboard/api">API tab</a>.
             </>
           ) : (
             <>
               set <code>INSTANTML_API_KEY</code> from the{" "}
-              <Link className="empty-workspace-snippet__link" href="/dashboard/api">API tab</Link>.
+              <a className="empty-workspace-snippet__link" href="/dashboard/api">API tab</a>.
             </>
           )}
         </span>
@@ -177,9 +177,9 @@ export function EmptyWorkspaceSnippet({ orgName }: { orgName: string }) {
           Need the full walkthrough? <Link className="empty-workspace-snippet__link" href="/docs/quickstart">Open Quickstart</Link>.
           {" "}Also feel free to paste <Link className="empty-workspace-snippet__link" href="/docs/quickstart.md">quickstart.md</Link> to your agent.
         </span>
-        <Link className="empty-workspace-snippet__import" href="/dashboard/integrations">
+        <a className="empty-workspace-snippet__import" href="/dashboard/integrations">
           Or import from W&amp;B / MLflow / Neptune <ArrowRight size={12} aria-hidden="true" />
-        </Link>
+        </a>
       </footer>
     </section>
   );

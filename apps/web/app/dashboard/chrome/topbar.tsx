@@ -746,11 +746,19 @@ export function DashboardTopbar({
         >
           {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
-        <Link className="brand-cell" href="/dashboard/runs" aria-label="InstantML">
+        <a
+          className="brand-cell"
+          href={tabToPath("runs")}
+          aria-label="InstantML"
+          onClick={(event) => {
+            event.preventDefault();
+            onSelectTab("runs");
+          }}
+        >
           <span className="brand-mark" aria-hidden="true">
             <InstantMlMark size={24} />
           </span>
-        </Link>
+        </a>
         <div className="brandbar-row">
           <span className="brand-wordmark" aria-label="InstantML">
             instant<span className="brand-wordmark__accent">ml</span>
@@ -776,6 +784,7 @@ export function DashboardTopbar({
               plan={planLabel}
               resetLabel={usageResetLabel}
               storagePercent={storageUsagePercent}
+              onSelectTab={onSelectTab}
               usageAvailable={usageAvailable}
             />
             <button className="ghost-kbd" type="button" onClick={onQuickSearch} aria-label="Quick search">
@@ -953,6 +962,7 @@ export function DashboardTopbar({
 function PlanUsageBadge({
   apiRequestPercent,
   metricPercent,
+  onSelectTab,
   plan,
   resetLabel,
   storagePercent,
@@ -960,6 +970,7 @@ function PlanUsageBadge({
 }: {
   apiRequestPercent: number;
   metricPercent: number;
+  onSelectTab: (tabId: TabId) => void;
   plan: string;
   resetLabel: string;
   storagePercent: number;
@@ -971,12 +982,20 @@ function PlanUsageBadge({
     ? resetLabel ? `${percent}% used · resets ${resetLabel}` : `${percent}% used`
     : "Usage unavailable";
   return (
-    <Link className={`plan-usage-badge ${tone}`} href={tabToPath("settings")} title={`Plan usage: ${detail}`}>
+    <a
+      className={`plan-usage-badge ${tone}`}
+      href={tabToPath("settings")}
+      title={`Plan usage: ${detail}`}
+      onClick={(event) => {
+        event.preventDefault();
+        onSelectTab("settings");
+      }}
+    >
       <span className="plan-usage-ring" style={{ "--plan-usage-percent": `${percent}%` } as CSSProperties} aria-hidden="true" />
       <span className="plan-usage-copy">
         <strong>{plan}</strong>
         <em>{detail}</em>
       </span>
-    </Link>
+    </a>
   );
 }

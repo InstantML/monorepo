@@ -10,6 +10,9 @@ type CachedAsset = {
   body: Buffer;
   contentType: string;
   isSvg: boolean;
+  lastAccess: number;
+  mtimeMs: number;
+  size: number;
 };
 
 const contentTypes: Record<string, string> = {
@@ -24,6 +27,7 @@ const contentTypes: Record<string, string> = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_ASSET_CACHE_ENTRIES = 64;
 const assetCache = new Map<string, CachedAsset>();
 
 export async function GET(_request: Request, { params }: AssetParams) {
@@ -64,22 +68,35 @@ export async function GET(_request: Request, { params }: AssetParams) {
 }
 
 async function loadDocsAsset(filePath: string): Promise<CachedAsset | null> {
-  const cached = assetCache.get(filePath);
-  if (cached) return cached;
   try {
     const info = await stat(filePath);
     if (!info.isFile()) return null;
+    const cached = assetCache.get(filePath);
+    if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) {
+      cached.lastAccess = Date.now();
+      return cached;
+    }
     const body = await readFile(filePath);
     const asset = {
       body,
       contentType: contentTypeFor(filePath, body),
       isSvg: path.extname(filePath).toLowerCase() === ".svg",
+      lastAccess: Date.now(),
+      mtimeMs: info.mtimeMs,
+      size: info.size,
     };
     assetCache.set(filePath, asset);
+    pruneAssetCache();
     return asset;
   } catch {
     return null;
   }
+}
+
+function pruneAssetCache() {
+  if (assetCache.size <= MAX_ASSET_CACHE_ENTRIES) return;
+  const [oldestPath] = [...assetCache.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess)[0] ?? [];
+  if (oldestPath) assetCache.delete(oldestPath);
 }
 
 function contentTypeFor(filePath: string, body: Buffer) {

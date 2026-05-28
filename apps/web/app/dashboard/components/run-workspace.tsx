@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   Activity,
   BarChart3,
@@ -138,7 +137,7 @@ export function RunWorkspace({
       <div className="empty compact-empty run-detail-empty">
         <strong>No run open</strong>
         <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics.</span>
-        <Link className="secondary compact-button" href="/dashboard/runs">Go to Runs</Link>
+        <a className="secondary compact-button" href="/dashboard/runs">Go to Runs</a>
       </div>
     );
   }
