@@ -77,6 +77,10 @@
   --workbar-height: 44px;
   --tracking-eyebrow: 0.1em;
   --tracking-display: -0.02em;
+  --scrollbar-size: 10px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(15, 23, 42, 0.18);
+  --scrollbar-thumb-hover: rgba(15, 23, 42, 0.34);
   --z-chrome: 50;
   --z-workbar: 40;
   --z-sticky-th: 5;
@@ -133,6 +137,9 @@
   --chart-tooltip-border: rgba(255, 255, 255, 0.12);
   --chart-tooltip-text: #f1f5f9;
   --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(248, 250, 252, 0.16);
+  --scrollbar-thumb-hover: rgba(248, 250, 252, 0.32);
   --bg-grid:
     radial-gradient(900px 600px at 50% -8%, rgba(31, 184, 119, 0.06), transparent 70%),
     linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),

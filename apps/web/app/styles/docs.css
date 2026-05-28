@@ -4,6 +4,15 @@
   color: #17211b;
   --docs-topbar-height: 104px;
   --docs-sidebar-width: 264px;
+  --scrollbar-track: #f7f8f5;
+  --scrollbar-thumb: rgba(8, 115, 75, 0.28);
+  --scrollbar-thumb-hover: rgba(8, 115, 75, 0.48);
+}
+
+body:has(.docs-route) {
+  --scrollbar-track: #f7f8f5;
+  --scrollbar-thumb: rgba(8, 115, 75, 0.28);
+  --scrollbar-thumb-hover: rgba(8, 115, 75, 0.48);
 }
 
 /* ---------- Top header (two rows, full-bleed) ---------- */
@@ -280,18 +289,6 @@
   min-height: 0;
   overflow-y: auto;
   padding-right: 6px;
-  /* Subtle scrollbar matching the rest of the app. */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(23, 33, 27, 0.18) transparent;
-}
-
-.docs-route-sidebar-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.docs-route-sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgba(23, 33, 27, 0.18);
-  border-radius: 3px;
 }
 
 .docs-route-sidebar-overview {
@@ -429,10 +426,9 @@
 
 .docs-route-article {
   min-width: 0;
-  width: 100%;
-  /* No max-width — fill the column. Avoids asymmetric whitespace on
-   * wide screens. Readable line-length is enforced where it actually
-   * matters: the description (max-width 720) and h1 (max-width 760). */
+  width: calc(100% - clamp(48px, 8vw, 160px));
+  max-width: 1280px;
+  margin-inline: auto;
   padding-top: 56px;
 }
 
@@ -832,6 +828,7 @@
 
   .docs-route-article {
     padding-top: 24px;
+    width: 100%;
     max-width: none;
   }
 

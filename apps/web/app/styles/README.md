@@ -7,8 +7,8 @@ Split from the original `globals.css` (11,348 lines) as part of the
 
 | File | Contents | Key selectors |
 |---|---|---|
-| `tokens.css` | Brand primitives + light/dark design tokens | `:root`, `:root[data-theme="dark"]` |
-| `base.css` | Global reset, typography, button defaults | `body`, `button`, `h1-p` |
+| `tokens.css` | Brand primitives + light/dark design tokens, including shared scrollbar tones | `:root`, `:root[data-theme="dark"]` |
+| `base.css` | Global reset, typography, button defaults, global scrollbar styling | `body`, `button`, `h1-p`, `::-webkit-scrollbar` |
 | `landing.css` | Marketing page + auth card | `.landing-*`, `.auth-*`, `.onboarding-*` |
 | `dashboard.css` | Shell, topbar, tabs, nav rail | `.shell`, `.topbar`, `.tabs`, `.brand-mark` |
 | `dashboard-runs.css` | Runs workspace rail and rows | `.runs-*`, `.workspace-run-*` |
