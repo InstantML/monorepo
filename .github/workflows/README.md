@@ -2,7 +2,7 @@
 
 | Workflow | File | Triggers | Purpose |
 | --- | --- | --- | --- |
-| Stable Quality Gates | [`ci.yml`](./ci.yml) | Pull request, push to `main` | Format / lint / tests / codegen-drift / docs validation. Used as the gate for the deploy workflow. |
+| Stable Quality Gates | [`ci.yml`](./ci.yml) | Pull request, push to `main` | Parallel Rust, Node, Python/SDK, docs, and codegen-drift checks. The final `Stable Quality Gates` job aggregates the split jobs and is used as the gate for the deploy workflow. |
 | Python SDK Release | [`python-sdk-release.yml`](./python-sdk-release.yml) | Release published, manual dispatch | Publish the `instantml` Python SDK to (Test)PyPI via OIDC trusted publishing. |
 | Deploy Cloud Run | [`deploy-cloud-run.yml`](./deploy-cloud-run.yml) | Manual dispatch, push of `deploy-*` / `release-*` tag | CI-triggered Cloud Run rollout. Replaces the laptop-only `npm run deploy:cloud-run`. |
 
@@ -17,7 +17,9 @@ importantly the Clerk publishable-key consistency check — keeps running.
 Three guardrails apply:
 
 1. The `Require Stable Quality Gates` job blocks the deploy until `ci.yml`
-   has a successful run on the same SHA.
+   has a successful run on the same SHA. Inside `ci.yml`, the final `Stable
+   Quality Gates` job depends on every split CI job so deploys still require
+   the full stable gate.
 2. The `prod` GitHub Environment is configured with **required reviewers**.
    A reviewer must approve before either the build or the deploy job
    contacts GCP.
