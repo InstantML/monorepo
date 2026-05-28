@@ -75,7 +75,13 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 
 `npm run deploy:cloud-run` deploys the Rust API to Google Cloud Run using the existing root `Dockerfile`. It is now the default production split control/data deployment path. `npm run deploy:cloud-run:multi` is the explicit equivalent. `npm run deploy:cloud-run:single` keeps the legacy combined-service path available when an operator needs one service. `npm run deploy:cloud-run:staging` deploys isolated staging Cloud Run services and a staging HTTPS router for `staging.api.instantml.ai`.
 
-The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures VPC/static egress, builds through Cloud Build, configures an HTTP startup probe against `/readyz`, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`. The active production/staging storage target is self-hosted GCP ClickHouse reached over the Google Cloud VPC; ClickHouse Cloud allowlist updates are legacy/optional and only matter when the provider-backed route path is explicitly configured.
+The helper enables required GCP APIs, ensures Artifact Registry, creates or reuses a runtime service account, syncs selected local secrets into Secret Manager, configures VPC/static egress, builds through Cloud Build, configures an HTTP startup probe against `/readyz`, and verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`. CI/Secret Manager deploys assume project-level IAM is already provisioned; local operator deploys can still grant those roles unless `INSTANTML_CLOUD_RUN_PROJECT_IAM_PROVISIONING=skip` is set. The active production/staging storage target is self-hosted GCP ClickHouse reached over the Google Cloud VPC; ClickHouse Cloud allowlist updates are legacy/optional and only matter when the provider-backed route path is explicitly configured.
+
+The one-time project IAM baseline is:
+
+- runtime service account: `roles/logging.logWriter`
+- runtime service account, when BYOC Secret Manager is enabled: `roles/secretmanager.admin`
+- Cloud Build compute service account: `roles/cloudbuild.builds.builder`, `roles/storage.objectViewer`, `roles/artifactregistry.writer`, and `roles/logging.logWriter`
 
 Expect hosted deploys to take a while. A normal `npm run deploy:cloud-run` or
 `npm run deploy:cloud-run:staging` run can take 10-30 minutes because Cloud
@@ -273,6 +279,7 @@ Root helper-only environment variables:
 - `INSTANTML_CLOUD_RUN_BACKEND_TIMEOUT_SECONDS`: public-router backend timeout. Defaults to Cloud Run/Rust timeout and then `900`.
 - `INSTANTML_CLOUD_RUN_VPC_EGRESS`: Cloud Run VPC egress mode when static egress is enabled. Default `all-traffic`; use `private-ranges-only` only when public BYOC/provider allowlists do not rely on the NAT IP.
 - `INSTANTML_CLOUD_RUN_NAT_LOGGING`: set `1` to enable Cloud NAT logging for newly created NATs. Default is off for cost.
+- `INSTANTML_CLOUD_RUN_PROJECT_IAM_PROVISIONING`: `grant` or `skip`. Defaults to `skip` for CI/Secret Manager deploys and `grant` for local operator deploys.
 - `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE`: permits control scaling above one instance for controlled tests only.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: managed HTTPS public router controls.
 - `INSTANTML_CLOUD_RUN_SECRET_PREFIX`: Secret Manager prefix for non-prod deploys. Staging defaults to `instantml-staging-`.
