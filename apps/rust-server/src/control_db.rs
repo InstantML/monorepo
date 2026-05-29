@@ -18,7 +18,7 @@ use crate::errors::{AppError, AppResult};
 /// `migrate` command already drives the ClickHouse schema.
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ControlDb {
     pool: PgPool,
 }
