@@ -1,4 +1,7 @@
-FROM rust:1.86-bookworm AS rust-builder
+# Keep this >= the highest MSRV in the dependency tree (Cargo.lock). The control
+# plane's sqlx deps pulled in `home@0.5.12`, which requires rustc 1.88; CI builds
+# with latest stable so this image is the only place an old pin breaks the build.
+FROM rust:1.88-bookworm AS rust-builder
 
 WORKDIR /app
 
