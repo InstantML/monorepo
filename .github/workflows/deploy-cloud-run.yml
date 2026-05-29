@@ -216,18 +216,25 @@ jobs:
           # Per-environment values mirroring what the live Cloud Run services
           # already have inline. Sourced here once so the deploy step env
           # block can pass them through verbatim without re-branching.
+          # CLERK_JWT_ISSUER must match the Clerk instance behind the deploy's
+          # publishable/secret keys. prod uses the custom domain; staging uses
+          # the Clerk development instance (pk_test_/sk_test_), whose issuer is
+          # the *.clerk.accounts.dev frontend API host.
           case "${environment}" in
             prod)
               frontend_base_url="https://instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
+              clerk_jwt_issuer="https://clerk.instantml.ai"
               ;;
             staging)
               frontend_base_url="https://staging.instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://staging.instantml.ai"
+              clerk_jwt_issuer="https://modern-mustang-72.clerk.accounts.dev"
               ;;
             *)
               frontend_base_url="https://instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
+              clerk_jwt_issuer="https://clerk.instantml.ai"
               ;;
           esac
           echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
@@ -235,6 +242,7 @@ jobs:
           echo "public_router=${public_router}" >> "${GITHUB_OUTPUT}"
           echo "frontend_base_url=${frontend_base_url}" >> "${GITHUB_OUTPUT}"
           echo "allowed_frontend_origins=${allowed_frontend_origins}" >> "${GITHUB_OUTPUT}"
+          echo "clerk_jwt_issuer=${clerk_jwt_issuer}" >> "${GITHUB_OUTPUT}"
 
       - name: Reuse Pre-Built Image Tag
         id: image
@@ -289,7 +297,7 @@ jobs:
           INSTANTML_AUTH_MODE: "api-key"
           INSTANTML_MANAGED_CLERK_ENABLED: "true"
           INSTANTML_SIGNUP_ALLOWED_EMAILS: ${{ vars.INSTANTML_SIGNUP_ALLOWED_EMAILS }}
-          CLERK_JWT_ISSUER: "https://clerk.instantml.ai"
+          CLERK_JWT_ISSUER: ${{ steps.inputs.outputs.clerk_jwt_issuer }}
 
           # Server runtime config. BIND_ADDR and LOG_FORMAT differ
           # legitimately between dev (127.0.0.1:8001/pretty) and prod;
