@@ -213,6 +213,22 @@ through a staged, verifiable cutover.
    `DATABASE_URL` on → keep the ClickHouse control table read-only for one
    release as a safety net. (Zero-downtime would require dual-write; out of
    scope unless explicitly needed.)
+   - **Deploy wiring:** `tools/deploy-cloud-run.mjs` gates this behind
+     `INSTANTML_ENABLE_CONTROL_POSTGRES=1` + `INSTANTML_CLOUD_SQL_CONNECTION`.
+     Off by default → dark deploys. On → mounts the Cloud SQL socket, injects
+     `DATABASE_URL` from `instantml-control-database-url`, and grants the runtime
+     SA secret access.
+   - **⚠️ Split-topology blocker (data plane freshness).** Prod runs
+     `--topology=split`. The **data plane** keeps control state fresh by polling
+     — but `spawn_control_refresh_task` / `refresh_control_records` are
+     **ClickHouse-only** (gated on `control_store`). With Postgres there is no
+     refresh, so a data instance rebuilds the control projection at startup and
+     never updates: **revoked API keys keep working and new keys are rejected
+     until restart.** Therefore split cutover requires a Postgres-backed
+     data-plane refresh (poll Postgres + rebuild changed entities) — or moving
+     data-plane control reads to direct SQL — **before** `DATABASE_URL` is set on
+     the data service. (Combined/`--topology=single` is safe today: one instance,
+     write-through keeps its own projection fresh.)
 6. **Delete.** Remove `control_store.rs`, the `StoreData` control maps,
    `apply_control_records`, `refresh_control_records`, the cursor
    (`record_clock_micros`), the 2s background task, `last_control_refresh*`,
