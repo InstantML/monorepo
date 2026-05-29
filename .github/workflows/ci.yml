@@ -41,6 +41,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune -af || true
+          df -h /
+
       - name: Setup Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -86,6 +93,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # The control-plane Postgres deps enlarged the Rust target dir enough to
+      # exhaust the ~14 GB runner during the build ("No space left on device").
+      # Drop preinstalled toolchains we don't use to reclaim ~20+ GB.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune -af || true
+          df -h /
 
       - name: Setup Node
         uses: actions/setup-node@v4
