@@ -218,17 +218,19 @@ through a staged, verifiable cutover.
      Off by default → dark deploys. On → mounts the Cloud SQL socket, injects
      `DATABASE_URL` from `instantml-control-database-url`, and grants the runtime
      SA secret access.
-   - **⚠️ Split-topology blocker (data plane freshness).** Prod runs
-     `--topology=split`. The **data plane** keeps control state fresh by polling
-     — but `spawn_control_refresh_task` / `refresh_control_records` are
-     **ClickHouse-only** (gated on `control_store`). With Postgres there is no
-     refresh, so a data instance rebuilds the control projection at startup and
-     never updates: **revoked API keys keep working and new keys are rejected
-     until restart.** Therefore split cutover requires a Postgres-backed
-     data-plane refresh (poll Postgres + rebuild changed entities) — or moving
-     data-plane control reads to direct SQL — **before** `DATABASE_URL` is set on
-     the data service. (Combined/`--topology=single` is safe today: one instance,
-     write-through keeps its own projection fresh.)
+   - **Split-topology data-plane freshness (resolved).** Prod runs
+     `--topology=split`, and the **data plane** must pick up control changes
+     (new/revoked keys, route changes). The original refresh
+     (`spawn_control_refresh_task` / `refresh_control_records`) was
+     ClickHouse-only, so on Postgres a data instance would have frozen its
+     control projection at startup — revoked keys still working, new keys
+     rejected until restart. **Fixed:** `refresh_from_postgres` reloads the live
+     control state from Postgres on the same background cadence and
+     `adopt_control_projection` swaps **only** the control collections, preserving
+     the data plane's lazily-loaded tenant data; changed tenant routes still
+     evict their MetricStore caches. The refresh task now spawns whenever a
+     control backing (Postgres or ClickHouse) is configured. (Combined/single is
+     also fine: one instance, write-through keeps its projection fresh.)
 6. **Delete.** Remove `control_store.rs`, the `StoreData` control maps,
    `apply_control_records`, `refresh_control_records`, the cursor
    (`record_clock_micros`), the 2s background task, `last_control_refresh*`,
