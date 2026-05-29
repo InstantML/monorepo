@@ -362,7 +362,12 @@ impl Store {
     ///
     /// No-op when no control store is configured (single-binary local mode).
     pub fn spawn_control_refresh_task(&self) -> Option<JoinHandle<()>> {
-        self.control_store.as_ref()?;
+        // Refresh against whichever control backing is configured: Postgres when
+        // present (the data plane re-reads control state from it), else the
+        // legacy ClickHouse control store.
+        if self.control_store.is_none() && self.control_db.is_none() {
+            return None;
+        }
         let store = self.clone();
         let handle = tokio::spawn(async move {
             // Stagger the first tick so we don't double up with the startup
@@ -397,6 +402,11 @@ impl Store {
     }
 
     async fn refresh_control_records_inner(&self, force: bool) -> AppResult<()> {
+        // Postgres is the system of record when configured: the data plane
+        // re-reads the live control state from it (there is no event-log cursor).
+        if let Some(control_db) = &self.control_db {
+            return self.refresh_from_postgres(control_db, force).await;
+        }
         let Some(control_store) = &self.control_store else {
             return Ok(());
         };
@@ -468,6 +478,51 @@ impl Store {
         }
         let mut clock = self.record_clock_micros.lock().await;
         *clock = (*clock).max(stats.latest_record_micros);
+        self.mark_control_refresh_success().await;
+        Ok(())
+    }
+
+    /// Refresh the in-memory control projection from Postgres. Reloads the live
+    /// control state (bounded by entity count, not history) and swaps only the
+    /// control collections into the projection, preserving the data plane's
+    /// lazily-loaded tenant data. Tenant-route changes evict the affected
+    /// MetricStore caches, matching the ClickHouse refresh path.
+    ///
+    /// The lock is released across the Postgres read and only reacquired to
+    /// apply the result, per the multi-instance lock guidance.
+    async fn refresh_from_postgres(&self, control_db: &ControlDb, force: bool) -> AppResult<()> {
+        {
+            let mut last = self.last_control_refresh.lock().await;
+            if !force {
+                if let Some(prev) = *last {
+                    if prev.elapsed() < CONTROL_REFRESH_MIN_INTERVAL {
+                        return Ok(());
+                    }
+                }
+            }
+            *last = Some(Instant::now());
+        }
+        let fresh = match self.load_data_from_postgres(control_db).await {
+            Ok(data) => data,
+            Err(error) => {
+                self.mark_control_refresh_failure(error.message()).await;
+                return Err(error);
+            }
+        };
+        let changed_tenant_routes = {
+            let mut data = self.data.lock().await;
+            let previous_routes = data.tenant_routes.clone();
+            data.adopt_control_projection(fresh);
+            changed_tenant_routes(&previous_routes, &data.tenant_routes)
+        };
+        if !changed_tenant_routes.is_empty() {
+            let mut loaded = self.tenant_loaded.lock().await;
+            let mut stores = self.tenant_metric_stores.lock().await;
+            for org_id in &changed_tenant_routes {
+                loaded.remove(org_id);
+                stores.remove(org_id);
+            }
+        }
         self.mark_control_refresh_success().await;
         Ok(())
     }
@@ -857,6 +912,40 @@ impl StoreData {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Replace the control-plane collections from a freshly loaded Postgres
+    /// projection while **preserving** the data plane's lazily-loaded tenant
+    /// state (runs/attributes/artifacts/imports/projects/reports/usage), the
+    /// invitation rate-limit counters, and device codes — none of which live in
+    /// Postgres. Used by the data-plane refresh so picking up control changes
+    /// (new/revoked keys, route changes) never clobbers loaded tenant data.
+    ///
+    /// The field set here must mirror `Store::load_data_from_postgres`.
+    fn adopt_control_projection(&mut self, fresh: StoreData) {
+        self.users = fresh.users;
+        self.users_by_email = fresh.users_by_email;
+        self.identities = fresh.identities;
+        self.organizations = fresh.organizations;
+        self.orgs_by_slug = fresh.orgs_by_slug;
+        self.memberships = fresh.memberships;
+        self.org_invitations = fresh.org_invitations;
+        self.org_invitations_by_token_hash = fresh.org_invitations_by_token_hash;
+        self.email_deliveries = fresh.email_deliveries;
+        self.sessions = fresh.sessions;
+        self.sessions_by_hash = fresh.sessions_by_hash;
+        self.service_accounts = fresh.service_accounts;
+        self.api_keys = fresh.api_keys;
+        self.api_keys_by_hash = fresh.api_keys_by_hash;
+        self.tenant_routes = fresh.tenant_routes;
+        self.billing_accounts = fresh.billing_accounts;
+        self.billing_checkout_intents = fresh.billing_checkout_intents;
+        self.billing_change_intents = fresh.billing_change_intents;
+        self.billing_subscriptions = fresh.billing_subscriptions;
+        self.billing_events = fresh.billing_events;
+        self.billing_usage_reports = fresh.billing_usage_reports;
+        self.dashboard_preferences = fresh.dashboard_preferences;
+        self.workspace_views = fresh.workspace_views;
     }
 
     fn recompute_counters(&mut self) {
@@ -1895,6 +1984,40 @@ mod tests {
         assert_eq!(db.load_identities().await.unwrap().len(), 1);
         // Projection mirrors Postgres.
         assert!(store.data.lock().await.users.contains_key(&first.id));
+    }
+
+    #[sqlx::test]
+    async fn data_plane_refresh_picks_up_postgres_and_preserves_tenant_data(pool: sqlx::PgPool) {
+        let store = store_with_control_db(ControlDb::from_pool(pool));
+        let control_db = store.control_db().unwrap();
+
+        // A tenant run is already lazily loaded into this instance's projection.
+        let run_id = Uuid::new_v4();
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(LOCAL_ORG_ID, run_id, "running"));
+        }
+
+        // Another instance (the control plane) writes a user straight to Postgres.
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "refresh@example.com".to_string(),
+            display_name: None,
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        control_db.upsert_user(&user).await.unwrap();
+
+        // Not visible to this instance until it refreshes (no write-through here).
+        assert!(!store.data.lock().await.users.contains_key(&user.id));
+
+        // The data-plane refresh pulls the new control state from Postgres...
+        store.refresh_control_records_for_auth_miss().await.unwrap();
+        assert!(store.data.lock().await.users.contains_key(&user.id));
+
+        // ...without clobbering the already-loaded tenant run.
+        assert!(store.data.lock().await.runs.contains_key(&run_id));
     }
 
     #[sqlx::test]
