@@ -31,6 +31,7 @@ async fn run() -> instantml_rust_server::AppResult<()> {
         "serve" => serve(config).await,
         "all" => serve(config).await,
         "migrate" => migrate_all(config).await,
+        "migrate-control" => migrate_control(config).await,
         "worker" => worker(config).await,
         "seed-demo" => seed_demo(config).await,
         "backfill-control" => backfill_control(config).await,
@@ -40,7 +41,7 @@ async fn run() -> instantml_rust_server::AppResult<()> {
             Ok(())
         }
         other => Err(instantml_rust_server::AppError::config(format!(
-            "unknown command {other}; expected serve, worker, migrate, seed-demo, backfill-control, emit-openapi, or all"
+            "unknown command {other}; expected serve, worker, migrate, migrate-control, seed-demo, backfill-control, emit-openapi, or all"
         ))),
     }
 }
@@ -183,6 +184,22 @@ async fn migrate_all(config: AppConfig) -> instantml_rust_server::AppResult<()> 
     if let Some(control_db) = ControlDb::connect(config.control_database_url.as_deref()).await? {
         control_db.migrate().await?;
     }
+    Ok(())
+}
+
+/// Apply only the Postgres control-plane migrations. Unlike `migrate`, this does
+/// not touch ClickHouse, so it can run against a freshly provisioned Cloud SQL
+/// instance (e.g. via the Cloud SQL Auth Proxy) before cutover, without a
+/// reachable ClickHouse.
+async fn migrate_control(config: AppConfig) -> instantml_rust_server::AppResult<()> {
+    let control_db = ControlDb::connect(config.control_database_url.as_deref())
+        .await?
+        .ok_or_else(|| {
+            instantml_rust_server::AppError::config("migrate-control requires DATABASE_URL")
+        })?;
+    control_db.migrate().await?;
+    tracing::info!("control-plane Postgres migrations applied");
+    println!("Control-plane Postgres schema is up to date.");
     Ok(())
 }
 
