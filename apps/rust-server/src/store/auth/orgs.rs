@@ -165,8 +165,12 @@ pub async fn create_current_user_organization(
         ));
     }
 
-    let (org, owner, user) = {
-        let mut data = store.data.lock().await;
+    // Validate against the projection and build the org/owner; then, when
+    // Postgres is the authority, commit them in one transaction *without*
+    // holding the StoreData lock across the network round trip (per the
+    // multi-instance guidance). Clone the captured strings so this can run in
+    // either branch.
+    let build = |data: &StoreData| -> AppResult<(UserRow, OrganizationRow, MembershipRow)> {
         let user = data
             .users
             .get(&user_id)
@@ -175,7 +179,7 @@ pub async fn create_current_user_organization(
         if data.orgs_by_slug.contains_key(&slug) {
             return Err(AppError::conflict("organization already exists"));
         }
-        if account_type == "personal" && user_has_personal_workspace(&data, user_id) {
+        if account_type == "personal" && user_has_personal_workspace(data, user_id) {
             return Err(AppError::conflict(
                 "personal workspace already exists for this user",
             ));
@@ -198,8 +202,8 @@ pub async fn create_current_user_organization(
         };
         let org = OrganizationRow {
             id: Uuid::new_v4(),
-            slug,
-            name,
+            slug: slug.clone(),
+            name: name.clone(),
             plan_tier: stored_plan.id.to_string(),
             account_type: account_type.clone(),
             seat_limit: if account_type == "personal" {
@@ -218,23 +222,33 @@ pub async fn create_current_user_organization(
             },
         };
         let owner = membership_row(org.id, user_id, "owner", "active");
-        if let Some(control_db) = store.control_db() {
-            // Atomic org + owner membership: the workspace and its owner commit
-            // together, so an interrupted signup can never strand an org without
-            // an owner. The slug `UNIQUE` constraint rejects a concurrent dup.
-            control_db.create_org_with_owner(&org, Some(&owner)).await?;
-            data.insert_org(org.clone());
-            data.insert_membership(owner.clone());
-        } else {
-            store
-                .persist_locked("organization", org.id, &org.id.to_string(), &org)
-                .await?;
-            data.insert_org(org.clone());
-            store
-                .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
-                .await?;
-            data.insert_membership(owner.clone());
-        }
+        Ok((user, org, owner))
+    };
+
+    let (org, owner, user) = if let Some(control_db) = store.control_db() {
+        let (user, org, owner) = {
+            let data = store.data.lock().await;
+            build(&data)?
+        };
+        // Atomic org + owner membership, with the lock released. A crash can't
+        // strand an org without its owner, and the slug `UNIQUE` constraint
+        // rejects a concurrent duplicate, so the validate→commit gap is safe.
+        control_db.create_org_with_owner(&org, Some(&owner)).await?;
+        let mut data = store.data.lock().await;
+        data.insert_org(org.clone());
+        data.insert_membership(owner.clone());
+        (org, owner, user)
+    } else {
+        let mut data = store.data.lock().await;
+        let (user, org, owner) = build(&data)?;
+        store
+            .persist_locked("organization", org.id, &org.id.to_string(), &org)
+            .await?;
+        data.insert_org(org.clone());
+        store
+            .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
+            .await?;
+        data.insert_membership(owner.clone());
         (org, owner, user)
     };
 

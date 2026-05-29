@@ -33,9 +33,7 @@ impl ControlDb {
         let Some(url) = database_url else {
             return Ok(None);
         };
-        let options: PgConnectOptions = url.parse().map_err(|err| {
-            AppError::config(format!("invalid DATABASE_URL for control plane: {err}"))
-        })?;
+        let options = pg_connect_options(url)?;
         let pool = PgPoolOptions::new()
             .max_connections(pool_max_connections())
             .acquire_timeout(Duration::from_secs(10))
@@ -70,6 +68,61 @@ impl ControlDb {
     }
 }
 
+/// Parse a `DATABASE_URL` into `sqlx` connect options.
+///
+/// `sqlx` rejects the libpq-style `postgres://user:pass@/db?host=/socket/dir`
+/// unix-socket form ("empty host"), but that is exactly the form Cloud Run +
+/// the Cloud SQL Auth Proxy use (`?host=/cloudsql/<connection-name>`). To keep
+/// operators from having to hand-percent-encode a socket path full of `/` and
+/// `:`, accept the `?host=` form and rebuild it into the percent-encoded
+/// authority form `sqlx` does accept. TCP URLs fall through to `sqlx`'s parser.
+fn pg_connect_options(database_url: &str) -> AppResult<PgConnectOptions> {
+    let invalid = |detail: String| {
+        AppError::config(format!("invalid DATABASE_URL for control plane: {detail}"))
+    };
+    // The `?host=/dir` socket form has an empty authority host, which both
+    // `sqlx`'s and `url`'s parsers reject outright — so detect and rewrite it by
+    // hand before handing anything to `sqlx`. TCP URLs fall straight through.
+    let Some(socket_dir) = host_query_param(database_url) else {
+        return database_url
+            .parse::<PgConnectOptions>()
+            .map_err(|err| invalid(err.to_string()));
+    };
+    let base = database_url.split('?').next().unwrap_or(database_url);
+    let after_scheme = base
+        .strip_prefix("postgresql://")
+        .or_else(|| base.strip_prefix("postgres://"))
+        .ok_or_else(|| invalid("expected a postgres:// URL".to_string()))?;
+    let (userinfo, host_and_path) = after_scheme
+        .split_once('@')
+        .ok_or_else(|| invalid("socket DATABASE_URL is missing credentials".to_string()))?;
+    let database = host_and_path
+        .split_once('/')
+        .map(|(_, db)| db)
+        .unwrap_or("");
+    // Percent-encode the socket directory into the authority, where `sqlx`
+    // treats a leading-slash host as a unix socket. `%` first so the escapes we
+    // introduce are not themselves re-encoded. Userinfo is reused verbatim so
+    // already-encoded credentials round-trip unchanged.
+    let encoded_dir = socket_dir
+        .replace('%', "%25")
+        .replace('/', "%2F")
+        .replace(':', "%3A");
+    let rebuilt = format!("postgresql://{userinfo}@{encoded_dir}/{database}");
+    rebuilt
+        .parse::<PgConnectOptions>()
+        .map_err(|err| invalid(err.to_string()))
+}
+
+/// Extract a `host=` query parameter (the libpq unix-socket directory) from a
+/// connection URL, if present.
+fn host_query_param(database_url: &str) -> Option<String> {
+    let query = database_url.split_once('?')?.1;
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("host=").map(|value| value.to_string()))
+}
+
 /// Pool size. Fluid Compute / multi-instance Cloud Run runs several app
 /// instances against one database, so keep per-instance connections modest and
 /// let Cloud SQL's connection limit bound the total. Override with
@@ -80,4 +133,34 @@ fn pool_max_connections() -> u32 {
         .and_then(|raw| raw.parse().ok())
         .filter(|value| *value > 0)
         .unwrap_or(10)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_cloud_run_unix_socket_host_form() {
+        // The exact form Cloud Run + Cloud SQL Auth Proxy produce, which sqlx's
+        // own parser rejects with "empty host".
+        let opts = pg_connect_options(
+            "postgres://instantml:pw@/control?host=/cloudsql/proj:us-central1:inst",
+        )
+        .expect("socket form should parse");
+        assert_eq!(
+            opts.get_socket()
+                .map(|path| path.to_string_lossy().into_owned()),
+            Some("/cloudsql/proj:us-central1:inst".to_string())
+        );
+        assert_eq!(opts.get_database(), Some("control"));
+    }
+
+    #[test]
+    fn parses_plain_tcp_form() {
+        let opts = pg_connect_options("postgres://u:pw@db.example.com:5432/control")
+            .expect("tcp form should parse");
+        assert_eq!(opts.get_host(), "db.example.com");
+        assert_eq!(opts.get_port(), 5432);
+        assert!(opts.get_socket().is_none());
+    }
 }

@@ -92,6 +92,19 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         config.byoc_clickhouse.clone(),
     )
     .await?;
+    if config.control_database_url.is_some() {
+        // The Postgres control plane is authoritative for writes, but reads
+        // still come from a per-instance in-memory projection that is only
+        // rebuilt at startup (there is no cross-instance refresh yet). Running
+        // more than one control instance would therefore serve stale auth/billing
+        // reads, so the control service must stay single-instance (the deploy
+        // tool pins this unless INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE
+        // is set) until reads move to SQL.
+        tracing::warn!(
+            "control plane on Postgres uses a startup-only in-memory read projection; \
+             run single-instance until reads are served from Postgres"
+        );
+    }
     // Data plane: poll the control table out-of-band so the request hot path
     // makes zero control-plane queries. See PR #32 for the burst-load failure
     // mode that motivated this change.

@@ -304,16 +304,3 @@ CREATE TABLE billing_usage_reports (
     created_at                   timestamptz NOT NULL
 );
 CREATE INDEX billing_usage_reports_org_idx ON billing_usage_reports (org_id);
-
--- Idempotency keys for mutating API requests. Replaces both the in-memory
--- `idempotency` map and the `inflight_idempotency` set: INSERT ... ON CONFLICT
--- handles the in-flight race, and the row holds the cached response.
-CREATE TABLE idempotency_keys (
-    org_id        uuid NOT NULL,
-    key           text NOT NULL,
-    request_hash  bytea NOT NULL,
-    response_json jsonb NOT NULL,
-    expires_at    timestamptz NOT NULL,
-    PRIMARY KEY (org_id, key)
-);
-CREATE INDEX idempotency_keys_expires_idx ON idempotency_keys (expires_at);

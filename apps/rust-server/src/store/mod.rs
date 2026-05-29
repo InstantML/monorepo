@@ -1465,7 +1465,14 @@ pub async fn control_ready(store: &Store) -> bool {
         Some(control_store) => control_store.ready().await,
         None => true,
     };
-    backing_ready && store.control_projection_health().await.loaded
+    // Probe Postgres too: once it is the system of record (control_store may be
+    // unset post-cutover) a Postgres outage must surface as not-ready rather
+    // than being masked by a `None` ClickHouse backing.
+    let control_db_ready = match &store.control_db {
+        Some(control_db) => control_db.ready().await,
+        None => true,
+    };
+    backing_ready && control_db_ready && store.control_projection_health().await.loaded
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
