@@ -104,7 +104,9 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /if \(payload\?\.billing_checkout\?\.url\) throw new Error\("Billing checkout URL was not trusted\."\);/, "untrusted workspace creation checkout URLs should not be opened");
   assert.match(shell, /if \(payload\?\.checkout\?\.url\) throw new Error\("Billing checkout URL was not trusted\."\);/, "untrusted plan-change checkout URLs should not be opened");
   assert.match(shell, /if \(payload\?\.checkout\) \{[\s\S]*?Retry from billing settings/, "checkout failures should leave a retry path in settings");
-  assert.match(shell, /selectedFetchRunKey/, "metric-series fetches should wait for selected run details to resolve");
+  // #136 (live-update metric charts) renamed selectedFetchRunKey -> workspaceFetchRunKey;
+  // it still keys the metric-series fetch effect on the resolved run set.
+  assert.match(shell, /workspaceFetchRunKey/, "metric-series fetches should be keyed on the resolved workspace fetch run set");
   assert.match(shell, /const runsForFetch = metricSeriesRuns;/, "metric-series fetches should use selected runs or visible runs when no explicit selection exists");
   assert.match(shell, /useLayoutEffect\(\(\) => \{[\s\S]*dashboardSelectionFilterKeyRef\.current = dashboardSelectionFilterKey/, "selection filter guard should update before synchronous select-all interactions");
   assert.match(shell, /api\.get\(`\/runs\/\$\{id\}`, \{ signal: controller\.signal \}\)/, "off-page selected run hydration should be abortable");
