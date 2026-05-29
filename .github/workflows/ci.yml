@@ -8,16 +8,97 @@ on:
 
 permissions:
   contents: read
+  # paths-filter reads the PR/commit file list via the API for pull_request
+  # events. Repo read is sufficient.
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Detect which areas of the monorepo a change touches so the heavy split
+  # jobs only run when relevant. The aggregate `quality` gate still runs on
+  # every event and stays the single required status check, so a skipped
+  # split job (area untouched) never blocks a merge while a real failure
+  # always does.
+  #
+  # Filter coupling notes (keep these honest — a wrong filter can let a
+  # broken change merge because its gate was skipped):
+  #   - All three codegen artifacts are committed: openapi.generated.json,
+  #     apps/web/src/types/api.generated.ts, apps/docs/openapi.json.
+  #   - rust_api drift-checks openapi.generated.json + api.generated.ts, so
+  #     it must run on Rust source, the codegen tool, and the committed TS.
+  #   - docs validates the committed public OpenAPI copy against the
+  #     committed openapi.generated.json, so it must run when that spec or
+  #     the docs sources / docs tooling change — not on arbitrary Rust edits.
+  changes:
+    name: Detect Changed Areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      rust_api: ${{ steps.filter.outputs.rust_api }}
+      docs: ${{ steps.filter.outputs.docs }}
+      node: ${{ steps.filter.outputs.node }}
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Filter Changed Paths
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          # YAML anchors (&name / *name) are expanded and flattened by
+          # paths-filter, so the shared globals stay defined once.
+          filters: |
+            global: &global
+              - '.github/workflows/ci.yml'
+            npm: &npm
+              - 'package.json'
+              - 'package-lock.json'
+            rust:
+              - *global
+              - 'apps/rust-server/**'
+            rust_api:
+              - *global
+              - *npm
+              - 'apps/rust-server/**'
+              - 'apps/web/src/types/api.generated.ts'
+              - 'tools/codegen-api.mjs'
+            docs:
+              - *global
+              - *npm
+              - 'apps/docs/**'
+              - 'apps/rust-server/openapi.generated.json'
+              - 'tools/sync-docs-openapi.mjs'
+              - 'tools/validate-docs-content.mjs'
+              - 'tools/validate-docs-snippets.mjs'
+            node:
+              - *global
+              - *npm
+              - 'apps/server/**'
+              - 'apps/web/**'
+              - 'apps/admin/**'
+            python:
+              - *global
+              - 'apps/api/**'
+              - 'packages/python-sdk/**'
+              - 'examples/rl-cartpole/**'
+              - 'examples/q-learning-gridworld/**'
+              - 'examples/contextual-bandit/**'
+              - 'examples/supervised-regression/**'
+              - 'examples/iris-classification/**'
+              - 'pyproject.toml'
+              - 'requirements-dev.txt'
+
   rust-format:
     name: Rust Format
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
 
     steps:
       - name: Checkout
@@ -36,6 +117,8 @@ jobs:
     name: Rust Lint
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
 
     steps:
       - name: Checkout
@@ -72,6 +155,8 @@ jobs:
     name: Rust Tests / API Drift
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: changes
+    if: ${{ needs.changes.outputs.rust_api == 'true' }}
 
     # Postgres for the control-plane `#[sqlx::test]` tests, which provision an
     # isolated database per test. Without DATABASE_URL these tests cannot run.
@@ -146,6 +231,8 @@ jobs:
     name: Docs Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: ${{ needs.changes.outputs.docs == 'true' }}
 
     steps:
       - name: Checkout
@@ -171,6 +258,8 @@ jobs:
     name: Node Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: ${{ needs.changes.outputs.node == 'true' }}
 
     steps:
       - name: Checkout
@@ -192,6 +281,8 @@ jobs:
     name: Python Tests / SDK Package
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' }}
 
     steps:
       - name: Checkout
@@ -222,20 +313,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - changes
       - rust-format
       - rust-lint
       - rust-tests-api
       - docs
       - node-tests
       - python-sdk
+    # Always runs so this stays the single required status check and the
+    # deploy gate's `ci.yml` success lookup keeps working, even when some
+    # split jobs were skipped because their area was untouched.
     if: ${{ always() }}
 
     steps:
       - name: Fail If A Split Gate Failed
-        if: ${{ contains(join(needs.*.result, ','), 'failure') || contains(join(needs.*.result, ','), 'cancelled') || contains(join(needs.*.result, ','), 'skipped') }}
+        # `skipped` means path filtering decided the area was not affected by
+        # this change — that is a pass, not a gate failure. Only a real
+        # `failure` or `cancelled` (including the changes detector itself)
+        # fails the aggregate gate.
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
           echo "One or more split CI gates failed: ${{ join(needs.*.result, ', ') }}"
           exit 1
 
       - name: Confirm Split Gates Passed
-        run: echo "All split CI gates passed."
+        run: echo "All split CI gates passed (skipped = area not touched by this change)."
