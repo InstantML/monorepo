@@ -40,6 +40,10 @@ pub struct AppConfig {
     pub slow_request_threshold: Duration,
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
+    /// Postgres connection URL for the control plane (users/orgs/sessions/
+    /// keys/billing/tenant routes). `None` keeps the legacy ClickHouse control
+    /// path during the migration and in single-binary local mode.
+    pub control_database_url: Option<String>,
     pub byoc_clickhouse: ByocClickHouseConfig,
     pub billing: BillingConfig,
     pub email: EmailConfig,
@@ -408,6 +412,9 @@ impl AppConfig {
             )?),
             log_format,
             hosted_clickhouse,
+            control_database_url: env::var("DATABASE_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
             byoc_clickhouse: byoc_clickhouse_config()?,
             billing,
             email,

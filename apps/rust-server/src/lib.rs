@@ -1,6 +1,8 @@
 pub mod artifact_store;
 pub mod auth;
 pub mod config;
+pub mod control_db;
+pub mod control_repo;
 pub mod control_store;
 pub mod domain;
 pub mod email;

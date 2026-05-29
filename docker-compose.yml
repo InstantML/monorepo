@@ -1,4 +1,23 @@
 services:
+  # Control-plane system of record (users/orgs/sessions/keys/billing/routes).
+  # The hosted control/data services and the Rust test suite (`#[sqlx::test]`)
+  # connect here via DATABASE_URL.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: instantml
+      POSTGRES_PASSWORD: instantml
+      POSTGRES_DB: control
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U instantml -d control"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - instantml-postgres:/var/lib/postgresql/data
+
   clickhouse:
     image: clickhouse/clickhouse-server:24.8-alpine
     environment:
@@ -41,6 +60,8 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "8001:8000"
     volumes:
@@ -49,6 +70,7 @@ services:
       CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
       CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: http://instantml:instantml@clickhouse:8123/instantml_user_data
       INSTANTML_TENANT_CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
+      DATABASE_URL: postgres://instantml:instantml@postgres:5432/control
       INSTANTML_BIND_ADDR: 0.0.0.0:8000
       INSTANTML_AUTH_MODE: local
       INSTANTML_DEV_AUTH_ENABLED: "true"
@@ -66,6 +88,8 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "8002:8000"
     volumes:
@@ -74,6 +98,7 @@ services:
       CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
       CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: http://instantml:instantml@clickhouse:8123/instantml_user_data
       INSTANTML_TENANT_CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
+      DATABASE_URL: postgres://instantml:instantml@postgres:5432/control
       INSTANTML_BIND_ADDR: 0.0.0.0:8000
       INSTANTML_AUTH_MODE: local
       INSTANTML_SERVICE_PLANE: data
@@ -87,3 +112,4 @@ services:
 volumes:
   instantml-clickhouse:
   instantml-artifacts:
+  instantml-postgres:

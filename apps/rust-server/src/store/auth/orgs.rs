@@ -39,15 +39,6 @@ pub async fn create_organization(
         store.require_customer_clickhouse_signup_ready()?;
     }
     let plan = plan_tier(&canonical_plan_tier);
-    let mut data = store.data.lock().await;
-    if data.orgs_by_slug.contains_key(&slug) {
-        return Err(AppError::conflict("organization already exists"));
-    }
-    if let Some(owner_id) = input.owner_user_id {
-        if !data.users.contains_key(&owner_id) {
-            return Err(AppError::not_found("owner user not found"));
-        }
-    }
     let account_type = "customer".to_string();
     let tenant_routing_tier = if storage_choice == STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
         "customer-clickhouse".to_string()
@@ -73,23 +64,49 @@ pub async fn create_organization(
             STORAGE_STATE_READY.to_string()
         },
     };
-    store
-        .persist_locked("organization", org.id, &org.id.to_string(), &org)
-        .await?;
-    data.insert_org(org.clone());
-    if let Some(owner_id) = input.owner_user_id {
-        let membership = membership_row(org.id, owner_id, "owner", "active");
-        store
-            .persist_locked(
-                "membership",
-                org.id,
-                &membership.id.to_string(),
-                &membership,
-            )
+    let owner_membership = input
+        .owner_user_id
+        .map(|owner_id| membership_row(org.id, owner_id, "owner", "active"));
+
+    if let Some(control_db) = store.control_db() {
+        // Postgres is the authority: the org and its owner membership commit in
+        // a single transaction, so a crash can never leave an org without an
+        // owner, and the slug `UNIQUE` constraint rejects a concurrent duplicate.
+        if let Some(owner_id) = input.owner_user_id {
+            if control_db.get_user(owner_id).await?.is_none() {
+                return Err(AppError::not_found("owner user not found"));
+            }
+        }
+        control_db
+            .create_org_with_owner(&org, owner_membership.as_ref())
             .await?;
-        data.insert_membership(membership);
+        let mut data = store.data.lock().await;
+        data.insert_org(org.clone());
+        if let Some(membership) = &owner_membership {
+            data.insert_membership(membership.clone());
+        }
+    } else {
+        let mut data = store.data.lock().await;
+        if data.orgs_by_slug.contains_key(&org.slug) {
+            return Err(AppError::conflict("organization already exists"));
+        }
+        if let Some(owner_id) = input.owner_user_id {
+            if !data.users.contains_key(&owner_id) {
+                return Err(AppError::not_found("owner user not found"));
+            }
+        }
+        store
+            .persist_locked("organization", org.id, &org.id.to_string(), &org)
+            .await?;
+        data.insert_org(org.clone());
+        if let Some(membership) = &owner_membership {
+            store
+                .persist_locked("membership", org.id, &membership.id.to_string(), membership)
+                .await?;
+            data.insert_membership(membership.clone());
+        }
     }
-    drop(data);
+
     if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
         store.ensure_tenant_route(&org).await?;
     }
@@ -148,8 +165,12 @@ pub async fn create_current_user_organization(
         ));
     }
 
-    let (org, owner, user) = {
-        let mut data = store.data.lock().await;
+    // Validate against the projection and build the org/owner; then, when
+    // Postgres is the authority, commit them in one transaction *without*
+    // holding the StoreData lock across the network round trip (per the
+    // multi-instance guidance). Clone the captured strings so this can run in
+    // either branch.
+    let build = |data: &StoreData| -> AppResult<(UserRow, OrganizationRow, MembershipRow)> {
         let user = data
             .users
             .get(&user_id)
@@ -158,7 +179,7 @@ pub async fn create_current_user_organization(
         if data.orgs_by_slug.contains_key(&slug) {
             return Err(AppError::conflict("organization already exists"));
         }
-        if account_type == "personal" && user_has_personal_workspace(&data, user_id) {
+        if account_type == "personal" && user_has_personal_workspace(data, user_id) {
             return Err(AppError::conflict(
                 "personal workspace already exists for this user",
             ));
@@ -181,8 +202,8 @@ pub async fn create_current_user_organization(
         };
         let org = OrganizationRow {
             id: Uuid::new_v4(),
-            slug,
-            name,
+            slug: slug.clone(),
+            name: name.clone(),
             plan_tier: stored_plan.id.to_string(),
             account_type: account_type.clone(),
             seat_limit: if account_type == "personal" {
@@ -200,11 +221,30 @@ pub async fn create_current_user_organization(
                 STORAGE_STATE_READY.to_string()
             },
         };
+        let owner = membership_row(org.id, user_id, "owner", "active");
+        Ok((user, org, owner))
+    };
+
+    let (org, owner, user) = if let Some(control_db) = store.control_db() {
+        let (user, org, owner) = {
+            let data = store.data.lock().await;
+            build(&data)?
+        };
+        // Atomic org + owner membership, with the lock released. A crash can't
+        // strand an org without its owner, and the slug `UNIQUE` constraint
+        // rejects a concurrent duplicate, so the validate→commit gap is safe.
+        control_db.create_org_with_owner(&org, Some(&owner)).await?;
+        let mut data = store.data.lock().await;
+        data.insert_org(org.clone());
+        data.insert_membership(owner.clone());
+        (org, owner, user)
+    } else {
+        let mut data = store.data.lock().await;
+        let (user, org, owner) = build(&data)?;
         store
             .persist_locked("organization", org.id, &org.id.to_string(), &org)
             .await?;
         data.insert_org(org.clone());
-        let owner = membership_row(org.id, user_id, "owner", "active");
         store
             .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
             .await?;
@@ -597,6 +637,7 @@ mod tests {
             )
             .unwrap(),
             control_store: None,
+            control_db: None,
             hosted_clickhouse: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
                 egress_cidrs: Vec::new(),
@@ -625,6 +666,7 @@ mod tests {
             )
             .unwrap(),
             control_store: None,
+            control_db: None,
             hosted_clickhouse: Some(crate::config::HostedClickHouseConfig {
                 user_data_url: "http://default:@127.0.0.1:8123/instantml_user_data_test"
                     .to_string(),

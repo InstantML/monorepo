@@ -1691,6 +1691,7 @@ mod tests {
         Store {
             metric_store,
             control_store: None,
+            control_db: None,
             hosted_clickhouse: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
                 egress_cidrs: Vec::new(),

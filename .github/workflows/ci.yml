@@ -41,6 +41,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune -af || true
+          df -h /
+
       - name: Setup Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -66,9 +73,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    # Postgres for the control-plane `#[sqlx::test]` tests, which provision an
+    # isolated database per test. Without DATABASE_URL these tests cannot run.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: control
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # The control-plane Postgres deps enlarged the Rust target dir enough to
+      # exhaust the ~14 GB runner during the build ("No space left on device").
+      # Drop preinstalled toolchains we don't use to reclaim ~20+ GB.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune -af || true
+          df -h /
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -96,6 +130,8 @@ jobs:
         run: npm ci
 
       - name: Rust Tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/control
         run: cargo test --manifest-path apps/rust-server/Cargo.toml
 
       - name: Verify OpenAPI / TS Codegen Has No Drift

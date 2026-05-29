@@ -13,7 +13,35 @@ use crate::{
 use std::net::IpAddr;
 use url::Url;
 
-const TENANT_ROUTE_KIND: &str = "tenant_route";
+pub(super) const TENANT_ROUTE_KIND: &str = "tenant_route";
+
+/// The set of record kinds that belong to the control plane (as opposed to
+/// tenant-owned run data). Used both to gate ClickHouse control-log writes and
+/// to route writes/rebuild through Postgres. Single source of truth so the two
+/// paths can never drift.
+pub(super) fn is_control_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "user"
+            | "identity"
+            | "organization"
+            | "membership"
+            | "org_invitation"
+            | "email_delivery"
+            | "session"
+            | "service_account"
+            | "api_key"
+            | "dashboard_preference"
+            | "workspace_view"
+            | "billing_account"
+            | "billing_checkout_intent"
+            | "billing_change_intent"
+            | "billing_subscription"
+            | "billing_event"
+            | "billing_usage_report"
+            | TENANT_ROUTE_KIND
+    )
+}
 const TENANT_ROUTE_READY: &str = "ready";
 const TENANT_ROUTE_PROVISIONING: &str = "provisioning";
 const TENANT_ROUTE_FAILED: &str = "failed";
@@ -69,28 +97,7 @@ impl Store {
     }
 
     pub(super) fn is_control_record_kind(&self, kind: &str) -> bool {
-        self.hosted_clickhouse_enabled()
-            && matches!(
-                kind,
-                "user"
-                    | "identity"
-                    | "organization"
-                    | "membership"
-                    | "org_invitation"
-                    | "email_delivery"
-                    | "session"
-                    | "service_account"
-                    | "api_key"
-                    | "dashboard_preference"
-                    | "workspace_view"
-                    | "billing_account"
-                    | "billing_checkout_intent"
-                    | "billing_change_intent"
-                    | "billing_subscription"
-                    | "billing_event"
-                    | "billing_usage_report"
-                    | TENANT_ROUTE_KIND
-            )
+        self.hosted_clickhouse_enabled() && is_control_kind(kind)
     }
 
     pub async fn ensure_tenant_loaded(&self, org_id: Uuid) -> AppResult<()> {
@@ -2082,6 +2089,7 @@ mod tests {
             )
             .unwrap(),
             control_store: None,
+            control_db: None,
             hosted_clickhouse: Some(HostedClickHouseConfig {
                 user_data_url: "http://default:@127.0.0.1:8123/instantml_user_data_test"
                     .to_string(),

@@ -51,6 +51,8 @@ use crate::{
     artifact_store::{prepare_base64_artifact, ArtifactByteStore, StoredArtifact},
     auth::{generate_api_key, generate_session_token, hash_idempotency, hash_secret},
     config::{AppConfig, ByocClickHouseConfig, HostedClickHouseConfig},
+    control_db::ControlDb,
+    control_repo::{ApiKeyWithHash, NewSession},
     control_store::{ControlRecordRow, ControlStore},
     domain::{
         is_personal_account_type, plan_tier, validate_account_type, validate_email,
@@ -144,6 +146,12 @@ const DEMO_STEPS: [i64; 6] = [0, 40, 80, 120, 160, 200];
 pub struct Store {
     metric_store: MetricStore,
     control_store: Option<ControlStore>,
+    /// Postgres control plane. When present, it is the system of record for
+    /// users/orgs/memberships/sessions/keys/billing/tenant routes, replacing the
+    /// in-memory `StoreData` projection. `None` keeps the legacy ClickHouse
+    /// event-log + projection path (single-binary local mode and not-yet-migrated
+    /// tests).
+    control_db: Option<ControlDb>,
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     byoc_clickhouse: ByocClickHouseConfig,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
@@ -178,6 +186,7 @@ impl Store {
     pub async fn connect(
         metric_store: MetricStore,
         control_store: Option<ControlStore>,
+        control_db: Option<ControlDb>,
         hosted_clickhouse: Option<HostedClickHouseConfig>,
         byoc_clickhouse: ByocClickHouseConfig,
     ) -> AppResult<Self> {
@@ -187,6 +196,7 @@ impl Store {
         let store = Self {
             metric_store,
             control_store,
+            control_db,
             hosted_clickhouse,
             byoc_clickhouse,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
@@ -216,8 +226,20 @@ impl Store {
         &self.metric_store
     }
 
+    /// The Postgres control plane, when configured. Auth/org/billing store
+    /// methods route through this; `None` falls back to the in-memory
+    /// projection during the migration.
+    pub fn control_db(&self) -> Option<&ControlDb> {
+        self.control_db.as_ref()
+    }
+
     async fn rebuild(&self) -> AppResult<()> {
-        let (data, latest_record_micros) = if let Some(control_store) = &self.control_store {
+        let (data, latest_record_micros) = if let Some(control_db) = &self.control_db {
+            // Postgres is the system of record: load the live control state
+            // directly. Unlike the event-log replay, startup cost is bounded by
+            // the number of live entities, not the lifetime mutation history.
+            (self.load_data_from_postgres(control_db).await?, 0)
+        } else if let Some(control_store) = &self.control_store {
             // First load: no cursor, so this still pulls every control record.
             let records = control_store.load_records(None).await?;
             let mut data = StoreData::default();
@@ -233,6 +255,78 @@ impl Store {
         *self.record_clock_micros.lock().await = latest_record_micros;
         self.mark_control_projection_loaded().await;
         Ok(())
+    }
+
+    /// Build the in-memory projection from the Postgres control plane. The
+    /// projection is currently kept as a read cache that is write-through via
+    /// `persist_locked`; a later step flips reads to SQL and removes it.
+    async fn load_data_from_postgres(&self, control_db: &ControlDb) -> AppResult<StoreData> {
+        let mut data = StoreData::default();
+        for user in control_db.list_users().await? {
+            data.insert_user(user);
+        }
+        for identity in control_db.load_identities().await? {
+            data.identities.insert(
+                (identity.provider, identity.provider_subject),
+                identity.user_id,
+            );
+        }
+        for org in control_db.load_orgs().await? {
+            data.insert_org(org);
+        }
+        for membership in control_db.load_memberships().await? {
+            data.insert_membership(membership);
+        }
+        for account in control_db.load_service_accounts().await? {
+            data.service_accounts.insert(account.id, account);
+        }
+        for key in control_db.load_api_keys().await? {
+            data.insert_api_key(ApiKeyRecord {
+                row: key.row,
+                key_hash: key.key_hash,
+            });
+        }
+        for session in control_db.load_sessions().await? {
+            data.insert_session(SessionRecord {
+                row: session.row,
+                token_hash: session.token_hash,
+            });
+        }
+        for invitation in control_db.load_org_invitations().await? {
+            data.insert_org_invitation(invitation);
+        }
+        for delivery in control_db.load_email_deliveries().await? {
+            data.insert_email_delivery(delivery);
+        }
+        for pref in control_db.load_dashboard_preferences().await? {
+            data.insert_dashboard_preference(pref);
+        }
+        for view in control_db.load_workspace_views().await? {
+            data.insert_workspace_view(view);
+        }
+        for account in control_db.load_billing_accounts().await? {
+            data.insert_billing_account(account);
+        }
+        for intent in control_db.load_billing_checkout_intents().await? {
+            data.insert_billing_checkout_intent(intent);
+        }
+        for intent in control_db.load_billing_change_intents().await? {
+            data.insert_billing_change_intent(intent);
+        }
+        for subscription in control_db.load_billing_subscriptions().await? {
+            data.insert_billing_subscription(subscription);
+        }
+        for event in control_db.load_billing_events().await? {
+            data.insert_billing_event(event);
+        }
+        for report in control_db.load_billing_usage_reports().await? {
+            data.insert_billing_usage_report(report);
+        }
+        for route in control_db.load_tenant_routes().await? {
+            data.insert_tenant_route(route);
+        }
+        data.recompute_counters();
+        Ok(data)
     }
 
     async fn mark_control_projection_loaded(&self) {
@@ -440,8 +534,21 @@ impl Store {
                 .map_err(|_| AppError::internal("operational payload serialization failed"))?,
             created_at: self.next_record_created_at().await,
         };
+        // Postgres control plane: when configured it is the system of record for
+        // control-plane kinds, replacing the ClickHouse event-log append. Tenant
+        // kinds (run/attribute/artifact/...) still flow to the metric store below.
+        if let Some(control_db) = &self.control_db {
+            if tenants::is_control_kind(kind) {
+                return self
+                    .persist_control_to_postgres(control_db, kind, &row.payload)
+                    .await;
+            }
+        }
         #[cfg(test)]
-        if self.control_store.is_none() && self.metric_store.database().ends_with("_test") {
+        if self.control_store.is_none()
+            && self.control_db.is_none()
+            && self.metric_store.database().ends_with("_test")
+        {
             return Ok(());
         }
         if self.is_control_record_kind(kind) {
@@ -465,6 +572,109 @@ impl Store {
         }
         let metric_store = self.metric_store_for_persist(org_id).await?;
         metric_store.insert_operational_record(&row).await
+    }
+
+    /// Route a serialized control record to the right typed Postgres upsert.
+    /// The payload is the same JSON `persist_locked` would have appended to the
+    /// ClickHouse log, so call sites are unchanged — only the destination moves.
+    async fn persist_control_to_postgres(
+        &self,
+        control_db: &ControlDb,
+        kind: &str,
+        payload: &str,
+    ) -> AppResult<()> {
+        match kind {
+            "user" => control_db.upsert_user(&parse_payload(payload)?).await,
+            "identity" => {
+                let item: IdentityRecord = parse_payload(payload)?;
+                control_db
+                    .upsert_identity(&item.provider, &item.provider_subject, item.user_id)
+                    .await
+            }
+            "organization" => control_db.upsert_org(&parse_payload(payload)?).await,
+            "membership" => control_db.upsert_membership(&parse_payload(payload)?).await,
+            "org_invitation" => {
+                control_db
+                    .upsert_org_invitation(&parse_payload(payload)?)
+                    .await
+            }
+            "email_delivery" => {
+                control_db
+                    .upsert_email_delivery(&parse_payload(payload)?)
+                    .await
+            }
+            "session" => {
+                let item: SessionRecord = parse_payload(payload)?;
+                control_db
+                    .upsert_session(&NewSession {
+                        row: item.row,
+                        token_hash: item.token_hash,
+                    })
+                    .await
+            }
+            "service_account" => {
+                control_db
+                    .upsert_service_account(&parse_payload(payload)?)
+                    .await
+            }
+            "api_key" => {
+                let item: ApiKeyRecord = parse_payload(payload)?;
+                control_db
+                    .upsert_api_key(&ApiKeyWithHash {
+                        row: item.row,
+                        key_hash: item.key_hash,
+                    })
+                    .await
+            }
+            "dashboard_preference" => {
+                control_db
+                    .upsert_dashboard_preference(&parse_payload(payload)?)
+                    .await
+            }
+            "workspace_view" => {
+                control_db
+                    .upsert_workspace_view(&parse_payload(payload)?)
+                    .await
+            }
+            "billing_account" => {
+                control_db
+                    .upsert_billing_account(&parse_payload(payload)?)
+                    .await
+            }
+            "billing_checkout_intent" => {
+                control_db
+                    .upsert_billing_checkout_intent(&parse_payload(payload)?)
+                    .await
+            }
+            "billing_change_intent" => {
+                control_db
+                    .upsert_billing_change_intent(&parse_payload(payload)?)
+                    .await
+            }
+            "billing_subscription" => {
+                control_db
+                    .upsert_billing_subscription(&parse_payload(payload)?)
+                    .await
+            }
+            "billing_event" => {
+                control_db
+                    .upsert_billing_event(&parse_payload(payload)?)
+                    .await
+            }
+            "billing_usage_report" => {
+                control_db
+                    .upsert_billing_usage_report(&parse_payload(payload)?)
+                    .await
+            }
+            tenants::TENANT_ROUTE_KIND => {
+                control_db
+                    .upsert_tenant_route(&parse_payload(payload)?)
+                    .await
+            }
+            other => Err(AppError::internal(format!(
+                "unknown control kind for postgres persistence: {other}"
+            ))),
+        }
     }
 
     async fn next_record_created_at(&self) -> DateTime<Utc> {
@@ -1262,7 +1472,14 @@ pub async fn control_ready(store: &Store) -> bool {
         Some(control_store) => control_store.ready().await,
         None => true,
     };
-    backing_ready && store.control_projection_health().await.loaded
+    // Probe Postgres too: once it is the system of record (control_store may be
+    // unset post-cutover) a Postgres outage must surface as not-ready rather
+    // than being masked by a `None` ClickHouse backing.
+    let control_db_ready = match &store.control_db {
+        Some(control_db) => control_db.ready().await,
+        None => true,
+    };
+    backing_ready && control_db_ready && store.control_projection_health().await.loaded
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1318,10 +1535,411 @@ async fn build_shared_cell_metric_store(
     Ok(Some(store))
 }
 
+/// One control entity that could not be written to Postgres during backfill —
+/// almost always a uniqueness collision (two orgs sharing a slug, two users a
+/// email) that the old append-only log allowed but the constraints reject, or a
+/// dangling foreign key. Reported rather than fatal so a single bad row does not
+/// abort the whole migration; the operator resolves these before cutover.
+#[derive(Debug, Clone, Serialize)]
+pub struct BackfillIssue {
+    pub kind: String,
+    pub entity_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct BackfillReport {
+    pub written: usize,
+    pub issues: Vec<BackfillIssue>,
+}
+
+impl BackfillReport {
+    fn note(&mut self, kind: &str, entity_id: String, result: AppResult<()>) {
+        match result {
+            Ok(()) => self.written += 1,
+            Err(err) => self.issues.push(BackfillIssue {
+                kind: kind.to_string(),
+                entity_id,
+                message: err.message().to_string(),
+            }),
+        }
+    }
+}
+
+/// Backfill the ClickHouse control log into Postgres. Replays the full log into
+/// a final-state projection (last-writer-wins per entity, keyed by id so
+/// slug/email collisions are preserved rather than collapsed), then upserts each
+/// entity. Idempotent — safe to re-run after resolving reported issues.
+pub async fn run_control_backfill(
+    control_store: &ControlStore,
+    control_db: &ControlDb,
+) -> AppResult<BackfillReport> {
+    let records = control_store.load_records(None).await?;
+    let mut data = StoreData::default();
+    data.apply_control_records(records)?;
+    backfill_data_to_postgres(&data, control_db).await
+}
+
+/// Write a materialized control projection to Postgres in foreign-key dependency
+/// order, collecting per-row failures into the report instead of aborting.
+async fn backfill_data_to_postgres(
+    data: &StoreData,
+    control_db: &ControlDb,
+) -> AppResult<BackfillReport> {
+    let mut report = BackfillReport::default();
+
+    // users → identities (FK user) → orgs (FK created_by user) → memberships →
+    // service accounts → api keys → sessions → the rest.
+    for user in data.users.values() {
+        report.note(
+            "user",
+            user.id.to_string(),
+            control_db.upsert_user(user).await,
+        );
+    }
+    for ((provider, subject), user_id) in &data.identities {
+        report.note(
+            "identity",
+            format!("{provider}:{subject}"),
+            control_db
+                .upsert_identity(provider, subject, *user_id)
+                .await,
+        );
+    }
+    for org in data.organizations.values() {
+        report.note(
+            "organization",
+            org.id.to_string(),
+            control_db.upsert_org(org).await,
+        );
+    }
+    for membership in data.memberships.values() {
+        report.note(
+            "membership",
+            membership.id.to_string(),
+            control_db.upsert_membership(membership).await,
+        );
+    }
+    for account in data.service_accounts.values() {
+        report.note(
+            "service_account",
+            account.id.to_string(),
+            control_db.upsert_service_account(account).await,
+        );
+    }
+    for key in data.api_keys.values() {
+        report.note(
+            "api_key",
+            key.row.id.to_string(),
+            control_db
+                .upsert_api_key(&ApiKeyWithHash {
+                    row: key.row.clone(),
+                    key_hash: key.key_hash.clone(),
+                })
+                .await,
+        );
+    }
+    for session in data.sessions.values() {
+        report.note(
+            "session",
+            session.row.id.to_string(),
+            control_db
+                .upsert_session(&NewSession {
+                    row: session.row.clone(),
+                    token_hash: session.token_hash.clone(),
+                })
+                .await,
+        );
+    }
+    for invitation in data.org_invitations.values() {
+        report.note(
+            "org_invitation",
+            invitation.id.to_string(),
+            control_db.upsert_org_invitation(invitation).await,
+        );
+    }
+    for delivery in data.email_deliveries.values() {
+        report.note(
+            "email_delivery",
+            delivery.id.to_string(),
+            control_db.upsert_email_delivery(delivery).await,
+        );
+    }
+    for pref in data.dashboard_preferences.values() {
+        report.note(
+            "dashboard_preference",
+            format!("{}:{:?}", pref.org_id, pref.user_id),
+            control_db.upsert_dashboard_preference(pref).await,
+        );
+    }
+    for view in data.workspace_views.values() {
+        report.note(
+            "workspace_view",
+            view.id.to_string(),
+            control_db.upsert_workspace_view(view).await,
+        );
+    }
+    for account in data.billing_accounts.values() {
+        report.note(
+            "billing_account",
+            account.org_id.to_string(),
+            control_db.upsert_billing_account(account).await,
+        );
+    }
+    for intent in data.billing_checkout_intents.values() {
+        report.note(
+            "billing_checkout_intent",
+            intent.id.to_string(),
+            control_db.upsert_billing_checkout_intent(intent).await,
+        );
+    }
+    for intent in data.billing_change_intents.values() {
+        report.note(
+            "billing_change_intent",
+            intent.id.to_string(),
+            control_db.upsert_billing_change_intent(intent).await,
+        );
+    }
+    for subscription in data.billing_subscriptions.values() {
+        report.note(
+            "billing_subscription",
+            subscription.stripe_subscription_id.clone(),
+            control_db.upsert_billing_subscription(subscription).await,
+        );
+    }
+    for event in data.billing_events.values() {
+        report.note(
+            "billing_event",
+            event.stripe_event_id.clone(),
+            control_db.upsert_billing_event(event).await,
+        );
+    }
+    for usage_report in data.billing_usage_reports.values() {
+        report.note(
+            "billing_usage_report",
+            usage_report.id.to_string(),
+            control_db.upsert_billing_usage_report(usage_report).await,
+        );
+    }
+    for route in data.tenant_routes.values() {
+        report.note(
+            "tenant_route",
+            route.org_id.to_string(),
+            control_db.upsert_tenant_route(route).await,
+        );
+    }
+
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    /// Build a `Store` whose control plane is the given Postgres handle, with
+    /// the rest of the dependencies stubbed. Used by the Postgres-backed
+    /// chokepoint tests.
+    fn store_with_control_db(control_db: ControlDb) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_pg_chokepoint_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_store: None,
+            control_db: Some(control_db),
+            hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            data: Arc::new(Mutex::new(StoreData::default())),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[sqlx::test]
+    async fn postgres_chokepoint_writes_through_and_rebuilds(pool: sqlx::PgPool) {
+        let store = store_with_control_db(ControlDb::from_pool(pool));
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "wt@example.com".to_string(),
+            display_name: None,
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        // persist_locked is the single chokepoint every control write funnels
+        // through; with a control_db set it lands in Postgres, not the CH log.
+        store
+            .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
+            .await
+            .unwrap();
+        assert!(store
+            .control_db()
+            .unwrap()
+            .get_user(user.id)
+            .await
+            .unwrap()
+            .is_some());
+
+        // The projection rebuild reads live state back from Postgres.
+        store.rebuild().await.unwrap();
+        assert!(store.data.lock().await.users.contains_key(&user.id));
+    }
+
+    #[sqlx::test]
+    async fn postgres_chokepoint_rejects_duplicate_org_slug(pool: sqlx::PgPool) {
+        let store = store_with_control_db(ControlDb::from_pool(pool));
+        let mut org = OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: "acme".to_string(),
+            name: "Acme".to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 5,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        };
+        store
+            .persist_locked("organization", org.id, &org.id.to_string(), &org)
+            .await
+            .unwrap();
+
+        // A *different* org claiming the same slug is rejected by the DB
+        // constraint — the concurrent-signup race the event log lost.
+        org.id = Uuid::new_v4();
+        let err = store
+            .persist_locked("organization", org.id, &org.id.to_string(), &org)
+            .await
+            .unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    fn backfill_org(slug: &str) -> OrganizationRow {
+        OrganizationRow {
+            id: Uuid::new_v4(),
+            slug: slug.to_string(),
+            name: slug.to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 5,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        }
+    }
+
+    #[sqlx::test]
+    async fn backfill_writes_projection_and_reports_slug_collision(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let mut data = StoreData::default();
+        data.insert_user(UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "bf@example.com".to_string(),
+            display_name: None,
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        });
+        // Two distinct orgs sharing a slug — the silent duplication the old
+        // append-only log allowed. The projection keeps both (keyed by id); the
+        // backfill must persist one and report the other, not lose it quietly.
+        data.insert_org(backfill_org("dup"));
+        data.insert_org(backfill_org("dup"));
+
+        let report = backfill_data_to_postgres(&data, &control_db).await.unwrap();
+
+        // user + exactly one org written; the colliding org is reported.
+        assert_eq!(report.written, 2);
+        assert_eq!(report.issues.len(), 1);
+        assert_eq!(report.issues[0].kind, "organization");
+        assert_eq!(control_db.load_orgs().await.unwrap().len(), 1);
+    }
+
+    #[sqlx::test]
+    async fn create_user_persists_and_is_idempotent_via_postgres(pool: sqlx::PgPool) {
+        let store = store_with_control_db(ControlDb::from_pool(pool));
+        let request = || CreateUserRequest {
+            email: Some("u@example.com".to_string()),
+            primary_email: None,
+            provider: Some("test".to_string()),
+            provider_subject: Some("subj".to_string()),
+            email_verified: None,
+            display_name: Some("U".to_string()),
+            avatar_url: None,
+        };
+        let first = create_user(&store, request()).await.unwrap();
+        // Same identity → same user, no duplicate row.
+        let second = create_user(&store, request()).await.unwrap();
+        assert_eq!(first.id, second.id);
+
+        let db = store.control_db().unwrap();
+        assert_eq!(db.list_users().await.unwrap().len(), 1);
+        assert_eq!(db.load_identities().await.unwrap().len(), 1);
+        // Projection mirrors Postgres.
+        assert!(store.data.lock().await.users.contains_key(&first.id));
+    }
+
+    #[sqlx::test]
+    async fn create_organization_commits_org_and_owner_atomically(pool: sqlx::PgPool) {
+        let store = store_with_control_db(ControlDb::from_pool(pool));
+        let owner = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "owner@example.com".to_string(),
+            display_name: None,
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        store
+            .control_db()
+            .unwrap()
+            .create_user_with_identity(
+                &owner,
+                &crate::control_repo::NewIdentity {
+                    provider: "test".to_string(),
+                    provider_subject: "owner".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let request = || CreateOrganizationRequest {
+            slug: Some("acme".to_string()),
+            name: Some("Acme".to_string()),
+            plan_tier: None,
+            owner_user_id: Some(owner.id),
+            storage_choice: None,
+        };
+        let org = create_organization(&store, request()).await.unwrap();
+
+        let db = store.control_db().unwrap();
+        // Org and owner membership both present — never one without the other.
+        assert!(db.get_org(org.id).await.unwrap().is_some());
+        assert!(db.membership_for(org.id, owner.id).await.unwrap().is_some());
+
+        // A second org with the same slug is rejected and leaves no orphan.
+        let err = create_organization(&store, request()).await.unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
+        assert_eq!(db.load_orgs().await.unwrap().len(), 1);
+    }
 
     fn replay_row<T: Serialize>(
         kind: &str,
