@@ -183,6 +183,25 @@ title: "Lists"
   ]);
 });
 
+test("docs parser keeps nested list lines attached to their parent item", () => {
+  const parsed = parseDocsMdx(`---
+title: "Nested Lists"
+---
+
+- Parent item
+  - Child item
+    with wrapped child context.
+- Sibling item
+`);
+
+  const lists = parsed.blocks.filter((block) => block.type === "list");
+  assert.equal(lists.length, 1);
+  assert.deepEqual(lists[0]?.items, [
+    "Parent item - Child item with wrapped child context.",
+    "Sibling item",
+  ]);
+});
+
 test("docs loader can read an MDX page and the generated API reference", async () => {
   const logging = await loadDocsPage(["sdk", "logging"]);
   assert.equal(logging.kind, "mdx");

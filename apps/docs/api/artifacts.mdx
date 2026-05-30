@@ -100,7 +100,8 @@ Authorization: Bearer instantml_...
 Range: bytes=0-1048575
 ```
 
-Unsatisfiable ranges return `416`.
+For hosted object storage, unsatisfiable ranges return `416`. The local file
+backend streams the full file and ignores `Range`.
 
 External metadata-only artifact rows are not downloadable through this endpoint.
 

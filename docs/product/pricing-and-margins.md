@@ -131,14 +131,14 @@ Premium exists for teams that want a larger included pool and stronger isolation
 
 ## Billing Gaps
 
-Not implemented yet:
+Coverage and hardening still needed before treating billing data as invoices:
 
 - Public production Stripe launch hardening beyond the current Checkout/Portal
   integration.
-- Live Stripe webhook, plan-change proration, extra-seat invoice, and storage
-  meter-event smoke coverage.
+- End-to-end smoke coverage for live Stripe webhooks, plan-change proration,
+  extra-seat invoices, and storage meter events.
 - Email delivery for invites.
-- Billable GiB-day accounting from object storage/provider truth.
+- Billable GiB-day reconciliation against object-storage/provider truth.
 - Enterprise contract terms.
 
 Implemented billing slice:
@@ -156,7 +156,7 @@ Implemented billing slice:
 - Billing gates return HTTP 402 `payment_required` for pending/failed paid
   workspaces while reads, exports, usage, and billing status remain available.
 
-Until those exist, usage outputs are product/admin guardrails, not invoices.
+Until that coverage and reconciliation exist, usage outputs are product/admin guardrails, not invoices.
 Writes that would exceed project, run, metric-point, or estimated-storage
 limits are rejected with `plan_limit_exceeded`; reads and exports remain
 available so teams can inspect and reduce usage. Metric-point blocking uses the

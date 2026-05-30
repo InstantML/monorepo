@@ -75,6 +75,8 @@ only a child run record; it does not start training or copy existing metrics.
 Attach the SDK to the child run when your resume script is ready to log.
 
 ```python
+import instantml as ro
+
 api = ro.Api()
 child = api.fork_run(
     "source-run-id",

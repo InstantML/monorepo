@@ -299,9 +299,12 @@ export function parseDocsMdx(raw) {
 function parseList(lines, startIndex, markerPattern) {
   const items = [];
   let index = startIndex;
+  const baseIndent = leadingWhitespaceCount(lines[startIndex] ?? "");
 
   while (index < lines.length) {
-    const itemMatch = markerPattern.exec(lines[index].trim());
+    const line = lines[index];
+    if (leadingWhitespaceCount(line) !== baseIndent) break;
+    const itemMatch = markerPattern.exec(line.slice(baseIndent));
     if (!itemMatch) break;
     const parts = [itemMatch[1]];
     index += 1;
@@ -310,7 +313,7 @@ function parseList(lines, startIndex, markerPattern) {
       const continuation = lines[index];
       const trimmed = continuation.trim();
       if (!trimmed) break;
-      if (!/^\s{2,}\S/.test(continuation) || startsSpecialBlock(lines, index)) break;
+      if (leadingWhitespaceCount(continuation) <= baseIndent) break;
       parts.push(trimmed);
       index += 1;
     }
@@ -319,6 +322,10 @@ function parseList(lines, startIndex, markerPattern) {
   }
 
   return { items, nextIndex: index };
+}
+
+function leadingWhitespaceCount(value) {
+  return value.match(/^\s*/)?.[0].length ?? 0;
 }
 
 export function slugifyHeading(text) {
