@@ -34,6 +34,15 @@
   padding: 56px 24px 24px; gap: 20px;
 }
 @media (min-width: 900px) { .pricing-tier-card { padding: 60px 28px 28px; } }
+@supports (grid-template-rows: subgrid) {
+  @media (min-width: 900px) {
+    .pricing-tier-card {
+      display: grid;
+      grid-row: span 4;
+      grid-template-rows: subgrid;
+    }
+  }
+}
 .pricing-tier-card--highlight {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 1px var(--accent-line), 0 12px 40px -16px rgba(31, 184, 119, 0.35);
