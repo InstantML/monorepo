@@ -392,8 +392,8 @@ export function LandingPage() {
             <a href="#how" className="landing-nav__link">How it works</a>
             <a href="#capabilities" className="landing-nav__link">Capabilities</a>
             <a href="#developers" className="landing-nav__link landing-nav__link--md">Developers</a>
-            <Link href="/docs" className="landing-nav__link">Docs</Link>
-            <Link href="/pricing" className="landing-nav__link">Pricing</Link>
+            <Link href="/docs" className="landing-nav__link landing-nav__link--mobile">Docs</Link>
+            <Link href="/pricing" className="landing-nav__link landing-nav__link--mobile">Pricing</Link>
             <ThemeToggle />
             <Link href="/signup" className="landing-cta-primary landing-cta-primary--sm">
               Get early access
@@ -529,7 +529,7 @@ export function LandingPage() {
         <div className="landing-bento-3">
           <PathTile num="01" title="Wait on a slow run list" line="Every project entry costs you focus. Spinners are the dominant UI." variant="old" />
           <PathTile num="02" title="Pay per tracked hour" line="Pricing scales with how hard your team is working. The wrong incentive." variant="old" />
-          <PathTile num="03" title="InstantML" line="Sub-second charts at 100k runs, flat predictable pricing, and a data model you can self-host." variant="instantml" />
+          <PathTile num="03" title="InstantML" line="Sub-second charts at 100k runs, predictable pricing, and a data model you can self-host." variant="instantml" />
         </div>
       </Section>
 
@@ -696,7 +696,7 @@ export function LandingPage() {
           <MatrixCell label="Self-hosted"     status="Available"           tone="ok" />
           <MatrixCell label="Hosted SaaS"     status="Design partners"     tone="progress" />
           <MatrixCell label="Dual-log to W&B" status="In testing"          tone="progress" />
-          <MatrixCell label="Flat pricing"    status="No tracked hours"    tone="ok" />
+          <MatrixCell label="Predictable pricing" status="No tracked hours" tone="ok" />
           <MatrixCell label="Data export"     status="GET /api/export"     tone="ok" />
         </div>
 
@@ -739,7 +739,7 @@ export function LandingPage() {
                 See the SDK
               </a>
             </div>
-            <p className="landing-cta-note">hello@instantml.ai · we reply same business day</p>
+            <p className="landing-cta-note">hello@instantml.ai</p>
           </div>
         </div>
       </Section>
@@ -755,7 +755,7 @@ export function LandingPage() {
               </div>
               <p className="landing-footer__brand-desc">
                 Training observability that&apos;s actually fast.
-                Sub-second charts at 100k runs, flat pricing, and a data
+                Sub-second charts at 100k runs, predictable pricing, and a data
                 model your team can own.
               </p>
             </div>

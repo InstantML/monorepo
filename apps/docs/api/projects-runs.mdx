@@ -23,7 +23,8 @@ Content-Type: application/json
 
 Requires `sdk:ingest` or a writable browser session.
 
-Project-scoped API keys cannot create a different project.
+Project-scoped API keys cannot create projects; create projects with an
+org-scoped key or browser session.
 
 ## List projects
 
@@ -116,6 +117,42 @@ Content-Type: application/json
 
 At least one field is required. Status must be `running`, `finished`, or
 `failed`. Empty notes remove the stored note.
+
+## Fork a run from a checkpoint
+
+```http
+POST /api/runs/{run_id}/forks
+Authorization: Bearer instantml_...
+Content-Type: application/json
+Idempotency-Key: instantml-fork-...
+
+{
+  "checkpoint_artifact_id": "00000000-0000-0000-0000-000000000000",
+  "step": 1000,
+  "inherit_config": true,
+  "name": "retry-from-step-1000",
+  "tags": ["retry", "checkpoint"],
+  "notes": "Retry from the stable checkpoint."
+}
+```
+
+Forking creates a linked child run record in the same project. It does not
+start training, copy metrics, or copy artifacts. Use a stable idempotency key
+for retries; the Python SDK derives one automatically in `Api.fork_run(...)`.
+
+The caller needs `export:read` on the source run and `sdk:ingest` to create the
+child run.
+
+## Read run lineage
+
+```http
+GET /api/runs/{run_id}/lineage
+Authorization: Bearer instantml_...
+```
+
+Returns a bounded direct lineage graph for the selected run: the run, optional
+parent, direct children, optional checkpoint artifact, total child count, and
+whether more children exist beyond the current fixed child limit.
 
 ## Dashboard summaries
 

@@ -15,7 +15,7 @@ pub async fn create_report(
     input: CreateReportRequest,
 ) -> AppResult<ReportRow> {
     let user_id = require_report_write(store, ctx)?;
-    let title = validate_name(input.title.as_deref(), "title")?;
+    let title = validate_name(Some(input.title.as_str()), "title")?;
     let description = validate_optional_name(input.description.as_deref(), "description")?;
     let visibility = validate_visibility(input.visibility.as_deref())?;
     let blocks = validate_blocks(input.blocks)?;

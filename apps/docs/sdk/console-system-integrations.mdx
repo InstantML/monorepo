@@ -71,15 +71,29 @@ when you want local evidence of what the SDK attempted during debugging.
 
 ## Source metadata
 
-By default, the SDK captures reproducibility context when it can:
+By default, the SDK captures privacy-safe reproducibility context when it can:
 
 - Python version.
 - Platform.
-- Hostname.
-- Process ID.
-- Current working directory.
-- Command argv.
-- Git repository metadata.
+- Git availability, commit, and dirty state.
+- Entrypoint basename when available.
+
+Hostname, process ID, current working directory, full command argv, branch, and
+git diff metadata are opt-in:
+
+```python
+run = ro.init(
+    project="train-loop",
+    source_tracking=ro.SourceTracking(
+        command=True,
+        paths=True,
+        branch=True,
+        hostname=True,
+        pid=True,
+        git_diff=True,
+    ),
+)
+```
 
 Disable source capture for sensitive jobs:
 

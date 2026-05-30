@@ -59,13 +59,13 @@ can access every project allowed by their scopes.
 
 ## Permission matrix
 
-| Route class | API key | Owner/admin session | Member session | Viewer session |
+| Route class | API key | Owner/admin session | Write/read (`member`) session | Read only (`viewer`) session |
 | --- | --- | --- | --- | --- |
 | Dashboard reads | Scope and org/project checks | Allowed | Allowed | Allowed |
 | Run/project mutations | `sdk:ingest` | Allowed | Allowed | Denied |
 | Artifact mutations | `artifacts:write` | Allowed | Allowed | Denied |
 | Imports | `imports:write` | Allowed | Denied | Denied |
-| Usage reads | `usage:read` | Allowed | Denied | Denied |
+| Usage reads | Unrestricted org key with `usage:read` | Allowed | Denied | Denied |
 | API-key admin | `api_keys:write` org key | Allowed | Denied | Denied |
 | Seat and invitation admin | Not a public SDK flow | Allowed | Denied | Denied |
 

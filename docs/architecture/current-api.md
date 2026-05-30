@@ -1484,8 +1484,8 @@ bytes stored by InstantML and never includes customer-owned ClickHouse bytes.
 `usage.estimated_storage_bytes_for_warnings` is retained as a compatibility
 alias for clients that have not yet moved to the exact/guardrail split.
 
-New project, run, scalar metric ingest, rank metric ingest, artifact, import,
-and demo-reset writes that exceed blocked limits fail with:
+New project, run, scalar metric ingest, rank metric ingest, artifact-storage,
+import, and demo-reset writes that exceed blocked limits fail with:
 
 ```json
 {

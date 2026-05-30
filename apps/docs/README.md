@@ -89,6 +89,8 @@ Node tests.
 - `openapi.json`: generated public API reference copy. Do not edit by hand.
 - `index.mdx`: public docs landing page.
 - `quickstart.mdx`: hosted SaaS and SDK first-run path.
+- `pricing.mdx`: public Free/Pro/Premium plan overview, no tracked-hour
+  billing positioning, included usage, and overage summary.
 - `guides/pricing-limits-billing.mdx`: public Free/Pro/Premium pricing,
   included usage, API request rate limits, storage/request overage, and billing
   behavior.
@@ -103,6 +105,10 @@ Node tests.
 - `api/`: practical API guides plus the generated OpenAPI reference tab.
 - `images/`: docs-local brand and product assets served by the Next `/docs`
   asset route and the Mintlify preview.
+- `images/product/`: dashboard screenshots for the public tour and workflow
+  pages. Refresh these when organization/workspace switching, search, run
+  detail files, checkpoint fork/lineage, artifacts, reports, settings, or API
+  key flows materially change.
 - Web-rendered Markdown mirrors are generated at request time from these MDX
   files; do not maintain duplicate checked-in `.md` copies.
 

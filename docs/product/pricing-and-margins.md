@@ -29,7 +29,7 @@ Current overage policy:
   `$1 / 1M` Premium requests. The meter reports exact request-unit deltas to
   decimal-cent Stripe prices.
 - API-key count and artifact counts are visibility-only.
-- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The Stripe meter-backed price is attached to paid subscriptions and the overage report path sends positive deltas of the current-month high-water retained GiB overage at the `$0.03/GB-month` target.
+- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The Stripe meter-backed price is attached to paid subscriptions and the overage report path sends positive deltas of the current-month high-water retained GiB overage at the `$0.03/GiB-month` target.
 
 Usage-period semantics:
 
@@ -39,7 +39,7 @@ Usage-period semantics:
   through bounded data-plane rollups. Free and non-billable orgs are blocked at
   the monthly allowance; paid org overage is reportable to Stripe as exact
   request-unit deltas.
-- Storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource posture. They do not reset monthly; usage drops only when data is deleted/expired, seats or keys are removed, or the org changes plan.
+- Storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource posture. They do not reset monthly; usage drops only when data is deleted/expired, seats or keys are removed, or the org changes plan. Artifact counts are visibility-only; artifact bytes feed the retained storage guardrail.
 
 ## Competitive Context
 
@@ -88,7 +88,7 @@ External pricing facts to re-check before launch:
 - Clerk lists a free Hobby plan, paid Pro/Business plans, B2B org features, and billing add-on charges if Clerk Billing is used.
 
 Current product copy should frame hosted artifact storage as included capacity
-with paid overage on Pro/Premium at `$0.03/GB-month` after the included pool.
+with paid overage on Pro/Premium at `$0.03/GiB-month` after the included pool.
 The first billing slice uses current-month high-water retained GiB and positive
 delta reports; provider reconciliation remains launch hardening.
 
@@ -138,7 +138,7 @@ Not implemented yet:
 - Live Stripe webhook, plan-change proration, extra-seat invoice, and storage
   meter-event smoke coverage.
 - Email delivery for invites.
-- Billable GB-day accounting from object storage/provider truth.
+- Billable GiB-day accounting from object storage/provider truth.
 - Enterprise contract terms.
 
 Implemented billing slice:

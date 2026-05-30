@@ -157,6 +157,32 @@ run.log({"loss": 0.1}, step=1)
   assert.equal(parsed.blocks.find((block) => block.type === "code")?.language, "python");
 });
 
+test("docs parser joins wrapped list item continuation lines", () => {
+  const parsed = parseDocsMdx(`---
+title: "Lists"
+---
+
+- Paid signup redirects through Stripe Checkout before writes and SDK key
+  creation are unlocked.
+- Settings shows plan, usage, rate limits, seats, storage accounting, and
+  billing controls.
+
+1. Open Run Detail and choose a checkpoint
+   before creating the fork.
+2. Attach the SDK to the child run.
+`);
+
+  const lists = parsed.blocks.filter((block) => block.type === "list");
+  assert.deepEqual(lists[0]?.items, [
+    "Paid signup redirects through Stripe Checkout before writes and SDK key creation are unlocked.",
+    "Settings shows plan, usage, rate limits, seats, storage accounting, and billing controls.",
+  ]);
+  assert.deepEqual(lists[1]?.items, [
+    "Open Run Detail and choose a checkpoint before creating the fork.",
+    "Attach the SDK to the child run.",
+  ]);
+});
+
 test("docs loader can read an MDX page and the generated API reference", async () => {
   const logging = await loadDocsPage(["sdk", "logging"]);
   assert.equal(logging.kind, "mdx");

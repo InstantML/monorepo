@@ -87,8 +87,17 @@ instead of repeatedly fetching every chart series from a notebook.
 
 ## Existing-run writes
 
-The current public SDK does not expose a high-level `load_run(...)` or
-resume-by-run-ID helper for appending events to an existing run. Use
-`Api.runs(...)` for read-only lookup and `Api.download_artifact(...)` for
-restore workflows. Start a new run with `ro.init(...)` when you want to log new
-training events.
+Use `ro.attach_run(...)` when a resume script should continue logging into an
+existing run, such as a checkpoint fork created by the dashboard or
+`Api.fork_run(...)`.
+
+```python
+run = ro.attach_run("child-run-id")
+run.log({"train/loss": 0.1}, step=1001)
+run.finish()
+```
+
+By default, `attach_run(validate=True)` reads `/runs/:id` before returning a run
+handle. That validation needs read access such as `export:read`. Use
+`validate=False` only for intentionally write-only credentials or offline attach
+flows.

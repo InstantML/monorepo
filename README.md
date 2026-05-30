@@ -23,6 +23,8 @@ Start with:
 - `docs/architecture/self-hosted-gcp-clickhouse.md` for the current
   InstantML-owned GCP ClickHouse production/staging operating model.
 - `docs/design/2026-05-19-utoipa-migration.md` for the OpenAPI-driven TS codegen pipeline. Run `npm run codegen:api` after any Rust handler change.
+- `docs/users/checkpoint-forking-agent-guide.md` for agent-facing checkpoint
+  logging, fork/resume, scope, and docs-sync guidance.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
 ## Repository Structure
@@ -116,6 +118,10 @@ Training-observability roadmap first slice is implemented:
 - Side-by-side comparison, metric aggregate summaries, chart smoothing, grouped averages, x-axis mode, sorting, and saved local views.
 - Runs workspace sections, top-level add-panel drawer, line-panel editing, fullscreen inspection, movable/resizable panels, local layout persistence, selected-run-only plotting, hover tooltips, and range zoom.
 - Visible/searchable run tags and notes, with editing from Run Detail and Compare and Rust-backed indexed search over name/tags/config/notes text.
+- Server-backed run search uses the shared `q` language across dashboard pages and API routes, including field filters, exact tag/status search, uppercase boolean operators, quoted phrases, negation, grouping, and explicit Rust `re:/.../` regex.
+- Run Detail supports stored checkpoint resume snippets and same-project checkpoint forks; forked child runs preserve direct lineage and can be continued from Python with `instantml.attach_run(...)`.
+- Reports are persisted workspace documents backed by `/api/reports`, with live panel grids, autosave, share tokens, provider-gated/stub LLM summary refresh, and Markdown export.
+- Hosted pricing is Free/Pro/Premium with visible plan usage, no tracked-hour billing in v1, and explicit paid storage/API request overage.
 - Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, a raw Python `Api.runs()` query helper, a repeatable local 100,000-run benchmark, and a hosted Cloud Run API benchmark for the deployed Cloud Run -> ClickHouse path. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms.
 - Rich-object benchmark evidence from 2026-05-11 measured selected-run object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, and table row p95 1.9 ms for 1,000 bounded rows.
 - Keyboard workflow MVP covering quick search, shortcut help, overlay dismissal, workspace undo/redo, run selector collapse, focus handoff, and fullscreen panel traversal.

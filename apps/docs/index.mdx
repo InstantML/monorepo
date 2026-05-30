@@ -27,6 +27,12 @@ from Python, then use the dashboard to sort, chart, and compare what happened.
   <Card title="Dashboard tour" icon="layout-dashboard" href="/dashboard/tour">
     Walk through the main product surfaces with screenshots from a representative project.
   </Card>
+  <Card title="Organizations" icon="building-2" href="/dashboard/organizations-workspaces">
+    Understand workspace hierarchy, roles, switching, settings, and billing scope.
+  </Card>
+  <Card title="Reports" icon="file-text" href="/dashboard/reports">
+    Create experiment writeups with live panels, share links, and Markdown export.
+  </Card>
   <Card title="API reference" icon="book-open" href="/api-reference/platform/get-health">
     Browse the filtered public API reference generated from the Rust OpenAPI spec.
   </Card>
@@ -39,8 +45,8 @@ from Python, then use the dashboard to sort, chart, and compare what happened.
   <Card title="Usage and limits" icon="gauge" href="/guides/export-usage-limits">
     Understand exports, usage counters, plan limits, and write gates.
   </Card>
-  <Card title="Pricing and billing" icon="credit-card" href="/guides/pricing-limits-billing">
-    Review Free, Pro, and Premium packaging, API request allowances, storage overage, and Stripe billing.
+  <Card title="Pricing" icon="credit-card" href="/pricing">
+    Review Free, Pro, and Premium packaging, included usage, explicit overage, and billing surfaces.
   </Card>
 </CardGroup>
 
@@ -80,10 +86,11 @@ become chartable series.
   run.
 - Use the SDK guides when you are wiring InstantML into a real training loop.
 - Use the dashboard guides when you want to understand the Runs workspace,
-  metric charts, run detail, Compare, research dashboards, artifacts, and
-  settings.
+  metric charts, run detail, Compare, research dashboards, artifacts,
+  checkpoint forks, reports, organizations, and settings.
 - Use pricing and limits when you need current Free, Pro, and Premium
-  allowances, overage behavior, API rate limits, or monthly reset rules.
+  allowances, no tracked-hour billing, overage behavior, API rate limits, or
+  monthly reset rules.
 - Use the architecture and API guides when you need a durable technical
   reference for storage, auth, routes, and limits.
 - Use troubleshooting when hosted sign-in, API key, or SDK connection behavior

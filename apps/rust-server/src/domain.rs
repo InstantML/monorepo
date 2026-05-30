@@ -9,6 +9,44 @@ use crate::{
     store::LOCAL_ORG_ID,
 };
 
+fn report_blocks_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::schema::{AdditionalProperties, ArrayBuilder, ObjectBuilder, Type};
+
+    ArrayBuilder::new()
+        .items(
+            ObjectBuilder::new()
+                .schema_type(Type::Object)
+                .additional_properties(Some(AdditionalProperties::FreeForm(true))),
+        )
+        .max_items(Some(256))
+        .into()
+}
+
+fn nullable_report_blocks_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::schema::{
+        AdditionalProperties, ArrayBuilder, ObjectBuilder, SchemaType, Type,
+    };
+
+    ArrayBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Array, Type::Null]))
+        .items(
+            ObjectBuilder::new()
+                .schema_type(Type::Object)
+                .additional_properties(Some(AdditionalProperties::FreeForm(true))),
+        )
+        .max_items(Some(256))
+        .into()
+}
+
+fn json_object_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::schema::{AdditionalProperties, ObjectBuilder, SchemaType, Type};
+
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .additional_properties(Some(AdditionalProperties::FreeForm(true)))
+        .into()
+}
+
 pub const MAX_TEXT_BYTES: usize = 512;
 pub const MAX_METRICS_PER_BATCH: usize = 1_000;
 pub const DEFAULT_METRIC_LIMIT: i64 = 1_000;
@@ -928,10 +966,10 @@ pub struct ProjectRow {
 pub struct CreateRunRequest {
     pub project: Option<String>,
     pub name: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub config: Option<Value>,
     pub tags: Option<Vec<String>>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub metadata: Option<Value>,
 }
 
@@ -941,11 +979,11 @@ pub struct CreateRunForkRequest {
     pub step: Option<f64>,
     pub checkpoint_artifact_id: Option<Uuid>,
     pub inherit_config: Option<bool>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub config_overrides: Option<Value>,
     pub tags: Option<Vec<String>>,
     pub notes: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub metadata: Option<Value>,
 }
 
@@ -967,7 +1005,7 @@ pub struct DashboardPreferenceRow {
 pub struct SaveWorkspaceViewRequest {
     pub name: Option<String>,
     pub project: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub payload: Option<Value>,
 }
 
@@ -1004,11 +1042,11 @@ pub struct WorkspaceViewSummary {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateReportRequest {
-    pub title: Option<String>,
+    pub title: String,
     pub description: Option<String>,
     pub project_id: Option<Uuid>,
     pub visibility: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = nullable_report_blocks_schema)]
     pub blocks: Option<Value>,
 }
 
@@ -1017,7 +1055,7 @@ pub struct UpdateReportRequest {
     pub title: Option<String>,
     pub description: Option<String>,
     pub visibility: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = nullable_report_blocks_schema)]
     pub blocks: Option<Value>,
 }
 
@@ -1031,10 +1069,9 @@ pub struct ReportRow {
     pub description: Option<String>,
     /// Ordered list of block JSON objects. Each block has a `kind` discriminator
     /// (`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,
-    /// `image`, `panel_grid`) plus kind-specific fields. Legacy stored
-    /// reports may still contain `llm_summary` blocks so old documents keep
-    /// rendering.
-    #[schema(value_type = Object)]
+    /// `image`, `panel_grid`) plus kind-specific fields. Legacy stored reports
+    /// may still contain `llm_summary` blocks so old documents keep rendering.
+    #[schema(schema_with = report_blocks_schema)]
     pub blocks: Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -1102,7 +1139,7 @@ pub struct LogMetricsRequest {
     pub step: Value,
     pub timestamp: Option<String>,
     pub preview: Option<bool>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub preview_completion: Option<Value>,
 }
 
@@ -1299,7 +1336,7 @@ pub struct CreateObjectRequest {
     #[schema(value_type = Option<Object>)]
     pub step: Option<Value>,
     pub artifact_id: Option<Uuid>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub metadata: Option<Value>,
     #[schema(value_type = Option<Object>)]
     pub summary: Option<Value>,
@@ -1331,15 +1368,15 @@ pub struct AttributeRow {
 pub struct CreateArtifactRequest {
     #[serde(rename = "type")]
     pub kind: Option<String>,
-    pub name: Option<String>,
+    pub name: String,
     pub uri: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(value_type = Option<f64>, minimum = 0)]
     pub step: Option<Value>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(value_type = Option<i64>, minimum = 0)]
     pub size_bytes: Option<Value>,
     pub sha256: Option<String>,
     pub mime_type: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub metadata: Option<Value>,
     pub path: Option<String>,
 }
@@ -1348,12 +1385,12 @@ pub struct CreateArtifactRequest {
 pub struct UploadArtifactRequest {
     #[serde(rename = "type")]
     pub kind: Option<String>,
-    pub name: Option<String>,
-    pub content_base64: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    pub name: String,
+    pub content_base64: String,
+    #[schema(value_type = Option<f64>, minimum = 0)]
     pub step: Option<Value>,
     pub mime_type: Option<String>,
-    #[schema(value_type = Option<Object>)]
+    #[schema(schema_with = json_object_schema)]
     pub metadata: Option<Value>,
     pub path: Option<String>,
 }

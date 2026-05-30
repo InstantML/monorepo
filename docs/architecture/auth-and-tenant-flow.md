@@ -143,7 +143,7 @@ Session-backed mutating browser requests also validate `Origin` against the conf
 | Run/project mutations | `sdk:ingest` | Allowed | Allowed | Denied |
 | Artifact mutations | `artifacts:write` | Allowed | Allowed | Denied |
 | Imports | `imports:write` | Allowed | Denied | Denied |
-| Usage reads | `usage:read` | Allowed | Denied | Denied |
+| Usage reads | Unrestricted org key with `usage:read` | Allowed | Denied | Denied |
 | API-key admin | `api_keys:write` org key | Allowed | Denied | Denied |
 | Seat reservation | Not public SDK flow | Allowed | Denied | Denied |
 

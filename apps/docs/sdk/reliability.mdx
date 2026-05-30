@@ -8,16 +8,16 @@ description: "Choose the right SDK reliability mode for training loops."
 The SDK starts simple and lets you opt into more durable modes when the training
 loop needs it.
 
-## Default initialization and sync writes
+## Default initialization and async writes
 
-By default, `ro.init(...)` starts run creation in the background and returns a
-run handle immediately. The first write waits for run creation if it has not
-finished yet, and foreground failures surface as `InstantMLError`.
+By default, `ro.init(...)` starts run creation in the background, returns a run
+handle immediately, and uses async metric/log/status uploads after the run
+exists. The first write waits for run creation if it has not finished yet.
 
 ```python
 run = ro.init(project="demo")
 run.log({"train/loss": 0.2}, step=1)
-run.finish()
+run.finish(timeout=30)
 ```
 
 Use `run.wait_for_init()` when a script wants to fail before expensive training
@@ -34,9 +34,25 @@ Set `async_init=False` for fully synchronous run creation:
 run = ro.init(project="demo", async_init=False)
 ```
 
-After initialization, normal SDK calls use synchronous HTTP requests with a
-10-second default timeout and raise `InstantMLError` for network or non-2xx API
-failures.
+After initialization, scalar metrics, rank metrics, console logs, and final run
+status are queued locally and drained by the async uploader. Delivery failures
+surface through `Run.upload_status()`, dashboard upload-health metrics, and wait
+helpers rather than raising from hot-path `log(...)` calls.
+
+```python
+run.log({"train/loss": 0.2}, step=1)
+print(run.upload_status())
+run.wait_for_processing(timeout=30)
+```
+
+Use `upload_mode="sync"` when a short script should raise foreground
+`InstantMLError` exceptions for normal post-init writes:
+
+```python
+run = ro.init(project="demo", upload_mode="sync")
+run.log({"train/loss": 0.2}, step=1)
+run.finish()
+```
 
 ## In-memory buffering
 
@@ -102,7 +118,8 @@ compatible server can safely accept retries.
 
 | Need | Mode |
 | --- | --- |
-| Small script, easiest behavior | Default async init plus sync writes |
+| Small script, easiest behavior | Default async init plus async writes |
+| Foreground exceptions on post-init writes | `upload_mode="sync"` |
 | Fewer HTTP calls | `buffer_size` |
 | Replay failed requests after temporary outage | `offline_dir` |
 | Keep post-init HTTP out of the training process | `upload_mode="spool"` |

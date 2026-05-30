@@ -17,7 +17,11 @@ starting from an empty project.
 | Neptune-shaped transformed JSON | `POST /api/imports/neptune` |
 
 These routes accept transformed JSON inputs. They are not raw vendor database
-readers.
+readers. Imports count against the same project, run, metric-point, and
+hosted-storage plan limits as SDK writes. Artifact counts are visible in usage
+summaries, but there is not a separate artifact count limit. Storage-heavy
+migration projects should use Premium or custom terms before importing the full
+archive.
 
 ## What importers preserve
 

@@ -1,26 +1,13 @@
 "use client";
 
 /**
- * PricingPage — public /pricing route.
+ * PricingPage - public /pricing route.
  *
- * Three blocks, in order:
- *   1. Tier matrix     — Free / Pro / Premium, with "best fit" labels
- *   2. W&B comparison  — 5-person team, side-by-side dollars
- *   3. Surprise costs  — what W&B charges for that InstantML doesn't
- *
- * Reuses landing-system.css design tokens and class primitives
- * (.landing-root, .landing-nav, .landing-section-py, .landing-h2, .pill,
- * .bento-cell, .landing-cta-primary). Brand color: var(--accent) = #1FB877.
- *
- * Numbers source:
- *   - Free / Pro / Premium tier prices: existing auth-flow.tsx
- *     (PLAN_OPTIONS) — keep these in sync.
- *   - W&B per-seat: ZenML Nov-2025 pricing guide cited in
- *     product/wiki/concepts/pricing-and-seats.md
- *     ($50/seat/mo team tier; $1/tracked-hour overage).
- *   - W&B "growth" / business per-seat ~$200/mo is the audit's planning
- *     number — TODO: verify with a current public quote before any
- *     marketing push. Marked PLACEHOLDER inline below.
+ * Public copy must stay aligned with the implemented Free/Pro/Premium plan
+ * constants in apps/rust-server/src/domain.rs and the signup cards in
+ * app/auth-flow.tsx. Avoid publishing unverified competitor dollar math here:
+ * PRODUCT_STRATEGY.md treats pricing comparisons as launch-sensitive research
+ * that must be rechecked before use.
  */
 
 import Link from "next/link";
@@ -39,6 +26,8 @@ function IconArrow() {
       stroke="currentColor"
       strokeWidth="2"
       viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
     >
       <path
         strokeLinecap="round"
@@ -67,26 +56,6 @@ function IconCheck() {
   );
 }
 
-function IconX() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6L6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
-// ─── Tier matrix ────────────────────────────────────────────────────────────
-
 type Tier = {
   id: string;
   name: string;
@@ -94,11 +63,14 @@ type Tier = {
   cadence: string;
   blurb: string;
   bestFor: string;
-  writers: string;
-  extraWriter: string;
-  viewers: string;
+  seats: string;
+  seatNote: string;
   storage: string;
+  projects: string;
+  runs: string;
+  metricPoints: string;
   apiRequests: string;
+  rateLimits: string;
   features: string[];
   ctaLabel: string;
   ctaHref: string;
@@ -110,19 +82,22 @@ const TIERS: Tier[] = [
     id: "free",
     name: "Free",
     price: "$0",
-    cadence: "forever",
-    blurb: "For individuals, students, and one-off academic runs.",
-    bestFor: "Solo researcher · academic",
-    writers: "1 writer seat",
-    extraWriter: "upgrade for more",
-    viewers: "Read-only viewer role",
-    storage: "2 GB hosted storage included",
+    cadence: "/ org / month",
+    blurb: "For individual researchers, students, and small experiments.",
+    bestFor: "Solo research and first projects",
+    seats: "2 included seats",
+    seatNote: "Upgrade when the team grows",
+    storage: "2 GiB hosted storage",
+    projects: "2 projects",
+    runs: "100 runs",
+    metricPoints: "1M metric points / month",
     apiRequests: "500k API requests / month",
+    rateLimits: "5 req/sec general; 2 req/sec ingest",
     features: [
-      "Full SDK · init / log / finish",
-      "Run compare · charts · artifacts",
-      "W&B / MLflow / Neptune import",
-      "Community Slack support",
+      "Full SDK for init, log, artifacts, and checkpoints",
+      "Run search, charts, Compare, Reports, and safe previews",
+      "W&B, MLflow, and Neptune import paths within plan limits",
+      "Monthly API request overage is blocked at the included pool",
     ],
     ctaLabel: "Start free",
     ctaHref: "/signup",
@@ -131,19 +106,22 @@ const TIERS: Tier[] = [
     id: "pro",
     name: "Pro",
     price: "$199",
-    cadence: "/month",
-    blurb: "For 3–7-person teams that share runs and review together.",
-    bestFor: "Small teams · 3–7 people",
-    writers: "3 writer seats included",
-    extraWriter: "$50 / extra writer",
-    viewers: "Read-only viewer role",
-    storage: "1 TB hosted storage included · $0.03 / GB-month overage",
-    apiRequests: "25M API requests / month · $2 / 1M overage",
+    cadence: "/ org / month",
+    blurb: "For small teams that need shared run review without tracked-hour billing.",
+    bestFor: "Lean ML teams",
+    seats: "3 included seats",
+    seatNote: "Extra seats available through billing",
+    storage: "1 TiB hosted storage; $0.03 / GiB-month overage",
+    projects: "100 projects",
+    runs: "100k runs",
+    metricPoints: "250M metric points / month",
+    apiRequests: "25M API requests / month; $2 / 1M overage",
+    rateLimits: "50 req/sec general; 25 req/sec ingest",
     features: [
       "Everything in Free",
-      "Project share links (read-only)",
-      "Org-wide RBAC · audit trail",
-      "Same-business-day email support",
+      "Paid storage and API request overage are explicit",
+      "Org roles, invitations, usage, billing, and API-key controls",
+      "Email support for setup and billing questions",
     ],
     ctaLabel: "Start Pro",
     ctaHref: "/signup?plan=pro",
@@ -153,19 +131,22 @@ const TIERS: Tier[] = [
     id: "premium",
     name: "Premium",
     price: "$699",
-    cadence: "/month",
-    blurb: "For growth-stage ML orgs with multiple projects in flight.",
-    bestFor: "Growth-stage · 100k+ runs",
-    writers: "10 writer seats included",
-    extraWriter: "$70 / extra writer",
-    viewers: "Read-only viewer role",
-    storage: "5 TB hosted storage included · $0.03 / GB-month overage",
-    apiRequests: "150M API requests / month · $1 / 1M overage",
+    cadence: "/ org / month",
+    blurb: "For teams with larger run volumes, storage needs, or BYOC requirements.",
+    bestFor: "Growth teams and heavy projects",
+    seats: "10 included seats",
+    seatNote: "Extra seats available through billing",
+    storage: "5 TiB hosted storage; $0.03 / GiB-month overage",
+    projects: "500 projects",
+    runs: "1M runs",
+    metricPoints: "2B metric points / month",
+    apiRequests: "150M API requests / month; $1 / 1M overage",
+    rateLimits: "200 req/sec general; 100 req/sec ingest",
     features: [
       "Everything in Pro",
-      "Priority ingest queue",
-      "SSO / SAML · custom domains",
-      "Shared private Slack channel",
+      "Premium BYOC self-hosted GCP ClickHouse option",
+      "Larger hosted warehouse routing intent",
+      "Guided storage and ingest setup during beta",
     ],
     ctaLabel: "Start Premium",
     ctaHref: "/signup?plan=premium",
@@ -173,12 +154,22 @@ const TIERS: Tier[] = [
 ];
 
 function TierCard({ tier }: { tier: Tier }) {
+  const rows = [
+    ["Seats", tier.seats, tier.seatNote],
+    ["Storage", tier.storage, ""],
+    ["Projects", tier.projects, ""],
+    ["Runs", tier.runs, ""],
+    ["Metric points", tier.metricPoints, ""],
+    ["API requests", tier.apiRequests, ""],
+    ["Rate limits", tier.rateLimits, ""],
+  ];
+
   return (
     <div
       className={`bento-cell pricing-tier-card${tier.highlight ? " pricing-tier-card--highlight" : ""}`}
     >
       {tier.highlight ? (
-        <span className="pricing-tier-card__ribbon">Most teams pick this</span>
+        <span className="pricing-tier-card__ribbon">Most teams start here</span>
       ) : null}
       <div className="pricing-tier-card__head">
         <div className="pricing-tier-card__name">{tier.name}</div>
@@ -194,39 +185,29 @@ function TierCard({ tier }: { tier: Tier }) {
       </div>
 
       <ul className="pricing-tier-card__lines">
-        <li>
-          <span className="pricing-tier-card__line-key">Writer seats</span>
-          <span className="pricing-tier-card__line-val">
-            {tier.writers}
-            <span className="pricing-tier-card__line-sub">{tier.extraWriter}</span>
-          </span>
-        </li>
-        <li>
-          <span className="pricing-tier-card__line-key">Viewer seats</span>
-          <span className="pricing-tier-card__line-val pricing-tier-card__line-val--accent">
-            {tier.viewers}
-          </span>
-        </li>
-        <li>
-          <span className="pricing-tier-card__line-key">Storage</span>
-          <span className="pricing-tier-card__line-val">{tier.storage}</span>
-        </li>
-        <li>
-          <span className="pricing-tier-card__line-key">API requests</span>
-          <span className="pricing-tier-card__line-val">{tier.apiRequests}</span>
-        </li>
-      </ul>
-
-      <ul className="pricing-tier-card__features">
-        {tier.features.map((f) => (
-          <li key={f}>
-            <span className="pricing-tier-card__feature-check"><IconCheck /></span>
-            <span>{f}</span>
+        {rows.map(([key, value, note]) => (
+          <li key={key}>
+            <span className="pricing-tier-card__line-key">{key}</span>
+            <span className="pricing-tier-card__line-val">
+              {value}
+              {note ? <span className="pricing-tier-card__line-sub">{note}</span> : null}
+            </span>
           </li>
         ))}
       </ul>
 
-      <a
+      <ul className="pricing-tier-card__features">
+        {tier.features.map((feature) => (
+          <li key={feature}>
+            <span className="pricing-tier-card__feature-check">
+              <IconCheck />
+            </span>
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+
+      <Link
         href={tier.ctaHref}
         className={
           tier.highlight
@@ -236,171 +217,128 @@ function TierCard({ tier }: { tier: Tier }) {
       >
         {tier.ctaLabel}
         <IconArrow />
-      </a>
+      </Link>
     </div>
   );
 }
 
-// ─── W&B comparison ─────────────────────────────────────────────────────────
-
-// PLACEHOLDER VALUES — verify with W&B sales rep before going live.
-// Sources:
-//   - $50/seat/mo at the Team/Pro tier
-//     (raw/external-feedback/blogs/zenml-wandb-pricing-guide.md, Nov 2025).
-//   - $1/tracked-hour overage from same source.
-//   - $0.03/GB/mo storage overage from same source.
-//   - 20k runs/mo × ~12h avg ≈ tracked-hour ballpark; we land on a
-//     conservative 200 tracked-hours/mo for the team beyond the included 500.
-// TODO: replace ESTIMATED amounts with a current public quote.
-const SCENARIO = {
-  shape:
-    "5-person team · ~20,000 runs/month · 50 GB metadata · 1 writer + 4 viewers (today)",
-  wandb: {
-    label: "W&B · Pro tier",
-    lines: [
-      { k: "5 writer seats @ $50", v: "$250" },
-      { k: "Tracked-hour overage (est. 200h × $1)", v: "$200" },
-      { k: "Hosted artifact storage (est. 50 GB × $0.03)", v: "$2" },
-    ],
-    monthly: "$452 /mo",
-    annual: "~$5,424 /yr",
-    note: "ESTIMATED — verify with W&B current quote",
-  },
-  wandbShared: {
-    label: "W&B · with seat-sharing workaround",
-    lines: [
-      { k: "2 writer seats (shared across the team)", v: "$100" },
-      { k: "Tracked-hour overage (est. 200h × $1)", v: "$200" },
-      { k: "Hosted artifact storage (est. 50 GB × $0.03)", v: "$2" },
-    ],
-    monthly: "$302 /mo",
-    annual: "~$3,624 /yr",
-    note: "Shared seats break attribution, RBAC, and onboarding.",
-  },
-  instantml: {
-    label: "InstantML · Pro",
-    lines: [
-      { k: "Base (3 writer seats included)", v: "$199" },
-      { k: "+2 extra writers @ $50", v: "$100" },
-      { k: "4 viewer seats", v: "$0" },
-      { k: "Hosted artifacts (50 GB included)", v: "$0" },
-    ],
-    monthly: "$299 /mo",
-    annual: "~$3,588 /yr",
-    note: "Flat. Every teammate gets their own writer login. Extra storage target: $0.03/GB-month.",
-  },
-};
-
-function ComparisonColumn({
-  label,
-  lines,
-  monthly,
-  annual,
-  note,
-  tone,
-}: {
+type BillingSignal = {
   label: string;
   lines: { k: string; v: string }[];
-  monthly: string;
-  annual: string;
+  total: string;
   note: string;
   tone: "old" | "alt" | "new";
-}) {
+};
+
+const BILLING_SIGNALS: BillingSignal[] = [
+  {
+    label: "Training time",
+    lines: [
+      { k: "Tracked-hour meter", v: "No" },
+      { k: "Step count", v: "Not billed" },
+      { k: "Runtime length", v: "Not billed" },
+    ],
+    total: "No tracked-hour billing",
+    note: "InstantML v1 does not charge based on how long your training loop runs.",
+    tone: "new",
+  },
+  {
+    label: "Included usage",
+    lines: [
+      { k: "Seats", v: "2 / 3 / 10" },
+      { k: "Hosted storage", v: "2 GiB / 1 TiB / 5 TiB" },
+      { k: "API requests", v: "500k / 25M / 150M" },
+    ],
+    total: "Plan limits are visible",
+    note: "Settings shows current usage, reset dates, and retained-resource posture.",
+    tone: "alt",
+  },
+  {
+    label: "Overage policy",
+    lines: [
+      { k: "Free overage", v: "Blocked" },
+      { k: "Paid API requests", v: "$2 or $1 / 1M" },
+      { k: "Paid storage", v: "$0.03 / GiB-month" },
+    ],
+    total: "Explicit overage",
+    note: "Paid plans meter API request and storage overage, while write routes still honor plan guardrails.",
+    tone: "new",
+  },
+];
+
+function SignalCard({ signal }: { signal: BillingSignal }) {
   return (
     <div
-      className={`bento-cell pricing-compare-col pricing-compare-col--${tone}`}
+      className={`bento-cell pricing-compare-col pricing-compare-col--${signal.tone}`}
     >
-      <div className="pricing-compare-col__label">{label}</div>
+      <div className="pricing-compare-col__label">{signal.label}</div>
       <ul className="pricing-compare-col__lines">
-        {lines.map((l) => (
-          <li key={l.k}>
-            <span>{l.k}</span>
-            <span className="pricing-compare-col__line-val">{l.v}</span>
+        {signal.lines.map((line) => (
+          <li key={line.k}>
+            <span>{line.k}</span>
+            <span className="pricing-compare-col__line-val">{line.v}</span>
           </li>
         ))}
       </ul>
       <div className="pricing-compare-col__total-row">
-        <span className="pricing-compare-col__total-label">Monthly</span>
-        <span className="pricing-compare-col__total">{monthly}</span>
+        <span className="pricing-compare-col__total-label">Policy</span>
+        <span className="pricing-compare-col__total">{signal.total}</span>
       </div>
-      <div className="pricing-compare-col__annual">{annual}</div>
-      <p className="pricing-compare-col__note">{note}</p>
+      <p className="pricing-compare-col__note">{signal.note}</p>
     </div>
   );
 }
 
-// ─── Surprise costs ──────────────────────────────────────────────────────────
-
-type Surprise = {
+type ChecklistItem = {
   title: string;
-  wandb: string;
+  compare: string;
   instantml: string;
-  evidence?: { label: string; href: string };
 };
 
-const SURPRISES: Surprise[] = [
+const CHECKLIST: ChecklistItem[] = [
   {
-    title: "Artifact storage that bills forever",
-    wandb:
-      "Orphaned artifacts you thought were deleted keep accruing storage charges. Public report: a student's bill ran to ~$600 from artifacts they couldn't see.",
+    title: "Training-time billing",
+    compare:
+      "When comparing trackers, check whether training hours, tracked compute time, or background logging time create a second bill axis.",
     instantml:
-      "Hosted R2 storage is included in every tier and shown in usage. Writes are blocked at the included pool until paid overages launch.",
-    evidence: {
-      label: "wandb#10459 — artifacts not pruned",
-      href: "https://github.com/wandb/wandb/issues/10459",
-    },
+      "InstantML does not bill tracked training hours in v1. The important meters are seats, included usage, storage, and API requests.",
   },
   {
-    title: "Per-seat pricing that punishes growing teams",
-    wandb:
-      "Every teammate is a paid seat. Teams workaround it by sharing one login — which destroys attribution, RBAC, and the audit trail.",
+    title: "Storage accounting",
+    compare:
+      "Confirm which artifact bytes are billable, when storage resets, and whether deleting metadata actually reduces retained storage.",
     instantml:
-      "Clear read-only viewer access from day one. Bring in PMs and leadership with their own login, and track seats honestly in usage.",
+      "Hosted storage is shown in Settings. Paid storage overage is reportable at $0.03 / GiB-month, but storage writes can still be blocked at plan guardrails until usage, plan, or terms change.",
   },
   {
-    title: "Tracked-hour overage on top of seats",
-    wandb:
-      "A second axis of bill creep: pay per logged compute hour on top of the seat fee. Reported $1/hr overage, with cases of 5,000 tracked hours in a single day on small clusters.",
+    title: "API request quota",
+    compare:
+      "Look for monthly request allowances, short-window rate limits, and whether ingestion can silently exceed a plan.",
     instantml:
-      "Flat monthly bill. We don't meter your training time. Log a million steps or ten — same price.",
+      "Free and non-billable orgs are blocked at the monthly request allowance. Pro and Premium use explicit request overage.",
   },
   {
-    title: "Silent SDK data loss",
-    wandb:
-      "Multiple open issues where the SDK stops logging mid-run with no error visible to the user.",
+    title: "Roles and seats",
+    compare:
+      "Check whether viewers, pending invites, service users, or shared logins change the effective seat count.",
     instantml:
-      "End-to-end ack on metric writes. Offline spool replays on reconnect. We surface drops loudly, not quietly.",
-    evidence: {
-      label: "wandb#10581 — stops tracking metrics",
-      href: "https://github.com/wandb/wandb/issues/10581",
-    },
+      "Settings counts active members plus unexpired invitations. Owner, Admin, Write/read, and Read only roles are visible in the UI.",
   },
 ];
 
-function SurpriseRow({ s }: { s: Surprise }) {
+function ChecklistRow({ item }: { item: ChecklistItem }) {
   return (
     <div className="bento-cell pricing-surprise">
-      <h3 className="pricing-surprise__title">{s.title}</h3>
+      <h3 className="pricing-surprise__title">{item.title}</h3>
       <div className="pricing-surprise__grid">
         <div className="pricing-surprise__col pricing-surprise__col--old">
           <div className="pricing-surprise__col-label">
             <span className="pricing-surprise__icon pricing-surprise__icon--bad">
-              <IconX />
+              <IconCheck />
             </span>
-            W&amp;B today
+            Compare elsewhere
           </div>
-          <p>{s.wandb}</p>
-          {s.evidence ? (
-            <a
-              href={s.evidence.href}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="landing-text-link pricing-surprise__evidence"
-            >
-              {s.evidence.label}
-              <IconArrow />
-            </a>
-          ) : null}
+          <p>{item.compare}</p>
         </div>
         <div className="pricing-surprise__col pricing-surprise__col--new">
           <div className="pricing-surprise__col-label">
@@ -409,14 +347,12 @@ function SurpriseRow({ s }: { s: Surprise }) {
             </span>
             InstantML
           </div>
-          <p>{s.instantml}</p>
+          <p>{item.instantml}</p>
         </div>
       </div>
     </div>
   );
 }
-
-// ─── Page shell ──────────────────────────────────────────────────────────────
 
 function FooterCol({
   title,
@@ -462,7 +398,10 @@ function Nav() {
           <Link href="/#developers" className="landing-nav__link landing-nav__link--md">
             Developers
           </Link>
-          <Link href="/pricing" className="landing-nav__link pricing-nav__link--active">
+          <Link href="/docs" className="landing-nav__link landing-nav__link--mobile">
+            Docs
+          </Link>
+          <Link href="/pricing" className="landing-nav__link landing-nav__link--mobile pricing-nav__link--active">
             Pricing
           </Link>
           <ThemeToggle />
@@ -499,147 +438,112 @@ export function PricingPage() {
     <div className="landing-root pricing-root">
       <Nav />
 
-      {/* Header */}
       <PageSection className="landing-section-py pricing-header-section">
         <div className="landing-section-intro pricing-header-intro">
           <p className="mono-label landing-mono-label">Pricing</p>
           <h1 className="landing-h2 pricing-h1">
-            Predictable monthly bill.{" "}
+            Predictable training observability pricing.{" "}
             <span className="font-serif-italic landing-h2-muted">
-              Clear seat accounting on every tier.
+              No tracked-hour billing.
             </span>
           </h1>
           <p className="landing-section-body">
-            No per-tracked-hour creep. Hosted artifact storage is included and
-            visible in usage. Invite teammates with admin, member, or viewer
-            roles and see the seat count before it surprises you.
+            InstantML uses seat-plus-included-usage plans for hosted teams.
+            Storage and API request overage are explicit on paid plans, and
+            project, run, and metric limits are visible before they block new
+            writes.
           </p>
           <div className="pricing-header-chips">
             <span className="landing-proof-chip">
               <span className="landing-proof-chip__check">
                 <IconCheck />
               </span>
-              Read-only viewer role
-            </span>
-            <span className="landing-proof-chip">
-              <span className="landing-proof-chip__check">
-                <IconCheck />
-              </span>
-              Included hosted artifact storage
-            </span>
-            <span className="landing-proof-chip">
-              <span className="landing-proof-chip__check">
-                <IconCheck />
-              </span>
               No tracked-hour billing
+            </span>
+            <span className="landing-proof-chip">
+              <span className="landing-proof-chip__check">
+                <IconCheck />
+              </span>
+              Usage visible in Settings
+            </span>
+            <span className="landing-proof-chip">
+              <span className="landing-proof-chip__check">
+                <IconCheck />
+              </span>
+              Explicit storage and API request overage
             </span>
           </div>
         </div>
 
         <div className="pricing-tier-grid">
-          {TIERS.map((t) => (
-            <TierCard key={t.id} tier={t} />
+          {TIERS.map((tier) => (
+            <TierCard key={tier.id} tier={tier} />
           ))}
         </div>
 
         <p className="pricing-fine-print">
-          All tiers include the full SDK, run compare, artifacts, and W&amp;B /
-          MLflow / Neptune import. Artifact bytes are stored in private
-          Cloudflare R2-backed org buckets. Additional retained storage beyond
-          the included pool is planned at $0.03/GB-month plus provider operation
-          costs; usage remains
-          guardrail telemetry until provider reconciliation is billable truth.
+          Prices are current hosted beta list prices. Extra seats are available
+          through billing; the target range remains $79-$99 per seat/month
+          until invoice smoke coverage is complete. Enterprise/custom is
+          reserved for SSO/SAML, VPC or self-hosted deployment, compliance,
+          custom retention, dedicated support, or unusually heavy data
+          footprints.
         </p>
       </PageSection>
 
-      {/* W&B comparison */}
-      <PageSection id="compare" className="landing-section-py pricing-compare-section">
+      <PageSection id="billing-model" className="landing-section-py pricing-compare-section">
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">The math</p>
+          <p className="mono-label landing-mono-label">Billing model</p>
           <h2 className="landing-h2">
-            What a 5-person team pays.{" "}
+            The meters are explicit.{" "}
             <span className="font-serif-italic landing-h2-muted">
-              Side-by-side, same workload.
+              Training time is not one of them.
             </span>
           </h2>
           <p className="landing-section-body">
-            {SCENARIO.shape}.
+            Compare InstantML by its implemented usage model: seats, retained
+            storage, monthly metric points, monthly API requests, and clear
+            write gates when limits are reached.
           </p>
         </div>
 
         <div className="pricing-compare-grid">
-          <ComparisonColumn
-            label={SCENARIO.wandbShared.label}
-            lines={SCENARIO.wandbShared.lines}
-            monthly={SCENARIO.wandbShared.monthly}
-            annual={SCENARIO.wandbShared.annual}
-            note={SCENARIO.wandbShared.note}
-            tone="old"
-          />
-          <ComparisonColumn
-            label={SCENARIO.wandb.label}
-            lines={SCENARIO.wandb.lines}
-            monthly={SCENARIO.wandb.monthly}
-            annual={SCENARIO.wandb.annual}
-            note={SCENARIO.wandb.note}
-            tone="alt"
-          />
-          <ComparisonColumn
-            label={SCENARIO.instantml.label}
-            lines={SCENARIO.instantml.lines}
-            monthly={SCENARIO.instantml.monthly}
-            annual={SCENARIO.instantml.annual}
-            note={SCENARIO.instantml.note}
-            tone="new"
-          />
-        </div>
-
-        <div className="pricing-compare-savings">
-          <div>
-            <span className="mono-label">Savings vs. unshared W&amp;B Pro</span>
-            <span className="pricing-compare-savings__value">
-              ~$1,836 / year
-            </span>
-          </div>
-          <div>
-            <span className="mono-label">And every teammate gets their own login</span>
-            <span className="pricing-compare-savings__sub">
-              Attribution, RBAC, audit trail — restored.
-            </span>
-          </div>
+          {BILLING_SIGNALS.map((signal) => (
+            <SignalCard key={signal.label} signal={signal} />
+          ))}
         </div>
 
         <p className="pricing-fine-print pricing-fine-print--note">
-          W&amp;B dollar figures are current public-quote estimates and include
-          a modest tracked-hour overage assumption — confirm with your account
-          rep for an exact comparison. InstantML numbers are list price, no
-          contract minimum.
+          Paid storage overage is reportable at $0.03 / GiB-month after
+          included storage, and storage writes can still be blocked at plan
+          guardrails until usage, plan, or terms change. Paid API request
+          overage is $2 / 1M requests on Pro and $1 / 1M requests on Premium.
+          Free and non-billable orgs are blocked at the monthly API request
+          allowance.
         </p>
       </PageSection>
 
-      {/* Surprise costs */}
       <PageSection
-        id="surprises"
+        id="compare"
         className="landing-section-py pricing-surprises-section"
       >
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">No surprise costs</p>
+          <p className="mono-label landing-mono-label">Comparison checklist</p>
           <h2 className="landing-h2">
-            Four ways W&amp;B&apos;s bill ambushes you.{" "}
+            Compare the billing rules, not stale screenshots.{" "}
             <span className="font-serif-italic landing-h2-muted">
-              We removed every one of them.
+              These are the questions that matter.
             </span>
           </h2>
         </div>
 
         <div className="pricing-surprise-stack">
-          {SURPRISES.map((s) => (
-            <SurpriseRow key={s.title} s={s} />
+          {CHECKLIST.map((item) => (
+            <ChecklistRow key={item.title} item={item} />
           ))}
         </div>
       </PageSection>
 
-      {/* CTA */}
       <PageSection className="landing-section-py">
         <div className="landing-cta-card">
           <div className="bg-grid landing-bg-overlay landing-cta-card__grid" />
@@ -649,33 +553,32 @@ export function PricingPage() {
               <LogoMark size={28} color="var(--accent)" />
             </div>
             <h2 className="landing-cta-h2">
-              Stop sharing seats.{" "}
+              Start with a real plan limit.{" "}
               <span className="font-serif-italic landing-h2-muted">
-                Invite the whole team.
+                Scale when usage proves it.
               </span>
             </h2>
             <p className="landing-cta-desc">
-              Start on Free. Upgrade when you outgrow the writer seat. Every
-              teammate gets their own role and audit trail — no per-call
-              charges, no tracked-hour meter.
+              Start on Free, upgrade to Pro or Premium when the workspace needs
+              more seats, storage, projects, runs, metric points, or API
+              request capacity.
             </p>
             <div className="landing-cta-row">
               <Link href="/signup" className="landing-cta-primary">
                 Get started
                 <IconArrow />
               </Link>
-              <Link href="/#developers" className="landing-cta-ghost">
-                See the SDK
+              <Link href="/docs/pricing" className="landing-cta-ghost">
+                Read billing docs
               </Link>
             </div>
             <p className="landing-cta-note">
-              hello@instantml.ai · we reply same business day
+              hello@instantml.ai
             </p>
           </div>
         </div>
       </PageSection>
 
-      {/* Footer */}
       <footer className="landing-footer">
         <div className="landing-footer__inner">
           <div className="landing-footer__grid">
@@ -685,8 +588,8 @@ export function PricingPage() {
                 <span className="landing-footer__brand-name">InstantML</span>
               </div>
               <p className="landing-footer__brand-desc">
-                Training observability that&apos;s actually fast. Sub-second
-                charts at 100k runs, flat pricing, and a data model your team
+                Training observability that's actually fast. Sub-second charts
+                at 100k runs, predictable pricing, and a data model your team
                 can own.
               </p>
             </div>
@@ -721,7 +624,7 @@ export function PricingPage() {
             </span>
             <span className="landing-footer__status">
               <span className="status-live" />
-              v0.1 · hello@instantml.ai
+              v0.1 - hello@instantml.ai
             </span>
           </div>
         </div>

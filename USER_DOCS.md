@@ -187,7 +187,11 @@ run = ro.init(
 )
 ```
 
-The SDK automatically captures Python, platform, hostname, process ID, current working directory, argv, and Git metadata when available. Disable that with `source_tracking=False`:
+The SDK automatically captures privacy-safe source context such as Python,
+platform, entrypoint basename, Git availability, commit, and dirty state when
+available. Hostname, process ID, current working directory, argv, branch, and
+git diff metadata are opt-in through `SourceTracking(...)`. Disable source
+capture with `source_tracking=False`:
 
 ```python
 run = ro.init(project="private-run", source_tracking=False)
@@ -540,7 +544,7 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 | `log_histogram(...)` | Histogram attributes for run inspection and future richer panels |
 | `log_artifact(...)` | Generic artifact metadata in Run Detail, Compare, Artifacts, and API tabs |
 | `log_checkpoint(...)` | Checkpoint timeline and artifact surfaces |
-| `log_rollout(...)` / `log_video(...)` | Rollout/artifact surfaces and safe media previews when available |
+| `log_rollout(...)` / `log_video(...)` | Rollout/artifact surfaces and safe media previews when stored bytes are available |
 | `log_table(...)` | Artifact/table references for Run Detail and Compare |
 | `log_file(...)` / `log_files(...)` | Generic file references for Run Detail, Compare, Artifacts, and API tabs |
 | `upload_file(...)` | Server-managed artifact bytes, previews/downloads when supported |
@@ -555,8 +559,11 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 4. In the Runs workspace, use automatic panels for a quick overview or switch to manual mode and add only the metric panels you need.
 5. Drag panels between sections, resize panels from the lower-right handle, hover points for run/value tooltips, and drag the range brush to zoom into a training interval.
 6. Open Run Detail to inspect one run's metrics, config, source metadata, notes, tags, artifacts, checkpoints, and rollouts.
-7. Open Compare to scan selected runs side by side or row by row. Use diff-only mode, sorting, reference switching, and tags/notes editing to decide what changed.
-8. Save local views or workspace layouts for repeated local analysis.
+7. Fork a stored checkpoint from Run Detail when you want a linked child run record for a resume script; then use `ro.attach_run(child_id)` to continue logging.
+8. Open Compare to scan selected runs side by side or row by row. Use diff-only mode, sorting, reference switching, and tags/notes editing to decide what changed.
+9. Create Reports when you want a persisted experiment writeup with live panels, share links, and Markdown export.
+10. Save workspace views and layouts for repeated analysis.
+11. Use Settings for plan usage, API request limits, storage accounting, billing, seats, invitations, and API keys. Current hosted plans are Free, Pro, and Premium; InstantML does not bill tracked training hours in v1.
 
 ## Practical Tips
 
@@ -565,14 +572,14 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 - Put important searchable identity in `tags` and `notes`; put structured hyperparameters in `config`.
 - Prefer metric namespaces such as `train/`, `val/`, `eval/`, `test/`, `system/`, `optimizer/`, and `model/`.
 - Upload small, high-signal artifacts directly. For large remote artifacts, log metadata and a stable URI.
-- Use `upload_mode="spool"` for long training jobs where logging must not block the training process.
+- The default SDK upload mode queues hot-path metric/log/status writes locally. Use `upload_mode="sync"` when you want foreground exceptions, or `upload_mode="spool"` for long training jobs where logging must not make post-init HTTP calls in the training process.
 - Call `finish()` in `finally` blocks when you are not using a context manager.
 
 ## Current Limitations
 
 - True offline run creation is not implemented yet; `init()` needs a reachable server.
-- Workspace layouts and saved views are local-browser state today, not hosted team objects.
-- First-slice workspace panels are line plots. Rich table, media, query, text, scatter, and parallel-coordinate panels are planned follow-ups.
+- Workspace layouts have a local fallback; named workspace views are persisted through the Rust control-plane API when available.
+- Runs workspace persisted panels support line, bar, histogram, and dot charts today. Report panel grids add richer writeup panels such as scatter, parallel coordinates, query-style run comparers, markdown, code, and image panels; video, audio, and HTML media panels remain future work.
 - The SDK package name is still `instantml` for compatibility.
 - The deprecated Node server is for compatibility checks only; new product usage should target the Rust/ClickHouse API.
 

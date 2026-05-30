@@ -1658,6 +1658,8 @@ export interface components {
             /** Format: date-time */
             usage_period_start: string;
         };
+        /** Format: binary */
+        BinaryBody: string;
         ClerkAuthRequest: {
             /** Format: uuid */
             accept_invite_org_id?: string | null;
@@ -1759,13 +1761,17 @@ export interface components {
             scopes?: string[] | null;
         };
         CreateArtifactRequest: {
-            metadata?: Record<string, never> | null;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
             mime_type?: string | null;
-            name?: string | null;
+            name: string;
             path?: string | null;
             sha256?: string | null;
-            size_bytes?: Record<string, never> | null;
-            step?: Record<string, never> | null;
+            /** Format: int64 */
+            size_bytes?: number | null;
+            /** Format: double */
+            step?: number | null;
             type?: string | null;
             uri?: string | null;
         };
@@ -1799,7 +1805,9 @@ export interface components {
             artifact_id?: string | null;
             key?: string | null;
             kind?: string | null;
-            metadata?: Record<string, never> | null;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
             rows?: Record<string, never> | null;
             step?: Record<string, never> | null;
             summary?: Record<string, never> | null;
@@ -1818,19 +1826,25 @@ export interface components {
             name?: string | null;
         };
         CreateReportRequest: {
-            blocks?: Record<string, never> | null;
+            blocks?: {
+                [key: string]: unknown;
+            }[] | null;
             description?: string | null;
             /** Format: uuid */
             project_id?: string | null;
-            title?: string | null;
+            title: string;
             visibility?: string | null;
         };
         CreateRunForkRequest: {
             /** Format: uuid */
             checkpoint_artifact_id?: string | null;
-            config_overrides?: Record<string, never> | null;
+            config_overrides?: {
+                [key: string]: unknown;
+            } | null;
             inherit_config?: boolean | null;
-            metadata?: Record<string, never> | null;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
             name?: string | null;
             notes?: string | null;
             /** Format: double */
@@ -1838,8 +1852,12 @@ export interface components {
             tags?: string[] | null;
         };
         CreateRunRequest: {
-            config?: Record<string, never> | null;
-            metadata?: Record<string, never> | null;
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
             name?: string | null;
             project?: string | null;
             tags?: string[] | null;
@@ -1976,7 +1994,9 @@ export interface components {
         LogMetricsRequest: {
             metrics: Record<string, never>;
             preview?: boolean | null;
-            preview_completion?: Record<string, never> | null;
+            preview_completion?: {
+                [key: string]: unknown;
+            } | null;
             step: Record<string, never>;
             timestamp?: string | null;
         };
@@ -2308,12 +2328,9 @@ export interface components {
         ReportRow: {
             /** Format: uuid */
             author_user_id?: string | null;
-            /** @description Ordered list of block JSON objects. Each block has a `kind` discriminator
-             *     (`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,
-             *     `image`, `panel_grid`) plus kind-specific fields. Legacy stored
-             *     reports may still contain `llm_summary` blocks so old documents keep
-             *     rendering. */
-            blocks: Record<string, never>;
+            blocks: {
+                [key: string]: unknown;
+            }[];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -2469,7 +2486,9 @@ export interface components {
         };
         SaveWorkspaceViewRequest: {
             name?: string | null;
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
             project?: string | null;
         };
         SeatEnvelope: {
@@ -2513,7 +2532,9 @@ export interface components {
             selected_project?: string | null;
         };
         UpdateReportRequest: {
-            blocks?: Record<string, never> | null;
+            blocks?: {
+                [key: string]: unknown;
+            }[] | null;
             description?: string | null;
             title?: string | null;
             visibility?: string | null;
@@ -2524,12 +2545,15 @@ export interface components {
             tags?: string[] | null;
         };
         UploadArtifactRequest: {
-            content_base64?: string | null;
-            metadata?: Record<string, never> | null;
+            content_base64: string;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
             mime_type?: string | null;
-            name?: string | null;
+            name: string;
             path?: string | null;
-            step?: Record<string, never> | null;
+            /** Format: double */
+            step?: number | null;
             type?: string | null;
         };
         UserEnvelope: {
@@ -2657,7 +2681,10 @@ export interface operations {
     download_artifact: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional byte range forwarded to the stored artifact backend */
+                Range?: string | null;
+            };
             path: {
                 /** @description Artifact UUID */
                 artifact_id: string;
@@ -2666,22 +2693,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Artifact byte stream */
+            /** @description Artifact byte stream. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/octet-stream": unknown;
+                    "application/octet-stream": components["schemas"]["BinaryBody"];
                 };
             };
-            /** @description Artifact byte range */
+            /** @description Artifact byte range. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream. */
             206: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/octet-stream": unknown;
+                    "application/octet-stream": components["schemas"]["BinaryBody"];
                 };
             };
             /** @description Authentication required */
@@ -2704,6 +2731,15 @@ export interface operations {
             };
             /** @description Artifact not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Requested range is not satisfiable */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4597,7 +4633,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Public report fetched by share token */
+            /** @description Shared report fetched by share token */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4776,7 +4812,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "text/markdown; charset=utf-8": string;
+                };
             };
             /** @description Authentication required */
             401: {
@@ -5211,7 +5249,10 @@ export interface operations {
     fork_run: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate fork retries */
+                "Idempotency-Key"?: string | null;
+            };
             path: {
                 /** @description Source run UUID */
                 run_id: string;

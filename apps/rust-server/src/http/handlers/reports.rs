@@ -192,7 +192,7 @@ pub async fn rotate_report_share_token(
     params(("share_token" = String, Path, description = "Magic-link share token")),
     security(()),
     responses(
-        (status = 200, description = "Public report fetched by share token", body = crate::http::openapi::ReportEnvelope),
+        (status = 200, description = "Shared report fetched by share token", body = crate::http::openapi::ReportEnvelope),
         (status = 404, description = "Report not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -232,7 +232,7 @@ pub async fn list_org_panels(
     ),
     security(("browserSession" = []), ("bearerApiKey" = []), ()),
     responses(
-        (status = 200, description = "Markdown rendering of the report"),
+        (status = 200, description = "Markdown rendering of the report", body = String, content_type = "text/markdown; charset=utf-8"),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Report not found", body = crate::http::openapi::ErrorResponse),
     ),

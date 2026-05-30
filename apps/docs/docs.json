@@ -38,6 +38,7 @@
               "index",
               "quickstart",
               "concepts/core-concepts",
+              "pricing",
               "guides/pricing-limits-billing",
               "guides/examples"
             ]
@@ -73,6 +74,7 @@
             "group": "Dashboard",
             "pages": [
               "dashboard/tour",
+              "dashboard/organizations-workspaces",
               "dashboard/runs-workspace",
               "dashboard/metrics-charts",
               "dashboard/run-detail",
@@ -119,6 +121,7 @@
               "api/metrics-series",
               "api/attributes-objects",
               "api/artifacts",
+              "api/reports",
               "api/import-export-usage",
               "api/dashboard-control-state",
               "troubleshooting"

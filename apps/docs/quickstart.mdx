@@ -104,8 +104,8 @@ python train.py
 ```
 
 For the first scalar-only run, the key only needs `sdk:ingest`. Add
-`artifacts:write` for file uploads, `export:read` for read/export jobs, and
-`usage:read` for usage reporting.
+`artifacts:write` for file uploads, `export:read` for read/export jobs, and an
+unrestricted org key with `usage:read` for usage reporting.
 
 You can also pass the key directly:
 
@@ -133,10 +133,9 @@ for row in page["runs"]:
     print(row["id"], row["name"], row.get("status"))
 ```
 
-`Api.runs(...)` reads the same bounded summary shape used by the dashboard. The
-current SDK does not have a high-level `load_run(...)` or resume-by-run-ID
-helper for writing more events to an existing run. Treat existing-run access as
-read/query/download unless a future SDK release documents an attach workflow.
+`Api.runs(...)` reads the same bounded summary shape used by the dashboard. Use
+`im.attach_run("run-id")` when a resume script should continue logging into an
+existing child run, such as one created by a checkpoint fork.
 
 Download stored checkpoint or file artifacts with:
 
@@ -170,7 +169,13 @@ run = im.init(
 for step in range(1, 11):
     run.log({"train/loss": 1.0 / step, "eval/accuracy": step / 10}, step=step)
 
-run.log_artifact("weights", "file://weights.pt", artifact_type="model", step=10)
+run.log_artifact(
+    "weights",
+    "file://weights.pt",
+    artifact_type="checkpoint",
+    step=10,
+    metadata={"kind": "model"},
+)
 run.finish()
 ```
 

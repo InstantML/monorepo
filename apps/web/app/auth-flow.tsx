@@ -112,10 +112,14 @@ const PLAN_OPTIONS: Array<{
   seats: string;
   icon: typeof Rocket;
 }> = [
-  { id: "free", label: "Free", price: "$0", storage: "2 GB", seats: "2 seats", icon: Users },
-  { id: "pro", label: "Pro", price: "$199", storage: "1 TB", seats: "3 seats", icon: Rocket },
-  { id: "premium", label: "Premium", price: "$699", storage: "5 TB", seats: "10 seats", icon: Crown },
+  { id: "free", label: "Free", price: "$0", storage: "2 GiB", seats: "2 seats", icon: Users },
+  { id: "pro", label: "Pro", price: "$199", storage: "1 TiB", seats: "3 seats", icon: Rocket },
+  { id: "premium", label: "Premium", price: "$699", storage: "5 TiB", seats: "10 seats", icon: Crown },
 ];
+
+function planTierFromSearchParam(value: string | null): PlanTier | null {
+  return value === "free" || value === "pro" || value === "premium" ? value : null;
+}
 
 // Stash the freshly issued onboarding key in sessionStorage so the dashboard's
 // empty-workspace SDK snippet can offer a "Copy with your key" action without
@@ -215,6 +219,16 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const orgUnavailable = orgNameRequired && (!orgName.trim() || orgAvailability.available === false);
   const managedClerkReady = config.managed_clerk_enabled && !clerkConfigError && clerkLoaded;
   const demoSession = isSharedDemoSession(session);
+
+  useEffect(() => {
+    if (!signupMode || typeof window === "undefined") return;
+    const requestedPlan = planTierFromSearchParam(new URLSearchParams(window.location.search).get("plan"));
+    if (!requestedPlan) return;
+    setPlanTier(requestedPlan);
+    if (requestedPlan !== "premium") {
+      setStorageChoice((current) => current === STORAGE_BYOC ? STORAGE_HOSTED : current);
+    }
+  }, [signupMode]);
 
   function choosePlanTier(next: PlanTier) {
     setPlanTier(next);

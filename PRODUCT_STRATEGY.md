@@ -202,7 +202,7 @@ Overage defaults:
   `$79-$99/seat/month` until invoice smoke coverage is complete.
 - Storage overage: paid subscriptions include a Stripe meter-backed storage
   overage item, and the server reports positive deltas of the current-month
-  high-water retained-storage overage at `$0.03/GB-month` after the included
+  high-water retained-storage overage at `$0.03/GiB-month` after the included
   pool, based on Cloudflare R2 Standard currently listing `$0.015/GB-month`.
 - Metric/event overage: new metric writes are blocked at the current UTC calendar-month fair-use threshold until paid overages or custom terms exist. Metric-point usage resets at 00:00 UTC on the first day of each month.
 - API request overage: Free is blocked at 500k requests/month. Paid Pro and
@@ -215,10 +215,11 @@ Overage defaults:
 Current implementation status:
 
 - The Rust/ClickHouse server exposes org usage summaries at `GET /api/usage` and versioned usage export at `GET /api/usage/export`. The deprecated Node compatibility server keeps the same route shape for comparison and migration fixtures.
-- Usage is scoped by org and requires `usage:read` in hosted API-key mode.
+- Usage is scoped by org and requires an unrestricted org API key with
+  `usage:read` in hosted API-key mode.
 - The summary returns the full plan catalog, current org plan, limits, overage policy, the UTC calendar-month usage period, seats, projects, runs, current-period scalar metric points, current-period API requests, billable storage/request overage fields, retained metric-point totals, retained metric series, artifacts, active API keys, exact artifact bytes, unknown artifact-byte counts, estimated metadata bytes, and blocked-at-limit storage estimates.
-- Paid signup uses Stripe Checkout; existing paid plan changes, extra-seat changes, cancellation, storage/API request overage reporting, and Customer Portal use Stripe Billing APIs plus User Data billing projections. New project, run, metric-ingest, artifact, import, API-key, seat, and demo-reset writes fail with HTTP 402 and `code: "payment_required"` when the org is pending payment or payment-failed, with `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium limit, and with HTTP 429 `code: "api_request_monthly_limit_exceeded"` when a Free or non-billable org reaches the monthly API request allowance.
-- Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes. Metric-point and API-request counters reset monthly.
+- Paid signup uses Stripe Checkout; existing paid plan changes, extra-seat changes, cancellation, storage/API request overage reporting, and Customer Portal use Stripe Billing APIs plus User Data billing projections. New project, run, metric-ingest, artifact-storage, import, and demo-reset writes fail with HTTP 402 and `code: "payment_required"` when the org is pending payment or payment-failed, with `code: "plan_limit_exceeded"` when current or projected usage crosses a blocked Free/Pro/Premium capacity limit, and with HTTP 429 `code: "api_request_monthly_limit_exceeded"` when a Free or non-billable org reaches the monthly API request allowance. API-key counts are visibility-only today; seat writes use invitation/billing-specific limits and errors.
+- Project, run, storage, artifact, API-key, and seat counts are current retained-resource posture; they do not reset monthly except through deletion, retention, or plan changes. Artifact counts are visibility-only; artifact bytes feed storage guardrails. Metric-point and API-request counters reset monthly.
 - Signup accepts `plan_tier` for Free, Pro, and Premium. Legacy plan values `lab` and `startup` canonicalize to Pro; `growth` canonicalizes to Premium for migration compatibility.
 - Local InstantML and the shared `InstantML Demo` org now default to Premium so the seeded demo exercises the Premium-scale warehouse profile and does not trip Free limits.
 - Hosted tenant routes record both requested warehouse profile and applied warehouse profile. The current InstantML-owned hosted path uses database-mode tenant routing on self-hosted GCP ClickHouse; legacy provider-backed `cloud-service` create bodies remain capped by operator defaults unless `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=true`.

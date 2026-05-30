@@ -94,6 +94,8 @@ test("publicOpenApiPaths excludes known admin and internal route families", () =
   assert.equal(publicOpenApiPaths.includes("/api/orgs/{org_id}/api-keys"), false);
   assert.equal(publicOpenApiPaths.includes("/api/runs/summary"), true);
   assert.equal(publicOpenApiPaths.includes("/api/runs/side-by-side"), true);
+  assert.equal(publicOpenApiPaths.includes("/api/reports"), true);
+  assert.equal(publicOpenApiPaths.includes("/api/reports/{report_id}/markdown"), true);
   assert.equal(publicOpenApiPaths.includes("/api/dashboard/preferences"), true);
 });
 

@@ -820,7 +820,7 @@ metric-point usage is counted for the current UTC calendar-month
 `usage.metric_points` and `usage.metric_points_current_period`, while
 `usage.metric_points_retained_total` records retained history. Plan-owned
 data-plane writes are checked against the stored tier before commit. New
-project, run, metric-ingest, artifact, import, and demo-reset writes return
+project, run, metric-ingest, artifact-storage, import, and demo-reset writes return
 HTTP 402 with `code: "plan_limit_exceeded"` when current or projected usage
 crosses a blocked `projects`, `runs`, current-month `metric_points`, or
 retained `storage` limit. Seats remain tracked as `paid_extra_seats` until

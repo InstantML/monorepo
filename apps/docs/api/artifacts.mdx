@@ -5,8 +5,10 @@ description: "Create artifact metadata, upload bytes, list artifacts, and downlo
 
 # Artifacts API
 
-Artifacts attach files, checkpoints, rollouts, reports, and media to a run.
-They can be metadata-only external references or server-managed stored bytes.
+Artifacts attach files, checkpoints, and rollouts to a run. They can be
+metadata-only external references or server-managed stored bytes. Rich media
+objects are modeled through object APIs that link to stored artifact bytes;
+reports are a separate API surface.
 
 ## Create metadata
 
@@ -30,8 +32,11 @@ Content-Type: application/json
 
 Requires `artifacts:write` or a writable browser session.
 
-Use metadata artifacts when bytes already live in customer storage or when the
-artifact is too large for direct upload.
+`name` is required. `type` defaults to `file` and accepts `checkpoint`, `file`,
+or `rollout`. `step` must be a finite nonnegative number when present, and
+`size_bytes` must be a nonnegative integer when present. Use metadata artifacts
+when bytes already live in customer storage or when the artifact is too large
+for direct upload.
 
 ## Upload bytes
 
@@ -53,6 +58,9 @@ Content-Type: application/json
 
 The server validates decoded byte size and projected storage usage before
 touching the byte backend.
+
+`name` and non-empty `content_base64` are required. `type` defaults to `file`
+and accepts `checkpoint`, `file`, or `rollout`.
 
 Stored bytes return public metadata with an opaque URI:
 
@@ -85,6 +93,14 @@ Authorization: Bearer instantml_...
 The API streams local or object-storage bytes with the artifact MIME type.
 Hosted object-storage downloads stream through the same-origin API route and
 forward valid `Range` requests for media previews.
+
+```http
+GET /api/artifacts/{artifact_id}/download
+Authorization: Bearer instantml_...
+Range: bytes=0-1048575
+```
+
+Unsatisfiable ranges return `416`.
 
 External metadata-only artifact rows are not downloadable through this endpoint.
 

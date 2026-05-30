@@ -20,6 +20,14 @@ Use Runs for the broadest view of a project:
 - Build line, bar, histogram, or dot panels from logged metric keys.
 - Save named workspace views when the layout should survive a reload.
 
+## Organizations and workspaces
+
+![Organization workspace switcher](/images/product/dashboard-org-workspaces.png)
+
+Use the top-right account menu to see the active workspace, switch
+organizations, create a personal or organization workspace, and open settings
+or billing for the current workspace.
+
 ## Metrics
 
 ![Metrics dashboard](/images/product/dashboard-metrics.png)
@@ -33,6 +41,11 @@ to compare series behavior across selected runs.
 
 Run Detail focuses on one run: tags, notes, status, metric summaries, config,
 source context, logs, files, system information, and graph-style run evidence.
+
+![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
+
+The Files tab shows checkpoints, rich objects, media, and artifact metadata for
+the selected run without loading those payloads on the initial summary view.
 
 ## Compare
 
@@ -52,3 +65,31 @@ metrics, grouped reducers, loaded summaries, and exploratory analysis.
 
 These views are designed for large sweeps and distributed training runs where a
 single scalar chart is not enough context.
+
+## Checkpoint forks and lineage
+
+![Checkpoint fork modal](/images/product/dashboard-checkpoint-fork.png)
+
+Checkpoint rows expose download, resume-code, and fork actions. Forking creates
+a linked child run record only; training starts when a user or script attaches
+to that run and logs new data.
+
+![Lineage graph](/images/product/dashboard-lineage-graph.png)
+
+The Graph tab shows the selected run's direct parent, checkpoint, and child
+context.
+
+## Artifacts
+
+![Artifacts browser](/images/product/dashboard-artifacts-browser.png)
+
+The Artifacts workspace combines selected-run artifact rows, rich-object
+previews, download actions, and aggregate counts.
+
+## Reports
+
+![Reports editor](/images/product/dashboard-reports-editor.png)
+
+Reports are block-based writeups with live panel grids, share links, Markdown
+export, and LLM-summary blocks that currently return deterministic
+stub/provider-gated text until live provider calls are enabled.

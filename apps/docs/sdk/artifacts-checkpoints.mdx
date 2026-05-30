@@ -16,8 +16,9 @@ record an external reference.
 run.log_artifact(
     name="eval-report",
     uri="s3://bucket/evals/report.json",
-    artifact_type="report",
+    artifact_type="file",
     step=10,
+    metadata={"kind": "eval-report"},
 )
 ```
 
@@ -29,12 +30,15 @@ Use `upload_file(...)` when InstantML should store the file bytes.
 artifact = run.upload_file(
     "outputs/confusion_matrix.png",
     name="confusion-matrix",
-    artifact_type="image",
+    artifact_type="file",
     step=10,
 )
 ```
 
 The SDK records size and SHA-256 metadata, then uploads through the API.
+Artifact `type` currently accepts `checkpoint`, `file`, or `rollout`; use
+metadata and MIME type for finer-grained labels such as image, audio, report,
+model, or table.
 
 ## Checkpoints
 
@@ -58,7 +62,38 @@ run.log_checkpoint_file(
 )
 ```
 
+Checkpoint metadata and checkpoint byte uploads use artifact routes and need
+`artifacts:write`. Use `sdk:ingest` too when the same key logs metrics, rich
+objects, or attaches to/forks runs.
+
 Use `CheckpointPolicy(every_steps=N)` in loops that save on a fixed interval.
+
+## Fork and resume
+
+The dashboard can create a linked fork from a checkpoint artifact. The fork is
+only a child run record; it does not start training or copy existing metrics.
+Attach the SDK to the child run when your resume script is ready to log.
+
+```python
+api = ro.Api()
+child = api.fork_run(
+    "source-run-id",
+    checkpoint_artifact_id="artifact-id",
+    step=1000,
+    name="retry-from-step-1000",
+)
+
+run = ro.attach_run(child["id"])
+run.log({"train/loss": 0.1}, step=1001)
+run.finish()
+```
+
+`Api.fork_run(...)` sends a stable idempotency key by default, so retrying the
+same fork request does not create duplicates.
+
+Forking through the API needs both `export:read` and `sdk:ingest`. The attached
+child run validates with `export:read` by default; pass `validate=False` only
+for intentionally write-only credentials or offline attach flows.
 
 ## Rollouts and video
 
@@ -72,11 +107,11 @@ bytes through InstantML for same-origin preview and download, upload the local
 file:
 
 ```python
-run.upload_file("outputs/rollout.mp4", artifact_type="video", step=1000)
+run.upload_file("outputs/rollout.mp4", artifact_type="rollout", step=1000)
 ```
 
-Use rich media objects when you want the file to appear as previewable evidence
-inside Run Detail:
+Use rich media objects when you want a local media file uploaded and linked as
+previewable evidence inside Run Detail:
 
 ```python
 run.log_objects(
@@ -88,6 +123,12 @@ run.log_objects(
 Stored same-origin media can preview in the dashboard when the browser supports
 the MIME type. External object-store references remain copy/download metadata
 only.
+
+Local image, audio, and video rich objects upload artifact bytes and then create
+a linked rich object, so the API key needs both `artifacts:write` and
+`sdk:ingest`. Rich media object helpers are not supported in
+`upload_mode="spool"` because the object link needs the upload response; use
+`upload_mode="sync"` or the default async mode for those events.
 
 ## Where artifacts appear
 
