@@ -61,7 +61,7 @@ const logoIntroFlag = `
 
 const SITE_URL = "https://instantml.ai";
 const SITE_TAGLINE =
-  "Training observability that's fast where W&B is slow, cheap where W&B is expensive, and built for the way ML teams actually work in 2026.";
+  "Training observability with fast run comparison, predictable pricing, and clearer control over experiment data for lean ML teams.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "InstantML",
     short_name: "InstantML",
     description:
-      "Training observability that's fast where W&B is slow, cheap where W&B is expensive, and built for the way ML teams actually work in 2026.",
+      "Training observability with fast run comparison, predictable pricing, and clearer control over experiment data for lean ML teams.",
     start_url: "/",
     display: "standalone",
     background_color: "#0e1116",

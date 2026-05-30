@@ -109,6 +109,17 @@
         ]
       },
       {
+        "tab": "Benchmarks",
+        "groups": [
+          {
+            "group": "Performance evidence",
+            "pages": [
+              "benchmarks"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "API",
         "groups": [
           {

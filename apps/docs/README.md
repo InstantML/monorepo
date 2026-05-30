@@ -91,6 +91,9 @@ Node tests.
 - `quickstart.mdx`: hosted SaaS and SDK first-run path.
 - `pricing.mdx`: public Free/Pro/Premium plan overview, no tracked-hour
   billing positioning, included usage, and overage summary.
+- `benchmarks.mdx`: public hosted latency evidence, W&B comparison status, and
+  benchmark fairness rules. Keep any W&B speed claims aligned with sanitized
+  committed benchmark results and their caveats.
 - `guides/pricing-limits-billing.mdx`: public Free/Pro/Premium pricing,
   included usage, API request rate limits, storage/request overage, and billing
   behavior.

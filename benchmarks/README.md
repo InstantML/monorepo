@@ -2,6 +2,12 @@
 
 Benchmark result summaries live here when they are useful for product or performance decisions. Keep committed reports sanitized: no ClickHouse credentials, raw endpoint URLs, cookies, API keys, org IDs, user IDs, or signed artifact URLs.
 
+Public benchmark copy lives in `apps/docs/benchmarks.mdx`. Keep that page
+strictly aligned with the committed summaries here: claim InstantML is faster
+only for surfaces where the benchmark evidence supports it, and preserve
+caveats for historical W&B runs, partial W&B seeds, mirrored W&B fields, and
+sampled versus exact-history chart APIs.
+
 ## Hosted ClickHouse Query Benchmark
 
 Use the hosted demo script from the repo root:

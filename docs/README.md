@@ -30,6 +30,8 @@ Future agents must update documentation whenever they change:
 - Strategy and roadmap: `../PRODUCT_STRATEGY.md`.
 - Public user, SDK, API, architecture, and operations docs:
   `../apps/docs/`.
+- Public benchmark claims: `../apps/docs/benchmarks.mdx`, backed by sanitized
+  result summaries in `../benchmarks/`.
 - Legacy condensed external-user guide: `../USER_DOCS.md`.
 - Working tasks: `../TODO.md`.
 - Fresh setup: `../SETUP.md`.
