@@ -580,11 +580,6 @@
   font-size: 12px;
 }
 
-/* The page-size value (up to "100") must not be clipped behind the chevron. */
-.workspace-run-footer .table-footer-select .select-trigger-value > span:first-child {
-  overflow: visible;
-}
-
 .workspace-run-footer .icon-button {
   width: 30px;
   min-width: 30px;

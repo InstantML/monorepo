@@ -28,7 +28,7 @@ export function ChartHelp({ label, children }: { label: string; children: ReactN
   return (
     <div className="chart-help" ref={rootRef}>
       <button
-        aria-describedby={open ? tipId : undefined}
+        aria-controls={tipId}
         aria-expanded={open}
         aria-label={`What does the ${label} chart show?`}
         className="chart-help-trigger"
@@ -41,7 +41,7 @@ export function ChartHelp({ label, children }: { label: string; children: ReactN
         <HelpCircle size={14} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="chart-help-pop" id={tipId} role="tooltip">
+        <div className="chart-help-pop" id={tipId}>
           {children}
         </div>
       ) : null}
