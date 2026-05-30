@@ -13,7 +13,7 @@ import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normaliz
 import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
-import { DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
@@ -546,6 +546,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const metricSeriesRunKey = useMemo(() => metricSeriesRuns.map((run) => run.id).join(","), [metricSeriesRuns]);
   const hasLiveMetricSeriesRun = useMemo(() => metricSeriesRuns.some((run) => run.status === "running"), [metricSeriesRuns]);
   const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
+  // The run detail chart plots the primary (opened) run, which may not belong to
+  // the current chart selection — e.g. opening a run beyond the auto-selected
+  // set. Always fetch its series on the detail tab so the curve renders instead
+  // of the empty "select runs" state.
+  const seriesFetchRuns = useMemo(() => {
+    if (activeTab === "detail" && primaryRun && !metricSeriesRuns.some((run) => run.id === primaryRun.id)) {
+      return [primaryRun, ...metricSeriesRuns].slice(0, MAX_SELECTED_RUNS);
+    }
+    return metricSeriesRuns;
+  }, [activeTab, metricSeriesRuns, primaryRun?.id]);
+  const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
     // Remember runs after commit so interrupted renders do not mutate the
@@ -1562,12 +1573,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    const signature = `${activeTab}|${runWorkspaceTab}|${metricKey}|${metricSeriesRunKey}`;
+    const signature = `${activeTab}|${runWorkspaceTab}|${metricKey}|${seriesFetchRunKey}`;
     const isLiveRefresh = signature === seriesSignatureRef.current;
     seriesSignatureRef.current = signature;
     async function loadMetricSeries() {
       const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
-      const runsForFetch = metricSeriesRuns;
+      const runsForFetch = seriesFetchRuns;
       if (!shouldLoad || !metricKey || !runsForFetch.length) {
         setSeries([]);
         return;
@@ -1588,7 +1599,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, metricKey, metricSeriesRunKey, runWorkspaceTab, liveSeriesTick]);
+  }, [activeTab, api, metricKey, seriesFetchRunKey, runWorkspaceTab, liveSeriesTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1872,6 +1883,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setPageCursorStack((current) => current.slice(0, -1));
     setPageOffset((current) => Math.max(0, current - pageSize));
   }, [dashboardLoading, hasPreviousPage, pageSize]);
+
+  const goToRunPage = useCallback((page: number) => {
+    if (dashboardLoading || pageNavigationPendingRef.current) return;
+    const totalPages = Math.max(1, Math.ceil(summary.total / pageSize));
+    const target = Math.min(Math.max(1, Math.floor(page)), totalPages);
+    const nextOffset = (target - 1) * pageSize;
+    if (nextOffset === pageOffset && pageCursorStack.length === 0) return;
+    pageNavigationPendingRef.current = true;
+    setPageNavigationPending(true);
+    // Jumping to an arbitrary page can't reuse the cursor stack (cursors only
+    // step one page at a time), so fall back to offset paging for the jump.
+    setPageCursorStack([]);
+    setPageOffset(nextOffset);
+  }, [dashboardLoading, pageCursorStack.length, pageOffset, pageSize, summary.total]);
 
   const changeRunPageSize = useCallback((size: number) => {
     setPageSize(size);
@@ -2436,15 +2461,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const requestFilterKey = dashboardSelectionFilterKeyRef.current;
     userTouchedDashboardFiltersRef.current = true;
     setSelectAllMatchingBusy(true);
-    setMessage(`Selecting up to ${MAX_SELECTED_RUNS} runs matching the current filter...`);
+    setMessage(`Selecting up to ${BULK_SELECT_MATCHING_LIMIT} runs matching the current filter...`);
     try {
-      const pageLimit = Math.min(1000, MAX_SELECTED_RUNS);
+      const pageLimit = Math.min(1000, BULK_SELECT_MATCHING_LIMIT);
       const matchingRuns: RunSummary[] = [];
       const seen = new Set<string>();
       let offset = 0;
       let cursor = "";
       let total = 0;
-      while (matchingRuns.length < MAX_SELECTED_RUNS) {
+      while (matchingRuns.length < BULK_SELECT_MATCHING_LIMIT) {
         if (controller.signal.aborted || requestFilterKey !== dashboardSelectionFilterKeyRef.current) {
           controller.abort();
           setMessage("Selection cancelled because filters changed.");
@@ -2454,7 +2479,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           project,
           status,
           q: query,
-          limit: Math.min(pageLimit, MAX_SELECTED_RUNS - matchingRuns.length),
+          limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           cursor,
           projection: "selection",
           sort_by: sortBy,
@@ -2463,7 +2488,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           project,
           status,
           q: query,
-          limit: Math.min(pageLimit, MAX_SELECTED_RUNS - matchingRuns.length),
+          limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           offset,
           projection: "selection",
           sort_by: sortBy,
@@ -2484,7 +2509,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           if (!run?.id || seen.has(run.id)) continue;
           matchingRuns.push(run);
           seen.add(run.id);
-          if (matchingRuns.length >= MAX_SELECTED_RUNS) break;
+          if (matchingRuns.length >= BULK_SELECT_MATCHING_LIMIT) break;
         }
         const nextCursor = typeof payload?.next_cursor === "string" ? payload.next_cursor : "";
         const hasNextPage = Boolean(payload?.page_info?.has_next_page || nextCursor);
@@ -3056,6 +3081,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onInspectRun={setPrimaryRunId}
               onMode={setWorkspaceMode}
               onMovePanel={moveWorkspacePanel}
+              onGoToPage={goToRunPage}
               onNextPage={goToNextRunPage}
               onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
               onPageSize={changeRunPageSize}

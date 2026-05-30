@@ -6,6 +6,7 @@ import { isAbortError, queryString } from "../../../src/api.js";
 import { formatNumber } from "../../../src/state.js";
 import { metricTitle } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
+import { AnalysisCard } from "../ui/analysis-card";
 import { CustomSelect } from "../ui/select";
 
 type RankReducerPoint = {
@@ -187,13 +188,22 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
 
 function ReducerChart({ metricKey, reducers }: { metricKey: string; reducers: RankReducerPoint[] }) {
   const geometry = useMemo(() => chartGeometry(reducers), [reducers]);
+  const help = (
+    <>
+      <strong>{metricTitle(metricKey)} reduced across ranks at each step.</strong>
+      <br />
+      The lines are the unweighted mean, the sample-count weighted mean, and the
+      median (p50) across all reporting ranks. The shaded band spans the p05–p95
+      range, so a widening band means ranks are diverging from each other.
+    </>
+  );
   if (!reducers.length || !geometry) {
-    return <Card title="Rank reducers"><div className="empty compact-empty">No reducer points.</div></Card>;
+    return <AnalysisCard title="Rank reducers" help={help}><div className="empty compact-empty">No reducer points.</div></AnalysisCard>;
   }
   const bandTop = reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.p95)}`);
   const bandBottom = reducers.slice().reverse().map((point) => `${geometry.x(point.step)},${geometry.y(point.p05)}`);
   return (
-    <Card title={`${metricTitle(metricKey)} reducers`} badge={metricKey}>
+    <AnalysisCard title={`${metricTitle(metricKey)} reducers`} badge={metricKey} help={help}>
       <svg className="analysis-line-chart" viewBox="0 0 720 280" role="img" aria-label="Rank reducer chart">
         {geometry.yTicks.map((tick) => (
           <g key={tick}>
@@ -216,7 +226,7 @@ function ReducerChart({ metricKey, reducers }: { metricKey: string; reducers: Ra
         <span><i className="rank-median" /> median (p50)</span>
         <span><i className="swatch rank-band" /> p05–p95</span>
       </div>
-    </Card>
+    </AnalysisCard>
   );
 }
 
@@ -227,8 +237,18 @@ function CoveragePanel({ coverage }: { coverage: RankCoveragePoint[] }) {
   // (a tail-only view would hide earlier gaps).
   const buckets = useMemo(() => coverageBuckets(coverage, 64), [coverage]);
   const gaps = coverage.filter((point) => point.rank_count < point.expected_world_size).length;
+  const help = (
+    <>
+      <strong>How many ranks reported each step vs. the expected world size.</strong>
+      <br />
+      Each bar is a sampled window of training; its height is the share of ranks
+      that logged at that point. Short or coloured bars flag steps where ranks
+      were missing or the world size changed — often a sign of a stalled or
+      crashed worker.
+    </>
+  );
   return (
-    <Card title="Rank coverage">
+    <AnalysisCard title="Rank coverage" help={help}>
       <div className="coverage-strip">
         {buckets.map((bucket) => (
           <span key={bucket.step} className={bucket.mismatch ? "mismatch" : bucket.ratio < 1 ? "partial" : ""} style={{ height: `${Math.max(8, bucket.ratio * 100)}%` }} title={`~step ${formatNumber(bucket.step, 0)}: ${formatNumber(bucket.ratio * 100, 0)}% ranks reporting`} />
@@ -243,7 +263,7 @@ function CoveragePanel({ coverage }: { coverage: RankCoveragePoint[] }) {
           {latest.missing_ranks.slice(0, 24).map((rank) => <span key={rank}>missing r{rank}</span>)}
         </div>
       ) : null}
-    </Card>
+    </AnalysisCard>
   );
 }
 
@@ -268,14 +288,23 @@ function coverageBuckets(coverage: RankCoveragePoint[], count: number) {
 
 function PerRankPanel({ heatmap, metricKey }: { heatmap: RankHeatmapPoint[]; metricKey: string }) {
   const snapshot = useMemo(() => perRankAtLatestStep(heatmap), [heatmap]);
+  const help = (
+    <>
+      <strong>Each rank&apos;s value for this metric at the latest logged step.</strong>
+      <br />
+      Bars are anchored to the same step so ranks are directly comparable. Bars
+      shown in red are stragglers — ranks more than 1.6× the mean absolute
+      deviation away from the across-rank mean.
+    </>
+  );
   if (!snapshot.rows.length) {
-    return <Card title="Per-rank snapshot"><div className="empty compact-empty">No per-rank values.</div></Card>;
+    return <AnalysisCard title="Per-rank snapshot" help={help}><div className="empty compact-empty">No per-rank values.</div></AnalysisCard>;
   }
   const { rows, step } = snapshot;
   const max = Math.max(...rows.map((row) => Math.abs(row.value)), 1e-9);
   const meanAbsDelta = rows.reduce((sum, row) => sum + Math.abs(row.delta_from_mean), 0) / rows.length || 1e-9;
   return (
-    <Card title="Per-rank snapshot" badge={metricKey}>
+    <AnalysisCard title="Per-rank snapshot" badge={metricKey} help={help}>
       <div className="rank-bar-list">
         {rows.map((row) => {
           const straggler = Math.abs(row.delta_from_mean) > meanAbsDelta * 1.6;
@@ -289,17 +318,26 @@ function PerRankPanel({ heatmap, metricKey }: { heatmap: RankHeatmapPoint[]; met
         })}
       </div>
       <p className="analysis-note">All ranks at step {formatNumber(step, 0)} · stragglers (&gt;1.6× mean abs deviation from rank mean) in red.</p>
-    </Card>
+    </AnalysisCard>
   );
 }
 
 function HeatmapPanel({ heatmap, truncated }: { heatmap: RankHeatmapPoint[]; truncated: boolean }) {
   const grid = useMemo(() => heatmapGrid(heatmap), [heatmap]);
+  const help = (
+    <>
+      <strong>Per-rank deviation from the across-rank mean, over time.</strong>
+      <br />
+      Rows are ranks, columns are steps. Warm cells are above the step mean, cool
+      cells below; stronger colour means a larger deviation. A persistently warm
+      or cool row points to one rank consistently out of line with the others.
+    </>
+  );
   if (!grid) {
-    return <Card title="Rank heatmap"><div className="empty compact-empty">No heatmap cells.</div></Card>;
+    return <AnalysisCard title="Rank heatmap" help={help}><div className="empty compact-empty">No heatmap cells.</div></AnalysisCard>;
   }
   return (
-    <Card title="Rank heatmap" badge="Δ from mean">
+    <AnalysisCard title="Rank heatmap" badge="Δ from mean" help={help}>
       {truncated ? <p className="analysis-note" style={{ marginTop: 0, marginBottom: 12 }}>Steps sampled evenly to stay under the cell cap.</p> : null}
       <div className="rank-heatmap-wrap">
         <div className="rank-heatmap-axis" style={{ gridTemplateRows: `repeat(${grid.ranks.length}, 15px)` }}>
@@ -327,14 +365,23 @@ function HeatmapPanel({ heatmap, truncated }: { heatmap: RankHeatmapPoint[]; tru
         <span>{signed(grid.maxDelta, 3)}</span>
         <span style={{ color: "var(--faint)" }}>Δ from rank mean</span>
       </div>
-    </Card>
+    </AnalysisCard>
   );
 }
 
 function OutlierPanel({ outliers, truncated, worldSize }: { outliers: RankOutlierPoint[]; truncated: boolean; worldSize: number }) {
   const shown = outliers.slice(0, 8);
+  const help = (
+    <>
+      <strong>The rank/step pairs that deviate most from their peers.</strong>
+      <br />
+      The z-score is how many standard deviations a rank&apos;s value sits from the
+      mean of all ranks at that step. Large positive or negative z-scores are the
+      ranks worth investigating first.
+    </>
+  );
   return (
-    <Card title="Rank outliers" badge={shown.length ? `top ${shown.length}` : undefined}>
+    <AnalysisCard title="Rank outliers" badge={shown.length ? `top ${shown.length}` : undefined} help={help}>
       <div className="analysis-table">
         <div className="analysis-row head"><span>rank</span><span>step</span><span>value</span><span>z-score</span></div>
         {shown.map((item) => (
@@ -351,18 +398,7 @@ function OutlierPanel({ outliers, truncated, worldSize }: { outliers: RankOutlie
         {truncated || outliers.length > shown.length ? "Highest-deviation rank/step pairs. " : ""}
         z-scores computed across the {worldSize || "reporting"} ranks at each step.
       </p>
-    </Card>
-  );
-}
-
-function Card({ title, badge, children }: { title: string; badge?: string; children: React.ReactNode }) {
-  return (
-    <article className="analysis-card">
-      <div className="analysis-card-head">
-        <h2>{title}{badge ? <span className="card-badge">{badge}</span> : null}</h2>
-      </div>
-      <div className="analysis-card-body">{children}</div>
-    </article>
+    </AnalysisCard>
   );
 }
 

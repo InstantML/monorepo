@@ -112,6 +112,47 @@
 }
 .analysis-card-body { padding: 16px; }
 
+.chart-help {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.chart-help-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: help;
+}
+.chart-help-trigger:hover,
+.chart-help-trigger:focus-visible,
+.chart-help-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chart-help-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius, 8px);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  color: var(--text);
+  font: 400 12px/1.45 var(--font-sans);
+  text-align: left;
+  white-space: normal;
+}
+.chart-help-pop strong { font-weight: 650; }
+
 /* ── KPI tile strip — reuses the segmented .analysis-stat-strip language ──── */
 .rank-tile-strip {
   display: grid;

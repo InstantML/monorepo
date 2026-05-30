@@ -56,6 +56,7 @@ type Props = {
   onInspectRun: (runId: string) => void;
   onMode: (mode: "automatic" | "manual") => void;
   onMovePanel: (sourceSectionId: string, panelId: string, targetSectionId: string, targetIndex: number) => void;
+  onGoToPage: (page: number) => void;
   onNextPage: () => void;
   onOpenRun: (id: string) => void;
   onPageSize: (size: number) => void;
@@ -136,6 +137,7 @@ export function RunsTabPane({
   onInspectRun,
   onMode,
   onMovePanel,
+  onGoToPage,
   onNextPage,
   onOpenRun,
   onPageSize,
@@ -269,6 +271,7 @@ export function RunsTabPane({
         selectAllMatchingDisabled={selectAllMatchingDisabled}
         hasNextPage={hasNextPage}
         hasPreviousPage={hasPreviousPage}
+        onGoToPage={onGoToPage}
         onNextPage={onNextPage}
         onPageSize={onPageSize}
         onPreviousPage={onPreviousPage}

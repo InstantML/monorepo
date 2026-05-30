@@ -1,5 +1,10 @@
 export const MAX_SELECTED_RUNS = 2000;
 export const DEFAULT_SELECTED_RUNS = 100;
+// Cap for the one-click "select all matching filter" action. Kept well below the
+// 2000 hard cap because rendering many hundreds of SVG series degrades chart
+// interactivity; 500 stays responsive while being a meaningful bulk step beyond
+// the 100 runs auto-selected on load.
+export const BULK_SELECT_MATCHING_LIMIT = 500;
 export const INTERNAL_INSTANTML_METRIC_PREFIX = "system/instantml/";
 const UPLOAD_HEALTH_HEARTBEAT_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}upload_health_unix_seconds`;
 const UPLOAD_HEALTH_LAG_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}upload_lag_seconds`;
@@ -54,9 +59,9 @@ export function rangeSelect(selected, orderedIds, anchorId, targetId) {
   return selectAllVisible(selected, range);
 }
 
-export function capSelectionToMatching(matchingIds) {
+export function capSelectionToMatching(matchingIds, limit = BULK_SELECT_MATCHING_LIMIT) {
   if (!Array.isArray(matchingIds)) return [];
-  return matchingIds.slice(0, MAX_SELECTED_RUNS);
+  return matchingIds.slice(0, limit);
 }
 
 export function defaultRunSelection(currentIds, runs, defaultInitialized) {

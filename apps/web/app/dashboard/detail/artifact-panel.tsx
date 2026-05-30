@@ -52,7 +52,12 @@ export function ArtifactPanel({ title, items }: { title: string; items: Artifact
               {artifactCanUseDownloadRoute(artifact) ? (
                 <a className="copy-button artifact-download" href={artifactDownloadUrl(artifact)}><Download size={13} /> Download</a>
               ) : null}
-              <button className="copy-button" type="button" onClick={() => copyText(artifact.id)}><Copy size={13} /> ID</button>
+              <button
+                className="copy-button"
+                onClick={() => copyText(artifact.id)}
+                title="Copy this artifact's unique ID to the clipboard (use it with the SDK/API to reference this file)"
+                type="button"
+              ><Copy size={13} /> Copy ID</button>
             </div>
           </article>
         )) : <div className="empty">Nothing logged yet.</div>}
