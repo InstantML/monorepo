@@ -4,8 +4,8 @@ import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plu
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 
-import { MAX_SELECTED_RUNS, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
-import { metricTitle, runConfigSummary, runNoteText, workspacePanelTypeLabel } from "../../dashboard-models";
+import { BULK_SELECT_MATCHING_LIMIT, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
+import { metricTitle, runConfigSummary, runNoteText, runRailTooltip, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { WorkspaceSectionView } from "./workspace-panel-card";
@@ -82,6 +82,7 @@ export function RunsWorkspace({
   onToggleSection,
   hasNextPage,
   hasPreviousPage,
+  onGoToPage,
   onNextPage,
   onPageSize,
   onPreviousPage,
@@ -130,6 +131,7 @@ export function RunsWorkspace({
   onToggleSection: (sectionId: string) => void;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
+  onGoToPage: (page: number) => void;
   onNextPage: () => void;
   onPageSize: (size: number) => void;
   onPreviousPage: () => void;
@@ -248,7 +250,7 @@ export function RunsWorkspace({
     : `Select all ${visibleRunIds.length} visible runs`;
   const matchingOverflow = summaryTotal > visibleRunIds.length;
   const showSelectAllMatching = matchingOverflow;
-  const selectAllMatchingTarget = Math.min(summaryTotal, MAX_SELECTED_RUNS);
+  const selectAllMatchingTarget = Math.min(summaryTotal, BULK_SELECT_MATCHING_LIMIT);
   return (
     <div className={`runs-workspace ${showAddPanelDrawer ? "drawer-open" : ""} ${runRailCollapsed ? "run-rail-collapsed" : ""}`}>
       <aside className="workspace-run-rail">
@@ -279,6 +281,25 @@ export function RunsWorkspace({
             </button>
           </div>
         </div>
+        {visibleRunIds.length ? (
+          <div className="workspace-rail-page-select">
+            <button
+              aria-pressed={railSelectionState === "all"}
+              className="link-button"
+              onClick={onSelectAllVisible}
+              type="button"
+            >
+              {railSelectionState === "all"
+                ? hasCrossPageSelection
+                  ? `Clear all ${selectedRunIds.length} selected`
+                  : `Clear ${visibleRunIds.length} on this page`
+                : `Select all ${visibleRunIds.length} on this page`}
+            </button>
+            {railSelectionState !== "none" ? (
+              <span className="workspace-rail-page-count">{selectedRunIds.length} selected</span>
+            ) : null}
+          </div>
+        ) : null}
         {showSelectAllMatching ? (
           <div className="workspace-rail-select-banner" role="status" aria-live="polite">
             <span>{selectedRunIds.length} of {summaryTotal} selected.</span>
@@ -327,7 +348,7 @@ export function RunsWorkspace({
                   aria-label={`Open ${run.name}`}
                   className="workspace-run-open"
                   onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
-                  title={`Open ${run.name}`}
+                  title={runRailTooltip(run)}
                   type="button"
                 >
                   <i className={`legend-dot dot-${index % 5}`} aria-hidden="true" />
@@ -338,7 +359,7 @@ export function RunsWorkspace({
                       <span className={`upload-health-chip ${uploadHealth.tone}`}>{uploadHealth.label}</span>
                     ) : null}
                     <span className="workspace-run-tags" aria-label={`${run.name} tags`}>
-                      {visibleTags.map((tag) => <b key={tag}>{tag}</b>)}
+                      {visibleTags.map((tag) => <b key={tag} title={tag}>{tag}</b>)}
                       {hiddenTags.length ? <em title={hiddenTags.join(", ")}>+{hiddenTags.length}</em> : null}
                     </span>
                     {note ? <small className="workspace-run-note" title={note}>{note}</small> : null}
@@ -369,8 +390,17 @@ export function RunsWorkspace({
             value={String(pageSize)}
           />
           <strong>{`${pageStart}-${pageEnd} of ${summaryTotal}`}</strong>
-          <button className="icon-button framed" disabled={paginationBusy || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page"><ChevronDown className="rotate-90" size={15} /></button>
-          <button className="icon-button framed" disabled={paginationBusy || !hasNextPage} onClick={onNextPage} type="button" aria-label="Next page"><ChevronDown className="rotate-neg-90" size={15} /></button>
+          <div className="workspace-run-pager">
+            <button className="icon-button framed" disabled={paginationBusy || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page"><ChevronDown className="rotate-90" size={15} /></button>
+            <RunPageJumper
+              disabled={paginationBusy || summaryTotal === 0}
+              onGoToPage={onGoToPage}
+              pageSize={pageSize}
+              pageStart={pageStart}
+              summaryTotal={summaryTotal}
+            />
+            <button className="icon-button framed" disabled={paginationBusy || !hasNextPage} onClick={onNextPage} type="button" aria-label="Next page"><ChevronDown className="rotate-neg-90" size={15} /></button>
+          </div>
         </div>
       </aside>
 
@@ -485,5 +515,61 @@ export function RunsWorkspace({
         </aside>
       ) : null}
     </div>
+  );
+}
+
+function RunPageJumper({
+  disabled,
+  onGoToPage,
+  pageSize,
+  pageStart,
+  summaryTotal,
+}: {
+  disabled: boolean;
+  onGoToPage: (page: number) => void;
+  pageSize: number;
+  pageStart: number;
+  summaryTotal: number;
+}) {
+  const totalPages = Math.max(1, Math.ceil(summaryTotal / Math.max(1, pageSize)));
+  const currentPage = summaryTotal ? Math.floor((pageStart - 1) / Math.max(1, pageSize)) + 1 : 1;
+  const [draft, setDraft] = useState(String(currentPage));
+  // Keep the input in sync when the page changes via prev/next or page-size.
+  useEffect(() => {
+    setDraft(String(currentPage));
+  }, [currentPage]);
+
+  function commit() {
+    const parsed = Number.parseInt(draft, 10);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(currentPage));
+      return;
+    }
+    const clamped = Math.min(Math.max(1, parsed), totalPages);
+    setDraft(String(clamped));
+    if (clamped !== currentPage) onGoToPage(clamped);
+  }
+
+  return (
+    <form
+      className="workspace-run-page-jump"
+      onSubmit={(event) => {
+        event.preventDefault();
+        commit();
+      }}
+    >
+      <input
+        aria-label={`Page number, ${currentPage} of ${totalPages}`}
+        disabled={disabled}
+        inputMode="numeric"
+        max={totalPages}
+        min={1}
+        onBlur={commit}
+        onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ""))}
+        type="text"
+        value={draft}
+      />
+      <span>/ {totalPages}</span>
+    </form>
   );
 }

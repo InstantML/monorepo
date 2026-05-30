@@ -7,6 +7,7 @@ import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
   MAX_SELECTED_RUNS,
   DEFAULT_SELECTED_RUNS,
+  BULK_SELECT_MATCHING_LIMIT,
   bestMetric,
   capSelectionToMatching,
   defaultRunSelection,
@@ -200,13 +201,20 @@ test("deselectVisible leaves cross-page selections in place so callers can detec
   assert.equal(visibleSelectionState(selected, visible), "all");
 });
 
-test("capSelectionToMatching truncates at MAX_SELECTED_RUNS", () => {
-  const ids = Array.from({ length: MAX_SELECTED_RUNS + 17 }, (_, index) => `id-${index}`);
+test("capSelectionToMatching truncates at BULK_SELECT_MATCHING_LIMIT by default", () => {
+  assert.ok(BULK_SELECT_MATCHING_LIMIT < MAX_SELECTED_RUNS, "bulk limit should stay below the hard cap");
+  const ids = Array.from({ length: BULK_SELECT_MATCHING_LIMIT + 17 }, (_, index) => `id-${index}`);
   const capped = capSelectionToMatching(ids);
-  assert.equal(capped.length, MAX_SELECTED_RUNS);
+  assert.equal(capped.length, BULK_SELECT_MATCHING_LIMIT);
   assert.equal(capped[0], "id-0");
-  assert.equal(capped.at(-1), `id-${MAX_SELECTED_RUNS - 1}`);
+  assert.equal(capped.at(-1), `id-${BULK_SELECT_MATCHING_LIMIT - 1}`);
   assert.deepEqual(capSelectionToMatching(null), []);
+});
+
+test("capSelectionToMatching honours an explicit limit", () => {
+  const ids = Array.from({ length: 50 }, (_, index) => `id-${index}`);
+  assert.equal(capSelectionToMatching(ids, 10).length, 10);
+  assert.equal(capSelectionToMatching(ids, MAX_SELECTED_RUNS).length, 50);
 });
 
 test("defaultRunSelection only auto-selects once", () => {

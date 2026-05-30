@@ -642,6 +642,18 @@ export function runNoteText(run: RunSummary) {
   return "";
 }
 
+// Composite hover text for a run row so hovering anywhere on the run reveals its
+// full name, every tag, and the note — the per-element title attributes only
+// covered fragments and were shadowed by the row's "Open <name>" title.
+export function runRailTooltip(run: RunSummary) {
+  const lines = [run.name];
+  const tags = Array.isArray(run.tags) ? run.tags.filter(Boolean) : [];
+  if (tags.length) lines.push(`Tags: ${tags.join(", ")}`);
+  const note = runNoteText(run);
+  if (note) lines.push(`Note: ${note}`);
+  return lines.join("\n");
+}
+
 export function buildCheckpointRows(run: RunSummary | null, artifacts: Artifact[]): CheckpointRow[] {
   if (!run) return [];
   return artifacts

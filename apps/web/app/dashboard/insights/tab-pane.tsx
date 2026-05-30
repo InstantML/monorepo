@@ -12,6 +12,7 @@ import {
 import { formatNumber, metricGoal, metricGoalValue } from "../../../src/state.js";
 import { metricTitle } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
+import { AnalysisCard } from "../ui/analysis-card";
 
 type Props = {
   embedded?: boolean;
@@ -66,21 +67,19 @@ export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, s
   );
 }
 
-function Card({ title, badge, children }: { title: string; badge?: string; children: React.ReactNode }) {
-  return (
-    <article className="analysis-card">
-      <div className="analysis-card-head">
-        <h2>{title}{badge ? <span className="card-badge">{badge}</span> : null}</h2>
-      </div>
-      <div className="analysis-card-body">{children}</div>
-    </article>
-  );
-}
-
 function GroupedReducersCard({ grouped, metricKey }: { grouped: any[]; metricKey: string }) {
   const maxMean = Math.max(1e-9, ...grouped.map((item) => Math.abs(item.mean)));
+  const help = (
+    <>
+      <strong>{metricTitle(metricKey)} averaged within each run group.</strong>
+      <br />
+      Loaded runs are bucketed (by seed, tag, or config) and the active metric is
+      reduced to a mean per group. The bar visualises each group&apos;s mean
+      relative to the largest, so you can compare cohorts at a glance.
+    </>
+  );
   return (
-    <Card title={`${metricTitle(metricKey)} by group`} badge={grouped.length ? `${grouped.length} groups` : undefined}>
+    <AnalysisCard title={`${metricTitle(metricKey)} by group`} badge={grouped.length ? `${grouped.length} groups` : undefined} help={help}>
       <div className="analysis-table">
         <div className="analysis-row head"><span>group</span><span>mean</span><span>spread</span><span>runs</span></div>
         {grouped.slice(0, 8).map((item) => (
@@ -93,13 +92,22 @@ function GroupedReducersCard({ grouped, metricKey }: { grouped: any[]; metricKey
         ))}
         {!grouped.length ? <div className="empty compact-empty">No grouped values for the active metric.</div> : null}
       </div>
-    </Card>
+    </AnalysisCard>
   );
 }
 
 function EvaluationCardGrid({ cards, total }: { cards: any[]; total: number }) {
+  const help = (
+    <>
+      <strong>Latest value of each standard evaluation metric, averaged across loaded runs.</strong>
+      <br />
+      Each tile shows the mean of a known metric (accuracy, loss, AUC, etc.) over the
+      runs that logged it, plus how many of the loaded runs reported it. Tiles marked
+      &ldquo;not logged&rdquo; mean no loaded run recorded that metric.
+    </>
+  );
   return (
-    <Card title="Evaluation metrics">
+    <AnalysisCard title="Evaluation metrics" help={help}>
       <div className="eval-card-grid">
         {cards.map((card) => (
           <div className={`eval-mini-card ${card.key ? "" : "missing"}`} key={card.id}>
@@ -109,7 +117,7 @@ function EvaluationCardGrid({ cards, total }: { cards: any[]; total: number }) {
           </div>
         ))}
       </div>
-    </Card>
+    </AnalysisCard>
   );
 }
 
@@ -118,8 +126,17 @@ function ScatterCard({ fields, rows }: { fields: string[]; rows: any[] }) {
     .map((row) => ({ run: row.run, x: row.values[fields[0]], y: row.values[fields[1]] }))
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
   const geometry = pointGeometry(points);
+  const help = (
+    <>
+      <strong>Relationship between two numeric fields across loaded runs.</strong>
+      <br />
+      Each dot is one run, positioned by the two auto-selected fields (typically the
+      most-varied hyperparameter against a key metric). Hover a dot for its run name
+      and exact values. Use it to spot correlations or clusters.
+    </>
+  );
   return (
-    <Card title="Hyperparameter scatter" badge={fields.length >= 2 ? `${shortLabel(fields[0])} × ${shortLabel(fields[1])}` : undefined}>
+    <AnalysisCard title="Hyperparameter scatter" badge={fields.length >= 2 ? `${shortLabel(fields[0])} × ${shortLabel(fields[1])}` : undefined} help={help}>
       {fields.length < 2 || !geometry ? <div className="empty compact-empty">Need two numeric fields.</div> : (
         <>
           <svg className="analysis-scatter" viewBox="0 0 520 232" role="img" aria-label="Hyperparameter scatter">
@@ -140,15 +157,24 @@ function ScatterCard({ fields, rows }: { fields: string[]; rows: any[] }) {
           <p className="analysis-note">{formatNumber(points.length, 0)} runs with both fields · linear axes</p>
         </>
       )}
-    </Card>
+    </AnalysisCard>
   );
 }
 
 function ClusterCard({ clusters, fields, axes, points }: { clusters: any[]; fields: string[]; axes?: string[]; points: any[] }) {
   const geometry = pointGeometry(points);
   const axisFields = axes && axes.length === 2 ? axes : fields.slice(0, 2);
+  const help = (
+    <>
+      <strong>Runs grouped into k=3 clusters by their standardized config features.</strong>
+      <br />
+      Numeric config fields are standardized and k-means assigns each run to one of
+      three clusters; colour shows the cluster. Axes plot two of those features. Use it
+      to see whether runs fall into natural configuration families.
+    </>
+  );
   return (
-    <Card title="K-means clusters" badge={clusters.length ? `k=${clusters.length}` : undefined}>
+    <AnalysisCard title="K-means clusters" badge={clusters.length ? `k=${clusters.length}` : undefined} help={help}>
       {!clusters.length || !geometry ? <div className="empty compact-empty">Need at least three runs and two numeric fields.</div> : (
         <>
           <svg className="analysis-scatter clusters" viewBox="0 0 520 232" role="img" aria-label="K-means clusters">
@@ -168,13 +194,23 @@ function ClusterCard({ clusters, fields, axes, points }: { clusters: any[]; fiel
           <p className="analysis-note">k fixed at 3 · axes show 2 of {fields.length} standardized config features clustered: {fields.slice(0, 5).map(shortLabel).join(" · ")}</p>
         </>
       )}
-    </Card>
+    </AnalysisCard>
   );
 }
 
+const parallelHelp = (
+  <>
+    <strong>Each run drawn as a line across several numeric fields at once.</strong>
+    <br />
+    Every vertical axis is one field, scaled to its own min/max. A run is a line
+    connecting its value on each axis, so you can trace how individual runs trade off
+    across hyperparameters and metrics. The best run for the active metric is highlighted.
+  </>
+);
+
 function ParallelCoordinatesCard({ fields, rows, metricKey }: { fields: string[]; rows: any[]; metricKey: string }) {
   if (fields.length < 2) {
-    return <Card title="Parallel coordinates"><div className="empty compact-empty">Need at least two numeric fields.</div></Card>;
+    return <AnalysisCard title="Parallel coordinates" help={parallelHelp}><div className="empty compact-empty">Need at least two numeric fields.</div></AnalysisCard>;
   }
   const domains = fields.map((field) => {
     const values = rows.map((row) => row.values[field]).filter(Number.isFinite);
@@ -195,7 +231,7 @@ function ParallelCoordinatesCard({ fields, rows, metricKey }: { fields: string[]
     .filter((row) => Number.isFinite(row.value))
     .sort((a, b) => minimize ? (a.value ?? 0) - (b.value ?? 0) : (b.value ?? 0) - (a.value ?? 0))[0]?.id;
   return (
-    <Card title="Parallel coordinates" badge={`${fields.length} fields`}>
+    <AnalysisCard title="Parallel coordinates" badge={`${fields.length} fields`} help={parallelHelp}>
       <svg className="parallel-chart" viewBox="0 0 720 264" role="img" aria-label="Parallel coordinate chart">
         {fields.map((field, index) => (
           <g key={field}>
@@ -213,7 +249,7 @@ function ParallelCoordinatesCard({ fields, rows, metricKey }: { fields: string[]
         })}
       </svg>
       <p className="analysis-note">{formatNumber(rows.length, 0)} runs · best run for {metricTitle(metricKey)} highlighted</p>
-    </Card>
+    </AnalysisCard>
   );
 }
 

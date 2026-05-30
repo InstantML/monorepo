@@ -82,7 +82,12 @@ function RichObjectCard({ object, rows }: { object: LoggedObject; rows: LoggedOb
       ) : null}
       <div className="artifact-actions">
         {artifact ? <span>{formatBytes(artifact.size_bytes)}</span> : null}
-        <button className="copy-button" type="button" onClick={() => copyText(String(object.id))}><Copy size={13} /> ID</button>
+        <button
+          className="copy-button"
+          onClick={() => copyText(String(object.id))}
+          title="Copy this object's unique ID to the clipboard (use it with the SDK/API to reference this object)"
+          type="button"
+        ><Copy size={13} /> Copy ID</button>
       </div>
     </article>
   );
