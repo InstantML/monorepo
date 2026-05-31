@@ -1,6 +1,6 @@
 ---
 title: "Artifacts, files, and media"
-description: "Browse stored artifacts, files, checkpoints, rollouts, tables, histograms, and media previews."
+description: "Browse versioned artifact collections, manifests, lineage, files, checkpoints, rollouts, tables, histograms, and media previews."
 ---
 
 # Artifacts, files, and media
@@ -9,14 +9,23 @@ Artifacts connect metric behavior to the files and evidence produced by a run.
 
 ![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
 
-## Artifact browser
+## Artifact workspace
 
 ![Artifacts workspace](/images/product/dashboard-artifacts-browser.png)
 
-The Artifacts tab focuses on the selected run context. Select a run first, then
-use the tab to inspect that run's artifact metadata and stored bytes.
+The Artifacts tab starts with versioned artifact collections for the active
+project. The collection list stays separate from the selected version detail so
+the main workflow is stable: choose a collection, inspect its versions, then
+open the manifest and lineage for the selected version.
 
-Artifacts can represent:
+Each collection shows versions with stable `vN` labels, automatic `latest`,
+custom aliases such as `best`, byte/file counts, retention state, and soft
+delete state. Selecting a version shows its manifest and a bounded lineage view
+of producer and consumer runs. The screenshot above shows a model collection
+where `v1` is `latest`, `v0` is `best`, and `v0` has both an output edge from
+the producing run and an input edge into a consuming evaluation run.
+
+Versioned artifacts can represent:
 
 - Uploaded files.
 - External file references.
@@ -26,6 +35,19 @@ Artifacts can represent:
 The same tab also shows rich logged objects for the selected run, such as
 tables, histograms, media previews, and evaluation outputs. Those objects can
 link to artifact bytes, but they are not artifact rows themselves.
+
+Owner/admin users can move the `best` alias, keep a version forever, apply a
+30-day retention window, or soft-delete a version after an explicit confirmation
+prompt with an audit reason. Read-only users see the same evidence with
+management controls disabled.
+
+## Raw run artifacts
+
+Versioned collections are the primary Artifacts tab workflow. Legacy raw run
+artifacts stay isolated from the collection/manifest/lineage view so existing
+file/media, rich-object, checkpoint, and importer workflows do not get mixed
+into the version registry. Use Run Detail Files for the selected run's raw
+artifact browser and media previews.
 
 ## Files in Run Detail
 

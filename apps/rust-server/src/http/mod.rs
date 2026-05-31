@@ -4,7 +4,7 @@ use axum::{
     extract::DefaultBodyLimit,
     http::{HeaderName, Method},
     middleware,
-    routing::{get, post},
+    routing::{get, patch, post, put},
     Router,
 };
 use std::time::Duration;
@@ -29,24 +29,30 @@ pub mod openapi;
 pub(crate) mod rate_limit;
 
 use handlers::{
-    accept_invitation, admin_overview, auth_clerk, auth_config, auth_dev_google, auth_logout,
-    auth_session, auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
-    billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
-    billing_report_usage_overage, billing_status, billing_webhook, create_api_key, create_artifact,
-    create_attributes, create_current_user_org, create_customer_clickhouse_connection,
-    create_invitation, create_object, create_org, create_project, create_report, create_run,
-    create_user, create_workspace_view, customer_clickhouse_connection_status, delete_report,
-    device_code_confirm, device_code_poll, device_code_start, disable_service_account,
-    download_artifact, export_data, export_report_markdown, fork_run, get_dashboard_preferences,
-    get_metrics, get_report, get_report_by_share_token, get_run, get_run_lineage,
-    get_workspace_view, health, import_mlflow, import_neptune, import_wandb, list_api_keys,
-    list_artifacts, list_attributes, list_console_logs, list_imports, list_invitations,
-    list_object_rows, list_objects, list_org_memberships, list_org_panels, list_orgs,
-    list_projects, list_reports, list_runs, list_seats, list_users, list_workspace_views,
-    log_console_logs, log_metrics, log_rank_metrics, metrics_handler, metrics_series, not_found,
-    openapi_json, org_name_availability, overview, preview_invitation, rank_metrics_summary,
-    readyz, resend_invitation, reserve_seat, reset_demo, revoke_api_key, revoke_invitation,
-    rotate_customer_clickhouse_credentials, rotate_report_share_token, runs_summary, side_by_side,
+    abort_artifact_upload, accept_invitation, admin_overview, artifact_version_lineage, auth_clerk,
+    auth_config, auth_dev_google, auth_logout, auth_session, auth_switch_organization,
+    billing_add_seat, billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync,
+    billing_portal, billing_report_storage_overage, billing_report_usage_overage, billing_status,
+    billing_webhook, complete_artifact_upload, create_api_key, create_artifact,
+    create_artifact_input_edge, create_attributes, create_current_user_org,
+    create_customer_clickhouse_connection, create_invitation, create_object, create_org,
+    create_project, create_report, create_run, create_user, create_workspace_view,
+    customer_clickhouse_connection_status, delete_artifact_alias, delete_artifact_version,
+    delete_report, device_code_confirm, device_code_poll, device_code_start,
+    disable_service_account, download_artifact, download_artifact_entry, export_data,
+    export_report_markdown, fork_run, get_artifact_collection, get_artifact_version,
+    get_dashboard_preferences, get_metrics, get_report, get_report_by_share_token, get_run,
+    get_run_lineage, get_workspace_view, health, import_mlflow, import_neptune, import_wandb,
+    initiate_artifact_upload, list_api_keys, list_artifact_collection_versions,
+    list_artifact_collections, list_artifact_manifest, list_artifacts, list_attributes,
+    list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
+    list_org_memberships, list_org_panels, list_orgs, list_projects, list_reports, list_runs,
+    list_seats, list_users, list_workspace_views, log_console_logs, log_metrics, log_rank_metrics,
+    metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
+    preview_invitation, rank_metrics_summary, readyz, renew_artifact_upload, resend_invitation,
+    reserve_seat, reset_demo, resolve_artifact_version, revoke_api_key, revoke_invitation,
+    rotate_customer_clickhouse_credentials, rotate_report_share_token, run_artifact_edges,
+    runs_summary, set_artifact_alias, side_by_side, update_artifact_retention,
     update_dashboard_preferences, update_report, update_run, update_workspace_view,
     upload_artifact, usage_export, usage_summary, validate_customer_clickhouse_connection,
 };
@@ -283,6 +289,64 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
             "/api/artifacts/:artifact_id/download",
             get(download_artifact),
         )
+        .route("/api/artifact-collections", get(list_artifact_collections))
+        .route(
+            "/api/artifact-collections/:collection_id",
+            get(get_artifact_collection),
+        )
+        .route(
+            "/api/artifact-collections/:collection_id/versions",
+            get(list_artifact_collection_versions),
+        )
+        .route(
+            "/api/artifact-collections/:collection_id/aliases/:alias",
+            put(set_artifact_alias).delete(delete_artifact_alias),
+        )
+        .route(
+            "/api/artifact-versions/resolve",
+            get(resolve_artifact_version),
+        )
+        .route(
+            "/api/artifact-versions/:version_id",
+            get(get_artifact_version).delete(delete_artifact_version),
+        )
+        .route(
+            "/api/artifact-versions/:version_id/manifest",
+            get(list_artifact_manifest),
+        )
+        .route(
+            "/api/artifact-versions/:version_id/lineage",
+            get(artifact_version_lineage),
+        )
+        .route(
+            "/api/artifact-versions/:version_id/retention",
+            patch(update_artifact_retention),
+        )
+        .route(
+            "/api/artifact-entries/:entry_id/download",
+            get(download_artifact_entry),
+        )
+        .route(
+            "/api/runs/:run_id/artifact-uploads",
+            post(initiate_artifact_upload),
+        )
+        .route(
+            "/api/artifact-uploads/:upload_session_id/renew",
+            post(renew_artifact_upload),
+        )
+        .route(
+            "/api/artifact-uploads/:upload_session_id/complete",
+            post(complete_artifact_upload).layer(DefaultBodyLimit::max(max_upload)),
+        )
+        .route(
+            "/api/artifact-uploads/:upload_session_id/abort",
+            post(abort_artifact_upload),
+        )
+        .route(
+            "/api/runs/:run_id/artifact-inputs",
+            post(create_artifact_input_edge),
+        )
+        .route("/api/runs/:run_id/artifact-edges", get(run_artifact_edges))
         .route("/api/export", get(export_data))
         .route("/api/usage", get(usage_summary))
         .route("/api/usage/export", get(usage_export))

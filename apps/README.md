@@ -11,7 +11,7 @@ Expected apps:
   orgs, storage, API-key, billing, and risk inspection.
 - `docs/`: public documentation source and filtered OpenAPI reference rendered
   by `web/` at `/docs`.
-- `rust-server/`: Primary Rust API and worker service home. It contains the accepted ClickHouse schema migration, ClickHouse metric-store integration, runnable service commands, and product API.
+- `rust-server/`: Primary Rust API and worker service home. It contains the accepted ClickHouse schema migration, ClickHouse metric-store integration, raw/versioned artifact API, runnable service commands, and product API.
 - `server/`: Deprecated Node.js compatibility server for route-shape regression tests, JSON migration fixtures, and legacy local fallback.
 - `web/`: Next/React frontend web application.
 
@@ -29,7 +29,7 @@ packages/python-sdk/uploader -> apps/rust-server -> ClickHouse operational layer
 
 Hosted production/staging currently implement that target with split Cloud Run
 control/data services, self-hosted ClickHouse on Google Cloud for User Data and
-tenant databases, and Cloudflare R2 for artifact bytes.
+tenant databases, and Cloudflare R2 for raw and versioned artifact bytes.
 
 Deprecated local compatibility target:
 

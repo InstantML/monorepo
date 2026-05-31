@@ -14,7 +14,14 @@ pub mod runs;
 pub mod usage;
 
 pub(super) use admin::admin_overview;
-pub(super) use artifacts::{create_artifact, download_artifact, list_artifacts, upload_artifact};
+pub(super) use artifacts::{
+    abort_artifact_upload, artifact_version_lineage, complete_artifact_upload, create_artifact,
+    create_artifact_input_edge, delete_artifact_alias, delete_artifact_version, download_artifact,
+    download_artifact_entry, get_artifact_collection, get_artifact_version,
+    initiate_artifact_upload, list_artifact_collection_versions, list_artifact_collections,
+    list_artifact_manifest, list_artifacts, renew_artifact_upload, resolve_artifact_version,
+    run_artifact_edges, set_artifact_alias, update_artifact_retention, upload_artifact,
+};
 pub(super) use auth::{
     auth_clerk, auth_dev_google, auth_logout, auth_session, auth_switch_organization,
     device_code_confirm, device_code_poll, device_code_start,
@@ -252,6 +259,22 @@ mod tests {
             "/api/runs/{run_id}/artifacts",
             "/api/runs/{run_id}/artifacts/upload",
             "/api/artifacts/{artifact_id}/download",
+            "/api/artifact-collections",
+            "/api/artifact-collections/{collection_id}",
+            "/api/artifact-collections/{collection_id}/versions",
+            "/api/artifact-collections/{collection_id}/aliases/{alias}",
+            "/api/artifact-versions/resolve",
+            "/api/artifact-versions/{version_id}",
+            "/api/artifact-versions/{version_id}/manifest",
+            "/api/artifact-versions/{version_id}/lineage",
+            "/api/artifact-versions/{version_id}/retention",
+            "/api/artifact-entries/{entry_id}/download",
+            "/api/runs/{run_id}/artifact-uploads",
+            "/api/artifact-uploads/{upload_session_id}/renew",
+            "/api/artifact-uploads/{upload_session_id}/complete",
+            "/api/artifact-uploads/{upload_session_id}/abort",
+            "/api/runs/{run_id}/artifact-inputs",
+            "/api/runs/{run_id}/artifact-edges",
             // export / usage / imports
             "/api/export",
             "/api/usage",
@@ -308,6 +331,13 @@ mod tests {
             "ReportSummariesEnvelope",
             "CreateReportRequest",
             "UpdateReportRequest",
+            "InitiateArtifactUploadRequest",
+            "CompleteArtifactUploadRequest",
+            "ArtifactCollectionRow",
+            "ArtifactVersionRow",
+            "ArtifactManifestEntryRow",
+            "ArtifactAliasRow",
+            "ArtifactEdgeRow",
         ] {
             assert!(
                 schemas.contains_key(expected),

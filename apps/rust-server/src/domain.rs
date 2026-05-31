@@ -1463,6 +1463,355 @@ impl ArtifactRow {
     }
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ArtifactCollectionInput {
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub description: Option<String>,
+    #[schema(value_type = Option<Object>)]
+    pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VersionedArtifactManifestInput {
+    pub entries: Vec<VersionedArtifactManifestEntryInput>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VersionedArtifactManifestEntryInput {
+    pub path: String,
+    pub kind: Option<String>,
+    #[schema(value_type = Option<i64>, minimum = 0)]
+    pub size_bytes: Option<Value>,
+    pub sha256: Option<String>,
+    pub mime_type: Option<String>,
+    pub reference_uri: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct InitiateArtifactUploadRequest {
+    pub collection: ArtifactCollectionInput,
+    pub manifest: VersionedArtifactManifestInput,
+    pub aliases: Option<Vec<String>>,
+    pub ttl_days: Option<i64>,
+    #[schema(value_type = Option<f64>)]
+    pub source_step: Option<Value>,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RenewArtifactUploadRequest {
+    pub entry_id: Uuid,
+    pub start_part_number: i64,
+    pub part_count: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CompleteArtifactUploadPart {
+    pub part_number: i64,
+    pub etag: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CompleteArtifactUploadFile {
+    pub entry_id: Uuid,
+    pub parts: Option<Vec<CompleteArtifactUploadPart>>,
+    pub content_base64: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CompleteArtifactUploadRequest {
+    pub files: Vec<CompleteArtifactUploadFile>,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AbortArtifactUploadRequest {
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetArtifactAliasRequest {
+    pub artifact_version_id: Uuid,
+    pub confirm: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeleteArtifactAliasRequest {
+    pub confirm: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateArtifactRetentionRequest {
+    pub retention_mode: Option<String>,
+    pub ttl_days: Option<i64>,
+    pub confirm: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeleteArtifactVersionRequest {
+    pub delete_aliases: Option<bool>,
+    pub confirm: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateArtifactInputEdgeRequest {
+    pub artifact_version_id: Option<Uuid>,
+    #[serde(rename = "ref")]
+    pub reference: Option<String>,
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactCollectionRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub description: Option<String>,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub default_ttl_days: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct PublicArtifactCollectionRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub description: Option<String>,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub default_ttl_days: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+impl ArtifactCollectionRow {
+    pub fn public_row(&self) -> PublicArtifactCollectionRow {
+        PublicArtifactCollectionRow {
+            id: self.id,
+            org_id: self.org_id,
+            project_id: self.project_id,
+            project: self.project.clone(),
+            name: self.name.clone(),
+            kind: self.kind.clone(),
+            description: self.description.clone(),
+            metadata: self.metadata.clone(),
+            default_ttl_days: self.default_ttl_days,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            deleted_at: self.deleted_at,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactVersionRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub collection_id: Uuid,
+    pub version_index: i64,
+    pub digest: String,
+    pub source_run_id: Option<Uuid>,
+    pub source_step: Option<f64>,
+    pub file_count: i64,
+    pub size_bytes: i64,
+    pub state: String,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub ttl_days: Option<i64>,
+    pub retention_mode: String,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub delete_requested_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub audit_reason: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct PublicArtifactVersionRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub collection_id: Uuid,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub version: String,
+    pub version_index: i64,
+    pub aliases: Vec<String>,
+    pub digest: String,
+    pub source_run_id: Option<Uuid>,
+    pub source_step: Option<f64>,
+    pub file_count: i64,
+    pub size_bytes: i64,
+    pub state: String,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub ttl_days: Option<i64>,
+    pub retention_mode: String,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub delete_requested_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub audit_reason: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ArtifactVersionRow {
+    pub fn version_label(&self) -> String {
+        format!("v{}", self.version_index)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactManifestEntriesRecord {
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub collection_id: Uuid,
+    pub artifact_version_id: Uuid,
+    pub chunk_index: i64,
+    pub entries: Vec<ArtifactManifestEntryRow>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactManifestEntryRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub collection_id: Uuid,
+    pub artifact_version_id: Uuid,
+    pub path: String,
+    pub kind: String,
+    pub size_bytes: Option<i64>,
+    pub sha256: Option<String>,
+    pub mime_type: Option<String>,
+    pub storage_backend: String,
+    pub storage_key: Option<String>,
+    pub storage_path: Option<String>,
+    pub reference_uri: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct PublicArtifactManifestEntryRow {
+    pub id: Uuid,
+    pub artifact_version_id: Uuid,
+    pub path: String,
+    pub kind: String,
+    pub size_bytes: Option<i64>,
+    pub sha256: Option<String>,
+    pub mime_type: Option<String>,
+    pub storage_backend: String,
+    pub reference_uri: Option<String>,
+    pub downloadable: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ArtifactManifestEntryRow {
+    pub fn public_row(&self) -> PublicArtifactManifestEntryRow {
+        PublicArtifactManifestEntryRow {
+            id: self.id,
+            artifact_version_id: self.artifact_version_id,
+            path: self.path.clone(),
+            kind: self.kind.clone(),
+            size_bytes: self.size_bytes,
+            sha256: self.sha256.clone(),
+            mime_type: self.mime_type.clone(),
+            storage_backend: self.storage_backend.clone(),
+            reference_uri: self.reference_uri.clone(),
+            downloadable: matches!(self.storage_backend.as_str(), "local" | "r2"),
+            created_at: self.created_at,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactAliasRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub collection_id: Uuid,
+    pub artifact_version_id: Uuid,
+    pub alias: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub audit_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactEdgeRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub run_id: Uuid,
+    pub artifact_version_id: Uuid,
+    pub direction: String,
+    pub source: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactUploadFile {
+    pub entry_id: Uuid,
+    pub path: String,
+    pub kind: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    pub mime_type: Option<String>,
+    pub storage_backend: String,
+    pub storage_key: Option<String>,
+    pub storage_path: Option<String>,
+    pub multipart_upload_id: Option<String>,
+    pub part_size_bytes: i64,
+    pub part_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ArtifactUploadSessionRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub run_id: Uuid,
+    pub artifact_version_id: Uuid,
+    pub collection_id: Uuid,
+    pub state: String,
+    pub request_hash: String,
+    pub expected_total_bytes: i64,
+    pub total_part_count: i64,
+    pub aliases: Vec<String>,
+    pub ttl_days: Option<i64>,
+    pub source_step: Option<f64>,
+    pub digest: String,
+    pub files: Vec<ArtifactUploadFile>,
+    pub manifest_entries: Vec<ArtifactManifestEntryRow>,
+    pub idempotency_response: Option<Value>,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 pub fn validate_name(value: Option<&str>, field: &str) -> AppResult<String> {
     let text = value
         .ok_or_else(|| AppError::validation(format!("{field} must be a non-empty string")))?

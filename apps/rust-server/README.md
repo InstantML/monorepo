@@ -5,12 +5,12 @@ This directory contains the primary Rust backend for InstantML. The current stor
 ## Purpose
 
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
-- Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, artifacts, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
+- Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, raw artifacts, versioned artifact collections/manifests/aliases/lineage edges/upload sessions, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
 - In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
 - Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric and API-request usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, apply plan-aware short-window API rate limits, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready. Browser sessions can also create additional organization workspaces through `POST /api/orgs/current-user`; the bootstrap `POST /api/orgs` route remains operator/admin-only.
 - Support Premium customer-owned GCP ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
-- Store artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, R2 references, exact byte counts, hashes, and MIME types. Artifact byte downloads always add defensive `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: sandbox` headers because artifact MIME metadata is user-provided.
+- Store raw and versioned artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, opaque R2 references, exact byte counts, hashes, MIME types, aliases, retention/delete state, and lineage edges. Artifact byte downloads always add defensive `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: sandbox` headers because artifact MIME metadata is user-provided.
 - Serve the authoritative run search language for `/runs`, `/api/overview`,
   `/api/runs/summary`, selection projection, and `/api/export`. Bare `q` text
   stays legacy implicit-AND search; advanced search supports field qualifiers,
@@ -310,7 +310,7 @@ Implemented health and platform endpoints:
 - `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, bootstrap-protected read-only admin overview (`GET /api/admin/overview`), API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, same-project checkpoint forks (`POST /api/runs/:run_id/forks`) and bounded lineage reads (`GET /api/runs/:run_id/lineage`), scalar metrics, per-rank metric ingest and run-scoped rank summaries, typed attributes, rich logged objects, artifact metadata/upload/download, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, bootstrap-protected read-only admin overview (`GET /api/admin/overview`), API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, same-project checkpoint forks (`POST /api/runs/:run_id/forks`) and bounded lineage reads (`GET /api/runs/:run_id/lineage`), scalar metrics, per-rank metric ingest and run-scoped rank summaries, typed attributes, rich logged objects, raw artifact metadata/upload/download, versioned artifact collections/manifests/aliases/retention/delete/input-output edges/upload sessions/lineage, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
 Run-summary pages default to 100 rows and are capped at 1,000 rows. Bulk UI
 selection should use `GET /api/runs/summary?projection=selection`, which skips
@@ -319,7 +319,7 @@ frontend-compatible empty summary fields. Batched metric-series reads accept up
 to 2,000 run IDs, but the server clamps `effective_limit` so a single response
 cannot exceed 120,000 metric points.
 
-Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a mutation-origin-validated non-demo browser session for an owner/admin in a billing- and storage-ready workspace, then mints a scoped API key (`sdk:ingest` + `export:read`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
+Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a mutation-origin-validated non-demo browser session for an owner/admin in a billing- and storage-ready workspace, then mints a scoped API key (`sdk:ingest` + `export:read` + `artifacts:write`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and
 the durable control/data-plane schema reference lives in
@@ -331,7 +331,7 @@ envelope, auth rule, limit, table, record kind, or payload field changes. The
 live service's `GET /openapi.json` returns a compact role-aware route index and
 includes `x-instantml-service-plane` for operator verification.
 
-In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
+In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, raw and versioned artifact write/upload routes require `artifacts:write`, artifact alias/retention/delete routes require `artifacts:manage` or an owner/admin browser session, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
 
 Run fork creation requires source read plus run creation rights: `export:read`
 and `sdk:ingest`, or an equivalent mutating browser session. Forks are
@@ -475,7 +475,8 @@ Coverage exception (multi-writer):
 - `src/store/auth.rs`: users, organizations-as-workspaces, memberships, invitations, browser sessions, API keys, and admin authorization helpers.
 - `src/store/console_logs.rs`: stdout/stderr validation, idempotent writes, cursor encoding, and read response shaping.
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, same-project fork lineage, scalar metric writes, and metric read endpoints.
-- `src/store/objects.rs`: typed attributes, rich objects, table rows, artifacts, and artifact metadata writes after local/R2 byte preflight.
+- `src/store/objects.rs`: typed attributes, rich objects, table rows, raw artifacts, and raw artifact metadata writes after local/R2 byte preflight.
+- `src/store/artifact_versions.rs`: versioned artifact collections, manifests, upload-session commit flow, aliases, retention/delete state, manifest downloads, and run/artifact lineage edges.
 - `src/store/imports.rs`: Neptune, W&B, and MLflow import normalization and import records.
 - `src/store/export.rs`: side-by-side comparison and bounded JSON export.
 - `src/store/usage.rs`: usage summaries, UTC calendar-month metric periods, daily snapshots, and worker cleanup helpers.
@@ -487,7 +488,7 @@ Coverage exception (multi-writer):
 - `src/store/validation.rs`: shared store validation, JSON value shaping, slugging, and unit tests for pure store logic.
 - `src/metric_store.rs`: ClickHouse schema migration, operational record append/load helpers, metric point writes, and metric-series reads.
 - `src/domain.rs`: DTOs and validation helpers.
-- `src/artifact_store.rs`: local staged artifact byte storage, Cloudflare R2 bucket/object access, opaque public artifact references, and root-confined local reads.
+- `src/artifact_store.rs`: local staged artifact byte storage, Cloudflare R2 bucket/object access, versioned upload targets, multipart completion/abort helpers, opaque public artifact references, and root-confined local reads.
 - `src/managed_auth.rs`: Clerk session-token verification and provider-neutral managed-auth principal shaping.
 - `clickhouse/0001_initial.sql`: operational record log, metric points, console log lines, metric series, and materialized view schema.
 
@@ -512,6 +513,7 @@ Coverage exception (multi-writer):
 - `docs/product/pricing-and-margins.md`
 - `docs/design/2026-05-19-utoipa-migration.md`
 - `docs/design/2026-05-21-rust-server-observability.md`
+- `docs/design/2026-05-30-artifact-lineage-parity.md`
 - `docs/design/2026-05-26-organization-workspace-selector.md`
 
 ## Adding a new endpoint (utoipa + codegen pipeline)
@@ -579,4 +581,4 @@ list of handlers still on the legacy hand-rolled spec path.
 - Keep compatibility org context explicit: API-key mode uses the key org, local mode uses the fixed local org.
 - Keep project-scoped API keys flowing through project-aware helpers before returning run-derived data.
 - Keep bounded JSON export caps explicit until streaming export has its own design.
-- Artifact byte writes should validate the decoded byte size and plan capacity before local/R2 writes, then stage/finalize or upload, commit metadata, and clean up temp/finalized bytes on finalize or storage errors. Crash-only orphan cleanup/retention remains operational hardening work.
+- Artifact byte writes should validate decoded or expected byte size and plan capacity before local/R2 writes. Versioned upload sessions reserve expected bytes for write gates before provider upload, use multipart presigned UploadPart URLs for R2 versioned entries, then commit metadata only after local/R2 completion and cheap provider size validation. Live R2 multipart smoke coverage and physical hard-delete of soft-deleted versioned bytes remain operational hardening work.

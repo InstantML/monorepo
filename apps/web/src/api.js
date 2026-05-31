@@ -34,6 +34,15 @@ export class ApiClient {
     });
   }
 
+  async delete(path, body = {}, options = {}) {
+    return this.request(path, {
+      ...options,
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...(options.headers ?? {}) },
+      body: JSON.stringify(body),
+    });
+  }
+
   async request(path, options = {}) {
     const method = String(options.method ?? "GET").toUpperCase();
     const { headers, requestId } = headersWithRequestId(options.headers);
@@ -346,7 +355,7 @@ function safeKnownRouteSegments(segments) {
     if (segments.length === 3 && ["summary", "side-by-side"].includes(segments[2])) {
       return ["api", "runs", segments[2]];
     }
-    if (segments.length === 4 && segments[2] !== "rank-metrics" && ["forks", "lineage", "logs", "attributes", "objects", "artifacts"].includes(segments[3])) {
+    if (segments.length === 4 && segments[2] !== "rank-metrics" && ["forks", "lineage", "logs", "attributes", "objects", "artifacts", "artifact-uploads", "artifact-inputs", "artifact-edges"].includes(segments[3])) {
       return ["api", "runs", ":run_id", segments[3]];
     }
     if (segments.length === 5 && segments[3] === "artifacts" && segments[4] === "upload") {
@@ -361,6 +370,27 @@ function safeKnownRouteSegments(segments) {
   }
   if (segments.length === 4 && segments[1] === "artifacts" && segments[3] === "download") {
     return ["api", "artifacts", ":artifact_id", "download"];
+  }
+  if (segments[1] === "artifact-collections") {
+    if (segments.length === 3) return ["api", "artifact-collections", ":collection_id"];
+    if (segments.length === 4 && segments[3] === "versions") {
+      return ["api", "artifact-collections", ":collection_id", "versions"];
+    }
+    if (segments.length === 5 && segments[3] === "aliases") {
+      return ["api", "artifact-collections", ":collection_id", "aliases", ":alias"];
+    }
+  }
+  if (segments[1] === "artifact-versions") {
+    if (segments.length === 3) return ["api", "artifact-versions", ":version_id"];
+    if (segments.length === 4 && ["manifest", "lineage", "retention"].includes(segments[3])) {
+      return ["api", "artifact-versions", ":version_id", segments[3]];
+    }
+  }
+  if (segments.length === 4 && segments[1] === "artifact-entries" && segments[3] === "download") {
+    return ["api", "artifact-entries", ":entry_id", "download"];
+  }
+  if (segments.length === 4 && segments[1] === "artifact-uploads" && ["renew", "complete", "abort"].includes(segments[3])) {
+    return ["api", "artifact-uploads", ":upload_session_id", segments[3]];
   }
   return null;
 }
@@ -401,6 +431,8 @@ const STATIC_API_ROUTE_KEYS = new Set([
   "overview",
   "runs/summary",
   "runs/side-by-side",
+  "artifact-collections",
+  "artifact-versions/resolve",
   "export",
   "usage",
   "usage/export",

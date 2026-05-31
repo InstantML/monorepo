@@ -1660,7 +1660,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "artifacts" || activeTab === "checkpoints";
+      const shouldLoad = activeTab === "detail" || activeTab === "checkpoints";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         setArtifactsRunId("");
@@ -1705,7 +1705,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadLoggedObjects() {
-      const shouldLoad = (activeTab === "detail" && runWorkspaceTab === "files") || activeTab === "artifacts";
+      const shouldLoad = activeTab === "detail" && runWorkspaceTab === "files";
       if (!shouldLoad || !primaryRun?.id) {
         setLoggedObjects([]);
         setObjectRowsById({});
@@ -1750,7 +1750,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadObjectRows() {
-      if (!((activeTab === "detail" && runWorkspaceTab === "files") || activeTab === "artifacts") || !tableObjectIds.length) {
+      if (!(activeTab === "detail" && runWorkspaceTab === "files") || !tableObjectIds.length) {
         setObjectRowsById({});
         return;
       }
@@ -3305,10 +3305,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "artifacts" ? "active" : ""}`} aria-label="Artifacts">
           {activeTab === "artifacts" ? (
             <ArtifactsTabPane
+              api={api}
               artifactTotals={artifactTotals}
+              canManageArtifacts={canManageOrg}
               loggedObjects={loggedObjects}
               objectRowsById={objectRowsById}
               primaryRun={primaryRun}
+              project={project}
               visibleArtifacts={visibleArtifacts}
             />
           ) : null}
