@@ -29,8 +29,8 @@ pub mod openapi;
 pub(crate) mod rate_limit;
 
 use handlers::{
-    abort_artifact_upload, accept_invitation, admin_overview, artifact_version_lineage, auth_clerk,
-    append_import_chunk, auth_config, auth_dev_google, auth_logout, auth_session,
+    abort_artifact_upload, accept_invitation, admin_overview, append_import_chunk,
+    artifact_version_lineage, auth_clerk, auth_config, auth_dev_google, auth_logout, auth_session,
     auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
     billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
     billing_report_usage_overage, billing_status, billing_webhook, cancel_import_job,
