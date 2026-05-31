@@ -27,7 +27,8 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Capture metrics-focused timestamp snapshots with a defined dictionary shape.
 - Optionally keep a local SQLite audit store for attempted SDK events.
 - Optionally sample psutil/NVML system metrics during a run.
-- Optionally wrap stdout/stderr and expose lightweight Torch, Transformers, and Lightning adapters.
+- Optionally wrap stdout/stderr and expose lightweight Torch, Hugging Face Trainer, Lightning, and Keras adapters.
+- Provide local adoption tools: W&B-compatible logging, W&B/Neptune/MLflow transformed JSON import, TensorBoard scalar sync, and Import v2 chunk upload to the Rust API.
 - Capture source metadata for reproducibility with privacy-safe defaults and explicit opt-in knobs for command, paths, branch, host/process identifiers, and git diff summaries.
 - Fork an existing Rust-backed run from a checkpoint and attach logging to that created child run.
 - Finish runs cleanly.
@@ -111,6 +112,61 @@ api_host = "https://api.instantml.ai"
 org_id = "..."
 user_email = "alice@example.com"
 ```
+
+The device-login key is org-scoped for SDK ingestion, artifact uploads,
+Import v2 writes, and exports, so the same login supports dry-run imports,
+TensorBoard sync, and normal training-loop logging.
+
+## CLI: Imports And TensorBoard Sync
+
+Import commands are intentionally local-first. They read source exports or
+event files on the training machine, redact secret-looking values, translate
+into canonical Import v2 chunks, upload dry-run summaries, and commit only when
+the server accepts the final chunk. Third-party credentials are never sent to
+InstantML.
+
+```bash
+# Transformed JSON exports.
+instantml import wandb --project cartpole --input wandb.json
+instantml import neptune --project cartpole --input neptune.json
+instantml import mlflow --project cartpole --input mlflow.json
+
+# Real Neptune Exporter Parquet directories. Pass --files-path when you want
+# imported artifact references to point at the exported local files tree.
+instantml import neptune --project cartpole --input ./exports/data --files-path ./exports/files
+
+# Direct W&B local export through the official wandb SDK, then Import v2 upload.
+instantml import wandb --project cartpole --entity my-team --source-project old-project
+
+# TensorBoard scalar event import.
+instantml sync tensorboard runs/tensorboard --project cartpole
+instantml sync tensorboard runs/tensorboard --project cartpole --run-id existing-run-id
+instantml sync tensorboard runs/tensorboard --project cartpole --watch --watch-interval 10
+
+# Validate and inspect server-side warnings without committing runs.
+instantml import neptune --project cartpole --input neptune.json --dry-run
+```
+
+Install only the extras you need:
+
+```bash
+pip install 'instantml[imports]'       # transformed JSON + Neptune Parquet helpers
+pip install 'instantml[wandb]'         # direct local W&B export
+pip install 'instantml[tensorboard]'   # TensorBoard event parsing
+pip install 'instantml[frameworks]'    # HF/Lightning/Keras adapter imports
+```
+
+The Import v2 production slice covers runs, scalar metrics, configs, tags,
+notes/metadata, statuses, typed attributes, external artifact references,
+provenance metadata, dry-run warnings, and job history. It does not fetch
+hosted W&B/Neptune data server-side and does not migrate artifact bytes.
+Neptune Exporter metric histories stream out as bounded Import v2 chunks; run
+metadata and external artifact references remain metadata-only. Committed
+external artifact references are still visible in the versioned Artifacts
+catalog and lineage graph as run-level external manifest bundles, while raw run
+artifact rows remain available for backwards-compatible Run Detail and Compare
+views. Repeated TensorBoard syncs append scalar points to the existing imported
+TensorBoard run when source identity matches.
 
 ## Credential resolution
 
@@ -446,8 +502,28 @@ Framework adapters stay deliberately small:
 
 ```python
 run.watch(model, log="gradients", log_freq=100)
-trainer.add_callback(ro.TransformersCallback(run=run))
-logger = ro.LightningLogger(project="cartpole")
+trainer.add_callback(ro.InstantMLCallback(run=run))  # alias: TransformersCallback
+logger = ro.InstantMLLogger(project="cartpole")      # alias: LightningLogger
+keras_callback = ro.InstantMLKerasCallback(project="cartpole")
+```
+
+W&B compatibility is opt-in and intentionally a small logging subset:
+
+```python
+import instantml.compat.wandb as wandb
+
+with wandb.init(project="cartpole", config={"seed": 13}) as run:
+    wandb.log({"train/loss": 0.1}, step=1)
+    artifact = wandb.Artifact("checkpoint", type="model")
+    artifact.add_reference("s3://bucket/checkpoint.pt")
+    run.log_artifact(artifact)
+```
+
+Unsupported W&B surfaces such as sweeps, `mode="offline"`/`"dryrun"`,
+`WANDB_MODE=offline`/`dryrun`, and batching kwargs such as
+`wandb.log(..., commit=False)` raise `UnsupportedWandbFeature` with a clear
+message. Use the official `wandb` package in parallel when you need full W&B
+behavior during a transition.
 ```
 
 Buffered logging and post-init offline replay:
@@ -573,6 +649,8 @@ record kind is `report` and the schema is documented under
 - Keep process spool events to one API request each unless a design doc expands idempotency across multi-request snapshots.
 - Preserve per-run uploader ordering when retrying failed event files.
 - Support dual-logging or coexistence with MLflow/W&B where practical.
+- Keep `instantml.compat.wandb` opt-in so importing `wandb` still means the official W&B package unless a user intentionally aliases the compatibility module.
+- Keep import translators local-first; do not add hosted W&B/Neptune credential flows without a new design doc and threat model update.
 - Keep SDK-owned metadata under `_rlobs` and reject user-provided `_rlobs` keys before merging metadata.
 - Add true offline run creation only after a design doc; do not imply it in README examples until implemented.
 - Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/ClickHouse backend and deprecated Node backend.

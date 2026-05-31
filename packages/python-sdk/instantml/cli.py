@@ -10,6 +10,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import argparse
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -299,6 +301,247 @@ def cmd_whoami() -> None:
 
 
 # ---------------------------------------------------------------------------
+# import / sync commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_import(rest: list[str]) -> None:
+    parser = argparse.ArgumentParser(prog="instantml import")
+    subparsers = parser.add_subparsers(dest="source", required=True)
+    for source in ("wandb", "neptune", "mlflow"):
+        sub = subparsers.add_parser(source)
+        sub.add_argument("--project", required=True, help="Target InstantML project")
+        sub.add_argument("--input", help="Local transformed JSON payload")
+        sub.add_argument("--source-project", help="Source project name/path")
+        sub.add_argument("--api-host", default=_DEFAULT_API_HOST)
+        sub.add_argument("--dry-run", action="store_true")
+        if source == "neptune":
+            sub.add_argument("--files-path", help="Neptune Exporter files directory for artifact references")
+        if source == "wandb":
+            sub.add_argument("--entity", help="W&B entity for direct local export")
+            sub.add_argument("--limit", type=int, help="Maximum W&B runs to export")
+    args = parser.parse_args(rest)
+    from . import importers
+
+    try:
+        if args.source == "wandb" and not args.input:
+            if not args.entity or not args.source_project:
+                _die("W&B direct import requires --entity and --source-project, or pass --input.")
+            result = importers.upload_chunks(
+                source_type="wandb",
+                source_project=f"{args.entity}/{args.source_project}",
+                target_project=args.project,
+                chunks=importers.chunks_from_wandb_project(
+                    args.entity,
+                    args.source_project,
+                    target_project=args.project,
+                    limit=args.limit,
+                ),
+                base_url=args.api_host,
+                commit=not args.dry_run,
+            )
+        else:
+            if not args.input:
+                _die(f"{args.source} import requires --input for this release.")
+            input_path = Path(args.input)
+            if args.source == "neptune" and (
+                input_path.is_dir() or input_path.suffix.lower() == ".parquet"
+            ):
+                effective_source_project = args.source_project or str(input_path)
+                chunks = importers.chunks_from_neptune_exporter(
+                    input_path,
+                    target_project=args.project,
+                    source_project=effective_source_project,
+                    files_path=args.files_path,
+                )
+                result = importers.upload_chunks(
+                    source_type="neptune",
+                    source_project=effective_source_project,
+                    target_project=args.project,
+                    chunks=chunks,
+                    base_url=args.api_host,
+                    commit=not args.dry_run,
+                )
+            else:
+                result = importers.import_transformed_json(
+                    source_type=args.source,
+                    input_path=args.input,
+                    target_project=args.project,
+                    source_project=args.source_project,
+                    base_url=args.api_host,
+                    dry_run=args.dry_run,
+                )
+    except Exception as exc:
+        _die(str(exc))
+    _print_import_result(result)
+
+
+def cmd_sync(rest: list[str]) -> None:
+    parser = argparse.ArgumentParser(prog="instantml sync")
+    subparsers = parser.add_subparsers(dest="source", required=True)
+    tb = subparsers.add_parser("tensorboard")
+    tb.add_argument("logdir")
+    tb.add_argument("--project", required=True, help="Target InstantML project")
+    tb.add_argument("--run-name")
+    tb.add_argument("--run-id", help="Existing InstantML run id to attach as source metadata")
+    tb.add_argument("--watch", action="store_true", help="Poll the TensorBoard logdir until interrupted")
+    tb.add_argument("--watch-interval", type=float, default=5.0, help="Seconds between TensorBoard watch passes")
+    tb.add_argument("--max-sync-passes", type=int, help=argparse.SUPPRESS)
+    tb.add_argument("--api-host", default=_DEFAULT_API_HOST)
+    tb.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(rest)
+    from . import importers
+
+    seen_events: set[tuple[str, str, str, str, str]] = set()
+    pass_count = 0
+    try:
+        while True:
+            result = _sync_tensorboard_once(
+                args,
+                importers,
+                seen_events,
+                allow_empty_import=pass_count == 0 and not args.run_id,
+            )
+            _print_import_result(result)
+            pass_count += 1
+            if not args.watch:
+                break
+            if args.max_sync_passes is not None and pass_count >= args.max_sync_passes:
+                break
+            time.sleep(max(0.1, float(args.watch_interval)))
+    except KeyboardInterrupt:
+        print("\nTensorBoard watch stopped.")
+    except Exception as exc:
+        _die(str(exc))
+
+
+def _sync_tensorboard_once(
+    args: argparse.Namespace,
+    importers: Any,
+    seen_events: set[tuple[str, str, str, str, str]],
+    *,
+    allow_empty_import: bool = False,
+) -> dict[str, Any]:
+    payload = importers.tensorboard_logdir_payload(args.logdir, run_name=args.run_name)
+    runs = payload.get("runs") or []
+    total_metrics = _filter_tensorboard_payload_events(payload, seen_events)
+    if args.run_id:
+        if len(runs) > 1:
+            raise ValueError("TensorBoard --run-id sync requires a single TensorBoard run directory.")
+        metrics = runs[0].get("metrics", []) if runs else []
+        if args.dry_run:
+            return {
+                "job": {"id": args.run_id, "status": "dry_run_ready"},
+                "summary": {"runs": 1, "metrics": len(metrics), "artifacts": 0},
+            }
+        from .client import Client
+
+        client = Client(base_url=args.api_host)
+        for group in _tensorboard_metric_batches(metrics):
+            client._request(
+                "POST",
+                f"/runs/{args.run_id}/metrics",
+                {
+                    "metrics": group["metrics"],
+                    "step": group["step"],
+                    "timestamp": group.get("timestamp"),
+                    "preview": False,
+                    "preview_completion": 0.0,
+                },
+            )
+        return {
+            "job": {"id": args.run_id, "status": "synced"},
+            "summary": {"runs": 1, "metrics": len(metrics), "artifacts": 0},
+        }
+    if not total_metrics and not allow_empty_import:
+        return {
+            "job": {"id": args.logdir, "status": "synced"},
+            "summary": {"runs": len(runs) or 1, "metrics": 0, "artifacts": 0},
+        }
+    chunks = importers.chunks_from_transformed_json(
+        payload,
+        source_type="tensorboard",
+        target_project=args.project,
+        source_project=args.logdir,
+    )
+    return importers.upload_chunks(
+        source_type="tensorboard",
+        source_project=args.logdir,
+        target_project=args.project,
+        chunks=chunks,
+        base_url=args.api_host,
+        commit=not args.dry_run,
+    )
+
+
+def _filter_tensorboard_payload_events(
+    payload: dict[str, Any],
+    seen_events: set[tuple[str, str, str, str, str]],
+) -> int:
+    total_metrics = 0
+    for run in payload.get("runs") or []:
+        source_run_id = str(run.get("id") or run.get("name") or "")
+        metrics = [
+            point
+            for point in run.get("metrics", [])
+            if _remember_tensorboard_event(seen_events, source_run_id, point)
+        ]
+        run["metrics"] = metrics
+        total_metrics += len(metrics)
+    return total_metrics
+
+
+def _tensorboard_metric_batches(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for point in metrics:
+        timestamp = _rfc3339_timestamp(point.get("timestamp"))
+        step = point.get("step")
+        key = (str(step), timestamp or "")
+        group = grouped.setdefault(key, {"step": step, "timestamp": timestamp, "metrics": {}})
+        group["metrics"][str(point["key"])] = point["value"]
+    return list(grouped.values())
+
+
+def _rfc3339_timestamp(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return str(value)
+
+
+def _remember_tensorboard_event(
+    seen_events: set[tuple[str, str, str, str, str]],
+    source_run_id: str,
+    point: dict[str, Any],
+) -> bool:
+    key = (
+        source_run_id,
+        str(point.get("key", "")),
+        str(point.get("step", "")),
+        str(point.get("timestamp", "")),
+        str(point.get("value", "")),
+    )
+    if key in seen_events:
+        return False
+    seen_events.add(key)
+    return True
+
+
+def _print_import_result(result: dict[str, Any]) -> None:
+    job = result.get("job") or {}
+    summary = result.get("summary") or job.get("summary") or {}
+    print("Import job complete." if job.get("status") == "committed" else "Import job updated.")
+    if job:
+        print(f"  job_id: {job.get('id')}")
+        print(f"  status: {job.get('status')}")
+    if summary:
+        print(f"  runs: {summary.get('runs', 0)}")
+        print(f"  metrics: {summary.get('metrics', 0)}")
+        print(f"  artifacts: {summary.get('artifacts', 0)}")
+
+
+# ---------------------------------------------------------------------------
 # Main entrypoint
 # ---------------------------------------------------------------------------
 
@@ -332,6 +575,12 @@ def main(argv: list[str] | None = None) -> None:
     elif subcommand == "whoami":
         cmd_whoami()
 
+    elif subcommand == "import":
+        cmd_import(rest)
+
+    elif subcommand == "sync":
+        cmd_sync(rest)
+
     else:
         _die(f"Unknown subcommand '{subcommand}'. Run `instantml --help` for usage.")
 
@@ -351,6 +600,13 @@ Usage:
 
   instantml whoami
       Print the current org/user from the stored credentials.
+
+  instantml import wandb --project NAME --input wandb.json
+  instantml import neptune --project NAME --input neptune.json
+      Translate a local export into Import v2 chunks and commit it.
+
+  instantml sync tensorboard LOGDIR --project NAME [--watch]
+      Import or continuously sync scalar TensorBoard events from a local log directory.
 
   instantml --help
       Show this message.

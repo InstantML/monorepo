@@ -365,6 +365,12 @@ function safeKnownRouteSegments(segments) {
       return ["api", "runs", ":run_id", "rank-metrics", "summary"];
     }
   }
+  if (segments[1] === "imports" && segments[2] === "jobs") {
+    if (segments.length === 4) return ["api", "imports", "jobs", ":job_id"];
+    if (segments.length === 5 && ["chunks", "commit", "cancel"].includes(segments[4])) {
+      return ["api", "imports", "jobs", ":job_id", segments[4]];
+    }
+  }
   if (segments.length === 4 && segments[1] === "objects" && segments[3] === "rows") {
     return ["api", "objects", ":object_id", "rows"];
   }
@@ -442,6 +448,11 @@ const STATIC_API_ROUTE_KEYS = new Set([
   "storage/clickhouse-connections/rotate-credentials",
   "demo/reset",
   "imports",
+  "imports/jobs",
+  "imports/jobs/:id",
+  "imports/jobs/:id/chunks",
+  "imports/jobs/:id/commit",
+  "imports/jobs/:id/cancel",
   "imports/neptune",
   "imports/wandb",
   "imports/mlflow",

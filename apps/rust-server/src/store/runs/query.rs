@@ -34,7 +34,7 @@ pub async fn overview(
             let data = store.data.lock().await;
             data.runs
                 .values()
-                .filter(|run| run.org_id == ctx.org_id)
+                .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
                 .fold(
                     (0_usize, 0_usize, 0_usize),
                     |(total, active, failed), run| {
@@ -73,7 +73,11 @@ pub async fn overview(
                 let data = store.data.lock().await;
                 data.runs
                     .values()
-                    .filter(|run| run.org_id == ctx.org_id && run.project == project)
+                    .filter(|run| {
+                        run.org_id == ctx.org_id
+                            && run.project == project
+                            && is_visible_run(&data, run)
+                    })
                     .fold(
                         (0_usize, 0_usize, 0_usize),
                         |(total, active, failed), run| {
@@ -174,14 +178,15 @@ pub async fn runs_summary(
         .map(|value| value == "selection")
         .unwrap_or(false);
     let search = compile_run_search(query.get("q").map(String::as_str))?;
-    let indexed_page = if sort_by == "created" && search.is_simple_literal_and() {
-        let data = store.data.lock().await;
-        created_index_page(&data, ctx, query, &search, offset, limit)
-    } else if matches!(sort_by.as_str(), "metric-latest" | "metric-best") {
-        metric_sorted_index_page(store, ctx, query, &sort_by, metric_key, offset, limit).await?
-    } else {
-        None
-    };
+    let indexed_page =
+        if sort_by == "created" && search.is_empty() && search.is_simple_literal_and() {
+            let data = store.data.lock().await;
+            created_index_page(&data, ctx, query, &search, offset, limit)
+        } else if matches!(sort_by.as_str(), "metric-latest" | "metric-best") {
+            metric_sorted_index_page(store, ctx, query, &sort_by, metric_key, offset, limit).await?
+        } else {
+            None
+        };
     let (total, page_runs) = if let Some(page) = indexed_page {
         page
     } else {
@@ -259,11 +264,40 @@ async fn collect_filtered_runs_with_search(
     let status = query
         .get("status")
         .filter(|value| !value.is_empty() && value.as_str() != "all");
-    let candidates = {
+    let cache_key = (!search.is_empty()).then(|| run_filter_cache_key(ctx, query));
+    if let Some(cache_key) = cache_key.as_ref() {
+        let data = store.data.lock().await;
+        if let Some(ids) = data.cached_run_filter_ids(cache_key) {
+            return Ok(ids
+                .into_iter()
+                .filter_map(|run_id| data.runs.get(&run_id).cloned())
+                .collect());
+        }
+    }
+    if search.is_empty() {
+        let data = store.data.lock().await;
+        return Ok(data
+            .runs
+            .values()
+            .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
+            .filter(|run| {
+                ctx.auth
+                    .as_ref()
+                    .and_then(|auth| auth.project_id)
+                    .map(|id| id == run.project_id)
+                    .unwrap_or(true)
+            })
+            .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
+            .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
+            .cloned()
+            .collect());
+    }
+
+    let matching_ids = {
         let data = store.data.lock().await;
         data.runs
             .values()
-            .filter(|run| run.org_id == ctx.org_id)
+            .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
             .filter(|run| {
                 ctx.auth
                     .as_ref()
@@ -274,26 +308,26 @@ async fn collect_filtered_runs_with_search(
             .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
             .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
             .map(|run| {
-                let doc = if search.is_empty() {
-                    None
-                } else {
-                    Some(
-                        data.run_search_documents
-                            .get(&run.id)
-                            .cloned()
-                            .unwrap_or_else(|| Arc::new(run_search_document(run))),
-                    )
-                };
-                (run.clone(), doc)
+                let doc = data
+                    .run_search_documents
+                    .get(&run.id)
+                    .cloned()
+                    .unwrap_or_else(|| Arc::new(run_search_document(run)));
+                (run.id, doc)
             })
             .collect::<Vec<_>>()
     };
-    if search.is_empty() {
-        return Ok(candidates.into_iter().map(|(run, _)| run).collect());
-    }
-    Ok(candidates
+    let matching_ids = matching_ids
         .into_iter()
-        .filter_map(|(run, doc)| doc.filter(|doc| search.matches(doc.as_ref())).map(|_| run))
+        .filter_map(|(run_id, doc)| search.matches(doc.as_ref()).then_some(run_id))
+        .collect::<Vec<_>>();
+    let mut data = store.data.lock().await;
+    if let Some(cache_key) = cache_key {
+        data.insert_run_filter_cache(cache_key, matching_ids.clone());
+    }
+    Ok(matching_ids
+        .into_iter()
+        .filter_map(|run_id| data.runs.get(&run_id).cloned())
         .collect())
 }
 
@@ -522,6 +556,32 @@ fn indexed_run_total(
     query: &HashMap<String, String>,
     search: &CompiledRunSearch,
 ) -> usize {
+    if search.is_empty() && !has_status_filter(query) {
+        if let Some(project_id) = ctx.auth.as_ref().and_then(|auth| auth.project_id) {
+            let Some(project) = data.projects.get(&project_id) else {
+                return 0;
+            };
+            if project_filter(query)
+                .map(|project_filter| project_filter != project.name)
+                .unwrap_or(false)
+            {
+                return 0;
+            }
+            return data
+                .run_count_by_org_project
+                .get(&(ctx.org_id, project.name.clone()))
+                .copied()
+                .unwrap_or(0);
+        }
+        if let Some(project) = project_filter(query) {
+            return data
+                .run_count_by_org_project
+                .get(&(ctx.org_id, project.to_string()))
+                .copied()
+                .unwrap_or(0);
+        }
+        return data.run_count_by_org.get(&ctx.org_id).copied().unwrap_or(0);
+    }
     if let Some(project) = project_filter(query) {
         data.runs_by_org_project_created
             .iter()
@@ -550,6 +610,19 @@ fn indexed_run_total(
     }
 }
 
+fn run_filter_cache_key(
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+) -> RunFilterCacheKey {
+    RunFilterCacheKey {
+        org_id: ctx.org_id,
+        auth_project_id: ctx.auth.as_ref().and_then(|auth| auth.project_id),
+        project: query.get("project").cloned().unwrap_or_default(),
+        status: query.get("status").cloned().unwrap_or_default(),
+        q: query.get("q").cloned().unwrap_or_default(),
+    }
+}
+
 fn run_matches_indexed_query(
     data: &StoreData,
     ctx: &RequestContext,
@@ -558,6 +631,9 @@ fn run_matches_indexed_query(
     run: &RunRow,
 ) -> bool {
     if run.org_id != ctx.org_id {
+        return false;
+    }
+    if !is_visible_run(data, run) {
         return false;
     }
     if ctx
@@ -659,6 +735,35 @@ mod tests {
         assert_eq!(total, 1);
         assert_eq!(page.len(), 1);
         assert_eq!(page[0].id, failed.id);
+    }
+
+    #[test]
+    fn incomplete_import_runs_are_hidden_from_indexes() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: None,
+        };
+        let mut data = StoreData::default();
+        let mut hidden = run(1, "half-imported", 1);
+        hidden.metadata = json!({
+            "import": {
+                "source_type": "wandb",
+                "external_project_id": "team/project",
+                "external_run_id": "run-1",
+                "complete": false
+            }
+        });
+        let visible = run(2, "complete", 2);
+        data.insert_run(hidden);
+        data.insert_run(visible);
+
+        let query = HashMap::new();
+        let search = CompiledRunSearch::empty();
+        let (total, page) = created_index_page(&data, &ctx, &query, &search, 0, 25).unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(page[0].name, "complete");
     }
 
     #[test]

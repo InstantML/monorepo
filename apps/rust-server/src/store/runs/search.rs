@@ -45,6 +45,7 @@ enum SearchField {
 #[derive(Clone, Debug)]
 enum SearchMatcher {
     Literal(String),
+    LiteralAny(Vec<String>),
     Regex(Regex),
 }
 
@@ -420,6 +421,12 @@ fn regex_predicate(
     if pattern.len() > MAX_RUN_SEARCH_REGEX_BYTES {
         return Err(invalid("regex pattern is too long", column));
     }
+    if let Some(values) = simple_literal_alternatives(pattern) {
+        return Ok(SearchPredicate {
+            field,
+            matcher: SearchMatcher::LiteralAny(values),
+        });
+    }
     let regex = RegexBuilder::new(pattern)
         .case_insensitive(true)
         .build()
@@ -608,6 +615,12 @@ fn predicate_matches(predicate: &SearchPredicate, doc: &RunSearchDocument) -> bo
                     .into_iter()
                     .any(|text| text.contains(value))
         }
+        (SearchField::All, SearchMatcher::LiteralAny(values)) => values.iter().any(|value| {
+            doc.summary.contains(value)
+                || all_large_field_texts(doc)
+                    .into_iter()
+                    .any(|text| text.contains(value))
+        }),
         (SearchField::All, SearchMatcher::Regex(regex)) => {
             regex.is_match(&doc.summary)
                 || all_large_field_texts(doc)
@@ -622,7 +635,14 @@ fn predicate_matches(predicate: &SearchPredicate, doc: &RunSearchDocument) -> bo
         (SearchField::Tag, SearchMatcher::Regex(regex)) => {
             doc.tags.iter().any(|tag| regex.is_match(tag))
         }
+        (SearchField::Tag, SearchMatcher::LiteralAny(values)) => doc
+            .tags
+            .iter()
+            .any(|tag| values.iter().any(|value| tag.contains(value))),
         (_, SearchMatcher::Literal(value)) => field_text(predicate.field, doc).contains(value),
+        (_, SearchMatcher::LiteralAny(values)) => values
+            .iter()
+            .any(|value| field_text(predicate.field, doc).contains(value)),
         (_, SearchMatcher::Regex(regex)) => regex.is_match(field_text(predicate.field, doc)),
     }
 }
@@ -643,6 +663,43 @@ fn field_text(field: SearchField, doc: &RunSearchDocument) -> &str {
         SearchField::Status => &doc.status,
         SearchField::Id => &doc.id,
     }
+}
+
+fn simple_literal_alternatives(pattern: &str) -> Option<Vec<String>> {
+    let open = pattern.find('(')?;
+    let close = pattern[open + 1..].find(')')? + open + 1;
+    if pattern[close + 1..].contains('(') || pattern[close + 1..].contains(')') {
+        return None;
+    }
+    let prefix = &pattern[..open];
+    let alternatives = &pattern[open + 1..close];
+    let suffix = &pattern[close + 1..];
+    if prefix.is_empty() && suffix.is_empty() {
+        return None;
+    }
+    if alternatives.is_empty() || alternatives.starts_with('|') || alternatives.ends_with('|') {
+        return None;
+    }
+    if !regex_literal_fragment(prefix) || !regex_literal_fragment(suffix) {
+        return None;
+    }
+    let mut values = Vec::new();
+    for alternative in alternatives.split('|') {
+        if alternative.is_empty() || !regex_literal_fragment(alternative) {
+            return None;
+        }
+        values.push(format!("{prefix}{alternative}{suffix}").to_ascii_lowercase());
+    }
+    Some(values)
+}
+
+fn regex_literal_fragment(value: &str) -> bool {
+    value.chars().all(|ch| {
+        !matches!(
+            ch,
+            '.' | '^' | '$' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\'
+        )
+    })
 }
 
 fn count_predicates(expr: &SearchExpr) -> usize {

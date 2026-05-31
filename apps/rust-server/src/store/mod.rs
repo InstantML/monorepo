@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     sync::Arc,
     time::{Duration as StdDuration, Instant},
 };
@@ -131,6 +131,7 @@ const ALLOWED_SCOPES: &[&str] = &[
 ];
 const SESSION_TTL_DAYS: i64 = 30;
 const MAX_EXPORT_RUNS: usize = 500;
+const MAX_RUN_FILTER_CACHE_ENTRIES: usize = 64;
 const MAX_EXPORT_METRICS: i64 = 100_000;
 const MAX_EXPORT_ATTRIBUTES: usize = 25_000;
 const MAX_EXPORT_ARTIFACTS: usize = 10_000;
@@ -796,7 +797,12 @@ struct StoreData {
     runs_by_org_created: BTreeMap<(Uuid, DateTime<Utc>, Uuid), Uuid>,
     runs_by_org_project_created: BTreeMap<(Uuid, String, DateTime<Utc>, Uuid), Uuid>,
     runs_by_parent_created: BTreeMap<(Uuid, Uuid, DateTime<Utc>, Uuid), Uuid>,
+    run_count_by_org: HashMap<Uuid, usize>,
+    run_count_by_org_project: HashMap<(Uuid, String), usize>,
+    incomplete_import_runs: HashSet<Uuid>,
     run_search_documents: HashMap<Uuid, Arc<RunSearchDocument>>,
+    run_filter_cache: HashMap<RunFilterCacheKey, Vec<Uuid>>,
+    run_filter_cache_order: VecDeque<RunFilterCacheKey>,
     attributes: BTreeMap<(Uuid, i64), AttributeRow>,
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
     artifacts: BTreeMap<Uuid, ArtifactRow>,
@@ -814,6 +820,8 @@ struct StoreData {
     artifact_upload_sessions: BTreeMap<Uuid, ArtifactUploadSessionRow>,
     table_rows: HashMap<(Uuid, i64), Vec<TableObjectRow>>,
     imports: BTreeMap<(Uuid, i64), ImportRow>,
+    import_chunks: BTreeMap<(Uuid, i64, String), ImportChunkRow>,
+    active_import_commits: HashSet<(Uuid, i64)>,
     idempotency: HashMap<(Uuid, String), IdempotencyRecord>,
     usage_daily: Vec<Value>,
     api_request_rollups: BTreeMap<String, ApiRequestUsageRollup>,
@@ -922,6 +930,11 @@ impl StoreData {
             "import" => {
                 let item: ImportRow = parse_payload(payload)?;
                 self.imports.insert((item.org_id, item.id), item);
+            }
+            "import_chunk" => {
+                let item: ImportChunkRow = parse_payload(payload)?;
+                self.import_chunks
+                    .insert((item.org_id, item.import_id, item.chunk_id.clone()), item);
             }
             "idempotency" => {
                 let item: IdempotencyRecord = parse_payload(payload)?;
@@ -1061,7 +1074,7 @@ impl StoreData {
     }
 
     fn insert_run(&mut self, run: RunRow) {
-        if let Some(existing) = self.runs.get(&run.id) {
+        if let Some(existing) = self.runs.get(&run.id).cloned() {
             self.runs_by_org_created
                 .remove(&(existing.org_id, existing.created_at, existing.id));
             self.runs_by_org_project_created.remove(&(
@@ -1078,20 +1091,31 @@ impl StoreData {
                     existing.id,
                 ));
             }
+            if !run_has_incomplete_import_metadata(&existing) {
+                self.decrement_run_counts(&existing);
+            }
         }
-        self.runs_by_org_created
-            .insert((run.org_id, run.created_at, run.id), run.id);
-        self.runs_by_org_project_created.insert(
-            (run.org_id, run.project.clone(), run.created_at, run.id),
-            run.id,
-        );
-        if let Some(parent_run_id) = run.parent_run_id {
-            self.runs_by_parent_created
-                .insert((run.org_id, parent_run_id, run.created_at, run.id), run.id);
+        if run_has_incomplete_import_metadata(&run) {
+            self.incomplete_import_runs.insert(run.id);
+            self.run_search_documents.remove(&run.id);
+        } else {
+            self.incomplete_import_runs.remove(&run.id);
+            self.increment_run_counts(&run);
+            self.runs_by_org_created
+                .insert((run.org_id, run.created_at, run.id), run.id);
+            self.runs_by_org_project_created.insert(
+                (run.org_id, run.project.clone(), run.created_at, run.id),
+                run.id,
+            );
+            if let Some(parent_run_id) = run.parent_run_id {
+                self.runs_by_parent_created
+                    .insert((run.org_id, parent_run_id, run.created_at, run.id), run.id);
+            }
+            self.run_search_documents
+                .insert(run.id, Arc::new(run_search_document(&run)));
         }
-        self.run_search_documents
-            .insert(run.id, Arc::new(run_search_document(&run)));
         self.runs.insert(run.id, run);
+        self.clear_run_filter_cache();
     }
 
     fn insert_attribute(&mut self, attribute: AttributeRow) {
@@ -1349,8 +1373,50 @@ impl StoreData {
                     run.id,
                 ));
             }
+            if !run_has_incomplete_import_metadata(&run) {
+                self.decrement_run_counts(&run);
+            }
             self.run_search_documents.remove(&run.id);
+            self.incomplete_import_runs.remove(&run.id);
+            self.clear_run_filter_cache();
         }
+    }
+
+    fn increment_run_counts(&mut self, run: &RunRow) {
+        *self.run_count_by_org.entry(run.org_id).or_insert(0) += 1;
+        *self
+            .run_count_by_org_project
+            .entry((run.org_id, run.project.clone()))
+            .or_insert(0) += 1;
+    }
+
+    fn decrement_run_counts(&mut self, run: &RunRow) {
+        decrement_count(&mut self.run_count_by_org, &run.org_id);
+        decrement_count(
+            &mut self.run_count_by_org_project,
+            &(run.org_id, run.project.clone()),
+        );
+    }
+
+    fn cached_run_filter_ids(&self, key: &RunFilterCacheKey) -> Option<Vec<Uuid>> {
+        self.run_filter_cache.get(key).cloned()
+    }
+
+    fn insert_run_filter_cache(&mut self, key: RunFilterCacheKey, ids: Vec<Uuid>) {
+        if !self.run_filter_cache.contains_key(&key) {
+            self.run_filter_cache_order.push_back(key.clone());
+        }
+        self.run_filter_cache.insert(key, ids);
+        while self.run_filter_cache_order.len() > MAX_RUN_FILTER_CACHE_ENTRIES {
+            if let Some(oldest) = self.run_filter_cache_order.pop_front() {
+                self.run_filter_cache.remove(&oldest);
+            }
+        }
+    }
+
+    fn clear_run_filter_cache(&mut self) {
+        self.run_filter_cache.clear();
+        self.run_filter_cache_order.clear();
     }
 
     fn allocate_attribute_id(&mut self, org_id: Uuid) -> i64 {
@@ -1461,6 +1527,39 @@ impl StoreData {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct RunFilterCacheKey {
+    org_id: Uuid,
+    auth_project_id: Option<Uuid>,
+    project: String,
+    status: String,
+    q: String,
+}
+
+fn run_has_incomplete_import_metadata(run: &RunRow) -> bool {
+    run.metadata
+        .get("import")
+        .and_then(|import| import.get("complete"))
+        .and_then(Value::as_bool)
+        == Some(false)
+}
+
+fn is_visible_run(data: &StoreData, run: &RunRow) -> bool {
+    data.incomplete_import_runs.is_empty() || !data.incomplete_import_runs.contains(&run.id)
+}
+
+fn decrement_count<K>(counts: &mut HashMap<K, usize>, key: &K)
+where
+    K: Eq + std::hash::Hash,
+{
+    if let Some(count) = counts.get_mut(key) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            counts.remove(key);
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApiRequestUsageRollup {
     pub org_id: Uuid,
@@ -1546,11 +1645,56 @@ struct ImportRow {
     org_id: Uuid,
     project_id: Option<Uuid>,
     source_type: String,
+    #[serde(default)]
+    source_project: Option<String>,
+    #[serde(default)]
+    target_project: Option<String>,
+    #[serde(default = "default_import_schema_version")]
+    schema_version: i32,
     status: String,
+    #[serde(default = "default_import_dedupe_policy")]
+    dedupe_policy: String,
     summary: Value,
+    #[serde(default)]
+    warnings: Vec<Value>,
+    #[serde(default)]
+    error_summary: Option<Value>,
+    #[serde(default)]
+    progress: Value,
     run_ids: Vec<Uuid>,
+    #[serde(default)]
+    chunk_ids: Vec<String>,
+    #[serde(default)]
+    accepted_chunk_count: i64,
+    #[serde(default)]
+    committed_batch_count: i64,
+    #[serde(default)]
+    created_by_user_id: Option<Uuid>,
+    #[serde(default)]
+    updated_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     completed_at: Option<DateTime<Utc>>,
+}
+
+fn default_import_schema_version() -> i32 {
+    1
+}
+
+fn default_import_dedupe_policy() -> String {
+    "legacy".to_string()
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ImportChunkRow {
+    org_id: Uuid,
+    import_id: i64,
+    chunk_id: String,
+    sequence: i64,
+    content_hash: String,
+    final_chunk: bool,
+    payload: Value,
+    summary: Value,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1646,6 +1790,7 @@ fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value)
         "artifact_manifest_entries" => validate_manifest_chunk_entity(record, payload),
         "artifact_alias" => validate_alias_entity(record, payload),
         "attribute" | "import" => validate_payload_i64_id(record, payload, "id"),
+        "import_chunk" => validate_payload_string_id(record, payload, "chunk_id"),
         "idempotency" => validate_payload_string_id(record, payload, "key"),
         "project_delete" => validate_payload_string_id(record, payload, "project_name"),
         "table_rows" => validate_payload_i64_id(record, payload, "attribute_id"),

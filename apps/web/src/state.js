@@ -70,6 +70,7 @@ export function defaultRunSelection(currentIds, runs, defaultInitialized) {
     return { ids: current, initialized: defaultInitialized };
   }
   const ids = (Array.isArray(runs) ? runs : []).slice(0, DEFAULT_SELECTED_RUNS).map((run) => run?.id).filter(Boolean);
+  if (!ids.length) return { ids: current, initialized: false };
   return { ids, initialized: ids.length > 0 };
 }
 

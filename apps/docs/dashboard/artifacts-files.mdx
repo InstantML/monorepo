@@ -6,8 +6,9 @@ description: "Browse versioned artifact collections, manifests, lineage, files, 
 # Artifacts, files, and media
 
 Artifacts connect metric behavior to the files and evidence produced by a run.
-
-![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
+Use them for uploaded files, external references, checkpoints, rollouts,
+versioned model collections, and the rich objects that make a training run
+inspectable after the fact.
 
 ## Artifact workspace
 
@@ -21,9 +22,7 @@ open the manifest and lineage for the selected version.
 Each collection shows versions with stable `vN` labels, automatic `latest`,
 custom aliases such as `best`, byte/file counts, retention state, and soft
 delete state. Selecting a version shows its manifest and a bounded lineage view
-of producer and consumer runs. The screenshot above shows a model collection
-where `v1` is `latest`, `v0` is `best`, and `v0` has both an output edge from
-the producing run and an input edge into a consuming evaluation run.
+of producer and consumer runs.
 
 Versioned artifacts can represent:
 
@@ -32,29 +31,40 @@ Versioned artifacts can represent:
 - Checkpoints.
 - Rollouts.
 
-The same tab also shows rich logged objects for the selected run, such as
-tables, histograms, media previews, and evaluation outputs. Those objects can
-link to artifact bytes, but they are not artifact rows themselves.
-
 Owner/admin users can move the `best` alias, keep a version forever, apply a
 30-day retention window, or soft-delete a version after an explicit confirmation
 prompt with an audit reason. Read-only users see the same evidence with
 management controls disabled.
 
+## Run Detail files explorer
+
+![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
+
+Run Detail includes a Files section for the selected run. It groups checkpoints,
+media and rich objects, and files, then opens a bounded preview beside the
+evidence rail.
+
+The Files section previews:
+
+- Tables with capped rows and columns.
+- Histograms.
+- Same-origin image, audio, and video artifacts when bytes are stored through
+  InstantML.
+- Artifact metadata for checkpoints, uploaded files, rollout files, and
+  external references.
+- Copyable object or artifact IDs for SDK/API follow-up work.
+
+Hidden Run Detail sections do not fetch object manifests until opened, so the
+normal metric summary path stays lightweight.
+
 ## Raw run artifacts
 
 Versioned collections are the primary Artifacts tab workflow. Legacy raw run
-artifacts stay isolated from the collection/manifest/lineage view so existing
-file/media, rich-object, checkpoint, and importer workflows do not get mixed
-into the version registry. Use Run Detail Files for the selected run's raw
-artifact browser and media previews.
-
-## Files in Run Detail
-
-Run Detail includes a Files section that previews the selected run's artifacts
-and rich objects without introducing a separate storage layer. The left rail
-groups checkpoints, media and rich objects, and files. Selecting an item opens a
-bounded preview for tables, histograms, media, and artifact metadata.
+artifacts remain available so existing file/media, rich-object, checkpoint, and
+importer workflows keep their old IDs and Run Detail behavior. Imported
+external artifact references are also mirrored into metadata-only versioned
+run-level bundles, which lets migrated W&B/Neptune/MLflow artifacts appear in
+the catalog and lineage graph without copying bytes into InstantML storage.
 
 ## Safe previews
 
@@ -69,12 +79,28 @@ Rich media objects can link to artifact bytes from the same run. Metadata-only
 objects and artifacts remain inspectable, but they cannot be downloaded through
 the same-origin route until bytes are uploaded to InstantML.
 
-## Checkpoint workflow
+## Checkpoint forks
 
 Checkpoint artifacts are visible in Run Detail and in the Checkpoints
 workspace. They can carry restore metadata such as source run and step. When
 checkpoint bytes are stored through the API, downloads go through the
 same-origin artifact download route.
+
+![Checkpoint fork modal](/images/product/dashboard-checkpoint-fork.png)
+
+Forking a checkpoint creates a linked child run record in the same project. It
+records provenance and can inherit the source config, but it does not start
+training or copy metrics/artifacts. Attach the SDK to the new child run from the
+training script that resumes the checkpoint.
+
+## Checkpoint lineage
+
+![Checkpoint lineage workspace](/images/product/dashboard-checkpoints.png)
+
+The Checkpoints workspace gives the same selected-run context a lineage-first
+view. Use it to confirm the checkpoint URI, step, run config context, and
+whether a run has forkable restore points before moving into a resumed
+experiment.
 
 ## API snippets
 

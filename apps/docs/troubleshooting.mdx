@@ -57,15 +57,25 @@ exists.
 
 ## Importer routes
 
-The public API includes JSON importer routes for transformed W&B, MLflow, and
-Neptune-shaped import payloads:
+The public API includes Import v2 job routes for local-first W&B, Neptune
+Exporter, MLflow, and TensorBoard migration tooling:
+
+- `POST /api/imports/jobs`
+- `POST /api/imports/jobs/{import_id}/chunks`
+- `POST /api/imports/jobs/{import_id}/commit`
+- `POST /api/imports/jobs/{import_id}/cancel`
+
+Legacy transformed JSON importer routes remain available:
 
 - `POST /api/imports/wandb`
 - `POST /api/imports/mlflow`
 - `POST /api/imports/neptune`
 
-These routes are for implemented transformed JSON inputs. Neptune Exporter
-Parquet imports are not currently supported by the public hosted importer.
+If Neptune imports fail before parsing, confirm `pyarrow` is installed with
+`pip install "instantml[imports]"` and that the path points at the exported
+Parquet directory rather than a symlink. If TensorBoard sync produces no new
+points, confirm the run source identity matches the original imported
+TensorBoard run and that the event files contain scalar summaries.
 
 ## Generated API reference looks stale
 

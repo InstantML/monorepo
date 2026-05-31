@@ -43,16 +43,36 @@ system = [
   "psutil==6.0.0",
   "pynvml==12.0.0",
 ]
+imports = [
+  "pyarrow==16.1.0",
+]
+wandb = [
+  "wandb==0.18.7",
+]
+tensorboard = [
+  "tensorboard==2.18.0",
+]
+frameworks = [
+  "keras==3.6.0",
+  "lightning==2.4.0",
+  "transformers==4.46.3",
+]
 all = [
   "GitPython==3.1.43",
   "Pillow==10.3.0",
+  "keras==3.6.0",
+  "lightning==2.4.0",
   "httpx==0.27.2",
   "imageio==2.36.1",
   "moviepy==2.1.2",
   "psutil==6.0.0",
   "pynvml==12.0.0",
+  "pyarrow==16.1.0",
   "rich==13.9.4",
   "soundfile==0.12.1",
+  "tensorboard==2.18.0",
+  "transformers==4.46.3",
+  "wandb==0.18.7",
 ]
 
 [project.scripts]

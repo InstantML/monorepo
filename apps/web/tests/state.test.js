@@ -226,6 +226,8 @@ test("defaultRunSelection only auto-selects once", () => {
   assert.equal(selected.ids.at(-1), `run-${DEFAULT_SELECTED_RUNS - 1}`);
   assert.deepEqual(defaultRunSelection([], runs, true), { ids: [], initialized: true });
   assert.deepEqual(defaultRunSelection(["chosen"], runs, false), { ids: ["chosen"], initialized: false });
+  const emptySelection = [];
+  assert.equal(defaultRunSelection(emptySelection, [], false).ids, emptySelection);
 });
 
 test("shortcut helpers detect platform commands and editable targets", () => {
@@ -809,6 +811,8 @@ test("api client handles query strings and malformed responses", async (t) => {
   await new ApiClient().get("/runs/run-secret/metrics?key=secret");
   assert.equal(loggedApiEvents.at(-1).level, "info");
   assert.equal(loggedApiEvents.at(-1).event.path, "/runs/:run_id/metrics");
+  await new ApiClient().post("/api/imports/jobs/job-123/chunks", { content_hash: "secret" });
+  assert.equal(loggedApiEvents.at(-1).event.path, "/api/imports/jobs/:job_id/chunks");
   restoreApiTestGlobals();
 });
 
@@ -838,12 +842,14 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabToPath("metrics"), "/dashboard/metrics");
   assert.equal(tabToPath("distributed"), "/dashboard/distributed");
   assert.equal(tabToPath("checkpoints"), "/dashboard/checkpoints");
+  assert.equal(tabToPath("imports"), "/dashboard/imports");
   assert.equal(tabToPath("models"), "/dashboard/checkpoints");
   assert.equal(tabToPath("insights"), "/dashboard/insights");
   assert.equal(tabToPath("unknown"), "/dashboard/runs");
   assert.equal(tabFromPath("/dashboard/advanced?x=1"), "runs");
   assert.equal(tabFromPath("/dashboard/models?x=1"), "checkpoints");
   assert.equal(tabFromPath("/dashboard/integrations?x=1"), "runs");
+  assert.equal(tabFromPath("/dashboard/imports?x=1"), "imports");
   assert.equal(tabFromPath("/dashboard/compare?x=1"), "compare");
   assert.equal(tabFromPath("/dashboard/reports/report_123"), "reports");
   assert.equal(tabFromPath("/dashboard/not-real"), "runs");
@@ -851,6 +857,7 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(canonicalDashboardPath("/dashboard/reports/report_123"), "/dashboard/reports/report_123");
   assert.equal(canonicalDashboardPath("/dashboard/models"), "/dashboard/checkpoints");
   assert.equal(canonicalDashboardPath("/dashboard/integrations"), "/dashboard/runs");
+  assert.equal(canonicalDashboardPath("/dashboard/imports"), "/dashboard/imports");
   assert.equal(canonicalDashboardPath("/dashboard/metrics/extra"), "/dashboard/metrics");
   assert.equal(pathFromLegacyHash("#detail"), "/dashboard/detail");
   assert.equal(pathFromLegacyHash("#/detail"), "");

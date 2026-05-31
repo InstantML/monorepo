@@ -90,6 +90,7 @@ impl Default for RateLimiter {
 pub enum RequestClass {
     General,
     Ingest,
+    Import,
 }
 
 impl RequestClass {
@@ -97,6 +98,7 @@ impl RequestClass {
         match self {
             Self::General => "general",
             Self::Ingest => "ingest",
+            Self::Import => "import",
         }
     }
 }
@@ -234,7 +236,9 @@ fn classify_route(method: &Method, path: &str) -> Option<RouteLimitPolicy> {
     if method == Method::OPTIONS {
         return None;
     }
-    let class = if is_ingest_route(method, path) {
+    let class = if is_import_route(method, path) {
+        RequestClass::Import
+    } else if is_ingest_route(method, path) {
         RequestClass::Ingest
     } else {
         RequestClass::General
@@ -252,9 +256,6 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
         ("POST", "/projects")
             | ("POST", "/runs")
             | ("POST", "/api/demo/reset")
-            | ("POST", "/api/imports/neptune")
-            | ("POST", "/api/imports/wandb")
-            | ("POST", "/api/imports/mlflow")
             | ("POST", "/api/storage/clickhouse-connections")
             | ("POST", "/api/storage/clickhouse-connections/validate")
             | (
@@ -271,6 +272,15 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
                 || path.ends_with("/objects")
                 || path.ends_with("/artifacts")
                 || path.ends_with("/artifacts/upload")))
+}
+
+fn is_import_route(method: &Method, path: &str) -> bool {
+    matches!(
+        (method.as_str(), path),
+        ("POST", "/api/imports/neptune")
+            | ("POST", "/api/imports/wandb")
+            | ("POST", "/api/imports/mlflow")
+    ) || (*method == Method::POST && path.starts_with("/api/imports/jobs"))
 }
 
 fn is_monthly_quota_exempt_route(method: &Method, path: &str) -> bool {
@@ -298,6 +308,10 @@ fn plan_limit(plan: PlanTier, class: RequestClass) -> RateLimitSpec {
             burst: plan.rate_limit_burst,
         },
         RequestClass::Ingest => RateLimitSpec {
+            rps: plan.ingest_rate_limit_rps,
+            burst: (plan.ingest_rate_limit_rps.saturating_mul(5)).min(plan.rate_limit_burst),
+        },
+        RequestClass::Import => RateLimitSpec {
             rps: plan.ingest_rate_limit_rps,
             burst: (plan.ingest_rate_limit_rps.saturating_mul(5)).min(plan.rate_limit_burst),
         },
@@ -506,7 +520,13 @@ mod tests {
             classify_route(&Method::POST, "/api/imports/wandb")
                 .expect("policy")
                 .class,
-            RequestClass::Ingest
+            RequestClass::Import
+        );
+        assert_eq!(
+            classify_route(&Method::POST, "/api/imports/jobs/1/chunks")
+                .expect("policy")
+                .class,
+            RequestClass::Import
         );
         assert_eq!(
             classify_route(&Method::POST, "/api/runs/run-1/forks")
@@ -667,6 +687,7 @@ mod tests {
             Some(100)
         );
         assert_eq!(plan_limit(PLAN_FREE, RequestClass::Ingest).rps, 2);
+        assert_eq!(plan_limit(PLAN_FREE, RequestClass::Import).rps, 2);
         assert_eq!(plan_limit(PLAN_PRO, RequestClass::General).rps, 50);
     }
 

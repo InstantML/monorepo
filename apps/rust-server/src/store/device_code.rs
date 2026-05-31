@@ -4,6 +4,12 @@ use super::*;
 pub const DEVICE_CODE_TTL_SECS: i64 = 900;
 /// Minimum seconds between polls per device code (RFC 8628 §3.5).
 pub const DEVICE_CODE_POLL_INTERVAL_SECS: i64 = 5;
+const CLI_DEVICE_LOGIN_SCOPES: &[&str] = &[
+    "sdk:ingest",
+    "artifacts:write",
+    "imports:write",
+    "export:read",
+];
 /// Length of the user-visible code segment (e.g. "ABCD" in "ABCD-EFGH").
 const USER_CODE_SEGMENT_LEN: usize = 4;
 /// Alphabet for user codes: uppercase letters and digits, excluding ambiguous chars.
@@ -231,11 +237,10 @@ pub async fn device_code_confirm(
         service_account_id: service_account.id,
         name: "CLI device login".to_string(),
         key_prefix: plaintext.chars().take(14).collect(),
-        scopes: vec![
-            "sdk:ingest".to_string(),
-            "artifacts:write".to_string(),
-            "export:read".to_string(),
-        ],
+        scopes: CLI_DEVICE_LOGIN_SCOPES
+            .iter()
+            .map(|scope| (*scope).to_string())
+            .collect(),
         project_id: None,
         created_at: now,
         expires_at: None,
@@ -509,6 +514,14 @@ mod tests {
         let base = "https://app.instantml.ai/";
         let uri = format!("{}/auth/device", base.trim_end_matches('/'));
         assert_eq!(uri, "https://app.instantml.ai/auth/device");
+    }
+
+    #[test]
+    fn cli_device_login_scopes_cover_import_workflows() {
+        assert!(CLI_DEVICE_LOGIN_SCOPES.contains(&"sdk:ingest"));
+        assert!(CLI_DEVICE_LOGIN_SCOPES.contains(&"artifacts:write"));
+        assert!(CLI_DEVICE_LOGIN_SCOPES.contains(&"imports:write"));
+        assert!(CLI_DEVICE_LOGIN_SCOPES.contains(&"export:read"));
     }
 
     #[tokio::test]

@@ -617,6 +617,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_import_job"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/jobs/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_import_job"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/jobs/{import_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel_import_job"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/jobs/{import_id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["append_import_chunk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/jobs/{import_id}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["commit_import_job"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/mlflow": {
         parameters: {
             query?: never;
@@ -2231,6 +2311,25 @@ export interface components {
         };
         /** Format: binary */
         BinaryBody: string;
+        CanonicalImportChunk: {
+            artifact_refs: unknown[];
+            attributes: unknown[];
+            chunk_id: string;
+            content_hash?: string | null;
+            final?: boolean | null;
+            /** Format: int64 */
+            job_id: number;
+            metric_points: unknown[];
+            runs: unknown[];
+            /** Format: int32 */
+            schema_version: number;
+            /** Format: int64 */
+            sequence: number;
+            source_project?: string | null;
+            source_type: string;
+            target_project: string;
+            warnings: components["schemas"]["ImportWarning"][];
+        };
         ClerkAuthRequest: {
             /** Format: uuid */
             accept_invite_org_id?: string | null;
@@ -2547,6 +2646,99 @@ export interface components {
         };
         HealthResponse: {
             status: string;
+        };
+        ImportChunkAppendResponse: {
+            chunk: components["schemas"]["ImportChunkRow"];
+            duplicate: boolean;
+            job: components["schemas"]["ImportJobRow"];
+        };
+        ImportChunkRow: {
+            chunk_id: string;
+            content_hash: string;
+            /** Format: date-time */
+            created_at: string;
+            final_chunk: boolean;
+            /** Format: int64 */
+            import_id: number;
+            /** Format: uuid */
+            org_id: string;
+            payload: Record<string, never>;
+            /** Format: int64 */
+            sequence: number;
+            summary: components["schemas"]["ImportJobSummary"];
+        };
+        ImportJobCreateRequest: {
+            project?: string | null;
+            /** Format: int32 */
+            schema_version?: number | null;
+            source_project?: string | null;
+            source_type: string;
+            target_project?: string | null;
+        };
+        ImportJobEnvelope: {
+            job: components["schemas"]["ImportJobRow"];
+        };
+        ImportJobProgress: {
+            /** Format: int64 */
+            chunks?: number | null;
+            final_chunk_received?: boolean | null;
+            partial_write_started?: boolean | null;
+            resumable?: boolean | null;
+            state: string;
+        };
+        ImportJobRow: {
+            /** Format: int64 */
+            accepted_chunk_count: number;
+            chunk_ids: string[];
+            /** Format: int64 */
+            committed_batch_count: number;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            created_by_user_id?: string | null;
+            dedupe_policy: string;
+            error_summary?: Record<string, never>;
+            /** Format: int64 */
+            id: number;
+            /** Format: uuid */
+            org_id: string;
+            progress: components["schemas"]["ImportJobProgress"];
+            /** Format: uuid */
+            project_id?: string | null;
+            run_ids: string[];
+            /** Format: int32 */
+            schema_version: number;
+            source_project?: string | null;
+            source_type: string;
+            status: string;
+            summary: components["schemas"]["ImportJobSummary"];
+            target_project?: string | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+            warnings: components["schemas"]["ImportWarning"][];
+        };
+        ImportJobSummary: {
+            /** Format: int64 */
+            artifacts: number;
+            /** Format: int64 */
+            attributes: number;
+            /** Format: int64 */
+            metrics: number;
+            /** Format: int64 */
+            runs: number;
+            /** Format: int64 */
+            skipped_runs?: number | null;
+            /** Format: int64 */
+            warnings: number;
+        };
+        ImportWarning: {
+            code?: string | null;
+            message?: string | null;
+        };
+        ImportsEnvelope: {
+            imports: components["schemas"]["ImportJobRow"][];
         };
         InitialInvitationCreateResult: {
             delivery_error?: string | null;
@@ -4736,11 +4928,286 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JsonObjectResponse"];
+                    "application/json": components["schemas"]["ImportsEnvelope"];
                 };
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing export:read or imports:write scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_import_job: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Import v2 job create request */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportJobCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created import job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportJobEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing imports:write scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_import_job: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Import job id */
+                import_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Import job status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportJobEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing export:read or imports:write scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Import job not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_import_job: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Import job id */
+                import_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled import job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportJobEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing imports:write scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Import job cannot be cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    append_import_chunk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Import job id */
+                import_id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Canonical import chunk v2 */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanonicalImportChunk"];
+            };
+        };
+        responses: {
+            /** @description Accepted import chunk */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportChunkAppendResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing imports:write scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Chunk conflict or illegal state transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    commit_import_job: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Import job id */
+                import_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Committed import job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportJobEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing imports:write scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Import job is not ready */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

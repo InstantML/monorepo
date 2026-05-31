@@ -133,6 +133,458 @@ def test_resolve_api_key_from_credentials(tmp_path, monkeypatch):
     assert resolve_api_key_from_credentials() == "instantml_MY_KEY"
 
 
+def test_cmd_import_transformed_json_dispatch(monkeypatch):
+    from instantml import importers
+
+    captured = {}
+    printed = []
+
+    def fake_import_transformed_json(**kwargs):
+        captured.update(kwargs)
+        return {"job": {"id": 7, "status": "dry_run_ready"}}
+
+    monkeypatch.setattr(importers, "import_transformed_json", fake_import_transformed_json)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: printed.append(result))
+
+    cli_module.cmd_import(
+        [
+            "neptune",
+            "--project",
+            "target-project",
+            "--input",
+            "neptune.json",
+            "--source-project",
+            "workspace/project",
+            "--api-host",
+            "http://api.example",
+            "--dry-run",
+        ]
+    )
+
+    assert captured == {
+        "source_type": "neptune",
+        "input_path": "neptune.json",
+        "target_project": "target-project",
+        "source_project": "workspace/project",
+        "base_url": "http://api.example",
+        "dry_run": True,
+    }
+    assert printed == [{"job": {"id": 7, "status": "dry_run_ready"}}]
+
+
+def test_cmd_import_neptune_exporter_dispatch(monkeypatch, tmp_path):
+    from instantml import importers
+
+    data_dir = tmp_path / "data"
+    files_dir = tmp_path / "files"
+    data_dir.mkdir()
+    files_dir.mkdir()
+    captured = {}
+
+    monkeypatch.setattr(importers, "chunks_from_neptune_exporter", lambda *args, **kwargs: [{"chunk_id": "chunk-0", "final": True}])
+
+    def fake_upload_chunks(**kwargs):
+        captured.update(kwargs)
+        return {"job": {"id": 10, "status": "dry_run_ready"}}
+
+    monkeypatch.setattr(importers, "upload_chunks", fake_upload_chunks)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: None)
+
+    cli_module.cmd_import(
+        [
+            "neptune",
+            "--project",
+            "target",
+            "--input",
+            str(data_dir),
+            "--source-project",
+            "workspace/source",
+            "--files-path",
+            str(files_dir),
+            "--api-host",
+            "http://api.example",
+            "--dry-run",
+        ]
+    )
+
+    assert captured == {
+        "source_type": "neptune",
+        "source_project": "workspace/source",
+        "target_project": "target",
+        "chunks": [{"chunk_id": "chunk-0", "final": True}],
+        "base_url": "http://api.example",
+        "commit": False,
+    }
+
+
+def test_cmd_import_wandb_direct_export_dispatch(monkeypatch):
+    from instantml import importers
+
+    calls = []
+    monkeypatch.setattr(importers, "chunks_from_wandb_project", lambda *args, **kwargs: [{"chunk_id": "chunk-0", **kwargs}])
+
+    def fake_upload_chunks(**kwargs):
+        calls.append(kwargs)
+        return {"job": {"id": 8, "status": "committed"}}
+
+    monkeypatch.setattr(importers, "upload_chunks", fake_upload_chunks)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: None)
+
+    cli_module.cmd_import(
+        [
+            "wandb",
+            "--project",
+            "target",
+            "--entity",
+            "team",
+            "--source-project",
+            "source",
+            "--limit",
+            "5",
+            "--api-host",
+            "http://api.example",
+        ]
+    )
+
+    assert calls == [
+        {
+                "source_type": "wandb",
+                "source_project": "team/source",
+                "target_project": "target",
+                "chunks": [{"chunk_id": "chunk-0", "target_project": "target", "limit": 5}],
+                "base_url": "http://api.example",
+                "commit": True,
+            }
+    ]
+
+
+def test_cmd_sync_tensorboard_dispatch(monkeypatch):
+    from instantml import importers
+
+    captured = {}
+    monkeypatch.setattr(importers, "tensorboard_logdir_payload", lambda logdir, run_name=None: {"project": "tb", "runs": [{"id": run_name}]})
+    monkeypatch.setattr(importers, "chunks_from_transformed_json", lambda payload, **kwargs: [{"chunk_id": "chunk-0"}])
+
+    def fake_upload_chunks(**kwargs):
+        captured.update(kwargs)
+        return {"job": {"id": 9, "status": "dry_run_ready"}}
+
+    monkeypatch.setattr(importers, "upload_chunks", fake_upload_chunks)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: None)
+
+    cli_module.cmd_sync(
+        [
+            "tensorboard",
+            "runs/tb",
+            "--project",
+            "target",
+            "--run-name",
+            "trial-1",
+            "--api-host",
+            "http://api.example",
+            "--dry-run",
+        ]
+    )
+
+    assert captured == {
+        "source_type": "tensorboard",
+        "source_project": "runs/tb",
+        "target_project": "target",
+        "chunks": [{"chunk_id": "chunk-0"}],
+        "base_url": "http://api.example",
+        "commit": False,
+    }
+
+
+def test_cmd_sync_tensorboard_existing_run_dispatch(monkeypatch):
+    from instantml import importers
+
+    requests = []
+    monkeypatch.setattr(
+        importers,
+        "tensorboard_logdir_payload",
+        lambda logdir, run_name=None: {
+            "project": "tb",
+            "runs": [{"metrics": [{"key": "loss", "step": 2.0, "value": 0.5, "timestamp": "2026-05-30T00:00:00Z"}]}],
+        },
+    )
+
+    class FakeClient:
+        def __init__(self, *, base_url):
+            self.base_url = base_url
+
+        def _request(self, method, path, body=None, idempotency_key=None):
+            requests.append((self.base_url, method, path, body, idempotency_key))
+            return {"ok": True}
+
+    monkeypatch.setattr("instantml.client.Client", FakeClient)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: requests.append(("printed", result)))
+
+    cli_module.cmd_sync(
+        [
+            "tensorboard",
+            "runs/tb",
+            "--project",
+            "target",
+            "--run-id",
+            "run-existing",
+            "--api-host",
+            "http://api.example",
+            "--watch",
+            "--max-sync-passes",
+            "1",
+        ]
+    )
+
+    assert requests[0] == (
+        "http://api.example",
+        "POST",
+        "/runs/run-existing/metrics",
+        {
+            "metrics": {"loss": 0.5},
+            "step": 2.0,
+            "timestamp": "2026-05-30T00:00:00Z",
+            "preview": False,
+            "preview_completion": 0.0,
+        },
+        None,
+    )
+    assert requests[1] == ("printed", {"job": {"id": "run-existing", "status": "synced"}, "summary": {"runs": 1, "metrics": 1, "artifacts": 0}})
+
+
+def test_cmd_sync_tensorboard_existing_run_dry_run_does_not_write(monkeypatch):
+    from instantml import importers
+
+    requests = []
+    monkeypatch.setattr(
+        importers,
+        "tensorboard_logdir_payload",
+        lambda logdir, run_name=None: {
+            "project": "tb",
+            "runs": [{"metrics": [{"key": "loss", "step": 2.0, "value": 0.5, "timestamp": 1778716800.0}]}],
+        },
+    )
+
+    class FakeClient:
+        def __init__(self, *, base_url):
+            raise AssertionError("dry-run must not create a client")
+
+    monkeypatch.setattr("instantml.client.Client", FakeClient)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: requests.append(("printed", result)))
+
+    cli_module.cmd_sync(
+        [
+            "tensorboard",
+            "runs/tb",
+            "--project",
+            "target",
+            "--run-id",
+            "run-existing",
+            "--dry-run",
+        ]
+    )
+
+    assert requests == [
+        (
+            "printed",
+            {"job": {"id": "run-existing", "status": "dry_run_ready"}, "summary": {"runs": 1, "metrics": 1, "artifacts": 0}},
+        )
+    ]
+
+
+def test_cmd_sync_tensorboard_rejects_run_id_for_multi_run_logdir(monkeypatch, capsys):
+    from instantml import importers
+
+    monkeypatch.setattr(
+        importers,
+        "tensorboard_logdir_payload",
+        lambda logdir, run_name=None: {
+            "project": "tb",
+            "runs": [
+                {"id": "a", "metrics": [{"key": "loss", "step": 1.0, "value": 0.5}]},
+                {"id": "b", "metrics": [{"key": "loss", "step": 1.0, "value": 0.4}]},
+            ],
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        cli_module.cmd_sync(["tensorboard", "runs/tb", "--project", "target", "--run-id", "run-existing"])
+
+    assert "requires a single TensorBoard run" in capsys.readouterr().err
+
+
+def test_tensorboard_metric_batches_normalize_timestamps():
+    batches = cli_module._tensorboard_metric_batches(
+        [
+            {"key": "loss", "step": 1.0, "value": 0.5, "timestamp": 1778716800.0},
+            {"key": "acc", "step": 1.0, "value": 0.9, "timestamp": 1778716800.0},
+            {"key": "lr", "step": 2.0, "value": 0.01, "timestamp": None},
+        ]
+    )
+
+    assert batches == [
+        {
+            "step": 1.0,
+            "timestamp": "2026-05-14T00:00:00Z",
+            "metrics": {"loss": 0.5, "acc": 0.9},
+        },
+        {"step": 2.0, "timestamp": None, "metrics": {"lr": 0.01}},
+    ]
+
+
+def test_cmd_sync_tensorboard_watch_filters_duplicate_events(monkeypatch):
+    from instantml import importers
+
+    uploads = []
+    printed = []
+    monkeypatch.setattr(
+        importers,
+        "tensorboard_logdir_payload",
+        lambda logdir, run_name=None: {
+            "project": "tb",
+            "runs": [{"metrics": [{"key": "loss", "step": 1.0, "value": 0.25, "timestamp": "2026-05-30T00:00:00Z"}]}],
+        },
+    )
+    monkeypatch.setattr(importers, "chunks_from_transformed_json", lambda payload, **kwargs: [{"chunk_id": "chunk-0", "metrics": payload["runs"][0]["metrics"]}])
+
+    def fake_upload_chunks(**kwargs):
+        uploads.append(kwargs)
+        return {"job": {"id": 11, "status": "committed"}, "summary": {"runs": 1, "metrics": 1, "artifacts": 0}}
+
+    monkeypatch.setattr(importers, "upload_chunks", fake_upload_chunks)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: printed.append(result))
+
+    cli_module.cmd_sync(
+        [
+            "tensorboard",
+            "runs/tb",
+            "--project",
+            "target",
+            "--watch",
+            "--watch-interval",
+            "0.1",
+            "--max-sync-passes",
+            "2",
+        ]
+    )
+
+    assert len(uploads) == 1
+    assert uploads[0]["chunks"][0]["metrics"] == [{"key": "loss", "step": 1.0, "value": 0.25, "timestamp": "2026-05-30T00:00:00Z"}]
+    assert printed[-1] == {"job": {"id": "runs/tb", "status": "synced"}, "summary": {"runs": 1, "metrics": 0, "artifacts": 0}}
+
+
+def test_cmd_sync_tensorboard_watch_filters_each_run_independently(monkeypatch):
+    from instantml import importers
+
+    uploads = []
+    monkeypatch.setattr(
+        importers,
+        "tensorboard_logdir_payload",
+        lambda logdir, run_name=None: {
+            "project": "tb",
+            "runs": [
+                {"id": "a", "metrics": [{"key": "loss", "step": 1.0, "value": 0.25, "timestamp": "2026-05-30T00:00:00Z"}]},
+                {"id": "b", "metrics": [{"key": "loss", "step": 1.0, "value": 0.25, "timestamp": "2026-05-30T00:00:00Z"}]},
+            ],
+        },
+    )
+    monkeypatch.setattr(importers, "chunks_from_transformed_json", lambda payload, **kwargs: [{"chunk_id": "chunk-0", "runs": payload["runs"]}])
+
+    def fake_upload_chunks(**kwargs):
+        uploads.append(kwargs)
+        return {"job": {"id": 11, "status": "committed"}, "summary": {"runs": 2, "metrics": 2, "artifacts": 0}}
+
+    monkeypatch.setattr(importers, "upload_chunks", fake_upload_chunks)
+    monkeypatch.setattr(cli_module, "_print_import_result", lambda result: None)
+
+    cli_module.cmd_sync(["tensorboard", "runs/tb", "--project", "target", "--watch", "--max-sync-passes", "2"])
+
+    assert len(uploads) == 1
+    assert [len(run["metrics"]) for run in uploads[0]["chunks"][0]["runs"]] == [1, 1]
+
+
+def test_cmd_sync_tensorboard_watch_handles_keyboard_interrupt(monkeypatch, capsys):
+    from instantml import importers
+
+    monkeypatch.setattr(
+        importers,
+        "tensorboard_logdir_payload",
+        lambda logdir, run_name=None: {"project": "tb", "runs": [{"metrics": []}]},
+    )
+    monkeypatch.setattr(importers, "chunks_from_transformed_json", lambda payload, **kwargs: [{"chunk_id": "chunk-0"}])
+    monkeypatch.setattr(
+        importers,
+        "upload_chunks",
+        lambda **kwargs: {"job": {"id": 12, "status": "committed"}, "summary": {"runs": 1, "metrics": 0, "artifacts": 0}},
+    )
+    monkeypatch.setattr(cli_module.time, "sleep", lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt()))
+
+    cli_module.cmd_sync(["tensorboard", "runs/tb", "--project", "target", "--watch"])
+
+    assert "TensorBoard watch stopped." in capsys.readouterr().out
+
+
+def test_cmd_import_reports_missing_required_source_arguments(capsys):
+    with pytest.raises(SystemExit) as wandb_exc:
+        cli_module.cmd_import(["wandb", "--project", "target"])
+    assert wandb_exc.value.code == 1
+    assert "W&B direct import requires" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as neptune_exc:
+        cli_module.cmd_import(["neptune", "--project", "target"])
+    assert neptune_exc.value.code == 1
+    assert "requires --input" in capsys.readouterr().err
+
+
+def test_cmd_import_reports_importer_errors(monkeypatch, capsys):
+    from instantml import importers
+
+    def fail_import(**kwargs):
+        raise RuntimeError("source export failed")
+
+    monkeypatch.setattr(importers, "import_transformed_json", fail_import)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli_module.cmd_import(["mlflow", "--project", "target", "--input", "payload.json"])
+
+    assert exc_info.value.code == 1
+    assert "source export failed" in capsys.readouterr().err
+
+
+def test_cmd_sync_reports_importer_errors(monkeypatch, capsys):
+    from instantml import importers
+
+    monkeypatch.setattr(importers, "tensorboard_logdir_payload", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("bad logdir")))
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli_module.cmd_sync(["tensorboard", "runs/tb", "--project", "target"])
+
+    assert exc_info.value.code == 1
+    assert "bad logdir" in capsys.readouterr().err
+
+
+def test_print_import_result_formats_committed_summary(capsys):
+    cli_module._print_import_result(
+        {"job": {"id": 12, "status": "committed", "summary": {"runs": 2, "metrics": 10, "artifacts": 1}}}
+    )
+
+    output = capsys.readouterr().out
+    assert "Import job complete." in output
+    assert "job_id: 12" in output
+    assert "metrics: 10" in output
+
+
+def test_main_dispatches_import_and_sync(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli_module, "cmd_import", lambda rest: calls.append(("import", rest)))
+    monkeypatch.setattr(cli_module, "cmd_sync", lambda rest: calls.append(("sync", rest)))
+
+    cli_module.main(["import", "wandb"])
+    cli_module.main(["sync", "tensorboard"])
+
+    assert calls == [("import", ["wandb"]), ("sync", ["tensorboard"])]
+
+
 # ---------------------------------------------------------------------------
 # Credential resolution order in Client._resolve_api_key
 # ---------------------------------------------------------------------------

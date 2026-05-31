@@ -172,6 +172,41 @@ def test_shadow_queues_log_calls_until_wandb_init_resolves(monkeypatch: pytest.M
     assert fake_run.logs == [({"a": 1.0}, {"step": 1}), ({"b": 2.0}, {"step": 2})]
 
 
+def test_shadow_drops_and_warns_when_init_queue_is_full(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_run = _FakeWandbRun()
+    init_gate = threading.Event()
+    init_release = threading.Event()
+    fake_wandb = MagicMock()
+    fake_wandb.Artifact = _FakeArtifact
+
+    def _init(**kwargs: Any) -> _FakeWandbRun:
+        init_gate.set()
+        assert init_release.wait(timeout=2.0)
+        return fake_run
+
+    fake_wandb.init = _init
+    monkeypatch.setitem(sys.modules, "wandb", fake_wandb)
+    monkeypatch.setattr(shadow, "MAX_SHADOW_QUEUE_EVENTS", 1)
+
+    shim = build_shadow(True, project="p", name=None, config=None, tags=None, notes=None)
+    assert shim is not None
+    assert init_gate.wait(timeout=2.0)
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        shim.log({"first": 1.0}, step=1)
+        shim.log({"second": 2.0}, step=2)
+        shim.log({"third": 3.0}, step=3)
+    assert shim.dropped_events == 2
+    assert sum("queue is full" in str(w.message) for w in captured) == 1
+    init_release.set()
+    assert shim.wait_for_init(timeout=2.0)
+    for _ in range(50):
+        if fake_run.logs:
+            break
+        threading.Event().wait(0.01)
+    assert fake_run.logs == [({"first": 1.0}, {"step": 1})]
+
+
 def test_shadow_warns_and_disables_when_wandb_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
     real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
 
@@ -249,6 +284,28 @@ def test_shadow_log_artifact_file_noop_when_disabled() -> None:
     shim._disabled = True
     shim.log_artifact_file("/nonexistent", name="x")
     assert existing.artifacts == []
+
+
+def test_shadow_log_artifact_file_disables_when_wandb_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "wandb", raising=False)
+    existing = _FakeWandbRun()
+    shim = ShadowWandb(project="p", name=None, config=None, tags=None, notes=None, existing_run=existing)
+
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+
+    def missing_wandb(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "wandb":
+            raise ImportError("no wandb")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", missing_wandb)
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        shim.log_artifact_file("/tmp/model.pt", name="model")
+
+    assert shim.disabled is True
+    assert existing.artifacts == []
+    assert any("artifact logging disabled" in str(w.message) for w in captured)
 
 
 def test_shadow_log_artifact_file_swallows_wandb_failures(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -348,6 +405,20 @@ def test_run_finish_fans_out_to_shadow() -> None:
     run = Run(client=_FakeClient(), run_id="run-1", shadow=shim)
     run.finish(status="finished")
     assert existing.finish_calls == [{"exit_code": 0}]
+
+
+def test_shadow_finish_warns_when_init_does_not_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    existing = _FakeWandbRun()
+    shim = ShadowWandb(project="p", name=None, config=None, tags=None, notes=None, existing_run=existing)
+    monkeypatch.setenv("INSTANTML_SHADOW_WANDB_FINISH_TIMEOUT", "0")
+    shim._init_done.clear()
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        shim.finish("failed")
+
+    assert any("finish skipped" in str(w.message) for w in captured)
+    assert existing.finish_calls == []
 
 
 def test_is_local_file_uri_helpers(tmp_path) -> None:

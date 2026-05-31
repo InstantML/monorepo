@@ -10,6 +10,7 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric and API-request usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, apply plan-aware short-window API rate limits, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready. Browser sessions can also create additional organization workspaces through `POST /api/orgs/current-user`; the bootstrap `POST /api/orgs` route remains operator/admin-only.
 - Support Premium customer-owned GCP ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
+- Accept Import v2 migration jobs for local W&B/Neptune/MLflow/TensorBoard translators. The job API stores redacted canonical chunks, exposes dry-run summaries and warnings, commits only after a final chunk arrives, records external provenance in run metadata, and dedupes already-imported external runs by source/project/run identity.
 - Store raw and versioned artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, opaque R2 references, exact byte counts, hashes, MIME types, aliases, retention/delete state, and lineage edges. Artifact byte downloads always add defensive `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: sandbox` headers because artifact MIME metadata is user-provided.
 - Serve the authoritative run search language for `/runs`, `/api/overview`,
   `/api/runs/summary`, selection projection, and `/api/export`. Bare `q` text
@@ -70,6 +71,44 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
 ```
 
 `worker` prunes expired idempotency keys and expired/revoked browser sessions from the single-process index, then writes immutable `usage_daily` snapshots for each organization. With the ClickHouse-only first slice, cleanup compacts live memory only; durable operational-log compaction is deferred to the hosted storage follow-up.
+
+## Import v2 Migration Jobs
+
+The production migration path is local-translator first: SDK/CLI tools read
+W&B, Neptune Exporter Parquet directories, transformed Neptune/MLflow JSON, or
+TensorBoard event files on the user's machine, redact source payloads, and
+upload canonical chunks to the Rust API. Hosted third-party connectors and
+artifact byte migration remain design-only follow-ups.
+
+Primary endpoints:
+
+- `POST /api/imports/jobs`: create a schema-versioned import job for a source and target project.
+- `GET /api/imports/jobs/:import_id`: read job status, progress, summaries, and warnings.
+- `POST /api/imports/jobs/:import_id/chunks`: append a canonical chunk. Duplicate chunk IDs with the same content hash are idempotent; conflicting duplicates fail with `409`.
+- `POST /api/imports/jobs/:import_id/commit`: commit a final-chunk job into runs, metrics, attributes, and external artifact references.
+- `POST /api/imports/jobs/:import_id/cancel`: cancel a non-terminal job.
+
+Canonical chunk limits are intentionally bounded: 1,000 runs, 50,000 metric
+points, 25,000 attributes, 10,000 artifact references, and 200 warnings per
+chunk. Chunk payload `job_id`, `source_type`, `source_project`, and
+`target_project` must match the job, which keeps retries and path parameters
+authoritative. The server also applies `INSTANTML_MAX_UPLOAD_BODY_BYTES`,
+checks storage capacity before accepting chunk payloads, caps staged payload
+bytes per job, redacts secret-looking keys and bearer/signed-URL text, and
+stores imported artifact references with `storage_backend="external"` so scalar
+metric ingestion stays separate from artifact bytes. Imported external artifact
+references are also mirrored into run-level metadata-only versioned artifact
+bundles/manifests with output lineage edges, so the new Artifacts catalog can
+browse migrated artifact references while legacy raw artifact rows remain
+available to Run Detail and Compare. Failed commits are retryable only when no
+partial imported runs were written; otherwise operators should create a new job
+to avoid duplicating or silently skipping partially written metrics. During
+commit, new imported runs are hidden with
+`metadata.import.complete=false` until their metric, attribute, and artifact
+rows are durable; run APIs and dashboard lists hide those incomplete rows.
+TensorBoard re-syncs append scalar points to an existing complete imported
+TensorBoard run when source identity matches and the original import contained
+no attributes or artifact references.
 
 ## Hosted Cloud Run Deployment
 
@@ -310,7 +349,7 @@ Implemented health and platform endpoints:
 - `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, bootstrap-protected read-only admin overview (`GET /api/admin/overview`), API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, same-project checkpoint forks (`POST /api/runs/:run_id/forks`) and bounded lineage reads (`GET /api/runs/:run_id/lineage`), scalar metrics, per-rank metric ingest and run-scoped rank summaries, typed attributes, rich logged objects, raw artifact metadata/upload/download, versioned artifact collections/manifests/aliases/retention/delete/input-output edges/upload sessions/lineage, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, bootstrap-protected read-only admin overview (`GET /api/admin/overview`), API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, same-project checkpoint forks (`POST /api/runs/:run_id/forks`) and bounded lineage reads (`GET /api/runs/:run_id/lineage`), scalar metrics, per-rank metric ingest and run-scoped rank summaries, typed attributes, rich logged objects, raw artifact metadata/upload/download, versioned artifact collections/manifests/aliases/retention/delete/input-output edges/upload sessions/lineage, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports plus Import v2 job/chunk/commit migration routes, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
 Run-summary pages default to 100 rows and are capped at 1,000 rows. Bulk UI
 selection should use `GET /api/runs/summary?projection=selection`, which skips
@@ -477,7 +516,7 @@ Coverage exception (multi-writer):
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, same-project fork lineage, scalar metric writes, and metric read endpoints.
 - `src/store/objects.rs`: typed attributes, rich objects, table rows, raw artifacts, and raw artifact metadata writes after local/R2 byte preflight.
 - `src/store/artifact_versions.rs`: versioned artifact collections, manifests, upload-session commit flow, aliases, retention/delete state, manifest downloads, and run/artifact lineage edges.
-- `src/store/imports.rs`: Neptune, W&B, and MLflow import normalization and import records.
+- `src/store/imports.rs`: Neptune, W&B, MLflow, and TensorBoard import normalization plus Import v2 job/chunk state, canonical chunk validation, redaction, provenance, and commit logic.
 - `src/store/export.rs`: side-by-side comparison and bounded JSON export.
 - `src/store/usage.rs`: usage summaries, UTC calendar-month metric periods, daily snapshots, and worker cleanup helpers.
 - `src/store/demo.rs`: demo project reset and synthetic data generation.
@@ -515,6 +554,7 @@ Coverage exception (multi-writer):
 - `docs/design/2026-05-21-rust-server-observability.md`
 - `docs/design/2026-05-30-artifact-lineage-parity.md`
 - `docs/design/2026-05-26-organization-workspace-selector.md`
+- `docs/design/2026-05-30-adoption-imports-integrations.md`
 
 ## Adding a new endpoint (utoipa + codegen pipeline)
 

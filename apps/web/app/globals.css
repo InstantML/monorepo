@@ -17,6 +17,7 @@
  *   run-detail.css      — run detail, KPIs, inspector, evidence, timeline
  *   compare.css         — compare view, leaderboard, evidence cells
  *   research.css        — Distributed and Insights dashboard panels
+ *   imports.css         — imports and integrations workflow
  *   dark-overrides.css  — dark-theme overrides (Phase 3: dissolve into each file)
  *   overhaul.css        — visual overhaul layers 2026-05-15 (Phase 3: merge into files)
  *   mobile.css          — mobile redesign (≤720px)
@@ -36,6 +37,7 @@
 @import "./styles/run-detail.css";
 @import "./styles/compare.css";
 @import "./styles/research.css";
+@import "./styles/imports.css";
 @import "./styles/dark-overrides.css";
 @import "./styles/overhaul.css";
 @import "./styles/mobile.css";

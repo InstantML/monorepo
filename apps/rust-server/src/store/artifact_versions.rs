@@ -830,12 +830,18 @@ pub async fn list_artifact_collections(
     )? as usize;
     let offset = validate_offset(query.get("offset").map(String::as_str))? as usize;
     let project_filter = query.get("project").map(String::as_str);
+    let restricted_project_id = ctx.auth.as_ref().and_then(|auth| auth.project_id);
     let type_filter = query.get("type").map(String::as_str);
     let q = query.get("q").map(|value| value.to_ascii_lowercase());
     let mut rows = data
         .artifact_collections
         .values()
         .filter(|collection| collection.org_id == ctx.org_id && collection.deleted_at.is_none())
+        .filter(|collection| {
+            restricted_project_id
+                .map(|project_id| collection.project_id == project_id)
+                .unwrap_or(true)
+        })
         .filter(|collection| {
             project_filter
                 .map(|project| collection.project == project)

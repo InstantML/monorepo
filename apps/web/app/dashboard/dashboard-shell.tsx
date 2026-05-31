@@ -27,6 +27,7 @@ import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
+import { ImportsTabPane } from "./imports/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
 import { CheckpointsTabPane } from "./checkpoints/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
@@ -506,6 +507,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [newApiKey, setNewApiKey] = useState("");
   const [adminBusy, setAdminBusy] = useState(false);
 
+  const hasSeriesRef = useRef(false);
+  const hasPanelSeriesRef = useRef(false);
+  const hasWorkspaceSeriesRef = useRef(false);
   const summaryMatchesProject = !project || summary.runs.every((run) => run.project === project);
   // Key the metric option list on its content, not on `summary` identity.
   // Otherwise every pagination produces a new array reference even when the
@@ -558,6 +562,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [activeTab, metricSeriesRuns, primaryRun?.id]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
+  useEffect(() => {
+    hasSeriesRef.current = series.length > 0;
+    hasPanelSeriesRef.current = Object.keys(panelSeries).length > 0;
+    hasWorkspaceSeriesRef.current = Object.keys(workspaceSeries).length > 0;
+  }, [panelSeries, series, workspaceSeries]);
   useEffect(() => {
     // Remember runs after commit so interrupted renders do not mutate the
     // directory. This keeps off-page selected runs resolvable without making
@@ -1434,7 +1443,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     if (project && !summaryMatchesProject) {
       setWorkspaceReady(false);
-      setWorkspaceSeries({});
+      if (hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
       return;
     }
     let raw = safeSavedView(localStorage.getItem(scopedWorkspaceStorageKey));
@@ -1451,7 +1460,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     setWorkspaceView(sanitizeWorkspaceView(raw, actualMetricOptions, project));
     setWorkspaceReady(Boolean(raw) || actualMetricOptions.length > 0);
-    setWorkspaceSeries({});
+    if (hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
     setAddPanelSectionId("");
     setEditingPanelRef(null);
     setFullscreenPanelRef(null);
@@ -1505,6 +1514,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (hoverFrameRef.current !== null) window.cancelAnimationFrame(hoverFrameRef.current);
   }, []);
 
+  // This effect owns selectedRunDetails hydration. Key it on the selection and
+  // current page data, not selectedRunDetails itself, so pruning/replacing page
+  // detail objects cannot schedule a render loop.
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -1554,7 +1566,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [api, primaryRunId, referenceRunId, selectedRunDetails, selectedRunIds, sortedRuns]);
+  }, [api, primaryRunId, referenceRunId, selectedRunIds, sortedRuns]);
 
   useEffect(() => {
     if (preserveRunWorkspaceTabOnceRef.current) {
@@ -1580,13 +1592,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
       const runsForFetch = seriesFetchRuns;
       if (!shouldLoad || !metricKey || !runsForFetch.length) {
-        setSeries([]);
+        if (hasSeriesRef.current) setSeries([]);
         return;
       }
       // Live refreshes (only the tick changed) keep the current curve on screen
       // and swap in the new points atomically; selection/metric changes clear
       // first and stream chunks for responsiveness.
-      if (!isLiveRefresh) setSeries([]);
+      if (!isLiveRefresh && hasSeriesRef.current) setSeries([]);
       const metricPayloads = await fetchBatchedMetricSeries(api, metricKey, runsForFetch, controller.signal, isLiveRefresh ? undefined : (patch) => {
         if (!cancelled) setSeries(patch);
       });
@@ -1612,10 +1624,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const metricsToLoad = pinnedMetrics.filter((metric) => metric && metric !== metricKey);
       const runsForFetch = metricSeriesRuns;
       if (activeTab !== "metrics" || !metricsToLoad.length || !runsForFetch.length) {
-        setPanelSeries({});
+        if (hasPanelSeriesRef.current) setPanelSeries({});
         return;
       }
-      if (!isLiveRefresh) setPanelSeries({});
+      if (!isLiveRefresh && hasPanelSeriesRef.current) setPanelSeries({});
       const next = await fetchMetricSeriesForMetrics(api, metricsToLoad, runsForFetch, controller.signal, (metric, patch) => {
         if (!cancelled && !isLiveRefresh) setPanelSeries((current) => ({ ...current, [metric]: patch }));
       });
@@ -1638,10 +1650,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     workspaceSeriesSignatureRef.current = signature;
     async function loadWorkspaceSeries() {
       if (activeTab !== "runs" || !workspacePanelMetrics.length || !workspaceFetchRuns.length) {
-        setWorkspaceSeries({});
+        if (hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
         return;
       }
-      if (!isLiveRefresh) setWorkspaceSeries({});
+      if (!isLiveRefresh && hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
       const next = await fetchMetricSeriesForMetrics(api, workspacePanelMetrics, workspaceFetchRuns, controller.signal, (metric, patch) => {
         if (!cancelled && !isLiveRefresh) setWorkspaceSeries((current) => ({ ...current, [metric]: patch }));
       });
@@ -3299,6 +3311,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               selectedRunIds={selectedRunIds}
               sortedRuns={sortedRuns}
             />
+          ) : null}
+        </section>
+
+        <section className={`tab-pane ${activeTab === "imports" ? "active" : ""}`} aria-label="Imports">
+          {activeTab === "imports" ? (
+            <ImportsTabPane api={api} project={project} />
           ) : null}
         </section>
 

@@ -28,11 +28,16 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 - Artifact collections/detail/lineage workspace plus the legacy raw artifact browser.
 - Rollout gallery.
 - Checkpoint timeline.
-- Import workflow UI when needed.
+- Imports and integrations workspace for adoption: copy-ready W&B/Neptune/TensorBoard/MLflow CLI commands, Import v2 dry-run status, schema mapping, polling job visibility, warning previews, commit/cancel actions, dual-logging guidance, and framework adapter snippets.
 
 Current navigation, workspace, and comparison controls:
 
-- Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Run Detail`, `Compare`, `Insights`, `Alerts`, `Datasets`, `Artifacts`, `Checkpoints`, `Reports`, `Settings`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
+- Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Run Detail`, `Compare`, `Insights`, `Alerts`, `Datasets`, `Imports`, `Artifacts`, `Checkpoints`, `Reports`, `Settings`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room.
+- Imports at `/dashboard/imports` is CLI-first. It does not ask users to paste third-party credentials into the browser. The tab renders source-specific import/sync commands, a sample dry-run action against the Import v2 job API, source-to-InstantML schema mapping, privacy posture, polling recent import jobs, warning previews, dry-run commit/cancel controls, W&B dual-logging guidance, and polished HF/Lightning/Keras adapter snippets. Browser upload remains limited to canonical chunk demonstrations and should not become the primary path for large source exports.
+- Copyable import commands are dry-run-first and shell-quote workspace, project,
+  path, entity, and source-project values before rendering. TensorBoard
+  watch/sync examples stay in the SDK docs; the dashboard copy action favors a
+  one-shot dry-run command so users review the Import v2 summary before commit.
 - Reports is a persisted document workspace backed by `/api/reports`: the dashboard tab lists org reports, opens each report at `/dashboard/reports/:report_id` in a Notion-style block editor so reloads and direct links preserve context, auto-saves the first and later edits, flushes pending edits before share/export actions, and supports public read-only share links at `/r/:share_token`.
 - The top-right account/workspace menu is the primary organization selector. Its trigger shows the current workspace next to the account avatar, the menu searches all active memberships, groups personal and business workspaces, shows role/plan/member metadata, launches create-workspace, and links to settings, billing, and sign out. The left brandbar workspace text is passive context only.
 - Create-workspace keeps organization/workspace as the same backend entity. Free workspaces can invite teammates inline; paid workspaces defer invitations until after Stripe Checkout so unpaid orgs stay billing-blocked.
@@ -77,7 +82,7 @@ Current navigation, workspace, and comparison controls:
 - Inspect selected runs through a detail dossier with a per-run metric chart, timeline, reproducibility fields, metric aggregate table, source metadata, config, tags, and artifact preview/copy actions.
 - Save dashboard project preference and named workspace views through the Rust control-plane API, with validated `localStorage` fallback when the API is unavailable during local development. Project preference loading gates the initial runs query so the first dashboard read does not fetch all projects and then immediately refetch the preferred project. Local saved views and workspace layouts are scoped by active org, user email, and project; old org-only and project-only local keys are copied into the scoped key on first authenticated load so existing browser layouts remain visible.
 - Compare selected runs in either a column-oriented matrix or row-oriented run scan mode. Compare includes diff-only mode, row search, row sorting, addable metric columns, clickable sorting for run/metric/annotation/artifact/config columns, run sorting by name/status/duration/tags/notes/config/artifact/metric values, reference highlighting, saved-view persistence, visible tags/notes, and a 50-run cap that matches the current Rust side-by-side endpoint.
-- Browse versioned artifact collections in the `Artifacts` tab with collection search/type filters, version summaries, manifest downloads, bounded lineage, and owner/admin management controls for `best`, retention, and soft delete. Legacy raw run artifacts remain visible in a separate panel for existing media, rich-object, checkpoint, and importer workflows. Run Detail and Compare render only safe same-origin media previews from an explicit PNG/JPEG/WebP/GIF, MP3/WAV/AAC/M4A, and MP4/WebM/MOV allowlist when stored bytes are available, including R2-backed hosted artifacts served through `/api/artifacts/:id/download`; SVG/HTML and unsupported or external-reference artifacts fall back to copy-only/unavailable actions. Raw artifact URIs are redacted in the UI so object-storage URLs, signed query strings, and bucket paths do not leak.
+- Browse versioned artifact collections in the `Artifacts` tab with collection search/type filters, version summaries, manifest downloads, bounded lineage, and owner/admin management controls for `best`, retention, and soft delete. Legacy raw run artifacts remain visible in a separate panel for existing media, rich-object, checkpoint, and importer workflows; imported external artifact references are also mirrored into run-level metadata-only versioned bundles so migrated W&B/Neptune/MLflow runs appear in catalog lineage without byte migration. Run Detail and Compare render only safe same-origin media previews from an explicit PNG/JPEG/WebP/GIF, MP3/WAV/AAC/M4A, and MP4/WebM/MOV allowlist when stored bytes are available, including R2-backed hosted artifacts served through `/api/artifacts/:id/download`; SVG/HTML and unsupported or external-reference artifacts fall back to copy-only/unavailable actions. Raw artifact URIs are redacted in the UI so object-storage URLs, signed query strings, and bucket paths do not leak.
 - Browse active-run rich logged objects in Run Detail and Artifacts. The first slice renders table previews, histogram bars, and media cards from `GET /api/runs/:id/objects` plus bounded `GET /api/objects/:id/rows` table reads. Hidden tabs do not fetch object manifests, and Compare keeps using existing artifact context to avoid extra selected-run fan-out.
 - Address tabs through real routes such as `/dashboard/runs`, `/dashboard/alerts`, and `/dashboard/api`; legacy hashes such as `#runs` normalize to the matching dashboard route.
 - Derived workspace tabs use current summaries, selected-run artifacts, local saved views, and documented API routes. They do not yet imply persistent alert or dataset registry storage; Reports is the exception and uses the persisted `/api/reports` surface.
@@ -351,6 +356,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/dashboard-models.ts`
 - `app/dashboard-types.ts`
 - `app/globals.css` — thin `@import` chain; all rules live in `app/styles/`. See below.
+- `app/dashboard/imports/tab-pane.tsx` — Imports and integrations tab body.
 - `app/styles/tokens.css` — brand primitives + light/dark design tokens (`:root`)
 - `app/styles/base.css` — global reset, typography, button defaults
 - `app/styles/landing.css` — marketing page + auth card surfaces (`.landing-*`, `.auth-*`)
@@ -359,6 +365,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/styles/panels.css` — workspace panels, canvas, sections, modals
 - `app/styles/charts.css` — metric charts, axes, series, range, tooltip
 - `app/styles/research.css` — Distributed and Insights dashboard surfaces
+- `app/styles/imports.css` — imports workspace styling
 - `app/styles/run-detail.css` — run detail, KPIs, inspector, evidence, timeline
 - `app/styles/compare.css` — compare view, leaderboard, evidence cells
 - `app/styles/dark-overrides.css` — dark-theme overrides (Phase 3 target: dissolve into each file)
@@ -408,6 +415,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`
 - `docs/design/2026-05-16-auto-personal-workspace.md`
 - `docs/design/2026-05-17-dashboard-reliability-control-views.md`
+- `docs/design/2026-05-30-adoption-imports-integrations.md`
 - `docs/product/pricing-and-margins.md`
 - `apps/web/TODO.md` tracks W&B keyboard-shortcut and app-interaction parity gaps by priority.
 

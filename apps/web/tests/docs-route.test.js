@@ -13,6 +13,7 @@ import {
   loadDocsMarkdownIndex,
   loadDocsPage,
   mapDocsAssetSrc,
+  pagePathToTitle,
   parseDocsMdx,
 } from "../src/docs.js";
 
@@ -127,6 +128,11 @@ test("docs links and assets are mapped to same-origin /docs URLs", () => {
   assert.equal(mapDocsAssetSrc("/images/product/dashboard-runs.png"), "/docs/assets/images/product/dashboard-runs.png");
 });
 
+test("docs navigation title overrides preserve source branding", () => {
+  assert.equal(pagePathToTitle("guides/wandb-neptune-imports"), "W&B and Neptune imports");
+  assert.equal(pagePathToTitle("guides/export-usage-limits"), "Export Usage Limits");
+});
+
 test("docs parser extracts frontmatter, headings, images, cards, and code", () => {
   const parsed = parseDocsMdx(`---
 title: "Example Page"
@@ -218,11 +224,22 @@ test("dashboard workflow docs expose product screenshots through the route parse
   const artifactImages = artifacts.blocks.filter((block) => block.type === "image").map((block) => block.src);
   assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-evidence.png"));
   assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-browser.png"));
+  assert.ok(artifactImages.includes("/images/product/dashboard-checkpoint-fork.png"));
+  assert.ok(artifactImages.includes("/images/product/dashboard-checkpoints.png"));
 
   const tour = await loadDocsPage(["dashboard", "tour"]);
   const tourImages = tour.blocks.filter((block) => block.type === "image").map((block) => block.src);
   assert.ok(tourImages.includes("/images/product/dashboard-artifacts-browser.png"));
   assert.ok(tourImages.includes("/images/product/dashboard-reports-editor.png"));
+});
+
+test("import docs describe metadata-only artifact bundles", async () => {
+  const importsGuide = await loadDocsMarkdown(["guides", "imports.md"]);
+  assert.match(importsGuide.markdown, /run-level,\s+metadata-only external\s+manifest bundles/);
+  assert.match(importsGuide.markdown, /downloads stay unavailable until you upload the actual bytes/);
+
+  const importApi = await loadDocsMarkdown(["api", "import-export-usage.md"]);
+  assert.match(importApi.markdown, /run-level metadata-only versioned artifact bundles/);
 });
 
 test("docs markdown loader mirrors pages and agent indexes", async () => {
