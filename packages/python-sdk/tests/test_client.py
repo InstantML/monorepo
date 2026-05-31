@@ -9,6 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 from io import BytesIO
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -372,6 +373,893 @@ def test_run_artifact_helpers_call_expected_endpoint(monkeypatch):
             },
         ),
     ]
+
+
+def test_run_log_versioned_artifact_uses_manifest_upload_session(monkeypatch, tmp_path):
+    calls = []
+    uploads = []
+    source = tmp_path / "weights.bin"
+    source.write_bytes(b"weights")
+
+    def fake_put(url, payload, timeout):
+        uploads.append((url, payload, timeout))
+        return "etag-1"
+
+    monkeypatch.setattr(client_module, "_put_presigned_url", fake_put)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 7
+        api_key = "secret"
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            if path == "/api/runs/run-1/artifact-uploads":
+                return {
+                    "upload_session": {"id": "session-1", "artifact_version_id": "version-1"},
+                    "files": [
+                        {
+                            "entry_id": body["manifest"]["entries"][0].get("entry_id", "entry-1"),
+                            "path": "weights.bin",
+                            "upload_kind": "put",
+                            "part_size_bytes": 7,
+                            "part_count": 1,
+                            "parts": [{"part_number": 1, "url": "https://upload.test/weights"}],
+                        }
+                    ],
+                }
+            if path == "/api/artifact-uploads/session-1/complete":
+                return {
+                    "artifact_version": {
+                        "id": "version-1",
+                        "collection_id": "collection-1",
+                        "name": "policy",
+                        "version": "v0",
+                        "aliases": ["latest", "best"],
+                    }
+                }
+            raise AssertionError(path)
+
+    artifact = ro.VersionedArtifact(
+        "policy",
+        type="model",
+        aliases=["best"],
+        metadata={"framework": "torch"},
+    ).add_file(source)
+
+    logged = Run(client=FakeClient(), run_id="run-1").log_artifact(artifact, step=12)
+
+    assert isinstance(logged, ro.LoggedArtifact)
+    assert logged.id == "version-1"
+    assert calls[0][0] == "POST"
+    assert calls[0][1] == "/api/runs/run-1/artifact-uploads"
+    assert calls[0][2]["collection"] == {
+        "name": "policy",
+        "type": "model",
+        "description": None,
+        "metadata": {"framework": "torch"},
+    }
+    assert calls[0][2]["aliases"] == ["best"]
+    assert calls[0][2]["source_step"] == 12
+    assert calls[0][2]["manifest"]["entries"][0]["path"] == "weights.bin"
+    assert calls[0][2]["manifest"]["entries"][0]["size_bytes"] == 7
+    assert calls[0][3].startswith("instantml-artifact-")
+    assert uploads == [("https://upload.test/weights", b"weights", 7)]
+    assert calls[1][:3] == (
+        "POST",
+        "/api/artifact-uploads/session-1/complete",
+        {"files": [{"entry_id": "entry-1"}]},
+    )
+    assert calls[1][3].startswith("instantml-artifact-")
+
+
+def test_run_log_versioned_artifact_returns_deduplicated_version_without_upload(monkeypatch, tmp_path):
+    source = tmp_path / "weights.bin"
+    source.write_bytes(b"weights")
+    uploads = []
+
+    monkeypatch.setattr(client_module, "_put_presigned_url", lambda *args: uploads.append(args))
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 7
+        api_key = "secret"
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            assert path == "/api/runs/run-1/artifact-uploads"
+            return {
+                "deduplicated": True,
+                "artifact_version": {
+                    "id": "version-existing",
+                    "collection_id": "collection-1",
+                    "name": "policy",
+                    "version": "v3",
+                    "aliases": ["best", "latest"],
+                },
+            }
+
+    logged = Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(
+        ro.VersionedArtifact("policy").add_file(source),
+        aliases=["best"],
+    )
+
+    assert logged.id == "version-existing"
+    assert logged.aliases == ["best", "latest"]
+    assert uploads == []
+
+
+def test_run_log_versioned_artifact_renews_multipart_urls(monkeypatch, tmp_path):
+    calls = []
+    uploads = []
+    source = tmp_path / "weights.bin"
+    source.write_bytes(b"abcdefghi")
+
+    def fake_put(url, payload, timeout):
+        uploads.append((url, payload, timeout))
+        return f"etag-{len(uploads)}"
+
+    monkeypatch.setattr(client_module, "_put_presigned_url", fake_put)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 7
+        api_key = "secret"
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            if path == "/api/runs/run-1/artifact-uploads":
+                return {
+                    "upload_session": {"id": "session-1"},
+                    "files": [
+                        {
+                            "entry_id": "entry-1",
+                            "path": "weights.bin",
+                            "upload_kind": "multipart",
+                            "part_size_bytes": 3,
+                            "part_count": 3,
+                            "parts": [{"part_number": 1, "url": "https://upload.test/part-1"}],
+                        }
+                    ],
+                }
+            if path == "/api/artifact-uploads/session-1/renew":
+                return {
+                    "parts": [
+                        {"part_number": 2, "url": "https://upload.test/part-2"},
+                        {"part_number": 3, "url": "https://upload.test/part-3"},
+                    ]
+                }
+            if path == "/api/artifact-uploads/session-1/complete":
+                return {"artifact_version": {"id": "version-1", "name": "policy", "version": "v0"}}
+            raise AssertionError(path)
+
+    logged = Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(
+        ro.VersionedArtifact("policy").add_file(source)
+    )
+
+    assert logged.id == "version-1"
+    assert uploads == [
+        ("https://upload.test/part-1", b"abc", 7),
+        ("https://upload.test/part-2", b"def", 7),
+        ("https://upload.test/part-3", b"ghi", 7),
+    ]
+    assert calls[1] == (
+        "POST",
+        "/api/artifact-uploads/session-1/renew",
+        {"entry_id": "entry-1", "start_part_number": 2, "part_count": 2},
+        None,
+    )
+    assert calls[2][:3] == (
+        "POST",
+        "/api/artifact-uploads/session-1/complete",
+        {
+            "files": [
+                {
+                    "entry_id": "entry-1",
+                    "parts": [
+                        {"part_number": 1, "etag": "etag-1"},
+                        {"part_number": 2, "etag": "etag-2"},
+                        {"part_number": 3, "etag": "etag-3"},
+                    ],
+                }
+            ]
+        },
+    )
+    assert calls[2][3].startswith("instantml-artifact-")
+
+
+def test_run_log_versioned_artifact_inline_complete_and_path_validation(tmp_path):
+    calls = []
+    source = tmp_path / "config.json"
+    source.write_text("{}", encoding="utf-8")
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 7
+        api_key = None
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            if path.endswith("/artifact-uploads"):
+                return {
+                    "upload_session": {"id": "session-inline"},
+                    "files": [
+                        {
+                            "entry_id": "entry-inline",
+                            "upload_kind": "inline",
+                            "part_size_bytes": 2,
+                            "part_count": 1,
+                            "parts": [],
+                        }
+                    ],
+                }
+            return {
+                "artifact_version": {
+                    "id": "version-inline",
+                    "collection_id": "collection-inline",
+                    "name": "dataset",
+                    "version": "v0",
+                    "aliases": ["latest"],
+                }
+            }
+
+    logged = Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(
+        ro.VersionedArtifact("dataset", type="dataset", files={"nested/config.json": source})
+    )
+
+    assert logged.version == "v0"
+    assert calls[1][2] == {"files": [{"entry_id": "entry-inline", "content_base64": "e30="}]}
+    with pytest.raises(ValueError, match="cannot contain"):
+        Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad", files={"../secret.json": source}))
+
+
+def test_versioned_artifact_constructor_and_file_validation(tmp_path):
+    source = tmp_path / "weights.bin"
+    source.write_bytes(b"weights")
+
+    with pytest.raises(ValueError, match="artifact name"):
+        ro.VersionedArtifact(" ")
+    with pytest.raises(ValueError, match="artifact type"):
+        ro.VersionedArtifact("weights", type=" ")
+
+    listed = ro.VersionedArtifact("weights", files=[source])
+    assert listed.files == [{"path": str(source), "name": "weights.bin"}]
+
+    with pytest.raises(ValueError, match="file name"):
+        ro.VersionedArtifact("weights").add_file("")
+
+
+def test_versioned_artifact_helper_validation_errors(tmp_path):
+    source = tmp_path / "weights.bin"
+    source.write_bytes(b"weights")
+    other = tmp_path / "other.bin"
+    other.write_bytes(b"other")
+
+    with pytest.raises(TypeError, match="must be a string"):
+        client_module._validate_artifact_manifest_path(123)
+    with pytest.raises(ValueError, match="non-empty"):
+        client_module._validate_artifact_manifest_path(" ")
+    with pytest.raises(ValueError, match="relative"):
+        client_module._validate_artifact_manifest_path("/absolute.bin")
+    with pytest.raises(ValueError, match="relative"):
+        client_module._validate_artifact_manifest_path("nested\\bad.bin")
+    with pytest.raises(ValueError, match="at least one file"):
+        client_module._prepare_versioned_artifact_files(ro.VersionedArtifact("empty"))
+    with pytest.raises(InstantMLError, match="does not exist"):
+        client_module._prepare_versioned_artifact_files(ro.VersionedArtifact("missing").add_file(tmp_path / "missing.bin"))
+    with pytest.raises(ValueError, match="duplicate"):
+        client_module._prepare_versioned_artifact_files(
+            ro.VersionedArtifact("dupe").add_file(source, name="dup.bin").add_file(other, name="dup.bin")
+        )
+
+
+def test_versioned_artifact_upload_helpers_cover_multipart_and_errors(monkeypatch, tmp_path):
+    source = tmp_path / "payload.bin"
+    source.write_bytes(b"abcdef")
+    uploads = []
+
+    def fake_put(url, payload, timeout):
+        uploads.append((url, payload, timeout))
+        return f"etag-{len(uploads)}"
+
+    monkeypatch.setattr(client_module, "_put_presigned_url", fake_put)
+
+    completed = client_module._upload_versioned_artifact_file(
+        source,
+        {
+            "entry_id": "entry-1",
+            "upload_kind": "multipart",
+            "part_size_bytes": 3,
+            "part_count": 2,
+            "parts": [
+                {"part_number": 2, "url": "https://upload.test/part-2"},
+                {"part_number": 1, "url": "https://upload.test/part-1"},
+            ],
+        },
+        timeout=9,
+    )
+
+    assert completed == {
+        "entry_id": "entry-1",
+        "parts": [{"part_number": 1, "etag": "etag-1"}, {"part_number": 2, "etag": "etag-2"}],
+    }
+    assert uploads == [
+        ("https://upload.test/part-1", b"abc", 9),
+        ("https://upload.test/part-2", b"def", 9),
+    ]
+
+    uploads.clear()
+    source.write_bytes(b"abcdefghijkl")
+    renew_calls = []
+
+    def renew_parts(entry_id, start_part_number, part_count):
+        renew_calls.append((entry_id, start_part_number, part_count))
+        return [
+            {"part_number": 3, "url": "https://upload.test/part-3"},
+            {"part_number": 4, "url": "https://upload.test/part-4"},
+        ]
+
+    completed = client_module._upload_versioned_artifact_file(
+        source,
+        {
+            "entry_id": "entry-1",
+            "upload_kind": "multipart",
+            "part_size_bytes": 3,
+            "part_count": 4,
+            "parts": [
+                {"part_number": 1, "url": "https://upload.test/part-1"},
+                {"part_number": 2, "url": "https://upload.test/part-2"},
+            ],
+        },
+        timeout=9,
+        renew_parts=renew_parts,
+    )
+    assert completed == {
+        "entry_id": "entry-1",
+        "parts": [
+            {"part_number": 1, "etag": "etag-1"},
+            {"part_number": 2, "etag": "etag-2"},
+            {"part_number": 3, "etag": "etag-3"},
+            {"part_number": 4, "etag": "etag-4"},
+        ],
+    }
+    assert renew_calls == [("entry-1", 3, 2)]
+    assert uploads == [
+        ("https://upload.test/part-1", b"abc", 9),
+        ("https://upload.test/part-2", b"def", 9),
+        ("https://upload.test/part-3", b"ghi", 9),
+        ("https://upload.test/part-4", b"jkl", 9),
+    ]
+
+    uploads.clear()
+    renew_calls.clear()
+
+    def renew_expired_parts(entry_id, start_part_number, part_count):
+        renew_calls.append((entry_id, start_part_number, part_count))
+        return [
+            {"part_number": part_number, "url": f"https://upload.test/fresh-{part_number}", "expires_at": "2999-01-01T00:00:00Z"}
+            for part_number in range(start_part_number, start_part_number + part_count)
+        ]
+
+    completed = client_module._upload_versioned_artifact_file(
+        source,
+        {
+            "entry_id": "entry-1",
+            "upload_kind": "multipart",
+            "part_size_bytes": 3,
+            "part_count": 4,
+            "parts": [
+                {"part_number": 1, "url": "https://upload.test/expired-1", "expires_at": "2000-01-01T00:00:00Z"},
+                {"part_number": 2, "url": "https://upload.test/expired-2", "expires_at": "2000-01-01T00:00:00Z"},
+            ],
+        },
+        timeout=9,
+        renew_parts=renew_expired_parts,
+    )
+    assert completed["parts"][0]["part_number"] == 1
+    assert renew_calls == [("entry-1", 1, 4)]
+    assert uploads == [
+        ("https://upload.test/fresh-1", b"abc", 9),
+        ("https://upload.test/fresh-2", b"def", 9),
+        ("https://upload.test/fresh-3", b"ghi", 9),
+        ("https://upload.test/fresh-4", b"jkl", 9),
+    ]
+
+    with pytest.raises(InstantMLError, match="upload URLs"):
+        client_module._upload_versioned_artifact_file(source, {"entry_id": "entry-1", "upload_kind": "put", "parts": []}, 1)
+    with pytest.raises(InstantMLError, match="expired before upload"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "put",
+                "parts": [{"part_number": 1, "url": "https://upload.test/expired", "expires_at": "2000-01-01T00:00:00Z"}],
+            },
+            1,
+        )
+    with pytest.raises(InstantMLError, match="did not renew artifact upload URL"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "put",
+                "parts": [{"part_number": 1, "url": "https://upload.test/expired", "expires_at": "2000-01-01T00:00:00Z"}],
+            },
+            1,
+            renew_parts=lambda entry_id, start, count: [],
+        )
+    with pytest.raises(InstantMLError, match="expired artifact upload URL"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "put",
+                "parts": [{"part_number": 1, "url": "https://upload.test/expired", "expires_at": "2000-01-01T00:00:00Z"}],
+            },
+            1,
+            renew_parts=lambda entry_id, start, count: [
+                {"part_number": 1, "url": "https://upload.test/still-expired", "expires_at": "2000-01-01T00:00:00Z"}
+            ],
+        )
+    with pytest.raises(InstantMLError, match="unsupported"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {"entry_id": "entry-1", "upload_kind": "other", "parts": [{"url": "https://upload.test"}]},
+            1,
+        )
+    with pytest.raises(InstantMLError, match="multipart size"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {"entry_id": "entry-1", "upload_kind": "multipart", "part_size_bytes": 0, "parts": [{"url": "https://upload.test"}]},
+            1,
+        )
+    with pytest.raises(InstantMLError, match="part count"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "multipart",
+                "part_size_bytes": 3,
+                "part_count": "0",
+                "parts": [{"part_number": 1, "url": "https://upload.test"}],
+            },
+            1,
+        )
+    with pytest.raises(InstantMLError, match="enough"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "multipart",
+                "part_size_bytes": 3,
+                "part_count": 3,
+                "parts": [{"part_number": 1, "url": "https://upload.test/part-1"}],
+            },
+            1,
+        )
+    with pytest.raises(InstantMLError, match="renew artifact multipart"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "multipart",
+                "part_size_bytes": 3,
+                "part_count": 2,
+                "parts": [{"part_number": 1, "url": "https://upload.test/part-1"}],
+            },
+            1,
+            renew_parts=lambda entry_id, start, count: [],
+        )
+    with pytest.raises(InstantMLError, match="requested"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "multipart",
+                "part_size_bytes": 3,
+                "part_count": 2,
+                "parts": [{"part_number": 1, "url": "https://upload.test/part-1"}],
+            },
+            1,
+            renew_parts=lambda entry_id, start, count: [{"part_number": 3, "url": "https://upload.test/part-3"}],
+        )
+    with pytest.raises(InstantMLError, match="expired artifact multipart"):
+        client_module._upload_versioned_artifact_file(
+            source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "multipart",
+                "part_size_bytes": 3,
+                "part_count": 1,
+                "parts": [{"part_number": 1, "url": "https://upload.test/expired", "expires_at": "2000-01-01T00:00:00Z"}],
+            },
+            1,
+            renew_parts=lambda entry_id, start, count: [
+                {"part_number": 1, "url": "https://upload.test/still-expired", "expires_at": "2000-01-01T00:00:00Z"}
+            ],
+        )
+    assert client_module._artifact_part_expires_soon({"expires_at": "not-a-date"})
+    assert not client_module._artifact_part_expires_soon({"expires_at": "2999-01-01T00:00:00"})
+    short_source = tmp_path / "short.bin"
+    short_source.write_bytes(b"abcdef")
+    with pytest.raises(InstantMLError, match="ended"):
+        client_module._upload_versioned_artifact_file(
+            short_source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "multipart",
+                "part_size_bytes": 3,
+                "part_count": 3,
+                "parts": [
+                    {"part_number": 1, "url": "https://upload.test/part-1"},
+                    {"part_number": 2, "url": "https://upload.test/part-2"},
+                    {"part_number": 3, "url": "https://upload.test/part-3"},
+                ],
+            },
+            1,
+        )
+    long_source = tmp_path / "long.bin"
+    long_source.write_bytes(b"abcdefg")
+    with pytest.raises(InstantMLError, match="changed"):
+        client_module._upload_versioned_artifact_file(
+            long_source,
+            {
+                "entry_id": "entry-1",
+                "upload_kind": "multipart",
+                "part_size_bytes": 3,
+                "part_count": 2,
+                "parts": [
+                    {"part_number": 1, "url": "https://upload.test/part-1"},
+                    {"part_number": 2, "url": "https://upload.test/part-2"},
+                ],
+            },
+            1,
+        )
+
+
+def test_put_presigned_url_success_and_error_redaction(monkeypatch):
+    class FakeResponse:
+        headers = {"ETag": '"etag-success"'}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return b""
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: FakeResponse())
+    assert client_module._put_presigned_url("https://upload.test/ok", b"payload", 2) == "etag-success"
+
+    with pytest.raises(InstantMLError, match="URL is missing"):
+        client_module._put_presigned_url("", b"payload", 2)
+
+    def raise_http(request, timeout):
+        raise urllib.error.HTTPError("https://upload.test/secret?token=x", 500, "boom", {}, BytesIO(b"bad"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_http)
+    with pytest.raises(InstantMLError, match="artifact upload PUT failed"):
+        client_module._put_presigned_url("https://upload.test/secret?token=x", b"payload", 2)
+
+    def raise_url(request, timeout):
+        raise urllib.error.URLError("offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_url)
+    with pytest.raises(InstantMLError, match="offline"):
+        client_module._put_presigned_url("https://upload.test/offline", b"payload", 2)
+
+
+def test_presigned_upload_required_headers_and_legacy_monkeypatch(monkeypatch):
+    assert client_module._artifact_required_headers({"required_headers": {"content-length": 3, "x-test": True}}) == {
+        "content-length": "3",
+        "x-test": "True",
+    }
+
+    calls = []
+
+    def legacy_put(url, payload, timeout):
+        calls.append((url, payload, timeout))
+        return "etag-legacy"
+
+    monkeypatch.setattr(client_module, "_put_presigned_url", legacy_put)
+    assert client_module._put_presigned_url_with_headers("https://upload.test/legacy", b"abc", 2, {}) == "etag-legacy"
+    assert calls == [("https://upload.test/legacy", b"abc", 2)]
+
+    with pytest.raises(TypeError):
+        client_module._put_presigned_url_with_headers(
+            "https://upload.test/signed",
+            b"abc",
+            2,
+            {"content-length": "3"},
+        )
+
+
+def test_api_artifact_resolve_use_promote_and_download(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        calls.append((method, path, body, idempotency_key))
+        if path.startswith("/api/artifact-versions/resolve"):
+            return {
+                "artifact_version": {
+                    "id": "version-1",
+                    "collection_id": "collection-1",
+                    "name": "policy",
+                    "version": "v1",
+                    "aliases": ["latest"],
+                }
+            }
+        if path == "/api/artifact-collections/collection-1/aliases/best":
+            return {
+                "artifact_version": {
+                    "id": "version-1",
+                    "collection_id": "collection-1",
+                    "name": "policy",
+                    "version": "v1",
+                    "aliases": ["best", "latest"],
+                }
+            }
+        if path == "/api/runs/run-2/artifact-inputs":
+            return {
+                "artifact_version": {
+                    "id": "version-1",
+                    "collection_id": "collection-1",
+                    "name": "policy",
+                    "version": "v1",
+                    "aliases": ["best", "latest"],
+                }
+            }
+        if path == "/api/artifact-versions/version-1":
+            return {
+                "artifact_version": {
+                    "id": "version-1",
+                    "collection_id": "collection-1",
+                    "name": "policy",
+                    "version": "v1",
+                    "aliases": [],
+                    "state": "soft_deleted",
+                }
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+
+    artifact = ro.Api(base_url="http://example.test", api_key="secret").artifact("models/policy:latest", type="model")
+    assert artifact.id == "version-1"
+    assert artifact.name == "policy"
+    artifact.promote("best")
+    assert artifact.aliases == ["best", "latest"]
+    assert artifact.delete(delete_aliases=True, reason="cleanup")["artifact_version"]["id"] == "version-1"
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 10
+        api_key = "secret"
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            return fake_request(self, method, path, body, idempotency_key)
+
+    used = Run(client=FakeClient(), run_id="run-2").use_artifact(artifact)
+    assert used.id == "version-1"
+    assert calls[0][1] == "/api/artifact-versions/resolve?ref=models%2Fpolicy%3Alatest&type=model"
+    assert calls[-1][2] == {"artifact_version_id": "version-1"}
+
+    downloads = []
+
+    class DownloadApi:
+        def _manifest_entries(self, artifact_version_id):
+            assert artifact_version_id == "version-1"
+            return [
+                {"id": "entry-1", "path": "nested/weights.bin", "downloadable": True},
+                {"id": "entry-2", "path": "remote.txt", "downloadable": False},
+            ]
+
+        def _download_artifact_entry(self, entry_id, output_path):
+            downloads.append((entry_id, Path(output_path).relative_to(tmp_path)))
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_path).write_text("ok", encoding="utf-8")
+            return str(output_path)
+
+    written = client_module.LoggedArtifact(DownloadApi(), {"id": "version-1"}).download(tmp_path)
+    assert [Path(path).relative_to(tmp_path) for path in written] == [Path("nested/weights.bin")]
+    assert downloads == [("entry-1", Path("nested/weights.bin"))]
+
+    class BadDownloadApi(DownloadApi):
+        def _manifest_entries(self, artifact_version_id):
+            return [{"id": "entry-1", "path": "../secret.txt", "downloadable": True}]
+
+    with pytest.raises(ValueError, match="cannot contain"):
+        client_module.LoggedArtifact(BadDownloadApi(), {"id": "version-1"}).download(tmp_path)
+
+
+def test_artifact_api_and_download_error_paths(monkeypatch, tmp_path):
+    def invalid_resolve(self, method, path, body=None, idempotency_key=None):
+        return {"artifact_version": "bad"}
+
+    monkeypatch.setattr(Client, "_request", invalid_resolve)
+    with pytest.raises(InstantMLError, match="invalid artifact response"):
+        ro.Api(base_url="http://example.test").artifact("policy:latest")
+
+    def invalid_manifest(self, method, path, body=None, idempotency_key=None):
+        return {"entries": "bad"}
+
+    monkeypatch.setattr(Client, "_request", invalid_manifest)
+    with pytest.raises(InstantMLError, match="invalid artifact manifest"):
+        ro.Api(base_url="http://example.test")._manifest_entries("version-1")
+
+    def valid_manifest(self, method, path, body=None, idempotency_key=None):
+        return {"entries": [{"id": "entry-1"}, "skip-me"]}
+
+    monkeypatch.setattr(Client, "_request", valid_manifest)
+    assert ro.Api(base_url="http://example.test")._manifest_entries("version-1") == [{"id": "entry-1"}]
+
+    with pytest.raises(TypeError, match="output_path"):
+        ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", object())
+
+    read_sizes = []
+
+    class FakeResponse:
+        def __init__(self, payload=b"payload"):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self, size=-1):
+            read_sizes.append(size)
+            if size == -1:
+                return self.payload
+            if not self.payload:
+                return b""
+            chunk, self.payload = self.payload[:size], self.payload[size:]
+            return chunk
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: FakeResponse())
+    target = tmp_path / "entry.bin"
+    assert ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", target) == str(target)
+    assert target.read_bytes() == b"payload"
+    assert read_sizes == [1024 * 1024, 1024 * 1024]
+
+    def raise_http(request, timeout):
+        raise urllib.error.HTTPError("http://example.test/download", 404, "missing", {}, BytesIO(b"missing"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_http)
+    with pytest.raises(InstantMLError, match="GET /api/artifact-entries/entry-1/download failed"):
+        ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", tmp_path / "missing.bin")
+
+    def raise_url(request, timeout):
+        raise urllib.error.URLError("offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_url)
+    with pytest.raises(InstantMLError, match="offline"):
+        ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", tmp_path / "offline.bin")
+
+
+def test_logged_artifact_download_rejects_symlink_escape(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (root / "link").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    class EscapeApi:
+        def _manifest_entries(self, artifact_version_id):
+            return [{"id": "entry-1", "path": "link/file.txt", "downloadable": True}]
+
+        def _download_artifact_entry(self, entry_id, output_path):
+            raise AssertionError("download should not happen")
+
+    with pytest.raises(InstantMLError, match="escapes"):
+        client_module.LoggedArtifact(EscapeApi(), {"id": "version-1"}).download(root)
+
+
+def test_run_versioned_artifact_error_paths(monkeypatch, tmp_path):
+    source_a = tmp_path / "a.bin"
+    source_a.write_bytes(b"a")
+    source_b = tmp_path / "b.bin"
+    source_b.write_bytes(b"b")
+
+    class BadSessionClient:
+        base_url = "http://example.test"
+        timeout = 7
+        api_key = None
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            return {"upload_session": "bad", "files": []}
+
+    with pytest.raises(ValueError, match="uri"):
+        Run(client=BadSessionClient(), run_id="run-1").log_artifact(ro.VersionedArtifact("bad"), uri="demo://bad")
+    with pytest.raises(TypeError, match="uri is required"):
+        Run(client=BadSessionClient(), run_id="run-1").log_artifact("raw")
+    with pytest.raises(ValueError, match="aliases and ttl_days"):
+        Run(client=BadSessionClient(), run_id="run-1").log_artifact("raw", "demo://raw", aliases=["best"])
+    with pytest.raises(InstantMLError, match="upload_mode"):
+        Run(client=BadSessionClient(), run_id="run-1", upload_mode="spool").log_versioned_artifact(ro.VersionedArtifact("spool"))
+    with pytest.raises(TypeError, match="VersionedArtifact"):
+        Run(client=BadSessionClient(), run_id="run-1").log_versioned_artifact("not-artifact")
+    with pytest.raises(InstantMLError, match="invalid artifact upload session"):
+        Run(client=BadSessionClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad-session").add_file(source_a))
+
+    class UnknownEntryClient(BadSessionClient):
+        def _request(self, method, path, body, idempotency_key=None):
+            if path.endswith("/artifact-uploads"):
+                return {
+                    "upload_session": {"id": "session-1"},
+                    "files": [
+                        "not-a-dict",
+                        {"entry_id": "entry-1", "path": "missing.bin", "upload_kind": "inline", "parts": []},
+                    ],
+                }
+            return {"artifact_version": {"id": "version-1"}}
+
+    artifact = ro.VersionedArtifact("unknown").add_file(source_a, name="a.bin").add_file(source_b, name="b.bin")
+    with pytest.raises(InstantMLError, match="unknown artifact upload entry"):
+        Run(client=UnknownEntryClient(), run_id="run-1").log_versioned_artifact(artifact, aliases=["extra"])
+
+    class BadCompleteClient(BadSessionClient):
+        def _request(self, method, path, body, idempotency_key=None):
+            if path.endswith("/artifact-uploads"):
+                return {
+                    "upload_session": {"id": "session-1"},
+                    "files": [{"entry_id": "entry-1", "path": "a.bin", "upload_kind": "inline", "parts": []}],
+                }
+            return {"artifact_version": "bad"}
+
+    with pytest.raises(InstantMLError, match="invalid artifact version"):
+        Run(client=BadCompleteClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad-complete").add_file(source_a, name="a.bin"))
+
+    monkeypatch.setattr(client_module, "_put_presigned_url", lambda url, payload, timeout: "etag-1")
+
+    class BadRenewClient(BadSessionClient):
+        def _request(self, method, path, body, idempotency_key=None):
+            if path.endswith("/artifact-uploads"):
+                return {
+                    "upload_session": {"id": "session-1"},
+                    "files": [
+                        {
+                            "entry_id": "entry-1",
+                            "path": "a.bin",
+                            "upload_kind": "multipart",
+                            "part_size_bytes": 1,
+                            "part_count": 2,
+                            "parts": [{"part_number": 1, "url": "https://upload.test/part-1"}],
+                        }
+                    ],
+                }
+            if path.endswith("/renew"):
+                return {"parts": "bad"}
+            raise AssertionError(path)
+
+    with pytest.raises(InstantMLError, match="invalid renewed"):
+        Run(client=BadRenewClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad-renew").add_file(source_a, name="a.bin"))
+
+
+def test_use_artifact_returns_existing_handle_when_server_omits_version():
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 10
+        api_key = None
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            assert path == "/api/runs/run-1/artifact-inputs"
+            return {"edge": {"id": "edge-1"}}
+
+    artifact = client_module.LoggedArtifact(ro.Api(base_url="http://example.test"), {"id": "version-1"})
+    assert Run(client=FakeClient(), run_id="run-1").use_artifact(artifact) is artifact
 
 
 def test_checkpoint_policy_matches_positive_integer_intervals():

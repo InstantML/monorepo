@@ -93,6 +93,46 @@ class Artifact(File):
     pass
 
 
+class VersionedArtifact:
+    """Versioned artifact manifest for W&B-style lineage workflows."""
+
+    def __init__(
+        self,
+        name: str,
+        type: str = "file",
+        metadata: dict[str, Any] | None = None,
+        description: str | None = None,
+        aliases: list[str] | tuple[str, ...] | None = None,
+        ttl_days: int | None = None,
+        files: list[str | os.PathLike[str]] | tuple[str | os.PathLike[str], ...] | dict[str, str | os.PathLike[str]] | None = None,
+    ) -> None:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("artifact name must be a non-empty string")
+        if not isinstance(type, str) or not type.strip():
+            raise ValueError("artifact type must be a non-empty string")
+        self.name = name.strip()
+        self.type = type.strip()
+        self.metadata = metadata
+        self.description = description
+        self.aliases = list(aliases or [])
+        self.ttl_days = ttl_days
+        self.files: list[dict[str, str]] = []
+        if isinstance(files, dict):
+            for artifact_path, source_path in files.items():
+                self.add_file(source_path, name=artifact_path)
+        elif files is not None:
+            for source_path in files:
+                self.add_file(source_path)
+
+    def add_file(self, path: str | os.PathLike[str], name: str | None = None) -> "VersionedArtifact":
+        source = os.fspath(path)
+        artifact_path = name or os.path.basename(source)
+        if not artifact_path:
+            raise ValueError("artifact file name must be non-empty")
+        self.files.append({"path": source, "name": artifact_path})
+        return self
+
+
 @dataclass(frozen=True)
 class CheckpointPolicy:
     """Simple step-interval helper for checkpointing training loops."""
@@ -252,7 +292,7 @@ def _histogram_counts_for_edges(values: list[float], edges: list[float]) -> list
     return counts
 
 
-for _public_class in (Table, Histogram, File, Artifact, CheckpointPolicy, Text, Image, Video, Audio):
+for _public_class in (Table, Histogram, File, Artifact, VersionedArtifact, CheckpointPolicy, Text, Image, Video, Audio):
     _public_class.__module__ = "instantml.client"
 
 del _public_class

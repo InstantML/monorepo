@@ -6,6 +6,7 @@ use std::{
 
 mod access;
 mod admin;
+mod artifact_versions;
 mod auth;
 mod billing;
 mod console_logs;
@@ -24,6 +25,7 @@ mod workspace_views;
 
 use access::*;
 pub use admin::*;
+pub use artifact_versions::*;
 pub use auth::*;
 pub use billing::*;
 pub use console_logs::*;
@@ -59,38 +61,45 @@ use crate::{
         validate_json_object, validate_limit, validate_membership_role, validate_name,
         validate_offset, validate_optional_name, validate_optional_step, validate_plan_tier,
         validate_slug, validate_status, validate_step, validate_tags, validate_timestamp,
-        ArtifactRow, AttributeInput, AttributeRow, AuthContext, AuthSessionPayload,
-        BillingAccountProjection, BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo,
-        BillingCheckoutIntent, BillingCheckoutRequest, BillingCheckoutSyncRequest,
-        BillingEventRecord, BillingPlanChangeRequest, BillingPortalRequest,
-        BillingSeatChangeRequest, BillingSubscriptionRecord, BillingUsageReportRecord,
-        ClerkAuthRequest, ClickHouseConnectionCreateRequest,
+        AbortArtifactUploadRequest, ArtifactAliasRow, ArtifactCollectionRow, ArtifactEdgeRow,
+        ArtifactManifestEntriesRecord, ArtifactManifestEntryRow, ArtifactRow, ArtifactUploadFile,
+        ArtifactUploadSessionRow, ArtifactVersionRow, AttributeInput, AttributeRow, AuthContext,
+        AuthSessionPayload, BillingAccountProjection, BillingCancelRequest, BillingChangeIntent,
+        BillingCheckoutInfo, BillingCheckoutIntent, BillingCheckoutRequest,
+        BillingCheckoutSyncRequest, BillingEventRecord, BillingPlanChangeRequest,
+        BillingPortalRequest, BillingSeatChangeRequest, BillingSubscriptionRecord,
+        BillingUsageReportRecord, ClerkAuthRequest, ClickHouseConnectionCreateRequest,
         ClickHouseConnectionRotateCredentialsRequest, ClickHouseConnectionStatus,
         ClickHouseConnectionValidateRequest, ClickHouseConnectionValidationResponse,
-        ConsoleLogInput, CreateApiKeyRequest, CreateArtifactRequest, CreateAttributesRequest,
-        CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest, CreateInvitationRequest,
-        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
-        CreateRunForkRequest, CreateRunRequest, CreateUserRequest, CreatedAuthSession,
-        CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DevGoogleAuthRequest,
-        EmailDeliveryRow, InitialInvitationCreateResult, InitialOrganizationInvitation,
-        InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
-        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
-        OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
-        ProvisioningStatusPayload, PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint,
-        RankHeatmapPoint, RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse,
-        RankOutlierPoint, RankReducerPoint, ReportRow, RequestContext, ReserveSeatRequest, RunRow,
-        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
+        CompleteArtifactUploadFile, CompleteArtifactUploadRequest, ConsoleLogInput,
+        CreateApiKeyRequest, CreateArtifactInputEdgeRequest, CreateArtifactRequest,
+        CreateAttributesRequest, CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest,
+        CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest,
+        CreateProjectRequest, CreateReportRequest, CreateRunForkRequest, CreateRunRequest,
+        CreateUserRequest, CreatedAuthSession, CurrentUserOrganizationCreateResponse,
+        DashboardPreferenceRow, DeleteArtifactAliasRequest, DeleteArtifactVersionRequest,
+        DevGoogleAuthRequest, EmailDeliveryRow, InitialInvitationCreateResult,
+        InitialOrganizationInvitation, InitiateArtifactUploadRequest, InvitationPreviewPayload,
+        InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest, MembershipRow,
+        MetricSeriesRow, OnboardingApiKey, OrgInvitationRow, OrganizationMembershipSummary,
+        OrganizationRoleCapabilities, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
+        PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
+        RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
+        RankReducerPoint, RenewArtifactUploadRequest, ReportRow, RequestContext,
+        ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
+        ServiceAccountRow, SessionContext, SetArtifactAliasRequest, UpdateArtifactRetentionRequest,
         UpdateDashboardPreferencesRequest, UpdateReportRequest, UpdateRunRequest,
-        UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow, WorkspaceViewSummary,
-        BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
-        BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT,
-        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
-        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
-        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS,
-        MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE,
-        MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
-        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED,
-        STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
+        UploadArtifactRequest, UserRow, UserSessionRow, VersionedArtifactManifestEntryInput,
+        WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING,
+        BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
+        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
+        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
+        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
+        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
+        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
+        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
+        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
+        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -114,6 +123,7 @@ const DEMO_API_KEY_SCOPES: &[&str] = &["export:read"];
 const ALLOWED_SCOPES: &[&str] = &[
     "sdk:ingest",
     "artifacts:write",
+    "artifacts:manage",
     "imports:write",
     "usage:read",
     "export:read",
@@ -161,6 +171,7 @@ pub struct Store {
     /// All personal/free orgs route here instead of getting a dedicated service.
     shared_cell_metric_store: Option<MetricStore>,
     inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
+    artifact_upload_capacity_lock: Arc<Mutex<()>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
     control_projection_loaded: Arc<Mutex<bool>>,
@@ -204,6 +215,7 @@ impl Store {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
             control_projection_loaded: Arc::new(Mutex::new(false)),
@@ -789,6 +801,17 @@ struct StoreData {
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
     artifacts: BTreeMap<Uuid, ArtifactRow>,
     artifacts_by_run: HashMap<Uuid, Vec<Uuid>>,
+    artifact_collections: BTreeMap<Uuid, ArtifactCollectionRow>,
+    artifact_collections_by_project_type_name: HashMap<(Uuid, String, String), Uuid>,
+    artifact_versions: BTreeMap<Uuid, ArtifactVersionRow>,
+    artifact_versions_by_collection: HashMap<Uuid, Vec<Uuid>>,
+    artifact_manifest_chunks: BTreeMap<(Uuid, i64), ArtifactManifestEntriesRecord>,
+    artifact_entries_by_id: HashMap<Uuid, (Uuid, i64, usize)>,
+    artifact_aliases: BTreeMap<(Uuid, String), ArtifactAliasRow>,
+    artifact_edges: BTreeMap<Uuid, ArtifactEdgeRow>,
+    artifact_edges_by_version: HashMap<Uuid, Vec<Uuid>>,
+    artifact_edges_by_run: HashMap<Uuid, Vec<Uuid>>,
+    artifact_upload_sessions: BTreeMap<Uuid, ArtifactUploadSessionRow>,
     table_rows: HashMap<(Uuid, i64), Vec<TableObjectRow>>,
     imports: BTreeMap<(Uuid, i64), ImportRow>,
     idempotency: HashMap<(Uuid, String), IdempotencyRecord>,
@@ -881,6 +904,16 @@ impl StoreData {
             "run" => self.insert_run(parse_payload(payload)?),
             "attribute" => self.insert_attribute(parse_payload(payload)?),
             "artifact" => self.insert_artifact(parse_payload(payload)?),
+            "artifact_collection" => self.insert_artifact_collection(parse_payload(payload)?),
+            "artifact_version" => self.insert_artifact_version(parse_payload(payload)?),
+            "artifact_manifest_entries" => {
+                self.insert_artifact_manifest_entries(parse_payload(payload)?)
+            }
+            "artifact_alias" => self.insert_artifact_alias(parse_payload(payload)?),
+            "artifact_edge" => self.insert_artifact_edge(parse_payload(payload)?),
+            "artifact_upload_session" => {
+                self.insert_artifact_upload_session(parse_payload(payload)?)
+            }
             "table_rows" => {
                 let item: TableRowsRecord = parse_payload(payload)?;
                 self.table_rows
@@ -1091,6 +1124,95 @@ impl StoreData {
         self.artifacts.insert(artifact.id, artifact);
     }
 
+    fn insert_artifact_collection(&mut self, collection: ArtifactCollectionRow) {
+        if let Some(existing) = self.artifact_collections.get(&collection.id) {
+            self.artifact_collections_by_project_type_name.remove(&(
+                existing.project_id,
+                existing.kind.clone(),
+                existing.name.clone(),
+            ));
+        }
+        if collection.deleted_at.is_none() {
+            self.artifact_collections_by_project_type_name.insert(
+                (
+                    collection.project_id,
+                    collection.kind.clone(),
+                    collection.name.clone(),
+                ),
+                collection.id,
+            );
+        }
+        self.artifact_collections.insert(collection.id, collection);
+    }
+
+    fn insert_artifact_version(&mut self, version: ArtifactVersionRow) {
+        let collection_id = version.collection_id;
+        let version_id = version.id;
+        self.artifact_versions.insert(version.id, version);
+        self.artifact_versions_by_collection
+            .entry(collection_id)
+            .or_default()
+            .retain(|id| *id != version_id);
+        self.artifact_versions_by_collection
+            .entry(collection_id)
+            .or_default()
+            .push(version_id);
+        self.artifact_versions_by_collection
+            .entry(collection_id)
+            .or_default()
+            .sort_by_key(|id| {
+                self.artifact_versions
+                    .get(id)
+                    .map(|row| row.version_index)
+                    .unwrap_or(i64::MAX)
+            });
+    }
+
+    fn insert_artifact_manifest_entries(&mut self, record: ArtifactManifestEntriesRecord) {
+        for (index, entry) in record.entries.iter().enumerate() {
+            self.artifact_entries_by_id.insert(
+                entry.id,
+                (record.artifact_version_id, record.chunk_index, index),
+            );
+        }
+        self.artifact_manifest_chunks
+            .insert((record.artifact_version_id, record.chunk_index), record);
+    }
+
+    fn insert_artifact_alias(&mut self, alias: ArtifactAliasRow) {
+        if alias.deleted_at.is_some() {
+            self.artifact_aliases
+                .remove(&(alias.collection_id, alias.alias.clone()));
+            return;
+        }
+        self.artifact_aliases
+            .insert((alias.collection_id, alias.alias.clone()), alias);
+    }
+
+    fn insert_artifact_edge(&mut self, edge: ArtifactEdgeRow) {
+        self.artifact_edges_by_version
+            .entry(edge.artifact_version_id)
+            .or_default()
+            .retain(|id| *id != edge.id);
+        self.artifact_edges_by_version
+            .entry(edge.artifact_version_id)
+            .or_default()
+            .push(edge.id);
+        self.artifact_edges_by_run
+            .entry(edge.run_id)
+            .or_default()
+            .retain(|id| *id != edge.id);
+        self.artifact_edges_by_run
+            .entry(edge.run_id)
+            .or_default()
+            .push(edge.id);
+        self.artifact_edges.insert(edge.id, edge);
+    }
+
+    fn insert_artifact_upload_session(&mut self, session: ArtifactUploadSessionRow) {
+        self.artifact_upload_sessions.insert(session.id, session);
+    }
+
     fn apply_project_delete(&mut self, delete: ProjectDeleteRecord) {
         let Some(project_id) = self
             .projects_by_org_name
@@ -1118,6 +1240,51 @@ impl StoreData {
                     self.artifacts.remove(&id);
                 }
             }
+            if let Some(edge_ids) = self.artifact_edges_by_run.remove(&run_id) {
+                for id in edge_ids {
+                    if let Some(edge) = self.artifact_edges.remove(&id) {
+                        if let Some(ids) = self
+                            .artifact_edges_by_version
+                            .get_mut(&edge.artifact_version_id)
+                        {
+                            ids.retain(|candidate| *candidate != id);
+                        }
+                    }
+                }
+            }
+        }
+        let collection_ids = self
+            .artifact_collections
+            .values()
+            .filter(|collection| {
+                collection.org_id == delete.org_id && collection.project_id == project_id
+            })
+            .map(|collection| collection.id)
+            .collect::<Vec<_>>();
+        for collection_id in collection_ids {
+            if let Some(collection) = self.artifact_collections.remove(&collection_id) {
+                self.artifact_collections_by_project_type_name.remove(&(
+                    collection.project_id,
+                    collection.kind,
+                    collection.name,
+                ));
+            }
+            if let Some(version_ids) = self.artifact_versions_by_collection.remove(&collection_id) {
+                for version_id in version_ids {
+                    self.artifact_versions.remove(&version_id);
+                    self.artifact_manifest_chunks
+                        .retain(|(candidate, _), _| *candidate != version_id);
+                    self.artifact_entries_by_id
+                        .retain(|_, (candidate, _, _)| *candidate != version_id);
+                    if let Some(edge_ids) = self.artifact_edges_by_version.remove(&version_id) {
+                        for edge_id in edge_ids {
+                            self.artifact_edges.remove(&edge_id);
+                        }
+                    }
+                }
+            }
+            self.artifact_aliases
+                .retain(|(candidate, _), _| *candidate != collection_id);
         }
     }
 
@@ -1472,6 +1639,12 @@ fn payload_org_id(payload: &Value) -> AppResult<Option<Uuid>> {
 fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value) -> AppResult<()> {
     match record.kind.as_str() {
         "project" | "run" | "artifact" => validate_payload_string_id(record, payload, "id"),
+        "artifact_collection"
+        | "artifact_version"
+        | "artifact_edge"
+        | "artifact_upload_session" => validate_payload_string_id(record, payload, "id"),
+        "artifact_manifest_entries" => validate_manifest_chunk_entity(record, payload),
+        "artifact_alias" => validate_alias_entity(record, payload),
         "attribute" | "import" => validate_payload_i64_id(record, payload, "id"),
         "idempotency" => validate_payload_string_id(record, payload, "key"),
         "project_delete" => validate_payload_string_id(record, payload, "project_name"),
@@ -1480,6 +1653,40 @@ fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value)
         "api_usage_monthly" => validate_api_usage_monthly_entity(record, payload),
         _ => Ok(()),
     }
+}
+
+fn validate_manifest_chunk_entity(record: &OperationalRecordRow, payload: &Value) -> AppResult<()> {
+    let version_id = payload
+        .get("artifact_version_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("tenant manifest chunk version id is missing"))?;
+    let chunk_index = payload
+        .get("chunk_index")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| AppError::internal("tenant manifest chunk index is missing"))?;
+    if record.entity_id != format!("{version_id}:{chunk_index}") {
+        return Err(AppError::internal(
+            "tenant manifest chunk entity id mismatch",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_alias_entity(record: &OperationalRecordRow, payload: &Value) -> AppResult<()> {
+    let collection_id = payload
+        .get("collection_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("tenant artifact alias collection id is missing"))?;
+    let alias = payload
+        .get("alias")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("tenant artifact alias is missing"))?;
+    if record.entity_id != format!("{collection_id}:{alias}") {
+        return Err(AppError::internal(
+            "tenant artifact alias entity id mismatch",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_payload_string_id(
@@ -1850,6 +2057,7 @@ mod tests {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
             control_projection_loaded: Arc::new(Mutex::new(false)),

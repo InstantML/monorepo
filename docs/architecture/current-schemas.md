@@ -1,6 +1,6 @@
 # Current Control And Data-Plane Schema Reference
 
-Date: 2026-05-25
+Date: 2026-05-30
 
 Status: Current implemented schema surface for `apps/rust-server`
 
@@ -529,6 +529,12 @@ ids match the routed org before adding the record to the in-process projection.
 | `run` | `RunRow.id` | `RunRow` | Run metadata and status. |
 | `attribute` | `AttributeRow.id` | `AttributeRow` | Typed attributes and rich logged objects. |
 | `artifact` | `ArtifactRow.id` | `ArtifactRow` | Artifact metadata, not hosted bytes. |
+| `artifact_collection` | `ArtifactCollectionRow.id` | `ArtifactCollectionRow` | Project-scoped versioned artifact namespace. |
+| `artifact_version` | `ArtifactVersionRow.id` | `ArtifactVersionRow` | Immutable committed version metadata and retention/delete state. |
+| `artifact_manifest_entries` | `<artifact_version_id>:<chunk_index>` | `ArtifactManifestEntriesRecord` | Bounded chunk of manifest entry rows for one version. |
+| `artifact_alias` | `<collection_id>:<alias>` | `ArtifactAliasRow` | Mutable custom alias pointer, such as `best`. |
+| `artifact_edge` | `ArtifactEdgeRow.id` | `ArtifactEdgeRow` | Run/artifact input or output lineage edge. |
+| `artifact_upload_session` | `ArtifactUploadSessionRow.id` | `ArtifactUploadSessionRow` | Pending or completed versioned upload session and upload targets. |
 | `table_rows` | `TableRowsRecord.attribute_id` | `TableRowsRecord` | Preview rows for table objects. |
 | `import` | `ImportRow.id` | `ImportRow` | Import job summary and produced run ids. |
 | `idempotency` | `IdempotencyRecord.key` | `IdempotencyRecord` | Request replay response for metric/log idempotency keys. |
@@ -660,6 +666,153 @@ The public response shape preserves `id`, `org_id`, `run_id`, `type`, `name`,
 `created_at`, but returns `uri: "instantml://artifacts/<artifact_id>"` for
 stored local/R2 bytes and omits `storage_key` and `storage_path`.
 
+### Versioned Artifact Records
+
+Versioned artifacts sit beside `ArtifactRow` instead of replacing it. Raw
+artifact rows remain the compatibility layer for existing file/media helpers
+and checkpoint fork workflows.
+
+`ArtifactCollectionRow` is the project-scoped namespace:
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "project_id": "uuid",
+  "project": "demo",
+  "name": "policy-checkpoints",
+  "type": "model",
+  "description": null,
+  "metadata": {},
+  "default_ttl_days": null,
+  "created_at": "2026-05-30T00:00:00Z",
+  "updated_at": "2026-05-30T00:00:00Z",
+  "deleted_at": null
+}
+```
+
+`ArtifactVersionRow` is immutable once active except for retention/delete
+state. Stable labels such as `v0` are derived from `version_index`; mutable
+aliases are separate `ArtifactAliasRow` records.
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "project_id": "uuid",
+  "collection_id": "uuid",
+  "version_index": 0,
+  "digest": "sha256:...",
+  "source_run_id": "uuid",
+  "source_step": 1200,
+  "file_count": 1,
+  "size_bytes": 12345,
+  "state": "active",
+  "metadata": {},
+  "ttl_days": 30,
+  "retention_mode": "days",
+  "expires_at": "2026-06-29T00:00:00Z",
+  "delete_requested_at": null,
+  "deleted_at": null,
+  "created_at": "2026-05-30T00:00:00Z"
+}
+```
+
+Manifest entries are stored in bounded chunks so list routes do not return
+entire package manifests by default. Public manifest responses omit
+`storage_key`, `storage_path`, and `reference_uri`, and instead expose
+`downloadable` for local/R2 stored entries.
+
+```json
+{
+  "org_id": "uuid",
+  "project_id": "uuid",
+  "collection_id": "uuid",
+  "artifact_version_id": "uuid",
+  "chunk_index": 0,
+  "entries": [
+    {
+      "id": "uuid",
+      "org_id": "uuid",
+      "project_id": "uuid",
+      "collection_id": "uuid",
+      "artifact_version_id": "uuid",
+      "path": "checkpoint.pt",
+      "kind": "file",
+      "size_bytes": 12345,
+      "sha256": "64-hex",
+      "mime_type": "application/octet-stream",
+      "storage_backend": "r2",
+      "storage_key": "bucket/artifact-versions/<version>/<entry>",
+      "storage_path": "r2://bucket/artifact-versions/<version>/<entry>",
+      "reference_uri": null,
+      "created_at": "2026-05-30T00:00:00Z"
+    }
+  ]
+}
+```
+
+Alias rows store custom aliases only. `latest` is resolved from the newest
+active version and `vN` is resolved from `version_index`.
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "project_id": "uuid",
+  "collection_id": "uuid",
+  "artifact_version_id": "uuid",
+  "alias": "best",
+  "created_at": "2026-05-30T00:00:00Z",
+  "updated_at": "2026-05-30T00:00:00Z",
+  "deleted_at": null
+}
+```
+
+Lineage edges use `direction: "output"` for `run -> artifact_version` and
+`direction: "input"` for `artifact_version -> run`.
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "project_id": "uuid",
+  "run_id": "uuid",
+  "artifact_version_id": "uuid",
+  "direction": "output",
+  "source": "sdk",
+  "created_at": "2026-05-30T00:00:00Z"
+}
+```
+
+Upload sessions reserve expected bytes before commit and hold opaque provider
+targets. Presigned URLs are never stored in operational records.
+
+```json
+{
+  "id": "uuid",
+  "org_id": "uuid",
+  "project_id": "uuid",
+  "run_id": "uuid",
+  "artifact_version_id": "uuid",
+  "collection_id": "uuid",
+  "state": "uploading",
+  "request_hash": "sha256:...",
+  "expected_total_bytes": 12345,
+  "total_part_count": 1,
+  "aliases": ["best"],
+  "ttl_days": 30,
+  "source_step": 1200,
+  "digest": "sha256:...",
+  "files": [],
+  "manifest_entries": [],
+  "idempotency_response": null,
+  "expires_at": "2026-05-30T01:00:00Z",
+  "created_at": "2026-05-30T00:00:00Z",
+  "updated_at": "2026-05-30T00:00:00Z"
+}
+```
+
 ### `TableRowsRecord`
 
 ```json
@@ -785,14 +938,22 @@ writes horizontally.
         "metric_points_retained_total": 250000,
         "metric_series": 10,
         "artifacts": 3,
+        "raw_artifacts": 3,
+        "artifact_collections": 1,
+        "artifact_versions_active": 2,
+        "artifact_versions_pending_delete": 1,
         "api_keys": 1,
         "artifact_bytes_exact": 12345,
+        "versioned_artifact_bytes_active": 8192,
+        "versioned_artifact_bytes_pending_delete": 4096,
+        "versioned_artifact_bytes_reserved": 0,
         "external_artifact_bytes_declared": 4096,
         "artifact_bytes_unknown": 0,
         "artifact_bytes_unknown_count": 0,
         "estimated_metadata_bytes": 8192,
         "warehouse_storage_bytes_exact": 32768,
         "storage_bytes_for_warnings": 45113,
+        "storage_bytes_for_write_gate": 45113,
         "estimated_storage_bytes_for_warnings": 45113,
         "billable_storage_bytes": null
       },
@@ -837,6 +998,9 @@ InstantML must not meter the customer's warehouse. `storage_bytes_for_warnings`
 is the guardrail value used for blocked storage checks; hosted orgs prefer exact
 warehouse plus artifact bytes when available and otherwise fall back to the
 metadata estimate. BYOC orgs use only retained InstantML-owned artifact bytes.
+`storage_bytes_for_write_gate` additionally includes reserved bytes from
+pending versioned artifact upload sessions, so a large multipart upload cannot
+bypass storage limits before metadata commit.
 The older
 `estimated_storage_bytes_for_warnings` field remains a compatibility alias for
 that guardrail value, not an invoice source.
@@ -1052,13 +1216,15 @@ When changing schemas or payload fields:
 - Shared data-plane cells remain single-writer by default. Durable uniqueness,
   per-org sequences or deterministic ids, and atomic idempotency are required
   before multi-writer data cells are safe.
-- R2-backed artifact storage uses the current JSON/base64 upload route. Large
-  checkpoint direct-upload, multipart upload, provider reconciliation, and
-  retention/delete policies remain future designs.
+- Versioned artifact records support SDK-originated local inline uploads and R2
+  presigned single/multipart uploads. Browser direct upload, live R2 smoke in
+  CI, and physical hard-delete garbage collection for soft-deleted versioned
+  bytes remain future hardening work.
 - Usage storage guardrails count retained InstantML-owned local/R2 artifact
-  bytes. External/imported artifact sizes remain visible as declared metadata
-  but do not consume retained-storage quota unless a future import copies those
-  bytes into InstantML-owned storage.
+  bytes, active/pending-delete versioned bytes, and pending upload-session
+  reservations for write gates. External/imported artifact sizes remain visible
+  as declared metadata but do not consume retained-storage quota unless a future
+  import copies those bytes into InstantML-owned storage.
 - `password_ciphertext` in `TenantRouteRecord` is currently a temporary
   plaintext field gated by config. Production secret-manager-backed tenant
   passwords need a separate design.

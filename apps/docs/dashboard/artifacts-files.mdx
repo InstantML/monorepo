@@ -9,14 +9,20 @@ Artifacts connect metric behavior to the files and evidence produced by a run.
 
 ![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
 
-## Artifact browser
+## Artifact workspace
 
 ![Artifacts workspace](/images/product/dashboard-artifacts-browser.png)
 
-The Artifacts tab focuses on the selected run context. Select a run first, then
-use the tab to inspect that run's artifact metadata and stored bytes.
+The Artifacts tab starts with versioned artifact collections for the active
+project. Use collection search and type filters to inspect datasets, models,
+checkpoints, tables, media, and files across runs.
 
-Artifacts can represent:
+Each collection shows versions with stable `vN` labels, automatic `latest`,
+custom aliases such as `best`, byte/file counts, retention state, and soft
+delete state. Selecting a version shows its manifest and a bounded lineage view
+of producer and consumer runs.
+
+Versioned artifacts can represent:
 
 - Uploaded files.
 - External file references.
@@ -26,6 +32,17 @@ Artifacts can represent:
 The same tab also shows rich logged objects for the selected run, such as
 tables, histograms, media previews, and evaluation outputs. Those objects can
 link to artifact bytes, but they are not artifact rows themselves.
+
+Owner/admin users can move the `best` alias, keep a version forever, apply a
+30-day retention window, or soft-delete a version after an explicit confirmation
+prompt with an audit reason. Read-only users see the same evidence with
+management controls disabled.
+
+## Raw run artifacts
+
+The same tab keeps legacy raw artifacts in a separate panel. Select a run to
+inspect raw artifact metadata and stored bytes from existing file/media,
+rich-object, checkpoint, and importer workflows.
 
 ## Files in Run Detail
 

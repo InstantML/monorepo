@@ -249,7 +249,9 @@ pub fn require_session_scope(session: &SessionContext, scope: &str) -> AppResult
     let role = session.role.as_str();
     let allowed = match scope {
         "sdk:ingest" | "artifacts:write" => matches!(role, "owner" | "admin" | "member"),
-        "imports:write" | "usage:read" | "api_keys:write" => matches!(role, "owner" | "admin"),
+        "artifacts:manage" | "imports:write" | "usage:read" | "api_keys:write" => {
+            matches!(role, "owner" | "admin")
+        }
         "export:read" => matches!(role, "owner" | "admin" | "member" | "viewer"),
         _ => false,
     };

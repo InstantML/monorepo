@@ -20,6 +20,214 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/artifact-collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_artifact_collections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-collections/{collection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_artifact_collection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-collections/{collection_id}/aliases/{alias}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_artifact_alias"];
+        post?: never;
+        delete: operations["delete_artifact_alias"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-collections/{collection_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_artifact_collection_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-entries/{entry_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["download_artifact_entry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-uploads/{upload_session_id}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["abort_artifact_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-uploads/{upload_session_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["complete_artifact_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-uploads/{upload_session_id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["renew_artifact_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-versions/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["resolve_artifact_version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_artifact_version"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_artifact_version"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-versions/{version_id}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["artifact_version_lineage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-versions/{version_id}/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_artifact_manifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifact-versions/{version_id}/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_artifact_retention"];
+        trace?: never;
+    };
     "/api/artifacts/{artifact_id}/download": {
         parameters: {
             query?: never;
@@ -847,6 +1055,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/artifact-edges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["run_artifact_edges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/artifact-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_artifact_input_edge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/artifact-uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["initiate_artifact_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}/artifacts": {
         parameters: {
             query?: never;
@@ -1235,6 +1491,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AbortArtifactUploadRequest: {
+            reason?: string | null;
+        };
         AdminApiKeySummary: {
             /** Format: date-time */
             created_at: string;
@@ -1433,8 +1692,320 @@ export interface components {
         ApiKeysEnvelope: {
             api_keys: components["schemas"]["PublicApiKeyRow"][];
         };
+        ArtifactAliasDeletedEnvelope: {
+            deleted: boolean;
+        };
+        ArtifactAliasRow: {
+            alias: string;
+            /** Format: uuid */
+            artifact_version_id: string;
+            audit_reason?: string | null;
+            /** Format: uuid */
+            collection_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ArtifactCollectionEnvelope: {
+            collection: components["schemas"]["ArtifactCollectionSummary"];
+        };
+        ArtifactCollectionInput: {
+            description?: string | null;
+            metadata?: Record<string, never> | null;
+            name?: string | null;
+            type?: string | null;
+        };
+        ArtifactCollectionRow: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            default_ttl_days?: number | null;
+            /** Format: date-time */
+            deleted_at?: string | null;
+            description?: string | null;
+            /** Format: uuid */
+            id: string;
+            metadata: Record<string, never>;
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            project: string;
+            /** Format: uuid */
+            project_id: string;
+            type: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ArtifactCollectionSummary: {
+            best_version?: null | components["schemas"]["PublicArtifactVersionRow"];
+            /** Format: date-time */
+            created_at: string;
+            description?: string | null;
+            /** Format: uuid */
+            id: string;
+            latest_version?: null | components["schemas"]["PublicArtifactVersionRow"];
+            metadata: Record<string, never>;
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: int64 */
+            pending_delete_bytes: number;
+            project: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: int64 */
+            retained_bytes: number;
+            type: string;
+            /** Format: date-time */
+            updated_at: string;
+            versions_count: number;
+        };
+        ArtifactCollectionsEnvelope: {
+            collections: components["schemas"]["ArtifactCollectionSummary"][];
+            has_more: boolean;
+            limit: number;
+            offset: number;
+            total: number;
+        };
+        ArtifactEdgeRow: {
+            /** Format: uuid */
+            artifact_version_id: string;
+            /** Format: date-time */
+            created_at: string;
+            direction: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: uuid */
+            run_id: string;
+            source: string;
+        };
+        ArtifactEdgesEnvelope: {
+            edges: components["schemas"]["ArtifactEdgeRow"][];
+            limit: number;
+        };
         ArtifactEnvelope: {
             artifact: components["schemas"]["PublicArtifactRow"];
+        };
+        ArtifactLineageEdge: {
+            direction: string;
+            from: string;
+            to: string;
+        };
+        ArtifactLineageEnvelope: {
+            depth: number;
+            edges: components["schemas"]["ArtifactLineageEdge"][];
+            limit: number;
+            nodes: components["schemas"]["ArtifactLineageNode"][];
+            truncated: boolean;
+        };
+        ArtifactLineageNode: {
+            id: string;
+            kind: string;
+            label: string;
+            state?: string | null;
+            summary: Record<string, never>;
+        };
+        ArtifactManifestEntriesRecord: {
+            /** Format: uuid */
+            artifact_version_id: string;
+            /** Format: int64 */
+            chunk_index: number;
+            /** Format: uuid */
+            collection_id: string;
+            entries: components["schemas"]["ArtifactManifestEntryRow"][];
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            project_id: string;
+        };
+        ArtifactManifestEntryRow: {
+            /** Format: uuid */
+            artifact_version_id: string;
+            /** Format: uuid */
+            collection_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            mime_type?: string | null;
+            /** Format: uuid */
+            org_id: string;
+            path: string;
+            /** Format: uuid */
+            project_id: string;
+            reference_uri?: string | null;
+            sha256?: string | null;
+            /** Format: int64 */
+            size_bytes?: number | null;
+            storage_backend: string;
+            storage_key?: string | null;
+            storage_path?: string | null;
+        };
+        ArtifactManifestEnvelope: {
+            /** Format: uuid */
+            artifact_version_id: string;
+            entries: components["schemas"]["PublicArtifactManifestEntryRow"][];
+            has_more: boolean;
+            limit: number;
+            offset: number;
+            total: number;
+        };
+        ArtifactUploadAbortEnvelope: {
+            upload_session: Record<string, never>;
+        };
+        ArtifactUploadFile: {
+            /** Format: uuid */
+            entry_id: string;
+            kind: string;
+            mime_type?: string | null;
+            multipart_upload_id?: string | null;
+            /** Format: int64 */
+            part_count: number;
+            /** Format: int64 */
+            part_size_bytes: number;
+            path: string;
+            sha256: string;
+            /** Format: int64 */
+            size_bytes: number;
+            storage_backend: string;
+            storage_key?: string | null;
+            storage_path?: string | null;
+        };
+        ArtifactUploadFileEnvelope: {
+            /** Format: uuid */
+            entry_id: string;
+            /** Format: int64 */
+            part_count: number;
+            /** Format: int64 */
+            part_size_bytes: number;
+            parts: components["schemas"]["ArtifactUploadPartEnvelope"][];
+            path: string;
+            upload_kind: string;
+        };
+        ArtifactUploadPartEnvelope: {
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: int64 */
+            part_number: number;
+            required_headers: {
+                [key: string]: string;
+            };
+            url: string;
+        };
+        ArtifactUploadRenewEnvelope: {
+            /** Format: uuid */
+            entry_id: string;
+            parts: components["schemas"]["ArtifactUploadPartEnvelope"][];
+            upload_session: Record<string, never>;
+        };
+        ArtifactUploadSessionEnvelope: {
+            files: components["schemas"]["ArtifactUploadFileEnvelope"][];
+            upload_session: components["schemas"]["ArtifactUploadSessionSummary"];
+        };
+        ArtifactUploadSessionRow: {
+            aliases: string[];
+            /** Format: uuid */
+            artifact_version_id: string;
+            /** Format: uuid */
+            collection_id: string;
+            /** Format: date-time */
+            created_at: string;
+            digest: string;
+            /** Format: int64 */
+            expected_total_bytes: number;
+            /** Format: date-time */
+            expires_at: string;
+            files: components["schemas"]["ArtifactUploadFile"][];
+            /** Format: uuid */
+            id: string;
+            idempotency_response?: unknown;
+            manifest_entries: components["schemas"]["ArtifactManifestEntryRow"][];
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            project_id: string;
+            request_hash: string;
+            /** Format: uuid */
+            run_id: string;
+            /** Format: double */
+            source_step?: number | null;
+            state: string;
+            /** Format: int64 */
+            total_part_count: number;
+            /** Format: int64 */
+            ttl_days?: number | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ArtifactUploadSessionSummary: {
+            /** Format: uuid */
+            artifact_version_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            part_size_bytes: number;
+        };
+        ArtifactVersionEnvelope: {
+            artifact_version: components["schemas"]["PublicArtifactVersionRow"];
+            deduplicated?: boolean | null;
+        };
+        ArtifactVersionRow: {
+            audit_reason?: string | null;
+            /** Format: uuid */
+            collection_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            delete_requested_at?: string | null;
+            /** Format: date-time */
+            deleted_at?: string | null;
+            digest: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: int64 */
+            file_count: number;
+            /** Format: uuid */
+            id: string;
+            metadata: Record<string, never>;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            project_id: string;
+            retention_mode: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** Format: uuid */
+            source_run_id?: string | null;
+            /** Format: double */
+            source_step?: number | null;
+            state: string;
+            /** Format: int64 */
+            ttl_days?: number | null;
+            /** Format: int64 */
+            version_index: number;
+        };
+        ArtifactVersionsEnvelope: {
+            has_more: boolean;
+            limit: number;
+            offset: number;
+            total: number;
+            versions: components["schemas"]["PublicArtifactVersionRow"][];
         };
         ArtifactsEnvelope: {
             artifacts: components["schemas"]["PublicArtifactRow"][];
@@ -1732,6 +2303,21 @@ export interface components {
             server_version?: string | null;
             status: string;
         };
+        CompleteArtifactUploadFile: {
+            content_base64?: string | null;
+            /** Format: uuid */
+            entry_id: string;
+            parts?: components["schemas"]["CompleteArtifactUploadPart"][] | null;
+        };
+        CompleteArtifactUploadPart: {
+            etag: string;
+            /** Format: int64 */
+            part_number: number;
+        };
+        CompleteArtifactUploadRequest: {
+            files: components["schemas"]["CompleteArtifactUploadFile"][];
+            idempotency_key?: string | null;
+        };
         ConsoleLogInput: {
             /** Format: int64 */
             line_number?: number | null;
@@ -1759,6 +2345,12 @@ export interface components {
             /** Format: uuid */
             project_id?: string | null;
             scopes?: string[] | null;
+        };
+        CreateArtifactInputEdgeRequest: {
+            /** Format: uuid */
+            artifact_version_id?: string | null;
+            ref?: string | null;
+            type?: string | null;
         };
         CreateArtifactRequest: {
             metadata?: {
@@ -1894,6 +2486,15 @@ export interface components {
         DashboardPreferencesEnvelope: {
             preferences: components["schemas"]["DashboardPreferenceRow"];
         };
+        DeleteArtifactAliasRequest: {
+            confirm?: string | null;
+            reason?: string | null;
+        };
+        DeleteArtifactVersionRequest: {
+            confirm?: string | null;
+            delete_aliases?: boolean | null;
+            reason?: string | null;
+        };
         DevGoogleAuthRequest: {
             /** Format: uuid */
             accept_invite_org_id?: string | null;
@@ -1955,6 +2556,16 @@ export interface components {
         InitialOrganizationInvitation: {
             email: string;
             role?: string | null;
+        };
+        InitiateArtifactUploadRequest: {
+            aliases?: string[] | null;
+            collection: components["schemas"]["ArtifactCollectionInput"];
+            idempotency_key?: string | null;
+            manifest: components["schemas"]["VersionedArtifactManifestInput"];
+            /** Format: double */
+            source_step?: number | null;
+            /** Format: int64 */
+            ttl_days?: number | null;
         };
         InsertedEnvelope: {
             /** Format: int64 */
@@ -2201,6 +2812,44 @@ export interface components {
             /** Format: uuid */
             service_account_id: string;
         };
+        PublicArtifactCollectionRow: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            default_ttl_days?: number | null;
+            /** Format: date-time */
+            deleted_at?: string | null;
+            description?: string | null;
+            /** Format: uuid */
+            id: string;
+            metadata: Record<string, never>;
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            project: string;
+            /** Format: uuid */
+            project_id: string;
+            type: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PublicArtifactManifestEntryRow: {
+            /** Format: uuid */
+            artifact_version_id: string;
+            /** Format: date-time */
+            created_at: string;
+            downloadable: boolean;
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            mime_type?: string | null;
+            path: string;
+            reference_uri?: string | null;
+            sha256?: string | null;
+            /** Format: int64 */
+            size_bytes?: number | null;
+            storage_backend: string;
+        };
         PublicArtifactRow: {
             /** Format: date-time */
             created_at: string;
@@ -2221,6 +2870,45 @@ export interface components {
             storage_backend: string;
             type: string;
             uri: string;
+        };
+        PublicArtifactVersionRow: {
+            aliases: string[];
+            audit_reason?: string | null;
+            /** Format: uuid */
+            collection_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            delete_requested_at?: string | null;
+            /** Format: date-time */
+            deleted_at?: string | null;
+            digest: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: int64 */
+            file_count: number;
+            /** Format: uuid */
+            id: string;
+            metadata: Record<string, never>;
+            name: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: uuid */
+            project_id: string;
+            retention_mode: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** Format: uuid */
+            source_run_id?: string | null;
+            /** Format: double */
+            source_step?: number | null;
+            state: string;
+            /** Format: int64 */
+            ttl_days?: number | null;
+            type: string;
+            version: string;
+            /** Format: int64 */
+            version_index: number;
         };
         PublicInvitationRow: {
             /** Format: date-time */
@@ -2321,6 +3009,14 @@ export interface components {
             /** Format: double */
             weighted_mean: number;
             world_size_mismatch: boolean;
+        };
+        RenewArtifactUploadRequest: {
+            /** Format: uuid */
+            entry_id: string;
+            /** Format: int64 */
+            part_count: number;
+            /** Format: int64 */
+            start_part_number: number;
         };
         ReportEnvelope: {
             report: components["schemas"]["ReportRow"];
@@ -2524,9 +3220,22 @@ export interface components {
             /** Format: uuid */
             org_id: string;
         };
+        SetArtifactAliasRequest: {
+            /** Format: uuid */
+            artifact_version_id: string;
+            confirm?: string | null;
+            reason?: string | null;
+        };
         SwitchOrganizationRequest: {
             /** Format: uuid */
             org_id?: string | null;
+        };
+        UpdateArtifactRetentionRequest: {
+            confirm?: string | null;
+            reason?: string | null;
+            retention_mode?: string | null;
+            /** Format: int64 */
+            ttl_days?: number | null;
         };
         UpdateDashboardPreferencesRequest: {
             selected_project?: string | null;
@@ -2589,6 +3298,18 @@ export interface components {
         };
         UsersEnvelope: {
             users: components["schemas"]["UserRow"][];
+        };
+        VersionedArtifactManifestEntryInput: {
+            kind?: string | null;
+            mime_type?: string | null;
+            path: string;
+            reference_uri?: string | null;
+            sha256?: string | null;
+            /** Format: int64 */
+            size_bytes?: number | null;
+        };
+        VersionedArtifactManifestInput: {
+            entries: components["schemas"]["VersionedArtifactManifestEntryInput"][];
         };
         WorkspaceViewEnvelope: {
             workspace_view: components["schemas"]["WorkspaceViewRow"];
@@ -2674,6 +3395,523 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_artifact_collections: {
+        parameters: {
+            query?: {
+                /** @description Project name filter */
+                project?: string;
+                /** @description Artifact collection type filter */
+                type?: string;
+                /** @description Case-insensitive collection name search */
+                q?: string;
+                /** @description Maximum collections to return */
+                limit?: number;
+                /** @description Collection offset */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versioned artifact collections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactCollectionsEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Read scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_artifact_collection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact collection UUID */
+                collection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactCollectionEnvelope"];
+                };
+            };
+            /** @description Collection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    set_artifact_alias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection_id: string;
+                alias: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetArtifactAliasRequest"];
+            };
+        };
+        responses: {
+            /** @description Moved artifact alias */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionEnvelope"];
+                };
+            };
+        };
+    };
+    delete_artifact_alias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection_id: string;
+                alias: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteArtifactAliasRequest"];
+            };
+        };
+        responses: {
+            /** @description Deleted artifact alias */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactAliasDeletedEnvelope"];
+                };
+            };
+        };
+    };
+    list_artifact_collection_versions: {
+        parameters: {
+            query?: {
+                /** @description Maximum versions to return */
+                limit?: number;
+                /** @description Version offset */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Artifact collection UUID */
+                collection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact collection versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionsEnvelope"];
+                };
+            };
+            /** @description Collection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    download_artifact_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact manifest entry UUID */
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact entry byte stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description Artifact entry not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Artifact version deleted or expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    abort_artifact_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact upload session UUID */
+                upload_session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AbortArtifactUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Aborted artifact upload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactUploadAbortEnvelope"];
+                };
+            };
+        };
+    };
+    complete_artifact_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact upload session UUID */
+                upload_session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteArtifactUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Committed artifact version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionEnvelope"];
+                };
+            };
+        };
+    };
+    renew_artifact_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact upload session UUID */
+                upload_session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenewArtifactUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Renewed upload URLs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactUploadRenewEnvelope"];
+                };
+            };
+        };
+    };
+    resolve_artifact_version: {
+        parameters: {
+            query: {
+                /** @description Artifact reference such as name:latest, type/name:best, or project/type/name:v0 */
+                ref: string;
+                /** @description Artifact collection type disambiguator */
+                type?: string;
+                /** @description Project name disambiguator */
+                project?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resolved artifact version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionEnvelope"];
+                };
+            };
+            /** @description Version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_artifact_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact version UUID */
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionEnvelope"];
+                };
+            };
+            /** @description Version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Artifact version deleted or expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_artifact_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact version UUID */
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteArtifactVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Soft-deleted artifact version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionEnvelope"];
+                };
+            };
+        };
+    };
+    artifact_version_lineage: {
+        parameters: {
+            query?: {
+                /** @description Maximum lineage edges to return */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Artifact version UUID */
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact lineage graph */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactLineageEnvelope"];
+                };
+            };
+            /** @description Version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Artifact version deleted or expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_artifact_manifest: {
+        parameters: {
+            query?: {
+                /** @description Maximum manifest entries to return */
+                limit?: number;
+                /** @description Manifest entry offset */
+                offset?: number;
+                /** @description Optional artifact path prefix */
+                path_prefix?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Artifact version UUID */
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact manifest page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactManifestEnvelope"];
+                };
+            };
+            /** @description Version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Artifact version deleted or expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_artifact_retention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact version UUID */
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateArtifactRetentionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated artifact retention */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionEnvelope"];
                 };
             };
         };
@@ -4999,6 +6237,106 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    run_artifact_edges: {
+        parameters: {
+            query?: {
+                /** @description Edge direction: input, output, or both */
+                direction?: string;
+                /** @description Maximum edges to return */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact input/output edges for a run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactEdgesEnvelope"];
+                };
+            };
+        };
+    };
+    create_artifact_input_edge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateArtifactInputEdgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Created artifact input edge */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersionEnvelope"];
+                };
+            };
+        };
+    };
+    initiate_artifact_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InitiateArtifactUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Artifact upload session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactUploadSessionEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Write scope required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

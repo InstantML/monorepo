@@ -1,3 +1,9 @@
+import type { components } from "../src/types/api.generated";
+
+type GeneratedArtifactCollectionSummary = components["schemas"]["ArtifactCollectionSummary"];
+type GeneratedArtifactVersion = components["schemas"]["PublicArtifactVersionRow"];
+type GeneratedArtifactManifestEntry = components["schemas"]["PublicArtifactManifestEntryRow"];
+
 export type RunSummary = {
   id: string;
   project: string;
@@ -65,6 +71,45 @@ export type Artifact = {
   mime_type?: string | null;
   storage_backend?: string | null;
   metadata: Record<string, unknown>;
+};
+
+export type ArtifactVersion = Omit<GeneratedArtifactVersion, "metadata"> & {
+  metadata: Record<string, unknown>;
+};
+
+export type ArtifactCollection = Omit<GeneratedArtifactCollectionSummary, "metadata" | "latest_version" | "best_version"> & {
+  metadata: Record<string, unknown>;
+  latest_version?: ArtifactVersion | null;
+  best_version?: ArtifactVersion | null;
+};
+
+export type ArtifactManifestEntry = GeneratedArtifactManifestEntry;
+
+export type ArtifactCollectionsEnvelope = components["schemas"]["ArtifactCollectionsEnvelope"];
+export type ArtifactVersionsEnvelope = components["schemas"]["ArtifactVersionsEnvelope"];
+export type ArtifactVersionEnvelope = components["schemas"]["ArtifactVersionEnvelope"];
+export type ArtifactManifestEnvelope = components["schemas"]["ArtifactManifestEnvelope"];
+
+export type ArtifactLineageNode = {
+  id: string;
+  kind: string;
+  label: string;
+  state?: string | null;
+  summary?: Record<string, unknown>;
+};
+
+export type ArtifactLineageEdge = {
+  from: string;
+  to: string;
+  direction?: string;
+};
+
+export type ArtifactLineageGraph = {
+  nodes: ArtifactLineageNode[];
+  edges: ArtifactLineageEdge[];
+  truncated?: boolean;
+  limit?: number;
+  depth?: number;
 };
 
 export type RunLineage = {

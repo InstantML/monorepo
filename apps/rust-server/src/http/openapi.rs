@@ -34,32 +34,41 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::{
-    AdminApiKeySummary, AdminBillingSummary, AdminOrgCounts, AdminOrganizationSummary,
-    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem,
-    AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
-    AdminUserSummary, AttributeInput, AttributeRow, AuthSessionPayload, BillingAccountProjection,
+    AbortArtifactUploadRequest, AdminApiKeySummary, AdminBillingSummary, AdminOrgCounts,
+    AdminOrganizationSummary, AdminOverviewQuerySummary, AdminOverviewResponse,
+    AdminOverviewTotals, AdminRiskItem, AdminStorageSummary, AdminUsageGauge, AdminUserIdentity,
+    AdminUserOrgMembership, AdminUserSummary, ArtifactAliasRow, ArtifactCollectionInput,
+    ArtifactCollectionRow, ArtifactEdgeRow, ArtifactManifestEntriesRecord,
+    ArtifactManifestEntryRow, ArtifactUploadFile, ArtifactUploadSessionRow, ArtifactVersionRow,
+    AttributeInput, AttributeRow, AuthSessionPayload, BillingAccountProjection,
     BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo, BillingCheckoutIntent,
     BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
     BillingPlanChangeRequest, BillingPortalRequest, BillingSeatChangeRequest,
     BillingSubscriptionRecord, BillingUsageReportRecord, ClerkAuthRequest,
     ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
     ClickHouseConnectionStatus, ClickHouseConnectionValidateRequest,
-    ClickHouseConnectionValidationResponse, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
-    CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
-    CreateCurrentUserOrganizationRequest, CreateInvitationRequest, CreateObjectRequest,
-    CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest, CreateRunForkRequest,
-    CreateRunRequest, CreateUserRequest, CurrentUserOrganizationCreateResponse,
-    DashboardPreferenceRow, DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest,
-    DeviceCodePollRequest, DeviceCodeStartRequest, InitialInvitationCreateResult,
-    InitialOrganizationInvitation, InvitationPreviewPayload, InvitationTokenRequest,
-    LogMetricsRequest, LogRankMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow,
-    OnboardingApiKey, OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow,
-    ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactRow, PublicInvitationRow,
-    RankCoveragePoint, RankHeatmapPoint, RankMetricLimits, RankMetricTruncation,
-    RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint, ReportRow, ReportSummary,
-    ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
-    SwitchOrganizationRequest, UpdateDashboardPreferencesRequest, UpdateReportRequest,
-    UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow, WorkspaceViewRow,
+    ClickHouseConnectionValidationResponse, CompleteArtifactUploadFile, CompleteArtifactUploadPart,
+    CompleteArtifactUploadRequest, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
+    CreateArtifactInputEdgeRequest, CreateArtifactRequest, CreateAttributesRequest,
+    CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest, CreateInvitationRequest,
+    CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
+    CreateRunForkRequest, CreateRunRequest, CreateUserRequest,
+    CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DeleteArtifactAliasRequest,
+    DeleteArtifactVersionRequest, DevGoogleAuthRequest, DeviceCodeClientInfo,
+    DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
+    InitialInvitationCreateResult, InitialOrganizationInvitation, InitiateArtifactUploadRequest,
+    InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
+    MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
+    OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
+    ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactCollectionRow,
+    PublicArtifactManifestEntryRow, PublicArtifactRow, PublicArtifactVersionRow,
+    PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
+    RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
+    RenewArtifactUploadRequest, ReportRow, ReportSummary, ReserveSeatRequest, RunRow,
+    SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SetArtifactAliasRequest,
+    SwitchOrganizationRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
+    UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+    VersionedArtifactManifestEntryInput, VersionedArtifactManifestInput, WorkspaceViewRow,
     WorkspaceViewSummary,
 };
 
@@ -400,6 +409,150 @@ pub struct ArtifactsEnvelope {
 #[schema(value_type = String, format = Binary)]
 pub struct BinaryBody(pub Vec<u8>);
 
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactCollectionSummary {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub description: Option<String>,
+    #[schema(value_type = Object)]
+    pub metadata: Value,
+    pub versions_count: usize,
+    pub retained_bytes: i64,
+    pub pending_delete_bytes: i64,
+    pub latest_version: Option<PublicArtifactVersionRow>,
+    pub best_version: Option<PublicArtifactVersionRow>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactCollectionsEnvelope {
+    pub collections: Vec<ArtifactCollectionSummary>,
+    pub limit: usize,
+    pub offset: usize,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactCollectionEnvelope {
+    pub collection: ArtifactCollectionSummary,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactVersionsEnvelope {
+    pub versions: Vec<PublicArtifactVersionRow>,
+    pub limit: usize,
+    pub offset: usize,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactVersionEnvelope {
+    pub artifact_version: PublicArtifactVersionRow,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deduplicated: Option<bool>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactManifestEnvelope {
+    pub artifact_version_id: Uuid,
+    pub entries: Vec<PublicArtifactManifestEntryRow>,
+    pub limit: usize,
+    pub offset: usize,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactLineageNode {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    pub state: Option<String>,
+    #[schema(value_type = Object)]
+    pub summary: Value,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactLineageEdge {
+    pub from: String,
+    pub to: String,
+    pub direction: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactLineageEnvelope {
+    pub nodes: Vec<ArtifactLineageNode>,
+    pub edges: Vec<ArtifactLineageEdge>,
+    pub truncated: bool,
+    pub limit: usize,
+    pub depth: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactUploadPartEnvelope {
+    pub part_number: i64,
+    pub url: String,
+    pub expires_at: DateTime<Utc>,
+    pub required_headers: BTreeMap<String, String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactUploadFileEnvelope {
+    pub entry_id: Uuid,
+    pub path: String,
+    pub upload_kind: String,
+    pub part_size_bytes: i64,
+    pub part_count: i64,
+    pub parts: Vec<ArtifactUploadPartEnvelope>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactUploadSessionSummary {
+    pub id: Uuid,
+    pub artifact_version_id: Uuid,
+    pub expires_at: DateTime<Utc>,
+    pub part_size_bytes: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactUploadSessionEnvelope {
+    pub upload_session: ArtifactUploadSessionSummary,
+    pub files: Vec<ArtifactUploadFileEnvelope>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactUploadRenewEnvelope {
+    #[schema(value_type = Object)]
+    pub upload_session: Value,
+    pub entry_id: Uuid,
+    pub parts: Vec<ArtifactUploadPartEnvelope>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactUploadAbortEnvelope {
+    #[schema(value_type = Object)]
+    pub upload_session: Value,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactAliasDeletedEnvelope {
+    pub deleted: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ArtifactEdgesEnvelope {
+    pub edges: Vec<ArtifactEdgeRow>,
+    pub limit: usize,
+}
+
 // ============================================================================
 // SecurityScheme registration via Modify.
 // ============================================================================
@@ -553,6 +706,24 @@ impl Modify for SecurityAddon {
         crate::http::handlers::artifacts::list_artifacts,
         crate::http::handlers::artifacts::upload_artifact,
         crate::http::handlers::artifacts::download_artifact,
+        crate::http::handlers::artifacts::list_artifact_collections,
+        crate::http::handlers::artifacts::get_artifact_collection,
+        crate::http::handlers::artifacts::list_artifact_collection_versions,
+        crate::http::handlers::artifacts::resolve_artifact_version,
+        crate::http::handlers::artifacts::get_artifact_version,
+        crate::http::handlers::artifacts::list_artifact_manifest,
+        crate::http::handlers::artifacts::artifact_version_lineage,
+        crate::http::handlers::artifacts::initiate_artifact_upload,
+        crate::http::handlers::artifacts::renew_artifact_upload,
+        crate::http::handlers::artifacts::complete_artifact_upload,
+        crate::http::handlers::artifacts::abort_artifact_upload,
+        crate::http::handlers::artifacts::set_artifact_alias,
+        crate::http::handlers::artifacts::delete_artifact_alias,
+        crate::http::handlers::artifacts::update_artifact_retention,
+        crate::http::handlers::artifacts::delete_artifact_version,
+        crate::http::handlers::artifacts::create_artifact_input_edge,
+        crate::http::handlers::artifacts::run_artifact_edges,
+        crate::http::handlers::artifacts::download_artifact_entry,
         // export / usage / imports
         crate::http::handlers::usage::export_data,
         crate::http::handlers::usage::usage_summary,
@@ -612,6 +783,23 @@ impl Modify for SecurityAddon {
         ArtifactEnvelope,
         ArtifactsEnvelope,
         BinaryBody,
+        ArtifactCollectionSummary,
+        ArtifactCollectionsEnvelope,
+        ArtifactCollectionEnvelope,
+        ArtifactVersionsEnvelope,
+        ArtifactVersionEnvelope,
+        ArtifactManifestEnvelope,
+        ArtifactLineageNode,
+        ArtifactLineageEdge,
+        ArtifactLineageEnvelope,
+        ArtifactUploadPartEnvelope,
+        ArtifactUploadFileEnvelope,
+        ArtifactUploadSessionSummary,
+        ArtifactUploadSessionEnvelope,
+        ArtifactUploadRenewEnvelope,
+        ArtifactUploadAbortEnvelope,
+        ArtifactAliasDeletedEnvelope,
+        ArtifactEdgesEnvelope,
         JsonObjectResponse,
         AdminOverviewResponse,
         AdminOverviewQuerySummary,
@@ -628,6 +816,31 @@ impl Modify for SecurityAddon {
         AdminBillingSummary,
         // domain
         PublicArtifactRow,
+        PublicArtifactCollectionRow,
+        PublicArtifactVersionRow,
+        PublicArtifactManifestEntryRow,
+        ArtifactCollectionInput,
+        VersionedArtifactManifestInput,
+        VersionedArtifactManifestEntryInput,
+        InitiateArtifactUploadRequest,
+        RenewArtifactUploadRequest,
+        CompleteArtifactUploadPart,
+        CompleteArtifactUploadFile,
+        CompleteArtifactUploadRequest,
+        AbortArtifactUploadRequest,
+        SetArtifactAliasRequest,
+        DeleteArtifactAliasRequest,
+        UpdateArtifactRetentionRequest,
+        DeleteArtifactVersionRequest,
+        CreateArtifactInputEdgeRequest,
+        ArtifactCollectionRow,
+        ArtifactVersionRow,
+        ArtifactManifestEntriesRecord,
+        ArtifactManifestEntryRow,
+        ArtifactAliasRow,
+        ArtifactEdgeRow,
+        ArtifactUploadFile,
+        ArtifactUploadSessionRow,
         AttributeInput,
         AttributeRow,
         AuthSessionPayload,
