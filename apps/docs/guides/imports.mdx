@@ -50,11 +50,20 @@ scalar points instead of replacing existing history.
 
 These routes accept transformed JSON inputs. They are not raw vendor database
 readers. Imports count against the same project, run, metric-point, and
-metadata/operational-storage plan limits as SDK writes. Artifact counts and
-declared external byte totals are visible in usage summaries, but importers do
-not copy source artifact bytes into InstantML-hosted storage. Storage-heavy
-migration projects should use Premium or custom terms before separately
-uploading retained artifact bytes.
+metadata/operational-storage plan limits as SDK writes. Accepted Import v2 chunk
+payloads also count as retained operational storage and each import job has a
+hard staged-payload byte ceiling, so abandoned dry-run jobs cannot consume
+unbounded space. Artifact counts and declared external byte totals are visible
+in usage summaries, but importers do not copy source artifact bytes into
+InstantML-hosted storage. Storage-heavy migration projects should use Premium
+or custom terms before separately uploading retained artifact bytes.
+
+Imported artifact references appear in both places users expect: the legacy raw
+run artifact list for backwards-compatible Run Detail and Compare workflows,
+and the versioned Artifacts catalog as run-level, metadata-only external
+manifest bundles. Those imported catalog versions participate in artifact
+lineage, but downloads stay unavailable until you upload the actual bytes with
+the SDK.
 
 The legacy JSON routes remain for backward compatibility. New migration work
 should prefer Import v2 through the SDK/CLI because it supports dry-run
@@ -70,7 +79,8 @@ Importer payloads should preserve the useful experiment-tracking spine:
 - Config/params.
 - Tags and notes when present.
 - Metric history and summaries.
-- External artifact references, declared sizes, MIME types, and metadata.
+- External artifact references, declared sizes, MIME types, metadata, and
+  metadata-only artifact catalog bundles for lineage.
 - Import status and diagnostics.
 
 ## API-key auth

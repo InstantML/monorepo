@@ -98,6 +98,11 @@ external-run identity level. Metric event-level dedupe is deferred; if a commit
 fails after partial writes begin, the job becomes non-resumable and the user
 creates a new import job.
 
+Accepted chunk payloads are operational storage, not free temporary upload
+space. Chunk append checks storage plan capacity before persistence, each job
+has a hard staged-payload byte ceiling, and usage summaries include retained
+chunk payload bytes so abandoned import jobs cannot bypass storage guardrails.
+
 V1 conflict behavior is append-only with `skip_existing`. If a run with the
 same `(org_id, project_id, source_type, external_project_id, external_run_id)`
 already exists, commit skips that run and reports it in the summary. There is no
@@ -112,6 +117,15 @@ summaries, and frontend previews. It redacts common API keys, bearer tokens,
 credentialed URLs, signed query strings, private key blocks, and internal
 credential-like values. Raw external artifact references are not fetched; API
 responses expose redacted display references by default.
+
+After the versioned artifact lineage slice, committed external artifact
+references are also mirrored into one metadata-only artifact bundle per imported
+run. The import still writes the legacy raw `ArtifactRow` so Run Detail,
+Compare, and old SDK flows remain compatible, but the Artifacts catalog can now
+show imported W&B/Neptune/MLflow references as active versions with external
+manifest entries and output lineage edges from the imported run. These versions have
+`storage_backend="external"`, are not downloadable through InstantML, and count
+only metadata overhead rather than source artifact bytes.
 
 ## Component Impact
 
@@ -138,7 +152,9 @@ Storage:
 
 - Persist import job/chunk metadata as operational records.
 - Store source provenance under reserved `metadata.import`.
-- Store external artifact references as metadata-only rows.
+- Store external artifact references as legacy raw rows plus metadata-only
+  run-level versioned artifact bundles/manifests so the artifact catalog and
+  lineage graph remain compatible with imported workloads.
 
 Docs:
 
@@ -369,6 +385,13 @@ Post-implementation review:
   but should behave as native subclasses when those frameworks are installed.
 - Resolution: accepted; adapter classes lazily specialize at instantiation time
   and plain `import instantml` remains lightweight.
+- Finding: PR #147's versioned artifact catalog required imports to mirror
+  external artifact refs into lineage without breaking raw artifact flows.
+- Resolution: accepted; imports now preserve legacy raw `ArtifactRow`s and create
+  one redacted metadata-only versioned artifact bundle per imported run, with
+  output lineage edges, retry repair for already-complete imports, project-scoped
+  artifact collection listing, native collection collision avoidance, full
+  multi-chunk manifest repair, and conservative metadata/ref-size plan gating.
 - Residual risk: Neptune Exporter parsing still groups run metadata/artifact
   references in memory while metric history streams and job caps bound the
   production import; fully streaming run metadata remains a follow-up if design

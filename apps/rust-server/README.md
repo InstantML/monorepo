@@ -93,12 +93,17 @@ points, 25,000 attributes, 10,000 artifact references, and 200 warnings per
 chunk. Chunk payload `job_id`, `source_type`, `source_project`, and
 `target_project` must match the job, which keeps retries and path parameters
 authoritative. The server also applies `INSTANTML_MAX_UPLOAD_BODY_BYTES`,
-redacts secret-looking keys and bearer/signed-URL text, and stores imported
-artifact references with `storage_backend="external"` so scalar metric
-ingestion stays separate from artifact bytes. Failed commits are retryable only
-when no partial imported runs were written; otherwise operators should create a
-new job to avoid duplicating or silently skipping partially written metrics.
-During commit, new imported runs are hidden with
+checks storage capacity before accepting chunk payloads, caps staged payload
+bytes per job, redacts secret-looking keys and bearer/signed-URL text, and
+stores imported artifact references with `storage_backend="external"` so scalar
+metric ingestion stays separate from artifact bytes. Imported external artifact
+references are also mirrored into run-level metadata-only versioned artifact
+bundles/manifests with output lineage edges, so the new Artifacts catalog can
+browse migrated artifact references while legacy raw artifact rows remain
+available to Run Detail and Compare. Failed commits are retryable only when no
+partial imported runs were written; otherwise operators should create a new job
+to avoid duplicating or silently skipping partially written metrics. During
+commit, new imported runs are hidden with
 `metadata.import.complete=false` until their metric, attribute, and artifact
 rows are durable; run APIs and dashboard lists hide those incomplete rows.
 TensorBoard re-syncs append scalar points to an existing complete imported

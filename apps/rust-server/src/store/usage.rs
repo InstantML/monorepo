@@ -252,6 +252,8 @@ async fn usage_counts_for_org(
         .values()
         .filter(|collection| collection.org_id == org_id && collection.deleted_at.is_none())
         .count() as i64;
+    let import_chunk_storage_bytes =
+        crate::store::imports::import_chunk_storage_bytes_for_org_locked(&data, org_id)?;
     let seats = reserved_seat_count_in_data(&data, org_id, Utc::now()) as i64;
     let projects = data
         .projects
@@ -285,7 +287,8 @@ async fn usage_counts_for_org(
     );
     let artifact_bytes_exact = artifact_usage.artifact_bytes_exact
         + versioned_artifact_usage.active_bytes
-        + versioned_artifact_usage.pending_delete_bytes;
+        + versioned_artifact_usage.pending_delete_bytes
+        + import_chunk_storage_bytes;
     let storage_bytes_for_warnings = storage_bytes_for_warnings(
         artifact_bytes_exact,
         estimated_metadata_bytes,

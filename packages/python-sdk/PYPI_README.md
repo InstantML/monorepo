@@ -162,7 +162,9 @@ instantml sync tensorboard runs/tensorboard --project cartpole --watch --watch-i
 
 Neptune Exporter metric histories stream as bounded Import v2 chunks, and
 repeated TensorBoard syncs append scalar points to the existing imported
-TensorBoard run when source identity matches.
+TensorBoard run when source identity matches. Imported external artifact
+references remain metadata-only, but they appear in the versioned Artifacts
+catalog and lineage graph as run-level external manifest bundles after commit.
 
 For a W&B-style logging subset, intentionally alias the compatibility module:
 

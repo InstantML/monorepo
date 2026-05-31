@@ -105,7 +105,14 @@ Authorization: Bearer instantml_...
 The create response returns an import job. Chunk uploads carry canonical runs,
 metric points, artifact references, warnings, source identity, and a `final`
 marker. Commit is allowed only after the final chunk has passed validation. Use
-cancel for abandoned dry-runs.
+cancel for abandoned dry-runs. Accepted chunk payloads count toward retained
+operational storage, are checked against storage plan capacity when appended,
+and are bounded by a per-job staged-payload byte ceiling.
+
+Committed external artifact references are stored as legacy raw artifact rows
+and mirrored into run-level metadata-only versioned artifact bundles. The
+catalog entries have external manifest references and lineage edges, but no
+InstantML download until bytes are uploaded separately.
 
 Legacy transformed JSON routes remain supported for compatibility:
 

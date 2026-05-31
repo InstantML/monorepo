@@ -60,10 +60,11 @@ normal metric summary path stays lightweight.
 ## Raw run artifacts
 
 Versioned collections are the primary Artifacts tab workflow. Legacy raw run
-artifacts stay isolated from the collection/manifest/lineage view so existing
-file/media, rich-object, checkpoint, and importer workflows do not get mixed
-into the version registry. Use Run Detail Files for the selected run's raw
-artifact browser and media previews.
+artifacts remain available so existing file/media, rich-object, checkpoint, and
+importer workflows keep their old IDs and Run Detail behavior. Imported
+external artifact references are also mirrored into metadata-only versioned
+run-level bundles, which lets migrated W&B/Neptune/MLflow artifacts appear in
+the catalog and lineage graph without copying bytes into InstantML storage.
 
 ## Safe previews
 

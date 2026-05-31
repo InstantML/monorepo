@@ -161,9 +161,12 @@ notes/metadata, statuses, typed attributes, external artifact references,
 provenance metadata, dry-run warnings, and job history. It does not fetch
 hosted W&B/Neptune data server-side and does not migrate artifact bytes.
 Neptune Exporter metric histories stream out as bounded Import v2 chunks; run
-metadata and external artifact references remain metadata-only. Repeated
-TensorBoard syncs append scalar points to the existing imported TensorBoard run
-when source identity matches.
+metadata and external artifact references remain metadata-only. Committed
+external artifact references are still visible in the versioned Artifacts
+catalog and lineage graph as run-level external manifest bundles, while raw run
+artifact rows remain available for backwards-compatible Run Detail and Compare
+views. Repeated TensorBoard syncs append scalar points to the existing imported
+TensorBoard run when source identity matches.
 
 ## Credential resolution
 

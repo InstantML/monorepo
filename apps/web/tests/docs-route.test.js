@@ -233,6 +233,15 @@ test("dashboard workflow docs expose product screenshots through the route parse
   assert.ok(tourImages.includes("/images/product/dashboard-reports-editor.png"));
 });
 
+test("import docs describe metadata-only artifact bundles", async () => {
+  const importsGuide = await loadDocsMarkdown(["guides", "imports.md"]);
+  assert.match(importsGuide.markdown, /run-level,\s+metadata-only external\s+manifest bundles/);
+  assert.match(importsGuide.markdown, /downloads stay unavailable until you upload the actual bytes/);
+
+  const importApi = await loadDocsMarkdown(["api", "import-export-usage.md"]);
+  assert.match(importApi.markdown, /run-level metadata-only versioned artifact bundles/);
+});
+
 test("docs markdown loader mirrors pages and agent indexes", async () => {
   const quickstart = await loadDocsMarkdown(["quickstart.md"]);
   assert.equal(quickstart.path, "quickstart");
