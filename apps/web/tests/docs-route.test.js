@@ -213,6 +213,18 @@ test("docs loader can read an MDX page and the generated API reference", async (
   assert.ok(apiReference.endpoints.length > 0);
 });
 
+test("dashboard workflow docs expose product screenshots through the route parser", async () => {
+  const artifacts = await loadDocsPage(["dashboard", "artifacts-files"]);
+  const artifactImages = artifacts.blocks.filter((block) => block.type === "image").map((block) => block.src);
+  assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-evidence.png"));
+  assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-browser.png"));
+
+  const tour = await loadDocsPage(["dashboard", "tour"]);
+  const tourImages = tour.blocks.filter((block) => block.type === "image").map((block) => block.src);
+  assert.ok(tourImages.includes("/images/product/dashboard-artifacts-browser.png"));
+  assert.ok(tourImages.includes("/images/product/dashboard-reports-editor.png"));
+});
+
 test("docs markdown loader mirrors pages and agent indexes", async () => {
   const quickstart = await loadDocsMarkdown(["quickstart.md"]);
   assert.equal(quickstart.path, "quickstart");

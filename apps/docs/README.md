@@ -68,7 +68,7 @@ only in the same change that changes the production docs URL.
 Focused tests for the docs helper scripts:
 
 ```bash
-node --test tools/tests/docs-openapi.test.js
+npm run docs:test
 ```
 
 Full docs validation:
@@ -108,10 +108,12 @@ Node tests.
 - `api/`: practical API guides plus the generated OpenAPI reference tab.
 - `images/`: docs-local brand and product assets served by the Next `/docs`
   asset route and the Mintlify preview.
-- `images/product/`: dashboard screenshots for the public tour and workflow
-  pages. Refresh these when organization/workspace switching, search, run
-  detail files, checkpoint fork/lineage, artifacts, reports, settings, or API
-  key flows materially change.
+- `images/product/`: 1440x1000 dashboard screenshots for the public tour and
+  workflow pages, captured from a seeded local workspace. Refresh these when
+  organization/workspace switching, search, run detail files, checkpoint
+  fork/lineage, artifacts, reports, settings, or API key flows materially
+  change. `npm run docs:test` guards missing, unused, wrong-sized, or otherwise
+  stale product captures, plus OpenAPI and benchmark evidence drift.
 - Web-rendered Markdown mirrors are generated at request time from these MDX
   files; do not maintain duplicate checked-in `.md` copies.
 
