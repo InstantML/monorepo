@@ -90,19 +90,39 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "Optional byte range forwarded to the stored artifact backend",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Artifact byte stream",
+            "description": "Artifact byte stream. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream.",
             "content": {
-              "application/octet-stream": {}
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              }
             }
           },
           "206": {
-            "description": "Artifact byte range",
+            "description": "Artifact byte range. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream.",
             "content": {
-              "application/octet-stream": {}
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              }
             }
           },
           "401": {
@@ -127,6 +147,16 @@
           },
           "404": {
             "description": "Artifact not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Requested range is not satisfiable",
             "content": {
               "application/json": {
                 "schema": {
@@ -2759,6 +2789,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2828,7 +2868,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Public report fetched by share token",
+            "description": "Shared report fetched by share token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2958,6 +2998,16 @@
               }
             }
           },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Report not found",
             "content": {
@@ -3035,6 +3085,16 @@
               }
             }
           },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Report not found",
             "content": {
@@ -3084,7 +3144,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Markdown rendering of the report"
+            "description": "Markdown rendering of the report",
+            "content": {
+              "text/markdown; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "description": "Authentication required",
@@ -3148,6 +3215,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
             "content": {
               "application/json": {
                 "schema": {
@@ -3521,6 +3598,16 @@
               }
             }
           },
+          "403": {
+            "description": "Artifact write scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Run not found",
             "content": {
@@ -3601,7 +3688,7 @@
             }
           },
           "403": {
-            "description": "Artifact byte uploads disabled by server configuration",
+            "description": "Artifact write scope required or artifact byte uploads disabled by server configuration",
             "content": {
               "application/json": {
                 "schema": {
@@ -3819,6 +3906,18 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate fork retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         ],
@@ -7437,6 +7536,10 @@
           }
         }
       },
+      "BinaryBody": {
+        "type": "string",
+        "format": "binary"
+      },
       "ClerkAuthRequest": {
         "type": "object",
         "properties": {
@@ -7882,12 +7985,16 @@
       },
       "CreateArtifactRequest": {
         "type": "object",
+        "required": [
+          "name"
+        ],
         "properties": {
           "metadata": {
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "mime_type": {
             "type": [
@@ -7896,10 +8003,7 @@
             ]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "path": {
             "type": [
@@ -7915,15 +8019,19 @@
           },
           "size_bytes": {
             "type": [
-              "object",
+              "integer",
               "null"
-            ]
+            ],
+            "format": "int64",
+            "minimum": 0
           },
           "step": {
             "type": [
-              "object",
+              "number",
               "null"
-            ]
+            ],
+            "format": "double",
+            "minimum": 0
           },
           "type": {
             "type": [
@@ -8096,7 +8204,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "rows": {
             "type": [
@@ -8179,12 +8288,20 @@
       },
       "CreateReportRequest": {
         "type": "object",
+        "required": [
+          "title"
+        ],
         "properties": {
           "blocks": {
             "type": [
-              "object",
+              "array",
               "null"
-            ]
+            ],
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "maxItems": 256
           },
           "description": {
             "type": [
@@ -8200,10 +8317,7 @@
             "format": "uuid"
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "visibility": {
             "type": [
@@ -8227,7 +8341,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "inherit_config": {
             "type": [
@@ -8239,7 +8354,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "name": {
             "type": [
@@ -8278,13 +8394,15 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "metadata": {
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "name": {
             "type": [
@@ -8876,7 +8994,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "step": {
             "type": "object"
@@ -9977,8 +10096,12 @@
             "format": "uuid"
           },
           "blocks": {
-            "type": "object",
-            "description": "Ordered list of block JSON objects. Each block has a `kind` discriminator\n(`heading`, `paragraph`, `markdown`, `code`, `callout`, `horizontal_rule`,\n`image`, `panel_grid`) plus kind-specific fields. Legacy stored\nreports may still contain `llm_summary` blocks so old documents keep\nrendering."
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "maxItems": 256
           },
           "created_at": {
             "type": "string",
@@ -10545,7 +10668,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "project": {
             "type": [
@@ -10702,9 +10826,14 @@
         "properties": {
           "blocks": {
             "type": [
-              "object",
+              "array",
               "null"
-            ]
+            ],
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "maxItems": 256
           },
           "description": {
             "type": [
@@ -10754,18 +10883,20 @@
       },
       "UploadArtifactRequest": {
         "type": "object",
+        "required": [
+          "name",
+          "content_base64"
+        ],
         "properties": {
           "content_base64": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "metadata": {
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "mime_type": {
             "type": [
@@ -10774,10 +10905,7 @@
             ]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "path": {
             "type": [
@@ -10787,9 +10915,11 @@
           },
           "step": {
             "type": [
-              "object",
+              "number",
               "null"
-            ]
+            ],
+            "format": "double",
+            "minimum": 0
           },
           "type": {
             "type": [
@@ -11101,7 +11231,7 @@
     },
     {
       "name": "reports",
-      "description": "Notion-style report documents with live PanelGrids."
+      "description": "Notion-style report documents with live PanelGrids and legacy LLM-summary rendering."
     }
   ]
 }

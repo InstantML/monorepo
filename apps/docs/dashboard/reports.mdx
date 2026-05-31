@@ -1,28 +1,53 @@
 ---
 title: "Reports"
-description: "Create shareable report documents with prose and live run panels."
+description: "Create block-based experiment writeups with live panels, share links, and Markdown export."
 ---
 
 # Reports
 
-The Reports tab creates persisted report documents for experiment recaps,
-ablation notes, and teammate handoffs. Reports can combine prose, markdown,
-code snippets, images, callouts, and live PanelGrids that query run data.
+The Reports tab turns dashboard context into persisted report documents for
+experiment recaps, ablation notes, checkpoint decisions, launch notes, sweep
+summaries, and teammate handoffs.
 
-## What appears
+![Reports editor](/images/product/dashboard-reports-editor.png)
 
-- A list of reports in the workspace.
-- A block editor for each report.
-- Live PanelGrid blocks that render charts from runsets.
-- Share links for read-only report viewing.
-- Markdown export for copying a report outside InstantML.
+## What reports contain
 
-## Create a useful report
+Reports are block-based documents. Current block types include:
 
-1. Open Reports.
-2. Create a report and add prose blocks for the narrative.
-3. Add a PanelGrid block for charts that should stay live.
-4. Share the report link or export it as Markdown.
+- Headings, paragraphs, markdown, code, horizontal rules, and callouts.
+- Images.
+- Panel grids with live metric charts, scalar panels, run comparers, markdown, code, and image panels.
 
-Use reports for concise experiment reviews rather than as a replacement for the
-main Runs and Compare workspaces.
+Legacy LLM summary blocks remain readable in existing reports so older writeups
+keep rendering. New reports should use narrative blocks and panel grids.
+
+The Reports list shows every report visible to the active workspace. Opening a
+report mounts the editor at `/dashboard/reports/{report_id}`.
+
+## Editing and auto-save
+
+The editor auto-saves title, description, visibility, and block changes through
+the reports API. The toolbar shows save state, undo/redo controls, share, and
+Markdown export.
+
+Use visibility to choose the audience:
+
+| Visibility | Meaning |
+| --- | --- |
+| Private | Workspace-authenticated report unless a share token exists |
+| Organization | Workspace report intended for team readout |
+| Public | Intended for public/shared read paths |
+
+## Sharing and export
+
+The Share action creates or rotates a share token and exposes a public `/r/...`
+link. Export opens a Markdown response for review, archives, or follow-up
+analysis outside InstantML.
+
+## Relationship to saved views
+
+Saved workspace views still preserve dashboard layout and filters from Runs.
+Reports are separate persisted documents. Use saved views for repeatable
+dashboard state, and use reports when the result needs narrative context,
+charts, evidence, and a shareable readout.

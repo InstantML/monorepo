@@ -1968,8 +1968,9 @@ def init(
     via ``api_key`` kwarg, ``INSTANTML_API_KEY`` env var, or ``~/.instantml/credentials``.
 
     Set ``shadow_wandb=True`` (or pass a ``dict`` of wandb.init kwargs, or an
-    already-initialized ``wandb.Run``) to mirror every ``log``, ``finish``, and
-    ``log_artifact`` call to Weights & Biases for shadow→graduate pilots.
+    already-initialized ``wandb.Run``) to mirror scalar ``log`` calls,
+    ``finish``, and local-file ``log_artifact("name", "file://path", ...)``
+    metadata artifacts to Weights & Biases for shadow→graduate pilots.
     """
     _check_credentials_or_raise(api_key)
     return Client(base_url=base_url or _default_base_url(), timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(

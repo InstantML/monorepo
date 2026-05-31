@@ -198,6 +198,7 @@ pub async fn get_run_lineage(
     tag = "runs",
     params(
         ("run_id" = String, Path, description = "Source run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate fork retries"),
     ),
     request_body = crate::domain::CreateRunForkRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),

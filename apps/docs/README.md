@@ -68,7 +68,7 @@ only in the same change that changes the production docs URL.
 Focused tests for the docs helper scripts:
 
 ```bash
-node --test tools/tests/docs-openapi.test.js
+npm run docs:test
 ```
 
 Full docs validation:
@@ -89,6 +89,11 @@ Node tests.
 - `openapi.json`: generated public API reference copy. Do not edit by hand.
 - `index.mdx`: public docs landing page.
 - `quickstart.mdx`: hosted SaaS and SDK first-run path.
+- `pricing.mdx`: public Free/Pro/Premium plan overview, no tracked-hour
+  billing positioning, included usage, and overage summary.
+- `benchmarks.mdx`: public hosted latency evidence, W&B comparison status, and
+  benchmark fairness rules. Keep any W&B speed claims aligned with sanitized
+  committed benchmark results and their caveats.
 - `guides/pricing-limits-billing.mdx`: public Free/Pro/Premium pricing,
   included usage, API request rate limits, storage/request overage, and billing
   behavior.
@@ -103,6 +108,12 @@ Node tests.
 - `api/`: practical API guides plus the generated OpenAPI reference tab.
 - `images/`: docs-local brand and product assets served by the Next `/docs`
   asset route and the Mintlify preview.
+- `images/product/`: 1440x1000 dashboard screenshots for the public tour and
+  workflow pages, captured from a seeded local workspace. Refresh these when
+  organization/workspace switching, search, run detail files, checkpoint
+  fork/lineage, artifacts, reports, settings, or API key flows materially
+  change. `npm run docs:test` guards missing, unused, wrong-sized, or otherwise
+  stale product captures, plus OpenAPI and benchmark evidence drift.
 - Web-rendered Markdown mirrors are generated at request time from these MDX
   files; do not maintain duplicate checked-in `.md` copies.
 

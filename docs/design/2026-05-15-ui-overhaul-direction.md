@@ -91,7 +91,7 @@ The public site is the source of truth for "what InstantML feels like."
 
 **Type system:**
 - Primary sans (heavy weight, tight tracking) — `Geist` / Inter family
-- *Italic serif* for emphasis fragments inside headlines: "One pip install. *Three SDK calls.*", "The old tools work. *They're just slow.*" — this is the most distinctive treatment on the site
+- *Italic serif* for emphasis fragments inside headlines: "One pip install. *Three SDK calls.*", "Familiar tools work. *The daily loop can still drag.*" — this is the most distinctive treatment on the site
 - Monospace uppercase for eyebrows and labels: `WHY TEAMS SWITCH`, `PROJECT SUMMARY P95`, `STATUS QUO`, `INSTANTML`
 - Large display numerals for benchmarks: `78 ms`, `118 ms`, `387 ms`
 

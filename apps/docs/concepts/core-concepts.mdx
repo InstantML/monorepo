@@ -8,6 +8,13 @@ description: "Understand projects, runs, metrics, configs, artifacts, objects, a
 InstantML is built around a small set of training-loop concepts. If these are
 clear, the SDK, API, and dashboard all feel predictable.
 
+## Workspace / organization
+
+A workspace is the dashboard name for an organization. It owns members, roles,
+billing, usage, API keys, reports, storage configuration, projects, and runs.
+Switching workspaces changes the organization context for every dashboard and
+API route.
+
 ## Project
 
 A project groups related runs. Most teams use one project per model family,
@@ -37,6 +44,8 @@ Runs carry:
 - Start/end timing.
 - Config values.
 - Searchable tags and notes.
+- Parent run and checkpoint fork context when the run was created from a
+  checkpoint.
 - Maintained metric summaries.
 - Source metadata when the SDK can capture it.
 - Artifacts, checkpoints, rich objects, logs, and media.
@@ -133,6 +142,13 @@ Use artifacts for:
 Stored artifact bytes are uploaded through the API and served back through a
 same-origin download route. External references remain copyable metadata.
 
+## Checkpoint fork
+
+A checkpoint fork is a linked child run created from a source run and
+checkpoint artifact. Forking records provenance only. It does not start
+training, copy metrics, or copy artifacts. Attach the SDK to the child run when
+you are ready to resume or retry training.
+
 ## Rich object
 
 Rich objects are structured logged values for dashboard previews.
@@ -145,6 +161,13 @@ Current public object types include:
 
 The dashboard fetches object manifests separately from run summaries so hidden
 tabs do not load large object payloads by accident.
+
+## Report
+
+A report is a workspace-scoped writeup with block content, live dashboard
+panels, share links, and Markdown export. Reports are for experiment decisions,
+checkpoint reviews, and summaries that need narrative context beyond a saved
+dashboard view.
 
 ## Usage and limits
 

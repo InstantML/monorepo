@@ -11,4 +11,7 @@ Rust/ClickHouse validation note: interviews should also test whether small teams
 Current docs:
 
 - `2026-05-09-validation-plan.md`: outreach plan, pricing validation questions, scorecard, and decision rules.
+- `checkpoint-forking-agent-guide.md`: agent playbook for checkpoint logging,
+  same-project run forks, resume scripts, scopes, and docs pages that must stay
+  aligned.
 - `day-1-customer-discovery.md`: original discovery hypotheses and interview questions.

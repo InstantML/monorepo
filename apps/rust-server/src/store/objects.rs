@@ -319,12 +319,9 @@ pub async fn upload_artifact(
     input: UploadArtifactRequest,
 ) -> AppResult<ArtifactRow> {
     ensure_billing_write_allowed(store, ctx.org_id, "upload an artifact").await?;
-    let name = validate_name(input.name.as_deref(), "artifact name")?;
+    let name = validate_name(Some(input.name.as_str()), "artifact name")?;
     let artifact_id = Uuid::new_v4();
-    let content = input
-        .content_base64
-        .as_deref()
-        .ok_or_else(|| AppError::validation("content_base64 is required"))?;
+    let content = input.content_base64.as_str();
     if content.trim().is_empty() {
         return Err(AppError::validation("content_base64 is required"));
     }
@@ -359,7 +356,7 @@ pub async fn upload_artifact(
         .await?;
     let request = CreateArtifactRequest {
         kind: input.kind,
-        name: Some(name),
+        name,
         uri: Some(stored.uri.clone()),
         step: input.step,
         size_bytes: Some(json!(size_bytes)),
@@ -387,7 +384,7 @@ async fn artifact_from_input(
     stored: Option<StoredArtifact>,
     enforce_capacity: bool,
 ) -> AppResult<ArtifactRow> {
-    let name = validate_name(input.name.as_deref(), "artifact name")?;
+    let name = validate_name(Some(input.name.as_str()), "artifact name")?;
     let kind = validate_artifact_type(input.kind.as_deref().unwrap_or("file"))?;
     let uri = validate_name(
         input

@@ -177,9 +177,9 @@ cursor while `event_id` is random. Full replay is the current safe path.
   "id": "uuid",
   "slug": "acme-research",
   "name": "Acme Research",
-  "plan_tier": "pro",
-  "account_type": "customer",
-  "seat_limit": 3,
+  "plan_tier": "premium",
+  "account_type": "business",
+  "seat_limit": 10,
   "created_by_user_id": "uuid",
   "created_at": "2026-05-16T00:00:00Z",
   "tenant_routing_tier": "customer-clickhouse",
@@ -194,7 +194,7 @@ cursor while `event_id` is random. Full replay is the current safe path.
 | `slug` | string | Unique URL-safe-ish workspace slug. |
 | `name` | string | Display name. |
 | `plan_tier` | string | Current tier: `free`, `pro`, or `premium`. Legacy `lab`/`startup` values canonicalize to `pro`; `growth` canonicalizes to `premium` on new writes. |
-| `account_type` | string | `customer`, `business`, or validated account type. |
+| `account_type` | string | `personal` or `business` for new user-created workspaces. `customer` is a legacy compatibility value that canonicalizes to the personal/default path. |
 | `seat_limit` | integer | Max active plus invited seats from the selected plan: Free 2, Pro 3, Premium 10 by default. |
 | `created_by_user_id` | UUID string or null | Creator when known. |
 | `created_at` | datetime | Creation time. |
@@ -820,7 +820,7 @@ metric-point usage is counted for the current UTC calendar-month
 `usage.metric_points` and `usage.metric_points_current_period`, while
 `usage.metric_points_retained_total` records retained history. Plan-owned
 data-plane writes are checked against the stored tier before commit. New
-project, run, metric-ingest, artifact, import, and demo-reset writes return
+project, run, metric-ingest, artifact-storage, import, and demo-reset writes return
 HTTP 402 with `code: "plan_limit_exceeded"` when current or projected usage
 crosses a blocked `projects`, `runs`, current-month `metric_points`, or
 retained `storage` limit. Seats remain tracked as `paid_extra_seats` until

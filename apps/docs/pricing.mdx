@@ -1,0 +1,77 @@
+---
+title: "Pricing"
+description: "Review InstantML hosted plans, included usage, explicit overage, and the no tracked-hour billing model."
+---
+
+# Pricing
+
+InstantML uses seat-plus-included-usage pricing for hosted training
+observability. Free, Pro, and Premium include seats, hosted storage, retained
+project/run capacity, monthly metric-point allowance, monthly API request
+allowance, and short-window rate limits.
+
+InstantML does not bill tracked training hours in v1. Paid storage and API
+request overage are explicit; Free and non-billable orgs are blocked at their
+monthly API request allowance.
+
+## Hosted plans
+
+| Plan | Price | Seats | Hosted storage | Projects | Runs | Metric points / month | API requests / month |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Free | $0 / org / month | 2 | 2 GiB | 2 | 100 | 1M | 500k |
+| Pro | $199 / org / month | 3 | 1 TiB | 100 | 100k | 250M | 25M |
+| Premium | $699 / org / month | 10 | 5 TiB | 500 | 1M | 2B | 150M |
+
+Included seats apply to organization workspaces. Personal workspaces are
+single-owner workspaces even when their plan has a larger included-seat pool;
+create a team organization workspace when you want invitations and shared
+seats.
+
+Premium can use InstantML-hosted storage or customer-owned self-hosted GCP
+ClickHouse. Customer-owned ClickHouse bytes are not counted as
+InstantML-hosted storage; only artifact bytes stored by InstantML are counted.
+
+Enterprise/custom is reserved for SSO/SAML, VPC or self-hosted deployment,
+custom retention, compliance, dedicated support, and unusually heavy data
+footprints.
+
+## Overage
+
+| Usage type | Free | Pro | Premium |
+| --- | --- | --- | --- |
+| Hosted storage | Blocked at included pool | $0.03 / GiB-month overage | $0.03 / GiB-month overage |
+| API requests | Blocked at 500k / month | $2 / 1M requests overage | $1 / 1M requests overage |
+
+Project, run, and metric-point limits are write guardrails. New writes can be
+blocked until usage, plan, or custom terms are adjusted.
+
+Paid storage overage is reportable/metered at `$0.03 / GiB-month`, but
+artifact-storage and import writes can still be blocked at plan guardrails until
+usage, plan, or custom terms change.
+
+Extra seats are available through billing. The public beta target remains
+$79-$99 per seat/month until invoice smoke coverage is complete.
+
+## Check usage from automation
+
+Use `GET /api/usage` with an unrestricted org API key that has `usage:read`
+when automation needs the same counters shown in Settings:
+
+```bash
+curl https://api.instantml.ai/api/usage \
+  -H "Authorization: Bearer $INSTANTML_API_KEY"
+```
+
+The response includes the active plan catalog, current org plan, limits,
+monthly reset window, metric-point usage, API request usage, retained storage,
+artifact counts, API-key counts, and billable overage fields.
+
+## Billing surfaces
+
+- Signup selects Free, Pro, or Premium.
+- Paid signup redirects through Stripe Checkout before writes and SDK key creation are unlocked.
+- Settings shows plan, usage, rate limits, seats, storage accounting, and billing controls.
+- The topbar plan badge mirrors the highest pressure among metric points, storage, and API requests.
+
+For exact reset behavior, rate limits, write gates, and Stripe billing details,
+see [Pricing, limits, and billing](/guides/pricing-limits-billing).

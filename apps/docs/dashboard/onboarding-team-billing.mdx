@@ -8,11 +8,23 @@ description: "Understand signup, first API key creation, invitations, plans, and
 Hosted onboarding takes a user from sign-in to an organization, plan, storage
 choice, and first SDK key.
 
+Workspaces are organizations in the product model. A user can belong to several
+workspaces and switch between them from the account menu after signup.
+
 ## Signup and first key
 
 New hosted users choose a plan and enter the dashboard through onboarding. Free
 hosted signups can receive a copy-once SDK key immediately. Paid plans may
 redirect through hosted checkout before write access is unlocked.
+
+The account menu can also create additional workspaces:
+
+- Personal workspace: single-seat, useful for individual experiments.
+- Organization workspace: team-oriented, with invitations, roles, billing, and
+  shared projects.
+
+Paid workspace creation can start checkout before teammate invitations are sent
+or write access is unlocked.
 
 ## Plans
 
@@ -20,9 +32,9 @@ The current product tiers are Free, Pro, and Premium:
 
 | Plan | Price | Included storage | API requests / month |
 | --- | ---: | ---: | ---: |
-| Free | $0 / org / month | 2 GB | 500k |
-| Pro | $199 / org / month | 1 TB | 25M |
-| Premium | $699 / org / month | 5 TB | 150M |
+| Free | $0 / org / month | 2 GiB | 500k |
+| Pro | $199 / org / month | 1 TiB | 25M |
+| Premium | $699 / org / month | 5 TiB | 150M |
 
 Premium can include customer-owned self-hosted GCP ClickHouse setup for teams
 that need tenant data routed to their own deployment.
@@ -37,6 +49,10 @@ page, preview the organization and role, then require the recipient to sign in
 before accepting.
 
 Admins can resend or revoke pending invitations while they are active.
+
+Invitation acceptance keeps the invited role. `Read only` (`viewer`) invites
+land in read-only dashboard access; `Write/read` (`member`), admin, and owner
+roles unlock the write and administration surfaces allowed by that role.
 
 ## Billing states
 

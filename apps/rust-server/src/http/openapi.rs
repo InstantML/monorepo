@@ -396,6 +396,10 @@ pub struct ArtifactsEnvelope {
     pub artifacts: Vec<PublicArtifactRow>,
 }
 
+#[derive(Serialize, ToSchema)]
+#[schema(value_type = String, format = Binary)]
+pub struct BinaryBody(pub Vec<u8>);
+
 // ============================================================================
 // SecurityScheme registration via Modify.
 // ============================================================================
@@ -607,6 +611,7 @@ impl Modify for SecurityAddon {
         ObjectEnvelope,
         ArtifactEnvelope,
         ArtifactsEnvelope,
+        BinaryBody,
         JsonObjectResponse,
         AdminOverviewResponse,
         AdminOverviewQuerySummary,
@@ -723,7 +728,7 @@ impl Modify for SecurityAddon {
         (name = "invitations", description = "Token-backed organization invitations."),
         (name = "runs", description = "Experiment runs, metrics, attributes, objects, artifacts."),
         (name = "dashboard", description = "Browser dashboard preferences and saved workspace views."),
-        (name = "reports", description = "Notion-style report documents with live PanelGrids."),
+        (name = "reports", description = "Notion-style report documents with live PanelGrids and legacy LLM-summary rendering."),
     ),
 )]
 pub struct ApiDoc;

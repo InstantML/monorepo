@@ -203,8 +203,8 @@ function CodeTabs() {
             </>
           ) : (
             <>
-              <span className="landing-code-accent">instantml</span>
-              <span className="landing-code-heading"> import wandb ./wandb-export.json</span>
+              <span className="landing-code-accent">node</span>
+              <span className="landing-code-heading"> tools/import-wandb-json.mjs ./wandb-export.json --dry-run</span>
             </>
           )}
         </code>
@@ -246,18 +246,12 @@ function PythonSnippet() {
       <span className="landing-code-str">&quot;loss&quot;</span>
       <span className="landing-code-mute">: </span>
       <span className="landing-code-heading">loss</span>
-      <span className="landing-code-mute">,</span>
-      {" "}<span className="landing-code-str">&quot;step&quot;</span>
-      <span className="landing-code-mute">: </span>
-      <span className="landing-code-heading">step</span>
-      <span className="landing-code-mute">{"})"})</span>{"\n\n"}
+      <span className="landing-code-mute">{"}, step=step)"}</span>{"\n\n"}
       <span className="landing-code-heading">run.</span>
-      <span className="landing-code-accent">log_artifact</span>
+      <span className="landing-code-accent">log_checkpoint_file</span>
       <span className="landing-code-mute">(</span>
-      <span className="landing-code-str">&quot;checkpoint&quot;</span>
-      <span className="landing-code-mute">, </span>
-      <span className="landing-code-str">&quot;./ckpt&quot;</span>
-      <span className="landing-code-mute">)</span>{"\n"}
+      <span className="landing-code-str">&quot;./ckpt/model.pt&quot;</span>
+      <span className="landing-code-mute">, step=step)</span>{"\n"}
       <span className="landing-code-heading">run.</span>
       <span className="landing-code-accent">finish</span>
       <span className="landing-code-mute">()</span>
@@ -268,9 +262,9 @@ function PythonSnippet() {
 function ImportSnippet() {
   return (
     <pre><code>
-      <span className="landing-code-dim"># Bring your history with you. Same charts, same compare, same URLs.</span>{"\n"}
-      <span className="landing-code-accent">instantml</span>
-      <span className="landing-code-heading"> import wandb </span>
+      <span className="landing-code-dim"># Import transformed JSON exports.</span>{"\n"}
+      <span className="landing-code-accent">node</span>
+      <span className="landing-code-heading"> tools/import-wandb-json.mjs </span>
       <span className="landing-code-str">./wandb-export.json</span>
       <span className="landing-code-mute"> \</span>{"\n"}
       <span className="landing-code-heading">    --project </span>
@@ -278,18 +272,18 @@ function ImportSnippet() {
       <span className="landing-code-mute"> \</span>{"\n"}
       <span className="landing-code-heading">    --dry-run</span>{"\n\n"}
       <span className="landing-code-dim"># Also works:</span>{"\n"}
-      <span className="landing-code-accent">instantml</span>
-      <span className="landing-code-heading"> import mlflow </span>
-      <span className="landing-code-str">./mlruns</span>{"\n"}
-      <span className="landing-code-accent">instantml</span>
-      <span className="landing-code-heading"> import neptune </span>
+      <span className="landing-code-accent">node</span>
+      <span className="landing-code-heading"> tools/import-mlflow-json.mjs </span>
+      <span className="landing-code-str">./mlflow-export.json</span>{"\n"}
+      <span className="landing-code-accent">node</span>
+      <span className="landing-code-heading"> tools/import-neptune-json.mjs </span>
       <span className="landing-code-str">./neptune-export.json</span>{"\n\n"}
-      <span className="landing-code-dim"># Dual-log during a migration:</span>{"\n"}
+      <span className="landing-code-dim"># Shadow scalar W&B logs during migration:</span>{"\n"}
       <span className="landing-code-heading">run = im.</span>
       <span className="landing-code-accent">init</span>
       <span className="landing-code-mute">(</span>
-      <span className="landing-code-fg">mirror_to=</span>
-      <span className="landing-code-str">&quot;wandb&quot;</span>
+      <span className="landing-code-fg">shadow_wandb=</span>
+      <span className="landing-code-str">True</span>
       <span className="landing-code-mute">)</span>
     </code></pre>
   );
@@ -392,8 +386,8 @@ export function LandingPage() {
             <a href="#how" className="landing-nav__link">How it works</a>
             <a href="#capabilities" className="landing-nav__link">Capabilities</a>
             <a href="#developers" className="landing-nav__link landing-nav__link--md">Developers</a>
-            <Link href="/docs" className="landing-nav__link">Docs</Link>
-            <Link href="/pricing" className="landing-nav__link">Pricing</Link>
+            <Link href="/docs" className="landing-nav__link landing-nav__link--mobile">Docs</Link>
+            <Link href="/pricing" className="landing-nav__link landing-nav__link--mobile">Pricing</Link>
             <ThemeToggle />
             <Link href="/signup" className="landing-cta-primary landing-cta-primary--sm">
               Get early access
@@ -423,10 +417,11 @@ export function LandingPage() {
             </h1>
 
             <p className="hero-rise-3 landing-lede">
-              InstantML is a W&amp;B-style platform built for speed. Sub-second
-              metric charts at 100k runs, instant run comparison, real
-              artifacts and checkpoints, and predictable pricing — without
-              tracked-hour billing.
+              InstantML is a W&amp;B-style platform built for fast run
+              comparison. Hosted run lists, metric-best sort, overview counters,
+              and bounded chart reads stay sub-second on the current 50k-run
+              benchmark, with real artifacts, checkpoints, and predictable
+              pricing.
             </p>
 
             <div className="hero-rise-4 landing-cta-row">
@@ -442,11 +437,11 @@ export function LandingPage() {
             <div className="hero-rise-4 landing-proof-chips">
               <span className="landing-proof-chip">
                 <span className="landing-proof-chip__check"><IconCheck /></span>
-                Drop-in for W&amp;B / MLflow / Neptune
+                W&amp;B / MLflow / Neptune import paths
               </span>
               <span className="landing-proof-chip">
                 <span className="landing-proof-chip__check"><IconCheck /></span>
-                Self-host or hosted
+                Hosted + Premium BYOC
               </span>
             </div>
           </div>
@@ -457,19 +452,19 @@ export function LandingPage() {
       <Section className="landing-stats-section">
         <div className="landing-stats-grid">
           <StatCard
-            k="Project summary p95"
-            v="78 ms"
-            hint="Measured at 100,000 runs. Charts open before the cursor stops moving."
+            k="Newest page p95"
+            v="236 ms"
+            hint="Hosted benchmark on a 50,000-run, 522M metric-point showcase."
           />
           <StatCard
-            k="Indexed search p95"
-            v="118 ms"
-            hint="Server-side search/sort over name, tags, config, and notes — at scale."
+            k="Metric-best sort p95"
+            v="307 ms"
+            hint="Maintained summaries avoid raw metric-history scans."
           />
           <StatCard
-            k="First useful render"
-            v="387 ms"
-            hint="Time-to-pixels on the production web dashboard. No spinner-driven UX."
+            k="Chart read p95"
+            v="224 ms"
+            hint="Bounded 1,000-point read from a 20,000-step source series."
           />
         </div>
       </Section>
@@ -515,21 +510,20 @@ export function LandingPage() {
         <div className="landing-section-intro">
           <p className="mono-label landing-mono-label">Why teams switch</p>
           <h2 className="landing-h2">
-            The old tools work.{" "}
-            <span className="font-serif-italic landing-h2-muted">They&apos;re just slow.</span>
+            Familiar tools work.{" "}
+            <span className="font-serif-italic landing-h2-muted">The daily loop can still drag.</span>
           </h2>
           <p className="landing-section-body">
-            We&apos;ve watched serious ML teams put up with run-list pages
-            that take five seconds to load, charts that lag behind the
-            mouse, and pricing that punishes you for actually using the
-            product. InstantML is the third option.
+            When projects grow, teams need run lists, charts, storage, and
+            pricing that stay understandable. InstantML keeps the current
+            hosted read-path claim precise while building toward broader scale.
           </p>
         </div>
 
         <div className="landing-bento-3">
           <PathTile num="01" title="Wait on a slow run list" line="Every project entry costs you focus. Spinners are the dominant UI." variant="old" />
           <PathTile num="02" title="Pay per tracked hour" line="Pricing scales with how hard your team is working. The wrong incentive." variant="old" />
-          <PathTile num="03" title="InstantML" line="Sub-second charts at 100k runs, flat predictable pricing, and a data model you can self-host." variant="instantml" />
+          <PathTile num="03" title="InstantML" line="Sub-second hosted reads on the current 50k-run benchmark, predictable pricing, and a Premium BYOC storage path." variant="instantml" />
         </div>
       </Section>
 
@@ -586,11 +580,11 @@ export function LandingPage() {
           <div className="bento-cell landing-bento-big landing-bento-dial">
             <div className="landing-bento-inner-pad">
               <BentoEyebrow icon={<IconBolt />} label="Benchmarked at scale" />
-              <h3 className="landing-bento-h3">100,000 runs. No spinner.</h3>
+              <h3 className="landing-bento-h3">50,000 hosted runs. No spinner.</h3>
               <p className="landing-bento-body">
-                Project summary p95 78 ms · search p95 118 ms · metric-best
-                sort p95 66 ms · chart series p95 22 ms. Measured locally,
-                reproducible by the included benchmark.
+                Latest hosted p95: newest page 236 ms · metric-best sort
+                307 ms · project overview 418 ms · chart read 224 ms on a
+                522M-point showcase dataset.
               </p>
             </div>
             <div className="landing-bento-dial-wrap">
@@ -626,16 +620,16 @@ export function LandingPage() {
             </div>
           </div>
 
-          {/* Drop-in */}
+          {/* Import paths */}
           <div className="bento-cell landing-bento-sm landing-bento-padded">
-            <BentoEyebrow icon={<IconMenu />} label="Drop-in" />
+            <BentoEyebrow icon={<IconMenu />} label="Migration" />
             <h3 className="landing-bento-h3-sm">Import yesterday&apos;s runs.</h3>
             <p className="landing-bento-body-sm landing-bento-body-mb">
-              First-class importers for W&amp;B, MLflow, and Neptune JSON
-              exports. Dual-log against your old tool during migration.
+              Transformed JSON importers preserve W&amp;B, MLflow, and Neptune
+              run history. Shadow scalar logs to W&amp;B during migration.
             </p>
             <div className="landing-pill-row">
-              {["W&B", "MLflow", "Neptune", "PyTorch", "JAX", "TRL"].map((p) => (
+              {["W&B JSON", "MLflow JSON", "Neptune JSON", "shadow_wandb"].map((p) => (
                 <span key={p} className="pill">{p}</span>
               ))}
             </div>
@@ -693,10 +687,10 @@ export function LandingPage() {
           <MatrixCell label="MLflow import"   status="JSON · CLI"          tone="ok" />
           <MatrixCell label="Neptune import"  status="JSON · CLI"          tone="ok" />
           <MatrixCell label="Docker Compose"  status="One command"         tone="ok" />
-          <MatrixCell label="Self-hosted"     status="Available"           tone="ok" />
+          <MatrixCell label="BYOC ClickHouse" status="Premium option"      tone="ok" />
           <MatrixCell label="Hosted SaaS"     status="Design partners"     tone="progress" />
           <MatrixCell label="Dual-log to W&B" status="In testing"          tone="progress" />
-          <MatrixCell label="Flat pricing"    status="No tracked hours"    tone="ok" />
+          <MatrixCell label="Predictable pricing" status="No tracked hours" tone="ok" />
           <MatrixCell label="Data export"     status="GET /api/export"     tone="ok" />
         </div>
 
@@ -739,7 +733,7 @@ export function LandingPage() {
                 See the SDK
               </a>
             </div>
-            <p className="landing-cta-note">hello@instantml.ai · we reply same business day</p>
+            <p className="landing-cta-note">hello@instantml.ai</p>
           </div>
         </div>
       </Section>
@@ -755,8 +749,8 @@ export function LandingPage() {
               </div>
               <p className="landing-footer__brand-desc">
                 Training observability that&apos;s actually fast.
-                Sub-second charts at 100k runs, flat pricing, and a data
-                model your team can own.
+                Sub-second hosted reads on the current 50k-run benchmark,
+                predictable pricing, and a data model your team can own.
               </p>
             </div>
             <FooterCol

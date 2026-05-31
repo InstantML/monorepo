@@ -99,7 +99,18 @@ for:
 - W&B.
 - MLflow.
 
-Importer API keys need `imports:write`.
+Importer write endpoints need `imports:write`.
+
+## Import history
+
+```http
+GET /api/imports
+Authorization: Bearer instantml_...
+```
+
+Import history is read-only. It accepts a same-org browser session or same-org
+API key and does not require `imports:write`; use that scope only for creating
+new W&B, MLflow, or Neptune imports.
 
 Practical migration flow:
 

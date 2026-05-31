@@ -16,6 +16,10 @@ This document explains the Free, Pro, and Premium pricing model, the current cos
 | Pro | `$199/org/mo` | 3 | 1 TiB | 100 projects, 100k runs, 250M metric points/month, 25M API requests/month | Standard, 12 GiB, 1 replica |
 | Premium | `$699/org/mo` | 10 | 5 TiB | 500 projects, 1M runs, 2B metric points/month, 150M API requests/month | Dedicated, 16 GiB, 2 replicas |
 
+Included seats are organization-workspace seats. Personal workspaces remain
+single-owner, and the billing projection preserves that one-seat cap even for
+paid personal workspaces.
+
 Current overage policy:
 
 - Extra seats are billed by updating a Stripe extra-seat subscription item
@@ -29,7 +33,7 @@ Current overage policy:
   `$1 / 1M` Premium requests. The meter reports exact request-unit deltas to
   decimal-cent Stripe prices.
 - API-key count and artifact counts are visibility-only.
-- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The Stripe meter-backed price is attached to paid subscriptions and the overage report path sends positive deltas of the current-month high-water retained GiB overage at the `$0.03/GB-month` target.
+- Artifact bytes are now included in the retained storage guardrail through exact `ArtifactRow.size_bytes`. The Stripe meter-backed price is attached to paid subscriptions and the overage report path sends positive deltas of the current-month high-water retained GiB overage at the `$0.03/GiB-month` target.
 
 Usage-period semantics:
 
@@ -39,7 +43,7 @@ Usage-period semantics:
   through bounded data-plane rollups. Free and non-billable orgs are blocked at
   the monthly allowance; paid org overage is reportable to Stripe as exact
   request-unit deltas.
-- Storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource posture. They do not reset monthly; usage drops only when data is deleted/expired, seats or keys are removed, or the org changes plan.
+- Storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource posture. They do not reset monthly; usage drops only when data is deleted/expired, seats or keys are removed, or the org changes plan. Artifact counts are visibility-only; artifact bytes feed the retained storage guardrail.
 
 ## Competitive Context
 
@@ -88,7 +92,7 @@ External pricing facts to re-check before launch:
 - Clerk lists a free Hobby plan, paid Pro/Business plans, B2B org features, and billing add-on charges if Clerk Billing is used.
 
 Current product copy should frame hosted artifact storage as included capacity
-with paid overage on Pro/Premium at `$0.03/GB-month` after the included pool.
+with paid overage on Pro/Premium at `$0.03/GiB-month` after the included pool.
 The first billing slice uses current-month high-water retained GiB and positive
 delta reports; provider reconciliation remains launch hardening.
 
@@ -131,14 +135,14 @@ Premium exists for teams that want a larger included pool and stronger isolation
 
 ## Billing Gaps
 
-Not implemented yet:
+Coverage and hardening still needed before treating billing data as invoices:
 
 - Public production Stripe launch hardening beyond the current Checkout/Portal
   integration.
-- Live Stripe webhook, plan-change proration, extra-seat invoice, and storage
-  meter-event smoke coverage.
+- End-to-end smoke coverage for live Stripe webhooks, plan-change proration,
+  extra-seat invoices, and storage meter events.
 - Email delivery for invites.
-- Billable GB-day accounting from object storage/provider truth.
+- Billable GiB-day reconciliation against object-storage/provider truth.
 - Enterprise contract terms.
 
 Implemented billing slice:
@@ -156,7 +160,7 @@ Implemented billing slice:
 - Billing gates return HTTP 402 `payment_required` for pending/failed paid
   workspaces while reads, exports, usage, and billing status remain available.
 
-Until those exist, usage outputs are product/admin guardrails, not invoices.
+Until that coverage and reconciliation exist, usage outputs are product/admin guardrails, not invoices.
 Writes that would exceed project, run, metric-point, or estimated-storage
 limits are rejected with `plan_limit_exceeded`; reads and exports remain
 available so teams can inspect and reduce usage. Metric-point blocking uses the

@@ -1,0 +1,64 @@
+---
+title: "Organizations and workspaces"
+description: "Understand workspace switching, organization hierarchy, roles, settings, and billing scope."
+---
+
+# Organizations and workspaces
+
+InstantML scopes product data to the active workspace. A workspace is the
+dashboard name for an organization: it owns projects, runs, reports, API keys,
+seats, usage counters, billing state, and storage configuration.
+
+![Organization workspace menu](/images/product/dashboard-org-workspaces.png)
+
+## Hierarchy
+
+The hierarchy is intentionally small:
+
+| Level | What it owns |
+| --- | --- |
+| Workspace / organization | Members, roles, billing, usage, API keys, reports, storage, and project data |
+| Project | Related runs inside one workspace |
+| Run | Metrics, config, tags, notes, logs, artifacts, rich objects, checkpoints, and lineage |
+| Report | Workspace-scoped writeups with live dashboard panels and share links |
+
+Switching workspaces changes the organization context for every dashboard and
+API route. Runs from another workspace do not appear in the current workspace.
+
+## Workspace menu
+
+Use the account menu in the top right to:
+
+- See the current workspace name, plan, and your role.
+- Search memberships when you belong to multiple workspaces.
+- Switch between personal and organization workspaces.
+- Create a new workspace.
+- Open workspace settings or billing when your role allows it.
+- Sign out.
+
+Personal workspaces are single-seat. Organization workspaces support teammates,
+invitations, role labels, and paid plan flows.
+
+Plan seat counts are organization-workspace allowances. Personal workspaces
+always stay one owner seat; create or switch to an organization workspace when
+you want to invite teammates.
+
+## Roles
+
+Workspace roles control mutations:
+
+| Role | Typical access |
+| --- | --- |
+| Owner | Full workspace, billing, seat, API-key, and data access |
+| Admin | Workspace administration and data access without ownership transfer |
+| Write/read (`member`) | Create and update runs, artifacts, reports, and saved views |
+| Read only (`viewer`) | Read dashboard data without write access |
+
+The shared demo workspace is read-only. It can be used for exploration, but it
+does not accept run, artifact, report, or settings mutations.
+
+## Settings scope
+
+Settings, API keys, usage, storage mode, invitations, and billing always apply
+to the active workspace. Confirm the top-right workspace name before creating
+keys, inviting teammates, or launching imports into a new organization.

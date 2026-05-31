@@ -135,7 +135,7 @@ Rust and frontend logs should emit a redacted/template-like path:
 - Preserve static route segments.
 - Replace dynamic IDs/tokens with stable placeholders, for example
   `/api/reports/share/:share_token`,
-  `/api/reports/:report_id/blocks/:block_index/refresh`,
+  `/api/reports/:report_id/markdown`,
   `/api/orgs/:org_id/invitations/:invitation_id/resend`, and
   `/runs/:run_id/metrics`.
 - Unknown long/token-like segments become `:token`; UUID-looking segments become

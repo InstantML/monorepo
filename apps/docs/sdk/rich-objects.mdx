@@ -13,6 +13,8 @@ Use tables for bounded previewable rows such as predictions, eval samples, or
 per-example metrics.
 
 ```python
+import instantml as ro
+
 run.log_table_object(
     "eval/predictions",
     ["id", "target", "prediction", "score"],
@@ -43,11 +45,10 @@ Histograms appear as previews in Run Detail and artifact/object surfaces.
 ## Media objects
 
 Use media objects when the dashboard should treat a stored image, audio, or
-video as previewable run evidence. Media objects link to uploaded artifact bytes
-from the same run.
+video as previewable run evidence. Passing a local media path uploads the file
+bytes and creates the linked rich object for the same run.
 
 ```python
-image = run.upload_file("outputs/confusion-matrix.png", artifact_type="image", step=10)
 run.log_objects(
     {
         "eval/confusion_matrix": ro.Image(
@@ -59,16 +60,24 @@ run.log_objects(
 )
 ```
 
-For videos and audio, upload the file bytes first, then log a rich object when
-you want Run Detail and artifact surfaces to render a preview:
+For videos and audio, log the rich object directly when you want Run Detail and
+artifact surfaces to render a preview:
 
 ```python
-run.upload_file("outputs/rollout.mp4", artifact_type="video", step=100)
 run.log_objects(
     {"eval/rollout": ro.Video(path="outputs/rollout.mp4", caption="Evaluation rollout")},
     step=100,
 )
 ```
+
+Use `upload_file(...)` separately only when you also want a standalone raw file
+artifact in addition to the rich media object.
+
+Local image, audio, and video objects upload artifact bytes and then create the
+linked rich object, so the API key needs both `artifacts:write` and
+`sdk:ingest`. Those helpers are not supported in `upload_mode="spool"` because
+the object link needs the artifact upload response; use `upload_mode="sync"` or
+the default async mode for those events.
 
 External references such as object-store URIs remain metadata artifacts. They
 are useful for provenance, but they are not previewable unless bytes are stored

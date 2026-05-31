@@ -15,19 +15,11 @@ option.
 
 ## Hosted topology
 
-```mermaid
-flowchart LR
-  browser["Browser / dashboard"]
-  sdk["Python SDK / uploader"]
-  api["Cloud Run control and data services"]
-  ch[("InstantML-owned ClickHouse on Google Cloud")]
-  r2[("Cloudflare R2 private artifact buckets")]
-
-  browser --> api
-  sdk --> api
-  api --> ch
-  api --> r2
-```
+| Source | Service | Storage |
+| --- | --- | --- |
+| Browser / dashboard | Cloud Run control and data services | InstantML-owned ClickHouse on Google Cloud |
+| Python SDK / uploader | Cloud Run control and data services | InstantML-owned ClickHouse on Google Cloud |
+| Artifact upload/download paths | Cloud Run data service | Cloudflare R2 private artifact buckets |
 
 The control service stores account, session, billing, API-key, and tenant-route
 records. The data service stores projects, runs, metrics, logs, artifacts,

@@ -23,6 +23,8 @@ Start with:
 - `docs/architecture/self-hosted-gcp-clickhouse.md` for the current
   InstantML-owned GCP ClickHouse production/staging operating model.
 - `docs/design/2026-05-19-utoipa-migration.md` for the OpenAPI-driven TS codegen pipeline. Run `npm run codegen:api` after any Rust handler change.
+- `docs/users/checkpoint-forking-agent-guide.md` for agent-facing checkpoint
+  logging, fork/resume, scope, and docs-sync guidance.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
 ## Repository Structure
@@ -116,7 +118,11 @@ Training-observability roadmap first slice is implemented:
 - Side-by-side comparison, metric aggregate summaries, chart smoothing, grouped averages, x-axis mode, sorting, and saved local views.
 - Runs workspace sections, top-level add-panel drawer, line-panel editing, fullscreen inspection, movable/resizable panels, local layout persistence, selected-run-only plotting, hover tooltips, and range zoom.
 - Visible/searchable run tags and notes, with editing from Run Detail and Compare and Rust-backed indexed search over name/tags/config/notes text.
-- Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, a raw Python `Api.runs()` query helper, a repeatable local 100,000-run benchmark, and a hosted Cloud Run API benchmark for the deployed Cloud Run -> ClickHouse path. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms.
+- Server-backed run search uses the shared `q` language across dashboard pages and API routes, including field filters, exact tag/status search, uppercase boolean operators, quoted phrases, negation, grouping, and explicit Rust `re:/.../` regex.
+- Run Detail supports stored checkpoint resume snippets and same-project checkpoint forks; forked child runs preserve direct lineage and can be continued from Python with `instantml.attach_run(...)`.
+- Reports are persisted workspace documents backed by `/api/reports`, with live panel grids, autosave, share tokens, legacy LLM-summary rendering, and Markdown export.
+- Hosted pricing is Free/Pro/Premium with visible plan usage, no tracked-hour billing in v1, and explicit paid storage/API request overage.
+- Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, a raw Python `Api.runs()` query helper, a repeatable local 100,000-run benchmark, and a hosted Cloud Run API benchmark for the deployed Cloud Run -> ClickHouse path. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms; the current 2026-05-23 hosted GCP showcase stayed sub-second on 50,000 runs and 522M metric points.
 - Rich-object benchmark evidence from 2026-05-11 measured selected-run object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, and table row p95 1.9 ms for 1,000 bounded rows.
 - Keyboard workflow MVP covering quick search, shortcut help, overlay dismissal, workspace undo/redo, run selector collapse, focus handoff, and fullscreen panel traversal.
 - Tab-aware frontend data fetching so hidden Metrics, Run Detail, Compare, and artifact surfaces no longer fan out requests during every dashboard entry.
@@ -133,9 +139,9 @@ Known follow-ups before broadening the roadmap:
 - Keep Node compatibility checks available until JSON-to-ClickHouse migration tooling and legacy fallback needs are retired; `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui` exercise Rust against disposable ClickHouse.
 - Keep batch/import/upload failure behavior tested as the storage layer evolves.
 - Keep frontend async loaders cancellation-safe as workflow components continue to split.
-- Validate W&B/MLflow/Neptune import and future W&B dual logging with real teams before broadening migration claims.
+- Validate W&B/MLflow/Neptune import and the optional `shadow_wandb` SDK path with real teams before broadening migration claims.
 - Implement real Neptune Exporter Parquet import after a dependency/schema design.
-- Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 100,000+ run design-partner scale before making public hosted speed claims. The local run-list/search/sort benchmark slice is complete, and `npm run benchmark:cloud-run` is the default hosted backend signal for API calls through Cloud Run into the self-hosted GCP ClickHouse tenant database. High metric-key cardinality, Compare payloads, and richer workspace panel fan-out still need dedicated gates.
+- Public hosted speed claims should stay limited to measured surfaces such as the current 50,000-run / 522M-point GCP read-path benchmark. Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 100,000+ run design-partner scale before broadening those claims. The local run-list/search/sort benchmark slice is complete, and `npm run benchmark:cloud-run` is the default hosted backend signal for API calls through Cloud Run into the self-hosted GCP ClickHouse tenant database. High metric-key cardinality, Compare payloads, and richer workspace panel fan-out still need dedicated gates.
 
 ## Quickstart
 

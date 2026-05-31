@@ -14,7 +14,8 @@ view into a full history scan.
 ```text
 Control plane:
   Users, identities, organizations, memberships, sessions, API keys,
-  billing state, invitations, and tenant routes.
+  billing state, invitations, tenant routes, dashboard preferences,
+  saved workspace views, reports, report shares, and report Markdown exports.
 
 Data plane:
   Projects, runs, attributes, artifacts, imports, usage snapshots,
@@ -40,6 +41,7 @@ Operational records include:
 - Attributes.
 - Artifacts.
 - Imports.
+- Reports and report share state when running in local or single-service mode.
 - Idempotency records.
 - Usage snapshots.
 - Table preview rows.
@@ -55,6 +57,8 @@ Hosted User Data records include:
 - Invitations and email deliveries.
 - Tenant routes.
 - Dashboard preferences and saved workspace views.
+- Reports, report share tokens, and report Markdown export state in hosted
+  split mode.
 
 ## Metric tables
 

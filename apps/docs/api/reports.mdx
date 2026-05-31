@@ -1,0 +1,113 @@
+---
+title: "Reports API"
+description: "Create, update, share, and export block-based dashboard reports."
+---
+
+# Reports API
+
+Reports are workspace-scoped documents with ordered JSON blocks. They support
+headings, paragraphs, markdown, code, callouts, images, and live panel grids.
+Legacy `llm_summary` blocks can still render in existing reports, but new
+authoring should use the dashboard-supported block set.
+
+Report routes accept a browser session with workspace membership. Bearer API
+keys also work for automation: report read routes accept any same-org API key or
+same-org session, and write routes accept API keys belonging to the workspace
+org. Report reads are a control-plane exception to the normal `export:read`
+tenant-read rule. Report API-key writes do not currently require a separate
+`reports:write` scope. Report editing is still primarily a dashboard workflow.
+
+## List reports
+
+```http
+GET /api/reports?limit=50&offset=0
+Authorization: Bearer instantml_...
+```
+
+Optional `project` filters by project ID. The response includes summaries,
+pagination fields, visibility, share state, and block counts.
+
+## List report panels
+
+```http
+GET /api/reports/panels
+Authorization: Bearer instantml_...
+```
+
+Returns the workspace's flattened panel inventory for the dashboard "add panel
+from another report" workflow. Each entry includes `report_id`,
+`report_title`, `panel_index`, and `panel_spec`. The route accepts a same-org
+session or API key and does not expose private report contents through public
+share tokens.
+
+## Create a report
+
+```http
+POST /api/reports
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "title": "RL checkpoint readout",
+  "description": "Fork candidate and artifact evidence.",
+  "visibility": "org",
+  "blocks": [
+    { "kind": "heading", "level": 1, "text": "RL checkpoint readout" },
+    { "kind": "paragraph", "text": "Seed 44 reached a stable return profile." },
+    {
+      "kind": "panel_grid",
+      "runsets": [{ "name": "demo", "projects": ["demo"] }],
+      "panels": [
+        { "type": "line", "metric_key": "eval/return_mean", "runset_index": 0 }
+      ]
+    }
+  ]
+}
+```
+
+`title` is required. `visibility` is `private`, `org`, or `public`. `blocks`
+must be an array when provided. The dashboard defaults new reports to private
+until the user changes visibility or creates a share link.
+
+## Read, update, or delete one report
+
+```http
+GET /api/reports/{report_id}
+PATCH /api/reports/{report_id}
+DELETE /api/reports/{report_id}
+```
+
+`PATCH` accepts any subset of `title`, `description`, `visibility`, and
+`blocks`, but the body cannot be empty. The dashboard auto-saves edits through
+this route.
+
+Reports with `visibility: "public"` can be read by ID without auth. Private
+and org-visible reports require workspace access unless a share token is used.
+
+## Share and public read
+
+```http
+POST /api/reports/{report_id}/share
+GET /api/reports/share/{share_token}
+GET /api/reports/{report_id}?share={share_token}
+```
+
+Creating or rotating a share link returns the updated report with its
+`share_token`. Public share reads are limited to the shared report.
+
+## Markdown export
+
+```http
+GET /api/reports/{report_id}/markdown
+GET /api/reports/{report_id}/markdown?share={share_token}
+```
+
+Markdown export renders text blocks, code blocks, panel-grid placeholders, and
+legacy stored LLM-summary text into a portable `.md` response.
+
+## Block limits
+
+Reports are validated before persistence. Each report has a bounded number of
+blocks, per-block size limits, and a fixed set of supported block and panel
+types. Current limits are 256 blocks, 256 KiB total block JSON, and 32 KiB per
+block. Invalid blocks return `400` with a validation message.

@@ -75,6 +75,10 @@ jobs:
               - 'tools/sync-docs-openapi.mjs'
               - 'tools/validate-docs-content.mjs'
               - 'tools/validate-docs-snippets.mjs'
+              - 'tools/tests/docs-openapi.test.js'
+              - 'tools/tests/benchmark-docs.test.js'
+              - 'tools/tests/docs-screenshots.test.js'
+              - 'apps/web/tests/docs-route.test.js'
             node:
               - *global
               - *npm
@@ -252,7 +256,7 @@ jobs:
         # copy is current, and public docs do not link into internal planning
         # docs. Run `npm run docs:sync-openapi` and commit the diff to fix
         # OpenAPI drift.
-        run: npm run docs:validate
+        run: npm run docs:test && npm run docs:validate
 
   node-tests:
     name: Node Tests

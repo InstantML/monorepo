@@ -1,0 +1,191 @@
+---
+title: "Benchmarks"
+description: "Read the current InstantML latency evidence, W&B comparison status, and benchmark fairness rules."
+---
+
+# Benchmarks
+
+InstantML benchmarks focus on the workflow users feel every day: loading run
+lists, searching, sorting by metric summaries, opening overview counters, and
+charting bounded metric series.
+
+The current verified hosted signal is strong: InstantML's Google Cloud
+ClickHouse path stayed sub-second on the 50,000-run showcase project with
+522,000,000 metric points. The W&B comparison is more nuanced. The historical
+May 18 public-API comparison showed a clear InstantML chart-read advantage, but
+it did not prove that InstantML is faster than W&B for every run-list, search,
+or sort operation.
+
+## Current hosted result
+
+Latest hosted InstantML rerun: May 23, 2026.
+
+| Case | Dataset | p95 | What it proves |
+| --- | --- | ---: | --- |
+| Project newest 100 | 50,000 runs | 236 ms | A normal Runs page can stay comfortably sub-second. |
+| Project metric-best sort | 50,000 runs | 307 ms | Sorting by a maintained metric summary is fast enough for daily comparison. |
+| Project overview | 50,000 runs / 522M metric points | 418 ms | Aggregate overview reads avoid scanning raw metric history. |
+| Single-run chart | 20,000-step source series, 1,000 returned points | 224 ms | Bounded chart reads are fast on the current hosted path. |
+| Org overview | 70,029 runs / 570M metric points | 414 ms | Workspace-level counters are still sub-second at showcase scale. |
+
+Protocol: two warmups, eight measured samples per endpoint, fixed endpoint
+order, nearest-rank p95, read-only API requests against the deployed hosted
+data service. The benchmark did not seed or mutate hosted run data.
+
+## W&B comparison status
+
+The W&B harness uses documented W&B Public API surfaces such as
+`wandb.Api.runs`, `Run.history(samples=...)`, and `Run.scan_history(...)`.
+It does not use private W&B browser or GraphQL request shapes.
+
+Historical W&B comparison run: May 18, 2026.
+
+| Operation | InstantML p95 | W&B p95 | Result | Fairness note |
+| --- | ---: | ---: | --- | --- |
+| Newest 100 runs | 480 ms | 408 ms | W&B was 1.18x faster | W&B had 4,321 visible seeded runs; InstantML read the existing 100,000-run hosted dataset. |
+| Search `seed-13` | 606 ms | 409 ms | W&B was 1.48x faster | W&B search used a tag filter through the public API. |
+| Metric-best sort | 522 ms | 305 ms | W&B was 1.71x faster | W&B used summary-metric ordering through the public API. |
+| Sampled chart read | 335 ms | 675 ms | InstantML was 2.0x faster | W&B used `Run.history(samples=1000)`; InstantML returned a 1,000-point bounded metric route. |
+| Exact history scan | 335 ms | 5,736 ms | InstantML was 17.1x faster | W&B used `Run.scan_history`; this is an export-style exact scan, not the normal sampled chart surface. |
+
+The honest headline is:
+
+- InstantML's strongest verified W&B advantage is bounded chart retrieval.
+- The May 18 run does not support a blanket "InstantML is faster than W&B"
+  claim for listing, search, or sorting.
+- The current May 23 InstantML chart p95 of 224 ms is better than the older May
+  18 InstantML chart p95 of 335 ms, but W&B must be rerun on the same dated
+  workload before publishing a fresh multiplier against W&B.
+
+## Why the comparison is not fully 1:1 yet
+
+W&B's documented run query surface is project-scoped. InstantML has
+workspace-wide and project-scoped query routes. The benchmark mirrors source
+project, source status, notes, and seed tags into W&B config/tags so the public
+API can express comparable filters.
+
+The May 18 W&B seed also stopped short of the full 100,000-run target after W&B
+rate limits appeared during external seeding. The visible W&B comparison
+dataset was 4,321 runs. The harness includes a guarded mode intended to seed a
+full exact W&B dataset, but no committed result has completed that external
+SaaS workload yet.
+
+## Not measured yet
+
+These areas are outside the benchmark claims above:
+
+- W&B UI latency and private browser request shapes.
+- A fresh same-day W&B A/B against the current Google Cloud ClickHouse path.
+- Full 100,000-run W&B exact-history seeding with 1,000 steps and six scalar
+  metric keys per run.
+- Ingestion throughput or time required to create the benchmark dataset.
+- Artifact-byte upload/download latency.
+- Dual-logging reliability or W&B artifact parity.
+- Reports, sweeps, tables, and rich object previews.
+
+## Fairness rules
+
+Use these rules before making a public benchmark claim:
+
+- Compare documented public APIs, not private browser calls.
+- Publish run count, metric-point count, step count, warmups, sample count, p95
+  method, and whether the benchmark seeded or only read data.
+- Label mirrored W&B fields such as source project, notes, and source status.
+- Label sampled chart reads separately from exact history scans.
+- Treat W&B rate limits and incomplete seeds as benchmark findings, not as
+  errors to hide.
+- Do not claim a fresh W&B A/B unless W&B was rerun in the same benchmark pass
+  with credentials, the same planned dataset shape, and sanitized result output.
+
+## Reproduce the current InstantML result
+
+Use the Node Cloud Run benchmark for the current hosted InstantML path because
+it validates the expected dataset size before timing requests.
+
+```bash
+INSTANTML_API_KEY=instantml_... \
+INSTANTML_API_BASE=https://<hosted-data-api-host> \
+INSTANTML_CLOUD_RUN_BENCH_PROJECTS=normal-runs-50k \
+INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS=50000 \
+INSTANTML_CLOUD_RUN_BENCH_METRIC_KEY=train/loss \
+INSTANTML_CLOUD_RUN_BENCH_SYSTEM_METRIC_KEY=train/loss \
+npm run benchmark:cloud-run
+```
+
+The committed May 23 result used the Python `benchmark-instantml --direct`
+fallback because the deployed API at the time was older than the Node validator.
+Use the Node command for fresh reruns. Direct fallback records observed row
+counts but does not enforce the `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS` guard, so
+direct fallback results must be labeled and checked manually before publishing.
+
+## Smoke the W&B harness
+
+The comparison harness is intentionally guarded because W&B seeding writes data
+to an external hosted service.
+
+Prerequisites for a fresh W&B run:
+
+- `wandb` installed for the benchmark Python environment.
+- W&B API key, entity, and project selected for the benchmark.
+- Network access and an explicit operator decision about W&B cost/rate-limit
+  exposure.
+- InstantML hosted API key and API base for the read-only InstantML benchmark.
+- A pre-seeded InstantML tenant for the target dataset.
+- Sanitized JSON review before publishing results.
+
+```bash
+python3 benchmarks/wandb_hosted_compare.py seed-wandb \
+  --runs 100 \
+  --steps 20 \
+  --history-mode newest \
+  --history-newest-runs 5 \
+  --allow
+```
+
+```bash
+python3 benchmarks/wandb_hosted_compare.py benchmark-wandb \
+  --runs 100 \
+  --steps 20 \
+  --samples 3 \
+  --warmups 1
+```
+
+This is a smoke-scale command, not the May 18 comparison recipe.
+
+## Reproduce the May 18 W&B table
+
+The historical W&B table used a partial 4,321-run visible seed after W&B public
+API rate limits interrupted the 5,001-run configured seed. It also measured list
+cases with hydration and count calls disabled after the hydrated pass spent too
+long in public API calls.
+
+```bash
+python3 benchmarks/wandb_hosted_compare.py benchmark-wandb \
+  --runs 5001 \
+  --steps 1000 \
+  --samples 3 \
+  --warmups 1 \
+  --default-selected-runs 100 \
+  --search-selected-runs 20 \
+  --selected-runs 100 \
+  --chart-limit 1000 \
+  --scan-history-limit 1000 \
+  --no-include-length \
+  --no-hydrate-runs
+```
+
+```bash
+python3 benchmarks/wandb_hosted_compare.py benchmark-instantml \
+  --direct \
+  --samples 8 \
+  --warmups 2
+```
+
+```bash
+python3 benchmarks/wandb_hosted_compare.py render-results
+```
+
+Set `WANDB_API_KEY` and `WANDB_ENTITY` for W&B. Set `INSTANTML_API_KEY` and the
+hosted InstantML API base for the read-only InstantML run. Keep raw JSON outputs
+out of public artifacts until API keys, signed URLs, org IDs, user IDs, and raw
+hosts have been reviewed.

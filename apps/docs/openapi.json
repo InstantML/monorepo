@@ -1184,6 +1184,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate fork retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "requestBody": {
@@ -1761,6 +1773,16 @@
               }
             }
           },
+          "403": {
+            "description": "Artifact write scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Run not found",
             "content": {
@@ -1841,7 +1863,7 @@
             }
           },
           "403": {
-            "description": "Artifact byte uploads disabled by server configuration",
+            "description": "Artifact write scope required or artifact byte uploads disabled by server configuration",
             "content": {
               "application/json": {
                 "schema": {
@@ -2139,19 +2161,39 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "Optional byte range forwarded to the stored artifact backend",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Artifact byte stream",
+            "description": "Artifact byte stream. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream.",
             "content": {
-              "application/octet-stream": {}
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              }
             }
           },
           "206": {
-            "description": "Artifact byte range",
+            "description": "Artifact byte range. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream.",
             "content": {
-              "application/octet-stream": {}
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              }
             }
           },
           "401": {
@@ -2176,6 +2218,16 @@
           },
           "404": {
             "description": "Artifact not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Requested range is not satisfiable",
             "content": {
               "application/json": {
                 "schema": {
@@ -2674,6 +2726,584 @@
         ]
       }
     },
+    "/api/reports": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "list_reports",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Pagination offset",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Filter to a single project_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report summaries for the caller's org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSummariesEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "create_report",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/reports/{report_id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "get_report",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "description": "Report UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "share",
+            "in": "query",
+            "description": "Magic-link share token (allows anonymous read)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Report not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          },
+          {}
+        ]
+      },
+      "delete": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "delete_report",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "description": "Report UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Soft-deleted report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Report not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "update_report",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "description": "Report UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Report not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/reports/{report_id}/share": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "rotate_report_share_token",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "description": "Report UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report with rotated share token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Report not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/reports/share/{share_token}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "get_report_by_share_token",
+        "parameters": [
+          {
+            "name": "share_token",
+            "in": "path",
+            "description": "Magic-link share token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shared report fetched by share token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Report not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/reports/panels": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "list_org_panels",
+        "responses": {
+          "200": {
+            "description": "Org-wide panel inventory flattened across every report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanelInventoryEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/reports/{report_id}/markdown": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "export_report_markdown",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "description": "Report UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "share",
+            "in": "query",
+            "description": "Magic-link share token (allows anonymous read)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Markdown rendering of the report",
+            "content": {
+              "text/markdown; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Report not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "bearerApiKey": []
+          },
+          {}
+        ]
+      }
+    },
     "/api/dashboard/preferences": {
       "get": {
         "tags": [
@@ -3022,6 +3652,10 @@
     {
       "name": "dashboard",
       "description": "Browser dashboard preferences and saved workspace views."
+    },
+    {
+      "name": "reports",
+      "description": "Notion-style report documents with live PanelGrids and legacy LLM-summary rendering."
     }
   ],
   "components": {
@@ -3130,13 +3764,15 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "metadata": {
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "name": {
             "type": [
@@ -3230,7 +3866,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "step": {
             "type": "object"
@@ -3473,7 +4110,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "inherit_config": {
             "type": [
@@ -3485,7 +4123,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "name": {
             "type": [
@@ -3622,7 +4261,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "rows": {
             "type": [
@@ -3677,12 +4317,16 @@
       },
       "CreateArtifactRequest": {
         "type": "object",
+        "required": [
+          "name"
+        ],
         "properties": {
           "metadata": {
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "mime_type": {
             "type": [
@@ -3691,10 +4335,7 @@
             ]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "path": {
             "type": [
@@ -3710,15 +4351,19 @@
           },
           "size_bytes": {
             "type": [
-              "object",
+              "integer",
               "null"
-            ]
+            ],
+            "format": "int64",
+            "minimum": 0
           },
           "step": {
             "type": [
-              "object",
+              "number",
               "null"
-            ]
+            ],
+            "format": "double",
+            "minimum": 0
           },
           "type": {
             "type": [
@@ -3747,18 +4392,20 @@
       },
       "UploadArtifactRequest": {
         "type": "object",
+        "required": [
+          "name",
+          "content_base64"
+        ],
         "properties": {
           "content_base64": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "metadata": {
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "mime_type": {
             "type": [
@@ -3767,10 +4414,7 @@
             ]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "path": {
             "type": [
@@ -3780,9 +4424,11 @@
           },
           "step": {
             "type": [
-              "object",
+              "number",
               "null"
-            ]
+            ],
+            "format": "double",
+            "minimum": 0
           },
           "type": {
             "type": [
@@ -3809,6 +4455,139 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "BinaryBody": {
+        "type": "string",
+        "format": "binary"
+      },
+      "ReportSummariesEnvelope": {
+        "type": "object",
+        "required": [
+          "reports",
+          "limit",
+          "offset",
+          "total"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportSummary"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CreateReportRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "blocks": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "maxItems": 256
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReportEnvelope": {
+        "type": "object",
+        "required": [
+          "report"
+        ],
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/ReportRow"
+          }
+        }
+      },
+      "UpdateReportRequest": {
+        "type": "object",
+        "properties": {
+          "blocks": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "maxItems": 256
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visibility": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PanelInventoryEnvelope": {
+        "type": "object",
+        "required": [
+          "panels"
+        ],
+        "properties": {
+          "panels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PanelInventoryEntry"
+            }
           }
         }
       },
@@ -3867,7 +4646,8 @@
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "additionalProperties": true
           },
           "project": {
             "type": [
@@ -4590,6 +5370,173 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ReportSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "visibility",
+          "has_share_token",
+          "created_at",
+          "updated_at",
+          "block_count"
+        ],
+        "properties": {
+          "author_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "block_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_share_token": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        }
+      },
+      "ReportRow": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "id",
+          "org_id",
+          "title",
+          "blocks",
+          "created_at",
+          "updated_at",
+          "visibility"
+        ],
+        "properties": {
+          "author_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "maxItems": 256
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "share_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "visibility": {
+            "type": "string",
+            "description": "One of `\"private\"`, `\"org\"`, `\"public\"`."
+          }
+        }
+      },
+      "PanelInventoryEntry": {
+        "type": "object",
+        "required": [
+          "report_id",
+          "report_title",
+          "panel_index",
+          "panel_spec"
+        ],
+        "properties": {
+          "panel_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "panel_spec": {
+            "type": "object"
+          },
+          "report_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "report_title": {
+            "type": "string"
           }
         }
       },

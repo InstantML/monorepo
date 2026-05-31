@@ -37,6 +37,7 @@ use super::helpers::{
         (status = 200, description = "Created artifact metadata", body = crate::http::openapi::ArtifactEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Artifact write scope required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -68,7 +69,7 @@ pub async fn create_artifact(
         (status = 200, description = "Created artifact with stored bytes", body = crate::http::openapi::ArtifactEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
-        (status = 403, description = "Artifact byte uploads disabled by server configuration", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Artifact write scope required or artifact byte uploads disabled by server configuration", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -147,14 +148,16 @@ pub async fn list_artifacts(
     tag = "runs",
     params(
         ("artifact_id" = String, Path, description = "Artifact UUID"),
+        ("Range" = Option<String>, Header, description = "Optional byte range forwarded to the stored artifact backend"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Artifact byte stream", content_type = "application/octet-stream"),
-        (status = 206, description = "Artifact byte range", content_type = "application/octet-stream"),
+        (status = 200, description = "Artifact byte stream. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream.", body = crate::http::openapi::BinaryBody, content_type = "application/octet-stream"),
+        (status = 206, description = "Artifact byte range. Runtime Content-Type uses the stored artifact MIME type when available and falls back to application/octet-stream.", body = crate::http::openapi::BinaryBody, content_type = "application/octet-stream"),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
         (status = 403, description = "Read scope required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Artifact not found", body = crate::http::openapi::ErrorResponse),
+        (status = 416, description = "Requested range is not satisfiable", body = crate::http::openapi::ErrorResponse),
     ),
 )]
 pub async fn download_artifact(

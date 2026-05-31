@@ -157,6 +157,51 @@ run.log({"loss": 0.1}, step=1)
   assert.equal(parsed.blocks.find((block) => block.type === "code")?.language, "python");
 });
 
+test("docs parser joins wrapped list item continuation lines", () => {
+  const parsed = parseDocsMdx(`---
+title: "Lists"
+---
+
+- Paid signup redirects through Stripe Checkout before writes and SDK key
+  creation are unlocked.
+- Settings shows plan, usage, rate limits, seats, storage accounting, and
+  billing controls.
+
+1. Open Run Detail and choose a checkpoint
+   before creating the fork.
+2. Attach the SDK to the child run.
+`);
+
+  const lists = parsed.blocks.filter((block) => block.type === "list");
+  assert.deepEqual(lists[0]?.items, [
+    "Paid signup redirects through Stripe Checkout before writes and SDK key creation are unlocked.",
+    "Settings shows plan, usage, rate limits, seats, storage accounting, and billing controls.",
+  ]);
+  assert.deepEqual(lists[1]?.items, [
+    "Open Run Detail and choose a checkpoint before creating the fork.",
+    "Attach the SDK to the child run.",
+  ]);
+});
+
+test("docs parser keeps nested list lines attached to their parent item", () => {
+  const parsed = parseDocsMdx(`---
+title: "Nested Lists"
+---
+
+- Parent item
+  - Child item
+    with wrapped child context.
+- Sibling item
+`);
+
+  const lists = parsed.blocks.filter((block) => block.type === "list");
+  assert.equal(lists.length, 1);
+  assert.deepEqual(lists[0]?.items, [
+    "Parent item - Child item with wrapped child context.",
+    "Sibling item",
+  ]);
+});
+
 test("docs loader can read an MDX page and the generated API reference", async () => {
   const logging = await loadDocsPage(["sdk", "logging"]);
   assert.equal(logging.kind, "mdx");
@@ -166,6 +211,18 @@ test("docs loader can read an MDX page and the generated API reference", async (
   const apiReference = await loadDocsPage(["api-reference", "platform", "get-health"]);
   assert.equal(apiReference.kind, "api-reference");
   assert.ok(apiReference.endpoints.length > 0);
+});
+
+test("dashboard workflow docs expose product screenshots through the route parser", async () => {
+  const artifacts = await loadDocsPage(["dashboard", "artifacts-files"]);
+  const artifactImages = artifacts.blocks.filter((block) => block.type === "image").map((block) => block.src);
+  assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-evidence.png"));
+  assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-browser.png"));
+
+  const tour = await loadDocsPage(["dashboard", "tour"]);
+  const tourImages = tour.blocks.filter((block) => block.type === "image").map((block) => block.src);
+  assert.ok(tourImages.includes("/images/product/dashboard-artifacts-browser.png"));
+  assert.ok(tourImages.includes("/images/product/dashboard-reports-editor.png"));
 });
 
 test("docs markdown loader mirrors pages and agent indexes", async () => {

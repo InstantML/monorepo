@@ -38,6 +38,7 @@
               "index",
               "quickstart",
               "concepts/core-concepts",
+              "pricing",
               "guides/pricing-limits-billing",
               "guides/examples"
             ]
@@ -73,6 +74,7 @@
             "group": "Dashboard",
             "pages": [
               "dashboard/tour",
+              "dashboard/organizations-workspaces",
               "dashboard/runs-workspace",
               "dashboard/metrics-charts",
               "dashboard/run-detail",
@@ -107,6 +109,17 @@
         ]
       },
       {
+        "tab": "Benchmarks",
+        "groups": [
+          {
+            "group": "Performance evidence",
+            "pages": [
+              "benchmarks"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "API",
         "groups": [
           {
@@ -119,6 +132,7 @@
               "api/metrics-series",
               "api/attributes-objects",
               "api/artifacts",
+              "api/reports",
               "api/import-export-usage",
               "api/dashboard-control-state",
               "troubleshooting"

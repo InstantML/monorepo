@@ -7,6 +7,12 @@ description: "Manage plan usage, seats, invitations, billing controls, storage m
 
 Settings and the API tab are the operational side of the dashboard.
 
+Settings are scoped to the active workspace. Confirm the workspace selector in
+the top-right account menu before inviting teammates, creating API keys, or
+opening billing. See
+[Organizations and workspaces](/dashboard/organizations-workspaces) for the
+workspace hierarchy and role model.
+
 ## Plan and usage
 
 The topbar shows a compact plan usage badge. Settings shows more detail:
@@ -33,6 +39,10 @@ payment or payment-failed, write routes can return a payment-required error.
 Admins can invite teammates, resend pending invitations, revoke pending
 invitations, and see seat accounting that includes active members plus
 unexpired pending invitations.
+
+Owners and admins can manage seats. Members can write runs, artifacts, reports,
+and saved views. Viewers can inspect dashboard data but cannot mutate product
+state.
 
 ## API keys
 
@@ -72,5 +82,8 @@ or storage credentials.
 ## Storage mode
 
 Hosted artifact bytes can use InstantML-owned storage. Customer-owned
-ClickHouse setup appears as a storage/admin workflow for teams that need to
-route product data to their own self-hosted GCP ClickHouse deployment.
+ClickHouse setup is handled in onboarding for Premium teams that need to route
+product data to their own self-hosted GCP ClickHouse deployment. Dashboard and
+API-key access remain locked until the storage state is ready. Settings shows
+storage usage and accounting notes for the active workspace, but the current
+ClickHouse connection form lives in onboarding rather than Settings.

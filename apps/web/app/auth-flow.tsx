@@ -112,10 +112,20 @@ const PLAN_OPTIONS: Array<{
   seats: string;
   icon: typeof Rocket;
 }> = [
-  { id: "free", label: "Free", price: "$0", storage: "2 GB", seats: "2 seats", icon: Users },
-  { id: "pro", label: "Pro", price: "$199", storage: "1 TB", seats: "3 seats", icon: Rocket },
-  { id: "premium", label: "Premium", price: "$699", storage: "5 TB", seats: "10 seats", icon: Crown },
+  { id: "free", label: "Free", price: "$0", storage: "2 GiB", seats: "2 seats", icon: Users },
+  { id: "pro", label: "Pro", price: "$199", storage: "1 TiB", seats: "3 seats", icon: Rocket },
+  { id: "premium", label: "Premium", price: "$699", storage: "5 TiB", seats: "10 seats", icon: Crown },
 ];
+
+function seatLimitForPlan(planTier: PlanTier): number {
+  if (planTier === "premium") return 10;
+  if (planTier === "pro") return 3;
+  return 2;
+}
+
+function planTierFromSearchParam(value: string | null): PlanTier | null {
+  return value === "free" || value === "pro" || value === "premium" ? value : null;
+}
 
 // Stash the freshly issued onboarding key in sessionStorage so the dashboard's
 // empty-workspace SDK snippet can offer a "Copy with your key" action without
@@ -215,6 +225,16 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const orgUnavailable = orgNameRequired && (!orgName.trim() || orgAvailability.available === false);
   const managedClerkReady = config.managed_clerk_enabled && !clerkConfigError && clerkLoaded;
   const demoSession = isSharedDemoSession(session);
+
+  useEffect(() => {
+    if (!signupMode || typeof window === "undefined") return;
+    const requestedPlan = planTierFromSearchParam(new URLSearchParams(window.location.search).get("plan"));
+    if (!requestedPlan) return;
+    setPlanTier(requestedPlan);
+    if (requestedPlan !== "premium") {
+      setStorageChoice((current) => current === STORAGE_BYOC ? STORAGE_HOSTED : current);
+    }
+  }, [signupMode]);
 
   function choosePlanTier(next: PlanTier) {
     setPlanTier(next);
@@ -702,7 +722,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
 
   const eyebrow = config.loaded ? providerLabel(config) : "Checking provider";
   const seatCount = seatEmails.split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length;
-  const seatLimit = session?.organization?.seat_limit ?? (accountType === "business" ? 3 : 1);
+  const seatLimit = session?.organization?.seat_limit ?? (accountType === "business" ? seatLimitForPlan(planTier) : 1);
   const storageSetupRequired = isOnboarding && !demoSession && !workspaceStorageReady(session);
   const byocSetupRequired = storageSetupRequired && workspaceUsesByoc(session);
 
@@ -1295,7 +1315,7 @@ function WorkspacePreview({
 }) {
   return (
     <>
-      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
+      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} seatContext="personal" />
       <StorageChoicePicker storageChoice={storageChoice} onStorageChoice={onStorageChoice} />
       <div className="iml-field">
         <span className="iml-legend">Your workspace</span>
@@ -1325,7 +1345,15 @@ function WorkspacePreview({
   );
 }
 
-function PlanPicker({ planTier, onPlanTier }: { planTier: PlanTier; onPlanTier: (value: PlanTier) => void }) {
+function PlanPicker({
+  planTier,
+  onPlanTier,
+  seatContext = "organization",
+}: {
+  planTier: PlanTier;
+  onPlanTier: (value: PlanTier) => void;
+  seatContext?: "organization" | "personal";
+}) {
   return (
     <fieldset className="iml-field iml-fieldset">
       <legend className="iml-legend">Plan</legend>
@@ -1337,12 +1365,15 @@ function PlanPicker({ planTier, onPlanTier }: { planTier: PlanTier; onPlanTier: 
               <input aria-label={plan.label} checked={planTier === plan.id} name="iml-plan-tier" onChange={() => onPlanTier(plan.id)} type="radio" />
               <span className="iml-plan-h"><Icon size={15} aria-hidden="true" /> {plan.label}</span>
               <strong className="iml-plan-p">{plan.price}<small>/mo</small></strong>
-              <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {plan.seats}</span>
+              <span className="iml-plan-m"><Users size={12} aria-hidden="true" /> {seatContext === "personal" ? "1 owner seat" : plan.seats}</span>
               <span className="iml-plan-m"><HardDrive size={12} aria-hidden="true" /> {plan.storage}</span>
             </label>
           );
         })}
       </div>
+      {seatContext === "personal" ? (
+        <span className="iml-hint">Managed signups create a personal workspace first. Included team seats apply to organization workspaces.</span>
+      ) : null}
     </fieldset>
   );
 }
@@ -1394,9 +1425,11 @@ function SignupFields({
   planTier: PlanTier;
 }) {
   const overLimit = seatCount > Math.max(0, seatLimit - 1);
+  const selectedPlan = PLAN_OPTIONS.find((plan) => plan.id === planTier) ?? PLAN_OPTIONS[0];
+  const seatContext = accountType === "personal" ? "personal" : "organization";
   return (
     <>
-      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} />
+      <PlanPicker planTier={planTier} onPlanTier={onPlanTier} seatContext={seatContext} />
       <StorageChoicePicker storageChoice={storageChoice} onStorageChoice={onStorageChoice} />
       <fieldset className="iml-field iml-fieldset">
         <legend className="iml-legend">Account type</legend>
@@ -1409,7 +1442,7 @@ function SignupFields({
           <label className="iml-seg-opt">
             <input aria-label="Business workspace" checked={accountType === "business"} name="iml-account-type" onChange={() => onAccountType("business")} type="radio" />
             <span className="iml-seg-t"><span className="iml-tick" aria-hidden="true">✓</span> Business</span>
-            <span className="iml-seg-d">Team org · 3 seats, reservable</span>
+            <span className="iml-seg-d">Team org · {selectedPlan.seats}, reservable</span>
           </label>
         </div>
       </fieldset>

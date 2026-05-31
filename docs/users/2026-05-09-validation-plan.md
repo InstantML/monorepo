@@ -72,7 +72,7 @@ Use ranges, not leading yes/no questions:
 3. Do tracked hours, seats, storage, or compute feel most fair as billing units?
 4. Which tier would you expect your team to start on?
 5. What monthly price would feel obvious, acceptable, expensive, and impossible?
-6. Would storage overage at `$0.02-$0.03/GB-month` feel understandable?
+6. Would storage overage at `$0.02-$0.03/GiB-month` feel understandable?
 7. Should metric/event volume be a hard limit, fair-use warning, or upgrade prompt?
 8. What would make self-hosting, VPC, SSO, or audit logs necessary?
 9. Would seat-plus-included-storage pricing feel more predictable than tracked-hour billing for your workload?

@@ -1,13 +1,13 @@
 "use client";
 
-// Decorative p95-latency dial. Number reflects the 100,000-run local
-// benchmark p95 for project summary (78 ms) — see
-// apps/rust-server README. Visual sweep is CSS-driven and cosmetic.
+// Decorative p95-latency dial. Number reflects the current hosted
+// newest-page benchmark p95 for the 50,000-run GCP ClickHouse showcase.
+// Visual sweep is CSS-driven and cosmetic.
 
 import { useCallback, useEffect, useRef } from "react";
 
-const MAX_MS = 200;
-const TARGET_MS = 78;
+const MAX_MS = 500;
+const TARGET_MS = 236;
 const CYCLE_S = 4;
 
 export function TtlRing() {
@@ -97,9 +97,9 @@ export function TtlRing() {
       </svg>
 
       <div className="landing-ttl-ring__label">
-        <div className="landing-ttl-ring__eyebrow">project p95</div>
+        <div className="landing-ttl-ring__eyebrow">newest page p95</div>
         <div className="landing-ttl-ring__value" ref={valueRef}>{display}</div>
-        <div className="landing-ttl-ring__unit">ms · at 100k runs</div>
+        <div className="landing-ttl-ring__unit">ms · hosted 50k runs</div>
       </div>
     </div>
   );

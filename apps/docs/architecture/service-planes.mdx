@@ -10,8 +10,8 @@ responsibilities behind one public API URL.
 
 | Mode | Routes | Typical use |
 | --- | --- | --- |
-| `control` | Auth, sessions, orgs, seats, billing, API keys, tenant routes, dashboard preference state. | Hosted control service. |
-| `data` | Projects, runs, metrics, logs, artifacts, objects, imports, export, usage. | Hosted tenant product service. |
+| `control` | Auth, sessions, orgs, seats, billing, API keys, tenant routes, dashboard preference state, reports, report shares, and Markdown export. | Hosted control service. |
+| `data` | Projects, runs, metrics, logs, artifacts, objects, imports, export, and usage. | Hosted tenant product service. |
 
 Platform routes exist on every service:
 
@@ -27,25 +27,12 @@ operators can verify which role is serving a request.
 
 ## Split Cloud Run topology
 
-```mermaid
-flowchart LR
-  browser["Browser / Next frontend"]
-  sdk["Python SDK / uploader"]
-  edge["Public HTTPS API URL"]
-  control["Cloud Run control service"]
-  data["Cloud Run data service"]
-  userdata[("User Data ClickHouse on Google Cloud")]
-  tenant[("Tenant databases on Google Cloud ClickHouse")]
-
-  browser --> edge
-  sdk --> edge
-  edge --> control
-  edge --> data
-  control --> userdata
-  control --> tenant
-  data --> userdata
-  data --> tenant
-```
+| Source | Route | Backing data |
+| --- | --- | --- |
+| Browser / Next frontend | Public HTTPS API URL | Control service for auth, billing, seats, API keys, tenant routes, dashboard preferences, and reports. |
+| Python SDK / uploader | Public HTTPS API URL | Data service for projects, runs, metrics, logs, artifacts, objects, imports, export, and usage. |
+| Control service | User Data ClickHouse | Account, session, billing, API-key, and tenant-route records. |
+| Data service | Tenant databases on Google Cloud ClickHouse | Tenant product records and metric tables. |
 
 Path-based routing is enough for a single data cell. Many cells require a
 discovery step or app-level router because a plain load balancer cannot inspect

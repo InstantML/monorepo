@@ -11,21 +11,11 @@ records into run comparison workflows.
 
 ## Primary product path
 
-```mermaid
-flowchart LR
-  sdk["Python SDK / uploader"]
-  web["Next dashboard"]
-  api["Rust API"]
-  op[("ClickHouse operational records")]
-  metrics[("ClickHouse metric tables")]
-  artifacts[("Artifact byte storage")]
-
-  sdk --> api
-  web --> api
-  api --> op
-  api --> metrics
-  api --> artifacts
-```
+| Producer | API boundary | Storage path |
+| --- | --- | --- |
+| Python SDK / uploader | Rust API | ClickHouse operational records |
+| Next dashboard | Rust API | ClickHouse metric tables |
+| SDK and dashboard artifact flows | Rust API | Artifact byte storage |
 
 The Rust API is the primary backend. It owns the product route contract for SDK
 ingestion, dashboard reads, imports, exports, usage, billing gates, and artifact
@@ -45,30 +35,16 @@ metadata.
 
 ## Hosted topology
 
-```mermaid
-flowchart LR
-  browser["Browser / Next app"]
-  sdk["Python SDK / uploader"]
-  edge["Public HTTPS API"]
-  control["Rust control service"]
-  data["Rust data service"]
-  userdata[("User Data ClickHouse on Google Cloud")]
-  tenant[("Tenant ClickHouse databases on Google Cloud")]
-  r2[("Private artifact buckets")]
+| Layer | Role |
+| --- | --- |
+| Browser / Next app and Python SDK / uploader | Send product traffic to the public HTTPS API. |
+| Public HTTPS API | Routes requests to control or data service responsibilities. |
+| Rust control service | Reads and writes User Data ClickHouse records and tenant-route metadata. |
+| Rust data service | Reads and writes tenant ClickHouse databases and private artifact buckets. |
 
-  browser --> edge
-  sdk --> edge
-  edge --> control
-  edge --> data
-  control --> userdata
-  control --> tenant
-  data --> userdata
-  data --> tenant
-  data --> r2
-```
-
-The control service handles auth, orgs, sessions, API keys, billing, seats, and
-tenant route metadata. The data service handles projects, runs, metrics, logs,
+The control service handles auth, orgs, sessions, API keys, billing, seats,
+tenant route metadata, dashboard preferences, reports, report share links, and
+report Markdown export. The data service handles projects, runs, metrics, logs,
 attributes, rich objects, imports, export, usage, and artifact data paths.
 InstantML-hosted production and staging currently use InstantML-owned
 self-hosted ClickHouse on Google Cloud for these User Data and tenant

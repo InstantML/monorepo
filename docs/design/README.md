@@ -15,7 +15,7 @@ Current implemented design sequence:
 - `2026-05-14-clickhouse-only-storage.md`: accepted primary Rust/ClickHouse storage plan, local/test first slice, and hosted control-plane/data-plane direction.
 - `2026-05-09-usage-metering.md`: Rust/ClickHouse usage summaries, immutable daily rollup snapshots, UTC calendar-month metric-point periods, and Node compatibility coverage for pricing validation.
 - `2026-05-09-migration-adoption-p4.md`: SDK metadata reservation, atomic importer core, Neptune hardening, and W&B JSON import first slice.
-- `2026-05-09-mlflow-import-and-dual-logging.md`: MLflow JSON import follow-up and W&B dual-logging recommendation.
+- `2026-05-09-mlflow-import-and-dual-logging.md`: MLflow JSON import follow-up and the original W&B dual-logging recommendation, later narrowed into the optional `shadow_wandb` SDK path.
 - `2026-05-10-runs-workspace-panels.md`: W&B/Grafana-inspired Runs workspace sections, line panels, add/edit/fullscreen flows, local layout persistence, and future persisted workspace API shape.
 - `2026-05-10-web-keyboard-shortcuts-mvp.md`: keyboard workflow MVP for quick search, shortcut help, overlay dismissal, undo/redo, run-rail collapse, focus handoff, and fullscreen panel traversal.
 - `2026-05-10-compare-page-flow.md`: Compare page row/column layouts, sorting, artifact context, saved-view restore, and safe media preview behavior.
@@ -31,7 +31,7 @@ Current implemented design sequence:
 - `2026-05-16-multi-instance-control-data-plane.md`: accepted multi-instance control/data-plane direction, central hot-path proxy rejection, single-instance guardrails, mutation gates, deterministic operational replay, split `combined`/`control`/`data` service-plane roles, and data-plane control-record refresh before auth.
 - `2026-05-16-cloud-run-multi-instance-launch.md`: split Cloud Run launch wiring, deploy helper target model, managed HTTPS public router, Docker Compose split profile, static egress reuse, scaling defaults, unsafe multi-writer guardrails, and frontend env behavior.
 - `2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, plan-aware tenant-route warehouse profile intent, seat invites, invite activation, usage/admin settings, API-key management, and first pricing/admin boundaries.
-- `2026-05-17-plan-limit-enforcement.md`: blocked-at-limit guardrails for new project, run, current-month metric-ingest, artifact, import, and demo-reset writes plus Premium local/shared demo defaults.
+- `2026-05-17-plan-limit-enforcement.md`: blocked-at-limit guardrails for new project, run, current-month metric-ingest, artifact-storage, import, and demo-reset writes plus Premium local/shared demo defaults.
 - `2026-05-18-wandb-hosted-comparison-benchmarks.md`: guarded W&B-hosted comparison benchmark tooling, W&B public API mapping, seeded-mode caveats, and sanitized result reporting against the existing InstantML hosted Cloud Run benchmark.
 - `2026-05-21-cloudflare-r2-artifact-storage.md`: Cloudflare R2-backed hosted artifact bytes, per-org private buckets, opaque public artifact responses, R2 usage accounting, and media upload/download smoke coverage.
 - `2026-05-21-stripe-billing-platform.md`: Stripe Checkout/Billing/Portal integration, payment-verified paid signup, billing access gates, subscription projection records, and webhook/reconciliation flows.

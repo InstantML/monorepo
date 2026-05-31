@@ -6,7 +6,7 @@ import { LandingPage } from "../components/landing/LandingPage";
 
 const LANDING_TITLE = "InstantML — Training observability that keeps up with your loop";
 const LANDING_DESCRIPTION =
-  "Training observability that's fast where W&B is slow, cheap where W&B is expensive, and built for the way ML teams actually work in 2026.";
+  "Training observability with fast run comparison, predictable pricing, and clearer control over experiment data for lean ML teams.";
 
 export const metadata: Metadata = {
   title: {

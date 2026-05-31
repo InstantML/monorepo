@@ -1322,7 +1322,7 @@ def render_results(args: argparse.Namespace) -> None:
         [
             "- W&B timings use public SDK/Public API surfaces, not private GraphQL documents.",
             "- W&B project/status/notes equivalents use mirrored config and tags where W&B has no documented matching top-level route.",
-            "- Exact W&B full-history parity for 100,000 runs x 1,000 steps x six metrics is supported by the seed tool but is intentionally guarded because it is a 600M-scalar external workload.",
+            "- Exact W&B full-history parity for 100,000 runs x 1,000 steps x six metrics is only an intended guarded seed mode today; it has not been completed in a committed result and would be a 600M-scalar external workload.",
             "- InstantML data in this report is read-only from the existing hosted Cloud Run benchmark path.",
         ]
     )

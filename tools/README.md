@@ -136,13 +136,13 @@ INSTANTML_SCALE_RUNS=5 INSTANTML_SCALE_METRICS=4 INSTANTML_SCALE_POINTS=100 node
 
 ```bash
 npm run benchmark:large-runs
-INSTANTML_BENCH_RUNS=90000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 npm run benchmark:large-runs
-INSTANTML_BENCH_RUNS=90000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
+INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 npm run benchmark:large-runs
+INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
 ```
 
 Useful environment variables:
 
-- `INSTANTML_BENCH_RUNS`: number of seeded runs. Default: `90000`.
+- `INSTANTML_BENCH_RUNS`: number of seeded runs. Default: `100000`.
 - `INSTANTML_BENCH_SAMPLES`: measured requests per endpoint. Default: `15`.
 - `INSTANTML_BENCH_WARMUPS`: warmup requests per endpoint. Default: `2`.
 - `INSTANTML_BENCH_WEB=1`: additionally build/start the Next app and measure first useful render.
@@ -200,8 +200,11 @@ Useful environment variables:
 
 `hosted-cloud-run-benchmark.mjs` is the default hosted performance signal after
 the split Cloud Run deployment. It does not seed data. Instead, it expects a
-live 100,000+ run tenant, usually created by `seed:hosted-scale`, and measures
-the real path the SDK/frontend use in production:
+pre-seeded tenant and validates `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS` before
+timing requests. The default remains the 100,000-run hosted-scale tenant usually
+created by `seed:hosted-scale`; the May 23, 2026 GCP showcase result used
+`normal-runs-50k` with `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS=50000`. The benchmark
+measures the real path the SDK/frontend use in production:
 
 ```text
 benchmark client -> Cloud Run data service or HTTPS router -> self-hosted GCP ClickHouse tenant database

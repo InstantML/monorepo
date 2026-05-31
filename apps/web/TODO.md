@@ -187,15 +187,15 @@ These items came from the full frontend audit for issues like fixed minimum grid
 
 ## P0: Large Run Count Speed, Search, And Run Identification
 
-- [x] Make Runs first useful render credible for a 90,000-run project.
+- [x] Make Runs first useful render credible for large projects.
   - Design-partner feedback: W&B took seconds to load at around 90,000 runs; speed is the top differentiator.
   - Build: server-backed Rust cursor pagination, bounded visible rows, Node offset fallback, no full-project run fetch on initial page load, and guarded pagination controls are implemented.
-  - Evidence: 2026-05-11 local production benchmark measured first useful render at 387 ms with a 90,000-run fixture.
-  - Remaining: hosted-environment proof, high-cardinality metric catalog split, and Compare/workspace panel series scale gates.
+  - Evidence: 2026-05-11 local production benchmark measured first useful render at 387 ms with a 90,000-run fixture; the current local benchmark default is 100,000 runs, and the 2026-05-23 hosted GCP showcase stayed sub-second on 50,000 runs / 522M metric points.
+  - Remaining: high-cardinality metric catalog split and Compare/workspace panel series scale gates.
 
 - [x] Add first-slice server-backed search for runs.
-  - Current app: quick search uses loaded client data.
-  - Build: search by run name, notes, tags, and selected config text through Rust `search_text`; keep group, job type, source metadata, artifact names, metric key/value summary search as follow-up work.
+  - Current app: dashboard run search commits one server-backed `q` string across run summaries, overview, selection projection, and export.
+  - Build: bare text preserves legacy implicit-AND matching, while `tag:`, `tags:`, `status:`, `name:`, `notes:`, `config:`, grouping, uppercase `AND`/`OR`/`NOT`, negation, quoted phrases, and Rust `re:/.../` regex use the shared parser. Keep group, job type, source metadata, artifact names, and metric key/value summary search as follow-up work.
   - Tests: UI smoke covers tokenized run search and note search; Rust tests cover tag/note search with org-scoped filters. Large-project query-plan tests remain open.
 
 - [ ] Add durable run-table sorting controls.
@@ -205,7 +205,7 @@ These items came from the full frontend audit for issues like fixed minimum grid
 
 - [x] Make tags visible in the Runs list and workspace.
   - Build: compact tag chips in rows, overflow count in the workspace, table column visibility, and tag editing from Run Detail/Compare are implemented.
-  - Remaining: row tooltip/full list, explicit tag filters, and pagination-aware tag filter tests.
+  - Remaining: row tooltip/full list and pagination-aware tag filter tests.
 
 - [x] Add first-slice notes visibility and editing.
   - Build: notes preview in run rows/workspace, server-backed notes search, and edit actions in Run Detail/Compare are implemented.

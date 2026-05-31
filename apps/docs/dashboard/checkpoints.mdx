@@ -7,15 +7,52 @@ description: "Inspect checkpoint lineage and run context for the selected run."
 
 The Checkpoints tab focuses on checkpoint artifacts and their run context.
 
+![Checkpoint rows](/images/product/dashboard-checkpoints.png)
+
 ## What appears
 
-- Checkpoint artifact rows derived from logged artifacts.
-- Source run and step context when metadata is available.
-- Model context for the selected run.
+- The Checkpoints tab shows checkpoint rows and model context for the
+  selected run.
+- Run Detail Summary shows stored checkpoint artifacts with Download, Resume
+  Code, and Fork actions.
+- Run Detail Graph shows parent, selected run, checkpoint, and direct child
+  context.
+
+## Fork a checkpoint
+
+![Fork checkpoint modal](/images/product/dashboard-checkpoint-fork.png)
+
+Fork creates a linked child run record from a source run and checkpoint. It
+does not start training, copy metrics, or copy artifacts. The linked child run
+is ready for the SDK to attach to and continue logging.
+
+The fork modal records:
+
+- Source run.
+- Checkpoint artifact.
+- Checkpoint step.
+- Child run name.
+- Optional retry reason.
+- Whether the child run should inherit source config.
+
+The dashboard also tags the child run as a forked checkpoint retry and stores
+the retry reason in metadata. The API and SDK can accept additional fork fields
+such as tags, notes, metadata, and config overrides, but the current dashboard
+modal exposes only name, reason, and config inheritance.
+
+After creation, the dashboard selects the child run and opens Run Detail Graph.
+
+![Run lineage graph](/images/product/dashboard-lineage-graph.png)
+
+The lineage panel reads a bounded direct graph: parent, selected run,
+checkpoint artifact, child runs, and whether more children exist beyond the
+current limit.
 
 ## Log checkpoint bytes
 
 ```python
+import instantml as im
+
 policy = im.CheckpointPolicy(every_steps=1000)
 
 if policy.should_save(step):
@@ -38,3 +75,28 @@ run.log_checkpoint(
 
 Stored bytes can be downloaded through the artifact download route. External
 URI checkpoints remain provenance records.
+
+## Continue from a fork
+
+The dashboard's Resume Code button shows a restore snippet. For automation, use
+the Python API helper to create a fork and then attach logging to the child run:
+
+```python
+import instantml as im
+
+api = im.Api()
+child = api.fork_run(
+    "source-run-id",
+    checkpoint_artifact_id="artifact-id",
+    step=1000,
+    name="retry-from-step-1000",
+    tags=["retry", "checkpoint"],
+)
+
+run = im.attach_run(child["id"])
+run.log({"train/loss": 0.1}, step=1001)
+run.finish()
+```
+
+`Api.fork_run(...)` sends a stable idempotency key by default so retrying the
+same request does not create duplicate child runs.

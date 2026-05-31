@@ -122,6 +122,28 @@ test("LandingPage top navigation links to docs", () => {
   assert.match(src, />Docs<\/Link>/);
 });
 
+test("LandingPage migration copy matches implemented importer and shadow paths", () => {
+  const src = fs.readFileSync(path.join(componentsDir, "LandingPage.tsx"), "utf8");
+  assert.match(src, /W&amp;B \/ MLflow \/ Neptune import paths/);
+  assert.match(src, /tools\/import-wandb-json\.mjs/);
+  assert.match(src, /tools\/import-mlflow-json\.mjs/);
+  assert.match(src, /tools\/import-neptune-json\.mjs/);
+  assert.match(src, /shadow_wandb/);
+  assert.doesNotMatch(src, /Drop-in/i);
+  assert.doesNotMatch(src, /mirror_to/);
+});
+
+test("LandingPage SDK and speed copy stays implementation-accurate", () => {
+  const src = fs.readFileSync(path.join(componentsDir, "LandingPage.tsx"), "utf8");
+  assert.match(src, /log_checkpoint_file/);
+  assert.match(src, /\}, step=step\)/);
+  assert.doesNotMatch(src, /log_artifact<\/span>[\s\S]*?&quot;checkpoint&quot;/);
+  assert.doesNotMatch(src, /The old tools work/);
+  assert.doesNotMatch(src, /We&apos;ve watched serious ML teams/);
+  assert.match(src, /Hosted \+ Premium BYOC/);
+  assert.match(src, /BYOC ClickHouse/);
+});
+
 // ── page.tsx: server component wiring ────────────────────────────────────────
 describe("app/page.tsx — auth-aware home route", () => {
   const pagePath = path.join(__dirname, "..", "app", "page.tsx");

@@ -7,7 +7,11 @@ description: "Browse stored artifacts, files, checkpoints, rollouts, tables, his
 
 Artifacts connect metric behavior to the files and evidence produced by a run.
 
+![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
+
 ## Artifact browser
+
+![Artifacts workspace](/images/product/dashboard-artifacts-browser.png)
 
 The Artifacts tab focuses on the selected run context. Select a run first, then
 use the tab to inspect that run's artifact metadata and stored bytes.
@@ -18,20 +22,30 @@ Artifacts can represent:
 - External file references.
 - Checkpoints.
 - Rollouts.
-- Videos and audio.
-- Table and histogram objects.
-- Evaluation outputs.
+
+The same tab also shows rich logged objects for the selected run, such as
+tables, histograms, media previews, and evaluation outputs. Those objects can
+link to artifact bytes, but they are not artifact rows themselves.
 
 ## Files in Run Detail
 
 Run Detail includes a Files section that previews the selected run's artifacts
-and rich objects without introducing a separate storage layer.
+and rich objects without introducing a separate storage layer. The left rail
+groups checkpoints, media and rich objects, and files. Selecting an item opens a
+bounded preview for tables, histograms, media, and artifact metadata.
 
 ## Safe previews
 
 Same-origin image, audio, and video artifacts can preview in Run Detail and
 Compare when bytes are stored through InstantML. Unsupported or external-only
-artifacts fall back to copy/download actions.
+artifacts fall back to metadata, copy, or unavailable-download actions. Stored
+bytes are served through
+`/api/artifacts/{artifact_id}/download`; public artifact rows expose opaque
+InstantML URIs rather than raw object-store URLs.
+
+Rich media objects can link to artifact bytes from the same run. Metadata-only
+objects and artifacts remain inspectable, but they cannot be downloaded through
+the same-origin route until bytes are uploaded to InstantML.
 
 ## Checkpoint workflow
 
@@ -42,6 +56,6 @@ same-origin artifact download route.
 
 ## API snippets
 
-Artifact and API tabs expose copyable identifiers and route snippets so a user
-can fetch artifacts or inspect API behavior without digging through browser
-network panels.
+The Artifacts tab exposes copyable artifact IDs and safe download states. The
+API tab exposes copyable route snippets so a user can fetch artifacts or inspect
+API behavior without digging through browser network panels.

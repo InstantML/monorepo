@@ -41,6 +41,8 @@ instantml logout
 Examples:
 
 ```python
+import instantml as ro
+
 # Explicit key
 run = ro.init(project="cartpole", api_key="instantml_...", base_url="https://api.instantml.ai")
 
@@ -56,6 +58,10 @@ The hosted SDK default is `https://api.instantml.ai`. Use
 a different hosted API. That flag does not change the SDK host for future
 scripts; set `INSTANTML_API_BASE_URL` or pass `base_url=...` if your team has a
 different API endpoint.
+
+Device-code credentials are scoped for normal SDK ingest and read/export jobs.
+Use a dashboard or onboarding API key with `artifacts:write` when a script needs
+to upload files, checkpoints, or artifact bytes.
 
 ## Browser confirmation
 

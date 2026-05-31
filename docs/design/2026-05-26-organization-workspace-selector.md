@@ -154,6 +154,19 @@ bootstrap `POST /api/orgs` route would mix operator and browser authorization.
 - Update `apps/web/README.md` with the top-right account/workspace menu and
   create-workspace flow.
 
+## Implementation Screenshots
+
+These captures document the accepted implementation state used during final
+review:
+
+| State | Screenshot |
+| --- | --- |
+| Primary workspace with visible run data | ![Primary workspace run](./assets/2026-05-26-org-workspace-selector/01-primary-workspace-run.png) |
+| Top-right workspace menu | ![Workspace menu](./assets/2026-05-26-org-workspace-selector/02-workspace-menu.png) |
+| Create-workspace modal | ![Create workspace modal](./assets/2026-05-26-org-workspace-selector/03-create-workspace-modal.png) |
+| New empty workspace | ![New empty workspace](./assets/2026-05-26-org-workspace-selector/04-new-empty-workspace.png) |
+| Switched back with run still visible | ![Switch back run visible](./assets/2026-05-26-org-workspace-selector/05-switch-back-run-visible.png) |
+
 ## Review Notes
 
 Fresh backend reviewer:

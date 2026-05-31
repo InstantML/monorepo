@@ -44,6 +44,7 @@ fn share_token(query: &HashMap<String, String>) -> Option<&str> {
         (status = 200, description = "Created report", body = crate::http::openapi::ReportEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient report write permission", body = crate::http::openapi::ErrorResponse),
     ),
 )]
 pub async fn create_report(
@@ -120,6 +121,7 @@ pub async fn get_report(
         (status = 200, description = "Updated report", body = crate::http::openapi::ReportEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient report write permission", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Report not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -146,6 +148,7 @@ pub async fn update_report(
     responses(
         (status = 200, description = "Soft-deleted report", body = crate::http::openapi::ReportEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient report write permission", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Report not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -170,6 +173,7 @@ pub async fn delete_report(
     responses(
         (status = 200, description = "Report with rotated share token", body = crate::http::openapi::ReportEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient report write permission", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Report not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -192,7 +196,7 @@ pub async fn rotate_report_share_token(
     params(("share_token" = String, Path, description = "Magic-link share token")),
     security(()),
     responses(
-        (status = 200, description = "Public report fetched by share token", body = crate::http::openapi::ReportEnvelope),
+        (status = 200, description = "Shared report fetched by share token", body = crate::http::openapi::ReportEnvelope),
         (status = 404, description = "Report not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -232,7 +236,7 @@ pub async fn list_org_panels(
     ),
     security(("browserSession" = []), ("bearerApiKey" = []), ()),
     responses(
-        (status = 200, description = "Markdown rendering of the report"),
+        (status = 200, description = "Markdown rendering of the report", body = String, content_type = "text/markdown; charset=utf-8"),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Report not found", body = crate::http::openapi::ErrorResponse),
     ),

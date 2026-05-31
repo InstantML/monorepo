@@ -69,15 +69,16 @@ Currently implemented plans:
 
 | Plan | Price | Seats | Storage warning limit | Requested warehouse | Routing tier |
 | --- | ---: | ---: | ---: | --- | --- |
-| Free (personal) | `$0/org/mo` | 2 | 2 GiB | Shared cell | `shared` |
+| Free organization workspace | `$0/org/mo` | 2 | 2 GiB | Shared cell | `shared` |
 | Pro | `$199/org/mo` | 3 | 1 TiB | Standard, 12 GiB, 1 replica | `dedicated` |
 | Premium | `$699/org/mo` | 10 | 5 TiB | Dedicated, 16 GiB, 2 replicas | `dedicated` |
 
 When `account_type=personal` (or absent, which defaults to personal), the signup
-path sets `tenant_routing_tier="shared"` on the new org and writes a
-`tenant_route` record pointing at the env-configured shared ClickHouse cell
-(`INSTANTML_SHARED_CELL_URL`). When `account_type=business`, the hosted default
-is now a database-mode tenant route on the InstantML-owned self-hosted GCP
+path caps the workspace at one owner seat, sets `tenant_routing_tier="shared"`
+on the new org, and writes a `tenant_route` record pointing at the
+env-configured shared ClickHouse cell (`INSTANTML_SHARED_CELL_URL`). When
+`account_type=business`, the hosted default is now a database-mode tenant route
+on the InstantML-owned self-hosted GCP
 ClickHouse deployment.
 
 Legacy provider-backed `cloud-service` mode still exists for explicit operator
@@ -143,7 +144,8 @@ Session-backed mutating browser requests also validate `Origin` against the conf
 | Run/project mutations | `sdk:ingest` | Allowed | Allowed | Denied |
 | Artifact mutations | `artifacts:write` | Allowed | Allowed | Denied |
 | Imports | `imports:write` | Allowed | Denied | Denied |
-| Usage reads | `usage:read` | Allowed | Denied | Denied |
+| Reports | Same-org key for writes; same-org key or share token for reads | Allowed | Read/write allowed | Workspace reads allowed; writes denied |
+| Usage reads | Unrestricted org key with `usage:read` | Allowed | Denied | Denied |
 | API-key admin | `api_keys:write` org key | Allowed | Denied | Denied |
 | Seat reservation | Not public SDK flow | Allowed | Denied | Denied |
 

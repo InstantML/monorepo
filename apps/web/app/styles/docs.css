@@ -495,7 +495,7 @@ body:has(.docs-route) {
 
 .docs-route-description {
   max-width: 720px;
-  margin: 14px 0 48px;
+  margin: 14px 0 28px;
   color: #53635c;
   font-size: 17px;
   line-height: 1.6;
@@ -504,6 +504,10 @@ body:has(.docs-route) {
 .docs-route-body {
   display: grid;
   gap: 18px;
+}
+
+.docs-route-body > :first-child {
+  margin-top: 0;
 }
 
 .docs-route-body h2,
