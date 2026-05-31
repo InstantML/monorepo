@@ -1,6 +1,6 @@
 # Current Rust API Reference
 
-Date: 2026-05-25
+Date: 2026-05-30
 
 Status: Current implemented API surface for `apps/rust-server`
 
@@ -174,6 +174,11 @@ Validation limits that affect callers:
 | Object page limit | Default 100, max 500 |
 | Object table row limit | Default 100, max 1,000 |
 | Artifact list limit | Max 1,000 |
+| Artifact collection list limit | Default 100, max 500 |
+| Artifact version list limit | Default 100, max 1,000 |
+| Artifact manifest entries | Default 100, max 1,000 per page |
+| Versioned artifact manifest | Max 1,000 entries |
+| Versioned artifact upload session | Max 20,000 total parts |
 | Side-by-side comparison | Max 50 runs and 5,000 rows |
 | Export | Max 500 runs, 100,000 metric points, 25,000 attributes, 10,000 artifacts |
 | API requests | Free 5 req/sec general / 2 req/sec ingest; Pro 50 / 25; Premium 200 / 100 |
@@ -1329,6 +1334,66 @@ names, signed URLs, and object keys are not exposed in public artifact metadata.
 External artifact metadata rows without stored bytes are not downloadable
 through this endpoint.
 
+### Versioned Artifact Collections
+
+Versioned artifact routes are the W&B-style reproducibility layer beside the
+raw artifact routes above. Raw artifact metadata/upload/download remains
+unchanged for existing SDK helpers and checkpoint fork flows.
+
+All read routes require tenant read access (`export:read` for API keys). Upload
+routes require `artifacts:write`. Alias, retention, and delete routes require
+`artifacts:manage` or an owner/admin browser session.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/artifact-collections?project=&type=&q=&limit=` | List project-scoped collections with latest/best summaries and retained bytes. |
+| `GET` | `/api/artifact-collections/:collection_id` | Fetch one collection summary. |
+| `GET` | `/api/artifact-collections/:collection_id/versions?limit=` | List versions newest-first. |
+| `GET` | `/api/artifact-versions/resolve?ref=<name-or-type/name:alias>&type=&project=` | Resolve `latest`, `best`, or `vN`. |
+| `GET` | `/api/artifact-versions/:version_id` | Fetch one version summary. |
+| `GET` | `/api/artifact-versions/:version_id/manifest?limit=&offset=&path_prefix=` | Page manifest entries. |
+| `GET` | `/api/artifact-versions/:version_id/lineage?limit=` | Return bounded run/artifact nodes and edges. |
+| `GET` | `/api/artifact-entries/:entry_id/download` | Stream one stored manifest entry through the API. |
+| `POST` | `/api/runs/:run_id/artifact-uploads` | Initiate an SDK upload session from a manifest. |
+| `POST` | `/api/artifact-uploads/:upload_session_id/renew` | Renew a contiguous range of presigned upload URLs. |
+| `POST` | `/api/artifact-uploads/:upload_session_id/complete` | Complete local inline, R2 single PUT, or R2 multipart upload and commit metadata. |
+| `POST` | `/api/artifact-uploads/:upload_session_id/abort` | Mark an uncommitted upload session failed. |
+| `POST` | `/api/runs/:run_id/artifact-inputs` | Record `artifact_version -> run` input lineage. |
+| `GET` | `/api/runs/:run_id/artifact-edges?direction=both` | List input/output artifact edges for one run. |
+| `PUT` | `/api/artifact-collections/:collection_id/aliases/:alias` | Move a custom alias such as `best`. |
+| `DELETE` | `/api/artifact-collections/:collection_id/aliases/:alias` | Remove a custom alias. |
+| `PATCH` | `/api/artifact-versions/:version_id/retention` | Update `inherit`, `forever`, or TTL-day retention. |
+| `DELETE` | `/api/artifact-versions/:version_id` | Soft-delete a version; custom aliases require `delete_aliases=true`. |
+
+Initiate body:
+
+```json
+{
+  "collection": { "name": "policy", "type": "model", "description": null, "metadata": {} },
+  "manifest": {
+    "entries": [
+      {
+        "path": "checkpoint.pt",
+        "kind": "file",
+        "size_bytes": 12345,
+        "sha256": "64-hex",
+        "mime_type": "application/octet-stream"
+      }
+    ]
+  },
+  "aliases": ["best"],
+  "ttl_days": 30,
+  "source_step": 1200
+}
+```
+
+Initiate returns an `upload_session` plus file upload targets. Local storage
+targets use `upload_kind: "inline"` and are completed with `content_base64`.
+R2 targets use presigned single `put` URLs or `multipart` part URLs. Object keys
+are opaque server-generated keys under the versioned artifact namespace and do
+not include project names, run IDs, collection names, or filenames. Complete
+returns `{ "artifact_version": { ... } }` and creates the output lineage edge.
+
 ## Export, Usage, Imports, And Demo
 
 ### `GET /api/export`
@@ -1450,13 +1515,21 @@ Output:
         "metric_points_retained_total": 18,
         "metric_series": 4,
         "artifacts": 0,
+        "raw_artifacts": 0,
+        "artifact_collections": 0,
+        "artifact_versions_active": 0,
+        "artifact_versions_pending_delete": 0,
         "api_keys": 1,
         "artifact_bytes_exact": 0,
+        "versioned_artifact_bytes_active": 0,
+        "versioned_artifact_bytes_pending_delete": 0,
+        "versioned_artifact_bytes_reserved": 0,
         "artifact_bytes_unknown": 0,
         "artifact_bytes_unknown_count": 0,
         "estimated_metadata_bytes": 2048,
         "warehouse_storage_bytes_exact": 4096,
         "storage_bytes_for_warnings": 4096,
+        "storage_bytes_for_write_gate": 4096,
         "estimated_storage_bytes_for_warnings": 4096,
         "billable_storage_bytes": null
       },
@@ -1489,6 +1562,9 @@ artifact bytes when available. For BYOC orgs, it uses only retained artifact
 bytes stored by InstantML and never includes customer-owned ClickHouse bytes.
 `usage.estimated_storage_bytes_for_warnings` is retained as a compatibility
 alias for clients that have not yet moved to the exact/guardrail split.
+`usage.storage_bytes_for_write_gate` is the value used before accepting writes;
+for versioned artifacts it includes bytes reserved by pending upload sessions
+as well as active and pending-delete committed bytes.
 
 New project, run, scalar metric ingest, rank metric ingest, artifact-storage,
 import, and demo-reset writes that exceed blocked limits fail with:

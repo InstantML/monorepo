@@ -238,6 +238,20 @@ async fn usage_counts_for_org(
         .filter(|artifact| artifact.org_id == org_id)
         .collect::<Vec<_>>();
     let artifact_usage = artifact_usage_counts(org_artifacts.iter().copied());
+    let versioned_artifact_usage = versioned_artifact_usage_counts(
+        data.artifact_versions
+            .values()
+            .filter(|version| version.org_id == org_id),
+        data.artifact_upload_sessions
+            .values()
+            .filter(|session| session.org_id == org_id),
+        Utc::now(),
+    );
+    let artifact_collections = data
+        .artifact_collections
+        .values()
+        .filter(|collection| collection.org_id == org_id && collection.deleted_at.is_none())
+        .count() as i64;
     let seats = reserved_seat_count_in_data(&data, org_id, Utc::now()) as i64;
     let projects = data
         .projects
@@ -249,7 +263,9 @@ async fn usage_counts_for_org(
         .values()
         .filter(|run| run.org_id == org_id)
         .count() as i64;
-    let artifacts = artifact_usage.artifacts;
+    let artifacts = artifact_usage.artifacts
+        + versioned_artifact_usage.active_versions
+        + versioned_artifact_usage.pending_delete_versions;
     let api_keys = data
         .api_keys
         .values()
@@ -259,14 +275,25 @@ async fn usage_counts_for_org(
         .api_request_usage_for_org_period(org_id, &api_request_usage_period_key(period.starts_at));
     let plan = plan_tier(&org.plan_tier);
     let api_request_overage_mode = api_request_overage_mode(&data, org_id, plan.id);
-    let estimated_metadata_bytes =
-        estimated_metadata_bytes(projects, runs, metric_series, artifacts, api_keys, seats);
+    let estimated_metadata_bytes = estimated_metadata_bytes(
+        projects,
+        runs,
+        metric_series,
+        artifacts + artifact_collections,
+        api_keys,
+        seats,
+    );
+    let artifact_bytes_exact = artifact_usage.artifact_bytes_exact
+        + versioned_artifact_usage.active_bytes
+        + versioned_artifact_usage.pending_delete_bytes;
     let storage_bytes_for_warnings = storage_bytes_for_warnings(
-        artifact_usage.artifact_bytes_exact,
+        artifact_bytes_exact,
         estimated_metadata_bytes,
         warehouse_storage_bytes_exact,
         &org.storage_choice,
     );
+    let storage_bytes_for_write_gate =
+        storage_bytes_for_warnings + versioned_artifact_usage.reserved_upload_bytes;
     Ok(UsageCounts {
         org,
         plan,
@@ -277,14 +304,22 @@ async fn usage_counts_for_org(
         metric_points_retained_total,
         metric_series,
         artifacts,
+        raw_artifacts: artifact_usage.artifacts,
+        artifact_collections,
+        artifact_versions_active: versioned_artifact_usage.active_versions,
+        artifact_versions_pending_delete: versioned_artifact_usage.pending_delete_versions,
         api_keys,
         api_requests,
-        artifact_bytes_exact: artifact_usage.artifact_bytes_exact,
+        artifact_bytes_exact,
         external_artifact_bytes_declared: artifact_usage.external_artifact_bytes_declared,
         artifact_bytes_unknown_count: artifact_usage.artifact_bytes_unknown_count,
+        versioned_artifact_bytes_active: versioned_artifact_usage.active_bytes,
+        versioned_artifact_bytes_pending_delete: versioned_artifact_usage.pending_delete_bytes,
+        versioned_artifact_bytes_reserved: versioned_artifact_usage.reserved_upload_bytes,
         estimated_metadata_bytes,
         warehouse_storage_bytes_exact,
         storage_bytes_for_warnings,
+        storage_bytes_for_write_gate,
         estimated_storage_bytes_for_warnings: storage_bytes_for_warnings,
         api_request_overage_mode,
         period,
@@ -324,15 +359,23 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "metric_points_retained_total": counts.metric_points_retained_total,
             "metric_series": counts.metric_series,
             "artifacts": counts.artifacts,
+            "raw_artifacts": counts.raw_artifacts,
+            "artifact_collections": counts.artifact_collections,
+            "artifact_versions_active": counts.artifact_versions_active,
+            "artifact_versions_pending_delete": counts.artifact_versions_pending_delete,
             "api_keys": counts.api_keys,
             "api_requests": counts.api_requests,
             "artifact_bytes_exact": counts.artifact_bytes_exact,
             "external_artifact_bytes_declared": counts.external_artifact_bytes_declared,
             "artifact_bytes_unknown": 0,
             "artifact_bytes_unknown_count": counts.artifact_bytes_unknown_count,
+            "versioned_artifact_bytes_active": counts.versioned_artifact_bytes_active,
+            "versioned_artifact_bytes_pending_delete": counts.versioned_artifact_bytes_pending_delete,
+            "versioned_artifact_bytes_reserved": counts.versioned_artifact_bytes_reserved,
             "estimated_metadata_bytes": counts.estimated_metadata_bytes,
             "warehouse_storage_bytes_exact": counts.warehouse_storage_bytes_exact,
             "storage_bytes_for_warnings": counts.storage_bytes_for_warnings,
+            "storage_bytes_for_write_gate": counts.storage_bytes_for_write_gate,
             "estimated_storage_bytes_for_warnings": counts.estimated_storage_bytes_for_warnings,
             "billable_storage_bytes": billable_storage_bytes,
             "billable": {
@@ -431,6 +474,15 @@ struct ArtifactUsage {
     artifact_bytes_unknown_count: i64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct VersionedArtifactUsage {
+    active_versions: i64,
+    pending_delete_versions: i64,
+    active_bytes: i64,
+    pending_delete_bytes: i64,
+    reserved_upload_bytes: i64,
+}
+
 fn artifact_usage_counts<'a>(
     artifacts: impl IntoIterator<Item = &'a ArtifactRow>,
 ) -> ArtifactUsage {
@@ -447,6 +499,41 @@ fn artifact_usage_counts<'a>(
             None => {
                 usage.artifact_bytes_unknown_count += 1;
             }
+        }
+    }
+    usage
+}
+
+fn versioned_artifact_usage_counts<'a, 'b>(
+    versions: impl IntoIterator<Item = &'a ArtifactVersionRow>,
+    upload_sessions: impl IntoIterator<Item = &'b ArtifactUploadSessionRow>,
+    now: DateTime<Utc>,
+) -> VersionedArtifactUsage {
+    let mut usage = VersionedArtifactUsage::default();
+    for version in versions {
+        if version.deleted_at.is_some() {
+            continue;
+        }
+        if version.state == "active"
+            && version.delete_requested_at.is_none()
+            && version
+                .expires_at
+                .map(|expires_at| expires_at > now)
+                .unwrap_or(true)
+        {
+            usage.active_versions += 1;
+            usage.active_bytes += version.size_bytes;
+        } else if version.state == "soft_deleted" || version.delete_requested_at.is_some() {
+            usage.pending_delete_versions += 1;
+            usage.pending_delete_bytes += version.size_bytes;
+        }
+    }
+    for session in upload_sessions {
+        if matches!(
+            session.state.as_str(),
+            "uploading" | "completing" | "provider_completed" | "aborting"
+        ) {
+            usage.reserved_upload_bytes += session.expected_total_bytes;
         }
     }
     usage
@@ -484,7 +571,9 @@ fn usage_warnings(counts: &UsageCounts) -> Vec<Value> {
         ),
         usage_limit_warning(
             "storage",
-            counts.storage_bytes_for_warnings,
+            counts
+                .storage_bytes_for_write_gate
+                .max(counts.storage_bytes_for_warnings),
             counts.plan.included_storage_bytes,
             "blocked_at_limit",
             true,
@@ -673,7 +762,9 @@ fn first_blocking_violation(counts: &UsageCounts, delta: UsageDelta) -> Option<P
         ),
         blocking_violation(
             "storage",
-            counts.storage_bytes_for_warnings,
+            counts
+                .storage_bytes_for_write_gate
+                .max(counts.storage_bytes_for_warnings),
             delta.storage_bytes,
             counts.plan.included_storage_bytes,
         ),
@@ -718,14 +809,22 @@ struct UsageCounts {
     metric_points_retained_total: i64,
     metric_series: i64,
     artifacts: i64,
+    raw_artifacts: i64,
+    artifact_collections: i64,
+    artifact_versions_active: i64,
+    artifact_versions_pending_delete: i64,
     api_keys: i64,
     api_requests: i64,
     artifact_bytes_exact: i64,
     external_artifact_bytes_declared: i64,
     artifact_bytes_unknown_count: i64,
+    versioned_artifact_bytes_active: i64,
+    versioned_artifact_bytes_pending_delete: i64,
+    versioned_artifact_bytes_reserved: i64,
     estimated_metadata_bytes: i64,
     warehouse_storage_bytes_exact: Option<i64>,
     storage_bytes_for_warnings: i64,
+    storage_bytes_for_write_gate: i64,
     estimated_storage_bytes_for_warnings: i64,
     api_request_overage_mode: ApiRequestOverageMode,
     period: UsagePeriod,
@@ -1030,6 +1129,7 @@ mod tests {
     fn usage_org_value_reports_unknown_artifact_count() {
         let mut counts = test_counts("free");
         counts.artifacts = 3;
+        counts.raw_artifacts = 3;
         counts.artifact_bytes_exact = 42;
         counts.external_artifact_bytes_declared = 128;
         counts.artifact_bytes_unknown_count = 2;
@@ -1041,6 +1141,70 @@ mod tests {
         assert_eq!(value["usage"]["external_artifact_bytes_declared"], 128);
         assert_eq!(value["usage"]["artifact_bytes_unknown_count"], 2);
         assert_eq!(value["usage"]["artifact_bytes_unknown"], 0);
+    }
+
+    #[test]
+    fn versioned_artifact_usage_counts_active_pending_and_reserved_bytes() {
+        let org_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let collection_id = Uuid::new_v4();
+        let run_id = Uuid::new_v4();
+        let now = Utc::now();
+        let active = test_artifact_version(org_id, project_id, collection_id, 12);
+        let mut expired = test_artifact_version(org_id, project_id, collection_id, 88);
+        expired.expires_at = Some(now - chrono::Duration::minutes(1));
+        let mut pending = test_artifact_version(org_id, project_id, collection_id, 20);
+        pending.state = "soft_deleted".to_string();
+        pending.delete_requested_at = Some(now);
+        let mut deleted = test_artifact_version(org_id, project_id, collection_id, 99);
+        deleted.deleted_at = Some(now);
+        let session = ArtifactUploadSessionRow {
+            id: Uuid::new_v4(),
+            org_id,
+            project_id,
+            run_id,
+            artifact_version_id: Uuid::new_v4(),
+            collection_id,
+            state: "uploading".to_string(),
+            request_hash: "hash".to_string(),
+            expected_total_bytes: 30,
+            total_part_count: 1,
+            aliases: vec![],
+            ttl_days: None,
+            source_step: None,
+            digest: "digest".to_string(),
+            files: vec![],
+            manifest_entries: vec![],
+            idempotency_response: None,
+            expires_at: now + chrono::Duration::minutes(5),
+            created_at: now,
+            updated_at: now,
+        };
+        let mut expired_session = session.clone();
+        expired_session.id = Uuid::new_v4();
+        expired_session.expected_total_bytes = 40;
+        expired_session.expires_at = now - chrono::Duration::minutes(1);
+        let mut provider_completed_session = expired_session.clone();
+        provider_completed_session.id = Uuid::new_v4();
+        provider_completed_session.state = "provider_completed".to_string();
+        provider_completed_session.expected_total_bytes = 50;
+
+        let usage = versioned_artifact_usage_counts(
+            [&active, &expired, &pending, &deleted],
+            [&session, &expired_session, &provider_completed_session],
+            now,
+        );
+
+        assert_eq!(
+            usage,
+            VersionedArtifactUsage {
+                active_versions: 1,
+                pending_delete_versions: 1,
+                active_bytes: 12,
+                pending_delete_bytes: 20,
+                reserved_upload_bytes: 120,
+            }
+        );
     }
 
     fn test_artifact(storage_backend: &str, size_bytes: Option<i64>) -> ArtifactRow {
@@ -1059,6 +1223,35 @@ mod tests {
             storage_key: None,
             storage_path: None,
             metadata: json!({}),
+            created_at: Utc::now(),
+        }
+    }
+
+    fn test_artifact_version(
+        org_id: Uuid,
+        project_id: Uuid,
+        collection_id: Uuid,
+        size_bytes: i64,
+    ) -> ArtifactVersionRow {
+        ArtifactVersionRow {
+            id: Uuid::new_v4(),
+            org_id,
+            project_id,
+            collection_id,
+            version_index: 0,
+            digest: "digest".to_string(),
+            source_run_id: None,
+            source_step: None,
+            file_count: 1,
+            size_bytes,
+            state: "active".to_string(),
+            metadata: json!({}),
+            ttl_days: None,
+            retention_mode: "inherit".to_string(),
+            expires_at: None,
+            delete_requested_at: None,
+            deleted_at: None,
+            audit_reason: None,
             created_at: Utc::now(),
         }
     }
@@ -1087,14 +1280,22 @@ mod tests {
             metric_points_retained_total: 1,
             metric_series: 1,
             artifacts: 0,
+            raw_artifacts: 0,
+            artifact_collections: 0,
+            artifact_versions_active: 0,
+            artifact_versions_pending_delete: 0,
             api_keys: 0,
             api_requests: 0,
             artifact_bytes_exact: 0,
             external_artifact_bytes_declared: 0,
             artifact_bytes_unknown_count: 0,
+            versioned_artifact_bytes_active: 0,
+            versioned_artifact_bytes_pending_delete: 0,
+            versioned_artifact_bytes_reserved: 0,
             estimated_metadata_bytes: 0,
             warehouse_storage_bytes_exact: None,
             storage_bytes_for_warnings: 0,
+            storage_bytes_for_write_gate: 0,
             estimated_storage_bytes_for_warnings: 0,
             api_request_overage_mode: ApiRequestOverageMode::Blocked,
             period: current_usage_period(Utc::now()),

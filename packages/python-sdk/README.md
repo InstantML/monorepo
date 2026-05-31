@@ -11,6 +11,9 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Log configs, searchable run tags, and searchable run notes.
 - Log rich table/histogram/image/audio/video objects.
 - Log local file and artifact wrappers through the upload route. The SDK contract is unchanged for hosted R2 storage: it still sends the upload payload to the Rust API, which stores bytes in the organization's configured artifact backend and returns the public artifact metadata row with an opaque `instantml://artifacts/<artifact_id>` URI for stored bytes.
+- Log versioned artifacts with immutable manifests, `latest`/`best` aliases,
+  explicit input/output lineage, safe downloads, and SDK-originated upload
+  sessions for local inline or R2 presigned uploads.
 - Log checkpoints.
 - Log videos.
 - Log tables.
@@ -70,13 +73,18 @@ run.log({"checkpoint": ro.File("checkpoints/policy.pt", artifact_type="checkpoin
 run.log_checkpoint("checkpoint.pt", "demo://checkpoint.pt", step=1)
 run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
 run.log_table("eval-table.jsonl", "demo://eval-table.jsonl", step=1)
+artifact = ro.VersionedArtifact("policy-checkpoints", type="model")
+artifact.add_file("checkpoints/policy.pt", name="checkpoint.pt")
+logged = run.log_versioned_artifact(artifact, step=1000, aliases=["best"])
 run.flush()
 run.finish()
 
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 checkpoint_path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
+resolved = api.artifact("policy-checkpoints:best", type="model", project="cartpole")
 child = api.fork_run("source-run-id", checkpoint_artifact_id="artifact-id")
 forked_run = ro.attach_run(child["id"], base_url="http://127.0.0.1:8000", api_key="instantml_...")
+forked_run.use_artifact(resolved)
 forked_run.log({"train/loss": 0.1}, step=101)
 forked_run.finish()
 ```
@@ -192,7 +200,8 @@ npm run test:hosted-clickhouse
 
 That smoke creates an API key through the onboarding route, passes it to `instantml.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
 
-Run summary, artifact download, and fork helpers use the raw `Api` helper:
+Run summary, artifact download, versioned artifact, and fork helpers use the
+raw `Api` helper:
 
 ```python
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
@@ -207,7 +216,7 @@ page = api.runs(
 
 `Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. Prefer `project` for Rust filtering; `project_id` remains a legacy SDK compatibility parameter and Rust-hosted summaries do not expose it as a query filter outside project-scoped API-key auth. The `q` language matches the dashboard search bar: bare terms are implicit `AND`, fields include `all`, `name`, `project`, `notes`, `config`, `metadata`, `tag`/`tags`, `status`, and `id`, uppercase `AND`/`OR`/`NOT` and grouping are supported, `-tag:debug` excludes field/group terms, quoted phrases are literal, and Rust supports explicit regex like `re:/seed-(13|14)/`. The deprecated Node compatibility API rejects completed regex with `run_search_regex_unsupported`.
 
-`Api.download_artifact(artifact_id, output_path)` downloads stored artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
+`Api.download_artifact(artifact_id, output_path)` downloads stored raw artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.artifact(ref, type=..., project=...)` resolves a versioned artifact ref such as `policy-checkpoints:latest`, `policy-checkpoints:best`, or `policy-checkpoints:v0` and returns a `LoggedArtifact`; `LoggedArtifact.download(output_dir=...)` downloads stored manifest entries while keeping paths inside the requested root, `promote(alias="best", reason="...")` moves a custom alias, and `delete(delete_aliases=False, reason="...")` soft-deletes the version with the API's required confirmation fields. `Run.use_artifact(...)` records an input lineage edge from a resolved version to the run. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
 
 Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
 
@@ -609,7 +618,7 @@ PYTHONPATH=packages/python-sdk python3 -c "import instantml as ro; print(ro.Clie
 python3 -m pytest
 ```
 
-The SDK defaults to buffered async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 artifact storage in sync mode and record a source path for the uploader in process spool mode.
+The SDK defaults to buffered async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 raw artifact storage in sync mode and record a source path for the uploader in process spool mode. Versioned artifacts require sync mode in this slice because presigned upload URLs are short-lived bearer secrets and the process spool contract does not yet persist multipart state.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 

@@ -1,6 +1,6 @@
 # Current System Architecture
 
-Date: 2026-05-16
+Date: 2026-05-30
 
 Status: Current architecture summary
 
@@ -46,7 +46,7 @@ monorepo/
 
 ## Components
 
-- `apps/rust-server`: Primary Rust API and worker service with ClickHouse operational storage, ClickHouse metric storage, plan-aware signup/admin routes, local artifact storage, and hosted Cloudflare R2 artifact storage.
+- `apps/rust-server`: Primary Rust API and worker service with ClickHouse operational storage, ClickHouse metric storage, plan-aware signup/admin routes, raw and versioned artifact metadata, local artifact storage, and hosted Cloudflare R2 artifact storage.
 - `apps/server`: Deprecated Node.js API compatibility server. Use it for route-shape regression tests, JSON migration fixtures, and legacy fallback only.
 - `apps/web`: Next/React frontend application for the operational UI.
 - `packages/python-sdk`: Standard-library Python SDK used by examples and training loops.
@@ -173,7 +173,7 @@ for query strings.
 
 Current dev/default storage:
 
-- ClickHouse `operational_records` stores low-volume records for users, identities, organizations, memberships, sessions, API keys, projects, runs, attributes, artifacts, imports, idempotency, usage snapshots, and table preview rows. The Rust server rebuilds an in-process index from these records on startup.
+- ClickHouse `operational_records` stores low-volume records for users, identities, organizations, memberships, sessions, API keys, projects, runs, attributes, raw artifacts, versioned artifact collections/versions/manifests/aliases/edges/upload sessions, imports, idempotency, usage snapshots, and table preview rows. The Rust server rebuilds an in-process index from these records on startup.
 - ClickHouse `metric_points` stores raw scalar points. ClickHouse `metric_series` is maintained by a materialized view for summary and chart queries.
 - `npm run dev:api` starts a local ClickHouse server for the default loopback `CLICKHOUSE_URL` when the `clickhouse` binary is installed, stores generated state under `.instantml/clickhouse`, and also works with an already-running `CLICKHOUSE_URL`. The docker-compose stack provides ClickHouse for the container path.
 - Local artifact bytes are stored through the Rust artifact-store abstraction under `.instantml/rust-artifacts` by default.
@@ -187,7 +187,7 @@ Durable hosted direction:
 
 - Control-plane ClickHouse layer for user and account data: users, identities, organizations, memberships, service routing, tenant-route warehouse profile metadata, plans, seats, API keys, and account status. The current hosted control layer is a self-hosted GCP ClickHouse database.
 - Data-plane ClickHouse layer per shared cell, InstantML-hosted tenant database on the self-hosted GCP ClickHouse deployment, or customer-owned ClickHouse route for projects, runs, attributes, artifacts, imports, idempotency, operational records, usage snapshots, and metric tables.
-- Cloudflare R2 stores production artifact byte payloads in private deterministic per-org buckets. ClickHouse stores artifact catalog rows with `storage_backend`, `storage_key`, `storage_path`, exact `size_bytes`, `sha256`, and `mime_type`; downloads stream through the Rust API rather than exposing raw bucket URLs.
+- Cloudflare R2 stores production artifact byte payloads in private deterministic per-org buckets. ClickHouse stores raw artifact catalog rows plus versioned artifact manifests with `storage_backend`, opaque `storage_key`, exact `size_bytes`, `sha256`, and `mime_type`; downloads stream through the Rust API rather than exposing raw bucket URLs or presigned download URLs.
 - JSON state retained only for deprecated Node compatibility and migration tooling.
 
 The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
@@ -248,7 +248,7 @@ Core SDK-compatible endpoints:
 - `POST /runs/:run_id/metrics`
 - `GET /runs/:run_id/metrics`
 
-Product endpoints include bootstrap users/orgs/API keys, auth/session/logout, plan-aware signup, customer-owned ClickHouse setup, org seat invite/list, API-key admin, run summaries, side-by-side comparison, attributes, artifacts, rich objects, imports, export, usage, and demo reset. See `apps/rust-server/README.md` for the maintained list.
+Product endpoints include bootstrap users/orgs/API keys, auth/session/logout, plan-aware signup, customer-owned ClickHouse setup, org seat invite/list, API-key admin, run summaries, side-by-side comparison, attributes, raw artifacts, versioned artifact collections/manifests/lineage, rich objects, imports, export, usage, and demo reset. See `apps/rust-server/README.md` for the maintained list.
 
 Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-up selects a plan, records warehouse intent, and establishes an InstantML browser session for one active org membership; Clerk sign-in can activate an invited membership by verified email. SDKs continue to use org-scoped API keys. Session and API-key requests both resolve an org before tenant data is read or mutated.
 
@@ -266,6 +266,7 @@ Human hosted auth is documented in `auth-and-tenant-flow.md`: Clerk sign-up sele
 - `docs/design/2026-05-22-staging-cloud-run-environment.md`: production URL-map cleanup, backend timeout alignment, and isolated staging Cloud Run services/router.
 - `docs/design/2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, warehouse profile metadata, seat invites, invited-member activation, usage/admin settings, and API-key management.
 - `docs/design/2026-05-21-cloudflare-r2-artifact-storage.md`: Cloudflare R2 per-org buckets, artifact reference metadata, and same-route upload/download preservation.
+- `docs/design/2026-05-30-artifact-lineage-parity.md`: versioned artifact collections, manifests, aliases, input/output edges, retention/delete state, SDK-originated presigned uploads, and lineage UI.
 - `docs/design/2026-05-22-customer-owned-clickhouse.md`: Premium BYOC ClickHouse onboarding, data-plane-origin validation, storage setup gates, and R2-only storage accounting for customer-owned warehouses.
 - `docs/design/2026-05-21-rust-server-observability.md`: narrowed Rust server logging slice, safe field contract, Cloudflare edge-log capture plan, and request/error correlation.
 - `docs/product/pricing-and-margins.md`: current packaging, cost assumptions, margin targets, and launch guardrails.

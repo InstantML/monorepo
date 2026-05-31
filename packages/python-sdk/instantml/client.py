@@ -24,9 +24,9 @@ import uuid
 import warnings
 import weakref
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .async_queue import (
     AsyncQueueRepository,
@@ -65,6 +65,7 @@ from .objects import (
     Table,
     Text,
     Video,
+    VersionedArtifact,
     _histogram_counts_for_edges,
     _histogram_from_count,
 )
@@ -355,6 +356,171 @@ def _is_retryable_rate_limit(exc: urllib.error.HTTPError) -> bool:
     return str(scope or "second").strip().lower() != "monthly"
 
 
+def _versioned_artifact_idempotency_key(run_id: str, body: dict[str, Any]) -> str:
+    payload = json.dumps({"run_id": run_id, "body": body}, sort_keys=True, separators=(",", ":"), default=str)
+    return "instantml-artifact-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _safe_artifact_download_path(value: str) -> Path:
+    path = _validate_artifact_manifest_path(value)
+    return Path(*path.split("/"))
+
+
+def _validate_artifact_manifest_path(value: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError("artifact manifest path must be a string")
+    text = value.strip()
+    if not text:
+        raise ValueError("artifact manifest path must be non-empty")
+    if text.startswith("/") or "\\" in text:
+        raise ValueError("artifact manifest path must be relative and use '/' separators")
+    segments = text.split("/")
+    if any(segment in {"", ".", ".."} for segment in segments):
+        raise ValueError("artifact manifest path cannot contain empty, '.', or '..' segments")
+    return "/".join(segments)
+
+
+def _prepare_versioned_artifact_files(artifact: VersionedArtifact) -> list[dict[str, Any]]:
+    if not artifact.files:
+        raise ValueError("versioned artifact must include at least one file")
+    prepared = []
+    seen = set()
+    for item in artifact.files:
+        source = Path(item["path"]).expanduser().resolve()
+        if not source.exists() or not source.is_file():
+            raise InstantMLError(f"artifact file does not exist: {source}")
+        artifact_path = _validate_artifact_manifest_path(item["name"])
+        if artifact_path in seen:
+            raise ValueError(f"duplicate artifact manifest path: {artifact_path}")
+        seen.add(artifact_path)
+        stats = _hash_file(source)
+        prepared.append(
+            {
+                "source": source,
+                "artifact_path": artifact_path,
+                "stats": stats,
+                "mime_type": mimetypes.guess_type(artifact_path)[0] or "application/octet-stream",
+            }
+        )
+    return prepared
+
+
+def _upload_versioned_artifact_file(
+    source: Path,
+    upload_file: dict[str, Any],
+    timeout: float,
+    renew_parts: Callable[[str, int, int], list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    entry_id = _validate_text(str(upload_file.get("entry_id", "")), "artifact entry id")
+    upload_kind = str(upload_file.get("upload_kind", ""))
+    if upload_kind == "inline":
+        return {
+            "entry_id": entry_id,
+            "content_base64": base64.b64encode(source.read_bytes()).decode("ascii"),
+        }
+    parts = upload_file.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise InstantMLError("server did not return upload URLs for artifact file")
+    if upload_kind == "put":
+        part = parts[0]
+        if _artifact_part_expires_soon(part):
+            if renew_parts is None:
+                raise InstantMLError("artifact upload URL expired before upload")
+            renewed = renew_parts(entry_id, 1, 1)
+            if not isinstance(renewed, list) or not renewed:
+                raise InstantMLError("server did not renew artifact upload URL")
+            part = renewed[0]
+        if _artifact_part_expires_soon(part):
+            raise InstantMLError("server returned an expired artifact upload URL")
+        _put_presigned_url_with_headers(str(part.get("url", "")), source.read_bytes(), timeout, _artifact_required_headers(part))
+        return {"entry_id": entry_id}
+    if upload_kind != "multipart":
+        raise InstantMLError(f"unsupported artifact upload kind: {upload_kind}")
+    part_size = int(upload_file.get("part_size_bytes") or 0)
+    if part_size <= 0:
+        raise InstantMLError("server returned an invalid artifact multipart size")
+    part_count = int(upload_file.get("part_count") or len(parts))
+    if part_count <= 0:
+        raise InstantMLError("server returned an invalid artifact multipart part count")
+    parts_by_number: dict[int, dict[str, Any]] = {}
+    for part in parts:
+        part_number = int(part.get("part_number") or 0)
+        if part_number > 0:
+            parts_by_number[part_number] = part
+    completed_parts = []
+    with source.open("rb") as handle:
+        for part_number in range(1, part_count + 1):
+            part = parts_by_number.get(part_number)
+            if part is None or _artifact_part_expires_soon(part):
+                if renew_parts is None:
+                    raise InstantMLError("server did not return enough artifact multipart upload URLs")
+                renewed = renew_parts(entry_id, part_number, min(256, part_count - part_number + 1))
+                if not isinstance(renewed, list) or not renewed:
+                    raise InstantMLError("server did not renew artifact multipart upload URLs")
+                for renewed_part in renewed:
+                    renewed_part_number = int(renewed_part.get("part_number") or 0)
+                    if renewed_part_number > 0:
+                        parts_by_number[renewed_part_number] = renewed_part
+                part = parts_by_number.get(part_number)
+                if part is None:
+                    raise InstantMLError("server did not renew the requested artifact multipart upload URL")
+                if _artifact_part_expires_soon(part):
+                    raise InstantMLError("server returned an expired artifact multipart upload URL")
+            url = str(part.get("url", ""))
+            chunk = handle.read(part_size)
+            if not chunk:
+                raise InstantMLError("artifact source ended before all multipart parts were read")
+            etag = _put_presigned_url_with_headers(url, chunk, timeout, _artifact_required_headers(part))
+            completed_parts.append({"part_number": part_number, "etag": etag})
+        if handle.read(1):
+            raise InstantMLError("artifact source changed after manifest hashing")
+    return {"entry_id": entry_id, "parts": completed_parts}
+
+
+def _artifact_part_expires_soon(part: dict[str, Any], skew_seconds: int = 60) -> bool:
+    expires_at = part.get("expires_at")
+    if not isinstance(expires_at, str) or not expires_at:
+        return False
+    try:
+        parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed <= datetime.now(timezone.utc) + timedelta(seconds=skew_seconds)
+
+
+def _artifact_required_headers(part: dict[str, Any]) -> dict[str, str]:
+    headers = part.get("required_headers")
+    if not isinstance(headers, dict):
+        return {}
+    return {str(key): str(value) for key, value in headers.items()}
+
+
+def _put_presigned_url_with_headers(url: str, payload: bytes, timeout: float, headers: dict[str, str]) -> str:
+    try:
+        return _put_presigned_url(url, payload, timeout, headers)
+    except TypeError:
+        if headers:
+            raise
+        return _put_presigned_url(url, payload, timeout)
+
+
+def _put_presigned_url(url: str, payload: bytes, timeout: float, headers: dict[str, str] | None = None) -> str:
+    if not url:
+        raise InstantMLError("artifact upload URL is missing")
+    request = urllib.request.Request(url, data=payload, method="PUT", headers=headers or {})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            etag = response.headers.get("ETag", "")
+            response.read()
+            return etag.strip('"')
+    except urllib.error.HTTPError as exc:
+        raise InstantMLError(f"artifact upload PUT failed: {_error_message(exc)}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise InstantMLError(f"artifact upload PUT failed: {exc}") from exc
+
+
 def _async_request_supported(method: str, path: str, body: dict[str, Any]) -> bool:
     if method == "POST" and (path.endswith("/metrics") or path.endswith("/rank-metrics") or path.endswith("/logs")):
         return True
@@ -490,6 +656,129 @@ class Api:
             raise InstantMLError(f"GET /api/artifacts/{artifact_id}/download failed: {exc}") from exc
         target.write_bytes(payload)
         return str(target)
+
+    def artifact(
+        self,
+        ref: str,
+        type: str | None = None,
+        project: str | None = None,
+    ) -> "LoggedArtifact":
+        ref = _validate_text(ref, "artifact ref")
+        params = {"ref": ref, "type": type, "project": project}
+        query = urllib.parse.urlencode(
+            [(key, value) for key, value in params.items() if value is not None and value != ""]
+        )
+        payload = Client(base_url=self.base_url, timeout=self.timeout, api_key=self.api_key)._request(
+            "GET",
+            f"/api/artifact-versions/resolve?{query}",
+        )
+        artifact_version = payload.get("artifact_version")
+        if not isinstance(artifact_version, dict):
+            raise InstantMLError("server returned an invalid artifact response")
+        return LoggedArtifact(self, artifact_version)
+
+    def _manifest_entries(self, artifact_version_id: str) -> list[dict[str, Any]]:
+        artifact_version_id = _validate_text(artifact_version_id, "artifact version id")
+        payload = Client(base_url=self.base_url, timeout=self.timeout, api_key=self.api_key)._request(
+            "GET",
+            f"/api/artifact-versions/{urllib.parse.quote(artifact_version_id, safe='')}/manifest?limit=1000",
+        )
+        entries = payload.get("entries")
+        if not isinstance(entries, list):
+            raise InstantMLError("server returned an invalid artifact manifest")
+        return [entry for entry in entries if isinstance(entry, dict)]
+
+    def _download_artifact_entry(self, entry_id: str, output_path: str | os.PathLike[str]) -> str:
+        entry_id = _validate_text(entry_id, "artifact entry id")
+        if not isinstance(output_path, (str, os.PathLike)):
+            raise TypeError("output_path must be a path")
+        target = Path(output_path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        url = f"{self.base_url.rstrip('/')}/api/artifact-entries/{urllib.parse.quote(entry_id, safe='')}/download"
+        headers = {"Accept": "application/octet-stream"}
+        api_key = _resolve_api_key_from_env(self.api_key)
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        request = urllib.request.Request(url, method="GET", headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                with target.open("wb") as handle:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+        except urllib.error.HTTPError as exc:
+            message = _error_message(exc)
+            raise InstantMLError(f"GET /api/artifact-entries/{entry_id}/download failed: {message}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            target.unlink(missing_ok=True)
+            raise InstantMLError(f"GET /api/artifact-entries/{entry_id}/download failed: {exc}") from exc
+        return str(target)
+
+
+class LoggedArtifact:
+    """Handle returned by versioned artifact logging or resolution."""
+
+    def __init__(self, api: Api, artifact_version: dict[str, Any]) -> None:
+        self._api = api
+        self.artifact_version = artifact_version
+
+    @property
+    def id(self) -> str:
+        return str(self.artifact_version.get("id", ""))
+
+    @property
+    def name(self) -> str:
+        return str(self.artifact_version.get("name", ""))
+
+    @property
+    def version(self) -> str:
+        return str(self.artifact_version.get("version", ""))
+
+    @property
+    def aliases(self) -> list[str]:
+        aliases = self.artifact_version.get("aliases")
+        return [str(alias) for alias in aliases] if isinstance(aliases, list) else []
+
+    def download(self, output_dir: str | os.PathLike[str] = ".") -> list[str]:
+        root = Path(output_dir).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        written: list[str] = []
+        for entry in self._api._manifest_entries(self.id):
+            if not entry.get("downloadable"):
+                continue
+            relative_path = _safe_artifact_download_path(str(entry.get("path", "")))
+            target = (root / relative_path).resolve()
+            if root != target and root not in target.parents:
+                raise InstantMLError("artifact manifest entry escapes the output directory")
+            written.append(self._api._download_artifact_entry(str(entry.get("id", "")), target))
+        return written
+
+    def promote(self, alias: str = "best", *, reason: str = "sdk alias promotion") -> "LoggedArtifact":
+        alias = _validate_text(alias, "artifact alias")
+        collection_id = _validate_text(str(self.artifact_version.get("collection_id", "")), "collection id")
+        payload = Client(base_url=self._api.base_url, timeout=self._api.timeout, api_key=self._api.api_key)._request(
+            "PUT",
+            f"/api/artifact-collections/{urllib.parse.quote(collection_id, safe='')}/aliases/{urllib.parse.quote(alias, safe='')}",
+            {"artifact_version_id": self.id, "confirm": alias, "reason": reason},
+        )
+        artifact_version = payload.get("artifact_version")
+        if isinstance(artifact_version, dict):
+            self.artifact_version = artifact_version
+        return self
+
+    def delete(self, *, delete_aliases: bool = False, reason: str = "sdk artifact delete") -> dict[str, Any]:
+        body = {"delete_aliases": delete_aliases, "confirm": self.id, "reason": reason}
+        payload = Client(base_url=self._api.base_url, timeout=self._api.timeout, api_key=self._api.api_key)._request(
+            "DELETE",
+            f"/api/artifact-versions/{urllib.parse.quote(self.id, safe='')}",
+            body,
+        )
+        artifact_version = payload.get("artifact_version")
+        if isinstance(artifact_version, dict):
+            self.artifact_version = artifact_version
+        return payload
 
 
 def _is_retryable_sqlite_enqueue_error(message: str) -> bool:
@@ -1388,13 +1677,23 @@ class Run:
 
     def log_artifact(
         self,
-        name: str,
-        uri: str,
+        name: str | VersionedArtifact,
+        uri: str | None = None,
         artifact_type: str = "file",
         step: int | None = None,
         size_bytes: int | None = None,
         metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        aliases: list[str] | tuple[str, ...] | None = None,
+        ttl_days: int | None = None,
+    ) -> dict[str, Any] | LoggedArtifact:
+        if isinstance(name, VersionedArtifact):
+            if uri is not None:
+                raise ValueError("uri must not be passed when logging a VersionedArtifact")
+            return self.log_versioned_artifact(name, step=step, aliases=aliases, ttl_days=ttl_days)
+        if uri is None:
+            raise TypeError("uri is required when logging a metadata artifact")
+        if aliases is not None or ttl_days is not None:
+            raise ValueError("aliases and ttl_days are only valid when logging a VersionedArtifact")
         step = _validate_step(step)
         payload = {
             "type": artifact_type,
@@ -1417,6 +1716,135 @@ class Run:
             )
             return {"id": "spooled", **payload}
         return self._request_or_spool("POST", f"/api/runs/{self.run_id}/artifacts", payload)["artifact"]
+
+    def log_versioned_artifact(
+        self,
+        artifact: VersionedArtifact,
+        step: int | float | None = None,
+        aliases: list[str] | tuple[str, ...] | None = None,
+        ttl_days: int | None = None,
+    ) -> LoggedArtifact:
+        if self.upload_mode == "spool":
+            raise InstantMLError("versioned artifact uploads require upload_mode='sync' or 'async'")
+        if not isinstance(artifact, VersionedArtifact):
+            raise TypeError("artifact must be a VersionedArtifact")
+        source_step = _validate_step(step)
+        artifact_files = _prepare_versioned_artifact_files(artifact)
+        manifest_entries = [
+            {
+                "path": item["artifact_path"],
+                "kind": "file",
+                "size_bytes": item["stats"].size_bytes,
+                "sha256": item["stats"].sha256,
+                "mime_type": item["mime_type"],
+            }
+            for item in artifact_files
+        ]
+        requested_aliases = list(artifact.aliases)
+        if aliases is not None:
+            requested_aliases.extend(str(alias) for alias in aliases)
+        body: dict[str, Any] = {
+            "collection": {
+                "name": artifact.name,
+                "type": artifact.type,
+                "description": artifact.description,
+                "metadata": _validate_optional_json_object(artifact.metadata, "artifact metadata"),
+            },
+            "manifest": {"entries": manifest_entries},
+            "aliases": requested_aliases,
+            "ttl_days": ttl_days if ttl_days is not None else artifact.ttl_days,
+            "source_step": source_step,
+        }
+        initiate = self.client._request(
+            "POST",
+            f"/api/runs/{self.run_id}/artifact-uploads",
+            body,
+            idempotency_key=_versioned_artifact_idempotency_key(self.run_id, body),
+        )
+        deduplicated_version = initiate.get("artifact_version")
+        if initiate.get("deduplicated") and isinstance(deduplicated_version, dict):
+            return LoggedArtifact(
+                Api(base_url=self.client.base_url, timeout=self.client.timeout, api_key=self.client.api_key),
+                deduplicated_version,
+            )
+        upload_files = initiate.get("files")
+        upload_session = initiate.get("upload_session")
+        if not isinstance(upload_files, list) or not isinstance(upload_session, dict):
+            raise InstantMLError("server returned an invalid artifact upload session")
+        upload_session_id = _validate_text(str(upload_session.get("id", "")), "artifact upload session id")
+
+        def renew_file_parts(entry_id: str, start_part_number: int, part_count: int) -> list[dict[str, Any]]:
+            payload = self.client._request(
+                "POST",
+                f"/api/artifact-uploads/{urllib.parse.quote(upload_session_id, safe='')}/renew",
+                {"entry_id": entry_id, "start_part_number": start_part_number, "part_count": part_count},
+            )
+            renewed = payload.get("parts")
+            if not isinstance(renewed, list):
+                raise InstantMLError("server returned invalid renewed artifact upload URLs")
+            return renewed
+
+        files_by_path = {str(item["artifact_path"]): item for item in artifact_files}
+        complete_files = []
+        try:
+            for upload_file in upload_files:
+                if not isinstance(upload_file, dict):
+                    continue
+                upload_path = str(upload_file.get("path", ""))
+                prepared = files_by_path.get(upload_path)
+                if prepared is None and len(artifact_files) == 1:
+                    prepared = artifact_files[0]
+                if prepared is None:
+                    raise InstantMLError("server returned an unknown artifact upload entry")
+                complete_files.append(
+                    _upload_versioned_artifact_file(
+                        prepared["source"],
+                        upload_file,
+                        self.client.timeout,
+                        renew_file_parts,
+                    )
+                )
+            complete = self.client._request(
+                "POST",
+                f"/api/artifact-uploads/{urllib.parse.quote(upload_session_id, safe='')}/complete",
+                {"files": complete_files},
+                idempotency_key=_versioned_artifact_idempotency_key(upload_session_id, {"files": complete_files}),
+            )
+        except Exception:
+            try:
+                self.client._request(
+                    "POST",
+                    f"/api/artifact-uploads/{urllib.parse.quote(upload_session_id, safe='')}/abort",
+                    {"reason": "sdk upload failed"},
+                )
+            except Exception:
+                pass
+            raise
+        artifact_version = complete.get("artifact_version")
+        if not isinstance(artifact_version, dict):
+            raise InstantMLError("server returned an invalid artifact version")
+        return LoggedArtifact(
+            Api(base_url=self.client.base_url, timeout=self.client.timeout, api_key=self.client.api_key),
+            artifact_version,
+        )
+
+    def use_artifact(
+        self,
+        ref: str | LoggedArtifact,
+        type: str | None = None,
+        project: str | None = None,
+    ) -> LoggedArtifact:
+        api = Api(base_url=self.client.base_url, timeout=self.client.timeout, api_key=self.client.api_key)
+        artifact = ref if isinstance(ref, LoggedArtifact) else api.artifact(ref, type=type, project=project)
+        payload = self.client._request(
+            "POST",
+            f"/api/runs/{self.run_id}/artifact-inputs",
+            {"artifact_version_id": artifact.id},
+        )
+        artifact_version = payload.get("artifact_version")
+        if isinstance(artifact_version, dict):
+            return LoggedArtifact(api, artifact_version)
+        return artifact
 
     def log_checkpoint(
         self,

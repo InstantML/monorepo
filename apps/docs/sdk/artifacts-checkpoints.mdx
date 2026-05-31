@@ -40,6 +40,55 @@ Artifact `type` currently accepts `checkpoint`, `file`, or `rollout`; use
 metadata and MIME type for finer-grained labels such as image, audio, report,
 model, or table.
 
+## Versioned artifacts
+
+Use `VersionedArtifact` when a dataset, model, or checkpoint package needs a
+stable manifest, `latest`/`best` aliases, and lineage.
+
+```python
+import instantml as im
+
+run = im.init(project="cartpole")
+
+artifact = im.VersionedArtifact(
+    "policy-checkpoints",
+    type="model",
+    metadata={"framework": "torch"},
+)
+artifact.add_file("checkpoints/policy.pt", name="checkpoint.pt")
+
+logged = run.log_versioned_artifact(
+    artifact,
+    step=1000,
+    aliases=["best"],
+    ttl_days=30,
+)
+
+run.finish()
+```
+
+`log_artifact(artifact, aliases=[...], ttl_days=...)` also accepts a
+`VersionedArtifact` and keeps the older `log_artifact(name, uri, ...)`
+raw-artifact call working.
+
+Resolve and consume a version from another run:
+
+```python
+api = im.Api()
+dataset = api.artifact("training-data:latest", type="dataset", project="cartpole")
+
+run = im.init(project="cartpole")
+run.use_artifact(dataset)
+dataset.download("inputs/training-data")
+run.finish()
+```
+
+`LoggedArtifact.download(...)` keeps downloaded paths inside the output
+directory. `promote(alias="best", reason="...")` moves a custom alias, and
+`delete(delete_aliases=True, reason="...")` requests a soft delete when the key
+has management permission. The SDK sends the API's required confirmation fields
+for these destructive or mutable operations.
+
 ## Checkpoints
 
 Use checkpoint helpers when the file is a restart point for training.
@@ -134,8 +183,8 @@ a linked rich object, so the API key needs both `artifacts:write` and
 
 ## Where artifacts appear
 
-- Run Detail summary and Files section.
-- Artifacts tab.
+- Run Detail summary and Files section for raw run artifacts.
+- Artifacts tab for versioned collections, manifests, lineage, and raw run artifacts.
 - Compare artifact context.
 - API snippets for download/copy workflows.
 

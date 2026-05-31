@@ -357,6 +357,7 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     .await?;
     let deleted = store::delete_expired_idempotency(&store).await?;
     let deleted_sessions = store::delete_expired_or_revoked_sessions(&store).await?;
+    let cleaned_uploads = store::cleanup_expired_artifact_uploads(&store, &config).await?;
     let usage_snapshots = store::write_usage_daily_snapshots(&store).await?;
     tracing::info!(
         workflow = "worker",
@@ -368,6 +369,7 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         retryable = false,
         deleted_idempotency_rows = deleted,
         deleted_session_rows = deleted_sessions,
+        cleaned_artifact_upload_sessions = cleaned_uploads,
         usage_daily_snapshots = usage_snapshots,
         "worker cleanup outcome"
     );

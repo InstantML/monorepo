@@ -81,9 +81,12 @@ Current implemented design sequence:
   credentials, static InstantML egress allowlisting, Secret Manager-backed
   credential storage, and R2-only InstantML storage accounting.
 
-Current draft/revised designs awaiting implementation approval:
+Current implemented design sequence, continued:
 
-- None.
+- `2026-05-30-artifact-lineage-parity.md`: first slice for W&B-parity
+  versioned artifact manifests, `latest`/`best` aliases, artifact input/output
+  edges, delete/retention state, presigned SDK-originated uploads, usage
+  reservations, and artifact lineage UI.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

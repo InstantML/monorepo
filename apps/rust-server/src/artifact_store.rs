@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+};
 
 use axum::http::StatusCode;
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -76,10 +79,73 @@ struct R2S3Request<'a> {
     method: Method,
     bucket: &'a str,
     object_key: &'a str,
+    query: Option<&'a str>,
     body: Option<Vec<u8>>,
     content_type: Option<&'a str>,
     payload_hash: String,
     range: Option<&'a str>,
+}
+
+#[derive(Clone, Debug)]
+pub struct VersionedUploadTarget {
+    pub storage_backend: String,
+    pub storage_key: String,
+    pub storage_path: Option<String>,
+    pub multipart_upload_id: Option<String>,
+    pub part_size_bytes: i64,
+    pub part_count: i64,
+    pub upload_kind: String,
+    pub parts: Vec<PresignedUploadPart>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PresignedUploadPart {
+    pub part_number: i64,
+    pub url: String,
+    pub expires_at: DateTime<Utc>,
+    pub required_headers: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RenewVersionedUploadPartsRequest<'a> {
+    pub storage_key: &'a str,
+    pub multipart_upload_id: Option<&'a str>,
+    pub start_part_number: i64,
+    pub part_count: i64,
+    pub part_size_bytes: i64,
+    pub expected_size_bytes: i64,
+    pub expected_part_count: i64,
+    pub expires_seconds: i64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MultipartPartPresignRequest<'a> {
+    bucket: &'a str,
+    object_key: &'a str,
+    upload_id: &'a str,
+    start_part_number: i64,
+    part_count: i64,
+    part_size_bytes: i64,
+    expected_size_bytes: i64,
+    expected_part_count: i64,
+    expires_seconds: i64,
+}
+
+struct PresignedR2QueryInput<'a> {
+    method: &'a str,
+    host: &'a str,
+    canonical_uri: &'a str,
+    extra_query: &'a str,
+    required_headers: &'a BTreeMap<String, String>,
+    expires_seconds: i64,
+    credentials: &'a R2Credentials,
+    now: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompletedUploadPart {
+    pub part_number: i64,
+    pub etag: String,
 }
 
 impl ArtifactByteStore {
@@ -144,6 +210,116 @@ impl ArtifactByteStore {
                     .store_prepared(org_id, run_id, artifact_id, name, mime_type, prepared)
                     .await
             }
+        }
+    }
+
+    pub async fn create_versioned_upload_target(
+        &self,
+        org_id: Uuid,
+        artifact_version_id: Uuid,
+        entry_id: Uuid,
+        size_bytes: i64,
+        mime_type: Option<&str>,
+    ) -> AppResult<VersionedUploadTarget> {
+        match self {
+            Self::Local(_store) => {
+                let storage_key =
+                    local_versioned_storage_key(org_id, artifact_version_id, entry_id);
+                Ok(VersionedUploadTarget {
+                    storage_backend: "local".to_string(),
+                    storage_key,
+                    storage_path: None,
+                    multipart_upload_id: None,
+                    part_size_bytes: size_bytes.max(1),
+                    part_count: 1,
+                    upload_kind: "inline".to_string(),
+                    parts: Vec::new(),
+                })
+            }
+            Self::R2(store) => {
+                store
+                    .create_versioned_upload_target(
+                        org_id,
+                        artifact_version_id,
+                        entry_id,
+                        size_bytes,
+                        mime_type,
+                    )
+                    .await
+            }
+        }
+    }
+
+    pub async fn renew_versioned_upload_parts(
+        &self,
+        request: RenewVersionedUploadPartsRequest<'_>,
+    ) -> AppResult<Vec<PresignedUploadPart>> {
+        match self {
+            Self::Local(_) => Ok(Vec::new()),
+            Self::R2(store) => store.renew_versioned_upload_parts(request).await,
+        }
+    }
+
+    pub async fn complete_versioned_upload(
+        &self,
+        storage_key: &str,
+        multipart_upload_id: Option<&str>,
+        parts: &[CompletedUploadPart],
+        expected_size_bytes: i64,
+        expected_part_count: i64,
+        expected_sha256: &str,
+    ) -> AppResult<()> {
+        match self {
+            Self::Local(_) => Ok(()),
+            Self::R2(store) => {
+                store
+                    .complete_versioned_upload(
+                        storage_key,
+                        multipart_upload_id,
+                        parts,
+                        expected_size_bytes,
+                        expected_part_count,
+                        expected_sha256,
+                    )
+                    .await
+            }
+        }
+    }
+
+    pub async fn abort_versioned_upload(
+        &self,
+        storage_key: &str,
+        multipart_upload_id: Option<&str>,
+    ) -> AppResult<()> {
+        match self {
+            Self::Local(store) => store.abort_versioned_upload(storage_key).await,
+            Self::R2(store) => {
+                store
+                    .abort_versioned_upload(storage_key, multipart_upload_id)
+                    .await
+            }
+        }
+    }
+
+    pub async fn store_versioned_inline_base64(
+        &self,
+        org_id: Uuid,
+        storage_key: &str,
+        content_base64: &str,
+    ) -> AppResult<StoredArtifact> {
+        match self {
+            Self::Local(store) => {
+                store
+                    .store_versioned_prepared(
+                        org_id,
+                        storage_key,
+                        prepare_base64_artifact(content_base64)?,
+                    )
+                    .await
+            }
+            Self::R2(_) => Err(AppError::validation(
+                "inline artifact upload is only available for local artifact storage",
+            )),
         }
     }
 
@@ -227,6 +403,45 @@ impl LocalArtifactStore {
         })
     }
 
+    pub async fn store_versioned_prepared(
+        &self,
+        _org_id: Uuid,
+        storage_key: &str,
+        prepared: PreparedArtifactBytes,
+    ) -> AppResult<StoredArtifact> {
+        let final_path = self.root.join(storage_key);
+        let tmp_path = self
+            .root
+            .join("tmp")
+            .join(format!("{}.tmp", storage_key.replace('/', "-")));
+        if let Some(parent) = tmp_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(&tmp_path, prepared.bytes).await?;
+        let staged = StagedArtifact {
+            tmp_path,
+            final_path,
+            storage_key: storage_key.to_string(),
+            uri: format!("instantml://artifact-entries/{storage_key}"),
+            size_bytes: prepared.size_bytes,
+            sha256: prepared.sha256,
+        };
+        if let Err(error) = self.finalize(&staged).await {
+            self.cleanup(&staged.tmp_path).await;
+            self.cleanup(&staged.final_path).await;
+            return Err(error);
+        }
+        Ok(StoredArtifact {
+            id: Uuid::new_v4(),
+            storage_backend: "local".to_string(),
+            storage_key: staged.storage_key,
+            storage_path: None,
+            uri: staged.uri,
+            size_bytes: staged.size_bytes,
+            sha256: staged.sha256,
+        })
+    }
+
     pub async fn stage_base64(
         &self,
         org_id: Uuid,
@@ -300,6 +515,11 @@ impl LocalArtifactStore {
         File::open(target)
             .await
             .map_err(|_| AppError::not_found("artifact bytes not found"))
+    }
+
+    async fn abort_versioned_upload(&self, storage_key: &str) -> AppResult<()> {
+        self.cleanup(&self.root.join(storage_key)).await;
+        Ok(())
     }
 }
 
@@ -383,6 +603,141 @@ impl R2ArtifactStore {
         let _ = self.delete_object(bucket, object_key).await;
     }
 
+    pub async fn create_versioned_upload_target(
+        &self,
+        org_id: Uuid,
+        artifact_version_id: Uuid,
+        entry_id: Uuid,
+        size_bytes: i64,
+        mime_type: Option<&str>,
+    ) -> AppResult<VersionedUploadTarget> {
+        let bucket = r2_bucket_name(&self.config.bucket_prefix, org_id);
+        let object_key = r2_versioned_object_key(artifact_version_id, entry_id);
+        self.ensure_bucket(&bucket).await?;
+        let storage_key = format!("{bucket}/{object_key}");
+        let part_size_bytes = default_part_size(size_bytes);
+        let part_count = div_ceil_i64(size_bytes.max(1), part_size_bytes);
+        let upload_id = self
+            .create_multipart_upload(&bucket, &object_key, mime_type)
+            .await?;
+        let parts = self
+            .presign_multipart_parts(MultipartPartPresignRequest {
+                bucket: &bucket,
+                object_key: &object_key,
+                upload_id: &upload_id,
+                start_part_number: 1,
+                part_count: part_count.min(256),
+                part_size_bytes,
+                expected_size_bytes: size_bytes,
+                expected_part_count: part_count,
+                expires_seconds: 15 * 60,
+            })
+            .await?;
+        Ok(VersionedUploadTarget {
+            storage_backend: "r2".to_string(),
+            storage_key: storage_key.clone(),
+            storage_path: Some(format!("r2://{storage_key}")),
+            multipart_upload_id: Some(upload_id),
+            part_size_bytes,
+            part_count,
+            upload_kind: "multipart".to_string(),
+            parts,
+        })
+    }
+
+    async fn renew_versioned_upload_parts(
+        &self,
+        request: RenewVersionedUploadPartsRequest<'_>,
+    ) -> AppResult<Vec<PresignedUploadPart>> {
+        let (bucket, object_key) = split_r2_storage_key(request.storage_key)?;
+        let expires_seconds = request.expires_seconds.clamp(60, 60 * 60);
+        if let Some(upload_id) = request.multipart_upload_id {
+            return self
+                .presign_multipart_parts(MultipartPartPresignRequest {
+                    bucket,
+                    object_key,
+                    upload_id,
+                    start_part_number: request.start_part_number,
+                    part_count: request.part_count,
+                    part_size_bytes: request.part_size_bytes,
+                    expected_size_bytes: request.expected_size_bytes,
+                    expected_part_count: request.expected_part_count,
+                    expires_seconds,
+                })
+                .await;
+        }
+        Err(AppError::validation(
+            "R2 artifact uploads require multipart upload sessions",
+        ))
+    }
+
+    async fn complete_versioned_upload(
+        &self,
+        storage_key: &str,
+        multipart_upload_id: Option<&str>,
+        parts: &[CompletedUploadPart],
+        expected_size_bytes: i64,
+        expected_part_count: i64,
+        expected_sha256: &str,
+    ) -> AppResult<()> {
+        let (bucket, object_key) = split_r2_storage_key(storage_key)?;
+        let Some(upload_id) = multipart_upload_id else {
+            return Err(AppError::validation(
+                "R2 artifact completion requires a multipart upload id",
+            ));
+        };
+        validate_completed_multipart_parts(parts, expected_part_count)?;
+        let body = multipart_complete_xml(parts)?;
+        let payload_hash = hex_sha256(body.as_bytes());
+        let query = format!("uploadId={}", percent_encode_query_value(upload_id));
+        let response = self
+            .signed_s3_request(R2S3Request {
+                method: Method::POST,
+                bucket,
+                object_key,
+                query: Some(&query),
+                body: Some(body.into_bytes()),
+                content_type: Some("application/xml"),
+                payload_hash,
+                range: None,
+            })
+            .await?;
+        if response.status().is_success() {
+            self.ensure_object_size(bucket, object_key, expected_size_bytes, expected_sha256)
+                .await?;
+            return Ok(());
+        }
+        if self
+            .ensure_object_size(bucket, object_key, expected_size_bytes, expected_sha256)
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+        Err(r2_object_error("R2 multipart completion", response).await)
+    }
+
+    async fn abort_versioned_upload(
+        &self,
+        storage_key: &str,
+        multipart_upload_id: Option<&str>,
+    ) -> AppResult<()> {
+        let (bucket, object_key) = split_r2_storage_key(storage_key)?;
+        if let Some(upload_id) = multipart_upload_id {
+            let abort_result = self
+                .abort_multipart_upload(bucket, object_key, upload_id)
+                .await;
+            let delete_result = self.delete_object(bucket, object_key).await;
+            if let Err(error) = abort_result {
+                delete_result?;
+                return Err(error);
+            }
+            delete_result?;
+            return Ok(());
+        }
+        self.delete_object(bucket, object_key).await
+    }
+
     async fn ensure_bucket(&self, bucket: &str) -> AppResult<()> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/accounts/{}/r2/buckets/{}",
@@ -437,6 +792,7 @@ impl R2ArtifactStore {
                 method: Method::PUT,
                 bucket,
                 object_key,
+                query: None,
                 body: Some(bytes),
                 content_type: Some(content_type),
                 payload_hash,
@@ -460,6 +816,7 @@ impl R2ArtifactStore {
                 method: Method::GET,
                 bucket,
                 object_key,
+                query: None,
                 body: None,
                 content_type: None,
                 payload_hash: hex_sha256(&[]),
@@ -481,12 +838,67 @@ impl R2ArtifactStore {
         Ok(response)
     }
 
+    async fn ensure_object_size(
+        &self,
+        bucket: &str,
+        object_key: &str,
+        expected_size_bytes: i64,
+        _expected_sha256: &str,
+    ) -> AppResult<()> {
+        let response = self.head_object(bucket, object_key).await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(AppError::validation(
+                "uploaded artifact object was not found in storage",
+            ));
+        }
+        if !response.status().is_success() {
+            return Err(r2_object_error("R2 object verification", response).await);
+        }
+        let actual_size = response
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<i64>().ok())
+            .ok_or_else(|| {
+                AppError::service_unavailable("R2 object verification returned no content length")
+            })?;
+        if actual_size != expected_size_bytes {
+            return Err(AppError::validation(
+                "uploaded artifact object size did not match manifest",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn head_object(&self, bucket: &str, object_key: &str) -> AppResult<reqwest::Response> {
+        let response = self
+            .signed_s3_request(R2S3Request {
+                method: Method::HEAD,
+                bucket,
+                object_key,
+                query: None,
+                body: None,
+                content_type: None,
+                payload_hash: hex_sha256(&[]),
+                range: None,
+            })
+            .await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(AppError::not_found("artifact bytes not found"));
+        }
+        if !response.status().is_success() {
+            return Err(r2_object_error("R2 object verification", response).await);
+        }
+        Ok(response)
+    }
+
     async fn delete_object(&self, bucket: &str, object_key: &str) -> AppResult<()> {
         let response = self
             .signed_s3_request(R2S3Request {
                 method: Method::DELETE,
                 bucket,
                 object_key,
+                query: None,
                 body: None,
                 content_type: None,
                 payload_hash: hex_sha256(&[]),
@@ -499,6 +911,118 @@ impl R2ArtifactStore {
         Err(r2_object_error("R2 object cleanup", response).await)
     }
 
+    async fn abort_multipart_upload(
+        &self,
+        bucket: &str,
+        object_key: &str,
+        upload_id: &str,
+    ) -> AppResult<()> {
+        let query = format!("uploadId={}", percent_encode_query_value(upload_id));
+        let response = self
+            .signed_s3_request(R2S3Request {
+                method: Method::DELETE,
+                bucket,
+                object_key,
+                query: Some(&query),
+                body: None,
+                content_type: None,
+                payload_hash: hex_sha256(&[]),
+                range: None,
+            })
+            .await?;
+        if response.status().is_success() || response.status() == StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+        Err(r2_object_error("R2 multipart abort", response).await)
+    }
+
+    async fn create_multipart_upload(
+        &self,
+        bucket: &str,
+        object_key: &str,
+        mime_type: Option<&str>,
+    ) -> AppResult<String> {
+        let response = self
+            .signed_s3_request(R2S3Request {
+                method: Method::POST,
+                bucket,
+                object_key,
+                query: Some("uploads="),
+                body: None,
+                content_type: mime_type,
+                payload_hash: hex_sha256(&[]),
+                range: None,
+            })
+            .await?;
+        if !response.status().is_success() {
+            return Err(r2_object_error("R2 multipart initiation", response).await);
+        }
+        let body = response.text().await.map_err(|err| {
+            AppError::service_unavailable(format!("R2 multipart initiation failed: {err}"))
+        })?;
+        xml_tag_text(&body, "UploadId")
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::service_unavailable("R2 multipart initiation returned no upload id")
+            })
+    }
+
+    async fn presign_multipart_parts(
+        &self,
+        request: MultipartPartPresignRequest<'_>,
+    ) -> AppResult<Vec<PresignedUploadPart>> {
+        if request.start_part_number < 1 || !(1..=256).contains(&request.part_count) {
+            return Err(AppError::validation(
+                "part range must start at 1 or higher and include 1-256 parts",
+            ));
+        }
+        if request.expected_part_count <= 0
+            || request.start_part_number + request.part_count - 1 > request.expected_part_count
+            || request.part_size_bytes <= 0
+            || request.expected_size_bytes < 0
+        {
+            return Err(AppError::validation(
+                "invalid artifact multipart part range",
+            ));
+        }
+        let expires_at = Utc::now() + chrono::Duration::seconds(request.expires_seconds);
+        let mut parts = Vec::new();
+        for part_number in request.start_part_number..request.start_part_number + request.part_count
+        {
+            let query = format!(
+                "partNumber={part_number}&uploadId={}",
+                percent_encode_query_value(request.upload_id)
+            );
+            let mut required_headers = BTreeMap::new();
+            required_headers.insert(
+                "content-length".to_string(),
+                expected_part_size(
+                    part_number,
+                    request.part_size_bytes,
+                    request.expected_size_bytes,
+                    request.expected_part_count,
+                )?
+                .to_string(),
+            );
+            parts.push(PresignedUploadPart {
+                part_number,
+                url: self
+                    .presign_s3_url(
+                        Method::PUT,
+                        request.bucket,
+                        request.object_key,
+                        Some(&query),
+                        &required_headers,
+                        request.expires_seconds,
+                    )
+                    .await?,
+                expires_at,
+                required_headers,
+            });
+        }
+        Ok(parts)
+    }
+
     async fn signed_s3_request(&self, request: R2S3Request<'_>) -> AppResult<reqwest::Response> {
         let credentials = self.credentials().await?;
         let endpoint = self.config.endpoint.trim_end_matches('/');
@@ -508,20 +1032,27 @@ impl R2ArtifactStore {
             .ok_or_else(|| AppError::config("CLOUDFLARE_R2_ENDPOINT must include a host"))?
             .to_string();
         let canonical_uri = format!("/{}/{}", request.bucket, request.object_key);
-        let url = format!("{endpoint}{canonical_uri}");
+        let url = if let Some(query) = request.query {
+            format!("{endpoint}{canonical_uri}?{query}")
+        } else {
+            format!("{endpoint}{canonical_uri}")
+        };
         let now = Utc::now();
-        let signed = sign_r2_request(
-            request.method.as_str(),
-            &host,
-            &canonical_uri,
-            request.content_type,
-            &request.payload_hash,
-            &credentials,
+        let signed = sign_r2_request(R2SigningRequest {
+            method: request.method.as_str(),
+            host: &host,
+            canonical_uri: &canonical_uri,
+            canonical_query: request.query.unwrap_or(""),
+            content_type: request.content_type,
+            payload_hash: &request.payload_hash,
+            credentials: &credentials,
             now,
-        );
+        });
         let mut builder = match request.method {
             Method::PUT => self.client.put(url),
             Method::GET => self.client.get(url),
+            Method::HEAD => self.client.head(url),
+            Method::POST => self.client.post(url),
             Method::DELETE => self.client.delete(url),
             _ => return Err(AppError::internal("unsupported R2 method")),
         }
@@ -541,6 +1072,40 @@ impl R2ArtifactStore {
         builder.send().await.map_err(|err| {
             AppError::service_unavailable(format!("R2 object request failed: {err}"))
         })
+    }
+
+    async fn presign_s3_url(
+        &self,
+        method: Method,
+        bucket: &str,
+        object_key: &str,
+        query: Option<&str>,
+        required_headers: &BTreeMap<String, String>,
+        expires_seconds: i64,
+    ) -> AppResult<String> {
+        let credentials = self.credentials().await?;
+        let endpoint = self.config.endpoint.trim_end_matches('/');
+        let host = url::Url::parse(endpoint)
+            .map_err(|err| AppError::config(format!("CLOUDFLARE_R2_ENDPOINT is invalid: {err}")))?
+            .host_str()
+            .ok_or_else(|| AppError::config("CLOUDFLARE_R2_ENDPOINT must include a host"))?
+            .to_string();
+        let canonical_uri = format!("/{}/{}", bucket, object_key);
+        let now = Utc::now();
+        let presigned_query = presigned_r2_query(PresignedR2QueryInput {
+            method: method.as_str(),
+            host: &host,
+            canonical_uri: &canonical_uri,
+            extra_query: query.unwrap_or(""),
+            required_headers,
+            expires_seconds,
+            credentials: &credentials,
+            now,
+        });
+        let separator = if presigned_query.is_empty() { "" } else { "?" };
+        Ok(format!(
+            "{endpoint}{canonical_uri}{separator}{presigned_query}"
+        ))
     }
 
     async fn credentials(&self) -> AppResult<R2Credentials> {
@@ -616,6 +1181,14 @@ fn artifact_path(root: &Path, artifact: &ArtifactRow) -> AppResult<PathBuf> {
         .ok_or_else(|| AppError::not_found("artifact bytes not found"))
 }
 
+pub fn local_versioned_storage_key(
+    org_id: Uuid,
+    artifact_version_id: Uuid,
+    entry_id: Uuid,
+) -> String {
+    format!("orgs/{org_id}/artifact-versions/{artifact_version_id}/{entry_id}")
+}
+
 fn is_within_root(root: &Path, target: &Path) -> bool {
     target == root || target.starts_with(root)
 }
@@ -666,6 +1239,10 @@ fn r2_object_key(run_id: Uuid, artifact_id: Uuid, name: &str) -> String {
     )
 }
 
+fn r2_versioned_object_key(_artifact_version_id: Uuid, _entry_id: Uuid) -> String {
+    format!("artifact-blobs/{}", Uuid::new_v4().simple())
+}
+
 fn r2_bucket_name(prefix: &str, org_id: Uuid) -> String {
     let mut prefix = prefix
         .to_ascii_lowercase()
@@ -709,45 +1286,223 @@ fn strip_r2_scheme(value: &str) -> Option<&str> {
     value.strip_prefix("r2://")
 }
 
-fn sign_r2_request(
-    method: &str,
-    host: &str,
-    canonical_uri: &str,
-    content_type: Option<&str>,
-    payload_hash: &str,
-    credentials: &R2Credentials,
+struct R2SigningRequest<'a> {
+    method: &'a str,
+    host: &'a str,
+    canonical_uri: &'a str,
+    canonical_query: &'a str,
+    content_type: Option<&'a str>,
+    payload_hash: &'a str,
+    credentials: &'a R2Credentials,
     now: DateTime<Utc>,
-) -> SignedRequest {
-    let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-    let date_stamp = now.format("%Y%m%d").to_string();
+}
+
+fn sign_r2_request(input: R2SigningRequest<'_>) -> SignedRequest {
+    let amz_date = input.now.format("%Y%m%dT%H%M%SZ").to_string();
+    let date_stamp = input.now.format("%Y%m%d").to_string();
     let mut canonical_headers = String::new();
     let mut signed_headers = Vec::new();
-    if let Some(content_type) = content_type {
+    if let Some(content_type) = input.content_type {
         canonical_headers.push_str(&format!("content-type:{content_type}\n"));
         signed_headers.push("content-type");
     }
-    canonical_headers.push_str(&format!("host:{host}\n"));
-    canonical_headers.push_str(&format!("x-amz-content-sha256:{payload_hash}\n"));
+    canonical_headers.push_str(&format!("host:{}\n", input.host));
+    canonical_headers.push_str(&format!("x-amz-content-sha256:{}\n", input.payload_hash));
     canonical_headers.push_str(&format!("x-amz-date:{amz_date}\n"));
     signed_headers.extend(["host", "x-amz-content-sha256", "x-amz-date"]);
     let signed_headers = signed_headers.join(";");
     let canonical_request = format!(
-        "{method}\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+        "{}\n{}\n{}\n{canonical_headers}\n{signed_headers}\n{}",
+        input.method, input.canonical_uri, input.canonical_query, input.payload_hash
     );
     let scope = format!("{date_stamp}/auto/s3/aws4_request");
     let string_to_sign = format!(
         "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
         hex_sha256(canonical_request.as_bytes())
     );
-    let signing_key = aws_signing_key(&credentials.secret_access_key, &date_stamp);
+    let signing_key = aws_signing_key(&input.credentials.secret_access_key, &date_stamp);
     let signature = hex_bytes(hmac_sha256(&signing_key, string_to_sign.as_bytes()));
     SignedRequest {
         amz_date,
         authorization: format!(
             "AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed_headers}, Signature={signature}",
-            credentials.access_key_id
+            input.credentials.access_key_id
         ),
     }
+}
+
+fn presigned_r2_query(input: PresignedR2QueryInput<'_>) -> String {
+    let amz_date = input.now.format("%Y%m%dT%H%M%SZ").to_string();
+    let date_stamp = input.now.format("%Y%m%d").to_string();
+    let scope = format!("{date_stamp}/auto/s3/aws4_request");
+    let mut params = Vec::new();
+    for pair in input.extra_query.split('&').filter(|part| !part.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        params.push((key.to_string(), value.to_string()));
+    }
+    let mut signed_header_names = vec!["host".to_string()];
+    signed_header_names.extend(
+        input
+            .required_headers
+            .keys()
+            .map(|key| key.to_ascii_lowercase()),
+    );
+    signed_header_names.sort();
+    let signed_headers = signed_header_names.join(";");
+    params.extend([
+        (
+            "X-Amz-Algorithm".to_string(),
+            "AWS4-HMAC-SHA256".to_string(),
+        ),
+        (
+            "X-Amz-Credential".to_string(),
+            percent_encode_query_value(&format!("{}/{}", input.credentials.access_key_id, scope)),
+        ),
+        ("X-Amz-Date".to_string(), amz_date.clone()),
+        (
+            "X-Amz-Expires".to_string(),
+            input.expires_seconds.clamp(60, 60 * 60).to_string(),
+        ),
+        ("X-Amz-SignedHeaders".to_string(), signed_headers.clone()),
+    ]);
+    params.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    let canonical_query = params
+        .iter()
+        .map(|(key, value)| format!("{}={}", percent_encode_query_value(key), value))
+        .collect::<Vec<_>>()
+        .join("&");
+    let mut canonical_headers = String::new();
+    for header in &signed_header_names {
+        if header == "host" {
+            canonical_headers.push_str(&format!("host:{}\n", input.host));
+        } else if let Some(value) = input.required_headers.get(header) {
+            canonical_headers.push_str(&format!("{header}:{}\n", value.trim()));
+        }
+    }
+    let canonical_request = format!(
+        "{}\n{}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\nUNSIGNED-PAYLOAD",
+        input.method, input.canonical_uri
+    );
+    let string_to_sign = format!(
+        "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
+        hex_sha256(canonical_request.as_bytes())
+    );
+    let signing_key = aws_signing_key(&input.credentials.secret_access_key, &date_stamp);
+    let signature = hex_bytes(hmac_sha256(&signing_key, string_to_sign.as_bytes()));
+    format!("{canonical_query}&X-Amz-Signature={signature}")
+}
+
+fn percent_encode_query_value(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
+fn default_part_size(size_bytes: i64) -> i64 {
+    const DEFAULT: i64 = 64 * 1024 * 1024;
+    if size_bytes <= 0 {
+        return DEFAULT;
+    }
+    let min_for_limit = div_ceil_i64(size_bytes, 10_000).max(5 * 1024 * 1024);
+    DEFAULT.max(min_for_limit)
+}
+
+fn div_ceil_i64(value: i64, divisor: i64) -> i64 {
+    if value <= 0 {
+        0
+    } else {
+        (value + divisor - 1) / divisor
+    }
+}
+
+fn expected_part_size(
+    part_number: i64,
+    part_size_bytes: i64,
+    expected_size_bytes: i64,
+    expected_part_count: i64,
+) -> AppResult<i64> {
+    if !(1..=expected_part_count).contains(&part_number)
+        || part_size_bytes <= 0
+        || expected_size_bytes < 0
+    {
+        return Err(AppError::validation(
+            "invalid artifact multipart part range",
+        ));
+    }
+    if part_number == expected_part_count {
+        let previous = part_size_bytes.saturating_mul(expected_part_count.saturating_sub(1));
+        return Ok((expected_size_bytes - previous).max(0));
+    }
+    Ok(part_size_bytes)
+}
+
+fn multipart_complete_xml(parts: &[CompletedUploadPart]) -> AppResult<String> {
+    if parts.is_empty() {
+        return Err(AppError::validation("multipart completion requires parts"));
+    }
+    let mut sorted = parts.to_vec();
+    sorted.sort_by_key(|part| part.part_number);
+    let mut body = String::from("<CompleteMultipartUpload>");
+    for part in sorted {
+        if part.part_number < 1 {
+            return Err(AppError::validation("part numbers must be positive"));
+        }
+        body.push_str("<Part><PartNumber>");
+        body.push_str(&part.part_number.to_string());
+        body.push_str("</PartNumber><ETag>");
+        body.push_str(&xml_escape(&part.etag));
+        body.push_str("</ETag></Part>");
+    }
+    body.push_str("</CompleteMultipartUpload>");
+    Ok(body)
+}
+
+fn validate_completed_multipart_parts(
+    parts: &[CompletedUploadPart],
+    expected_part_count: i64,
+) -> AppResult<()> {
+    if expected_part_count <= 0 {
+        return Err(AppError::validation("multipart completion requires parts"));
+    }
+    if i64::try_from(parts.len()).unwrap_or(i64::MAX) != expected_part_count {
+        return Err(AppError::validation(
+            "multipart completion must include exactly the expected parts",
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    for part in parts {
+        if !(1..=expected_part_count).contains(&part.part_number) {
+            return Err(AppError::validation(
+                "multipart completion part number is out of range",
+            ));
+        }
+        if !seen.insert(part.part_number) {
+            return Err(AppError::validation(
+                "multipart completion includes duplicate parts",
+            ));
+        }
+        if part.etag.trim().is_empty() {
+            return Err(AppError::validation(
+                "multipart completion etags must be non-empty",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+fn xml_tag_text(body: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = body.find(&open)? + open.len();
+    let end = body[start..].find(&close)? + start;
+    Some(body[start..end].to_string())
 }
 
 fn aws_signing_key(secret: &str, date_stamp: &str) -> [u8; 32] {
@@ -883,17 +1638,20 @@ mod tests {
             access_key_id: "token-id".to_string(),
             secret_access_key: "secret".to_string(),
         };
-        let signed = sign_r2_request(
-            "PUT",
-            "example.r2.cloudflarestorage.com",
-            "/bucket/runs/1/file.txt",
-            Some("text/plain"),
-            &hex_sha256(b"hello"),
-            &credentials,
-            Utc.with_ymd_and_hms(2026, 5, 21, 12, 0, 0)
+        let payload_hash = hex_sha256(b"hello");
+        let signed = sign_r2_request(R2SigningRequest {
+            method: "PUT",
+            host: "example.r2.cloudflarestorage.com",
+            canonical_uri: "/bucket/runs/1/file.txt",
+            canonical_query: "",
+            content_type: Some("text/plain"),
+            payload_hash: &payload_hash,
+            credentials: &credentials,
+            now: Utc
+                .with_ymd_and_hms(2026, 5, 21, 12, 0, 0)
                 .single()
                 .unwrap(),
-        );
+        });
         assert_eq!(signed.amz_date, "20260521T120000Z");
         assert!(signed
             .authorization
@@ -902,5 +1660,44 @@ mod tests {
             .authorization
             .contains("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date"));
         assert!(signed.authorization.contains("Signature="));
+    }
+
+    #[test]
+    fn multipart_completion_requires_exact_non_empty_part_set() {
+        let parts = vec![
+            CompletedUploadPart {
+                part_number: 1,
+                etag: "etag-1".to_string(),
+            },
+            CompletedUploadPart {
+                part_number: 2,
+                etag: "etag-2".to_string(),
+            },
+        ];
+        assert!(validate_completed_multipart_parts(&parts, 2).is_ok());
+        assert!(validate_completed_multipart_parts(&parts, 3).is_err());
+        assert!(validate_completed_multipart_parts(&parts, 1).is_err());
+        assert!(validate_completed_multipart_parts(
+            &[
+                CompletedUploadPart {
+                    part_number: 1,
+                    etag: "etag-1".to_string(),
+                },
+                CompletedUploadPart {
+                    part_number: 1,
+                    etag: "etag-2".to_string(),
+                },
+            ],
+            2
+        )
+        .is_err());
+        assert!(validate_completed_multipart_parts(
+            &[CompletedUploadPart {
+                part_number: 1,
+                etag: " ".to_string(),
+            }],
+            1
+        )
+        .is_err());
     }
 }

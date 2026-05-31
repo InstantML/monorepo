@@ -5,10 +5,13 @@ description: "Create artifact metadata, upload bytes, list artifacts, and downlo
 
 # Artifacts API
 
-Artifacts attach files, checkpoints, and rollouts to a run. They can be
-metadata-only external references or server-managed stored bytes. Rich media
-objects are modeled through object APIs that link to stored artifact bytes;
-reports are a separate API surface.
+Artifacts attach files, checkpoints, rollouts, and media evidence to a run.
+They can be metadata-only external references or server-managed stored bytes.
+Rich media objects are modeled through object APIs that link to stored artifact
+bytes; reports are a separate API surface. Raw artifact routes remain available
+for existing file/media/checkpoint workflows. Versioned artifact routes add
+immutable manifests, aliases, and lineage for reproducible datasets, models, and
+checkpoints.
 
 ## Create metadata
 
@@ -108,6 +111,93 @@ For hosted object storage, unsatisfiable ranges return `416`. The local file
 backend streams the full file and ignores `Range`.
 
 External metadata-only artifact rows are not downloadable through this endpoint.
+
+## Versioned artifacts
+
+Create versioned artifacts through upload sessions. The SDK uses this route for
+`VersionedArtifact`; direct API callers should send the same manifest fields.
+
+```http
+POST /api/runs/{run_id}/artifact-uploads
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "collection": {
+    "name": "policy-checkpoints",
+    "type": "model",
+    "metadata": {}
+  },
+  "manifest": {
+    "entries": [
+      {
+        "path": "checkpoint.pt",
+        "kind": "file",
+        "size_bytes": 12345,
+        "sha256": "64-hex",
+        "mime_type": "application/octet-stream"
+      }
+    ]
+  },
+  "aliases": ["best"],
+  "ttl_days": 30,
+  "source_step": 1000
+}
+```
+
+The response includes an `upload_session` and per-file upload targets. Local
+development targets complete inline. Hosted R2 targets return short-lived
+presigned multipart UploadPart URLs, including for one-part files; treat those
+URLs as bearer secrets and do not log or store them. If a part includes
+`required_headers`, send those headers exactly with the corresponding PUT.
+
+After uploading bytes, complete the session:
+
+```http
+POST /api/artifact-uploads/{upload_session_id}/complete
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "files": [
+    {
+      "entry_id": "manifest-entry-uuid",
+      "parts": [{ "part_number": 1, "etag": "\"etag\"" }]
+    }
+  ]
+}
+```
+
+Completing finalizes provider upload state, validates cheap provider evidence
+such as object size against the manifest, commits the immutable version, assigns
+a stable `vN` label, moves `latest`, applies requested custom aliases such as
+`best`, and records the output lineage edge from the run. SHA-256 is the
+client-computed manifest digest used for reproducibility and deduplication; the
+API does not re-download hosted objects on the request path just to recompute it.
+
+Useful read and management routes:
+
+```http
+GET /api/artifact-collections?project=cartpole&type=model&q=policy
+GET /api/artifact-collections/{collection_id}/versions
+GET /api/artifact-versions/resolve?ref=policy-checkpoints:best&type=model&project=cartpole
+GET /api/artifact-versions/{version_id}/manifest
+GET /api/artifact-versions/{version_id}/lineage
+GET /api/artifact-entries/{entry_id}/download
+PUT /api/artifact-collections/{collection_id}/aliases/best
+PATCH /api/artifact-versions/{version_id}/retention
+DELETE /api/artifact-versions/{version_id}
+POST /api/runs/{run_id}/artifact-inputs
+```
+
+Reads require tenant read access. Uploads require `artifacts:write`; alias,
+retention, and delete routes require `artifacts:manage` or an owner/admin
+browser session. Delete is a soft-delete in this slice; soft-deleted or expired
+versions are hidden from resolution, manifest, lineage, and download reads.
+Physical byte cleanup is handled by later retention/garbage-collection work.
+Alias move/delete request bodies must include `confirm` equal to the alias and a
+non-empty `reason`. Retention and version-delete request bodies must include
+`confirm` equal to the version id and a non-empty `reason`.
 
 ## UI behavior
 

@@ -47,3 +47,27 @@ test("rich-object media previews preserve stored-byte artifact backends", () => 
   assert.match(richObjectSrc, /storage_backend: object\.artifact\.storage_backend/);
   assert.match(richObjectSrc, /ArtifactMediaPreview artifact=\{artifact\}/);
 });
+
+test("artifact lineage UI uses versioned artifact endpoints and keeps raw run artifacts separate", () => {
+  const paneSrc = read("app/dashboard/artifacts/tab-pane.tsx");
+  const apiSrc = read("src/api.js");
+
+  assert.match(paneSrc, /\/api\/artifact-collections/);
+  assert.match(paneSrc, /\/api\/artifact-versions\/\$\{encodeURIComponent\(selectedVersion\.id\)\}\/manifest/);
+  assert.match(paneSrc, /offset: manifestEntries\.length/);
+  assert.match(paneSrc, /manifestHasMore/);
+  assert.match(paneSrc, /manifestCountLabel/);
+  assert.match(paneSrc, /\/api\/artifact-versions\/\$\{encodeURIComponent\(selectedVersion\.id\)\}\/lineage/);
+  assert.match(paneSrc, /\/api\/artifact-entries\/\$\{encodeURIComponent\(entry\.id\)\}\/download/);
+  assert.match(paneSrc, /collection_id === collection\.id/);
+  assert.match(paneSrc, /retention_mode: retentionMode/);
+  assert.match(paneSrc, /updateRetention\("keep_forever"\)/);
+  assert.doesNotMatch(paneSrc, /updateRetention\("forever"\)/);
+  assert.match(paneSrc, /Raw run artifacts/);
+  assert.match(paneSrc, /canManageArtifacts/);
+
+  assert.match(apiSrc, /async delete\(path, body = \{\}, options = \{\}\)/);
+  assert.match(apiSrc, /artifact-collections/);
+  assert.match(apiSrc, /artifact-versions/);
+  assert.match(apiSrc, /artifact-entries/);
+});
