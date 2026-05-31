@@ -1,0 +1,322 @@
+.imports-tab {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 20px;
+}
+
+.imports-head {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.imports-head h1,
+.imports-panel h2,
+.imports-mapping h2,
+.imports-jobs h2 {
+  margin: 0;
+}
+
+.imports-head p,
+.imports-panel p {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+.imports-modes {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+}
+
+.imports-modes button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 1 auto;
+  font: inherit;
+  padding: 10px 16px;
+}
+
+.imports-modes button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.imports-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr) minmax(0, 320px);
+  min-width: 0;
+}
+
+.imports-sources,
+.imports-panel,
+.imports-mapping,
+.imports-jobs {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.imports-sources {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.imports-sources .source {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  gap: 6px 10px;
+  grid-template-columns: 26px 1fr;
+  padding: 12px;
+  text-align: left;
+}
+
+.imports-sources .source.active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.imports-sources .source span {
+  display: grid;
+  gap: 2px;
+}
+
+.imports-sources .source em,
+.imports-sources .source small {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.imports-sources .source small {
+  grid-column: 1 / -1;
+}
+
+.imports-workflow {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.imports-steps {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.imports-steps li {
+  border-bottom: 2px solid var(--line);
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+.imports-steps li.done,
+.imports-steps li.active {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.imports-panel,
+.imports-mapping,
+.imports-jobs {
+  padding: 14px;
+}
+
+.imports-panel-head {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.imports-command {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+  margin-top: 14px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.imports-command code,
+.imports-snippet pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.imports-security {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.imports-message {
+  color: var(--accent);
+}
+
+.imports-mapping dl {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.imports-mapping div {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1.4fr;
+  padding-bottom: 10px;
+}
+
+.imports-mapping dt,
+.imports-mapping dd {
+  margin: 0;
+}
+
+.imports-mapping dd {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.imports-table-scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.imports-jobs table {
+  border-collapse: collapse;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.imports-jobs th,
+.imports-jobs td {
+  border-top: 1px solid var(--line);
+  padding: 9px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.imports-status {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.imports-status--committed,
+.imports-status--completed {
+  color: var(--green);
+}
+
+.imports-status--failed {
+  color: var(--danger);
+}
+
+.imports-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.imports-actions button {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 8px;
+}
+
+.imports-actions button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.imports-warnings {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.imports-warnings p {
+  margin: 0;
+}
+
+.imports-snippet {
+  max-width: 860px;
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .imports-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .imports-tab {
+    padding: 14px;
+  }
+
+  .imports-modes {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .imports-modes button {
+    text-align: left;
+  }
+
+  .imports-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .imports-command {
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .imports-mapping div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

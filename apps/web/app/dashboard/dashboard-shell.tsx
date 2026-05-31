@@ -27,6 +27,7 @@ import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
+import { ImportsTabPane } from "./imports/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
 import { CheckpointsTabPane } from "./checkpoints/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
@@ -3299,6 +3300,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               selectedRunIds={selectedRunIds}
               sortedRuns={sortedRuns}
             />
+          ) : null}
+        </section>
+
+        <section className={`tab-pane ${activeTab === "imports" ? "active" : ""}`} aria-label="Imports">
+          {activeTab === "imports" ? (
+            <ImportsTabPane api={api} project={project} />
           ) : null}
         </section>
 

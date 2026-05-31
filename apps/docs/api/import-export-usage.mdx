@@ -92,14 +92,30 @@ same org and permission rules as usage summary.
 
 ## Importers
 
-Supported importer routes accept transformed or exporter-shaped JSON payloads
-for:
+Import v2 is the recommended migration API for SDK/CLI-driven imports:
 
-- Neptune.
-- W&B.
-- MLflow.
+```http
+POST /api/imports/jobs
+POST /api/imports/jobs/{import_id}/chunks
+POST /api/imports/jobs/{import_id}/commit
+POST /api/imports/jobs/{import_id}/cancel
+Authorization: Bearer instantml_...
+```
 
-Importer write endpoints need `imports:write`.
+The create response returns an import job. Chunk uploads carry canonical runs,
+metric points, artifact references, warnings, source identity, and a `final`
+marker. Commit is allowed only after the final chunk has passed validation. Use
+cancel for abandoned dry-runs.
+
+Legacy transformed JSON routes remain supported for compatibility:
+
+- `POST /api/imports/neptune`
+- `POST /api/imports/wandb`
+- `POST /api/imports/mlflow`
+
+Importer API keys need `imports:write`. CLI device login grants import,
+artifact, export, and SDK ingest scopes so one login can dry-run imports,
+commit them, sync TensorBoard, and log normal training runs.
 
 ## Import history
 
@@ -114,11 +130,12 @@ new W&B, MLflow, or Neptune imports.
 
 Practical migration flow:
 
-1. Export from the source tracker.
-2. Transform to the supported JSON shape.
-3. Import into a staging or local InstantML project first.
-4. Verify projects, runs, metrics, configs, tags, notes, artifacts, and counts.
-5. Repeat for production once the mapping is trusted.
+1. Run the Python CLI locally against W&B, Neptune Exporter Parquet, MLflow JSON,
+   or TensorBoard event files.
+2. Upload a dry-run Import v2 job.
+3. Verify projects, runs, metrics, configs, tags, notes, artifacts, warnings,
+   and counts.
+4. Commit once the mapping is trusted.
 
 Imports can write many records. Treat importer retries as operational jobs and
 keep the returned import ID with logs or support tickets.

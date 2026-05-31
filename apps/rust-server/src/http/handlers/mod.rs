@@ -28,7 +28,10 @@ pub(super) use dashboard::{
     create_workspace_view, get_dashboard_preferences, get_workspace_view, list_workspace_views,
     update_dashboard_preferences, update_workspace_view,
 };
-pub(super) use imports::{import_mlflow, import_neptune, import_wandb, list_imports};
+pub(super) use imports::{
+    append_import_chunk, cancel_import_job, commit_import_job, create_import_job, get_import_job,
+    import_mlflow, import_neptune, import_wandb, list_imports,
+};
 pub(super) use invitations::{
     accept_invitation, create_invitation, list_invitations, preview_invitation, resend_invitation,
     revoke_invitation,

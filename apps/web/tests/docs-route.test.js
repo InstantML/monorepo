@@ -13,6 +13,7 @@ import {
   loadDocsMarkdownIndex,
   loadDocsPage,
   mapDocsAssetSrc,
+  pagePathToTitle,
   parseDocsMdx,
 } from "../src/docs.js";
 
@@ -125,6 +126,11 @@ test("docs links and assets are mapped to same-origin /docs URLs", () => {
   assert.equal(docsHref("https://instantml.ai"), "https://instantml.ai");
   assert.equal(docsHref("#steps"), "#steps");
   assert.equal(mapDocsAssetSrc("/images/product/dashboard-runs.png"), "/docs/assets/images/product/dashboard-runs.png");
+});
+
+test("docs navigation title overrides preserve source branding", () => {
+  assert.equal(pagePathToTitle("guides/wandb-neptune-imports"), "W&B and Neptune imports");
+  assert.equal(pagePathToTitle("guides/export-usage-limits"), "Export Usage Limits");
 });
 
 test("docs parser extracts frontmatter, headings, images, cards, and code", () => {

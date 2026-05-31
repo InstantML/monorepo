@@ -400,6 +400,136 @@ pub struct ArtifactsEnvelope {
 #[schema(value_type = String, format = Binary)]
 pub struct BinaryBody(pub Vec<u8>);
 
+#[derive(Serialize, ToSchema)]
+pub struct ImportJobCreateRequest {
+    pub source_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_project: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_project: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<i32>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportJobSummary {
+    pub runs: u64,
+    pub metrics: u64,
+    pub attributes: u64,
+    pub artifacts: u64,
+    pub warnings: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped_runs: Option<u64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportWarning {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportJobProgress {
+    pub state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunks: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_chunk_received: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial_write_started: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resumable: Option<bool>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportJobRow {
+    pub id: i64,
+    pub org_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<Uuid>,
+    pub source_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_project: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_project: Option<String>,
+    pub schema_version: i32,
+    pub status: String,
+    pub dedupe_policy: String,
+    pub summary: ImportJobSummary,
+    pub warnings: Vec<ImportWarning>,
+    #[schema(value_type = Object)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_summary: Option<Value>,
+    pub progress: ImportJobProgress,
+    pub run_ids: Vec<Uuid>,
+    pub chunk_ids: Vec<String>,
+    pub accepted_chunk_count: i64,
+    pub committed_batch_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_by_user_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportsEnvelope {
+    pub imports: Vec<ImportJobRow>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportJobEnvelope {
+    pub job: ImportJobRow,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CanonicalImportChunk {
+    pub schema_version: i32,
+    pub source_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_project: Option<String>,
+    pub target_project: String,
+    pub job_id: i64,
+    pub chunk_id: String,
+    pub sequence: i64,
+    #[serde(rename = "final", skip_serializing_if = "Option::is_none")]
+    pub final_chunk: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
+    pub runs: Vec<Value>,
+    pub metric_points: Vec<Value>,
+    pub attributes: Vec<Value>,
+    pub artifact_refs: Vec<Value>,
+    pub warnings: Vec<ImportWarning>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportChunkRow {
+    pub org_id: Uuid,
+    pub import_id: i64,
+    pub chunk_id: String,
+    pub sequence: i64,
+    pub content_hash: String,
+    pub final_chunk: bool,
+    #[schema(value_type = Object)]
+    pub payload: Value,
+    pub summary: ImportJobSummary,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ImportChunkAppendResponse {
+    pub job: ImportJobRow,
+    pub chunk: ImportChunkRow,
+    pub duplicate: bool,
+}
+
 // ============================================================================
 // SecurityScheme registration via Modify.
 // ============================================================================
@@ -559,6 +689,11 @@ impl Modify for SecurityAddon {
         crate::http::handlers::usage::usage_export,
         crate::http::handlers::usage::reset_demo,
         crate::http::handlers::imports::list_imports,
+        crate::http::handlers::imports::create_import_job,
+        crate::http::handlers::imports::get_import_job,
+        crate::http::handlers::imports::append_import_chunk,
+        crate::http::handlers::imports::commit_import_job,
+        crate::http::handlers::imports::cancel_import_job,
         crate::http::handlers::imports::import_neptune,
         crate::http::handlers::imports::import_wandb,
         crate::http::handlers::imports::import_mlflow,
@@ -612,6 +747,16 @@ impl Modify for SecurityAddon {
         ArtifactEnvelope,
         ArtifactsEnvelope,
         BinaryBody,
+        ImportJobCreateRequest,
+        ImportJobSummary,
+        ImportWarning,
+        ImportJobProgress,
+        ImportJobRow,
+        ImportsEnvelope,
+        ImportJobEnvelope,
+        CanonicalImportChunk,
+        ImportChunkRow,
+        ImportChunkAppendResponse,
         JsonObjectResponse,
         AdminOverviewResponse,
         AdminOverviewQuerySummary,

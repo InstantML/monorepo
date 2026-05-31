@@ -29,16 +29,17 @@ pub mod openapi;
 pub(crate) mod rate_limit;
 
 use handlers::{
-    accept_invitation, admin_overview, auth_clerk, auth_config, auth_dev_google, auth_logout,
-    auth_session, auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
-    billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
-    billing_report_usage_overage, billing_status, billing_webhook, create_api_key, create_artifact,
-    create_attributes, create_current_user_org, create_customer_clickhouse_connection,
+    accept_invitation, admin_overview, append_import_chunk, auth_clerk, auth_config,
+    auth_dev_google, auth_logout, auth_session, auth_switch_organization, billing_add_seat,
+    billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
+    billing_report_storage_overage, billing_report_usage_overage, billing_status, billing_webhook,
+    cancel_import_job, commit_import_job, create_api_key, create_artifact, create_attributes,
+    create_current_user_org, create_customer_clickhouse_connection, create_import_job,
     create_invitation, create_object, create_org, create_project, create_report, create_run,
     create_user, create_workspace_view, customer_clickhouse_connection_status, delete_report,
     device_code_confirm, device_code_poll, device_code_start, disable_service_account,
     download_artifact, export_data, export_report_markdown, fork_run, get_dashboard_preferences,
-    get_metrics, get_report, get_report_by_share_token, get_run, get_run_lineage,
+    get_import_job, get_metrics, get_report, get_report_by_share_token, get_run, get_run_lineage,
     get_workspace_view, health, import_mlflow, import_neptune, import_wandb, list_api_keys,
     list_artifacts, list_attributes, list_console_logs, list_imports, list_invitations,
     list_object_rows, list_objects, list_org_memberships, list_org_panels, list_orgs,
@@ -304,6 +305,20 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         )
         .route("/api/demo/reset", post(reset_demo))
         .route("/api/imports", get(list_imports))
+        .route("/api/imports/jobs", post(create_import_job))
+        .route("/api/imports/jobs/:import_id", get(get_import_job))
+        .route(
+            "/api/imports/jobs/:import_id/chunks",
+            post(append_import_chunk).layer(DefaultBodyLimit::max(max_upload)),
+        )
+        .route(
+            "/api/imports/jobs/:import_id/commit",
+            post(commit_import_job),
+        )
+        .route(
+            "/api/imports/jobs/:import_id/cancel",
+            post(cancel_import_job),
+        )
         .route("/api/imports/neptune", post(import_neptune))
         .route("/api/imports/wandb", post(import_wandb))
         .route("/api/imports/mlflow", post(import_mlflow))

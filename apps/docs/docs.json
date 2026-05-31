@@ -99,6 +99,7 @@
             "group": "Data and account",
             "pages": [
               "guides/imports",
+              "guides/wandb-neptune-imports",
               "guides/export-usage-limits",
               "guides/pricing-limits-billing",
               "guides/auth-billing-storage",

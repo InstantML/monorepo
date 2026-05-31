@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"];
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
+const PAGE_TITLE_OVERRIDES = {
+  "guides/wandb-neptune-imports": "W&B and Neptune imports",
+};
 
 export const docsRoot = resolveDocsRoot();
 export const repoRoot = path.resolve(docsRoot, "..", "..");
@@ -338,6 +341,7 @@ export function slugifyHeading(text) {
 }
 
 export function pagePathToTitle(pagePath) {
+  if (PAGE_TITLE_OVERRIDES[pagePath]) return PAGE_TITLE_OVERRIDES[pagePath];
   if (pagePath === "index") return "Overview";
   if (pagePath === "api-reference") return "API Reference";
   const last = pagePath.split("/").at(-1) ?? pagePath;

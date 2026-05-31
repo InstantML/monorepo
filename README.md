@@ -126,7 +126,7 @@ Training-observability roadmap first slice is implemented:
 - Rich-object benchmark evidence from 2026-05-11 measured selected-run object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, and table row p95 1.9 ms for 1,000 bounded rows.
 - Keyboard workflow MVP covering quick search, shortcut help, overlay dismissal, workspace undo/redo, run selector collapse, focus handoff, and fullscreen panel traversal.
 - Tab-aware frontend data fetching so hidden Metrics, Run Detail, Compare, and artifact surfaces no longer fan out requests during every dashboard entry.
-- Neptune Exporter-shaped, transformed W&B, and transformed MLflow JSON importer endpoints and CLIs.
+- Real Neptune Exporter Parquet import, transformed W&B, transformed MLflow JSON, and TensorBoard scalar importer/sync endpoints and CLIs.
 - Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
 - Docker Compose for a one-command local Rust/ClickHouse API and artifact-storage stack.
 - Internal Cloud Run deployment for the Rust API with Secret Manager secrets, bounded single-instance control/data cells, private VPC access to the self-hosted GCP ClickHouse VM, and local frontend-only development against the hosted API.
@@ -139,8 +139,7 @@ Known follow-ups before broadening the roadmap:
 - Keep Node compatibility checks available until JSON-to-ClickHouse migration tooling and legacy fallback needs are retired; `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui` exercise Rust against disposable ClickHouse.
 - Keep batch/import/upload failure behavior tested as the storage layer evolves.
 - Keep frontend async loaders cancellation-safe as workflow components continue to split.
-- Validate W&B/MLflow/Neptune import and the optional `shadow_wandb` SDK path with real teams before broadening migration claims.
-- Implement real Neptune Exporter Parquet import after a dependency/schema design.
+- Validate W&B/MLflow/Neptune import, the optional `shadow_wandb` SDK path, W&B dual logging, TensorBoard sync, and real Neptune Exporter Parquet import against design-partner production traces before broadening migration claims.
 - Public hosted speed claims should stay limited to measured surfaces such as the current 50,000-run / 522M-point GCP read-path benchmark. Keep proving broader Runs, Compare, chart, and metric-catalog behavior at the 100,000+ run design-partner scale before broadening those claims. The local run-list/search/sort benchmark slice is complete, and `npm run benchmark:cloud-run` is the default hosted backend signal for API calls through Cloud Run into the self-hosted GCP ClickHouse tenant database. High metric-key cardinality, Compare payloads, and richer workspace panel fan-out still need dedicated gates.
 
 ## Quickstart
@@ -392,15 +391,21 @@ PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
   --base-url http://127.0.0.1:8000
 ```
 
-Dry-run a Neptune-shaped JSON import:
+Dry-run local-first SDK imports:
+
+```bash
+PYTHONPATH=packages/python-sdk instantml import wandb \
+  --project migrated-wandb --entity my-team --source-project old-project --dry-run
+PYTHONPATH=packages/python-sdk instantml import neptune \
+  --project migrated-neptune --input ./neptune-export --dry-run
+PYTHONPATH=packages/python-sdk instantml import tensorboard \
+  --project tensorboard-sync --logdir ./runs --dry-run
+```
+
+Dry-run legacy transformed JSON imports:
 
 ```bash
 node tools/import-neptune-json.mjs ./export.json --project migrated-neptune --dry-run
-```
-
-Dry-run transformed W&B or MLflow JSON imports:
-
-```bash
 node tools/import-wandb-json.mjs ./wandb-export.json --project migrated-wandb --dry-run
 node tools/import-mlflow-json.mjs ./mlflow-export.json --project migrated-mlflow --dry-run
 ```

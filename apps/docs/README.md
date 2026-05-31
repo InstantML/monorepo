@@ -103,8 +103,8 @@ Node tests.
   page.
 - `sdk/`: SDK usage docs.
 - `dashboard/`: dashboard workflow docs.
-- `guides/`: examples, imports, export, usage, auth, billing, storage, and
-  observability guides.
+- `guides/`: examples, imports, W&B/Neptune migration walkthroughs, export,
+  usage, auth, billing, storage, and observability guides.
 - `api/`: practical API guides plus the generated OpenAPI reference tab.
 - `images/`: docs-local brand and product assets served by the Next `/docs`
   asset route and the Mintlify preview.

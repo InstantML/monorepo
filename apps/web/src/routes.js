@@ -11,6 +11,7 @@ export const DASHBOARD_TAB_IDS = [
   "alerts",
   "insights",
   "datasets",
+  "imports",
   "artifacts",
   "checkpoints",
   "reports",

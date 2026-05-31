@@ -2364,13 +2364,393 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonObjectResponse"
+                  "$ref": "#/components/schemas/ImportsEnvelope"
                 }
               }
             }
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing export:read or imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/jobs": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "create_import_job",
+        "requestBody": {
+          "description": "Import v2 job create request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportJobCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created import job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/jobs/{import_id}": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "get_import_job",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "description": "Import job id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import job status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing export:read or imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/jobs/{import_id}/chunks": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "append_import_chunk",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "description": "Import job id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Canonical import chunk v2",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanonicalImportChunk"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted import chunk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportChunkAppendResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Chunk conflict or illegal state transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/jobs/{import_id}/commit": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "commit_import_job",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "description": "Import job id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Committed import job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import job is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/imports/jobs/{import_id}/cancel": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "cancel_import_job",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "description": "Import job id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled import job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing imports:write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import job cannot be cancelled",
             "content": {
               "application/json": {
                 "schema": {
@@ -4462,6 +4842,165 @@
         "type": "string",
         "format": "binary"
       },
+      "ImportsEnvelope": {
+        "type": "object",
+        "required": [
+          "imports"
+        ],
+        "properties": {
+          "imports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportJobRow"
+            }
+          }
+        }
+      },
+      "ImportJobCreateRequest": {
+        "type": "object",
+        "required": [
+          "source_type"
+        ],
+        "properties": {
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "source_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "target_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ImportJobEnvelope": {
+        "type": "object",
+        "required": [
+          "job"
+        ],
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/ImportJobRow"
+          }
+        }
+      },
+      "CanonicalImportChunk": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "source_type",
+          "target_project",
+          "job_id",
+          "chunk_id",
+          "sequence",
+          "runs",
+          "metric_points",
+          "attributes",
+          "artifact_refs",
+          "warnings"
+        ],
+        "properties": {
+          "artifact_refs": {
+            "type": "array",
+            "items": {}
+          },
+          "attributes": {
+            "type": "array",
+            "items": {}
+          },
+          "chunk_id": {
+            "type": "string"
+          },
+          "content_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "final": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "job_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "metric_points": {
+            "type": "array",
+            "items": {}
+          },
+          "runs": {
+            "type": "array",
+            "items": {}
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "target_project": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportWarning"
+            }
+          }
+        }
+      },
+      "ImportChunkAppendResponse": {
+        "type": "object",
+        "required": [
+          "job",
+          "chunk",
+          "duplicate"
+        ],
+        "properties": {
+          "chunk": {
+            "$ref": "#/components/schemas/ImportChunkRow"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "job": {
+            "$ref": "#/components/schemas/ImportJobRow"
+          }
+        }
+      },
       "ReportSummariesEnvelope": {
         "type": "object",
         "required": [
@@ -5373,6 +5912,192 @@
           }
         }
       },
+      "ImportJobRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "source_type",
+          "schema_version",
+          "status",
+          "dedupe_policy",
+          "summary",
+          "warnings",
+          "progress",
+          "run_ids",
+          "chunk_ids",
+          "accepted_chunk_count",
+          "committed_batch_count",
+          "created_at"
+        ],
+        "properties": {
+          "accepted_chunk_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "chunk_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "committed_batch_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "dedupe_policy": {
+            "type": "string"
+          },
+          "error_summary": {
+            "type": "object"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ImportJobProgress"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "run_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "source_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ImportJobSummary"
+          },
+          "target_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportWarning"
+            }
+          }
+        }
+      },
+      "ImportWarning": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ImportChunkRow": {
+        "type": "object",
+        "required": [
+          "org_id",
+          "import_id",
+          "chunk_id",
+          "sequence",
+          "content_hash",
+          "final_chunk",
+          "payload",
+          "summary",
+          "created_at"
+        ],
+        "properties": {
+          "chunk_id": {
+            "type": "string"
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "final_chunk": {
+            "type": "boolean"
+          },
+          "import_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ImportJobSummary"
+          }
+        }
+      },
       "ReportSummary": {
         "type": "object",
         "required": [
@@ -5718,6 +6443,87 @@
               "null"
             ],
             "format": "double"
+          }
+        }
+      },
+      "ImportJobProgress": {
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "chunks": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "final_chunk_received": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "partial_write_started": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "resumable": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "ImportJobSummary": {
+        "type": "object",
+        "required": [
+          "runs",
+          "metrics",
+          "attributes",
+          "artifacts",
+          "warnings"
+        ],
+        "properties": {
+          "artifacts": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "attributes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "metrics": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "runs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "skipped_runs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "warnings": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       }

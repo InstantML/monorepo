@@ -16,7 +16,7 @@ pip install --pre instantml
 instantml login
 ```
 
-Opens your browser, completes a device-code flow against the InstantML platform, and stores the resulting credential at `~/.instantml/credentials`. The SDK reads it automatically — no env vars to manage. Same UX as `wandb login`, `gh auth login`, `gcloud auth login`.
+Opens your browser, completes a device-code flow against the InstantML platform, and stores the resulting org-scoped credential at `~/.instantml/credentials`. The SDK reads it automatically for training-loop logging, artifact uploads, imports, TensorBoard sync, and exports — no env vars to manage. Same UX as `wandb login`, `gh auth login`, `gcloud auth login`.
 
 Device-code credentials are scoped for scalar/rich-object SDK ingest and read/export jobs. Use a dashboard or onboarding API key with `artifacts:write` when a script uploads files, checkpoints, or artifact bytes.
 
@@ -147,13 +147,58 @@ If `wandb` is not installed or `wandb.init` fails, shadow logging is disabled wi
 InstantML remains the source of truth for rich objects, uploaded files,
 checkpoint uploads, console capture, and system metrics.
 
+## Imports and framework adapters
+
+Migration import commands run locally, redact source payloads, and upload
+canonical Import v2 chunks to InstantML. Third-party credentials stay on your
+machine.
+
+```bash
+instantml import wandb --project cartpole --entity my-team --source-project old-project
+instantml import neptune --project cartpole --input ./neptune-export/data --files-path ./neptune-export/files
+instantml import mlflow --project cartpole --input mlflow-export.json
+instantml sync tensorboard runs/tensorboard --project cartpole --watch --watch-interval 10
+```
+
+Neptune Exporter metric histories stream as bounded Import v2 chunks, and
+repeated TensorBoard syncs append scalar points to the existing imported
+TensorBoard run when source identity matches.
+
+For a W&B-style logging subset, intentionally alias the compatibility module:
+
+```python
+import instantml.compat.wandb as wandb
+
+run = wandb.init(project="cartpole", config={"seed": 13})
+wandb.log({"train/loss": 0.1}, step=1)
+run.finish()
+```
+
+Unsupported W&B surfaces, including sweeps and `mode="offline"`/`"dryrun"`,
+`WANDB_MODE=offline`/`dryrun`, and batching kwargs such as
+`wandb.log(..., commit=False)`, raise `UnsupportedWandbFeature` instead of
+silently changing logging semantics.
+
+Framework adapters are available from the top-level package and lazily subclass
+installed framework base classes when present:
+
+```python
+trainer.add_callback(im.InstantMLCallback(project="cartpole"))
+logger = im.InstantMLLogger(project="cartpole")
+callbacks = [im.InstantMLKerasCallback(project="cartpole")]
+```
+
 ## Optional extras
 
 The core package has no required third-party runtime dependencies. Install extras for richer local conversions and system metrics:
 
 ```bash
-pip install "instantml[media]"     # Pillow, imageio, moviepy, soundfile
-pip install "instantml[system]"    # psutil, pynvml
+pip install "instantml[media]"        # Pillow, imageio, moviepy, soundfile
+pip install "instantml[system]"       # psutil, pynvml
+pip install "instantml[imports]"      # pyarrow for Neptune Exporter imports
+pip install "instantml[wandb]"        # direct local W&B export and dual logging
+pip install "instantml[tensorboard]"  # TensorBoard event parsing
+pip install "instantml[frameworks]"   # HF/Lightning/Keras adapter bases
 pip install "instantml[all]"
 ```
 

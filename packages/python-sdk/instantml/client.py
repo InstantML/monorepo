@@ -1171,6 +1171,8 @@ class Run:
             {"attributes": attributes},
             data={"config": data},
         )
+        if self._shadow is not None:
+            self._shadow.update_config(data)
 
     @_async_hot_path
     def log_metrics(
@@ -2322,26 +2324,113 @@ def _torch_gradient_hook(run: Run, name: str, bins: int, log_freq: int, calls: d
     return hook
 
 
-class TransformersCallback:
+def _rank_zero(args: Any = None, state: Any = None, trainer: Any = None) -> bool:
+    for candidate in (state, args, trainer):
+        if candidate is None:
+            continue
+        value = getattr(candidate, "is_world_process_zero", None)
+        if isinstance(value, bool):
+            return value
+        value = getattr(candidate, "is_global_zero", None)
+        if isinstance(value, bool):
+            return value
+    rank = os.environ.get("RANK") or os.environ.get("LOCAL_RANK")
+    return rank in (None, "", "0")
+
+
+_ADAPTER_CLASS_CACHE: dict[tuple[type, type], type] = {}
+
+
+def _optional_framework_base(module_name: str, attr_path: str) -> type | None:
+    try:
+        module = __import__(module_name, fromlist=[attr_path.split(".")[0]])
+    except ImportError:
+        return None
+    value: Any = module
+    for part in attr_path.split("."):
+        value = getattr(value, part, None)
+        if value is None:
+            return None
+    return value if isinstance(value, type) else None
+
+
+def _framework_adapter_new(cls: type, base: type | None, name: str) -> Any:
+    if base is None or issubclass(cls, base):
+        return object.__new__(cls)
+    key = (cls, base)
+    specialized = _ADAPTER_CLASS_CACHE.get(key)
+    if specialized is None:
+        try:
+            specialized = type(name, (cls, base), {})
+        except TypeError:
+            return object.__new__(cls)
+        _ADAPTER_CLASS_CACHE[key] = specialized
+    return object.__new__(specialized)
+
+
+def _transformers_callback_base() -> type | None:
+    return _optional_framework_base("transformers", "TrainerCallback")
+
+
+def _lightning_logger_base() -> type | None:
+    return (
+        _optional_framework_base("lightning.pytorch.loggers.logger", "Logger")
+        or _optional_framework_base("pytorch_lightning.loggers.logger", "Logger")
+    )
+
+
+def _keras_callback_base() -> type | None:
+    return (
+        _optional_framework_base("keras.callbacks", "Callback")
+        or _optional_framework_base("tensorflow.keras.callbacks", "Callback")
+    )
+
+
+class InstantMLCallback:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        if cls is InstantMLCallback:
+            return _framework_adapter_new(cls, _transformers_callback_base(), "InstantMLTransformersCallback")
+        return object.__new__(cls)
+
     def __init__(self, run: Run | None = None, **init_kwargs: Any) -> None:
         self.run = run
         self.init_kwargs = init_kwargs
 
     def setup(self, args: Any, state: Any, model: Any | None = None, **kwargs: Any) -> None:
+        if not _rank_zero(args=args, state=state):
+            return
         if self.run is None:
             init_kwargs = {"project": getattr(args, "project", "transformers"), **self.init_kwargs}
             self.run = init(**init_kwargs)
 
     def on_log(self, args: Any, state: Any, control: Any, logs: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        if not _rank_zero(args=args, state=state):
+            return
         if self.run is None:
             self.setup(args, state, **kwargs)
-        assert self.run is not None
+        if self.run is None:
+            return
         metrics = {key: value for key, value in (logs or {}).items() if _is_scalar_number(value)}
         if metrics:
             self.run.log(metrics, step=getattr(state, "global_step", None))
 
+    def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        if not _rank_zero(args=args, state=state) or self.run is None:
+            return
+        output_dir = getattr(args, "output_dir", None)
+        if output_dir:
+            self.run.log_artifact("checkpoint", str(output_dir), artifact_type="checkpoint", step=getattr(state, "global_step", None))
 
-class LightningLogger:
+
+TransformersCallback = InstantMLCallback
+
+
+class InstantMLLogger:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        if cls is InstantMLLogger:
+            return _framework_adapter_new(cls, _lightning_logger_base(), "InstantMLLightningLogger")
+        return object.__new__(cls)
+
     def __init__(self, project: str | None = None, run: Run | None = None, **init_kwargs: Any) -> None:
         self.project = project
         self._run = run
@@ -2353,6 +2442,8 @@ class LightningLogger:
 
     @property
     def version(self) -> str:
+        if not _rank_zero():
+            return "rank-nonzero"
         return self.experiment.run_id
 
     @property
@@ -2362,23 +2453,73 @@ class LightningLogger:
         return self._run
 
     def log_metrics(self, metrics: dict[str, Any], step: int | float | None = None) -> None:
+        if not _rank_zero():
+            return
         self.experiment.log(metrics, step=step)
 
     def log_hyperparams(self, params: dict[str, Any]) -> None:
+        if not _rank_zero():
+            return
         self.experiment.log_config(params)
 
     def log_image(self, key: str, images: list[Any], step: int | float | None = None, **kwargs: Any) -> None:
+        if not _rank_zero():
+            return
         self.experiment.log({key: [Image.from_data(image, metadata=kwargs or None) for image in images]}, step=step)
 
     def log_audio(self, key: str, audios: list[Any], step: int | float | None = None, **kwargs: Any) -> None:
+        if not _rank_zero():
+            return
         self.experiment.log({key: [Audio.from_data(audio, metadata=kwargs or None) for audio in audios]}, step=step)
 
     def log_video(self, key: str, videos: list[Any], step: int | float | None = None, **kwargs: Any) -> None:
+        if not _rank_zero():
+            return
         self.experiment.log({key: [Video.from_data(video, metadata=kwargs or None) for video in videos]}, step=step)
 
     def finalize(self, status: str = "finished") -> None:
         if self._run is not None:
             self._run.finish(status)
+
+
+LightningLogger = InstantMLLogger
+
+
+class InstantMLKerasCallback:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        if cls is InstantMLKerasCallback:
+            return _framework_adapter_new(cls, _keras_callback_base(), "InstantMLKerasNativeCallback")
+        return object.__new__(cls)
+
+    def __init__(self, run: Run | None = None, project: str | None = None, log_batch: bool = False, **init_kwargs: Any) -> None:
+        self.run = run
+        self.project = project
+        self.log_batch = log_batch
+        self.init_kwargs = init_kwargs
+
+    def _ensure_run(self) -> Run:
+        if self.run is None:
+            self.run = init(project=self.project or "keras", **self.init_kwargs)
+        return self.run
+
+    def on_train_begin(self, logs: dict[str, Any] | None = None) -> None:
+        self._ensure_run()
+
+    def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
+        metrics = {key: value for key, value in (logs or {}).items() if _is_scalar_number(value)}
+        if metrics:
+            self._ensure_run().log(metrics, step=epoch)
+
+    def on_train_batch_end(self, batch: int, logs: dict[str, Any] | None = None) -> None:
+        if not self.log_batch:
+            return
+        metrics = {f"batch/{key}": value for key, value in (logs or {}).items() if _is_scalar_number(value)}
+        if metrics:
+            self._ensure_run().log(metrics, step=batch)
+
+    def on_train_end(self, logs: dict[str, Any] | None = None) -> None:
+        if self.run is not None:
+            self.run.finish("finished")
 
 
 def _collect_system_metrics(psutil_module: Any | None = None, pynvml_module: Any | None = None) -> dict[str, float]:

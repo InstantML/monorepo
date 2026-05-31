@@ -17,9 +17,12 @@ disables shadow and warns — it never raises from the InstantML log path.
 
 from __future__ import annotations
 
+import os
 import threading
 import warnings
 from typing import Any
+
+MAX_SHADOW_QUEUE_EVENTS = 10_000
 
 
 class ShadowWandb:
@@ -37,6 +40,7 @@ class ShadowWandb:
         self._lock = threading.Lock()
         self._wandb_run: Any | None = existing_run
         self._queue: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+        self._dropped_events = 0
         self._disabled = False
         self._init_done = threading.Event()
         if existing_run is not None:
@@ -94,6 +98,15 @@ class ShadowWandb:
                 return
             run = self._wandb_run
             if run is None:
+                if len(self._queue) >= MAX_SHADOW_QUEUE_EVENTS:
+                    self._dropped_events += 1
+                    if self._dropped_events == 1:
+                        warnings.warn(
+                            "shadow_wandb queue is full; dropping shadow events until wandb.init resolves",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                    return
                 self._queue.append((op, args, kwargs))
                 return
         try:
@@ -123,10 +136,15 @@ class ShadowWandb:
         with self._lock:
             if self._disabled:
                 return
-        import wandb  # type: ignore[import-not-found]  # safe: shadow is disabled if wandb is missing
         try:
+            import wandb  # type: ignore[import-not-found]
             artifact = wandb.Artifact(name=name, type=artifact_type)
             artifact.add_file(path)
+        except ImportError as exc:
+            with self._lock:
+                self._disabled = True
+            warnings.warn(f"shadow_wandb artifact logging disabled because W&B is unavailable: {exc}", RuntimeWarning, stacklevel=2)
+            return
         except Exception as exc:  # noqa: BLE001
             warnings.warn(f"shadow_wandb building Artifact failed: {exc}", RuntimeWarning, stacklevel=2)
             return
@@ -134,8 +152,10 @@ class ShadowWandb:
 
     def finish(self, status: str = "finished") -> None:
         exit_code = 0 if status == "finished" else 1
+        if not self.wait_for_init(timeout=float(os.environ.get("INSTANTML_SHADOW_WANDB_FINISH_TIMEOUT", "5"))):
+            warnings.warn("shadow_wandb finish skipped because W&B init did not complete", RuntimeWarning, stacklevel=2)
+            return
         self._dispatch("finish", exit_code=exit_code)
-        self._init_done.set()
 
     def wait_for_init(self, timeout: float | None = None) -> bool:
         return self._init_done.wait(timeout=timeout)
@@ -144,6 +164,11 @@ class ShadowWandb:
     def disabled(self) -> bool:
         with self._lock:
             return self._disabled
+
+    @property
+    def dropped_events(self) -> int:
+        with self._lock:
+            return self._dropped_events
 
 
 def build_shadow(

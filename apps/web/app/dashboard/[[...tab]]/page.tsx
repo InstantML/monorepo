@@ -13,6 +13,7 @@ const tabIds = new Set([
   "compare",
   "alerts",
   "datasets",
+  "imports",
   "insights",
   "artifacts",
   "checkpoints",

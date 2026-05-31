@@ -1,17 +1,49 @@
 ---
 title: "Imports"
-description: "Import transformed W&B, MLflow, and Neptune-shaped JSON payloads."
+description: "Import W&B, Neptune Exporter, MLflow, and TensorBoard data through local-first migration jobs."
 ---
 
 # Imports
 
-InstantML includes JSON importer endpoints so teams can evaluate without
-starting from an empty project.
+InstantML includes local-first import tooling so teams can evaluate without
+starting from an empty project or handing third-party credentials to InstantML
+servers. The Python CLI reads source data on your machine, normalizes it into
+Import v2 chunks, uploads a dry-run summary first, and commits only after you
+review the result.
 
-## Supported importer routes
+For a screenshot walkthrough of the app flow, see
+[W&B and Neptune imports](/guides/wandb-neptune-imports).
+
+## Recommended CLI flow
+
+Use `instantml login` once, then run the source-specific import locally:
+
+```bash
+# W&B via the official local wandb SDK.
+instantml import wandb --project cartpole --entity my-team --source-project old-project --dry-run
+
+# Real Neptune Exporter Parquet directories.
+instantml import neptune --project cartpole --input ./neptune-export --dry-run
+
+# TensorBoard scalar event files.
+instantml import tensorboard --project cartpole --logdir ./runs --dry-run
+
+# Transformed MLflow JSON.
+instantml import mlflow --project cartpole --input ./mlflow-export.json --dry-run
+```
+
+Remove `--dry-run` only after the summary, warnings, and counts look right.
+TensorBoard sync can be repeated; matching imported TensorBoard runs append new
+scalar points instead of replacing existing history.
+
+## Supported server routes
 
 | Source shape | Route |
 | --- | --- |
+| Import v2 jobs | `POST /api/imports/jobs` |
+| Import v2 chunks | `POST /api/imports/jobs/{import_id}/chunks` |
+| Import v2 commit | `POST /api/imports/jobs/{import_id}/commit` |
+| Import v2 cancel | `POST /api/imports/jobs/{import_id}/cancel` |
 | W&B transformed JSON | `POST /api/imports/wandb` |
 | MLflow transformed JSON | `POST /api/imports/mlflow` |
 | Neptune-shaped transformed JSON | `POST /api/imports/neptune` |
@@ -23,6 +55,11 @@ declared external byte totals are visible in usage summaries, but importers do
 not copy source artifact bytes into InstantML-hosted storage. Storage-heavy
 migration projects should use Premium or custom terms before separately
 uploading retained artifact bytes.
+
+The legacy JSON routes remain for backward compatibility. New migration work
+should prefer Import v2 through the SDK/CLI because it supports dry-run
+readiness, warning previews, chunked uploads, real Neptune Exporter Parquet,
+direct W&B export, and TensorBoard sync.
 
 ## What importers preserve
 
@@ -49,14 +86,18 @@ curl https://api.instantml.ai/api/imports/mlflow \
 
 ## Practical migration flow
 
-1. Export or transform source data outside InstantML.
-2. Validate the JSON shape with a small project first.
-3. Import one representative project.
+1. Install the optional integration extra, for example
+   `pip install "instantml[imports]"`, `instantml[wandb]`, or
+   `instantml[tensorboard]`.
+2. Run a dry-run import against one representative project.
+3. Review counts, warnings, configs, notes, and artifact references.
 4. Open the dashboard and inspect runs, metric counts, configs, notes, and
    artifacts.
 5. Repeat for larger projects once the shape looks right.
 
-## Current limitation
+## Compatibility boundaries
 
-Real Neptune Exporter Parquet import is not part of this public docs surface.
-Use the Neptune-shaped JSON importer route for transformed payloads.
+Importers preserve runs, scalar metrics, configs/params, tags, notes, source
+provenance, and artifact references. They do not claim full vendor parity for
+W&B sweeps/reports/launch, full Neptune namespace semantics, TensorBoard media,
+or server-side hosted vendor credential pulls. Source credentials stay local.

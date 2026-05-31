@@ -63,6 +63,9 @@ pub(super) fn fetch_run_in_data(
         .get(&run_id)
         .cloned()
         .ok_or_else(|| AppError::not_found("run not found"))?;
+    if !is_visible_run(data, &run) {
+        return Err(AppError::not_found("run not found"));
+    }
     ensure_run_access_in_data(ctx, &run)?;
     Ok(run)
 }

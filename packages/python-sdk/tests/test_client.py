@@ -2383,10 +2383,19 @@ def test_log_config_can_preserve_nested_values():
             calls.append((method, path, body))
             return {}
 
-    run = Run(client=FakeClient(), run_id="run-1")
+    class FakeShadow:
+        def __init__(self):
+            self.config_updates = []
+
+        def update_config(self, data):
+            self.config_updates.append(data)
+
+    shadow = FakeShadow()
+    run = Run(client=FakeClient(), run_id="run-1", shadow=shadow)
     run.log_config({"optimizer": {"lr": 0.001}}, flatten=False)
 
     assert calls[0][2]["attributes"] == [{"path": "config/optimizer", "type": "config", "value": {"lr": 0.001}}]
+    assert shadow.config_updates == [{"optimizer": {"lr": 0.001}}]
 
 
 def test_metric_validation_warns_for_non_increasing_steps():
@@ -4292,6 +4301,193 @@ def test_framework_adapter_warning_and_lazy_logger_paths(monkeypatch):
     assert logger.version == "lazy-run"
     assert [entry[1] for entry in fake_run.logged] == [1, 2, 3]
     assert fake_run.finished == ["finished"]
+
+
+def test_polished_framework_adapters_rank_zero_and_keras(monkeypatch, tmp_path):
+    class FakeRun:
+        run_id = "adapter-run"
+
+        def __init__(self):
+            self.logged = []
+            self.artifacts = []
+            self.finished = []
+
+        def log(self, metrics, step=None):
+            self.logged.append((metrics, step))
+
+        def log_artifact(self, name, path, artifact_type="file", step=None, metadata=None):
+            self.artifacts.append((name, path, artifact_type, step, metadata))
+
+        def finish(self, status="finished"):
+            self.finished.append(status)
+
+    fake_run = FakeRun()
+    monkeypatch.setattr(client_module, "init", lambda **kwargs: fake_run)
+
+    callback = ro.InstantMLCallback(project="hf-demo")
+    callback.on_log(
+        SimpleNamespace(project="ignored"),
+        SimpleNamespace(global_step=1, is_world_process_zero=False),
+        object(),
+        logs={"loss": 1.0},
+    )
+    assert fake_run.logged == []
+
+    output_dir = tmp_path / "checkpoint"
+    output_dir.mkdir()
+    callback.on_log(
+        SimpleNamespace(project="ignored", output_dir=str(output_dir)),
+        SimpleNamespace(global_step=2, is_world_process_zero=True),
+        object(),
+        logs={"loss": 0.5, "epoch": "2"},
+    )
+    callback.on_save(
+        SimpleNamespace(output_dir=str(output_dir)),
+        SimpleNamespace(global_step=2, is_world_process_zero=True),
+        object(),
+    )
+    assert fake_run.logged == [({"loss": 0.5}, 2)]
+    assert fake_run.artifacts == [("checkpoint", str(output_dir), "checkpoint", 2, None)]
+
+    keras_callback = ro.InstantMLKerasCallback(run=fake_run, log_batch=True)
+    keras_callback.on_epoch_end(3, {"val_loss": 0.2, "ignored": object()})
+    keras_callback.on_train_batch_end(4, {"loss": 0.1})
+    keras_callback.on_train_end()
+    assert fake_run.logged[-2:] == [({"val_loss": 0.2}, 3), ({"batch/loss": 0.1}, 4)]
+    assert fake_run.finished == ["finished"]
+
+
+def test_framework_adapter_rank_zero_edge_paths(monkeypatch, tmp_path):
+    class FakeRun:
+        run_id = "adapter-run"
+
+        def __init__(self):
+            self.logged = []
+            self.configs = []
+            self.artifacts = []
+            self.finished = []
+
+        def log(self, metrics, step=None):
+            self.logged.append((metrics, step))
+
+        def log_config(self, params):
+            self.configs.append(params)
+
+        def log_artifact(self, name, path, artifact_type="file", step=None, metadata=None):
+            self.artifacts.append((name, path, artifact_type, step, metadata))
+
+        def finish(self, status="finished"):
+            self.finished.append(status)
+
+    fake_run = FakeRun()
+    init_calls = []
+
+    def fake_init(**kwargs):
+        init_calls.append(kwargs)
+        return fake_run
+
+    monkeypatch.setattr(client_module, "init", fake_init)
+
+    assert client_module._rank_zero(state=SimpleNamespace(is_global_zero=True)) is True
+    assert client_module._rank_zero(state=SimpleNamespace(is_global_zero=False)) is False
+    monkeypatch.setenv("LOCAL_RANK", "0")
+    assert client_module._rank_zero() is True
+    monkeypatch.setenv("RANK", "1")
+    assert client_module._rank_zero() is False
+    monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.delenv("LOCAL_RANK", raising=False)
+
+    callback = ro.InstantMLCallback(project="hf-demo")
+    callback.setup(SimpleNamespace(project="ignored"), SimpleNamespace(is_global_zero=False))
+    assert callback.run is None
+    callback.on_save(SimpleNamespace(output_dir=str(tmp_path)), SimpleNamespace(is_global_zero=True), object())
+    assert fake_run.artifacts == []
+
+    empty_callback = ro.InstantMLCallback()
+    monkeypatch.setattr(empty_callback, "setup", lambda *args, **kwargs: None)
+    empty_callback.on_log(SimpleNamespace(project="ignored"), SimpleNamespace(is_global_zero=True), object(), logs={"loss": 1.0})
+    assert empty_callback.run is None
+
+    logger = ro.InstantMLLogger(project="lightning-demo", run=fake_run)
+    monkeypatch.setenv("RANK", "1")
+    assert logger.version == "rank-nonzero"
+    logger.log_metrics({"loss": 1.0}, step=1)
+    logger.log_hyperparams({"lr": 0.1})
+    logger.log_image("image", ["frame"], step=1)
+    logger.log_audio("audio", ["clip"], step=1)
+    logger.log_video("video", ["movie"], step=1)
+    assert fake_run.logged == []
+    assert fake_run.configs == []
+    monkeypatch.delenv("RANK", raising=False)
+
+    lazy_keras = ro.InstantMLKerasCallback(project="keras-demo")
+    lazy_keras.on_train_begin()
+    lazy_keras.on_train_batch_end(1, {"loss": 0.5})
+    assert init_calls == [{"project": "keras-demo"}]
+    assert fake_run.logged == []
+
+
+def test_framework_adapters_subclass_installed_framework_bases(monkeypatch):
+    class TrainerCallback:
+        pass
+
+    class LightningBase:
+        pass
+
+    class KerasBase:
+        pass
+
+    transformers_module = ModuleType("transformers")
+    transformers_module.TrainerCallback = TrainerCallback
+    lightning_logger_module = ModuleType("lightning.pytorch.loggers.logger")
+    lightning_logger_module.Logger = LightningBase
+    keras_callbacks_module = ModuleType("keras.callbacks")
+    keras_callbacks_module.Callback = KerasBase
+
+    monkeypatch.setitem(sys.modules, "transformers", transformers_module)
+    monkeypatch.setitem(sys.modules, "lightning", ModuleType("lightning"))
+    monkeypatch.setitem(sys.modules, "lightning.pytorch", ModuleType("lightning.pytorch"))
+    monkeypatch.setitem(sys.modules, "lightning.pytorch.loggers", ModuleType("lightning.pytorch.loggers"))
+    monkeypatch.setitem(sys.modules, "lightning.pytorch.loggers.logger", lightning_logger_module)
+    monkeypatch.setitem(sys.modules, "keras", ModuleType("keras"))
+    monkeypatch.setitem(sys.modules, "keras.callbacks", keras_callbacks_module)
+
+    assert isinstance(ro.InstantMLCallback(), TrainerCallback)
+    assert isinstance(ro.InstantMLLogger(project="demo", run=object()), LightningBase)
+    assert isinstance(ro.InstantMLKerasCallback(run=object()), KerasBase)
+
+
+def test_framework_adapter_lazy_helper_edge_paths(monkeypatch):
+    missing_attr_module = ModuleType("framework_missing_attr")
+    monkeypatch.setitem(sys.modules, "framework_missing_attr", missing_attr_module)
+    assert client_module._optional_framework_base("framework_missing_attr", "callbacks.Callback") is None
+
+    class ChildCallback(ro.InstantMLCallback):
+        pass
+
+    class ChildLogger(ro.InstantMLLogger):
+        pass
+
+    class ChildKeras(ro.InstantMLKerasCallback):
+        pass
+
+    assert type(ChildCallback()) is ChildCallback
+    assert type(ChildLogger(run=object())) is ChildLogger
+    assert type(ChildKeras(run=object())) is ChildKeras
+
+    class MetaA(type):
+        pass
+
+    class MetaB(type):
+        pass
+
+    class ConflictingBase(metaclass=MetaA):
+        pass
+
+    class ConflictingAdapter(metaclass=MetaB):
+        pass
+
+    assert type(client_module._framework_adapter_new(ConflictingAdapter, ConflictingBase, "Broken")) is ConflictingAdapter
 
 
 # ---------------------------------------------------------------------------

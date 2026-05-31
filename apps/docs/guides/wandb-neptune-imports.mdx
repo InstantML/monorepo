@@ -1,0 +1,105 @@
+---
+title: "W&B and Neptune imports"
+description: "Walk through local-first W&B and Neptune imports with dry-run review and dashboard screenshots."
+---
+
+# W&B and Neptune imports
+
+Use this flow when a team already has real experiment history in W&B or a
+Neptune Exporter directory. Source credentials and vendor files stay on your
+machine. InstantML receives normalized Import v2 chunks, shows a dry-run
+summary, then writes runs only after you commit.
+
+## 1. Open Imports & Integrations
+
+In the app, open **Dashboard > Imports**. The page keeps migration work
+CLI-first and shows the exact source-specific dry-run command to run locally.
+
+![W&B import source selected in the Imports & Integrations dashboard](/images/product/import-flow-wandb.png)
+
+## 2. Import from W&B
+
+Install the optional W&B integration and authenticate with W&B locally:
+
+```bash
+pip install "instantml[wandb]"
+instantml login
+wandb login
+```
+
+Run a dry-run import first:
+
+```bash
+instantml import wandb \
+  --project cartpole \
+  --entity my-team \
+  --source-project old-project \
+  --dry-run
+```
+
+The CLI uses the official local `wandb` SDK, converts runs, configs, scalar
+history, tags, notes, and artifact references into Import v2 chunks, then
+uploads the dry-run job to InstantML. W&B API tokens stay local.
+
+After the dry-run, return to **Recent import jobs** in the Imports tab. Review:
+
+- Run count.
+- Metric point count.
+- Warning count and messages.
+- Target project.
+- Source identity.
+
+Commit from the dashboard when the mapping looks right, or rerun the same
+command without `--dry-run` to import directly.
+
+## 3. Import from Neptune Exporter
+
+Export the Neptune project with Neptune Exporter first. Keep the generated
+Parquet data directory and optional files directory together.
+
+```bash
+pip install "instantml[imports]"
+instantml login
+```
+
+Then run a dry-run import:
+
+```bash
+instantml import neptune \
+  --project cartpole \
+  --input ./neptune-export/data \
+  --files-path ./neptune-export/files \
+  --source-project "workspace/project" \
+  --dry-run
+```
+
+![Neptune Exporter import source selected in the Imports & Integrations dashboard](/images/product/import-flow-neptune.png)
+
+The Neptune importer streams Parquet rows into bounded Import v2 chunks instead
+of loading full metric history into memory. File attributes become artifact
+references; scalar series become metric points; params, tags, notes, and run
+metadata map into InstantML run metadata/config.
+
+Commit from the dashboard once the dry-run summary and warnings look right, or
+rerun without `--dry-run` for a direct import.
+
+## 4. Verify in the dashboard
+
+After commit, open the target project in the Runs workspace and check:
+
+- Expected imported run names.
+- Configs and tags are searchable.
+- Scalar metrics appear in charts.
+- Artifact references are attached to the right runs.
+- Imported source metadata includes the external run identity.
+
+If the counts or warnings look wrong, cancel the dry-run job and rerun the CLI
+with a smaller source project, a `--limit` for W&B, or a corrected Neptune
+Exporter path.
+
+## Compatibility boundaries
+
+The importers cover the migration spine: runs, scalar metrics, configs/params,
+tags, notes, provenance, and artifact references. They do not claim full W&B
+sweeps/reports/launch parity, full Neptune namespace semantics, or hosted
+server-side vendor credential pulls.

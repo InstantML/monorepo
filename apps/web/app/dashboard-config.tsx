@@ -11,6 +11,7 @@ import {
   Package,
   Settings,
   Telescope,
+  UploadCloud,
 } from "lucide-react";
 
 import type { TabId } from "./dashboard-types";
@@ -31,6 +32,7 @@ export const navGroups = [
       { id: "alerts", label: "Alerts", icon: AlertTriangle },
       { id: "insights", label: "Insights", icon: Telescope },
       { id: "datasets", label: "Datasets", icon: Database },
+      { id: "imports", label: "Imports", icon: UploadCloud },
       { id: "artifacts", label: "Artifacts", icon: Package },
       { id: "checkpoints", label: "Checkpoints", icon: Box },
       { id: "reports", label: "Reports", icon: FileBarChart },
