@@ -50,7 +50,7 @@ This report compares the existing InstantML hosted Cloud Run benchmark against W
 - At the bounded W&B scale, newest/search/sort W&B public API timings were in the same broad range as InstantML hosted Cloud Run, and sometimes faster: newest 100 p95 `408 ms` W&B vs `480 ms` InstantML; seed search p95 `409 ms` W&B vs `606 ms` InstantML; metric-best sort p95 `305 ms` W&B vs `522 ms` InstantML.
 - Chart reads are the clearer InstantML advantage in this run: InstantML `GET /runs/:id/metrics` returned 1,000 points at p95 `335 ms`; W&B `Run.history(samples=1000)` was p95 `675 ms`, and exact `Run.scan_history` had a p95 outlier at `5736 ms`.
 - The W&B benchmark used `--no-include-length --no-hydrate-runs` for measured list cases after an earlier hydrated/counting pass spent too long in W&B Public API calls. InstantML measured full JSON route payloads from the deployed hosted API.
-- The current tooling now supports a guarded exact W&B mode, but a true 100k x 1k-step x six-metric public-SDK seed is a large external workload. It should be run separately with a long window and conservative worker count.
+- The current tooling includes a guarded exact W&B mode intended for a true 100k x 1k-step x six-metric public-SDK seed, but that external workload has not been completed in a committed result. It should be run separately with a long window and conservative worker count before any full-parity claim.
 
 ## Seeding Notes
 
@@ -134,5 +134,5 @@ This report compares the existing InstantML hosted Cloud Run benchmark against W
 
 - W&B timings use public SDK/Public API surfaces, not private GraphQL documents.
 - W&B project/status/notes equivalents use mirrored config and tags where W&B has no documented matching top-level route.
-- Exact W&B full-history parity for 100,000 runs x 1,000 steps x six metrics is supported by the seed tool but is intentionally guarded because it is a 600M-scalar external workload.
+- Exact W&B full-history parity for 100,000 runs x 1,000 steps x six metrics is only an intended guarded seed mode today; it has not been completed in a committed result and would be a 600M-scalar external workload.
 - InstantML data in this report is read-only from the existing hosted Cloud Run benchmark path.

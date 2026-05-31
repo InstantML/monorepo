@@ -51,6 +51,8 @@ current limit.
 ## Log checkpoint bytes
 
 ```python
+import instantml as im
+
 policy = im.CheckpointPolicy(every_steps=1000)
 
 if policy.should_save(step):

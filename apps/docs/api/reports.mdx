@@ -11,9 +11,11 @@ Legacy `llm_summary` blocks can still render in existing reports, but new
 authoring should use the dashboard-supported block set.
 
 Report routes accept a browser session with workspace membership. Bearer API
-keys also work for automation: read routes require tenant read access, and
-write routes accept API keys belonging to the workspace org. Report editing is
-still primarily a dashboard workflow.
+keys also work for automation: report read routes accept any same-org API key or
+same-org session, and write routes accept API keys belonging to the workspace
+org. Report reads are a control-plane exception to the normal `export:read`
+tenant-read rule. Report API-key writes do not currently require a separate
+`reports:write` scope. Report editing is still primarily a dashboard workflow.
 
 ## List reports
 
@@ -24,6 +26,19 @@ Authorization: Bearer instantml_...
 
 Optional `project` filters by project ID. The response includes summaries,
 pagination fields, visibility, share state, and block counts.
+
+## List report panels
+
+```http
+GET /api/reports/panels
+Authorization: Bearer instantml_...
+```
+
+Returns the workspace's flattened panel inventory for the dashboard "add panel
+from another report" workflow. Each entry includes `report_id`,
+`report_title`, `panel_index`, and `panel_spec`. The route accepts a same-org
+session or API key and does not expose private report contents through public
+share tokens.
 
 ## Create a report
 

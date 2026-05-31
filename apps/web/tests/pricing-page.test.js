@@ -273,6 +273,18 @@ describe("PricingPage — surfaces implemented pricing model", () => {
     assert.match(authFlow, /setPlanTier\(requestedPlan\)/);
   });
 
+  test("managed signup plan picker does not sell organization seats into a personal workspace", () => {
+    const authFlow = read("app/auth-flow.tsx");
+    assert.match(authFlow, /function seatLimitForPlan\(planTier: PlanTier\): number/);
+    assert.match(authFlow, /seatLimitForPlan\(planTier\)/);
+    assert.match(authFlow, /seatContext\?:\s*"organization"\s*\|\s*"personal"/);
+    assert.match(authFlow, /<PlanPicker[^>]*seatContext="personal"/);
+    assert.match(authFlow, /seatContext=\{seatContext\}/);
+    assert.match(authFlow, /seatContext === "personal" \? "1 owner seat" : plan\.seats/);
+    assert.match(authFlow, /Team org · \{selectedPlan\.seats\}, reservable/);
+    assert.match(authFlow, /Managed signups create a personal workspace first/);
+  });
+
   test("links to docs pricing page", () => {
     assert.match(src, /href=["']\/docs\/pricing["']/);
     assert.ok(existsRepo("apps/docs/pricing.mdx"), "apps/docs/pricing.mdx must exist");

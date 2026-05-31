@@ -3,7 +3,7 @@ import { AuthFlow } from "../auth-flow";
 
 const SIGNUP_TITLE = "Sign up";
 const SIGNUP_DESCRIPTION =
-  "Create your free InstantML account and start tracking training runs in seconds.";
+  "Create your InstantML workspace and start tracking training runs in seconds.";
 
 export const metadata: Metadata = {
   title: SIGNUP_TITLE,

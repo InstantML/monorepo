@@ -134,6 +134,8 @@ when building restore scripts.
 ## Public Docs To Keep In Sync
 
 - `/docs/sdk/artifacts-checkpoints` and `/docs/sdk/artifacts-checkpoints.md`
+- `/docs/sdk/querying-data` and `/docs/sdk/querying-data.md`
+- `/docs/quickstart` and `/docs/quickstart.md`
 - `/docs/dashboard/checkpoints` and `/docs/dashboard/checkpoints.md`
 - `/docs/api/projects-runs` and `/docs/api/projects-runs.md`
 - `/docs/api/artifacts` and `/docs/api/artifacts.md`

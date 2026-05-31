@@ -2789,6 +2789,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2988,6 +2998,16 @@
               }
             }
           },
+          "403": {
+            "description": "Insufficient report write permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Report not found",
             "content": {
@@ -3057,6 +3077,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
             "content": {
               "application/json": {
                 "schema": {
@@ -3185,6 +3215,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient report write permission",
             "content": {
               "application/json": {
                 "schema": {
@@ -3558,6 +3598,16 @@
               }
             }
           },
+          "403": {
+            "description": "Artifact write scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Run not found",
             "content": {
@@ -3638,7 +3688,7 @@
             }
           },
           "403": {
-            "description": "Artifact byte uploads disabled by server configuration",
+            "description": "Artifact write scope required or artifact byte uploads disabled by server configuration",
             "content": {
               "application/json": {
                 "schema": {

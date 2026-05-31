@@ -16,6 +16,10 @@ This document explains the Free, Pro, and Premium pricing model, the current cos
 | Pro | `$199/org/mo` | 3 | 1 TiB | 100 projects, 100k runs, 250M metric points/month, 25M API requests/month | Standard, 12 GiB, 1 replica |
 | Premium | `$699/org/mo` | 10 | 5 TiB | 500 projects, 1M runs, 2B metric points/month, 150M API requests/month | Dedicated, 16 GiB, 2 replicas |
 
+Included seats are organization-workspace seats. Personal workspaces remain
+single-owner, and the billing projection preserves that one-seat cap even for
+paid personal workspaces.
+
 Current overage policy:
 
 - Extra seats are billed by updating a Stripe extra-seat subscription item

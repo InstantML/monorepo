@@ -195,6 +195,10 @@ These are the current product defaults implemented in Rust and mirrored in the d
 | Premium | `$699/org/mo` | 10 seats, 5 TiB included storage, 500 projects, 1M runs, 2B metric points, 150M API requests/month, dedicated 16 GiB x 2 replica warehouse intent |
 | Enterprise | Custom | SSO/SAML, VPC or self-host option, custom retention, compliance, dedicated support, custom warehouse and storage terms |
 
+Included seats apply to organization workspaces. Personal workspaces remain
+single-owner even when the underlying plan catalog has a larger included-seat
+pool.
+
 Overage defaults:
 
 - Extra seats: billed through a Stripe extra-seat subscription item when an org
@@ -417,7 +421,7 @@ Current state:
 
 Do next:
 
-- Prove server-backed pagination/search/sort at the 90,000-run design-partner scale.
+- Keep server-backed pagination/search/sort benchmarked at the 100,000-run local scale and the current 50,000-run / 522M-point hosted GCP showcase scale.
 - Split remaining complex `apps/web/app/page.tsx` logic when a workflow justifies a dedicated container component.
 - Harden hosted org/auth/settings UI with Stripe webhook smoke coverage, invite delivery, and org-member management beyond seat reservation.
 - Add hosted import UI once that workflow is ready for beta.
@@ -597,5 +601,5 @@ The immediate work should stay practical:
 - Validate the W&B replacement wedge with real users.
 - Keep Rust/ClickHouse as the default backend while preserving Node compatibility tests until JSON migration is complete.
 - Harden SDK run lifecycle, offline creation, summary policies, public query APIs, and rich logged objects through reviewed slices.
-- Prove run browsing, search, compare, and chart performance at the 90,000-run design-partner scale.
+- Keep run browsing, search, compare, and chart performance proven with the 100,000-run local benchmark, the 50,000-run hosted GCP showcase benchmark, and fresh W&B comparisons before making new competitor-speed claims.
 - Treat W&B/MLflow/Neptune importers as adoption paths.

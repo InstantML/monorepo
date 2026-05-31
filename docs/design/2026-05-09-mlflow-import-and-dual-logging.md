@@ -8,9 +8,9 @@ Owner: Codex
 
 ## Summary
 
-This second P4 slice adds an MLflow JSON import path and records the W&B dual-logging decision. The implementation should stay narrow: accept a transformed MLflow JSON file, normalize it through the existing canonical importer, add a small CLI wrapper, and keep direct MLflow/W&B SDK dependencies out of the core repo.
+This second P4 slice adds an MLflow JSON import path and records the original W&B dual-logging decision. The implementation should stay narrow: accept a transformed MLflow JSON file, normalize it through the existing canonical importer, add a small CLI wrapper, and keep direct MLflow/W&B SDK dependencies out of the core repo.
 
-The W&B work remains import-first for now. Dual logging is useful, but it should be implemented later as an optional SDK adapter only after the SDK hot path, error semantics, and user-facing naming are stable.
+Historical note: the W&B work was import-first in this slice. A later SDK slice implemented an explicit `shadow_wandb` path that keeps W&B optional, runs `wandb.init(...)` asynchronously, mirrors scalar logs/finish and local-file metadata artifacts best-effort, and leaves InstantML as the source of truth for rich objects, uploaded files, checkpoint uploads, console capture, and system metrics.
 
 ## Research Notes
 
@@ -25,7 +25,7 @@ W&B's integration guidance recommends treating W&B as an optional dependency for
 - Preserve MLflow run IDs, experiment IDs, params, tags, latest metrics, metric history, artifact roots, and artifact references.
 - Add a dependency-free `tools/import-mlflow-json.mjs` wrapper.
 - Keep malformed fixture coverage at parity with Neptune and W&B.
-- Document the W&B dual-logging recommendation without adding a dependency yet.
+- Document the W&B dual-logging recommendation for this import-first slice without adding a required dependency.
 
 ## Non-Goals
 
@@ -152,7 +152,7 @@ run.log_metrics({"reward": 1}, step=1)
 - Implemented strict request-body numeric validation for SDK writes and importer metrics/steps, while keeping query-parameter parsing for read filters.
 - Implemented canonical import support for optional imported `started_at` and `finished_at` timestamps.
 - Implemented MLflow schema-version validation, status mapping, per-key metric-history/latest fallback, raw latest-metric preservation, artifact directory skip counts, safe relative artifact paths, and URI-root joining.
-- W&B dual logging remains deferred. The accepted next step is to validate import usefulness with real teams before adding a live dual-logging adapter.
+- W&B dual logging was deferred in this slice. The current SDK now exposes the narrower optional `shadow_wandb` path; validate it with real teams before broadening migration claims or promising broader artifact/rich-object parity.
 
 ## Review Notes
 

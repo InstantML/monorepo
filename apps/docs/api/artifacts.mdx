@@ -59,6 +59,9 @@ Content-Type: application/json
 The server validates decoded byte size and projected storage usage before
 touching the byte backend.
 
+Requires `artifacts:write` or a writable browser session. Hosted deployments can
+also disable direct byte uploads by configuration.
+
 `name` and non-empty `content_base64` are required. `type` defaults to `file`
 and accepts `checkpoint`, `file`, or `rollout`.
 
@@ -92,7 +95,8 @@ Authorization: Bearer instantml_...
 
 The API streams local or object-storage bytes with the artifact MIME type.
 Hosted object-storage downloads stream through the same-origin API route and
-forward valid `Range` requests for media previews.
+forward valid `Range` requests for media previews. API keys need `export:read`;
+browser sessions need viewer or higher role.
 
 ```http
 GET /api/artifacts/{artifact_id}/download

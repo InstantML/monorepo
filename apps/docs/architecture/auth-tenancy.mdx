@@ -19,24 +19,15 @@ organization before product data is read or written.
 
 ## Browser sign-in flow
 
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant IdP as Identity provider
-    participant API as Rust API
-    participant Control as User Data ClickHouse
-    participant Tenant as Tenant ClickHouse
-
-    Browser->>API: GET /api/auth/config
-    API-->>Browser: Auth provider availability
-    Browser->>IdP: Sign in or sign up
-    IdP-->>Browser: Session token
-    Browser->>API: POST /api/auth/clerk or /api/auth/dev/google
-    API->>API: Verify token and email
-    API->>Control: Upsert user, org, membership, session
-    API->>Tenant: Provision or load tenant route
-    API-->>Browser: Auth payload + session cookie
-```
+| Step | Caller | Action |
+| ---: | --- | --- |
+| 1 | Browser | `GET /api/auth/config` to learn available auth providers. |
+| 2 | Browser | Sign in or sign up with the configured identity provider. |
+| 3 | Browser | Submit the provider token to `POST /api/auth/clerk` or `POST /api/auth/dev/google`. |
+| 4 | Rust API | Verify the token and email. |
+| 5 | Rust API | Upsert user, organization, membership, and session records in User Data ClickHouse. |
+| 6 | Rust API | Provision or load the tenant route. |
+| 7 | Rust API | Return the auth payload and set the browser session cookie. |
 
 Cookie-authenticated mutating requests validate `Origin` against allowed
 frontend origins. Bearer-token SDK requests are not origin-gated because they
@@ -44,15 +35,14 @@ are not browser-cookie requests.
 
 ## API-key flow
 
-```mermaid
-flowchart LR
-  req["API request"] --> bearer{"Bearer key?"}
-  bearer -->|yes| key["Authenticate key hash"]
-  key --> org["Resolve org_id and optional project scope"]
-  org --> route["Load tenant route"]
-  route --> checks["Enforce scope and project checks"]
-  checks --> store["Read or mutate tenant data"]
-```
+| Stage | What happens |
+| --- | --- |
+| Bearer key | The request presents `Authorization: Bearer instantml_...`. |
+| Key authentication | The API authenticates the key hash. |
+| Tenant resolution | The API resolves `org_id` and any project scope attached to the key. |
+| Route lookup | The API loads the tenant route for that organization. |
+| Scope checks | The route handler enforces API-key scopes and project boundaries. |
+| Product access | The request reads or mutates tenant data. |
 
 Project-scoped API keys can only read or mutate their project. Org-scoped keys
 can access every project allowed by their scopes.
@@ -65,6 +55,7 @@ can access every project allowed by their scopes.
 | Run/project mutations | `sdk:ingest` | Allowed | Allowed | Denied |
 | Artifact mutations | `artifacts:write` | Allowed | Allowed | Denied |
 | Imports | `imports:write` | Allowed | Denied | Denied |
+| Reports | Same-org key for writes; same-org key or share token for reads | Allowed | Read/write allowed | Workspace reads allowed; writes denied |
 | Usage reads | Unrestricted org key with `usage:read` | Allowed | Denied | Denied |
 | API-key admin | `api_keys:write` org key | Allowed | Denied | Denied |
 | Seat and invitation admin | Not a public SDK flow | Allowed | Denied | Denied |

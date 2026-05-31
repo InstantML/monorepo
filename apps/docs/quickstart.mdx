@@ -169,6 +169,20 @@ run = im.init(
 for step in range(1, 11):
     run.log({"train/loss": 1.0 / step, "eval/accuracy": step / 10}, step=step)
 
+run.finish()
+```
+
+Artifact and checkpoint calls in a shadowed run use the InstantML artifact API.
+Use a dashboard or onboarding API key with `artifacts:write` before adding
+`run.log_artifact(...)` or `run.log_checkpoint_file(...)`:
+
+```python
+from pathlib import Path
+
+import instantml as im
+
+run = im.init(project="quickstart", api_key="instantml_...", shadow_wandb=True)
+Path("weights.pt").write_bytes(b"replace with checkpoint bytes")
 run.log_artifact(
     "weights",
     "file://weights.pt",

@@ -20,6 +20,8 @@ run.log_stderr(["warning: entropy dipped", "retrying evaluation"])
 Or let the SDK wrap stdout and stderr:
 
 ```python
+import instantml as ro
+
 run = ro.init(
     project="train-loop",
     name="seed-7",
@@ -28,8 +30,10 @@ run = ro.init(
 ```
 
 Captured console lines are written through to the original stream and also sent
-to InstantML. Run Detail fetches them only when the Logs section is opened, so
-normal dashboard entry does not fan out log requests.
+to InstantML as text-series attributes named `console/stdout` and
+`console/stderr`. Use `log_stdout(...)` or `log_stderr(...)` when you want
+bounded console rows in the Run Detail Logs section; dashboard entry does not
+fan out log requests until that section is opened.
 
 ## System metrics
 

@@ -37,6 +37,7 @@ use super::helpers::{
         (status = 200, description = "Created artifact metadata", body = crate::http::openapi::ArtifactEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Artifact write scope required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -68,7 +69,7 @@ pub async fn create_artifact(
         (status = 200, description = "Created artifact with stored bytes", body = crate::http::openapi::ArtifactEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
-        (status = 403, description = "Artifact byte uploads disabled by server configuration", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Artifact write scope required or artifact byte uploads disabled by server configuration", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]

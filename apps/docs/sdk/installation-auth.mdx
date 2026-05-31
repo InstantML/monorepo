@@ -90,6 +90,10 @@ instantml whoami
 After login, `ro.init(...)` can read the stored credential file without another
 argument.
 
+Device-code credentials cover normal SDK ingest and read/export jobs. Uploading
+files, checkpoints, or artifact bytes needs a dashboard or onboarding API key
+that includes `artifacts:write`.
+
 Top-level `ro.init(...)` fails fast when no explicit key, environment key, or
 CLI credential exists. Lower-level `Client(...)` objects can still be
 constructed without credentials, but authenticated hosted writes fail once they

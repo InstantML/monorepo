@@ -66,9 +66,9 @@ API can express comparable filters.
 
 The May 18 W&B seed also stopped short of the full 100,000-run target after W&B
 rate limits appeared during external seeding. The visible W&B comparison
-dataset was 4,321 runs. The harness can seed a full exact W&B dataset, but that
-requires an explicit operator decision because it creates a large external SaaS
-workload.
+dataset was 4,321 runs. The harness includes a guarded mode intended to seed a
+full exact W&B dataset, but no committed result has completed that external
+SaaS workload yet.
 
 ## Not measured yet
 
@@ -97,7 +97,28 @@ Use these rules before making a public benchmark claim:
 - Do not claim a fresh W&B A/B unless W&B was rerun in the same benchmark pass
   with credentials, the same planned dataset shape, and sanitized result output.
 
-## Reproduce the harness
+## Reproduce the current InstantML result
+
+Use the Node Cloud Run benchmark for the current hosted InstantML path because
+it validates the expected dataset size before timing requests.
+
+```bash
+INSTANTML_API_KEY=instantml_... \
+INSTANTML_API_BASE=https://<hosted-data-api-host> \
+INSTANTML_CLOUD_RUN_BENCH_PROJECTS=normal-runs-50k \
+INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS=50000 \
+INSTANTML_CLOUD_RUN_BENCH_METRIC_KEY=train/loss \
+INSTANTML_CLOUD_RUN_BENCH_SYSTEM_METRIC_KEY=train/loss \
+npm run benchmark:cloud-run
+```
+
+The committed May 23 result used the Python `benchmark-instantml --direct`
+fallback because the deployed API at the time was older than the Node validator.
+Use the Node command for fresh reruns. Direct fallback records observed row
+counts but does not enforce the `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS` guard, so
+direct fallback results must be labeled and checked manually before publishing.
+
+## Smoke the W&B harness
 
 The comparison harness is intentionally guarded because W&B seeding writes data
 to an external hosted service.
@@ -127,6 +148,30 @@ python3 benchmarks/wandb_hosted_compare.py benchmark-wandb \
   --steps 20 \
   --samples 3 \
   --warmups 1
+```
+
+This is a smoke-scale command, not the May 18 comparison recipe.
+
+## Reproduce the May 18 W&B table
+
+The historical W&B table used a partial 4,321-run visible seed after W&B public
+API rate limits interrupted the 5,001-run configured seed. It also measured list
+cases with hydration and count calls disabled after the hydrated pass spent too
+long in public API calls.
+
+```bash
+python3 benchmarks/wandb_hosted_compare.py benchmark-wandb \
+  --runs 5001 \
+  --steps 1000 \
+  --samples 3 \
+  --warmups 1 \
+  --default-selected-runs 100 \
+  --search-selected-runs 20 \
+  --selected-runs 100 \
+  --chart-limit 1000 \
+  --scan-history-limit 1000 \
+  --no-include-length \
+  --no-hydrate-runs
 ```
 
 ```bash

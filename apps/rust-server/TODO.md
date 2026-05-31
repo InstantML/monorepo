@@ -54,9 +54,9 @@ Primary W&B references reviewed:
 - [ ] Add authenticated pagination, sorting, and filter grammar for runs and histories with explicit query-plan tests.
   - First run-list slice complete: `/api/runs/summary` and `/runs` support cursor pagination, direct auth/project/status/search filters, and server-side sorting by newest/name/status/duration/selected metric latest/best.
   - Remaining: broader filter grammar, history pagination, explicit query-plan assertions, and versioned public API route naming.
-- [x] Add 90,000-run project support for run list/search: keyset pagination, server-side sort, indexed status/tag/note/name/config filters, and selected metric-summary sorts.
+- [x] Add large-run project support for run list/search: keyset pagination, server-side sort, indexed status/tag/note/name/config filters, and selected metric-summary sorts.
   - Design: `docs/design/2026-05-11-large-run-query-performance.md`
-  - Evidence: local benchmark p95 project summary 78 ms, search 118 ms, metric-best sort 66 ms, chart series 22 ms.
+  - Evidence: the first 90,000-run local benchmark measured p95 project summary 78 ms, search 118 ms, metric-best sort 66 ms, and chart series 22 ms; the current local benchmark default is 100,000 runs with a 20,000-step source series.
   - Follow-up: split metric-key catalog discovery or add `include_metric_keys=false` before claiming scale for projects with very high metric-key cardinality.
 - [ ] Add compare data routes that support row-oriented and column-oriented clients, including row sorting, column sorting, diff-only filtering, artifact-presence sorting, and bounded payloads.
 - [ ] Add post-hoc mutation routes for safe metadata, config, summary, and file updates after a run finishes.
@@ -100,10 +100,10 @@ Primary W&B references reviewed:
 ## P5 - Reliability And Coverage
 
 - [ ] Add integration tests for every new route with real ClickHouse and org/project auth checks.
-- [ ] Add query-plan checks for history, public API filters, 90,000-run search/sort, tag/note search, compare row/column sorting, artifact alias lookup, table pagination, and sweep assignment.
-  - First 90,000-run benchmark exists, but it is latency-based rather than `EXPLAIN`-plan asserted.
-- [ ] Add load tests for scalar ingestion, 90,000-run project browsing, table writes, artifact manifest reads, MP3/MP4 media streaming, and public history export.
-  - First 90,000-run browsing benchmark exists in `tools/rust-large-run-benchmark.mjs`.
+- [ ] Add query-plan checks for history, public API filters, 100,000-run search/sort, tag/note search, compare row/column sorting, artifact alias lookup, table pagination, and sweep assignment.
+  - Large-run latency benchmarks exist, but they are latency-based rather than `EXPLAIN`-plan asserted.
+- [ ] Add load tests for scalar ingestion, 100,000-run project browsing, table writes, artifact manifest reads, MP3/MP4 media streaming, and public history export.
+  - Large-run browsing coverage exists in `tools/rust-large-run-benchmark.mjs`.
   - First rich-object read benchmark exists in `tools/rust-rich-objects-benchmark.mjs`; 2026-05-11 local evidence: object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, table row p95 1.9 ms for 1,000 rows. Remaining load tests should cover ingestion, media/artifact streaming, histories, table writes, and compare.
 - [ ] Keep first-party Rust service logic at 100% meaningful coverage or document precise coverage exceptions in this README/TODO.
 - [ ] Keep Node compatibility smokes for old route shapes until migration from Node JSON is complete.

@@ -18,7 +18,7 @@ INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-clickhouse-query-benchma
 npm run benchmark:hosted-demo
 ```
 
-The script signs in as the shared `hello@instantml.ai` demo account, reuses the existing tenant route when present, verifies the 100,000-run project seed, warms each route, then measures the dashboard query shapes documented in `docs/design/2026-05-14-hosted-clickhouse-query-benchmarks.md`. Current hosted benchmark routes should point at the self-hosted GCP ClickHouse deployment unless a legacy provider-backed route is being tested intentionally.
+The script signs in as the shared `hello@instantml.ai` demo account, reuses the existing tenant route when present, verifies the configured project seed, warms each route, then measures the dashboard query shapes documented in `docs/design/2026-05-14-hosted-clickhouse-query-benchmarks.md`. The historical hosted-demo seed targeted 100,000 runs. Current hosted benchmark routes should point at the self-hosted GCP ClickHouse deployment unless a legacy provider-backed route is being tested intentionally.
 
 The committed Markdown summaries should include:
 
@@ -42,11 +42,15 @@ INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json \
 npm run benchmark:cloud-run
 ```
 
-This is now the preferred hosted backend latency signal because it measures the
-actual deployed request path: benchmark client -> Cloud Run data service or
-HTTPS router -> self-hosted GCP ClickHouse tenant database. It assumes `INSTANTML_DATA_API_BASE` or
-`INSTANTML_API_BASE` points at the hosted API and validates at least 100,000
-runs across the configured benchmark projects before timing requests.
+This remains the preferred hosted backend latency signal when measuring the
+100,000-run hosted-scale tenant created by `seed:hosted-scale`, because it
+measures the actual deployed request path: benchmark client -> Cloud Run data
+service or HTTPS router -> self-hosted GCP ClickHouse tenant database. It
+assumes `INSTANTML_DATA_API_BASE` or `INSTANTML_API_BASE` points at the hosted
+API and validates `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS` across the configured
+benchmark projects before timing requests. The default minimum is 100,000 runs;
+set it lower only for a named showcase dataset and record that in the result
+summary.
 
 Committed summaries for this benchmark should include the same sanitized fields
 as the hosted ClickHouse benchmark plus the API host only, never full URLs or API
@@ -55,7 +59,10 @@ keys.
 The latest current-path result is
 `benchmarks/2026-05-23-gcp-clickhouse-cloud-run-results.md`: Cloud Run direct to
 self-hosted GCP ClickHouse, reading the `normal-runs-50k` project with 50,000
-runs and 522,000,000 metric points. It passed the current read-path budgets.
+runs and 522,000,000 metric points. That committed run used the Python direct
+fallback because the deployed API at the time was older than the Node validator.
+Use `npm run benchmark:cloud-run` with `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS=50000`
+for fresh reruns so the expected dataset size is enforced before timing.
 
 The run-search language benchmark result in
 `benchmarks/2026-05-26-run-search-local-results.md` covers the new literal,
@@ -64,25 +71,26 @@ local ClickHouse dataset. It also records why a fresh W&B hosted search rerun
 was not collected in that workspace and points to the existing sanitized W&B
 public-API comparison for directional context.
 
-For the GCP self-hosted showcase workload, run the read-only direct benchmark
-with a short-lived API key:
+For the GCP self-hosted showcase workload, prefer the Node Cloud Run benchmark
+because it validates the expected run count before timing requests:
 
 ```bash
 INSTANTML_API_KEY=instantml_... \
-INSTANTML_API_BASE=https://instantml-data-us-central1-a-hfv667633q-uc.a.run.app \
+INSTANTML_API_BASE=https://<hosted-data-api-host> \
 INSTANTML_CLOUD_RUN_BENCH_PROJECTS=normal-runs-50k \
+INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS=50000 \
 INSTANTML_CLOUD_RUN_BENCH_METRIC_KEY=train/loss \
 INSTANTML_CLOUD_RUN_BENCH_SYSTEM_METRIC_KEY=train/loss \
-python3 benchmarks/wandb_hosted_compare.py benchmark-instantml \
-  --direct \
-  --samples 8 \
-  --warmups 2 \
-  --output /tmp/instantml-gcp-clickhouse-result.json
+npm run benchmark:cloud-run
 ```
 
 Do not commit the API key or raw JSON unless it has been reviewed for
 sanitization. If a one-off benchmark key is inserted directly into User Data,
 append a revoked `api_key` control record immediately after the benchmark.
+`wandb_hosted_compare.py benchmark-instantml --direct` is a manual historical
+fallback for older deployed APIs; it records observed rows but does not enforce
+`INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`, so confirm the dataset shape separately
+before using direct fallback numbers in docs.
 
 ## W&B Hosted Comparison Benchmark
 
@@ -128,7 +136,7 @@ the mirrored `config.instantml_source_status` field and the report calls that
 out. Use `--seed-mode init` when actual W&B finished/failed states matter more
 than seeding speed.
 
-Run W&B read benchmarks:
+Smoke the W&B read benchmark:
 
 ```bash
 .venv/bin/python benchmarks/wandb_hosted_compare.py benchmark-wandb \
@@ -141,10 +149,17 @@ not rerun. Keep that caveat in any report that compares the new GCP numbers to
 the historical W&B measurements in `benchmarks/RESULTS.md`.
 
 Run the InstantML read-only hosted benchmark when the hosted-scale dataset
-already exists:
+already exists. Use the Node command when you need dataset-size validation:
 
 ```bash
-.venv/bin/python benchmarks/wandb_hosted_compare.py benchmark-instantml
+npm run benchmark:cloud-run
+```
+
+Use the Python direct fallback only when the deployed API is older than the Node
+validator expects, and label the result as direct fallback in the summary:
+
+```bash
+.venv/bin/python benchmarks/wandb_hosted_compare.py benchmark-instantml --direct
 ```
 
 Render the comparison report:
@@ -153,13 +168,15 @@ Render the comparison report:
 .venv/bin/python benchmarks/wandb_hosted_compare.py render-results
 ```
 
-For the full W&B exact-history dataset, explicitly set `--runs 100000
---steps 1000 --history-mode exact --allow --allow-exact`. That mode logs
-100 million W&B history rows and 600 million scalar values through public SDK
-calls, so use it only when you intentionally want that external workload. A
-summary/list-fidelity run can seed one summary row per run with
-`--history-mode none`; bounded chart fidelity can seed selected full-history
-runs with `--history-mode newest` or `--history-mode dashboard`.
+The harness includes a guarded mode intended for a full W&B exact-history
+dataset: explicitly set `--runs 100000 --steps 1000 --history-mode exact
+--allow --allow-exact`. That mode would log 100 million W&B history rows and
+600 million scalar values through public SDK calls; it has not been completed
+in a committed result yet, so use it only when you intentionally want that
+external workload and have time to publish a fresh sanitized summary. A
+summary/list-fidelity run can seed one summary row per run with `--history-mode
+none`; bounded chart fidelity can seed selected full-history runs with
+`--history-mode newest` or `--history-mode dashboard`.
 
 ## SDK Logging Overhead Benchmark
 

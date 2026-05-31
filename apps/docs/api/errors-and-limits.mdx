@@ -99,9 +99,9 @@ Hosted short-window API rate limits are plan-aware:
 
 | Tier | General rate | Ingest rate | Monthly request allowance |
 | --- | ---: | ---: | ---: |
-| Free | 5 req/sec, burst 30 | 2 req/sec | 500k requests |
-| Pro | 50 req/sec, burst 250 | 25 req/sec | 25M requests |
-| Premium | 200 req/sec, burst 1000 | 100 req/sec | 150M requests |
+| Free | 5 req/sec, burst 30 | 2 req/sec, burst 10 | 500k requests |
+| Pro | 50 req/sec, burst 250 | 25 req/sec, burst 125 | 25M requests |
+| Premium | 200 req/sec, burst 1000 | 100 req/sec, burst 500 | 150M requests |
 
 Short-window rate-limit responses use HTTP `429`, return `code:
 "rate_limit_exceeded"`, include `X-InstantML-RateLimit-Scope: second`, and set

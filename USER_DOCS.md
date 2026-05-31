@@ -554,7 +554,11 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 ## UI Workflow After Logging
 
 1. Select your project from the top bar.
-2. Use the Runs list to search by run name, tag, note, seed, or config text.
+2. Use the Runs list to search by run name, tag, note, seed, config text, or
+   the shared `q` language. Examples: `tag:baseline`, `status:finished`,
+   `name:"long context"`, `notes:regression`, `config:model=llama`,
+   `(tag:baseline OR tag:candidate)`, `-tag:debug`, and
+   `re:/seed-(13|14)/`.
 3. Click a run row to inspect it, or select multiple runs for comparison.
 4. In the Runs workspace, use automatic panels for a quick overview or switch to manual mode and add only the metric panels you need.
 5. Drag panels between sections, resize panels from the lower-right handle, hover points for run/value tooltips, and drag the range brush to zoom into a training interval.

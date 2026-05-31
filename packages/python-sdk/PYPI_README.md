@@ -18,6 +18,8 @@ instantml login
 
 Opens your browser, completes a device-code flow against the InstantML platform, and stores the resulting credential at `~/.instantml/credentials`. The SDK reads it automatically — no env vars to manage. Same UX as `wandb login`, `gh auth login`, `gcloud auth login`.
 
+Device-code credentials are scoped for scalar/rich-object SDK ingest and read/export jobs. Use a dashboard or onboarding API key with `artifacts:write` when a script uploads files, checkpoints, or artifact bytes.
+
 ```bash
 instantml whoami    # confirm who you're logged in as
 instantml logout    # clear the cached credential
@@ -30,7 +32,6 @@ import os
 import instantml as im
 
 run = im.init(project="llm-7b-sft", config=cfg)
-checkpoint_policy = im.CheckpointPolicy(every_steps=500)
 rank = int(os.environ.get("RANK", "0"))
 world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
@@ -46,7 +47,19 @@ for step, batch in enumerate(loader):
         world_size=world_size,
         weight=len(batch),
     )
-    if checkpoint_policy.should_save(step):
+run.finish()
+```
+
+To upload checkpoints, use an API key that includes `artifacts:write`:
+
+```python
+run = im.init(project="llm-7b-sft", api_key="instantml_...")
+policy = im.CheckpointPolicy(every_steps=500)
+
+for step, batch in enumerate(loader):
+    loss = train_step(batch)
+    run.log({"loss": loss}, step=step)
+    if policy.should_save(step):
         save_model("./ckpt/model.pt")
         run.log_checkpoint_file("./ckpt/model.pt", step=step)
 
@@ -106,7 +119,7 @@ run = im.init(
 
 ## Shadow Weights & Biases
 
-If you're migrating from W&B and want to compare numbers side-by-side, pass `shadow_wandb=True` to `init`. Every `log`, `finish`, and `log_artifact` call is mirrored to a parallel `wandb.Run`, using your existing `WANDB_API_KEY` / `WANDB_ENTITY` env vars. `wandb.init` runs on a background thread so InstantML's init stays sub-millisecond.
+If you're migrating from W&B and want to compare numbers side-by-side, pass `shadow_wandb=True` to `init`. Scalar `run.log(...)` calls, `finish()`, and local-file metadata artifacts created with `log_artifact("name", "file://path", ...)` are mirrored to a parallel `wandb.Run`, using your existing `WANDB_API_KEY` / `WANDB_ENTITY` env vars. `wandb.init` runs on a background thread so InstantML's init stays sub-millisecond.
 
 ```python
 run = im.init(project="llm-7b-sft", config=cfg, shadow_wandb=True)
@@ -130,6 +143,9 @@ run = im.init(project="llm-7b-sft", shadow_wandb=wb_run)
 ```
 
 If `wandb` is not installed or `wandb.init` fails, shadow logging is disabled with a warning and InstantML logging continues unaffected.
+
+InstantML remains the source of truth for rich objects, uploaded files,
+checkpoint uploads, console capture, and system metrics.
 
 ## Optional extras
 
@@ -156,7 +172,7 @@ instantml-uploader --spool-dir .instantml/spool
 By default, `instantml.init()` uses buffered async metric/log uploads:
 
 ```python
-run = instantml.init(project="cartpole")
+run = im.init(project="cartpole")
 run.log_metrics({"train/reward": 100.0}, step=1)
 run.log_stdout("step=1 reward=100.0")
 run.wait_for_submission(timeout=30)

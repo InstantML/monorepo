@@ -40,6 +40,9 @@ revoked after the run.
 - p95 method: nearest-rank over measured samples
 - Endpoint order: fixed
 - Runner: `benchmarks/wandb_hosted_compare.py benchmark-instantml --direct`
+  direct fallback. The direct fallback records observed rows but does not enforce
+  `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`; the result was accepted because the
+  visible `normal-runs-50k` and org-wide counts matched the showcase dataset.
 
 ## Results
 
@@ -55,12 +58,12 @@ revoked after the run.
 | `normal_runs_50k_newest_100` | summary | 100 / 50000 | 215 ms | 236 ms | 187 ms | 236 ms | Pass |
 | `normal_runs_50k_search_latest_name` | summary | 1 / 1 | 198 ms | 551 ms | 192 ms | 551 ms | Pass |
 | `normal_runs_50k_search_project_tag` | summary | 25 / 50000 | 183 ms | 224 ms | 171 ms | 224 ms | Pass |
-| `normal_runs_50k_search_config_transformer` | summary | 0 / 0 | 182 ms | 215 ms | 174 ms | 215 ms | Pass |
-| `normal_runs_50k_search_notes_scale_validation` | summary | 0 / 0 | 180 ms | 211 ms | 168 ms | 211 ms | Pass |
+| `normal_runs_50k_search_config_transformer` | summary | 0 / 0 | 182 ms | 215 ms | 174 ms | 215 ms | Not exercised |
+| `normal_runs_50k_search_notes_scale_validation` | summary | 0 / 0 | 180 ms | 211 ms | 168 ms | 211 ms | Not exercised |
 | `normal_runs_50k_filter_failed` | summary | 25 / 237 | 154 ms | 169 ms | 146 ms | 169 ms | Pass |
 | `normal_runs_50k_filter_running` | summary | 25 / 1157 | 159 ms | 170 ms | 152 ms | 170 ms | Pass |
 | `normal_runs_50k_filter_finished` | summary | 25 / 48606 | 171 ms | 478 ms | 170 ms | 478 ms | Pass |
-| `normal_runs_50k_filter_finished_config` | summary | 0 / 0 | 179 ms | 205 ms | 176 ms | 205 ms | Pass |
+| `normal_runs_50k_filter_finished_config` | summary | 0 / 0 | 179 ms | 205 ms | 176 ms | 205 ms | Not exercised |
 | `normal_runs_50k_sort_metric_best` | summary | 25 / 50000 | 262 ms | 307 ms | 251 ms | 307 ms | Pass |
 | `normal_runs_50k_overview` | overview | 50000 runs / 522000000 points | 403 ms | 418 ms | 365 ms | 418 ms | Pass |
 | `chart_eval_return` | chart | 1000 points | 191 ms | 224 ms | 152 ms | 224 ms | Pass |
@@ -77,6 +80,11 @@ revoked after the run.
 - Summary/search/sort requests remain comfortably below the current
   `750-1000 ms` budgets. Single-run chart reads over a 20,000-step source
   series are `224 ms` p95 for a 1,000-point response.
+- The `normal-runs-50k` config and notes search rows returned zero matches, so
+  they are recorded for transparency but should not be used as evidence for
+  search coverage. Use the local run-search benchmark and the nonzero
+  `org_search_*` / tag rows for search-path evidence until the showcase dataset
+  includes matching config and notes fixtures.
 - W&B was not rerun on this machine because the W&B package was not installed
   and no W&B API key or netrc auth was present. Historical W&B public API
   numbers from May 18 remain useful only as directional context.

@@ -15,7 +15,7 @@ Current implemented design sequence:
 - `2026-05-14-clickhouse-only-storage.md`: accepted primary Rust/ClickHouse storage plan, local/test first slice, and hosted control-plane/data-plane direction.
 - `2026-05-09-usage-metering.md`: Rust/ClickHouse usage summaries, immutable daily rollup snapshots, UTC calendar-month metric-point periods, and Node compatibility coverage for pricing validation.
 - `2026-05-09-migration-adoption-p4.md`: SDK metadata reservation, atomic importer core, Neptune hardening, and W&B JSON import first slice.
-- `2026-05-09-mlflow-import-and-dual-logging.md`: MLflow JSON import follow-up and W&B dual-logging recommendation.
+- `2026-05-09-mlflow-import-and-dual-logging.md`: MLflow JSON import follow-up and the original W&B dual-logging recommendation, later narrowed into the optional `shadow_wandb` SDK path.
 - `2026-05-10-runs-workspace-panels.md`: W&B/Grafana-inspired Runs workspace sections, line panels, add/edit/fullscreen flows, local layout persistence, and future persisted workspace API shape.
 - `2026-05-10-web-keyboard-shortcuts-mvp.md`: keyboard workflow MVP for quick search, shortcut help, overlay dismissal, undo/redo, run-rail collapse, focus handoff, and fullscreen panel traversal.
 - `2026-05-10-compare-page-flow.md`: Compare page row/column layouts, sorting, artifact context, saved-view restore, and safe media preview behavior.

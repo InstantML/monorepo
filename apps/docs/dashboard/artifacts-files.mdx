@@ -14,8 +14,6 @@ Artifacts connect metric behavior to the files and evidence produced by a run.
 The Artifacts tab focuses on the selected run context. Select a run first, then
 use the tab to inspect that run's artifact metadata and stored bytes.
 
-![Artifacts browser](/images/product/dashboard-artifacts-browser.png)
-
 Artifacts can represent:
 
 - Uploaded files.
@@ -38,7 +36,8 @@ bounded preview for tables, histograms, media, and artifact metadata.
 
 Same-origin image, audio, and video artifacts can preview in Run Detail and
 Compare when bytes are stored through InstantML. Unsupported or external-only
-artifacts fall back to copy/download actions. Stored bytes are served through
+artifacts fall back to metadata, copy, or unavailable-download actions. Stored
+bytes are served through
 `/api/artifacts/{artifact_id}/download`; public artifact rows expose opaque
 InstantML URIs rather than raw object-store URLs.
 

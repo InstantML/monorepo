@@ -15,6 +15,8 @@ handle immediately, and uses async metric/log/status uploads after the run
 exists. The first write waits for run creation if it has not finished yet.
 
 ```python
+import instantml as ro
+
 run = ro.init(project="demo")
 run.log({"train/loss": 0.2}, step=1)
 run.finish(timeout=30)

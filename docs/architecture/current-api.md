@@ -296,7 +296,7 @@ Body:
   "token": "clerk-session-jwt",
   "mode": "signup",
   "plan_tier": "premium",
-  "account_type": "customer",
+  "account_type": "business",
   "org_name": "Acme Research",
   "storage_choice": "customer-clickhouse",
   "seat_emails": ["teammate@example.com"],
@@ -305,14 +305,17 @@ Body:
 }
 ```
 
-`mode` is `signin` or `signup`. `org_name` is required for signup and omitted
-for normal sign-in. `plan_tier` is required only for plan-specific signup
-behavior and defaults to `free` when omitted. `storage_choice` accepts
-`instantml-hosted` or Premium-only `customer-clickhouse`; BYOC signups stay in
-onboarding until customer storage is validated. `accept_invite_token` is used on
-sign-in to activate a matching token-backed invitation; hosted Clerk exchanges
-ignore tokenless legacy invite activation. Output is the authenticated session
-payload plus `Set-Cookie: instantml_session=...`.
+`mode` is `signin` or `signup`. Managed Clerk signup can omit `account_type` and
+`org_name`; the server then derives a personal workspace name from the verified
+Clerk display name or email handle. `account_type: "business"` plus `org_name`
+creates an explicit organization workspace. `plan_tier` is required only for
+plan-specific signup behavior and defaults to `free` when omitted.
+`storage_choice` accepts `instantml-hosted` or Premium-only
+`customer-clickhouse`; BYOC signups stay in onboarding until customer storage is
+validated. `accept_invite_token` is used on sign-in to activate a matching
+token-backed invitation; hosted Clerk exchanges ignore tokenless legacy invite
+activation. Output is the authenticated session payload plus
+`Set-Cookie: instantml_session=...`.
 
 ### Organization Invitations
 
@@ -348,7 +351,7 @@ Output when authenticated:
   "organization": {},
   "membership": {},
   "memberships": [],
-  "account_type": "customer",
+  "account_type": "business",
   "provisioning": {
     "status": "ready",
     "mode": "database",
@@ -568,9 +571,12 @@ api_keys:write
 export:read
 ```
 
-Tenant read access means owner/admin/member/viewer browser sessions for the
-current org, or API keys that include `export:read`. Data-plane read routes do
-not treat `sdk:ingest` alone as read permission.
+Tenant read access normally means owner/admin/member/viewer browser sessions for
+the current org, or API keys that include `export:read`. Data-plane read routes
+do not treat `sdk:ingest` alone as read permission. Current control-plane
+report reads and import-history reads are narrower exceptions: they accept any
+valid same-org browser session or same-org API key because they expose
+workspace-authored control records rather than metric/history export payloads.
 
 ## Stripe Billing
 
@@ -1516,7 +1522,8 @@ endpoint is versioned for future billing/debug exports.
 
 ### `GET /api/imports`
 
-Auth: tenant read access.
+Auth: same-org browser session or same-org API key. This import-history route is
+an exception to the normal `export:read` tenant-read rule.
 
 Output:
 

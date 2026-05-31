@@ -427,6 +427,14 @@ selection with adaptive metric-series point limits. Set
 `INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json`
 to save sanitized JSON output.
 
+The latest current-path hosted result is
+`benchmarks/2026-05-23-gcp-clickhouse-cloud-run-results.md`: Cloud Run direct to
+self-hosted GCP ClickHouse over `normal-runs-50k`, with 50,000 runs,
+522,000,000 metric points, and sub-second p95s for newest pages, metric-best
+sort, project overview, and bounded chart reads. Use
+`INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS=50000` when reproducing that showcase
+dataset instead of the default 100,000-run hosted-scale tenant.
+
 In hosted split mode the Rust server migrates only the User Data control table at startup. Tenant metric/object tables are created in each org's routed ClickHouse database, not in the User Data database. In the current production/staging path those tenant databases live on self-hosted GCP ClickHouse; legacy `cloud-service` routes may still point at provider-managed services.
 
 Hosted tenant warehouse wakeups are reported as `503` errors with the stable

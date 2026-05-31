@@ -13,6 +13,8 @@ Use tables for bounded previewable rows such as predictions, eval samples, or
 per-example metrics.
 
 ```python
+import instantml as ro
+
 run.log_table_object(
     "eval/predictions",
     ["id", "target", "prediction", "score"],

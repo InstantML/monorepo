@@ -144,7 +144,7 @@ const TIERS: Tier[] = [
     rateLimits: "200 req/sec general; 100 req/sec ingest",
     features: [
       "Everything in Pro",
-      "Premium BYOC self-hosted GCP ClickHouse option",
+      "Premium BYOC GCP ClickHouse option",
       "Larger hosted warehouse routing intent",
       "Guided storage and ingest setup during beta",
     ],
@@ -484,10 +484,11 @@ export function PricingPage() {
         <p className="pricing-fine-print">
           Prices are current hosted beta list prices. Extra seats are available
           through billing; the target range remains $79-$99 per seat/month
-          until invoice smoke coverage is complete. Enterprise/custom is
-          reserved for SSO/SAML, VPC or self-hosted deployment, compliance,
-          custom retention, dedicated support, or unusually heavy data
-          footprints.
+          until invoice smoke coverage is complete. Included seats apply to
+          organization workspaces; personal workspaces stay one owner seat.
+          Enterprise/custom is reserved for SSO/SAML, VPC or self-hosted
+          deployment, compliance, custom retention, dedicated support, or
+          unusually heavy data footprints.
         </p>
       </PageSection>
 
@@ -588,9 +589,9 @@ export function PricingPage() {
                 <span className="landing-footer__brand-name">InstantML</span>
               </div>
               <p className="landing-footer__brand-desc">
-                Training observability that's actually fast. Sub-second charts
-                at 100k runs, predictable pricing, and a data model your team
-                can own.
+                Training observability that's actually fast. Sub-second hosted
+                reads on the current 50k-run benchmark, predictable pricing,
+                and a data model your team can own.
               </p>
             </div>
             <FooterCol
