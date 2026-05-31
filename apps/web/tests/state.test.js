@@ -226,6 +226,8 @@ test("defaultRunSelection only auto-selects once", () => {
   assert.equal(selected.ids.at(-1), `run-${DEFAULT_SELECTED_RUNS - 1}`);
   assert.deepEqual(defaultRunSelection([], runs, true), { ids: [], initialized: true });
   assert.deepEqual(defaultRunSelection(["chosen"], runs, false), { ids: ["chosen"], initialized: false });
+  const emptySelection = [];
+  assert.equal(defaultRunSelection(emptySelection, [], false).ids, emptySelection);
 });
 
 test("shortcut helpers detect platform commands and editable targets", () => {
