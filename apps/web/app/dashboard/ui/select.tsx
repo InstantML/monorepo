@@ -4,6 +4,8 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { selectMenuViewportPosition } from "../../../src/select-menu-position.js";
+
 export type SelectOption = {
   description?: string;
   disabled?: boolean;
@@ -37,6 +39,7 @@ export function CustomSelect({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeOnOpenRef = useRef<number | null>(null);
   const focusMenuOnOpenRef = useRef(false);
@@ -87,6 +90,36 @@ export function CustomSelect({
       window.clearTimeout(restoreLateTimer);
     };
   }, [open, options.length, selectedIndex]);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const root = rootRef.current;
+    const menu = menuRef.current;
+    const trigger = root?.querySelector<HTMLButtonElement>(".select-trigger");
+    if (!root || !menu || !trigger) return undefined;
+    const anchorNode = menu.offsetParent instanceof HTMLElement ? menu.offsetParent : menu.parentElement ?? root;
+    const menuNode = menu;
+    const triggerNode = trigger;
+
+    function clampMenuToViewport() {
+      const position = selectMenuViewportPosition({
+        anchorRect: anchorNode.getBoundingClientRect(),
+        triggerRect: triggerNode.getBoundingClientRect(),
+        viewportWidth: window.innerWidth,
+        menuAlign,
+      });
+      menuNode.style.setProperty("--select-menu-left", `${position.left}px`);
+      menuNode.style.setProperty("--select-menu-width", `${position.width}px`);
+    }
+
+    clampMenuToViewport();
+    window.addEventListener("resize", clampMenuToViewport);
+    window.addEventListener("scroll", clampMenuToViewport, true);
+    return () => {
+      window.removeEventListener("resize", clampMenuToViewport);
+      window.removeEventListener("scroll", clampMenuToViewport, true);
+    };
+  }, [menuAlign, open, options.length]);
 
   function rememberScrollPosition(force = false) {
     if (force || !scrollBeforeOpenRef.current) scrollBeforeOpenRef.current = { x: window.scrollX, y: window.scrollY };
@@ -196,7 +229,7 @@ export function CustomSelect({
           <ChevronDown size={15} />
         </button>
         {open ? (
-          <div className={`select-menu ${menuAlign === "right" ? "align-right" : ""} ${menuPlacement === "top" ? "open-up" : ""}`} id={menuId} role="listbox" aria-labelledby={labelId}>
+          <div className={`select-menu ${menuAlign === "right" ? "align-right" : ""} ${menuPlacement === "top" ? "open-up" : ""}`} id={menuId} ref={menuRef} role="listbox" aria-labelledby={labelId}>
             {options.map((option, index) => {
               const optionSelected = option.value === value;
               return (

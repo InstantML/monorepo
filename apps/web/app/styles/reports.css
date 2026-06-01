@@ -3308,6 +3308,15 @@ a.report-pane__icon-button {
   margin-right: auto;
 }
 
+.public-report__context {
+  width: min(100%, 820px);
+  margin-bottom: 4px;
+  color: var(--muted);
+  font: 700 11px/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
 @media (max-width: 840px) {
   .report-home__header,
   .report-pane__toolbar {

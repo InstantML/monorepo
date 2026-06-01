@@ -444,32 +444,40 @@ export function ReportEditor({
   );
 
   const rootClass = `report-editor${readOnly ? " report-editor--readonly" : ""}`;
+  const reportTitle = report.title || "Untitled report";
+  const reportDescription = report.description || "No summary provided.";
 
   return (
     <div className={rootClass}>
       <header className="report-editor__head">
-        <input
-          ref={titleRef}
-          id="report-title"
-          className="report-editor__title"
-          value={report.title}
-          placeholder="Untitled report"
-          readOnly={readOnly}
-          onChange={(event) => emit({ ...report, title: event.target.value })}
-          aria-label="Report title"
-        />
-        <textarea
-          ref={descriptionRef}
-          id="report-description"
-          className="report-editor__description"
-          value={report.description ?? ""}
-          placeholder="One-line summary"
-          rows={1}
-          readOnly={readOnly}
-          onChange={(event) => emit({ ...report, description: event.target.value })}
-          onInput={autoSizeDescription}
-          aria-label="Report description"
-        />
+        {readOnly ? (
+          <h1 id="report-title" className="report-editor__title">{reportTitle}</h1>
+        ) : (
+          <input
+            ref={titleRef}
+            id="report-title"
+            className="report-editor__title"
+            value={report.title}
+            placeholder="Untitled report"
+            onChange={(event) => emit({ ...report, title: event.target.value })}
+            aria-label="Report title"
+          />
+        )}
+        {readOnly ? (
+          <p id="report-description" className="report-editor__description">{reportDescription}</p>
+        ) : (
+          <textarea
+            ref={descriptionRef}
+            id="report-description"
+            className="report-editor__description"
+            value={report.description ?? ""}
+            placeholder="One-line summary"
+            rows={1}
+            onChange={(event) => emit({ ...report, description: event.target.value })}
+            onInput={autoSizeDescription}
+            aria-label="Report description"
+          />
+        )}
         {!readOnly ? (
           <div className="report-editor__visibility">
             <CustomSelect

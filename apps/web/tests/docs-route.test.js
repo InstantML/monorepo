@@ -65,8 +65,17 @@ test("first-run onboarding links to human and agent quickstart docs", async () =
 
 test("docs routes bypass Clerk proxy middleware", async () => {
   const proxy = await readFile(path.join(webRoot, "proxy.ts"), "utf8");
-  assert.match(proxy, /\(\?!_next\|docs\|/);
-  assert.match(proxy, /txt\|xml\|webmanifest/);
+  assert.match(proxy, /_next/);
+  assert.match(proxy, /docs/);
+  assert.match(proxy, /INSTANTML_WEB_EXPLICIT_API_BASES/);
+  assert.match(proxy, /NextResponse\.next/);
+  assert.match(proxy, /__clerk/);
+});
+
+test("API rewrites bypass Clerk proxy middleware", async () => {
+  const proxy = await readFile(path.join(webRoot, "proxy.ts"), "utf8");
+  assert.match(proxy, /\(?!_next\|api\|trpc\|docs/);
+  assert.doesNotMatch(proxy, /"\/\(api\|trpc/);
 });
 
 test("docs asset route serves images from the docs source tree", async () => {

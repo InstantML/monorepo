@@ -309,7 +309,7 @@ export function MetricChart({
   const exportHelpId = `${chartInstanceId}-chart-export-help`;
 
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
-    return <div className="chart-area"><div className="empty">{emptyMessage}</div></div>;
+    return <div className="chart-area" onMouseLeave={onLeave}><div className="empty">{emptyMessage}</div></div>;
   }
   // Lines render solid. Per-point markers are only drawn for genuinely sparse
   // series (1–2 samples) where a bare polyline would be invisible/ambiguous;
@@ -344,7 +344,10 @@ export function MetricChart({
   }
 
   return (
-    <div className={`chart-area${exportFilenameBase ? " chart-area-exportable" : ""}`}>
+    <div
+      className={`chart-area${exportFilenameBase ? " chart-area-exportable" : ""}`}
+      onMouseLeave={onLeave}
+    >
       {exportFilenameBase ? (
         <div className="chart-export-actions" aria-label="Chart export actions">
           <button
@@ -378,7 +381,7 @@ export function MetricChart({
         ))}
         {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow" title={normalizedSeries.slice(legendSeries.length).map((item) => item.identifier ?? item.name).join(", ")}>+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
       </div>
-      <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }}>
+      <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }} onMouseLeave={onLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
@@ -416,7 +419,7 @@ export function MetricChart({
                   cy={point.displayY ?? point.y}
                   style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
                   onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance: 0 })}
-                  r={2.6}
+                  r={2.4}
                 />
               )) : null}
             </g>

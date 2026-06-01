@@ -1,25 +1,25 @@
-/* ── mobile.css — mobile redesign (≤720px) ──────────────────────────────────
+/* ── mobile.css — mobile redesign (≤900px) ──────────────────────────────────
  * All mobile-specific overrides. Must be imported last in the chain so
  * media queries win over desktop defaults.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Mobile redesign (≤720px)
+ * Mobile redesign (≤900px)
  *
- * Phone-sized viewports get a distinct layout: collapsible top bar, hidden
- * sidebar that opens as a slide-in drawer, filters that slide down on demand,
- * and full vertical stacking for the run workspace. Anything above 720px keeps
- * the existing desktop/tablet treatment.
+ * Phone and narrow tablet viewports get a distinct layout: collapsible top
+ * bar, hidden sidebar that opens as a slide-in drawer, filters that slide down
+ * on demand, and full vertical stacking for the run workspace. Anything above
+ * 900px keeps the existing desktop treatment.
  * ────────────────────────────────────────────────────────────────────────── */
 
-/* Mobile menu trigger lives in the brandbar but is only visible on phones. */
+/* Mobile menu trigger lives in the brandbar but is only visible on compact viewports. */
 .mobile-menu-button {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  margin-left: 4px;
+  width: 44px;
+  height: 44px;
+  margin-left: 2px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
@@ -32,7 +32,7 @@
   display: none;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   :root {
     --topbar-height: 96px;
   }
@@ -58,15 +58,15 @@
   .mobile-menu-button { display: inline-flex; }
 
   .brandbar {
-    grid-template-columns: 40px 40px 1fr;
+    grid-template-columns: 44px 44px 1fr;
     height: 56px;
     flex: 0 0 56px;
-    padding: 0 12px 0 4px;
+    padding: 0 10px 0 2px;
     align-items: center;
   }
   .brandbar .brand-cell {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-right: 0;
   }
   .brandbar .brand-mark { width: 30px; height: 30px; }
@@ -100,8 +100,28 @@
     display: none;
   }
 
-  .brandbar-actions { gap: 4px; }
-  .brandbar-actions .brandbar-action-desktop { display: none; }
+  .brandbar-actions {
+    gap: 4px;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .brandbar-actions .brandbar-action-desktop,
+  .brandbar-actions .plan-usage-badge,
+  .brandbar-actions .ghost-kbd {
+    display: none;
+  }
+  .account-workspace {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .account-workspace-trigger {
+    max-width: min(42vw, 180px);
+    min-width: 0;
+  }
+  .account-workspace-current {
+    min-width: 0;
+    max-width: min(28vw, 126px);
+  }
   .ghost-kbd {
     height: 36px;
     padding: 0 8px;
@@ -115,8 +135,8 @@
 
   .topbar .icon-button.framed,
   .topbar .icon-button.framed.mobile-filters-toggle {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   /* Workbar collapses by default; the SlidersHorizontal toggle reveals it. */
@@ -126,6 +146,8 @@
   }
   .topbar--workbar.mobile-filters-open {
     --topbar-height: 56px;
+    height: auto;
+    min-height: 56px;
   }
   .topbar--workbar.mobile-filters-open .workbar {
     display: grid;
@@ -169,9 +191,14 @@
     flex-wrap: wrap;
   }
   .topbar--workbar.mobile-filters-open .workbar-search {
-    flex: 1 1 calc(100% - 34px);
+    flex: 1 1 calc(100% - 44px);
     width: auto;
     height: 40px;
+    min-height: 40px;
+  }
+  .topbar--workbar.mobile-filters-open .workbar-search-help {
+    flex: 0 0 44px;
+    width: 44px;
     min-height: 40px;
   }
   .topbar--workbar.mobile-filters-open .workbar-search-error {
@@ -182,10 +209,31 @@
   }
   .topbar--workbar.mobile-filters-open .workbar-divider,
   .topbar--workbar.mobile-filters-open .workbar-spacer,
-  .topbar--workbar.mobile-filters-open .workbar .status-message,
   .topbar--workbar.mobile-filters-open .workbar .system-status,
   .topbar--workbar.mobile-filters-open .workbar #demo-reset {
     display: none;
+  }
+  .topbar--workbar.mobile-filters-open .workbar .icon-button.framed,
+  .topbar--workbar.mobile-filters-open .workbar .primary-button {
+    display: inline-flex;
+    min-height: 40px;
+  }
+  .topbar--workbar.mobile-filters-open .workbar .primary-button {
+    width: 100%;
+  }
+  .topbar--workbar.mobile-filters-open .workbar #save-view {
+    display: inline-flex;
+  }
+  .topbar--workbar.mobile-filters-open .workbar .custom-select-control.compact,
+  .topbar--workbar.mobile-filters-open .workbar .workbar-name {
+    display: flex;
+  }
+  .topbar--workbar.mobile-filters-open .workbar > .icon-button {
+    display: inline-flex;
+    justify-self: end;
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
   }
   .topbar--workbar.mobile-filters-open .icon-button.framed.mobile-filters-toggle {
     color: var(--accent);
@@ -202,7 +250,7 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 50;
+    z-index: 90;
     width: min(82vw, 320px);
     height: 100vh;
     height: 100dvh;
@@ -218,12 +266,24 @@
     overflow-y: auto;
     overflow-x: hidden;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
     gap: 8px;
   }
   .tabs::after { display: none; }
   .shell.mobile-nav-open .tabs {
     transform: translateX(0);
+  }
+  .nav-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 40px;
+    border-bottom: 1px solid var(--line);
+    padding: 0 2px 10px;
+    color: var(--text);
+    font: 700 12px/1 var(--font-sans);
+    text-transform: uppercase;
   }
 
   .tab-scroll {
@@ -256,9 +316,10 @@
     border: 1px solid var(--accent-line);
   }
   .tab-button.active svg { color: var(--accent); }
-  .tab-label {
-    max-width: none;
-    opacity: 1;
+  .shell.mobile-nav-open .tabs .tab-label,
+  .tabs .tab-label {
+    max-width: none !important;
+    opacity: 1 !important;
   }
 
   .nav-footer { display: none; }
@@ -274,7 +335,7 @@
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 40;
+    z-index: 80;
     background: rgba(8, 12, 18, 0.5);
     backdrop-filter: blur(2px);
   }
@@ -290,7 +351,8 @@
 
   /* ── Stats / commandbar / filter island ──────────────────────────────── */
   .runs-workspace-filter {
-    position: static;
+    position: sticky;
+    top: var(--topbar-height);
     padding: 8px;
     border-radius: var(--radius);
     gap: 8px;
@@ -331,13 +393,20 @@
     width: 100%;
     min-height: 40px;
   }
+  .runs-commandbar .export-selected-runs-help {
+    display: block;
+    grid-column: 1 / -1;
+  }
   .column-popover {
     position: fixed;
-    inset: 12px;
+    top: max(64px, env(safe-area-inset-top));
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
     width: auto;
     max-height: 70vh;
     overflow-y: auto;
-    z-index: 60;
+    z-index: calc(var(--z-pop, 100) - 1);
   }
 
   /* ── Run workspace stacks vertically; rail becomes a horizontal bar ──── */
@@ -362,6 +431,18 @@
     max-height: 320px;
     overflow-y: auto;
   }
+  .workspace-run-row {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .workspace-run-select {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .workspace-rail-select-all input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
   .workspace-run-footer {
     flex-wrap: wrap;
     gap: 6px;
@@ -381,7 +462,8 @@
   /* Panels and drawer */
   .panel-drawer,
   .runs-workspace.drawer-open .panel-drawer {
-    position: static;
+    position: relative;
+    z-index: calc(var(--z-pop, 100) - 1);
     width: auto;
     height: auto;
     border: 0;
@@ -389,12 +471,27 @@
     border-radius: 0;
     box-shadow: none;
   }
+  .panel-drawer-backdrop {
+    inset: 0;
+    background: rgba(9, 14, 20, 0.22);
+  }
+  .workspace-canvas,
+  .workspace-sections,
+  .workspace-panel-grid {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
   .workspace-panel-grid {
     grid-template-columns: 1fr;
     gap: 10px;
     padding: 0 8px 12px;
   }
-  .workspace-panel-card { grid-column: 1 / -1; }
+  .workspace-panel-card {
+    grid-column: 1 / -1 !important;
+    width: 100%;
+    max-width: 100%;
+  }
   .workspace-panel-toolbar {
     position: static;
     display: grid;
@@ -461,6 +558,26 @@
     max-width: 100%;
   }
   .quick-search-input { font-size: 16px; }
+  .chart-export-button,
+  .chart-area-exportable .chart-export-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+  .chart-legend {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .legend-chip {
+    max-width: 100%;
+    min-height: 32px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .copy-button {
+    min-height: 44px;
+  }
 
   /* ── Generic touch target boost ──────────────────────────────────────── */
   .topbar .control select,
@@ -589,6 +706,9 @@
   .runs-workspace-filter .runs-commandbar {
     grid-template-columns: 1fr;
   }
+  .topbar--workbar.mobile-filters-open .workbar {
+    grid-template-columns: 1fr;
+  }
   .brandbar-row { gap: 6px; }
   .brand-wordmark { display: none; }
 
@@ -598,8 +718,78 @@
   .panel-head { padding: 8px 10px; }
 }
 
+@media (min-width: 901px) and (max-width: 1080px) {
+  .shell,
+  .shell.nav-pinned,
+  .shell.nav-auto-open {
+    --sidebar-width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tabs,
+  .shell.nav-pinned .tabs,
+  .shell:not(.nav-pinned).nav-auto-open .tabs {
+    position: static;
+    display: flex;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 10px 8px;
+    box-shadow: none;
+  }
+
+  .nav-drawer-head,
+  .nav-footer,
+  .nav-mobile-actions {
+    display: none;
+  }
+
+  .tab-scroll,
+  .tab-group {
+    display: flex;
+    gap: 6px;
+  }
+
+  .tab-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-right: 12px;
+    scrollbar-width: thin;
+  }
+
+  .tab-group {
+    flex: 0 0 auto;
+    border-right: 1px solid var(--line-soft);
+    border-bottom: 0;
+    padding: 0 8px 0 0;
+  }
+
+  .tab-button,
+  .shell:not(.nav-pinned) .tab-button,
+  .shell:not(.nav-pinned).nav-auto-open .tab-button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 40px;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .tab-label,
+  .shell:not(.nav-pinned) .tab-label,
+  .shell:not(.nav-pinned).nav-auto-open .tab-label {
+    max-width: 140px;
+    opacity: 1;
+  }
+}
+
 /* Prevent body scroll while the nav drawer is open on mobile */
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   html:has(.shell.mobile-nav-open) {
     overflow: hidden;
   }
@@ -624,7 +814,7 @@
  * properties (flex-wrap, flex-direction) instead.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   /* ── CRITICAL ───────────────────────────────────────────────────────── */
 
   /* C1: analysis-header / analysis-stat-strip were redeclared as flex in
@@ -669,14 +859,33 @@
     font-size: 16px !important;
   }
 
-  /* C4: select-menu (.select-menu) is left-anchored with no viewport-edge
-   * clamp, so menus opened near the right edge overflow off-screen.
-   * Pin to right edge on mobile and cap width to viewport. */
+  /* C4: select-menu is absolutely positioned by the custom select component.
+   * Use its viewport-clamped variables on mobile/tablet so menus opened from
+   * compact workbar controls cannot overflow either screen edge. */
   .select-menu {
-    left: auto !important;
-    right: 0 !important;
-    width: min(calc(100vw - 24px), 280px) !important;
+    left: var(--select-menu-left, 0) !important;
+    right: auto !important;
+    width: var(--select-menu-width, min(calc(100vw - 24px), 280px)) !important;
     max-width: calc(100vw - 24px);
+  }
+
+  .tab-grid.two-col.api-tab-grid,
+  .metrics-workbench {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .metrics-chart-surface {
+    order: 1;
+  }
+  .metric-catalog-panel {
+    order: 2;
+  }
+  .metric-insights-panel {
+    order: 3;
+  }
+  .metric-catalog-panel .panel-body {
+    max-height: 360px;
   }
 
   /* ── HIGH ───────────────────────────────────────────────────────────── */
@@ -693,12 +902,25 @@
   /* H3: metric-summary-row was min-width 520px with no scroll cue.
    * Stack vertically on mobile instead of forcing horizontal scroll. */
   .metric-summary-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     min-width: 0;
+    gap: 8px 12px;
     grid-auto-rows: auto;
   }
-  .metric-summary-row > span:not(:first-of-type) {
+  .metric-summary-row strong {
     grid-column: 1 / -1;
+  }
+  .metric-summary-row span {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px;
+    text-align: left;
+  }
+  .metric-summary-row span::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font: 700 10px/1.2 var(--font-mono);
+    text-transform: uppercase;
   }
   .metric-summary-head { display: none; }
 
@@ -739,6 +961,23 @@
   .workspace-panel-card {
     min-height: 240px;
     --panel-chart-min-height: 160px;
+  }
+
+  .evidence-preview-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .evidence-preview-head > div {
+    flex: 1 1 min(100%, 220px);
+    min-width: 0;
+  }
+  .evidence-preview-head h3 {
+    overflow-wrap: anywhere;
+  }
+  .evidence-preview-head .copy-button {
+    flex: 1 1 100%;
+    justify-content: center;
+    margin-left: 0;
   }
 
   /* M4: runs-chart-strip + smoothing-control wrap and shrink. */
@@ -823,11 +1062,10 @@
 
   /* L7: column-popover account for iOS safe-area-inset on notched devices. */
   .column-popover {
-    inset:
-      max(12px, env(safe-area-inset-top))
-      12px
-      max(12px, env(safe-area-inset-bottom))
-      12px;
+    top: max(64px, env(safe-area-inset-top));
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
   }
 
   /* L9: run-workspace-topline / tabs tighten and scroll horizontally on phones. */

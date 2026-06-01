@@ -111,6 +111,9 @@ type DashboardSessionPayload = {
   membership?: { role: string; status: string };
   memberships?: Array<{ org_id: string; role: string; status: string }>;
 };
+
+const SHARED_DEMO_EMAIL = "hello@instantml.ai";
+const SHARED_DEMO_ORG = "InstantML Demo";
 // Sourced from the generated OpenAPI spec; `list_org_memberships` returns
 // an `OrgMembershipsEnvelope { memberships: OrganizationMembershipSummary[] }`.
 // Rust struct `domain::OrganizationMembershipSummary`.
@@ -199,6 +202,10 @@ function isWarehouseStartingError(error: unknown) {
   return error instanceof ApiError && error.code === "warehouse_unavailable";
 }
 
+function isOptionalAdminPlaneUnavailable(error: unknown) {
+  return error instanceof ApiError && (error.status === 403 || error.status === 404);
+}
+
 type RunSearchError = {
   query: string;
   code: string;
@@ -261,19 +268,37 @@ function scopedSavedViewPrefix(scope: string) {
   return scope ? `${SAVED_VIEW_PREFIX}${scope}:` : SAVED_VIEW_PREFIX;
 }
 
+function legacyOrgScopeFromSavedViewScope(scope: string) {
+  return scope.split(":")[0] ?? "";
+}
+
+function legacyOrgSavedViewKeys(scope: string) {
+  const orgId = legacyOrgScopeFromSavedViewScope(scope);
+  if (!orgId) return [];
+  const prefix = legacyOrgSavedViewPrefix(orgId);
+  const targetPrefix = scopedSavedViewPrefix(scope);
+  return Object.keys(localStorage).filter((key) => {
+    if (!key.startsWith(prefix) || key.startsWith(targetPrefix)) return false;
+    // Legacy org-scoped views were `${org_id}:${view_name}`. New scoped keys
+    // include user/project segments, so do not re-list those as legacy aliases.
+    return !key.slice(prefix.length).includes(":");
+  });
+}
+
 function savedViewStorageKeys(scope = "") {
   const prefix = scopedSavedViewPrefix(scope);
-  return Object.keys(localStorage)
+  const keys = Object.keys(localStorage)
     // Scoped authenticated views intentionally exclude legacy global keys;
     // those keys cannot prove which user/org/project created them.
     .filter((key) => scope ? key.startsWith(prefix) : key.startsWith(SAVED_VIEW_PREFIX) || key.startsWith(LEGACY_SAVED_VIEW_PREFIX))
-    .sort();
+    .concat(scope ? legacyOrgSavedViewKeys(scope) : []);
+  return [...new Set(keys)].sort();
 }
 
 function localSavedViewOptions(scope = ""): SavedViewOption[] {
   const prefix = scopedSavedViewPrefix(scope);
   return savedViewStorageKeys(scope).map((key) => ({
-    label: scope ? key.replace(prefix, "") : key.replace(SAVED_VIEW_PREFIX, "").replace(LEGACY_SAVED_VIEW_PREFIX, ""),
+    label: localSavedViewName(key, scope),
     source: "local" as const,
     value: key,
   }));
@@ -296,9 +321,11 @@ function migrateLegacySavedViewsToScope(orgId: string, scope: string) {
   const targetPrefix = scopedSavedViewPrefix(scope);
   const legacyOrgPrefix = orgId ? legacyOrgSavedViewPrefix(orgId) : "";
   for (const key of Object.keys(localStorage)) {
+    if (key.startsWith(targetPrefix)) continue;
     let label = "";
     if (legacyOrgPrefix && key.startsWith(legacyOrgPrefix)) {
       label = key.slice(legacyOrgPrefix.length);
+      if (label.includes(":")) label = "";
     } else if (key.startsWith(LEGACY_SAVED_VIEW_PREFIX)) {
       label = key.slice(LEGACY_SAVED_VIEW_PREFIX.length);
     } else if (key.startsWith(SAVED_VIEW_PREFIX)) {
@@ -319,7 +346,12 @@ function localSavedViewKey(name: string, scope = "") {
 }
 
 function localSavedViewName(key: string, scope = "") {
-  if (scope) return key.replace(scopedSavedViewPrefix(scope), "");
+  if (scope) {
+    const prefix = scopedSavedViewPrefix(scope);
+    if (key.startsWith(prefix)) return key.slice(prefix.length);
+    const legacyOrgPrefix = legacyOrgSavedViewPrefix(legacyOrgScopeFromSavedViewScope(scope));
+    if (key.startsWith(legacyOrgPrefix)) return key.slice(legacyOrgPrefix.length);
+  }
   return key.replace(SAVED_VIEW_PREFIX, "").replace(LEGACY_SAVED_VIEW_PREFIX, "");
 }
 
@@ -508,6 +540,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [inviteRole, setInviteRole] = useState("member");
   const [apiKeyName, setApiKeyName] = useState("Dashboard SDK key");
   const [newApiKey, setNewApiKey] = useState("");
+  const [apiAdminMessage, setApiAdminMessage] = useState("");
+  const [apiAdminTone, setApiAdminTone] = useState<"status" | "error">("status");
   const [adminBusy, setAdminBusy] = useState(false);
 
   const hasSeriesRef = useRef(false);
@@ -652,7 +686,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const domain = useMemo(() => chartDomain(displaySeries, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
   const chartSummaries = useMemo(() => chartSummary(displaySeries), [displaySeries]);
   const metricCatalogSelectionIds = useMemo(
-    () => selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id),
+    () => (selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id)),
     [selectedRunIds, sortedRuns],
   );
   const metricCatalogRows = useMemo(() => buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds), [metricCatalogSelectionIds, metricOptions, sortedRuns]);
@@ -715,8 +749,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     [localSavedViewProjectScope, localSavedViewScope, project],
   );
   const activeMembershipRole = sessionPayload?.membership?.role ?? "";
-  const canManageOrg = roleCanManageOrg(activeMembershipRole);
   const canWriteRuns = roleCanWriteRuns(activeMembershipRole);
+  const sharedDemoSession = isSharedDemoSession(sessionPayload);
+  const canManageOrg = roleCanManageOrg(activeMembershipRole) && !sharedDemoSession;
+  const canWriteWorkspace = canWriteRuns && !sharedDemoSession;
+  const canEditReports = canWriteWorkspace;
   const activeMembershipSummary = useMemo(
     () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
       ?? orgMemberships.find((membership) => membership.is_current)
@@ -1032,21 +1069,31 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         ? { project, status, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
         : { project, status, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
-      const [overviewResult, summaryResult] = await Promise.allSettled([
-        retryTransientRequest(() => api.get(`/api/overview${queryString({ project, status, q: query, metric_key: metricKey })}`, requestOptions), retryOptions),
-        retryTransientRequest(() => api.get(`/api/runs/summary${queryString(params)}`, requestOptions), retryOptions),
-      ]);
-      if (requestId !== dashboardRequestRef.current) return;
-      if (summaryResult.status === "rejected") {
-        const nextSearchError = searchErrorFromApi(summaryResult.reason, query);
+      let summaryPayload: Summary;
+      try {
+        summaryPayload = await retryTransientRequest(
+          () => api.get(`/api/runs/summary${queryString(params)}`, requestOptions),
+          retryOptions,
+        ) as Summary;
+      } catch (error) {
+        const nextSearchError = searchErrorFromApi(error, query);
         if (nextSearchError) {
+          if (requestId !== dashboardRequestRef.current) return;
           setSearchError(nextSearchError);
           if (!silent) setMessage(previousMessage);
           return;
         }
-        throw summaryResult.reason;
+        throw error;
       }
-      const summaryPayload = summaryResult.value;
+      if (requestId !== dashboardRequestRef.current) return;
+      const overviewResult = await retryTransientRequest(
+        () => api.get(`/api/overview${queryString({ project, status, q: query, metric_key: metricKey })}`, requestOptions),
+        retryOptions,
+      ).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason) => ({ status: "rejected" as const, reason }),
+      );
+      if (requestId !== dashboardRequestRef.current) return;
       const nextSummary = summaryPayload as Summary;
       setSearchError(null);
       if (overviewResult.status === "fulfilled") {
@@ -1065,7 +1112,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
       if (silent) {
         // Keep the user's current status message stable during background polls.
-      } else if (overviewResult.status === "rejected" && !isWarehouseStartingError(overviewResult.reason)) {
+      } else if (overviewResult.status === "rejected" && !isAbortError(overviewResult.reason) && !isWarehouseStartingError(overviewResult.reason)) {
         setMessage("Runs loaded. Overview is still syncing.");
       } else {
         setMessage(runsPageMessage(nextSummary.total, pageOffset, nextSummary.runs.length));
@@ -1127,9 +1174,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [api]);
 
   const signOut = useCallback(async () => {
+    setDashboardAuthorized(false);
+    setSessionPayload(null);
     try {
-      await api.post("/api/auth/logout", {});
-      await clerk.signOut({ redirectUrl: "/signin" });
+      await api.post("/api/auth/logout", {}).catch(() => undefined);
+      await clerk.signOut({ redirectUrl: "/signin?signed_out=1" }).catch(() => undefined);
+      window.location.replace("/signin?signed_out=1");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to sign out.";
       setDashboardAuthMessage(detail);
@@ -1681,7 +1731,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "checkpoints";
+      const shouldLoad = activeTab === "detail" || activeTab === "checkpoints" || activeTab === "artifacts";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         setArtifactsRunId("");
@@ -1726,7 +1776,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadLoggedObjects() {
-      const shouldLoad = activeTab === "detail" && runWorkspaceTab === "files";
+      const shouldLoad = activeTab === "artifacts" || (activeTab === "detail" && runWorkspaceTab === "files");
       if (!shouldLoad || !primaryRun?.id) {
         setLoggedObjects([]);
         setObjectRowsById({});
@@ -1771,7 +1821,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadObjectRows() {
-      if (!(activeTab === "detail" && runWorkspaceTab === "files") || !tableObjectIds.length) {
+      const shouldLoad = activeTab === "artifacts" || (activeTab === "detail" && runWorkspaceTab === "files");
+      if (!shouldLoad || !tableObjectIds.length) {
         setObjectRowsById({});
         return;
       }
@@ -1929,6 +1980,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setUsagePayload(null);
       return;
     }
+    if (sharedDemoSession) {
+      setUsagePayload(null);
+      return;
+    }
     try {
       const usage = await retryTransientRequest(
         () => api.get("/api/usage", options),
@@ -1938,11 +1993,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } catch (error) {
       if (!isAbortError(error)) setUsagePayload(null);
     }
-  }, [activeOrgId, api, canManageOrg]);
+  }, [activeOrgId, api, canManageOrg, sharedDemoSession]);
 
   const loadOrgSettings = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     if (!activeOrgId) return;
     if (!canManageOrg) {
+      setSeats([]);
+      setInvitations([]);
+      setBillingPayload(null);
+      setUsagePayload(null);
+      return;
+    }
+    if (sharedDemoSession) {
       setSeats([]);
       setInvitations([]);
       setBillingPayload(null);
@@ -1960,8 +2022,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let loadError = "";
     if (usageResult.status === "fulfilled") {
       setUsagePayload(usageResult.value as UsagePayload);
-    } else if (shouldSurfaceError(usageResult.reason)) {
-      loadError = usageResult.reason instanceof Error ? usageResult.reason.message : "Unable to load usage.";
+    } else {
+      setUsagePayload(null);
+      if (shouldSurfaceError(usageResult.reason) && !isOptionalAdminPlaneUnavailable(usageResult.reason)) {
+        loadError = usageResult.reason instanceof Error ? usageResult.reason.message : "Unable to load usage.";
+      }
     }
     if (seatResult.status === "fulfilled") {
       const seatPayload = seatResult.value as { seats?: unknown };
@@ -1985,12 +2050,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setBillingPayload(billingResult.value as BillingPayload | null);
     } else {
       setBillingPayload(null);
-      if (shouldSurfaceError(billingResult.reason) && !loadError) {
+      if (shouldSurfaceError(billingResult.reason) && !isOptionalAdminPlaneUnavailable(billingResult.reason) && !loadError) {
         loadError = billingResult.reason instanceof Error ? billingResult.reason.message : "Unable to load billing.";
       }
     }
     if (loadError) setMessage(loadError);
-  }, [activeOrgId, api, canManageOrg]);
+  }, [activeOrgId, api, canManageOrg, sharedDemoSession]);
 
   useEffect(() => {
     if (!dashboardAuthorized || !activeOrgId) return;
@@ -2005,13 +2070,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setNewApiKey("");
       return;
     }
+    if (sharedDemoSession) {
+      setApiKeys([]);
+      setNewApiKey("");
+      return;
+    }
     try {
       const payload = await api.get(`/api/orgs/${activeOrgId}/api-keys`, options);
       setApiKeys(Array.isArray(payload.api_keys) ? payload.api_keys as ApiKeyRow[] : []);
+      setApiAdminMessage("");
     } catch (error) {
-      if (!isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load API keys.");
+      if (!isAbortError(error)) {
+        const detail = error instanceof Error ? error.message : "Unable to load API keys.";
+        setApiAdminTone("error");
+        setApiAdminMessage(detail);
+        setMessage(detail);
+      }
     }
-  }, [activeOrgId, api, canManageOrg]);
+  }, [activeOrgId, api, canManageOrg, sharedDemoSession]);
 
   useEffect(() => {
     if (!dashboardAuthorized || activeTab !== "settings" || !activeOrgId) return;
@@ -2118,8 +2194,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage("Invitation link was not a valid InstantML invite URL.");
       return;
     }
-    await navigator.clipboard.writeText(safeLink);
-    setMessage("Invitation link copied.");
+    try {
+      await navigator.clipboard.writeText(safeLink);
+      setMessage("Invitation link copied.");
+    } catch {
+      setMessage("Copy failed. Select and copy the invitation link manually.");
+    }
   }
 
   function openInvitationLink(invitationId: string) {
@@ -2205,6 +2285,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     setAdminBusy(true);
     setNewApiKey("");
+    setApiAdminTone("status");
+    setApiAdminMessage("Creating API key...");
     setMessage("Creating API key...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/api-keys`, {
@@ -2212,9 +2294,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       });
       if (typeof payload.api_key === "string") setNewApiKey(payload.api_key);
       await loadApiKeys();
+      setApiAdminTone("status");
+      setApiAdminMessage("API key created. Copy it now; the secret will not be shown again.");
       setMessage("API key created.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to create API key.");
+      const detail = error instanceof Error ? error.message : "Unable to create API key.";
+      setApiAdminTone("error");
+      setApiAdminMessage(detail);
+      setMessage(detail);
     } finally {
       setAdminBusy(false);
     }
@@ -2226,13 +2313,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       return;
     }
     setAdminBusy(true);
+    setApiAdminTone("status");
+    setApiAdminMessage("Revoking API key...");
     setMessage("Revoking API key...");
     try {
       await api.post(`/api/orgs/${activeOrgId}/api-keys/${keyId}/revoke`, {});
       await loadApiKeys();
+      setApiAdminTone("status");
+      setApiAdminMessage("API key revoked.");
       setMessage("API key revoked.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to revoke API key.");
+      const detail = error instanceof Error ? error.message : "Unable to revoke API key.";
+      setApiAdminTone("error");
+      setApiAdminMessage(detail);
+      setMessage(detail);
     } finally {
       setAdminBusy(false);
     }
@@ -2240,12 +2334,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function copyNewApiKey() {
     if (!newApiKey) return;
-    await navigator.clipboard?.writeText(newApiKey);
-    setMessage("API key copied.");
+    try {
+      await navigator.clipboard?.writeText(newApiKey);
+      setApiAdminTone("status");
+      setApiAdminMessage("API key copied.");
+      setMessage("API key copied.");
+    } catch {
+      setApiAdminTone("error");
+      setApiAdminMessage("Copy failed. Select the key above and copy it manually.");
+      setMessage("Copy failed. Select the key above and copy it manually.");
+    }
   }
 
   async function saveView() {
-    if (!canWriteRuns) {
+    if (!canWriteWorkspace) {
       setMessage("Read only workspaces can view runs and metrics but cannot save shared views.");
       return;
     }
@@ -2299,13 +2401,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       if (savedView) {
         upsertOption({ label: name, source: "control", value: controlSavedViewKey(savedView.id) });
         await loadSavedViews();
+        setMessage("Saved view.");
+        return;
       }
+      throw new Error("Shared saved view response was empty.");
     } catch (error) {
       const key = localSavedViewKey(name, localSavedViewProjectScope);
       localStorage.setItem(key, JSON.stringify(payload));
       upsertOption({ label: name, source: "local", value: key });
+      setMessage("Saved view locally. Shared save unavailable.");
+      return;
     }
-    setMessage("Saved view.");
   }
 
   async function applySavedView(key: string) {
@@ -2590,7 +2696,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   async function updateRunTagsAndNotes(runId: string, patch: { tags: string[]; notes: string }) {
-    if (!canWriteRuns) {
+    if (!canWriteWorkspace) {
       throw new Error("Read only workspaces can view run data but cannot edit run metadata.");
     }
     const tags = patch.tags.map((tag) => tag.trim()).filter(Boolean).slice(0, 16);
@@ -2852,7 +2958,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setPanelSearch("");
   }
 
+  function clearChartHover() {
+    pendingHoverRef.current = null;
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+      hoverFrameRef.current = null;
+    }
+    setHover(null);
+  }
+
   function closeTransientSurfaces() {
+    clearChartHover();
     setAddPanelSectionId("");
     setEditingPanelRef(null);
     setFullscreenPanelRef(null);
@@ -2861,6 +2977,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   function focusRouteStatus() {
     window.setTimeout(() => document.getElementById("status-message")?.focus({ preventScroll: true }), 0);
+  }
+
+  function closeMobileNav({ restoreFocus = true, afterFocus }: { restoreFocus?: boolean; afterFocus?: () => void } = {}) {
+    setMobileNavOpen(false);
+    if (!restoreFocus) {
+      afterFocus?.();
+      return;
+    }
+    window.setTimeout(() => {
+      document.querySelector<HTMLButtonElement>('[data-mobile-menu-button="true"]')?.focus({ preventScroll: true });
+      afterFocus?.();
+    }, 0);
   }
 
   function selectTab(tabId: TabId) {
@@ -2876,6 +3004,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (url !== window.location.pathname + window.location.search) {
       window.history.pushState(null, "", url);
     }
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     focusRouteStatus();
   }
 
@@ -2894,6 +3023,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function selectQuickSearchItem(item: QuickSearchItem) {
+    clearChartHover();
     item.onSelect();
     setQuickSearchOpen(false);
     setQuickSearchInput("");
@@ -2902,27 +3032,38 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   function dismissTopOverlay() {
     if (quickSearchOpen) {
+      clearChartHover();
       setQuickSearchOpen(false);
       return true;
     }
     if (shortcutHelpOpen) {
+      clearChartHover();
       setShortcutHelpOpen(false);
       return true;
     }
     if (fullscreenPanelRef) {
+      clearChartHover();
       setFullscreenPanelRef(null);
       return true;
     }
     if (editingPanelRef) {
+      clearChartHover();
       setEditingPanelRef(null);
       return true;
     }
     if (addPanelSectionId) {
+      clearChartHover();
       setAddPanelSectionId("");
       return true;
     }
     if (columnsOpen) {
+      clearChartHover();
       setColumnsOpen(false);
+      return true;
+    }
+    if (mobileNavOpen) {
+      clearChartHover();
+      closeMobileNav();
       return true;
     }
     return false;
@@ -2969,6 +3110,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   globalKeyHandlerRef.current = (event: globalThis.KeyboardEvent) => {
     if (event.key === "Escape" && dismissTopOverlay()) {
       event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape" && hover) {
+      event.preventDefault();
+      clearChartHover();
       return;
     }
     if (quickSearchOpen || shortcutHelpOpen) return;
@@ -3046,7 +3192,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onQuickSearch={() => setQuickSearchOpen(true)}
         onRefresh={loadDashboard}
         onSaveView={saveView}
-        canSaveView={canWriteRuns}
+        canSaveView={canWriteWorkspace}
         onCheckWorkspaceName={checkWorkspaceName}
         onCreateWorkspace={createWorkspace}
         onOpenBilling={() => selectTab("settings")}
@@ -3086,17 +3232,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <div
           className="mobile-nav-scrim"
           aria-hidden="true"
-          onClick={() => setMobileNavOpen(false)}
+          onClick={() => closeMobileNav()}
         />
       ) : null}
 
       <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
         <DashboardNav
           activeTab={activeTab}
+          compactNav={isMobile}
+          mobileOpen={mobileNavOpen}
           onAutoOpenChange={setNavAutoOpen}
+          onMobileClose={closeMobileNav}
           onPinnedChange={setNavPinned}
           onSelect={selectTab}
-          onShortcutHelp={() => { setMobileNavOpen(false); openShortcutHelp(); }}
+          onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
           pinned={navPinned}
         />
 
@@ -3275,8 +3424,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
-              onForkCheckpoint={canWriteRuns ? forkCheckpointRun : undefined}
-              onRunMetadataSave={canWriteRuns ? updateRunTagsAndNotes : undefined}
+              onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
+              onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primaryDomain={primaryDomain}
               primaryFullDomain={primaryFullDomain}
@@ -3330,7 +3479,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onResetCompareTableMetrics={resetCompareTableMetrics}
               onRunSortMetricKey={setCompareSortMetricKey}
               onRunSort={setCompareRunSort}
-              onUpdateRunTagsAndNotes={canWriteRuns ? updateRunTagsAndNotes : undefined}
+              onUpdateRunTagsAndNotes={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               referenceRun={referenceRun}
               removeCompareTableMetric={removeCompareTableMetric}
               selectedRunIds={selectedRunIds}
@@ -3389,7 +3538,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         </section>
 
         <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
-          {activeTab === "reports" ? <ReportsTabPane /> : null}
+          {activeTab === "reports" ? <ReportsTabPane canEditReports={canEditReports} /> : null}
         </section>
 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
@@ -3441,6 +3590,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               storageUsageLabel={storageUsageLabel}
               storageUsageDescription={storageUsageDescription}
               usageResetLabel={usageResetLabel}
+              usageAvailable={usageAvailable}
               xMode={xMode}
               billingStatus={billingPayload?.billing ?? null}
             />
@@ -3452,6 +3602,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             <ApiTabPane
               activeOrgId={activeOrgId}
               adminBusy={adminBusy}
+              adminMessage={apiAdminMessage}
+              adminMessageTone={apiAdminTone}
               apiKeyName={apiKeyName}
               apiKeys={apiKeys}
               apiRows={apiRows}
@@ -3476,17 +3628,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           activeIndex={quickSearchActiveIndex}
           items={filteredQuickSearchItems}
           onActiveIndex={setQuickSearchActiveIndex}
-          onClose={() => setQuickSearchOpen(false)}
+          onClose={() => { clearChartHover(); setQuickSearchOpen(false); }}
           onQuery={setQuickSearchInput}
           onSelect={selectQuickSearchItem}
           query={quickSearchInput}
+          returnFocusSelector="[data-quick-search-trigger='true']"
         />
       ) : null}
       {shortcutHelpOpen ? (
         <ShortcutHelpModal
           commands={shortcutCommands}
           modifierLabel={modifierLabel}
-          onClose={() => setShortcutHelpOpen(false)}
+          onClose={() => { clearChartHover(); setShortcutHelpOpen(false); }}
+          returnFocusSelector="[data-shortcut-help-trigger='true']"
         />
       ) : null}
     </main>
@@ -3513,6 +3667,12 @@ function planDisplayName(value?: string) {
   if (value === "premium" || value === "growth") return "Premium";
   if (value === "pro" || value === "lab" || value === "startup") return "Pro";
   return "Free";
+}
+
+function isSharedDemoSession(session: DashboardSessionPayload | null) {
+  return session?.user?.primary_email === SHARED_DEMO_EMAIL
+    || session?.organization?.name === SHARED_DEMO_ORG
+    || session?.organization?.slug === "instantml-demo";
 }
 
 function formatUsageResetLabel(value?: string) {

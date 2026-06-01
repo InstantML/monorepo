@@ -6,6 +6,7 @@ import { ChevronRight, Globe } from "lucide-react";
 
 import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
 import { DocsCodeBlock } from "../docs-code-block";
+import { DocsMobileInert } from "../docs-mobile-inert";
 import { DocsSearch } from "../docs-search";
 import { InstantMlMark } from "../../instantml-mark";
 import {
@@ -67,6 +68,7 @@ export default async function DocsPage({ params }: DocsParams) {
 
   return (
     <main className="docs-route">
+      <DocsMobileInert />
       <header className="docs-route-topbar">
         <div className="docs-route-topbar-row docs-route-topbar-row-primary">
           <Link className="docs-route-brand" href="/docs" aria-label="InstantML Docs home">
@@ -96,6 +98,7 @@ export default async function DocsPage({ params }: DocsParams) {
                   className={isActive ? "docs-route-tab is-active" : "docs-route-tab"}
                   href={href}
                   key={tab.tab}
+                  aria-current={isActive ? "page" : undefined}
                 >
                   {tab.tab}
                 </Link>

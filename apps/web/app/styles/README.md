@@ -19,7 +19,7 @@ Split from the original `globals.css` (11,348 lines) as part of the
 | `compare.css` | Compare view, leaderboard | `.compare-*`, `.leaderboard-*` |
 | `dark-overrides.css` | Dark-theme overrides (Phase 3 target) | `:root[data-theme="dark"] *` |
 | `overhaul.css` | Visual overhaul layers 2026-05-15 (Phase 3 target), including account/workspace menu and create-workspace modal rules until those are folded into dashboard styles | Duplicated rules from all feature areas, `.account-workspace-*`, `.workspace-create-*` |
-| `mobile.css` | Mobile redesign ≤720px | `@media (max-width: 720px)` |
+| `mobile.css` | Compact dashboard redesign ≤900px | `@media (max-width: 900px)` |
 | `landing-system.css` | Landing visual system + animations | `.landing-root`, `.bento-*`, `@keyframes` |
 | `docs.css` | First-party documentation route | `.docs-route-*` |
 

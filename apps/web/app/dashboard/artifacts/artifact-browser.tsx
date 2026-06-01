@@ -1,6 +1,7 @@
 "use client";
 
 import { Activity, Box, Copy, Download, FileText } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { artifactHasStoredBytes, formatBytes, safeArtifactMediaKind, safeArtifactUri } from "../../dashboard-models";
 import type { Artifact } from "../../dashboard-types";
@@ -13,9 +14,16 @@ function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
 }
 
-function copyText(value: string) {
-  if (!value) return;
-  void navigator.clipboard?.writeText(value);
+async function copyText(value: string) {
+  if (!value) return false;
+  if (!navigator.clipboard?.writeText) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    // Visible IDs/snippets remain selectable when clipboard permission is denied.
+    return false;
+  }
 }
 
 function ArtifactIcon({ type }: { type: string }) {
@@ -38,6 +46,17 @@ function ArtifactBrowserPreview({ artifact }: { artifact: Artifact }) {
 }
 
 export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {
+  const [copiedArtifactId, setCopiedArtifactId] = useState("");
+  useEffect(() => {
+    if (!copiedArtifactId) return undefined;
+    const timer = window.setTimeout(() => setCopiedArtifactId(""), 1600);
+    return () => window.clearTimeout(timer);
+  }, [copiedArtifactId]);
+
+  async function handleCopyArtifactId(id: string) {
+    if (await copyText(id)) setCopiedArtifactId(id);
+  }
+
   if (!artifacts.length) return <div className="empty">No artifacts logged for the selected run.</div>;
   return (
     <div className="artifact-browser">
@@ -54,11 +73,24 @@ export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {
           {artifactCanUseDownloadRoute(artifact) ? (
             <a className="copy-button artifact-download" href={artifactDownloadUrl(artifact)}><Download size={13} /> Download</a>
           ) : (
-            <button className="copy-button artifact-download unavailable" disabled title="Download unavailable for metadata-only artifacts" type="button">
-              <Download size={13} /> Unavailable
-            </button>
+            <span
+              aria-label="Metadata-only artifact; no stored file bytes are available to download."
+              className="copy-button artifact-download unavailable"
+              role="status"
+              title="Metadata-only artifact; no stored file bytes are available to download."
+            >
+              <Download size={13} /> Metadata only
+            </span>
           )}
-          <button className="copy-button" type="button" onClick={() => copyText(artifact.id)}><Copy size={13} /> Copy ID</button>
+          <button
+            aria-live="polite"
+            className="copy-button"
+            title={copiedArtifactId === artifact.id ? "Copied artifact ID" : "Copy artifact ID"}
+            type="button"
+            onClick={() => void handleCopyArtifactId(artifact.id)}
+          >
+            <Copy size={13} /> {copiedArtifactId === artifact.id ? "Copied" : "Copy ID"}
+          </button>
         </article>
       ))}
     </div>

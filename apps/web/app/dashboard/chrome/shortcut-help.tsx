@@ -16,12 +16,14 @@ export function ShortcutHelpModal({
   commands,
   modifierLabel,
   onClose,
+  returnFocusSelector,
 }: {
   commands: ShortcutCommand[];
   modifierLabel: string;
   onClose: () => void;
+  returnFocusSelector?: string;
 }) {
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "button[aria-label='Close keyboard shortcuts']");
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "button[aria-label='Close keyboard shortcuts']", returnFocusSelector);
   const grouped = commands.reduce<Record<string, ShortcutCommand[]>>((acc, command) => {
     acc[command.group] = [...(acc[command.group] ?? []), command];
     return acc;

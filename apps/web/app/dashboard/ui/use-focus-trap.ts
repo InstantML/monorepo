@@ -12,6 +12,7 @@ export function useFocusTrap<T extends HTMLElement>(
   active: boolean,
   onClose: () => void,
   initialSelector?: string,
+  returnFocusSelector?: string,
 ) {
   const rootRef = useRef<T>(null);
   const closeRef = useRef(onClose);
@@ -68,9 +69,14 @@ export function useFocusTrap<T extends HTMLElement>(
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", handleKeyDown, true);
-      previousFocusRef.current?.focus({ preventScroll: true });
+      const previous = previousFocusRef.current;
+      const fallback = returnFocusSelector ? document.querySelector<HTMLElement>(returnFocusSelector) : null;
+      const returnTarget = previous && previous !== document.body && document.contains(previous)
+        ? previous
+        : fallback;
+      returnTarget?.focus({ preventScroll: true });
     };
-  }, [active, initialSelector]);
+  }, [active, initialSelector, returnFocusSelector]);
 
   return rootRef;
 }
