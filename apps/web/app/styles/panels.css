@@ -394,7 +394,7 @@
 .panel-drawer {
   position: sticky;
   top: var(--topbar-height);
-  z-index: 8;
+  z-index: calc(var(--z-pop, 100) - 1);
   display: grid;
   align-content: start;
   gap: 14px;
@@ -407,9 +407,10 @@
 
 .panel-drawer-backdrop {
   position: fixed;
-  inset: var(--topbar-height) 0 0;
-  z-index: 7;
-  background: rgba(15, 23, 42, 0.08);
+  inset: 0;
+  z-index: calc(var(--z-pop, 100) - 2);
+  background: rgba(9, 14, 20, 0.22);
+  backdrop-filter: blur(1px);
 }
 
 .edit-drawer {
@@ -561,7 +562,7 @@
 .workspace-modal {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--z-pop, 100);
   display: grid;
   place-items: center;
   background: rgba(9, 14, 20, 0.48);

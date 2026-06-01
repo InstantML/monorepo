@@ -2,7 +2,7 @@
 
 import { BookOpen, CircleHelp, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import Link from "next/link";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { MouseEvent } from "react";
 
 import { tabToPath } from "../../../src/routes.js";
@@ -33,6 +33,13 @@ export function DashboardNav({
   const navRef = useRef<HTMLElement>(null);
   const hiddenCompactNav = compactNav && !mobileOpen;
   const compactTabIndex = hiddenCompactNav ? -1 : undefined;
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    window.setTimeout(() => {
+      navRef.current?.querySelector<HTMLElement>(".tab-button.active")?.scrollIntoView({ block: "center" });
+    }, 0);
+  }, [activeTab, mobileOpen]);
 
   function handlePinnedChange(nextPinned: boolean) {
     function resetNavScroll() {

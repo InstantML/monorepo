@@ -31,6 +31,7 @@ let browser = null;
 let expectedBadRequestResourceErrors = 0;
 let expectedPaymentRequiredResourceErrors = 0;
 let expectedServiceUnavailableResourceErrors = 0;
+let expectedServiceUnavailableApiErrors = 0;
 let nextOutput = "";
 
 try {
@@ -80,8 +81,12 @@ try {
   const unexpectedPaymentRequiredResourceUrls = [];
   const unexpectedBadRequestResourceUrls = [];
   const unexpectedRateLimitResourceUrls = [];
+  const consoleErrorReads = [];
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() === "error") {
+      const read = consoleErrorText(message).then((text) => errors.push(text));
+      consoleErrorReads.push(read);
+    }
   });
   page.on("pageerror", (error) => errors.push(error.message));
   const summaryUrls = [];
@@ -1323,6 +1328,7 @@ try {
   await browser.close();
   browser = null;
   let expectedNodeObject404s = backendMode === "node" ? objectNotFoundUrls.length : 0;
+  await Promise.all(consoleErrorReads);
   const unexpectedErrors = errors.filter((error) => {
     if (expectedNodeObject404s > 0 && error === "Failed to load resource: the server responded with a status of 404 (Not Found)") {
       expectedNodeObject404s -= 1;
@@ -1342,6 +1348,10 @@ try {
     }
     if (expectedServiceUnavailableResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)") {
       expectedServiceUnavailableResourceErrors -= 1;
+      return false;
+    }
+    if (expectedServiceUnavailableApiErrors > 0 && isExpectedServiceUnavailableApiError(error)) {
+      expectedServiceUnavailableApiErrors -= 1;
       return false;
     }
     if (expectedRateLimitResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 429 (Too Many Requests)") {
@@ -1390,13 +1400,20 @@ async function selectVisibleRunForMetrics(page) {
   await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 1);
   const railMaster = page.locator(".workspace-rail-select-all input");
   await railMaster.waitFor({ state: "attached", timeout: 10000 });
-  const masterState = await railMaster.getAttribute("aria-checked");
-  await railMaster.click();
-  if (masterState !== "true") {
-    await page.waitForFunction(() => document.querySelector(".workspace-rail-select-all input")?.getAttribute("aria-checked") === "true");
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const selectedCount = await page.locator(".workspace-run-row.selected").count();
+    if (selectedCount === 0) break;
     await railMaster.click();
+    await page.waitForTimeout(150);
   }
-  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row.selected").length === 0);
+  for (let attempt = 0; attempt < 250; attempt += 1) {
+    const selectedCount = await page.locator(".workspace-run-row.selected").count();
+    if (selectedCount === 0) break;
+    await page.locator(".workspace-run-row.selected .workspace-run-select").first().click();
+    await page.waitForTimeout(25);
+  }
+  const remainingSelected = await page.locator(".workspace-run-row.selected").count();
+  assert.equal(remainingSelected, 0, "expected visible run selection to clear before choosing a metrics run");
   const runButtons = page.locator(".workspace-run-row .workspace-run-select");
   const runCount = await runButtons.count();
   assert.ok(runCount > 0, "expected at least one visible run to select for metrics");
@@ -1612,7 +1629,7 @@ async function assertPaidCheckoutFlow(page, returnOrgId, smokeId) {
     switch_on_create: true,
   });
   if (!paidResult.ok && paidResult.status === 503 && paidResult.payload?.code === "billing_unavailable") {
-    expectedServiceUnavailableResourceErrors += 1;
+    expectedServiceUnavailableApiErrors += 1;
     return;
   }
   assert.equal(paidResult.ok, true, `POST /api/orgs/current-user: ${JSON.stringify(paidResult.payload)} (${paidResult.status})`);
@@ -1650,6 +1667,34 @@ async function assertPaidCheckoutFlow(page, returnOrgId, smokeId) {
   });
   const restoredSession = await pageApiGet(page, "/api/auth/session");
   assert.equal(restoredSession.organization.id, returnOrgId);
+}
+
+async function consoleErrorText(message) {
+  const text = message.text();
+  if (!text.startsWith("instantml_api_request")) return text;
+  const args = message.args();
+  const eventArg = args[1];
+  if (!eventArg) return text;
+  try {
+    const event = await eventArg.jsonValue();
+    return `instantml_api_request ${JSON.stringify(event)}`;
+  } catch {
+    return text;
+  }
+}
+
+function isExpectedServiceUnavailableApiError(error) {
+  if (!error.startsWith("instantml_api_request ")) return false;
+  try {
+    const event = JSON.parse(error.slice("instantml_api_request ".length));
+    return event?.outcome === "failure"
+      && event?.method === "POST"
+      && event?.path === "/api/orgs/current-user"
+      && event?.status === 503
+      && event?.code === "billing_unavailable";
+  } catch {
+    return false;
+  }
 }
 
 async function openAccountWorkspaceMenu(page) {

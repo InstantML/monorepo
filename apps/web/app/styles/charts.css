@@ -684,7 +684,7 @@ small {
 }
 
 .chart-area-exportable {
-  padding-top: 42px;
+  padding-top: 52px;
 }
 
 .chart-export-actions {
@@ -695,6 +695,17 @@ small {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+@media (max-width: 900px) {
+  .chart-area-exportable {
+    padding-top: 62px;
+  }
+
+  .chart-export-actions {
+    top: 10px;
+    right: 12px;
+  }
 }
 
 .chart-export-button {
@@ -1197,7 +1208,7 @@ small {
 
 .compare-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) repeat(7, minmax(118px, 0.72fr)) minmax(92px, 0.42fr);
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
   gap: 10px;
   min-width: 0;
   border-bottom: 1px solid var(--line-soft);
@@ -1211,6 +1222,10 @@ small {
 .compare-toolbar .select-trigger,
 .compare-toolbar .control input {
   width: 100%;
+}
+
+.compare-toolbar .compare-search-control {
+  grid-column: span 2;
 }
 
 .compare-toolbar .checkbox-control {

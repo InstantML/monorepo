@@ -17,9 +17,9 @@
   display: none;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  margin-left: 4px;
+  width: 44px;
+  height: 44px;
+  margin-left: 2px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
@@ -58,15 +58,15 @@
   .mobile-menu-button { display: inline-flex; }
 
   .brandbar {
-    grid-template-columns: 40px 40px 1fr;
+    grid-template-columns: 44px 44px 1fr;
     height: 56px;
     flex: 0 0 56px;
-    padding: 0 12px 0 4px;
+    padding: 0 10px 0 2px;
     align-items: center;
   }
   .brandbar .brand-cell {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-right: 0;
   }
   .brandbar .brand-mark { width: 30px; height: 30px; }
@@ -135,8 +135,8 @@
 
   .topbar .icon-button.framed,
   .topbar .icon-button.framed.mobile-filters-toggle {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   /* Workbar collapses by default; the SlidersHorizontal toggle reveals it. */
@@ -189,9 +189,14 @@
     flex-wrap: wrap;
   }
   .topbar--workbar.mobile-filters-open .workbar-search {
-    flex: 1 1 calc(100% - 34px);
+    flex: 1 1 calc(100% - 44px);
     width: auto;
     height: 40px;
+    min-height: 40px;
+  }
+  .topbar--workbar.mobile-filters-open .workbar-search-help {
+    flex: 0 0 44px;
+    width: 44px;
     min-height: 40px;
   }
   .topbar--workbar.mobile-filters-open .workbar-search-error {
@@ -209,8 +214,10 @@
   .topbar--workbar.mobile-filters-open .workbar .icon-button.framed,
   .topbar--workbar.mobile-filters-open .workbar .primary-button {
     display: inline-flex;
-    width: 100%;
     min-height: 40px;
+  }
+  .topbar--workbar.mobile-filters-open .workbar .primary-button {
+    width: 100%;
   }
   .topbar--workbar.mobile-filters-open .workbar #save-view {
     display: inline-flex;
@@ -221,6 +228,10 @@
   }
   .topbar--workbar.mobile-filters-open .workbar > .icon-button {
     display: inline-flex;
+    justify-self: end;
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
   }
   .topbar--workbar.mobile-filters-open .icon-button.framed.mobile-filters-toggle {
     color: var(--accent);
@@ -379,13 +390,20 @@
     width: 100%;
     min-height: 40px;
   }
+  .runs-commandbar .export-selected-runs-help {
+    display: block;
+    grid-column: 1 / -1;
+  }
   .column-popover {
     position: fixed;
-    inset: 12px;
+    top: max(64px, env(safe-area-inset-top));
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
     width: auto;
     max-height: 70vh;
     overflow-y: auto;
-    z-index: 60;
+    z-index: calc(var(--z-pop, 100) - 1);
   }
 
   /* ── Run workspace stacks vertically; rail becomes a horizontal bar ──── */
@@ -410,6 +428,18 @@
     max-height: 320px;
     overflow-y: auto;
   }
+  .workspace-run-row {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .workspace-run-select {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .workspace-rail-select-all input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
   .workspace-run-footer {
     flex-wrap: wrap;
     gap: 6px;
@@ -430,7 +460,7 @@
   .panel-drawer,
   .runs-workspace.drawer-open .panel-drawer {
     position: relative;
-    z-index: 8;
+    z-index: calc(var(--z-pop, 100) - 1);
     width: auto;
     height: auto;
     border: 0;
@@ -440,7 +470,7 @@
   }
   .panel-drawer-backdrop {
     inset: 0;
-    background: rgba(15, 23, 42, 0.06);
+    background: rgba(9, 14, 20, 0.22);
   }
   .workspace-canvas,
   .workspace-sections,
@@ -525,6 +555,26 @@
     max-width: 100%;
   }
   .quick-search-input { font-size: 16px; }
+  .chart-export-button,
+  .chart-area-exportable .chart-export-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+  .chart-legend {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .legend-chip {
+    max-width: 100%;
+    min-height: 32px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .copy-button {
+    min-height: 44px;
+  }
 
   /* ── Generic touch target boost ──────────────────────────────────────── */
   .topbar .control select,
@@ -663,6 +713,76 @@
   .compact-row { min-width: 440px; }
   .panel-body { padding: 10px; }
   .panel-head { padding: 8px 10px; }
+}
+
+@media (min-width: 901px) and (max-width: 1080px) {
+  .shell,
+  .shell.nav-pinned,
+  .shell.nav-auto-open {
+    --sidebar-width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tabs,
+  .shell.nav-pinned .tabs,
+  .shell:not(.nav-pinned).nav-auto-open .tabs {
+    position: static;
+    display: flex;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 10px 8px;
+    box-shadow: none;
+  }
+
+  .nav-drawer-head,
+  .nav-footer,
+  .nav-mobile-actions {
+    display: none;
+  }
+
+  .tab-scroll,
+  .tab-group {
+    display: flex;
+    gap: 6px;
+  }
+
+  .tab-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-right: 12px;
+    scrollbar-width: thin;
+  }
+
+  .tab-group {
+    flex: 0 0 auto;
+    border-right: 1px solid var(--line-soft);
+    border-bottom: 0;
+    padding: 0 8px 0 0;
+  }
+
+  .tab-button,
+  .shell:not(.nav-pinned) .tab-button,
+  .shell:not(.nav-pinned).nav-auto-open .tab-button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 40px;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .tab-label,
+  .shell:not(.nav-pinned) .tab-label,
+  .shell:not(.nav-pinned).nav-auto-open .tab-label {
+    max-width: 140px;
+    opacity: 1;
+  }
 }
 
 /* Prevent body scroll while the nav drawer is open on mobile */
@@ -939,11 +1059,10 @@
 
   /* L7: column-popover account for iOS safe-area-inset on notched devices. */
   .column-popover {
-    inset:
-      max(12px, env(safe-area-inset-top))
-      12px
-      max(12px, env(safe-area-inset-bottom))
-      12px;
+    top: max(64px, env(safe-area-inset-top));
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
   }
 
   /* L9: run-workspace-topline / tabs tighten and scroll horizontally on phones. */

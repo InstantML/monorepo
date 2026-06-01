@@ -119,8 +119,8 @@ export function ImportsTabPane({ api, project }: Props) {
           <h1>Imports & Integrations</h1>
           <p>Move existing experiment history into InstantML without handing third-party tokens to the server.</p>
         </div>
-        <button className="icon-button" type="button" onClick={() => void loadJobs(true)} aria-label="Refresh import jobs">
-          <RefreshCw size={16} />
+        <button className="secondary compact-button imports-refresh-button" type="button" onClick={() => void loadJobs(true)} aria-label="Refresh import jobs">
+          <RefreshCw size={16} /> Refresh
         </button>
       </header>
 

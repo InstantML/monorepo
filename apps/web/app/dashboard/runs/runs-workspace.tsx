@@ -24,6 +24,28 @@ function compactRailRunName(name: string) {
   return `${name.slice(0, 18)}...${name.slice(-10)}`;
 }
 
+function compactRailConfigValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const absolute = Math.abs(value);
+    if (absolute > 0 && absolute < 0.01) return value.toExponential(0).replace("e-0", "e-").replace("e+", "e");
+    if (absolute >= 1000) return Math.round(value).toLocaleString("en-US");
+    return String(value);
+  }
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function compactRailConfigSummary(run: RunSummary) {
+  const config = run.config ?? {};
+  const keys = ["learning_rate", "lr", "batch_size", "seed", "optimizer", "model"];
+  const parts = keys
+    .filter((key) => config[key] !== undefined && config[key] !== null && config[key] !== "")
+    .slice(0, 2)
+    .map((key) => `${key.replace("learning_rate", "lr")} ${compactRailConfigValue(config[key])}`);
+  return parts.length ? parts.join(" · ") : "no config";
+}
+
 function visibleTagsForSearch(tags: string[], search: string, limit: number) {
   const normalizedTags = Array.isArray(tags) ? tags.filter(Boolean) : [];
   const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -158,6 +180,7 @@ export function RunsWorkspace({
     showAddPanelDrawer,
     () => onSetAddPanelSection(""),
     ".drawer-metric-row:not([disabled]), .quick-add-card:not([disabled]), button[aria-label='Close add panels']",
+    "[data-add-panel-trigger='true']",
   );
   const [draggedPanel, setDraggedPanel] = useState<DraggedWorkspacePanel | null>(null);
   const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
@@ -329,6 +352,8 @@ export function RunsWorkspace({
             const visibleTags = visibleTagsForSearch(run.tags, runSearch, 3);
             const hiddenTags = run.tags.filter((tag) => !visibleTags.includes(tag));
             const uploadHealth = uploadHealthForRun(run);
+            const configSummary = runConfigSummary(run);
+            const compactConfigSummary = compactRailConfigSummary(run);
             return (
               <div
                 className={`workspace-run-row ${selected ? "selected" : ""}`}
@@ -354,7 +379,7 @@ export function RunsWorkspace({
                   <i className={`legend-dot dot-${index % 5}`} aria-hidden="true" />
                   <span className="workspace-run-body">
                     <strong>{compactRailRunName(run.name)}</strong>
-                    <small>{run.project} · {runConfigSummary(run)}</small>
+                    <small title={`${run.project} · ${configSummary}`}>{run.project} · {compactConfigSummary}</small>
                     {uploadHealth.state !== "unknown" ? (
                       <span className={`upload-health-chip ${uploadHealth.tone}`}>{uploadHealth.label}</span>
                     ) : null}
@@ -420,7 +445,7 @@ export function RunsWorkspace({
             value={view.mode}
           />
           <button className="secondary compact-button" type="button" onClick={onResetWorkspace}><RefreshCw size={15} /> Reset layout</button>
-          {!showAddPanelDrawer ? <button className="primary-button" type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
+          {!showAddPanelDrawer ? <button className="primary-button" data-add-panel-trigger="true" type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
         </div>
 
         <div className="workspace-sections">

@@ -314,11 +314,11 @@ describe("Landing nav links to /pricing", () => {
     assert.match(landingSrc, /href=["']\/pricing["'][\s\S]*?landing-nav__link--mobile/);
     assert.match(pricingSrc, /href=["']\/docs["'][\s\S]*?landing-nav__link--mobile/);
     assert.match(pricingSrc, /href=["']\/pricing["'][\s\S]*?landing-nav__link--mobile/);
-    assert.match(css, /\.landing-nav__link--mobile\s*\{\s*display:\s*block;/);
+    assert.match(css, /\.landing-nav__link--mobile\s*\{\s*display:\s*inline-flex;/);
     assert.match(css, /\.landing-nav__links > \*\s*\{\s*flex-shrink:\s*0;/);
-    assert.match(css, /\.landing-theme-toggle\s*\{[\s\S]*?flex:\s*0 0 36px;/);
+    assert.match(css, /\.landing-theme-toggle\s*\{[\s\S]*?flex:\s*0 0 44px;/);
     assert.match(css, /\.landing-cta-primary\s*\{[\s\S]*?white-space:\s*nowrap;/);
-    assert.match(css, /@media \(max-width:\s*420px\)\s*\{[\s\S]*?\.landing-cta-primary--sm\s*\{[\s\S]*?display:\s*none;/);
+    assert.match(css, /@media \(max-width:\s*480px\)\s*\{[\s\S]*?\.landing-cta-primary--sm\s*\{[\s\S]*?display:\s*none;/);
   });
 
   test("landing pricing copy avoids flat-pricing overclaim", () => {

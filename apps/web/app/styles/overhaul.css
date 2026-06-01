@@ -1243,11 +1243,6 @@ textarea:focus {
   width: 30px;
   height: 30px;
 }
-.brandbar-user-avatar .cl-userButtonAvatarBox,
-.brandbar-user-avatar .cl-userButtonTrigger {
-  width: 30px;
-  height: 30px;
-}
 
 /* Workbar — 44px control row */
 .workbar {

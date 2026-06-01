@@ -2958,7 +2958,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setPanelSearch("");
   }
 
+  function clearChartHover() {
+    pendingHoverRef.current = null;
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+      hoverFrameRef.current = null;
+    }
+    setHover(null);
+  }
+
   function closeTransientSurfaces() {
+    clearChartHover();
     setAddPanelSectionId("");
     setEditingPanelRef(null);
     setFullscreenPanelRef(null);
@@ -2982,6 +2992,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (url !== window.location.pathname + window.location.search) {
       window.history.pushState(null, "", url);
     }
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     focusRouteStatus();
   }
 
@@ -3000,6 +3011,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function selectQuickSearchItem(item: QuickSearchItem) {
+    clearChartHover();
     item.onSelect();
     setQuickSearchOpen(false);
     setQuickSearchInput("");
@@ -3008,30 +3020,37 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   function dismissTopOverlay() {
     if (quickSearchOpen) {
+      clearChartHover();
       setQuickSearchOpen(false);
       return true;
     }
     if (shortcutHelpOpen) {
+      clearChartHover();
       setShortcutHelpOpen(false);
       return true;
     }
     if (fullscreenPanelRef) {
+      clearChartHover();
       setFullscreenPanelRef(null);
       return true;
     }
     if (editingPanelRef) {
+      clearChartHover();
       setEditingPanelRef(null);
       return true;
     }
     if (addPanelSectionId) {
+      clearChartHover();
       setAddPanelSectionId("");
       return true;
     }
     if (columnsOpen) {
+      clearChartHover();
       setColumnsOpen(false);
       return true;
     }
     if (mobileNavOpen) {
+      clearChartHover();
       setMobileNavOpen(false);
       return true;
     }
@@ -3079,6 +3098,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   globalKeyHandlerRef.current = (event: globalThis.KeyboardEvent) => {
     if (event.key === "Escape" && dismissTopOverlay()) {
       event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape" && hover) {
+      event.preventDefault();
+      clearChartHover();
       return;
     }
     if (quickSearchOpen || shortcutHelpOpen) return;
@@ -3592,17 +3616,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           activeIndex={quickSearchActiveIndex}
           items={filteredQuickSearchItems}
           onActiveIndex={setQuickSearchActiveIndex}
-          onClose={() => setQuickSearchOpen(false)}
+          onClose={() => { clearChartHover(); setQuickSearchOpen(false); }}
           onQuery={setQuickSearchInput}
           onSelect={selectQuickSearchItem}
           query={quickSearchInput}
+          returnFocusSelector="[data-quick-search-trigger='true']"
         />
       ) : null}
       {shortcutHelpOpen ? (
         <ShortcutHelpModal
           commands={shortcutCommands}
           modifierLabel={modifierLabel}
-          onClose={() => setShortcutHelpOpen(false)}
+          onClose={() => { clearChartHover(); setShortcutHelpOpen(false); }}
+          returnFocusSelector="[data-shortcut-help-trigger='true']"
         />
       ) : null}
     </main>

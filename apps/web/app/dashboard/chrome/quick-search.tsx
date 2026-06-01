@@ -20,6 +20,7 @@ export function QuickSearchModal({
   onQuery,
   onSelect,
   query,
+  returnFocusSelector,
 }: {
   activeIndex: number;
   items: QuickSearchItem[];
@@ -28,8 +29,9 @@ export function QuickSearchModal({
   onQuery: (value: string) => void;
   onSelect: (item: QuickSearchItem) => void;
   query: string;
+  returnFocusSelector?: string;
 }) {
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "#quick-search-input");
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "#quick-search-input", returnFocusSelector);
   function handleKey(event: KeyboardEvent<HTMLInputElement>) {
     const maxIndex = Math.max(0, items.length - 1);
     if (event.key === "ArrowDown") {

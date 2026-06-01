@@ -685,6 +685,7 @@ export function DashboardTopbar({
   const showWorkbar = activeTab !== "detail";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
+  const workbarInert = compactFilters && !mobileFiltersOpen;
   const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
     ? ` Column ${searchError.position}.`
     : "";
@@ -780,7 +781,7 @@ export function DashboardTopbar({
               onSelectTab={onSelectTab}
               usageAvailable={usageAvailable}
             />
-            <button className="ghost-kbd" type="button" onClick={onQuickSearch} aria-label="Quick search">
+            <button className="ghost-kbd" data-quick-search-trigger="true" type="button" onClick={onQuickSearch} aria-label="Quick search">
               <Search size={13} /> <span className="ghost-kbd-label">Search</span> <span className="kbd">⌘K</span>
             </button>
             {showWorkbar ? (
@@ -801,6 +802,7 @@ export function DashboardTopbar({
             <button
               aria-label="Keyboard shortcuts"
               className="icon-button framed brandbar-action-desktop"
+              data-shortcut-help-trigger="true"
               onClick={onShortcutHelp}
               title="Keyboard shortcuts"
               type="button"
@@ -825,7 +827,7 @@ export function DashboardTopbar({
       </div>
 
       {showWorkbar ? (
-        <div className="workbar" role="toolbar" aria-label="Run filters">
+        <div className="workbar" role="toolbar" aria-label="Run filters" aria-hidden={workbarInert ? true : undefined} inert={workbarInert ? true : undefined}>
           <CustomSelect id="project-filter" label="Project" value={project} onChange={onProject} options={[{ value: "", label: "All projects" }, ...projects.map((item) => ({ value: item, label: item }))]} />
           <CustomSelect
             id="status-filter"
