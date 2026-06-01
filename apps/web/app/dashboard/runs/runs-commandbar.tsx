@@ -133,9 +133,10 @@ export function RunsCommandbar({
       </div>
       <button
         aria-label={selectedRunCount ? `Export ${selectedRunCount} selected runs as CSV` : "Export selected runs as CSV"}
+        aria-disabled={selectedRunExportDisabled || undefined}
         aria-describedby={exportHelpId}
         className="secondary compact-button export-selected-runs-button"
-        disabled={exportSelectedBusy || selectedRunExportDisabled}
+        disabled={exportSelectedBusy}
         onClick={onExportSelectedRuns}
         title={selectedRunExportTitle}
         type="button"

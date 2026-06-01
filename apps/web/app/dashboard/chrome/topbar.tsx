@@ -679,6 +679,7 @@ export function DashboardTopbar({
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
   const [compactFilters, setCompactFilters] = useState(false);
   const [searchHelpOpen, setSearchHelpOpen] = useState(false);
+  const topbarRef = useRef<HTMLElement>(null);
   const searchHelpRef = useRef<HTMLDivElement>(null);
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
@@ -693,20 +694,33 @@ export function DashboardTopbar({
   useEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia("(max-width: 900px)");
+    let frame = 0;
+    function fallbackHeight() {
+      if (media.matches) {
+        return "56px";
+      }
+      return showWorkbar && !desktopFiltersCollapsed ? "92px" : "48px";
+    }
+    function syncHeight() {
+      const height = topbarRef.current?.getBoundingClientRect().height;
+      root.style.setProperty("--topbar-height", height && Number.isFinite(height) ? `${Math.ceil(height)}px` : fallbackHeight());
+    }
+    function queueSyncHeight() {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(syncHeight);
+    }
     function applyHeight() {
       setCompactFilters(media.matches);
-      if (media.matches) {
-        // On mobile the workbar collapses behind the filters toggle. Keep the
-        // sticky offset at the brandbar height; when filters open they push
-        // content down naturally without needing a calc-able offset.
-        root.style.setProperty("--topbar-height", "56px");
-      } else {
-        root.style.setProperty("--topbar-height", showWorkbar && !desktopFiltersCollapsed ? "92px" : "48px");
-      }
+      root.style.setProperty("--topbar-height", fallbackHeight());
+      queueSyncHeight();
     }
+    const observer = new ResizeObserver(queueSyncHeight);
+    if (topbarRef.current) observer.observe(topbarRef.current);
     applyHeight();
     media.addEventListener("change", applyHeight);
     return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
       media.removeEventListener("change", applyHeight);
       root.style.removeProperty("--topbar-height");
     };
@@ -729,11 +743,12 @@ export function DashboardTopbar({
   }, [searchHelpOpen]);
 
   return (
-    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`}>
+    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`} ref={topbarRef}>
       <div className="brandbar">
         <button
           type="button"
           className="mobile-menu-button"
+          data-mobile-menu-button="true"
           aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
           aria-expanded={mobileNavOpen}
           onClick={onMobileMenuToggle}

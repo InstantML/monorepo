@@ -55,9 +55,9 @@ export function DashboardNav({
 
   function handleTabSelect(event: MouseEvent<HTMLAnchorElement>, tabId: TabId) {
     event.preventDefault();
+    onMobileClose?.();
     onSelect(tabId);
     onAutoOpenChange(false);
-    onMobileClose?.();
     if (event.detail > 0) event.currentTarget.blur();
   }
 

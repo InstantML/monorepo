@@ -146,6 +146,8 @@
   }
   .topbar--workbar.mobile-filters-open {
     --topbar-height: 56px;
+    height: auto;
+    min-height: 56px;
   }
   .topbar--workbar.mobile-filters-open .workbar {
     display: grid;
@@ -349,7 +351,8 @@
 
   /* ── Stats / commandbar / filter island ──────────────────────────────── */
   .runs-workspace-filter {
-    position: static;
+    position: sticky;
+    top: var(--topbar-height);
     padding: 8px;
     border-radius: var(--radius);
     gap: 8px;
@@ -856,13 +859,13 @@
     font-size: 16px !important;
   }
 
-  /* C4: select-menu (.select-menu) is left-anchored with no viewport-edge
-   * clamp, so menus opened near the right edge overflow off-screen.
-   * Pin to right edge on mobile and cap width to viewport. */
+  /* C4: select-menu is absolutely positioned by the custom select component.
+   * Use its viewport-clamped variables on mobile/tablet so menus opened from
+   * compact workbar controls cannot overflow either screen edge. */
   .select-menu {
-    left: auto !important;
-    right: 0 !important;
-    width: min(calc(100vw - 24px), 280px) !important;
+    left: var(--select-menu-left, 0) !important;
+    right: auto !important;
+    width: var(--select-menu-width, min(calc(100vw - 24px), 280px)) !important;
     max-width: calc(100vw - 24px);
   }
 

@@ -2979,6 +2979,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     window.setTimeout(() => document.getElementById("status-message")?.focus({ preventScroll: true }), 0);
   }
 
+  function closeMobileNav({ restoreFocus = true, afterFocus }: { restoreFocus?: boolean; afterFocus?: () => void } = {}) {
+    setMobileNavOpen(false);
+    if (!restoreFocus) {
+      afterFocus?.();
+      return;
+    }
+    window.setTimeout(() => {
+      document.querySelector<HTMLButtonElement>('[data-mobile-menu-button="true"]')?.focus({ preventScroll: true });
+      afterFocus?.();
+    }, 0);
+  }
+
   function selectTab(tabId: TabId) {
     const label = tabs.find((tab) => tab.id === tabId)?.label ?? tabId;
     closeTransientSurfaces();
@@ -3051,7 +3063,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     if (mobileNavOpen) {
       clearChartHover();
-      setMobileNavOpen(false);
+      closeMobileNav();
       return true;
     }
     return false;
@@ -3220,7 +3232,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <div
           className="mobile-nav-scrim"
           aria-hidden="true"
-          onClick={() => setMobileNavOpen(false)}
+          onClick={() => closeMobileNav()}
         />
       ) : null}
 
@@ -3230,10 +3242,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           compactNav={isMobile}
           mobileOpen={mobileNavOpen}
           onAutoOpenChange={setNavAutoOpen}
-          onMobileClose={() => setMobileNavOpen(false)}
+          onMobileClose={closeMobileNav}
           onPinnedChange={setNavPinned}
           onSelect={selectTab}
-          onShortcutHelp={() => { setMobileNavOpen(false); openShortcutHelp(); }}
+          onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
           pinned={navPinned}
         />
 
