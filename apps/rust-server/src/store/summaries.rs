@@ -171,9 +171,9 @@ pub(super) async fn metric_point_values_for_runs(
     metric_store: &MetricStore,
     org_id: Uuid,
     run_ids: &[Uuid],
-) -> AppResult<Vec<Value>> {
+) -> AppResult<(Vec<Value>, bool)> {
     if run_ids.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), false));
     }
     let rows = metric_store
         .client()
@@ -186,53 +186,74 @@ pub(super) async fn metric_point_values_for_runs(
         )
         .bind(org_id)
         .bind(run_ids)
-        .bind(MAX_EXPORT_METRICS)
+        .bind(MAX_EXPORT_METRICS + 1)
         .fetch_all::<ExportMetricPointRow>()
         .await
         .map_err(|err| AppError::internal(format!("clickhouse export metrics failed: {err}")))?;
-    Ok(rows
-        .into_iter()
-        .map(|row| {
-            json!({
-                "org_id": row.org_id,
-                "run_id": row.run_id,
-                "key": row.key,
-                "step": row.step,
-                "value": row.value,
-                "logged_at": row.logged_at,
-                "created_at": row.created_at
+    let truncated = rows.len() as i64 > MAX_EXPORT_METRICS;
+    Ok((
+        rows.into_iter()
+            .take(MAX_EXPORT_METRICS as usize)
+            .map(|row| {
+                json!({
+                    "org_id": row.org_id,
+                    "run_id": row.run_id,
+                    "key": row.key,
+                    "step": row.step,
+                    "value": row.value,
+                    "logged_at": row.logged_at,
+                    "created_at": row.created_at
+                })
             })
-        })
-        .collect())
+            .collect(),
+        truncated,
+    ))
 }
 
-pub(super) async fn metric_series_values_for_runs(
+pub(super) async fn metric_series_values_for_runs_limited(
     metric_store: &MetricStore,
     org_id: Uuid,
     run_ids: &[Uuid],
-) -> AppResult<Vec<Value>> {
-    metric_series_for_runs(metric_store, org_id, run_ids)
-        .await
-        .map(|rows| {
-            rows.into_iter()
-                .map(|row| {
-                    json!({
-                        "org_id": org_id,
-                        "run_id": row.run_id,
-                        "key": row.key,
-                        "count": row.count,
-                        "min": row.min,
-                        "max": row.max,
-                        "mean": row.mean,
-                        "variance": row.variance,
-                        "latest": row.latest,
-                        "latest_step": row.latest_step,
-                        "best": row.best,
-                        "best_step": row.best_step
-                    })
+    limit: Option<usize>,
+) -> AppResult<(Vec<Value>, bool)> {
+    let fetch_limit = limit.map(|value| value.saturating_add(1) as i64);
+    let rows =
+        metric_series_for_runs_limited_or_all(metric_store, org_id, run_ids, fetch_limit).await?;
+    let truncated = limit.map(|value| rows.len() > value).unwrap_or(false);
+    let selected = rows.into_iter().take(limit.unwrap_or(usize::MAX));
+    Ok((
+        selected
+            .map(|row| {
+                json!({
+                    "org_id": org_id,
+                    "run_id": row.run_id,
+                    "key": row.key,
+                    "count": row.count,
+                    "min": row.min,
+                    "max": row.max,
+                    "mean": row.mean,
+                    "variance": row.variance,
+                    "latest": row.latest,
+                    "latest_step": row.latest_step,
+                    "best": row.best,
+                    "best_step": row.best_step
                 })
-                .collect()
-        })
+            })
+            .collect(),
+        truncated,
+    ))
+}
+
+async fn metric_series_for_runs_limited_or_all(
+    metric_store: &MetricStore,
+    org_id: Uuid,
+    run_ids: &[Uuid],
+    limit: Option<i64>,
+) -> AppResult<Vec<MetricSeriesRow>> {
+    let rows = metric_store
+        .query_series_for_runs(org_id, run_ids, limit)
+        .await?;
+    Ok(rows.into_iter().map(series_row_from_aggregate).collect())
 }
 
 pub(super) fn series_row_from_aggregate(aggregate: SeriesReadRow) -> MetricSeriesRow {

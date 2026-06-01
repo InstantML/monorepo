@@ -4,7 +4,7 @@
 
 .runs-commandbar {
   display: grid;
-  grid-template-columns: minmax(250px, 320px) minmax(120px, 150px) minmax(170px, 210px) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) auto auto auto;
   gap: 8px;
   align-items: end;
   min-height: 34px;
@@ -42,6 +42,15 @@
 
 .columns-menu {
   position: relative;
+}
+
+.export-selected-runs-button {
+  white-space: nowrap;
+}
+
+.export-selected-runs-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .column-popover {

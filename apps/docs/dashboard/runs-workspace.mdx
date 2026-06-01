@@ -40,6 +40,17 @@ The run rail supports:
 Large selection pages use a lightweight selection projection so the UI does not
 fetch full metric aggregates for every selected run.
 
+## Export selected runs
+
+Use **Export CSV** in the Runs command bar to download the selected runs and
+their bounded project, metric, attribute, artifact, rich-object row, and import
+metadata. The dashboard calls `GET /api/export?format=csv&run_ids=...`, so the
+download follows the same org, project, role, and API-key rules as the API.
+
+Synchronous selected-run export is capped at 100 run IDs. If nothing is
+selected, or the selection is above the cap, the command bar announces the
+reason instead of silently exporting a partial subset.
+
 ## Panels
 
 Automatic mode creates a capped high-signal set of line panels from logged

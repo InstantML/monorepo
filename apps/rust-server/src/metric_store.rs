@@ -748,7 +748,7 @@ impl MetricStore {
              FROM metric_series \
              WHERE org_id = ? AND run_id IN ? \
              GROUP BY run_id, key \
-             ORDER BY key \
+             ORDER BY run_id, key \
              {limit_clause}"
         );
         let mut query = self.client.query(&sql).bind(org_id).bind(run_ids);

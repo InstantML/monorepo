@@ -18,6 +18,11 @@ This directory contains the primary Rust backend for InstantML. The current stor
   exact tags/status/ID prefixes, quoted phrases, uppercase booleans,
   field/group exclusion such as `-tag:debug`, parentheses, and bounded explicit
   `re:/.../` regex.
+- Serve bounded user-owned exports through `GET /api/export`. JSON remains the
+  default portable export shape; `format=csv` returns a normalized single CSV
+  for selected runs or filtered runs, `run_ids`/`runs` selects exact visible
+  runs, synchronous selected export is capped at 100 run IDs, and CSV responses
+  use attachment/no-store/nosniff/sandbox headers.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
 
@@ -370,7 +375,7 @@ envelope, auth rule, limit, table, record kind, or payload field changes. The
 live service's `GET /openapi.json` returns a compact role-aware route index and
 includes `x-instantml-service-plane` for operator verification.
 
-In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, raw and versioned artifact write/upload routes require `artifacts:write`, artifact alias/retention/delete routes require `artifacts:manage` or an owner/admin browser session, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
+In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, run/metric/artifact reads and `/api/export` require `export:read`, raw and versioned artifact write/upload routes require `artifacts:write`, artifact alias/retention/delete routes require `artifacts:manage` or an owner/admin browser session, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
 
 Run fork creation requires source read plus run creation rights: `export:read`
 and `sdk:ingest`, or an equivalent mutating browser session. Forks are

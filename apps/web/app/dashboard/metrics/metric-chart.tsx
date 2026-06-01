@@ -1,10 +1,11 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { FileText, ImageDown, RefreshCw } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, svgPointFromClient } from "../../../src/charts.js";
+import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
 import { chartHeight, chartPadding, chartWidth, metricTitle } from "../../dashboard-models";
@@ -202,6 +203,7 @@ function MiniRange({
 export function MetricChart({
   domain,
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
+  exportFilenameBase,
   fullDomain,
   height = chartHeight,
   hover,
@@ -220,6 +222,7 @@ export function MetricChart({
 }: {
   domain: any;
   emptyMessage?: string;
+  exportFilenameBase?: string;
   fullDomain?: any;
   height?: number;
   hover: HoverPoint;
@@ -297,6 +300,14 @@ export function MetricChart({
     context.globalAlpha = 1;
   }, [denseChart, height, normalizedSeries, width]);
 
+  const exportBlockedReason = useMemo(
+    () => (exportFilenameBase ? chartExportBlockedReason(normalizedSeries) : ""),
+    [exportFilenameBase, normalizedSeries],
+  );
+  const exportFileBase = safeExportFilename(exportFilenameBase ?? metricKey, "metric-chart");
+  const chartInstanceId = useId();
+  const exportHelpId = `${chartInstanceId}-chart-export-help`;
+
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     return <div className="chart-area"><div className="empty">{emptyMessage}</div></div>;
   }
@@ -322,8 +333,45 @@ export function MetricChart({
   const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
   const legendSeries = normalizedSeries.slice(0, legendLimit);
 
+  function downloadChartCsv() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.csv`, chartSeriesToCsv({ metricKey, series: normalizedSeries, xMode }), "text/csv;charset=utf-8");
+  }
+
+  function downloadChartSvg() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height, padding, xMode }), "image/svg+xml;charset=utf-8");
+  }
+
   return (
-    <div className="chart-area">
+    <div className={`chart-area${exportFilenameBase ? " chart-area-exportable" : ""}`}>
+      {exportFilenameBase ? (
+        <div className="chart-export-actions" aria-label="Chart export actions">
+          <button
+            aria-label={`Download ${metricKey} plotted data CSV`}
+            aria-describedby={exportBlockedReason ? exportHelpId : undefined}
+            aria-disabled={Boolean(exportBlockedReason) || undefined}
+            className="icon-button chart-export-button"
+            onClick={downloadChartCsv}
+            title={exportBlockedReason || "Download plotted chart data as CSV"}
+            type="button"
+          >
+            <FileText size={14} />
+          </button>
+          <button
+            aria-label={`Download ${metricKey} chart image`}
+            aria-describedby={exportBlockedReason ? exportHelpId : undefined}
+            aria-disabled={Boolean(exportBlockedReason) || undefined}
+            className="icon-button chart-export-button"
+            onClick={downloadChartSvg}
+            title={exportBlockedReason || "Download chart image as SVG"}
+            type="button"
+          >
+            <ImageDown size={14} />
+          </button>
+          {exportBlockedReason ? <span className="chart-export-helper" id={exportHelpId}>{exportBlockedReason}</span> : null}
+        </div>
+      ) : null}
       <div className="chart-legend">
         {legendSeries.map((item, index) => (
           <span className="legend-chip" key={item.id} title={item.identifier ?? item.name}><i className={`legend-dot dot-${index % 5}`} style={{ backgroundColor: chartColor(index) }} /> {item.identifier ?? item.name}</span>

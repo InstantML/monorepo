@@ -27,6 +27,20 @@ exclusion with `-`, quoted phrases, and explicit Rust regex such as
 non-regex subset and returns `run_search_regex_unsupported` for completed regex
 queries.
 
+Selected-run export accepts `run_ids` (or the legacy alias `runs`) as a
+comma-separated UUID list capped at 100 runs:
+
+```http
+GET /api/export?format=csv&run_ids=0af...,7db...
+Authorization: Bearer instantml_...
+```
+
+`format=json` is the default. `format=csv` returns a flat, spreadsheet-safe
+record stream with `Content-Disposition`, `Cache-Control: private, no-store`,
+`X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox`, and
+`X-InstantML-Export-Truncated` headers. JSON exports use the same download and
+cache-control headers.
+
 Response shape:
 
 ```json
@@ -47,8 +61,11 @@ Response shape:
 }
 ```
 
-Export is bounded. If `truncated` is true, narrow the filters before treating
-the file as a complete archive.
+Export is bounded to 500 filter-selected runs, 100 selected run IDs, 100,000
+metric points, 25,000 metric-series summaries, 25,000 attributes, 10,000
+artifacts, 25,000 table rows, 500 import records, and 25 MiB CSV responses.
+If `truncated` is true, or the `X-InstantML-Export-Truncated` header is `true`,
+narrow the filters before treating the file as a complete archive.
 
 ## Usage summary
 

@@ -155,6 +155,7 @@ export function MetricsTabPane({
           </div>
           <MetricChart
             domain={domain}
+            exportFilenameBase={`instantml-${metricKey}`}
             fullDomain={fullDomain}
             hover={hover}
             metricKey={metricKey}
@@ -177,6 +178,7 @@ export function MetricsTabPane({
                   </div>
                   <MetricChart
                     domain={panel.domain}
+                    exportFilenameBase={`instantml-${panel.metric}`}
                     fullDomain={panel.fullDomain}
                     hover={hover}
                     metricKey={panel.metric}

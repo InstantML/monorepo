@@ -2298,6 +2298,33 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "run_ids",
+            "in": "query",
+            "description": "Comma-separated exact run UUIDs for selected-run export. Capped for GET URL safety.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runs",
+            "in": "query",
+            "description": "Alias for run_ids. Ignored when run_ids is present.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Export format: json (default) or csv",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2307,6 +2334,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              },
+              "text/csv; charset=utf-8": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -2333,6 +2365,16 @@
           },
           "403": {
             "description": "Missing export scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Selected run is missing or not visible to the caller",
             "content": {
               "application/json": {
                 "schema": {

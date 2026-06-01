@@ -686,6 +686,21 @@ test("api client handles query strings and malformed responses", async (t) => {
   assert.equal(calls[2].url, "/base/api/dashboard/preferences");
   assert.equal(calls[2].options.method, "PUT");
   assert.equal(calls[2].options.headers.get("Content-Type"), "application/json");
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ "x-request-id": "srv_download", "content-disposition": "attachment; filename=\"runs.csv\"" }),
+      blob: async () => new Blob(["record_type\n"]),
+    };
+  };
+  const download = await new ApiClient("/base").download("/api/export?format=csv");
+  assert.equal(calls[3].url, "/base/api/export?format=csv");
+  assert.equal(calls[3].options.method, "GET");
+  assert.match(calls[3].options.headers.get("x-request-id"), /^web-/);
+  assert.equal(download.headers.get("content-disposition"), "attachment; filename=\"runs.csv\"");
+  assert.equal(await download.blob.text(), "record_type\n");
   assert.equal(loggedApiEvents.some((event) => event.level === "info"), false);
   globalThis.fetch = async () => ({ ok: true, text: async () => "[]" });
   await assert.rejects(() => new ApiClient().get("/bad"), /malformed/);

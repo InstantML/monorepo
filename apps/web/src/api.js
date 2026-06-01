@@ -43,6 +43,72 @@ export class ApiClient {
     });
   }
 
+  async download(path, options = {}) {
+    const method = String(options.method ?? "GET").toUpperCase();
+    const { headers, requestId } = headersWithRequestId(options.headers);
+    const url = this.baseUrl + path;
+    const safePath = safeApiPathForLogs(path);
+    const startedAt = nowMs();
+    let response = null;
+    let payload = null;
+    let finalRequestId = requestId;
+    try {
+      response = await fetch(url, { ...options, method, headers });
+      finalRequestId = responseRequestId(response, payload, requestId);
+      if (!response.ok) {
+        payload = await readPayload(response);
+        finalRequestId = responseRequestId(response, payload, requestId);
+        const error = new ApiError(clientSafeError(response.status, payload), {
+          code: typeof payload?.code === "string" ? payload.code : "",
+          field: typeof payload?.field === "string" ? payload.field : "",
+          position: Number.isInteger(payload?.position) ? payload.position : null,
+          requestId: finalRequestId,
+          status: response.status,
+        });
+        logApiRequest("failure", {
+          requestId: finalRequestId,
+          method,
+          path: safePath,
+          status: response.status,
+          durationMs: elapsedMs(startedAt),
+          code: error.code,
+          retryable: isTransientApiError(error),
+        });
+        throw error;
+      }
+      const blob = await response.blob();
+      finalRequestId = responseRequestId(response, payload, requestId);
+      logApiRequest("success", {
+        requestId: finalRequestId,
+        method,
+        path: safePath,
+        status: response.status,
+        durationMs: elapsedMs(startedAt),
+        code: "ok",
+        retryable: false,
+      });
+      return { blob, headers: response.headers, requestId: finalRequestId, status: response.status };
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      if (error instanceof ApiError) throw error;
+      const networkError = new ApiError("Network request failed. Check your connection and try again.", {
+        code: "network_error",
+        requestId: finalRequestId,
+        status: 0,
+      });
+      logApiRequest("failure", {
+        requestId: finalRequestId,
+        method,
+        path: safePath,
+        status: 0,
+        durationMs: elapsedMs(startedAt),
+        code: "network_error",
+        retryable: true,
+      });
+      throw networkError;
+    }
+  }
+
   async request(path, options = {}) {
     const method = String(options.method ?? "GET").toUpperCase();
     const { headers, requestId } = headersWithRequestId(options.headers);

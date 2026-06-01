@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLocalArtifactStore } from "./artifact-store.js";
-import { ConflictError, ForbiddenError, PlanLimitError, SearchValidationError, UnauthorizedError, defaultDbPath, NotFoundError, openStore, ValidationError } from "./db.js";
+import { ConflictError, ForbiddenError, PlanLimitError, SearchValidationError, UnauthorizedError, defaultDbPath, exportPayloadToCsv, NotFoundError, openStore, ValidationError } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_WEB_ROOT = path.resolve(__dirname, "..", "..", "web");
@@ -148,7 +148,22 @@ export async function route(req, store, webRoot = DEFAULT_WEB_ROOT, artifactStor
   if (method === "GET" && pathname === "/api/overview") return json({ overview: store.overview(withOrg(query, auth)) });
   if (method === "GET" && pathname === "/api/runs/summary") return json(store.runsSummary(withOrg(query, auth)));
   if (method === "GET" && pathname === "/api/runs/side-by-side") return json(store.sideBySide(withOrg(query, auth)));
-  if (method === "GET" && pathname === "/api/export") return json(store.exportData(withOrg(query, auth)));
+  if (method === "GET" && pathname === "/api/export") {
+    requireScope(auth, "export:read", options);
+    const input = withOrg(query, auth);
+    const format = input.format || "json";
+    if (format === "csv") {
+      const payload = store.exportData(input);
+      return csv(exportPayloadToCsv(payload), 200, exportDownloadHeaders("instantml-export.csv", {
+        "X-InstantML-Export-Truncated": payload.truncated ? "true" : "false",
+      }));
+    }
+    if (format !== "json") throw new ValidationError("format must be json or csv");
+    const payload = store.exportData(input);
+    return json(payload, 200, exportDownloadHeaders("instantml-export.json", {
+      "X-InstantML-Export-Truncated": payload.truncated ? "true" : "false",
+    }));
+  }
   if (method === "GET" && pathname === "/api/imports") return json({ imports: store.listImports(withOrg(query, auth)) });
   if (method === "POST" && pathname === "/api/imports/neptune") {
     requireScope(auth, "imports:write", options);
@@ -229,8 +244,23 @@ function readBody(req, expectedLength) {
   });
 }
 
-function json(body, status = 200) {
-  return { type: "json", status, body };
+function json(body, status = 200, headers = {}) {
+  return { type: "json", status, body, headers };
+}
+
+function csv(body, status = 200, headers = {}) {
+  return { type: "csv", status, body, headers };
+}
+
+function exportDownloadHeaders(filename, headers = {}) {
+  return {
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, no-store",
+    "Pragma": "no-cache",
+    "Content-Security-Policy": "sandbox",
+    ...headers,
+  };
 }
 
 function staticFile(webRoot, pathname) {
@@ -366,6 +396,21 @@ function requiresTenantAuth(method, pathname) {
 }
 
 function writeJsonOrStatic(res, response) {
+  if (response.type === "csv") {
+    const body = Buffer.from(response.body);
+    res.writeHead(response.status, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": "attachment; filename=\"instantml-export.csv\"",
+      "Content-Length": body.length,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+      "Pragma": "no-cache",
+      "Content-Security-Policy": "sandbox",
+      ...response.headers,
+    });
+    res.end(body);
+    return;
+  }
   if (response.type === "static") {
     res.writeHead(response.status, {
       "Content-Type": response.contentType,
@@ -378,6 +423,7 @@ function writeJsonOrStatic(res, response) {
   res.writeHead(response.status, {
     "Content-Type": "application/json",
     "Content-Length": body.length,
+    ...response.headers,
   });
   res.end(body);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, RefreshCw, Search } from "lucide-react";
+import { Columns3, Download, RefreshCw, Search } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef } from "react";
 
@@ -19,9 +19,11 @@ const tableColumnLabels: Array<[keyof TableColumns, string]> = [
 
 export function RunsCommandbar({
   columnsOpen,
+  exportSelectedBusy,
   metricKey,
   metricOptions,
   onColumnsOpen,
+  onExportSelectedRuns,
   onMetricKey,
   onPinnedMetricFilter,
   onPinnedMetric,
@@ -31,12 +33,17 @@ export function RunsCommandbar({
   pinnedMetricFilterValid,
   pinnedMetricOptions,
   pinnedMetrics,
+  selectedRunCount,
+  selectedRunExportDisabled,
+  selectedRunExportTitle,
   tableColumns,
 }: {
   columnsOpen: boolean;
+  exportSelectedBusy: boolean;
   metricKey: string;
   metricOptions: string[];
   onColumnsOpen: Dispatch<SetStateAction<boolean>>;
+  onExportSelectedRuns: () => void;
   onMetricKey: (value: string) => void;
   onPinnedMetricFilter: (value: string) => void;
   onPinnedMetric: (metric: string) => void;
@@ -46,10 +53,14 @@ export function RunsCommandbar({
   pinnedMetricFilterValid: boolean;
   pinnedMetricOptions: string[];
   pinnedMetrics: string[];
+  selectedRunCount: number;
+  selectedRunExportDisabled: boolean;
+  selectedRunExportTitle: string;
   tableColumns: TableColumns;
 }) {
   const columnsMenuRef = useRef<HTMLDivElement>(null);
   const columnsTriggerRef = useRef<HTMLButtonElement>(null);
+  const exportHelpId = "selected-runs-export-help";
 
   useEffect(() => {
     if (!columnsOpen) return;
@@ -120,6 +131,18 @@ export function RunsCommandbar({
           </div>
         ) : null}
       </div>
+      <button
+        aria-label={selectedRunCount ? `Export ${selectedRunCount} selected runs as CSV` : "Export selected runs as CSV"}
+        aria-describedby={exportHelpId}
+        className="secondary compact-button export-selected-runs-button"
+        disabled={exportSelectedBusy}
+        onClick={onExportSelectedRuns}
+        title={selectedRunExportTitle}
+        type="button"
+      >
+        <Download size={15} /> {exportSelectedBusy ? "Exporting" : "Export CSV"}
+      </button>
+      <span className="visually-hidden" id={exportHelpId}>{selectedRunExportTitle}</span>
       <button className="icon-button framed" type="button" aria-label="Refresh runs" onClick={onRefresh}><RefreshCw size={16} /></button>
     </div>
   );
