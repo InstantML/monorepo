@@ -9,8 +9,12 @@ InstantML treats export and usage visibility as first-class product surfaces.
 
 ## Export
 
-Use `GET /api/export` to retrieve a bounded JSON export for the current org and
-project context.
+Use `GET /api/export` to retrieve a bounded JSON or CSV export for the current
+org and project context. Filtered exports use the same run filters and search
+language as `GET /runs`; selected-run exports pass `run_ids` (or `runs`) with up
+to 100 run UUIDs. Add `format=csv` for a flat spreadsheet-safe record stream.
+In the dashboard, the Runs command bar uses this route for selected-run CSV
+downloads.
 
 Typical export contents include:
 
@@ -23,6 +27,19 @@ Typical export contents include:
 - Limit/truncation metadata.
 
 Use export for backups, migrations, debugging, and vendor evaluation.
+Synchronous export caps are 500 filtered runs, 100 selected run IDs, 100,000
+metric points, 25,000 metric-series summaries, 25,000 attributes, 10,000
+artifacts, 25,000 table rows, 500 import records, and 25 MiB CSV responses.
+Treat `truncated: true` or `X-InstantML-Export-Truncated: true` as a signal to
+narrow filters before using the export as a complete archive.
+
+## Chart exports
+
+Metrics and Runs workspace line charts include opt-in export buttons for the
+visible graph. Chart CSV export is the plotted sample, not a full raw-history
+archive; chart image export renders the visible graph in the browser. These
+controls are capped at 120 series and 20,000 plotted points. Use selected-run
+CSV export or filtered API export when you need raw run data.
 
 ## Usage summary
 

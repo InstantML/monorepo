@@ -25,6 +25,8 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 - Run detail view.
 - Run comparison view.
 - Metric charts with catalog, selected-run leaderboard, hover details, summaries, grouping, smoothing, and pinned panels.
+- Selected-run data export from the Runs command bar plus opt-in plotted-data
+  CSV and chart-image downloads on Metrics and Runs workspace line charts.
 - Artifact collections/detail/lineage workspace plus the legacy raw artifact browser.
 - Rollout gallery.
 - Checkpoint timeline.
@@ -57,6 +59,12 @@ Current navigation, workspace, and comparison controls:
 - Compare row mode uses readable metric-table headers with namespace/objective sublabels; non-zero artifact counts jump to the selected-run Artifacts tab instead of acting as inert numbers.
 - Keyboard workflow MVP: `Cmd/Ctrl+K` quick search, `?` shortcut help, `Esc` top-overlay dismissal, `Cmd/Ctrl+Z` undo, `Cmd+Shift+Z` / `Ctrl+Y` redo, `Cmd/Ctrl+.` Runs selector collapse, `Cmd/Ctrl+J` Runs/canvas focus handoff, and Left/Right Arrow fullscreen panel traversal.
 - Runs rail bulk-selection: the rail header has a tri-state master checkbox that selects or clears every run on the current page, shift-clicking a run extends the selection from the last interacted run, and a banner offers "Select all N matching filter" (capped at `MAX_SELECTED_RUNS = 2000`) when more runs match the filter than fit on the visible page, including after filters clear the current selection to zero. Bulk selection pages through the Rust `projection=selection` response so it does not fetch full ClickHouse metric aggregates for every selected run, and both summary/search loads and bulk-selection pages retry short transient proxy/backend failures before showing a global API issue. The dashboard auto-selects the first `DEFAULT_SELECTED_RUNS = 100` most recent runs once on initial load; explicit empty selections and large cross-page selections are preserved across search/filter refreshes. Workspace and Metrics line panels load selected-run series through bounded adaptive `POST /api/metrics/series` chunks with adaptive per-series point limits, retry transient proxy/backend failures, and patch the chart as chunks return, so the rail can drive 2,000-run selections without N per-run requests.
+- Selected-run CSV export downloads raw selected-run data through
+  `/api/export?format=csv&run_ids=...`; the action announces why export is
+  unavailable when nothing is selected or the 100-run synchronous export cap is
+  exceeded. Chart export buttons download the already plotted/zoomed sample,
+  not unsampled full history, and are disabled above 120 series or 20,000
+  plotted points.
 - Run search uses one server-backed `q` language across `/runs`, summaries, overview, selection projection, and export: bare text preserves legacy implicit-AND matching, while `tag:baseline`, `status:finished`, `name:"long context"`, `-tag:debug`, `(tag:baseline OR tag:candidate)`, and `re:/seed-(13|14)/` add precise filters. The topbar search help icon documents the syntax in place; invalid search syntax shows an inline error while preserving the last valid run page, and "Select all matching" stays disabled until the committed query is valid.
 - Production polish from Computer Use QA: modal/drawer focus traps, safer quick-search routing while typing, server-backed run search, visible panel action affordances, compact run rows, responsive Run Detail KPI wrapping, horizontally contained Compare matrices, and polished fullscreen panel charts with non-duplicated headers.
 - The topbar sliders button now has an honest state on both desktop and mobile: it collapses/expands the run-filter workbar on desktop and opens the mobile filter drawer on phones.

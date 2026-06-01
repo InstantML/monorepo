@@ -30,9 +30,25 @@ Current chart controls include:
   as `algo` and `policy`.
 - Range brush zoom.
 - Hover readouts with run name, metric, step, and value.
+- Chart CSV export for the plotted sample.
+- Chart image export for the visible graph.
 
 Unit-bounded metrics such as accuracy, F1, precision, recall, and AUC use a
 normalized `0..1` y-axis. Return, reward, and loss metrics auto-scale.
+
+## Export chart evidence
+
+Use the chart export buttons when you need to move evidence into a notebook,
+issue, report, or lab note. CSV export contains the already plotted data,
+including the visible sample, grouping labels, series type, source run count for
+aggregates, step/time, value, and smoothed value when smoothing is active. Image
+export renders the visible chart client-side without requesting additional
+history.
+
+Chart export is intentionally bounded to avoid browser jank. It is disabled
+when a chart has more than 120 series or more than 20,000 plotted points. Use
+the API export route when you need raw selected-run data rather than the plotted
+chart sample.
 
 ## Bounded series requests
 

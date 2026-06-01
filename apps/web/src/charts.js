@@ -232,7 +232,7 @@ export function averageGroupedSeries(series) {
         }
         return point;
       });
-    return { id: group, name: `${group} avg`, group, points };
+    return { id: group, name: `${group} avg`, group, points, seriesType: "aggregate", sourceRunCount: items.length };
   });
 }
 

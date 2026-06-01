@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { ConflictError, ForbiddenError, PlanLimitError, SearchValidationError, UnauthorizedError, createStore, defaultDbPath, emptyState, loadState, openStore, ValidationError } from "../src/db.js";
+import { ConflictError, ForbiddenError, PlanLimitError, SearchValidationError, UnauthorizedError, createStore, defaultDbPath, emptyState, exportPayloadToCsv, loadState, openStore, ValidationError } from "../src/db.js";
 
 test("file-backed store persists and tolerates partial state files", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-store-"));
@@ -92,6 +92,63 @@ test("orgs, users, API keys, idempotency, summaries, and export work", () => {
   assert.equal(exported.organizations[0].id, org.id);
   assert.equal(exported.metric_series[0].key, "reward");
   assert.equal(exported.metrics.length, 1);
+  const localArtifact = store.createArtifact(run.id, {
+    type: "file",
+    name: "local.csv",
+    uri: "file://local.csv",
+    storage_path: "private-local-path",
+    size_bytes: 3,
+  });
+  const hiddenImportedRun = store.createRun({ org_id: org.id, project: "research", name: "seed-2" });
+  store.state.imports.push({
+    id: 999,
+    org_id: org.id,
+    source_type: "wandb_json",
+    project: "research",
+    run_ids: [run.id, hiddenImportedRun.id],
+    summary: { runs: 2 },
+    created_at: "2026-05-31T00:00:00.000Z",
+  });
+  store.state.imports.push({
+    id: 1000,
+    org_id: "other-org",
+    source_type: "wandb_json",
+    project: "research",
+    run_ids: [run.id],
+    summary: { runs: 1 },
+    created_at: "2026-05-31T00:00:00.000Z",
+  });
+  const selectedExport = store.exportData({ org_id: org.id, run_ids: `${run.id},${run.id}` });
+  assert.equal(selectedExport.runs.length, 1);
+  assert.equal(selectedExport.imports.length, 1);
+  assert.deepEqual(selectedExport.imports[0].run_ids, [run.id]);
+  assert.equal(selectedExport.artifacts.find((artifact) => artifact.id === localArtifact.id).uri, `instantml://artifacts/${localArtifact.id}`);
+  assert.equal("storage_path" in selectedExport.artifacts.find((artifact) => artifact.id === localArtifact.id), false);
+  const csvExport = store.exportDataCsv({ org_id: org.id, run_ids: run.id });
+  assert.match(csvExport, /^record_type,org_id,project_id,run_id/m);
+  assert.match(csvExport, /run,.*seed-1/);
+  assert.match(csvExport, /metric,.*reward/);
+  const formulaRun = store.createRun({ org_id: org.id, project: "research", name: "\t=cmd" });
+  const formulaCsv = store.exportDataCsv({ org_id: org.id, run_ids: formulaRun.id });
+  assert.match(formulaCsv, /,'=cmd,/);
+  assert.doesNotMatch(formulaCsv, /,=cmd,/);
+});
+
+test("export CSV protects leading tab and newline cells", () => {
+  const csv = exportPayloadToCsv({
+    organizations: [],
+    projects: [],
+    runs: [{ id: "run-1", org_id: "org", project_id: "project", name: "\tplain", status: "running" }],
+    metrics: [],
+    metric_series: [],
+    attributes: [{ id: 1, org_id: "org", run_id: "run-1", path: "\rpath", value: "\nplain" }],
+    artifacts: [],
+    table_object_rows: [],
+    imports: [],
+  });
+  assert.match(csv, /,'\tplain,/);
+  assert.match(csv, /,"'\rpath",/);
+  assert.match(csv, /,"'\nplain",/);
 });
 
 test("plan limits block new storage writes and mark blocking warnings", () => {

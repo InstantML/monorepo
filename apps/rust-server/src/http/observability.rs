@@ -548,6 +548,42 @@ pub fn import_outcome(outcome_data: ImportOutcome<'_>) {
     );
 }
 
+pub struct ExportOutcome<'a> {
+    pub org_id: Uuid,
+    pub actor_kind: &'a str,
+    pub actor_fingerprint: String,
+    pub project_restricted: bool,
+    pub format: &'a str,
+    pub scope: &'a str,
+    pub run_count: usize,
+    pub truncated: bool,
+    pub response_bytes: Option<usize>,
+    pub error: Option<&'a AppError>,
+}
+
+pub fn export_outcome(outcome_data: ExportOutcome<'_>) {
+    let outcome = outcome(outcome_data.error);
+    let (status, code, retryable) = error_fields(outcome_data.error);
+    info!(
+        workflow = "export",
+        operation = "export_data",
+        outcome,
+        status,
+        code,
+        retryable,
+        org_id = %outcome_data.org_id,
+        actor_kind = outcome_data.actor_kind,
+        actor_fingerprint = outcome_data.actor_fingerprint,
+        project_restricted = outcome_data.project_restricted,
+        format = outcome_data.format,
+        scope = outcome_data.scope,
+        run_count = outcome_data.run_count,
+        truncated = outcome_data.truncated,
+        response_bytes = outcome_data.response_bytes.unwrap_or(0),
+        "export outcome"
+    );
+}
+
 fn error_fields(error: Option<&AppError>) -> (u16, &'static str, bool) {
     let Some(error) = error else {
         return (200, "ok", false);

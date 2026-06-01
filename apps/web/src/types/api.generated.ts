@@ -4868,6 +4868,12 @@ export interface operations {
                 sort_by?: string;
                 /** @description Metric key for export columns */
                 metric_key?: string;
+                /** @description Comma-separated exact run UUIDs for selected-run export. Capped for GET URL safety. */
+                run_ids?: string;
+                /** @description Alias for run_ids. Ignored when run_ids is present. */
+                runs?: string;
+                /** @description Export format: json (default) or csv */
+                format?: string;
             };
             header?: never;
             path?: never;
@@ -4882,6 +4888,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JsonObjectResponse"];
+                    "text/csv; charset=utf-8": string;
                 };
             };
             /** @description Invalid run search or query parameter */
@@ -4904,6 +4911,15 @@ export interface operations {
             };
             /** @description Missing export scope */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Selected run is missing or not visible to the caller */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

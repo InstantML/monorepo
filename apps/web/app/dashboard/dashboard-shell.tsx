@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent } from "react";
 
 import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest } from "../../src/api.js";
+import { downloadBlob, filenameFromContentDisposition, safeExportFilename } from "../../src/chart-export.js";
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
@@ -162,6 +163,7 @@ const SEARCH_DEBOUNCE_MS = 250;
 const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 12;
+const MAX_EXPORT_SELECTED_RUNS = 100;
 const ARTIFACT_PAGE_LIMIT = 100;
 const WORKSPACE_HISTORY_LIMIT = 50;
 const WAREHOUSE_RETRY_MS = 5_000;
@@ -449,6 +451,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [summary, setSummary] = useState<Summary>({ runs: [], metric_keys: [], total: 0 });
   const [overview, setOverview] = useState<Overview>({ total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 });
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([]);
+  const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
   const [primaryRunId, setPrimaryRunId] = useState("");
   const [series, setSeries] = useState<MetricSeries[]>([]);
@@ -588,6 +591,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setRunWorkspaceTab(nextTab);
   }, []);
   const selectedRunKey = selectedRunIds.join(",");
+  const selectedRunExportDisabled = selectedRunIds.length === 0 || selectedRunIds.length > MAX_EXPORT_SELECTED_RUNS;
+  const selectedRunExportTitle = selectedRunIds.length === 0
+    ? "Select one or more runs to export their data as CSV."
+    : selectedRunIds.length > MAX_EXPORT_SELECTED_RUNS
+      ? `Synchronous CSV export supports up to ${MAX_EXPORT_SELECTED_RUNS} selected runs.`
+      : `Export ${selectedRunIds.length} selected runs, metrics, attributes, and artifacts as CSV.`;
   const compareRunIds = useMemo(() => selectedRuns.map((run) => run.id).slice(0, COMPARE_RUN_LIMIT), [selectedRuns]);
   const compareRunKey = compareRunIds.join(",");
   const compareRuns = useMemo(() => (
@@ -2546,6 +2555,40 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
   }
 
+  async function exportSelectedRunsCsv() {
+    if (exportSelectedBusy) return;
+    if (!selectedRunIds.length) {
+      setMessage("Select one or more runs before exporting CSV.");
+      return;
+    }
+    if (selectedRunIds.length > MAX_EXPORT_SELECTED_RUNS) {
+      setMessage(`CSV export supports up to ${MAX_EXPORT_SELECTED_RUNS} selected runs at a time.`);
+      return;
+    }
+    setExportSelectedBusy(true);
+    setMessage(`Exporting ${selectedRunIds.length} selected runs...`);
+    try {
+      const { blob, headers } = await api.download(`/api/export${queryString({ format: "csv", run_ids: selectedRunIds.join(",") })}`, {
+        credentials: "same-origin",
+      });
+      const today = new Date().toISOString().slice(0, 10);
+      const serverName = filenameFromContentDisposition(headers.get("content-disposition"));
+      const fallbackName = `instantml-selected-runs-${selectedRunIds.length}-${today}.csv`;
+      const rawName = serverName && serverName !== "instantml-export.csv" ? serverName : fallbackName;
+      const safeName = safeExportFilename(rawName, fallbackName);
+      const filename = safeName.endsWith(".csv") ? safeName : `${safeName}.csv`;
+      downloadBlob(blob, filename);
+      const truncated = headers.get("x-instantml-export-truncated") === "true";
+      setMessage(truncated
+        ? `Exported ${selectedRunIds.length} selected runs as CSV. Some data was capped by synchronous export limits.`
+        : `Exported ${selectedRunIds.length} selected runs as CSV.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to export selected runs.");
+    } finally {
+      setExportSelectedBusy(false);
+    }
+  }
+
   async function updateRunTagsAndNotes(runId: string, patch: { tags: string[]; notes: string }) {
     if (!canWriteRuns) {
       throw new Error("Read only workspaces can view run data but cannot edit run metadata.");
@@ -3069,6 +3112,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               columnsOpen={columnsOpen}
               dashboardLoading={dashboardLoading}
               editingPanelContext={editingPanelContext}
+              exportSelectedBusy={exportSelectedBusy}
               fullscreenModalRef={fullscreenModalRef}
               fullscreenPanelContext={fullscreenPanelContext}
               fullscreenPanelIndex={fullscreenPanelIndex}
@@ -3087,6 +3131,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onColumnMetricFilter={setColumnMetricFilter}
               onDuplicatePanel={duplicateWorkspacePanel}
               onEditPanel={(sectionId, panelId) => setEditingPanelRef({ sectionId, panelId })}
+              onExportSelectedRuns={exportSelectedRunsCsv}
               onFullscreenPanel={(sectionId, panelId) => setFullscreenPanelRef({ sectionId, panelId })}
               onFullscreenPanelClose={() => setFullscreenPanelRef(null)}
               onFullscreenPanelMove={moveFullscreenPanel}
@@ -3134,6 +3179,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               selectAllMatchingBusy={selectAllMatchingBusy}
               selectAllMatchingDisabled={queryInput !== query || Boolean(searchError && searchError.query === query)}
               selectedRunIds={selectedRunIds}
+              selectedRunExportDisabled={selectedRunExportDisabled}
+              selectedRunExportTitle={selectedRunExportTitle}
               sortedRuns={sortedRuns}
               status={status}
               summaryTotal={summary.total}
@@ -3489,7 +3536,6 @@ function runsPageMessage(total: number, offset: number, visibleCount: number) {
   const end = Math.min(total, offset + count);
   return `${formatNumber(start, 0)}-${formatNumber(end, 0)} of ${formatNumber(total, 0)} matching runs`;
 }
-
 
 async function fetchBatchedMetricSeries(
   api: ApiClient,

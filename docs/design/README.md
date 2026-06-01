@@ -87,6 +87,9 @@ Current implemented design sequence, continued:
   versioned artifact manifests, `latest`/`best` aliases, artifact input/output
   edges, delete/retention state, presigned SDK-originated uploads, usage
   reservations, and artifact lineage UI.
+- `2026-05-31-exporting-data.md`: reviewed export first slice with selected-run
+  JSON/CSV exports, per-chart plotted-data/image downloads, CSV safety rules,
+  bounded synchronous limits, and the async export roadmap.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

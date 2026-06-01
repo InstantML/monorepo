@@ -18,7 +18,9 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
   upload sessions, aliases, retention/delete state, run input/output lineage,
   and manifest-entry downloads.
 - `imports.rs`: Neptune, W&B, and MLflow import normalization plus import record creation/listing.
-- `export.rs`: side-by-side comparison and bounded export response assembly.
+- `export.rs`: side-by-side comparison, selected-run export selection, bounded
+  JSON export response assembly, and normalized CSV export serialization with
+  formula-cell protection and public artifact rows.
 - `usage.rs`: usage summaries, daily snapshots, versioned-artifact active,
   pending-delete, and reserved byte accounting, idempotency cleanup, and
   session cleanup.

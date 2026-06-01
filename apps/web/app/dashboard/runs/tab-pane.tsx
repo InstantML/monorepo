@@ -32,6 +32,7 @@ type Props = {
   columnsOpen: boolean;
   dashboardLoading: boolean;
   editingPanelContext: EditingPanelContext;
+  exportSelectedBusy: boolean;
   fullscreenModalRef: RefObject<HTMLDivElement | null>;
   fullscreenPanelContext: FullscreenPanelContext;
   fullscreenPanelIndex: number;
@@ -49,6 +50,7 @@ type Props = {
   onColumnMetricFilter: (filter: string) => void;
   onDuplicatePanel: (sectionId: string, panelId: string) => void;
   onEditPanel: (sectionId: string, panelId: string) => void;
+  onExportSelectedRuns: () => void;
   onFullscreenPanel: (sectionId: string, panelId: string) => void;
   onCloseEditingPanel: () => void;
   onFullscreenPanelClose: () => void;
@@ -94,6 +96,8 @@ type Props = {
   selectAllMatchingBusy: boolean;
   selectAllMatchingDisabled: boolean;
   selectedRunIds: string[];
+  selectedRunExportDisabled: boolean;
+  selectedRunExportTitle: string;
   sortedRuns: RunSummary[];
   status: string;
   summaryTotal: number;
@@ -113,6 +117,7 @@ export function RunsTabPane({
   columnsOpen,
   dashboardLoading,
   editingPanelContext,
+  exportSelectedBusy,
   fullscreenModalRef,
   fullscreenPanelContext,
   fullscreenPanelIndex,
@@ -131,6 +136,7 @@ export function RunsTabPane({
   onDuplicatePanel,
   onCloseEditingPanel,
   onEditPanel,
+  onExportSelectedRuns,
   onFullscreenPanel,
   onFullscreenPanelClose,
   onFullscreenPanelMove,
@@ -175,6 +181,8 @@ export function RunsTabPane({
   selectAllMatchingBusy,
   selectAllMatchingDisabled,
   selectedRunIds,
+  selectedRunExportDisabled,
+  selectedRunExportTitle,
   sortedRuns,
   status,
   summaryTotal,
@@ -226,9 +234,11 @@ export function RunsTabPane({
         <Stats overview={overview} metricKey={metricKey} />
         <RunsCommandbar
           columnsOpen={columnsOpen}
+          exportSelectedBusy={exportSelectedBusy}
           metricKey={metricKey}
           metricOptions={metricOptionsForControls}
           onColumnsOpen={onColumnsOpen}
+          onExportSelectedRuns={onExportSelectedRuns}
           onMetricKey={onChangeMetricKey}
           onPinnedMetricFilter={onColumnMetricFilter}
           onPinnedMetric={onPinnedMetric}
@@ -238,6 +248,9 @@ export function RunsTabPane({
           pinnedMetricFilterValid={columnMetricFilterValid}
           pinnedMetricOptions={columnMetricOptionsForControls}
           pinnedMetrics={pinnedMetrics}
+          selectedRunCount={selectedRunIds.length}
+          selectedRunExportDisabled={selectedRunExportDisabled}
+          selectedRunExportTitle={selectedRunExportTitle}
           tableColumns={tableColumns}
         />
       </div>

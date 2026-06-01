@@ -21,6 +21,14 @@ const MAX_RUN_SEARCH_TERMS = 32;
 const MAX_RUN_SEARCH_AST_NODES = 64;
 const MAX_RUN_SEARCH_DEPTH = 8;
 const MAX_RUN_SEARCH_FIELD_BYTES = 32 * 1024;
+const MAX_EXPORT_RUNS = 500;
+const MAX_EXPORT_SELECTED_RUN_IDS = 100;
+const MAX_EXPORT_METRICS = 100_000;
+const MAX_EXPORT_METRIC_SERIES = 25_000;
+const MAX_EXPORT_ATTRIBUTES = 25_000;
+const MAX_EXPORT_ARTIFACTS = 10_000;
+const MAX_EXPORT_IMPORTS = 500;
+const MAX_EXPORT_CSV_BYTES = 25 * 1024 * 1024;
 
 export const PLAN_TIERS = Object.freeze({
   free: Object.freeze({
@@ -199,6 +207,7 @@ export function createStore(state = emptyState(), dbPath = null) {
     overview: (input = {}) => overview(state, input),
     runsSummary: (input = {}) => runsSummary(state, input),
     exportData: (input = {}) => exportData(state, input),
+    exportDataCsv: (input = {}) => exportDataCsv(state, input),
     usageSummary: (input = {}) => usageSummary(state, input),
     usageExport: (input = {}) => usageExport(state, input),
     resetDemo: (input = {}) => write(persist, () => resetDemo(state, input)),
@@ -303,7 +312,7 @@ export function createApiKey(state, orgId, input = {}) {
     name,
     key_prefix: secret.slice(0, 14),
     key_hash: hashSecret(secret),
-    scopes: validateScopes(input?.scopes ?? ["sdk:ingest", "artifacts:write", "imports:write"]),
+    scopes: validateScopes(input?.scopes ?? ["sdk:ingest", "artifacts:write", "imports:write", "export:read"]),
     created_at: utcNow(),
     last_used_at: null,
     revoked_at: null,
@@ -1050,27 +1059,217 @@ function runSummaryForRun(state, run) {
 }
 
 export function exportData(state, input = {}) {
+  const selectedRunIds = input.run_ids || input.runs ? parseExportRunIds(input) : null;
   const scopedProjects = input.project || input.project_id || input.org_id ? listProjectsForExport(state, input) : state.projects;
   const scopedProjectIds = new Set(scopedProjects.map((project) => project.id));
   const sortBy = validateRunSort(input.sort_by ?? input.sortBy ?? "created");
   const metricKey = input.metric_key ? validateName(input.metric_key, "metric key") : "eval/return_mean";
-  const runs = sortRunRecords(state, filterRuns(state, input), sortBy, metricKey)
-    .filter((run) => scopedProjectIds.has(run.project_id));
+  const matchedRuns = selectedRunIds
+    ? selectedRunIds.map((runId) => {
+        const run = state.runs.find((candidate) => candidate.id === runId);
+        if (!run || !scopedProjectIds.has(run.project_id)) throw new NotFoundError("run not found");
+        return run;
+      })
+    : sortRunRecords(state, filterRuns(state, input), sortBy, metricKey)
+        .filter((run) => scopedProjectIds.has(run.project_id));
+  const runs = selectedRunIds ? matchedRuns : matchedRuns.slice(0, MAX_EXPORT_RUNS);
   const runIds = new Set(runs.map((run) => run.id));
   const projects = scopedProjects.filter((project) => runs.some((run) => run.project_id === project.id));
   const orgIds = new Set(scopedProjects.map((project) => project.org_id));
+  const metricSeries = state.metricSeries.filter((series) => runIds.has(series.run_id));
+  const metrics = state.metrics.filter((metric) => runIds.has(metric.run_id)).sort((a, b) => a.run_id.localeCompare(b.run_id) || a.step - b.step || a.id - b.id);
+  const artifacts = state.artifacts.filter((artifact) => runIds.has(artifact.run_id));
+  const artifactsById = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  const attributes = state.attributes.filter((attribute) => runIds.has(attribute.run_id));
+  const imports = state.imports
+    .filter((record) => orgIds.has(record.org_id) && record.run_ids.some((runId) => runIds.has(runId)))
+    .map((record) => ({ ...clone(record), run_ids: record.run_ids.filter((runId) => runIds.has(runId)) }));
   return {
     version: 1,
     exported_at: utcNow(),
     organizations: state.organizations.filter((organization) => orgIds.has(organization.id)).map(clone),
     projects: projects.map(clone),
     runs: runs.map(clone),
-    metric_series: state.metricSeries.filter((series) => runIds.has(series.run_id)).map(clone),
-    metrics: state.metrics.filter((metric) => runIds.has(metric.run_id)).sort((a, b) => a.run_id.localeCompare(b.run_id) || a.step - b.step || a.id - b.id).map(clone),
-    attributes: state.attributes.filter((attribute) => runIds.has(attribute.run_id)).map(clone),
-    artifacts: state.artifacts.filter((artifact) => runIds.has(artifact.run_id)).map(clone),
-    imports: state.imports.filter((record) => record.run_ids.some((runId) => runIds.has(runId))).map(clone),
+    metric_series: metricSeries.slice(0, MAX_EXPORT_METRIC_SERIES).map(clone),
+    metrics: metrics.slice(0, MAX_EXPORT_METRICS).map(clone),
+    attributes: attributes.slice(0, MAX_EXPORT_ATTRIBUTES).map((attribute) => publicAttribute(attribute, artifactsById)),
+    artifacts: artifacts.slice(0, MAX_EXPORT_ARTIFACTS).map(publicArtifact),
+    imports: imports.slice(0, MAX_EXPORT_IMPORTS),
+    limits: {
+      runs: MAX_EXPORT_RUNS,
+      selected_run_ids: MAX_EXPORT_SELECTED_RUN_IDS,
+      metrics: MAX_EXPORT_METRICS,
+      metric_series: MAX_EXPORT_METRIC_SERIES,
+      attributes: MAX_EXPORT_ATTRIBUTES,
+      artifacts: MAX_EXPORT_ARTIFACTS,
+      imports: MAX_EXPORT_IMPORTS,
+      csv_bytes: MAX_EXPORT_CSV_BYTES,
+    },
+    truncated: (!selectedRunIds && matchedRuns.length > runs.length)
+      || metricSeries.length > MAX_EXPORT_METRIC_SERIES
+      || metrics.length > MAX_EXPORT_METRICS
+      || attributes.length > MAX_EXPORT_ATTRIBUTES
+      || artifacts.length > MAX_EXPORT_ARTIFACTS
+      || imports.length > MAX_EXPORT_IMPORTS,
   };
+}
+
+function publicArtifact(artifact) {
+  const { storage_path, ...publicRow } = clone(artifact);
+  if (storage_path) publicRow.uri = `instantml://artifacts/${artifact.id}`;
+  return publicRow;
+}
+
+function publicAttribute(attribute, artifactsById) {
+  const row = clone(attribute);
+  if (row.artifact_id && artifactsById.has(row.artifact_id)) {
+    row.value = publicArtifact(artifactsById.get(row.artifact_id)).uri;
+  }
+  return row;
+}
+
+export function exportDataCsv(state, input = {}) {
+  return exportPayloadToCsv(exportData(state, input));
+}
+
+function parseExportRunIds(input) {
+  const raw = input.run_ids ?? input.runs;
+  const seen = new Set();
+  const deduped = [];
+  for (const id of parseRunIds(raw).map(validateExportRunId)) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    deduped.push(id);
+  }
+  if (deduped.length > MAX_EXPORT_SELECTED_RUN_IDS) {
+    throw new ValidationError(`run_ids must include at most ${MAX_EXPORT_SELECTED_RUN_IDS} runs for synchronous export`);
+  }
+  return deduped;
+}
+
+function validateExportRunId(id) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    throw new ValidationError("run_ids entries must be valid UUIDs");
+  }
+  return id;
+}
+
+const EXPORT_CSV_HEADER = [
+  "record_type",
+  "org_id",
+  "project_id",
+  "run_id",
+  "run_name",
+  "run_status",
+  "artifact_id",
+  "attribute_id",
+  "key",
+  "path",
+  "step",
+  "value",
+  "logged_at",
+  "created_at",
+  "row_index",
+  "json",
+];
+
+export function exportPayloadToCsv(payload) {
+  const writer = new CsvWriter(MAX_EXPORT_CSV_BYTES);
+  writer.pushRecord(EXPORT_CSV_HEADER);
+  const runLookup = new Map((payload.runs ?? []).map((run) => [run.id, { name: run.name ?? "", status: run.status ?? "" }]));
+  for (const key of ["organizations", "projects", "runs", "metric_series", "metrics", "attributes", "artifacts", "table_object_rows", "imports"]) {
+    const recordType = singularExportRecordType(key);
+    for (const row of payload[key] ?? []) writer.pushRecord(exportCsvRow(recordType, row, runLookup));
+  }
+  return writer.finish();
+}
+
+class CsvWriter {
+  constructor(maxBytes) {
+    this.maxBytes = maxBytes;
+    this.bytes = 0;
+    this.chunks = [];
+  }
+
+  pushRecord(cells) {
+    const line = `${cells.map(csvCell).join(",")}\n`;
+    this.bytes += Buffer.byteLength(line, "utf8");
+    if (this.bytes > this.maxBytes) {
+      throw new ValidationError(`CSV export exceeds the synchronous ${this.maxBytes} byte cap; narrow the selection or use async export when available`);
+    }
+    this.chunks.push(line);
+  }
+
+  finish() {
+    return this.chunks.join("");
+  }
+}
+
+function singularExportRecordType(key) {
+  return {
+    organizations: "organization",
+    projects: "project",
+    runs: "run",
+    metric_series: "metric_series",
+    metrics: "metric",
+    attributes: "attribute",
+    artifacts: "artifact",
+    table_object_rows: "table_object_row",
+    imports: "import",
+  }[key] ?? "record";
+}
+
+function exportCsvRow(recordType, row, runLookup) {
+  const runId = stringifyCsvValue(row.run_id ?? (recordType === "run" ? row.id : ""));
+  const run = recordType === "run"
+    ? { name: row.name ?? "", status: row.status ?? "" }
+    : runLookup.get(runId) ?? { name: "", status: "" };
+  const orgId = stringifyCsvValue(row.org_id ?? (recordType === "organization" ? row.id : ""));
+  const projectId = stringifyCsvValue(row.project_id ?? (recordType === "project" ? row.id : ""));
+  return [
+    recordType,
+    orgId,
+    projectId,
+    runId,
+    stringifyCsvValue(run.name),
+    stringifyCsvValue(run.status),
+    recordType === "artifact" ? stringifyCsvValue(row.id) : "",
+    stringifyCsvValue(row.attribute_id ?? (recordType === "attribute" ? row.id : "")),
+    stringifyCsvValue(row.key),
+    stringifyCsvValue(row.path),
+    stringifyCsvValue(row.step),
+    stringifyCsvValue(row.value ?? row.latest),
+    stringifyCsvValue(row.logged_at),
+    stringifyCsvValue(row.created_at),
+    stringifyCsvValue(row.row_index),
+    JSON.stringify(row),
+  ];
+}
+
+function stringifyCsvValue(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+function csvCell(rawValue) {
+  const raw = protectCsvFormula(String(rawValue ?? ""));
+  return /[",\r\n]/.test(raw) ? `"${raw.replaceAll("\"", "\"\"")}"` : raw;
+}
+
+function protectCsvFormula(raw) {
+  if (!raw) return "";
+  if (raw.startsWith("\t") || raw.startsWith("\r") || raw.startsWith("\n")) return `'${raw}`;
+  const firstMeaningful = [...raw].find((char) => !isCsvFormulaPadding(char)) ?? "";
+  return ["=", "+", "-", "@"].includes(firstMeaningful)
+    ? `'${raw}`
+    : raw;
+}
+
+function isCsvFormulaPadding(char) {
+  const codePoint = char.codePointAt(0) ?? 0;
+  return codePoint <= 0x20 || codePoint === 0x7f || codePoint === 0xfeff || /\s/u.test(char);
 }
 
 export function usageSummary(state, input = {}) {

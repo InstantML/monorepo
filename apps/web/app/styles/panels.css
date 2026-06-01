@@ -195,6 +195,10 @@
   padding: 4px 12px 12px;
 }
 
+.workspace-panel-card .chart-area-exportable {
+  padding-top: 38px;
+}
+
 .workspace-panel-card .metric-chart {
   aspect-ratio: 560 / 360;
 }
@@ -812,6 +816,10 @@ kbd {
   align-content: start;
   overflow: hidden;
   padding: 0;
+}
+
+.fullscreen-panel-card .chart-area-exportable {
+  padding-top: 38px;
 }
 
 .fullscreen-panel-card .chart-legend {

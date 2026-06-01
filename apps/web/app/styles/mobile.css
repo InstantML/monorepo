@@ -312,6 +312,12 @@
     gap: 8px;
     width: 100%;
   }
+  .runs-workspace-filter .runs-commandbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 8px;
+  }
   .runs-commandbar .command-select,
   .runs-commandbar .columns-menu,
   .runs-commandbar > * {
@@ -578,6 +584,9 @@
     grid-template-columns: 1fr;
   }
   .runs-commandbar {
+    grid-template-columns: 1fr;
+  }
+  .runs-workspace-filter .runs-commandbar {
     grid-template-columns: 1fr;
   }
   .brandbar-row { gap: 6px; }

@@ -17,7 +17,7 @@ Compatibility rule: treat this server as the v1 wire-contract oracle. Future Rus
 - Provide artifact/checkpoint/rollout metadata endpoints plus local artifact upload/download.
 - Provide side-by-side comparison and metric aggregate summaries for the UI.
 - Provide importer endpoints for Neptune Exporter-shaped, transformed W&B, and transformed MLflow JSON payloads with dry-run support.
-- Provide user-owned JSON export for experiment history.
+- Provide user-owned JSON/CSV export for experiment history.
 - Provide org usage summaries, blocked-at-limit write guardrails, and versioned usage export for pricing/debug planning.
 - Generate/reset rich synthetic demo data only within the `demo` project.
 
@@ -47,11 +47,11 @@ Artifact bytes go through `src/artifact-store.js`. The current implementation is
 - `POST /api/imports/neptune` imports or dry-runs a Neptune Exporter-shaped JSON payload through the shared atomic importer path.
 - `POST /api/imports/wandb` imports or dry-runs a transformed W&B JSON payload with scalar history and artifact references. It does not download W&B artifact bytes.
 - `POST /api/imports/mlflow` imports or dry-runs a transformed MLflow JSON payload with metric history, latest-metric fallback, params, tags, timestamps, and artifact references. It does not crawl an MLflow server or download artifact bytes.
-- `GET /api/export` returns a portable JSON export filtered by project, project ID, org ID, status, and the same non-regex run-search subset.
+- `GET /api/export` returns a portable JSON export filtered by project, project ID, org ID, status, and the same non-regex run-search subset. `run_ids`/`runs` selects exact visible runs, and `format=csv` returns the normalized CSV compatibility shape used by the Rust backend.
 - `GET /api/usage` returns org-scoped usage counts for seats, projects, runs, current UTC calendar-month scalar metric points, retained metric-point totals, retained metric series, artifacts, API keys, exact artifact bytes, estimated metadata bytes, the monthly `usage_period`, and blocked-at-limit warning metadata.
 - `GET /api/usage/export` returns the same usage shape as versioned JSON for billing/debug planning. It is not invoice truth.
 
-Set `INSTANTML_REQUIRE_API_KEY=true` or pass `requireApiKey: true` to `createServer()` to require bearer API keys on tenant reads, SDK writes, imports, exports, usage summaries, and artifact downloads. In that mode, local admin scaffolding routes for users, orgs, and API keys require `X-INSTANTML-Bootstrap-Token` matching `INSTANTML_BOOTSTRAP_TOKEN` or the `bootstrapToken` server option. SDK run/metric/attribute mutations require `sdk:ingest`, and artifact metadata/upload routes require `artifacts:write`. Import routes require `imports:write`; default locally-created SDK keys include it for local migration testing, while usage-only keys cannot import. Usage routes require `usage:read`; default SDK ingest keys cannot read seat/API-key counts. Local dev defaults remain unauthenticated for compatibility.
+Set `INSTANTML_REQUIRE_API_KEY=true` or pass `requireApiKey: true` to `createServer()` to require bearer API keys on tenant reads, SDK writes, imports, exports, usage summaries, and artifact downloads. In that mode, local admin scaffolding routes for users, orgs, and API keys require `X-INSTANTML-Bootstrap-Token` matching `INSTANTML_BOOTSTRAP_TOKEN` or the `bootstrapToken` server option. SDK run/metric/attribute mutations require `sdk:ingest`, artifact metadata/upload routes require `artifacts:write`, and export reads require `export:read`. Import routes require `imports:write`; default locally-created SDK keys include imports and exports for local migration testing, while usage-only keys cannot import/export run data. Usage routes require `usage:read`; default SDK ingest keys cannot read seat/API-key counts. Local dev defaults remain unauthenticated for compatibility.
 
 New project, run, metric-ingest, artifact, import, and demo-reset writes are blocked with HTTP 402 and `code: "plan_limit_exceeded"` when the current or projected org usage exceeds the stored Free/Pro/Premium project, run, current-month metric-point, or estimated-storage limit. Metric-point usage resets on the first day of each UTC month; storage, projects, runs, seats, artifacts, metric series, and API keys are retained-resource counts. Reads, exports, and usage summaries remain available so over-limit orgs can inspect usage.
 

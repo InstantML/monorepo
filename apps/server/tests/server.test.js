@@ -177,6 +177,11 @@ test("org API keys protect SDK ingestion and idempotent metric replay", async ()
       (await request(baseUrl, "POST", `/runs/${run.id}/metrics`, { metrics: { reward: 2 }, step: 1 }, { ...authHeaders, "Idempotency-Key": "event-1" })).inserted,
       1,
     );
+    const uploadedArtifact = (await request(baseUrl, "POST", `/api/runs/${run.id}/artifacts/upload`, {
+      name: "private-metrics.txt",
+      content_base64: Buffer.from("private export test").toString("base64"),
+      mime_type: "text/plain",
+    }, authHeaders)).artifact;
     response = await fetch(baseUrl + `/runs/${run.id}`);
     assert.equal(response.status, 401);
     response = await fetch(baseUrl + `/api/runs/${run.id}/attributes`, {
@@ -256,7 +261,7 @@ test("org API keys protect SDK ingestion and idempotent metric replay", async ()
     assert.equal(usage.organizations.length, 1);
     assert.equal(usage.organizations[0].org_id, organization.id);
     assert.equal(usage.organizations[0].usage.metric_points, 1);
-    assert.equal(usage.organizations[0].usage.artifact_bytes_exact, 7);
+    assert.equal(usage.organizations[0].usage.artifact_bytes_exact, uploadedArtifact.size_bytes + 7);
     assert.equal(usage.organizations[0].usage.api_keys, 2);
     const usageExport = await request(baseUrl, "GET", "/api/usage/export", undefined, usageHeaders);
     assert.equal(usageExport.source, "computed_current_state");
@@ -316,9 +321,34 @@ test("org API keys protect SDK ingestion and idempotent metric replay", async ()
     assert.equal((await request(baseUrl, "GET", `/runs/${run.id}/metrics?key=reward`, undefined, authHeaders)).metrics.length, 1);
     assert.equal((await request(baseUrl, "PATCH", `/runs/${run.id}`, { status: "finished" }, authHeaders)).run.status, "finished");
 
-    const exported = await request(baseUrl, "GET", "/api/export?project=secure&q=name%3Aseed-1", undefined, authHeaders);
+    const exportResponse = await fetch(`${baseUrl}/api/export?project=secure&q=name%3Aseed-1`, { headers: authHeaders });
+    assert.equal(exportResponse.status, 200);
+    assert.equal(exportResponse.headers.get("cache-control"), "private, no-store");
+    assert.equal(exportResponse.headers.get("pragma"), "no-cache");
+    assert.equal(exportResponse.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(exportResponse.headers.get("content-security-policy"), "sandbox");
+    assert.equal(exportResponse.headers.get("x-instantml-export-truncated"), "false");
+    assert.match(exportResponse.headers.get("content-disposition"), /instantml-export\.json/);
+    const exported = await exportResponse.json();
     assert.equal(exported.organizations[0].id, organization.id);
     assert.equal(exported.metric_series[0].count, 1);
+    const exportedText = JSON.stringify(exported);
+    assert.equal(exportedText.includes(uploadedArtifact.uri), false);
+    assert.equal(exportedText.includes("storage_path"), false);
+    assert.equal(exported.artifacts.find((artifact) => artifact.id === uploadedArtifact.id).uri, `instantml://artifacts/${uploadedArtifact.id}`);
+    assert.equal(exported.attributes.find((attribute) => attribute.artifact_id === uploadedArtifact.id).value, `instantml://artifacts/${uploadedArtifact.id}`);
+    const csvExport = await fetch(`${baseUrl}/api/export?format=csv&run_ids=${run.id}`, { headers: authHeaders });
+    assert.equal(csvExport.status, 200);
+    assert.equal(csvExport.headers.get("content-type"), "text/csv; charset=utf-8");
+    assert.equal(csvExport.headers.get("x-instantml-export-truncated"), "false");
+    assert.match(csvExport.headers.get("content-disposition"), /attachment/);
+    const csvText = await csvExport.text();
+    assert.match(csvText, /^record_type,org_id,project_id,run_id/m);
+    assert.equal(csvText.includes(uploadedArtifact.uri), false);
+    assert.equal(csvText.includes("storage_path"), false);
+    assert.match(csvText, new RegExp(`instantml://artifacts/${uploadedArtifact.id}`));
+    const invalidRunIds = await fetch(`${baseUrl}/api/export?format=csv&run_ids=not-a-uuid`, { headers: authHeaders });
+    assert.equal(invalidRunIds.status, 400);
   }, { requireApiKey: true, bootstrapToken: "test-bootstrap" });
 });
 
