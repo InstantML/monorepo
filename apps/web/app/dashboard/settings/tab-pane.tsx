@@ -23,6 +23,11 @@ type BillingStatus = {
   message?: string | null;
 };
 
+const RETRY_PLAN_LABELS = {
+  pro: "Retry Pro",
+  premium: "Retry Premium",
+};
+
 function formatInviteDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "unknown expiry";
@@ -39,6 +44,13 @@ function inviteStatusLabel(invitation: InvitationRow) {
   if (invitation.status === "pending") return invitation.delivery_status === "sent" ? "sent" : invitation.delivery_status || "pending";
   if (invitation.delivery_status === "send_failed" && !["accepted", "expired", "revoked"].includes(invitation.status ?? "")) return "send failed";
   return invitation.status;
+}
+
+function planDisplayName(value?: string) {
+  if (value === "pro") return "Pro";
+  if (value === "premium") return "Premium";
+  if (value === "enterprise") return "Enterprise";
+  return "Free";
 }
 
 type Props = {
@@ -88,6 +100,7 @@ type Props = {
   storageUsageLabel: string;
   storageUsageDescription: string;
   usageResetLabel: string;
+  usageAvailable: boolean;
   xMode: string;
   billingStatus: BillingStatus | null;
 };
@@ -139,19 +152,24 @@ export function SettingsTabPane({
   storageUsageLabel,
   storageUsageDescription,
   usageResetLabel,
+  usageAvailable,
   xMode,
   billingStatus,
 }: Props) {
   const adminOnlyValue = "Available to admins";
+  const usageUnavailableValue = "Unavailable";
   const billingState = canManageOrg ? billingStatus?.access_state ?? "free_active" : adminOnlyValue;
   const billingSubscription = canManageOrg ? billingStatus?.subscription_status ?? "none" : adminOnlyValue;
   const effectivePlan = canManageOrg ? billingStatus?.effective_plan_tier ?? orgPlanTier ?? "free" : orgPlanTier || activePlan || "free";
-  const storageUsageValue = canManageOrg ? `${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}` : adminOnlyValue;
-  const metricUsageValue = canManageOrg ? `${formatNumber(metricUsed, 0)} / ${metricLimit ? formatNumber(metricLimit, 0) : "-"}` : adminOnlyValue;
-  const apiRequestUsageValue = canManageOrg ? `${formatNumber(apiRequestsUsed, 0)} / ${apiRequestsLimit ? formatNumber(apiRequestsLimit, 0) : "-"}` : adminOnlyValue;
-  const storageMeterPercent = canManageOrg ? storagePercent : 0;
-  const metricMeterPercent = canManageOrg ? metricPercent : 0;
-  const apiRequestMeterPercent = canManageOrg ? apiRequestsPercent : 0;
+  const usageValue = (used: number, limit: number) => usageAvailable
+    ? `${formatNumber(used, 0)} / ${limit ? formatNumber(limit, 0) : "-"}`
+    : usageUnavailableValue;
+  const storageUsageValue = canManageOrg ? (usageAvailable ? `${formatBytes(storageUsed)} / ${storageLimit ? formatBytes(storageLimit) : "-"}` : usageUnavailableValue) : adminOnlyValue;
+  const metricUsageValue = canManageOrg ? usageValue(metricUsed, metricLimit) : adminOnlyValue;
+  const apiRequestUsageValue = canManageOrg ? usageValue(apiRequestsUsed, apiRequestsLimit) : adminOnlyValue;
+  const storageMeterPercent = canManageOrg && usageAvailable ? storagePercent : 0;
+  const metricMeterPercent = canManageOrg && usageAvailable ? metricPercent : 0;
+  const apiRequestMeterPercent = canManageOrg && usageAvailable ? apiRequestsPercent : 0;
   const visibleInvitations = invitations.filter((invitation) => invitation.status !== "accepted");
   const checkoutRetryPlan = billingStatus?.access_state === "checkout_pending"
     ? billingStatus.requested_plan_tier ?? billingStatus.plan_tier ?? orgPlanTier
@@ -162,9 +180,39 @@ export function SettingsTabPane({
     billingStatus?.effective_plan_tier !== plan &&
     !billingStatus?.stripe_subscription_id
   );
+  const subscriptionState = billingStatus?.subscription_status ?? "";
+  const hasBillingSubscription = Boolean(
+    billingStatus?.stripe_subscription_id ||
+    (subscriptionState && !["none", "canceled", "cancelled"].includes(subscriptionState)),
+  );
+  const canOpenBillingPortal = canManageOrg && !adminBusy && hasBillingSubscription;
+  const canCancelBilling = canOpenBillingPortal && !billingStatus?.cancel_at_period_end;
   const planButtonDisabled = (plan: "free" | "pro" | "premium") => (
     adminBusy || (orgPlanTier === plan && (plan === "free" || !canRetryPlanCheckout(plan)))
   );
+  const planButtonLabel = (plan: "free" | "pro" | "premium") => {
+    if (plan !== "free" && canRetryPlanCheckout(plan)) return RETRY_PLAN_LABELS[plan];
+    if (orgPlanTier === plan) return `Current ${planDisplayName(plan)}`;
+    return `Change to ${planDisplayName(plan)}`;
+  };
+  const planButtonTitle = (plan: "free" | "pro" | "premium") => {
+    if (adminBusy) return "Billing action in progress";
+    if (plan !== "free" && canRetryPlanCheckout(plan)) return `Retry ${planDisplayName(plan)} checkout`;
+    if (orgPlanTier === plan) return `${planDisplayName(plan)} is the current plan`;
+    return `Change workspace billing to ${planDisplayName(plan)}`;
+  };
+  const portalTitle = adminBusy
+    ? "Billing action in progress"
+    : hasBillingSubscription
+      ? "Open the Stripe billing portal"
+      : "No active paid subscription yet";
+  const cancelTitle = adminBusy
+    ? "Billing action in progress"
+    : !hasBillingSubscription
+      ? "No active paid subscription to cancel"
+      : billingStatus?.cancel_at_period_end
+        ? "Subscription is already scheduled to cancel"
+        : "Cancel the active paid subscription at period end";
   return (
     <>
       <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
@@ -179,6 +227,7 @@ export function SettingsTabPane({
             <MetricCard label="Seats" value={`${formatNumber(reservedSeatCount, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} tone="neutral" />
             <MetricCard label={storageUsageLabel} value={storageUsageValue} tone={canManageOrg && storagePercent > 90 ? "bad" : canManageOrg && storagePercent > 70 ? "live" : "neutral"} />
             {canManageOrg && storageUsageDescription ? <p className="setting-hint">{storageUsageDescription}</p> : null}
+            {canManageOrg && !usageAvailable ? <p className="setting-hint">Usage reporting is not available from this local control plane.</p> : null}
             {!canManageOrg ? <p className="setting-hint">Usage reporting is available to workspace admins.</p> : null}
             <div className="usage-meter" aria-label={`${storageUsageLabel} usage`}>
               <span style={{ width: `${storageMeterPercent}%` }} />
@@ -193,11 +242,11 @@ export function SettingsTabPane({
             </div>
             <SettingRow label="General API rate" value={canManageOrg ? generalRateLimitLabel || "-" : adminOnlyValue} />
             <SettingRow label="Ingest API rate" value={canManageOrg ? ingestRateLimitLabel || "-" : adminOnlyValue} />
-            <SettingRow label="Monthly reset" value={canManageOrg && usageResetLabel ? `${usageResetLabel} UTC` : canManageOrg ? "-" : adminOnlyValue} />
-            {canManageOrg && activeUsageWarnings.length ? (
+            <SettingRow label="Monthly reset" value={canManageOrg && usageAvailable && usageResetLabel ? `${usageResetLabel} UTC` : canManageOrg && usageAvailable ? "-" : canManageOrg ? usageUnavailableValue : adminOnlyValue} />
+                {canManageOrg && activeUsageWarnings.length ? (
               <div className="admin-alert-list">
-                {activeUsageWarnings.map((warning, index) => (
-                  <div className="api-row" key={`${warning.code ?? "warning"}-${index}`}>
+                {activeUsageWarnings.map((warning) => (
+                  <div className="api-row" key={`${warning.code ?? "warning"}-${warning.message ?? "usage"}`}>
                     <AlertTriangle size={14} />
                     <strong>{warning.message ?? warning.code ?? "Usage warning"}</strong>
                   </div>
@@ -220,11 +269,11 @@ export function SettingsTabPane({
             ) : null}
             {canManageOrg ? (
               <div className="admin-form-row">
-                <button className="ghost" disabled={adminBusy} onClick={onOpenBillingPortal} type="button"><CreditCard size={14} /> Portal</button>
-                <button className="ghost" disabled={planButtonDisabled("pro")} onClick={() => onChangeBillingPlan("pro")} type="button">{canRetryPlanCheckout("pro") ? "Retry Pro" : "Pro"}</button>
-                <button className="ghost" disabled={planButtonDisabled("premium")} onClick={() => onChangeBillingPlan("premium")} type="button">{canRetryPlanCheckout("premium") ? "Retry Premium" : "Premium"}</button>
-                <button className="ghost" disabled={planButtonDisabled("free")} onClick={() => onChangeBillingPlan("free")} type="button">Free</button>
-                <button className="ghost" disabled={adminBusy || !billingStatus?.subscription_status} onClick={onCancelBilling} type="button">Cancel</button>
+                <button className="ghost" disabled={!canOpenBillingPortal} onClick={onOpenBillingPortal} title={portalTitle} type="button"><CreditCard size={14} /> Open portal</button>
+                <button className="ghost" disabled={planButtonDisabled("pro")} onClick={() => onChangeBillingPlan("pro")} title={planButtonTitle("pro")} type="button">{planButtonLabel("pro")}</button>
+                <button className="ghost" disabled={planButtonDisabled("premium")} onClick={() => onChangeBillingPlan("premium")} title={planButtonTitle("premium")} type="button">{planButtonLabel("premium")}</button>
+                <button className="ghost" disabled={planButtonDisabled("free")} onClick={() => onChangeBillingPlan("free")} title={planButtonTitle("free")} type="button">{planButtonLabel("free")}</button>
+                <button className="ghost" disabled={!canCancelBilling} onClick={onCancelBilling} title={cancelTitle} type="button">Cancel subscription</button>
               </div>
             ) : null}
           </div>

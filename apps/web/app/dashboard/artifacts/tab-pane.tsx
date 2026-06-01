@@ -48,9 +48,13 @@ const COLLECTION_PAGE_LIMIT = 100;
 const VERSION_PAGE_LIMIT = 100;
 const MANIFEST_PAGE_LIMIT = 100;
 
-function copyText(value: string) {
+async function copyText(value: string) {
   if (!value) return;
-  void navigator.clipboard?.writeText(value);
+  try {
+    await navigator.clipboard?.writeText(value);
+  } catch {
+    // Visible IDs/snippets remain selectable when clipboard permission is denied.
+  }
 }
 
 function selectedVersionForCollection(collection: ArtifactCollection | null, versions: ArtifactVersion[], selectedVersionId: string) {
@@ -468,9 +472,12 @@ export function ArtifactsTabPane({
 
   const manageTitle = canManageArtifacts ? "" : "Artifact management requires owner or admin access";
   const mutationDisabled = Boolean(mutationBusy);
+  const versionMoreTitle = versionHasMore ? "Load more versions" : "No more versions";
   const collectionCountLabel = collectionTotal ? `${collections.length}/${collectionTotal} collections` : collections.length ? `${collections.length} collections` : "No collections";
   const selectedAliases = selectedVersion?.aliases?.length ? selectedVersion.aliases.join(", ") : "none";
   const rawArtifacts = versionedUnsupported ? legacyArtifacts : visibleArtifacts;
+  const hasRawArtifacts = rawArtifacts.length > 0 || loggedObjects.length > 0;
+  const rawPanelOpen = versionedUnsupported || (!collections.length && hasRawArtifacts);
 
   return (
     <>
@@ -508,20 +515,26 @@ export function ArtifactsTabPane({
                 <strong>{collection.name}</strong>
                 <small>{collection.project} · {formatNumber(collection.versions_count ?? 0, 0)} versions · {formatBytes(collection.retained_bytes ?? 0)}</small>
               </button>
-            )) : <div className="empty">No versioned artifact collections.</div>}
+            )) : <div className="empty">{hasRawArtifacts ? "No versioned artifact collections. Raw run artifacts are shown below." : "No versioned artifact collections."}</div>}
           </div>
         </section>
 
         <section className="panel artifact-version-panel">
           <div className="panel-head">
             <h2><Archive size={15} /> Versions <span>{selectedCollection ? `${versions.length}/${versionTotal || versions.length}` : "none"}</span></h2>
-            <div className="panel-controls">
-              <button className="copy-button" disabled={!selectedVersion || !canManageArtifacts || mutationDisabled} title={manageTitle || "Move best alias to this version"} type="button" onClick={setBestAlias}><Star size={13} /> Best</button>
-              <button className="copy-button" disabled={!selectedVersion || !canManageArtifacts || mutationDisabled} title={manageTitle || "Keep this version"} type="button" onClick={() => updateRetention("keep_forever")}><ShieldCheck size={13} /> Keep</button>
-              <button className="copy-button" disabled={!selectedVersion || !canManageArtifacts || mutationDisabled} title={manageTitle || "Set 30 day retention"} type="button" onClick={() => updateRetention("days", 30)}><CheckCircle2 size={13} /> 30d</button>
-              <button className="copy-button unavailable" disabled={!selectedVersion || !canManageArtifacts || mutationDisabled} title={manageTitle || "Soft delete this version"} type="button" onClick={deleteVersion}><Trash2 size={13} /> Delete</button>
-              <button className="copy-button" disabled={!versionHasMore || versionLoadingMore} type="button" onClick={loadMoreVersions}><ListPlus size={13} /> More</button>
-            </div>
+            {selectedVersion || versionHasMore ? (
+              <div className="panel-controls">
+                {selectedVersion ? (
+                  <>
+                    <button className="copy-button" disabled={!canManageArtifacts || mutationDisabled} title={manageTitle || "Move best alias to this version"} type="button" onClick={setBestAlias}><Star size={13} /> Best</button>
+                    <button className="copy-button" disabled={!canManageArtifacts || mutationDisabled} title={manageTitle || "Keep this version"} type="button" onClick={() => updateRetention("keep_forever")}><ShieldCheck size={13} /> Keep</button>
+                    <button className="copy-button" disabled={!canManageArtifacts || mutationDisabled} title={manageTitle || "Set 30 day retention"} type="button" onClick={() => updateRetention("days", 30)}><CheckCircle2 size={13} /> 30d</button>
+                    <button className="copy-button unavailable" disabled={!canManageArtifacts || mutationDisabled} title={manageTitle || "Soft delete this version"} type="button" onClick={deleteVersion}><Trash2 size={13} /> Delete</button>
+                  </>
+                ) : null}
+                <button className="copy-button" disabled={!versionHasMore || versionLoadingMore} title={versionMoreTitle} type="button" onClick={loadMoreVersions}><ListPlus size={13} /> More</button>
+              </div>
+            ) : null}
           </div>
           <div className="panel-body artifact-version-grid">
             <div className="artifact-version-list">
@@ -543,7 +556,7 @@ export function ArtifactsTabPane({
               <MetricCard label="Selected" value={selectedVersion ? `${selectedVersion.name}:${selectedVersion.version}` : "-"} tone="neutral" />
               <MetricCard label="Aliases" value={selectedAliases} tone={selectedVersion?.aliases?.includes("best") ? "good" : "neutral"} />
               <MetricCard label="State" value={selectedVersion?.state ?? "-"} tone={selectedVersion?.state === "active" ? "good" : "bad"} />
-              <button className="copy-button" disabled={!selectedVersion} type="button" onClick={() => copyText(selectedVersion?.id ?? "")}><Copy size={13} /> Copy version ID</button>
+              <button className="copy-button" disabled={!selectedVersion} type="button" onClick={() => void copyText(selectedVersion?.id ?? "")}><Copy size={13} /> Copy version ID</button>
             </div>
           </div>
         </section>
@@ -579,7 +592,7 @@ export function ArtifactsTabPane({
           </div>
         </section>
 
-        <details className="panel artifact-raw-panel" open={versionedUnsupported}>
+        <details className="panel artifact-raw-panel" open={rawPanelOpen}>
           <summary className="panel-head"><h2><Package size={15} /> Raw run artifacts <span>({rawArtifacts.length})</span></h2></summary>
           <div className="panel-body">
             {legacyLoading ? <div className="status-strip loading" aria-live="polite">{legacyLoading}</div> : null}

@@ -145,7 +145,7 @@ const TIERS: Tier[] = [
     features: [
       "Everything in Pro",
       "Premium BYOC GCP ClickHouse option",
-      "Larger hosted warehouse routing intent",
+      "Larger hosted warehouse capacity",
       "Guided storage and ingest setup during beta",
     ],
     ctaLabel: "Start Premium",
@@ -483,9 +483,8 @@ export function PricingPage() {
 
         <p className="pricing-fine-print">
           Prices are current hosted beta list prices. Extra seats are available
-          through billing; the target range remains $79-$99 per seat/month
-          until invoice smoke coverage is complete. Included seats apply to
-          organization workspaces; personal workspaces stay one owner seat.
+          through billing; contact us for current extra-seat pricing. Included
+          seats apply to organization workspaces; personal workspaces stay one owner seat.
           Enterprise/custom is reserved for SSO/SAML, VPC or self-hosted
           deployment, compliance, custom retention, dedicated support, or
           unusually heavy data footprints.

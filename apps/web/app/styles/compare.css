@@ -550,6 +550,19 @@ button.compare-row-head.active {
   min-width: 0;
 }
 
+.artifact-catalog-panel .panel-head,
+.artifact-version-panel .panel-head,
+.artifact-manifest-panel .panel-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.artifact-catalog-panel .panel-head h2,
+.artifact-version-panel .panel-head h2,
+.artifact-manifest-panel .panel-head h2 {
+  min-width: min(100%, 220px);
+}
+
 .artifact-collection-list,
 .artifact-version-list,
 .artifact-manifest-table,
@@ -761,6 +774,12 @@ button.compare-row-head.active {
     grid-column: 1 / -1;
   }
 
+  .artifact-catalog-controls,
+  .artifact-version-panel .panel-controls,
+  .artifact-manifest-panel .panel-controls {
+    width: 100%;
+  }
+
   .metrics-chart-surface {
     order: 1;
   }
@@ -769,7 +788,8 @@ button.compare-row-head.active {
     order: 2;
   }
 
-  .metrics-analysis .inspector {
+  .metrics-analysis .inspector,
+  .metric-insights-panel {
     order: 3;
   }
 

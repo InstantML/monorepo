@@ -468,51 +468,54 @@ export function RunsWorkspace({
       </section>
 
       {showAddPanelDrawer ? (
-        <aside className="panel-drawer" role="dialog" aria-modal="true" aria-label="Add panels" ref={addDrawerRef} tabIndex={-1}>
-          <div className="drawer-head">
-            <h2>Add panels</h2>
-            <button className="icon-button" type="button" aria-label="Close add panels" onClick={() => onSetAddPanelSection("")}><X size={16} /></button>
-          </div>
-          <button className="quick-add-card" type="button" disabled={!availableMetricKeys.length} onClick={() => availableMetricKeys[0] && onAddPanel(activeAddSectionId, availableMetricKeys[0], addPanelType)}>
-            <span><Plus size={17} /></span>
-            <strong>Quick add</strong>
-            <small>Add the next available metric as a {workspacePanelTypeLabel(addPanelType).toLowerCase()} panel.</small>
-          </button>
-          <div className="chart-type-segment" role="group" aria-label="Chart type">
-            {(["line", "bar", "histogram", "dot"] as WorkspacePanelType[]).map((type) => (
-              <button
-                aria-pressed={addPanelType === type}
-                className={addPanelType === type ? "active" : ""}
-                key={type}
-                onClick={() => setAddPanelType(type)}
-                type="button"
-              >
-                {workspacePanelTypeLabel(type)}
-              </button>
-            ))}
-          </div>
-          <CustomSelect
-            className="full"
-            id="add-panel-section"
-            label="Add to"
-            onChange={onSetAddPanelSection}
-            options={view.sections.map((section) => ({ value: section.id, label: section.name }))}
-            value={activeAddSectionId}
-          />
-          <div className="drawer-group">
-            <h3>Charts</h3>
-            {availableMetricKeys.slice(0, 18).map((metric) => (
-              <button className="drawer-metric-row" key={metric} type="button" onClick={() => onAddPanel(activeAddSectionId, metric, addPanelType)}>
-                <Activity size={16} />
-                <span>
-                  <strong>{metricTitle(metric)}</strong>
-                  <small>{metric}</small>
-                </span>
-              </button>
-            ))}
-            {!availableMetricKeys.length ? <div className="empty compact-empty">No metrics are available for the current filters yet.</div> : null}
-          </div>
-        </aside>
+        <>
+          <div className="panel-drawer-backdrop" aria-hidden="true" onMouseDown={() => onSetAddPanelSection("")} />
+          <aside className="panel-drawer" role="dialog" aria-modal="true" aria-label="Add panels" ref={addDrawerRef} tabIndex={-1}>
+            <div className="drawer-head">
+              <h2>Add panels</h2>
+              <button className="icon-button" type="button" aria-label="Close add panels" onClick={() => onSetAddPanelSection("")}><X size={16} /></button>
+            </div>
+            <button className="quick-add-card" type="button" disabled={!availableMetricKeys.length} onClick={() => availableMetricKeys[0] && onAddPanel(activeAddSectionId, availableMetricKeys[0], addPanelType)}>
+              <span><Plus size={17} /></span>
+              <strong>Quick add</strong>
+              <small>Add the next available metric as a {workspacePanelTypeLabel(addPanelType).toLowerCase()} panel.</small>
+            </button>
+            <div className="chart-type-segment" role="group" aria-label="Chart type">
+              {(["line", "bar", "histogram", "dot"] as WorkspacePanelType[]).map((type) => (
+                <button
+                  aria-pressed={addPanelType === type}
+                  className={addPanelType === type ? "active" : ""}
+                  key={type}
+                  onClick={() => setAddPanelType(type)}
+                  type="button"
+                >
+                  {workspacePanelTypeLabel(type)}
+                </button>
+              ))}
+            </div>
+            <CustomSelect
+              className="full"
+              id="add-panel-section"
+              label="Add to"
+              onChange={onSetAddPanelSection}
+              options={view.sections.map((section) => ({ value: section.id, label: section.name }))}
+              value={activeAddSectionId}
+            />
+            <div className="drawer-group">
+              <h3>Charts</h3>
+              {availableMetricKeys.slice(0, 18).map((metric) => (
+                <button className="drawer-metric-row" key={metric} type="button" onClick={() => onAddPanel(activeAddSectionId, metric, addPanelType)}>
+                  <Activity size={16} />
+                  <span>
+                    <strong>{metricTitle(metric)}</strong>
+                    <small>{metric}</small>
+                  </span>
+                </button>
+              ))}
+              {!availableMetricKeys.length ? <div className="empty compact-empty">No metrics are available for the current filters yet.</div> : null}
+            </div>
+          </aside>
+        </>
       ) : null}
     </div>
   );

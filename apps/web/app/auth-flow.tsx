@@ -596,6 +596,19 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
     });
   }
 
+  async function leaveDemoForSignup() {
+    setBusy(true);
+    note("Leaving the demo...");
+    try {
+      await api.post("/api/auth/logout", {}).catch(() => undefined);
+      await clerk.signOut({ redirectUrl: "/signup" }).catch(() => undefined);
+      window.location.replace("/signup");
+    } catch (error) {
+      fail(error instanceof Error ? error.message : "Unable to leave the demo. Try signing out, then open sign up again.");
+      setBusy(false);
+    }
+  }
+
   async function createKey() {
     if (!session?.organization?.id) return;
     setBusy(true);
@@ -804,6 +817,7 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                 onSaveByoc={saveByocConnection}
                 onCreateKey={createKey}
                 onCopy={copyKey}
+                onCreateRealWorkspace={leaveDemoForSignup}
               />
             ) : (
               <>
@@ -1055,7 +1069,7 @@ function OnboardingAside({ session, keyDone, demo }: { session: SessionPayload |
 
 function OnboardingBody({
   session, demo, apiKey, copied, busy, nextPath, byocStatus, byocValidation, byocForm,
-  onByocField, onValidateByoc, onSaveByoc, onCreateKey, onCopy,
+  onByocField, onValidateByoc, onSaveByoc, onCreateKey, onCopy, onCreateRealWorkspace,
 }: {
   session: SessionPayload | null;
   demo: boolean;
@@ -1071,6 +1085,7 @@ function OnboardingBody({
   onSaveByoc: () => void;
   onCreateKey: () => void;
   onCopy: () => void;
+  onCreateRealWorkspace: () => void;
 }) {
   const storageSetupRequired = !workspaceStorageReady(session);
   const byocRequired = workspaceUsesByoc(session) && storageSetupRequired;
@@ -1092,7 +1107,7 @@ function OnboardingBody({
           <Link className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" href="/dashboard/runs">
             Open the demo dashboard <ArrowRight className="iml-arrow" size={15} />
           </Link>
-          <Link className="iml-btn iml-btn--ghost iml-btn--block" href="/signup">Create a real workspace instead</Link>
+          <button className="iml-btn iml-btn--ghost iml-btn--block" disabled={busy} onClick={onCreateRealWorkspace} type="button">Create a real workspace instead</button>
         </div>
       ) : byocRequired && !canManageStorage ? (
         <StorageSetupBlocked />
@@ -1192,6 +1207,7 @@ function ByocSetup({
   onValidate: () => void;
   onSave: () => void;
 }) {
+  const [copyStatus, setCopyStatus] = useState("");
   const egress = status?.required_egress_cidrs ?? validation?.required_egress_cidrs ?? [];
   const egressText = egress.join(", ");
   const database = clickhouseIdentifierPreview(form.database, "instantml");
@@ -1206,16 +1222,32 @@ function ByocSetup({
   ].join("\n");
   const egressConfigured = egress.length > 0;
   const canSubmit = Boolean(form.endpoint.trim() && form.database.trim() && form.username.trim() && form.password && egressConfigured);
-  const copyEgress = () => {
-    if (egressText && typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(egressText);
+  const missingFields = [
+    !form.endpoint.trim() ? "endpoint" : "",
+    !form.database.trim() ? "database" : "",
+    !form.username.trim() ? "username" : "",
+    !form.password ? "password" : "",
+  ].filter(Boolean);
+  const submitDisabledReason = busy
+    ? "Connection check in progress."
+    : !egressConfigured
+      ? "BYOC signup is disabled until InstantML egress CIDRs are configured."
+      : missingFields.length
+        ? `Enter ${missingFields.join(", ")} before validating.`
+        : "Validate and save this ClickHouse connection.";
+  async function copySetupText(label: string, text: string) {
+    if (!text || typeof navigator === "undefined" || !navigator.clipboard) {
+      setCopyStatus(`Copy failed. Select and copy the ${label} manually.`);
+      return;
     }
-  };
-  const copySql = () => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(setupSql);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus(`${label} copied.`);
+    } catch {
+      setCopyStatus(`Copy failed. Select and copy the ${label} manually.`);
     }
-  };
+    window.setTimeout(() => setCopyStatus(""), 1800);
+  }
   return (
     <div className="iml-actions">
       <div className="iml-byoc-callout">
@@ -1233,7 +1265,7 @@ function ByocSetup({
           <span className="iml-egress-label">Data-plane egress</span>
           {egress.length > 0 ? egress.map((cidr) => <code key={cidr}>{cidr}</code>) : <span>Not configured. BYOC signup is disabled until egress is set.</span>}
           {egress.length > 0 ? (
-            <button className="iml-copy" onClick={copyEgress} type="button"><Copy size={12} /> Copy CIDRs</button>
+            <button className="iml-copy" onClick={() => void copySetupText("CIDRs", egressText)} type="button"><Copy size={12} /> Copy CIDRs</button>
           ) : null}
           {status?.egress_set_version || validation?.egress_set_version ? (
             <span className="iml-egress-version">{status?.egress_set_version || validation?.egress_set_version}</span>
@@ -1243,10 +1275,11 @@ function ByocSetup({
           <div className="iml-term-bar">
             <span className="tl">clickhouse · setup sql</span>
             <span className="sp" />
-            <button className="iml-copy" onClick={copySql} type="button"><Copy size={12} /> Copy SQL</button>
+            <button className="iml-copy" onClick={() => void copySetupText("SQL", setupSql)} type="button"><Copy size={12} /> Copy SQL</button>
           </div>
           <pre>{setupSql}</pre>
         </div>
+        {copyStatus ? <p className="iml-status is-busy" role={copyStatus.startsWith("Copy failed") ? "alert" : "status"}>{copyStatus}</p> : null}
       </div>
 
       <div className="iml-field">
@@ -1287,11 +1320,11 @@ function ByocSetup({
       ) : null}
 
       <div className="iml-byoc-actions">
-        <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy || !canSubmit} onClick={onValidate} type="button">
+        <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy || !canSubmit} onClick={onValidate} title={submitDisabledReason} type="button">
           {busy ? <span className="iml-spin" aria-hidden="true" /> : <Database size={16} />}
           Validate connection
         </button>
-        <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy || !canSubmit} onClick={onSave} type="button">
+        <button className="iml-btn iml-btn--primary iml-btn--lg iml-btn--block" disabled={busy || !canSubmit} onClick={onSave} title={submitDisabledReason} type="button">
           {busy ? <span className="iml-spin on-fill" aria-hidden="true" /> : <KeyRound size={16} />}
           Save connection
         </button>

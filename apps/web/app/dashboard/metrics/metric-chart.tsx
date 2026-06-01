@@ -416,7 +416,7 @@ export function MetricChart({
                   cy={point.displayY ?? point.y}
                   style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
                   onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance: 0 })}
-                  r={2.6}
+                  r={2.4}
                 />
               )) : null}
             </g>

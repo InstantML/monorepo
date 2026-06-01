@@ -691,7 +691,7 @@ export function DashboardTopbar({
 
   useEffect(() => {
     const root = document.documentElement;
-    const media = window.matchMedia("(max-width: 720px)");
+    const media = window.matchMedia("(max-width: 900px)");
     function applyHeight() {
       setCompactFilters(media.matches);
       if (media.matches) {

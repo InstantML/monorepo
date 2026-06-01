@@ -14,6 +14,23 @@
 .pricing-h1 { font-size: 38px; line-height: 1.05; letter-spacing: -0.02em; }
 @media (min-width: 768px) { .pricing-h1 { font-size: 52px; } }
 .pricing-header-chips { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.pricing-header-chips > * {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (min-width: 768px) and (max-width: 899px) {
+  .pricing-header-section { padding-top: 96px; }
+  .pricing-header-intro { margin-bottom: 36px; }
+  .pricing-h1 { font-size: 46px; }
+  .pricing-root .landing-cta-primary--sm {
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+  .pricing-header-chips > * {
+    white-space: normal;
+    text-align: center;
+  }
+}
 
 /* Active nav indicator */
 .pricing-nav__link--active { color: var(--text); position: relative; }

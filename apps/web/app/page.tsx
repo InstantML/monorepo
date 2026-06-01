@@ -29,6 +29,15 @@ export const metadata: Metadata = {
   },
 };
 
+async function clerkUserIdOrNull() {
+  try {
+    const { userId } = await auth();
+    return userId;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Home route — auth-aware server component.
  *
@@ -49,7 +58,7 @@ export const metadata: Metadata = {
  * See docs/design/2026-05-17-landing-merge-into-web.md.
  */
 export default async function Home() {
-  const { userId } = await auth();
+  const userId = await clerkUserIdOrNull();
   if (userId) {
     redirect("/signin");
   }

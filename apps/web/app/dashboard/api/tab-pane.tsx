@@ -10,6 +10,8 @@ type ApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 type Props = {
   activeOrgId: string;
   adminBusy: boolean;
+  adminMessage: string;
+  adminMessageTone: "status" | "error";
   apiKeyName: string;
   apiKeys: ApiKeyRow[];
   apiRows: ApiRow[];
@@ -30,6 +32,8 @@ type Props = {
 export function ApiTabPane({
   activeOrgId,
   adminBusy,
+  adminMessage,
+  adminMessageTone,
   apiKeyName,
   apiKeys,
   apiRows,
@@ -52,7 +56,7 @@ export function ApiTabPane({
   return (
     <>
       <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API" emphasis="keys" lede={`${activeKeyCount} active · documented REST routes`} />
-      <div className="tab-grid two-col">
+      <div className="tab-grid two-col api-tab-grid">
         <section className="panel">
           <div className="panel-head">
             <h2><KeyRound size={15} /> API Keys</h2>
@@ -67,6 +71,7 @@ export function ApiTabPane({
             ) : (
               <p className="empty">API-key management is available to workspace owners and admins.</p>
             )}
+            {adminMessage ? <p className={`admin-message ${adminMessageTone}`} role={adminMessageTone === "error" ? "alert" : "status"}>{adminMessage}</p> : null}
             {visibleNewApiKey ? (
               <div className="api-key-reveal" role="status" aria-live="polite">
                 <strong>Copy-once API key</strong>

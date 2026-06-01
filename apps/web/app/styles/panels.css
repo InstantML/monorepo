@@ -90,6 +90,10 @@
   scroll-margin-top: calc(var(--topbar-height) + var(--runs-filter-sticky-height) + 74px);
 }
 
+.workspace-panel-grid > .workspace-panel-card:only-child {
+  grid-column: 1 / -1;
+}
+
 .workspace-panel-head {
   display: flex;
   align-items: flex-start;
@@ -147,10 +151,9 @@
 .workspace-panel-head small {
   display: block;
   min-width: 0;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: min(520px, 100%);
+  overflow-wrap: anywhere;
+  white-space: normal;
   line-height: 1.25;
 }
 
@@ -400,6 +403,13 @@
   border-left: 1px solid var(--line);
   background: var(--surface);
   padding: 14px;
+}
+
+.panel-drawer-backdrop {
+  position: fixed;
+  inset: var(--topbar-height) 0 0;
+  z-index: 7;
+  background: rgba(15, 23, 42, 0.08);
 }
 
 .edit-drawer {

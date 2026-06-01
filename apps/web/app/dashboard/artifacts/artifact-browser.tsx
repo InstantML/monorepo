@@ -13,9 +13,13 @@ function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
 }
 
-function copyText(value: string) {
+async function copyText(value: string) {
   if (!value) return;
-  void navigator.clipboard?.writeText(value);
+  try {
+    await navigator.clipboard?.writeText(value);
+  } catch {
+    // Visible IDs/snippets remain selectable when clipboard permission is denied.
+  }
 }
 
 function ArtifactIcon({ type }: { type: string }) {
@@ -58,7 +62,7 @@ export function ArtifactBrowser({ artifacts }: { artifacts: Artifact[] }) {
               <Download size={13} /> Unavailable
             </button>
           )}
-          <button className="copy-button" type="button" onClick={() => copyText(artifact.id)}><Copy size={13} /> Copy ID</button>
+          <button className="copy-button" type="button" onClick={() => void copyText(artifact.id)}><Copy size={13} /> Copy ID</button>
         </article>
       ))}
     </div>

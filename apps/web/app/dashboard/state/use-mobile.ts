@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export const MOBILE_BREAKPOINT_PX = 720;
+export const MOBILE_BREAKPOINT_PX = 900;
 
 export function useIsMobile(breakpointPx: number = MOBILE_BREAKPOINT_PX): boolean {
   const [isMobile, setIsMobile] = useState(false);

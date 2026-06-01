@@ -229,15 +229,24 @@ body:has(.docs-route) {
   align-items: stretch;
   gap: 6px;
   overflow-x: auto;
-  scrollbar-width: none;
+  padding-bottom: 6px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 
 .docs-route-tabs::-webkit-scrollbar {
-  display: none;
+  height: 6px;
+  display: block;
+}
+
+.docs-route-tabs::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(23, 33, 27, 0.18);
 }
 
 .docs-route-tab {
   position: relative;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   padding: 12px 12px;

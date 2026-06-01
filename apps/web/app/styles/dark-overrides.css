@@ -119,6 +119,16 @@
   color: #04130d;
 }
 
+:root[data-theme="dark"] button.primary-button:disabled,
+:root[data-theme="dark"] .primary-button[aria-disabled="true"],
+:root[data-theme="dark"] button.primary-button:disabled:hover,
+:root[data-theme="dark"] .primary-button[aria-disabled="true"]:hover {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  box-shadow: none;
+}
+
 :root[data-theme="dark"] button.secondary:hover,
 :root[data-theme="dark"] .copy-button:hover,
 :root[data-theme="dark"] .select-trigger:hover,
@@ -734,8 +744,9 @@
 }
 
 .run-data-panel .chart-area {
-  max-height: 410px;
-  overflow: hidden;
+  min-height: 340px;
+  max-height: none;
+  overflow: visible;
 }
 
 .run-data-panel .metric-chart {

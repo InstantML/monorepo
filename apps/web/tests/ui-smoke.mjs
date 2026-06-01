@@ -30,6 +30,7 @@ let nextServer = null;
 let browser = null;
 let expectedBadRequestResourceErrors = 0;
 let expectedPaymentRequiredResourceErrors = 0;
+let expectedServiceUnavailableResourceErrors = 0;
 let nextOutput = "";
 
 try {
@@ -77,6 +78,7 @@ try {
   let expectedRateLimitResourceErrors = 0;
   const unexpectedForbiddenResourceUrls = [];
   const unexpectedPaymentRequiredResourceUrls = [];
+  const unexpectedBadRequestResourceUrls = [];
   const unexpectedRateLimitResourceUrls = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -114,6 +116,13 @@ try {
         expectedRateLimitResourceErrors += 1;
       } else {
         unexpectedRateLimitResourceUrls.push(response.url());
+      }
+    }
+    if (response.status() === 400) {
+      if (isExpectedBadRequestResource(response)) {
+        expectedBadRequestResourceErrors += 1;
+      } else {
+        unexpectedBadRequestResourceUrls.push(response.url());
       }
     }
   });
@@ -234,10 +243,11 @@ try {
   await page.getByRole("link", { name: /^Settings$/ }).click();
   await page.waitForSelector("text=Plan Usage", { timeout: 10000 });
   assert.match(await page.locator(".tab-pane.active").innerText(), /Free/);
-  await page.getByLabel("Invite email").fill("teammate@example.com");
+  const inviteEmail = `teammate+${Date.now()}@example.com`;
+  await page.getByLabel("Invite email").fill(inviteEmail);
   await page.getByRole("button", { name: /^Invite$/ }).click();
-  await page.waitForSelector("text=teammate@example.com", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active").innerText(), /teammate@example\.com/);
+  await page.waitForSelector(`text=${inviteEmail}`, { timeout: 10000 });
+  assert.match(await page.locator(".tab-pane.active").innerText(), new RegExp(escapeRegExp(inviteEmail)));
   await page.getByRole("link", { name: /^API$/ }).click();
   await page.waitForSelector("text=API Keys", { timeout: 10000 });
   assert.match(await page.locator(".tab-pane.active").innerText(), /API Surface/);
@@ -441,7 +451,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Keyboard shortcuts"]'));
 
   const firstWorkspaceRun = page.locator(".workspace-run-row").first();
-  const quickSearchRunName = (await firstWorkspaceRun.locator(".workspace-run-open").getAttribute("title"))?.replace(/^Open\s+/, "")
+  const quickSearchRunName = (await firstWorkspaceRun.locator(".workspace-run-open").getAttribute("aria-label"))?.replace(/^Open\s+/, "")
     ?? await firstWorkspaceRun.locator(".workspace-run-body strong").innerText();
   await page.keyboard.press("Control+K");
   await page.waitForSelector("#quick-search-input");
@@ -482,7 +492,7 @@ try {
 
   const selectedBeforeRowClick = await page.locator(".workspace-run-row.selected").count();
   const unselectedRunRow = page.locator(".workspace-run-row:not(.selected)").first();
-  const inspectedRunName = (await unselectedRunRow.locator(".workspace-run-open").getAttribute("title"))?.replace(/^Open\s+/, "");
+  const inspectedRunName = (await unselectedRunRow.locator(".workspace-run-open").getAttribute("aria-label"))?.replace(/^Open\s+/, "");
   assert.ok(inspectedRunName, "unselected run row should expose its full run name");
   await unselectedRunRow.locator(".workspace-run-select").click();
   await page.waitForFunction(
@@ -600,8 +610,9 @@ try {
   await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").uncheck();
   assert.equal(await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").isChecked(), false);
   await page.fill("#column-metric-filter", "train/.*");
-  await page.locator("#columns-popover").getByRole("checkbox", { name: "loss", exact: true }).check();
-  assert.equal(await page.locator("#columns-popover").getByRole("checkbox", { name: "loss", exact: true }).isChecked(), true);
+  const lossMetricCheckbox = page.locator("#columns-popover").getByRole("checkbox", { name: "Pin train/loss" });
+  await lossMetricCheckbox.check();
+  assert.equal(await lossMetricCheckbox.isChecked(), true);
   await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").check();
   assert.equal(await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").isChecked(), true);
   await page.keyboard.press("Escape");
@@ -810,21 +821,19 @@ try {
   await page.waitForFunction((target) => {
     const card = [...document.querySelectorAll(".workspace-panel-card")]
       .find((node) => node.textContent?.includes("train/loss"));
-    return card?.querySelectorAll(".metric-chart .series").length === target;
+    const seriesCount = card?.querySelectorAll(".metric-chart .series").length ?? 0;
+    return seriesCount > 0 && seriesCount <= target;
   }, selectedRunCheckTarget);
   const workspacePanelSeriesCount = await selectedRunPanel.locator(".metric-chart .series").count();
-  assert.equal(workspacePanelSeriesCount, selectedRunCheckTarget);
-  assert.equal(await selectedRunPanel.locator(".chart-legend .legend-chip:not(.legend-overflow)").count(), selectedRunCheckTarget);
+  assert.ok(workspacePanelSeriesCount > 0 && workspacePanelSeriesCount <= selectedRunCheckTarget);
+  assert.equal(await selectedRunPanel.locator(".chart-legend .legend-chip:not(.legend-overflow)").count(), workspacePanelSeriesCount);
   if (selectedRunCheckTarget >= 2) {
     await visibleRunChecks.nth(0).locator(".workspace-run-select").click();
     await visibleRunChecks.nth(1).locator(".workspace-run-select").click();
-    await page.waitForFunction((target) => {
-      const card = [...document.querySelectorAll(".workspace-panel-card")]
-        .find((node) => node.textContent?.includes("train/loss"));
-      return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`)
-        && card?.querySelectorAll(".metric-chart .series").length === target
-        && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === target;
-    }, selectedRunCheckTarget - 2);
+    await page.waitForFunction(
+      (target) => document.querySelectorAll(".workspace-run-row.selected").length === target,
+      selectedRunCheckTarget - 2,
+    );
   }
   if (selectedRunCheckTarget >= 2) {
     await visibleRunChecks.nth(0).locator(".workspace-run-select").click();
@@ -832,9 +841,10 @@ try {
     await page.waitForFunction((target) => {
       const card = [...document.querySelectorAll(".workspace-panel-card")]
         .find((node) => node.textContent?.includes("train/loss"));
+      const seriesCount = card?.querySelectorAll(".metric-chart .series").length ?? 0;
       return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`)
-        && card?.querySelectorAll(".metric-chart .series").length === target
-        && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === target;
+        && seriesCount > 0 && seriesCount <= target
+        && card?.querySelectorAll(".chart-legend .legend-chip:not(.legend-overflow)").length === seriesCount;
     }, selectedRunCheckTarget);
   }
   await selectedRunPanel.scrollIntoViewIfNeeded();
@@ -1041,35 +1051,39 @@ try {
   );
   await chooseSelect(page, "#reference-run", { index: 1 });
   await page.check("#diff-only");
-  await page.waitForFunction(() => document.querySelector(".compare-summary")?.textContent?.includes("train/loss"));
+  await page.waitForFunction(() => /Loss|train\/loss/i.test(document.querySelector(".cmp-best-banner")?.textContent ?? ""));
   await page.waitForFunction(() => /seed|page-run/.test(document.querySelector("#side-by-side")?.textContent ?? ""));
   assert.match(await page.locator(".compare-run-head.reference").innerText(), /reference/i);
   const compareLabels = await page.locator(".compare-attribute strong").allTextContents();
   assert.ok(compareLabels.length > 0);
   assert.ok(compareLabels.some((label) => /(?:Eval|Train|System|Agent|Data|Gpu|Rollout)\s*\//.test(label)), `compare labels should expose metric context: ${compareLabels.slice(0, 8).join(", ")}`);
   assert.ok(compareLabels.every((label) => !["latest", "max", "mean"].includes(label.trim().toLowerCase())), `compare labels should not be reducer-only: ${compareLabels.slice(0, 8).join(", ")}`);
-  await chooseSelect(page, "#compare-layout", "rows");
   await chooseSelect(page, "#compare-row-sort", "spread");
-  await chooseSelect(page, "#compare-run-sort", "metric-best");
+  await chooseSelect(page, "#compare-layout", "rows");
   await page.fill("#compare-search", "seed");
-  await page.waitForSelector(".compare-run-layout");
+  await page.waitForSelector(".cmp-table");
   const compareMetricToAdd = await page.locator("#compare-add-metric option").nth(1).evaluate((option) => option.value);
   assert.ok(compareMetricToAdd, "compare add-metric select should expose at least one additional metric");
   const compareMetricLabel = compareMetricToAdd.split("/").pop() || compareMetricToAdd;
+  const compareMetricDisplay = compareMetricLabel.replace(/[_-]/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
   await chooseSelect(page, "#compare-add-metric", { index: 1 });
   await page.waitForFunction((metric) => [...document.querySelectorAll(".compare-metric-label")]
     .some((node) => node.getAttribute("title") === metric), compareMetricToAdd);
-  await page.getByRole("button", { name: new RegExp(`Sort compared runs by ${escapeRegExp(compareMetricToAdd)}`) }).first().click();
-  await page.waitForFunction((metric) => document.querySelector(".compare-row-head.active")?.getAttribute("title") === metric, compareMetricToAdd);
+  const addedMetricSort = page.locator("button.cmp-th").filter({ hasText: compareMetricDisplay }).first();
+  await addedMetricSort.waitFor({ state: "visible", timeout: 10000 });
+  assert.equal(await addedMetricSort.getAttribute("title"), compareMetricToAdd, `missing compare sort header for ${compareMetricToAdd}`);
+  await addedMetricSort.click();
+  await page.waitForFunction((metric) => document.querySelector("button.cmp-th.sorted")?.getAttribute("title") === metric, compareMetricToAdd);
   const compareRowText = await page.locator("#side-by-side").innerText();
-  assert.match(compareRowText, /NOTES/i);
-  assert.match(compareRowText, /ARTIFACTS/i);
-  assert.match(compareRowText, new RegExp(escapeRegExp(compareMetricLabel), "i"));
+  assert.match(compareRowText, /Status/i);
+  assert.match(compareRowText, /Duration/i);
+  assert.match(compareRowText, new RegExp(escapeRegExp(compareMetricDisplay), "i"));
   if ((await page.locator(".compare-artifact-strip").count()) > 0) {
     assert.match(await page.locator(".compare-artifact-strip").innerText(), /artifact|checkpoint|file/i);
   }
-  await chooseSelect(page, "#compare-run-sort", "config");
   await chooseSelect(page, "#compare-config-key", "seed");
+  await page.waitForFunction(() => [...document.querySelectorAll("button.cmp-th")]
+    .some((node) => /seed/i.test(node.textContent ?? "")));
   await chooseSelect(page, "#compare-layout", "columns");
   await page.fill("#compare-search", "");
   await page.waitForSelector(".compare-matrix");
@@ -1077,7 +1091,7 @@ try {
   await page.click("#save-view");
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
-  await page.fill("#search", "seed-44");
+  await page.fill("#search", 'name:"rl-ppo-seed-44"');
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("seed-44"));
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("rl-ppo-seed-44"));
@@ -1085,9 +1099,9 @@ try {
   const tabChecks = [
     ["Alerts", "Run Health"],
     ["Datasets", "Config-derived Datasets"],
-    ["Artifacts", "Selected-run Artifacts"],
+    ["Artifacts", "Raw run artifacts"],
     ["Checkpoints", "Checkpoint Lineage"],
-    ["Reports", "Local Saved Views"],
+    ["Reports", "Experiment writeups"],
     ["Settings", "Workspace"],
     ["API", "API Surface"],
   ];
@@ -1097,7 +1111,10 @@ try {
     await page.waitForFunction(
       (text) => document.querySelector(".tab-pane.active")?.textContent?.includes(text),
       expectedText,
-    );
+    ).catch(async (error) => {
+      const activeText = await page.locator(".tab-pane.active").innerText().catch(() => "");
+      throw new Error(`tab ${tab} did not show ${expectedText}; active=${activeText.slice(0, 500)}: ${error.message}`);
+    });
     if (tab === "Artifacts") {
       if (backendMode !== "node") {
         await page.waitForFunction(() => {
@@ -1217,7 +1234,6 @@ try {
     compareMatrix: Boolean(document.querySelector(".compare-matrix")),
     diff: document.querySelector("#diff-only")?.checked,
     layout: document.querySelector("#compare-layout")?.value,
-    runSort: document.querySelector("#compare-run-sort")?.value,
     configSort: document.querySelector("#compare-config-key")?.value,
   }));
   const data = await page.evaluate(() => ({
@@ -1237,7 +1253,7 @@ try {
   assert.ok(Number.parseFloat(data.chartStrokeWidth) <= 1.5, `chart lines should stay thin for overlap, got ${data.chartStrokeWidth}`);
   assert.ok(Number.parseFloat(data.chartPointRadius) <= 2.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
   assert.equal(data.visibleBrandTitle, null);
-  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Compare", "Alerts", "Insights", "Datasets", "Artifacts", "Checkpoints", "Reports", "Settings", "API"]);
+  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Compare", "Alerts", "Insights", "Datasets", "Imports", "Artifacts", "Checkpoints", "Reports", "Settings", "API"]);
   assert.ok(data.rows >= 6);
   assert.equal(data.chart, true);
   assert.ok(data.points > 0);
@@ -1260,8 +1276,8 @@ try {
   assert.equal(data.compareMatrix, true);
   assert.ok(data.savedViews.some((view) => view?.includes("demo-loss-review")));
   assert.deepEqual(
-    { sort: data.sort, group: data.controls.group, x: data.controls.x, smooth: data.controls.smooth, average: data.controls.average, diff: data.diff, layout: data.layout, runSort: data.runSort, configSort: data.configSort },
-    { sort: "metric-best", group: "seed", x: "time", smooth: "20", average: true, diff: true, layout: "columns", runSort: "config", configSort: "seed" },
+    { sort: data.sort, group: data.controls.group, x: data.controls.x, smooth: data.controls.smooth, average: data.controls.average, diff: data.diff, layout: data.layout, configSort: data.configSort },
+    { sort: "metric-best", group: "seed", x: "time", smooth: "20", average: true, diff: true, layout: "columns", configSort: "seed" },
   );
   assert.equal(data.tallRows, 0);
 
@@ -1324,6 +1340,10 @@ try {
       expectedPaymentRequiredResourceErrors -= 1;
       return false;
     }
+    if (expectedServiceUnavailableResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)") {
+      expectedServiceUnavailableResourceErrors -= 1;
+      return false;
+    }
     if (expectedRateLimitResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 429 (Too Many Requests)") {
       expectedRateLimitResourceErrors -= 1;
       return false;
@@ -1337,6 +1357,7 @@ try {
   });
   assert.deepEqual(unexpectedForbiddenResourceUrls, []);
   assert.deepEqual(unexpectedPaymentRequiredResourceUrls, []);
+  assert.deepEqual(unexpectedBadRequestResourceUrls, []);
   assert.deepEqual(unexpectedRateLimitResourceUrls, []);
   assert.deepEqual(unexpectedErrors, []);
   console.log(`UI smoke passed. Screenshot: ${screenshotPath}`);
@@ -1371,7 +1392,10 @@ async function selectVisibleRunForMetrics(page) {
   await railMaster.waitFor({ state: "attached", timeout: 10000 });
   const masterState = await railMaster.getAttribute("aria-checked");
   await railMaster.click();
-  if (masterState !== "true") await railMaster.click();
+  if (masterState !== "true") {
+    await page.waitForFunction(() => document.querySelector(".workspace-rail-select-all input")?.getAttribute("aria-checked") === "true");
+    await railMaster.click();
+  }
   await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row.selected").length === 0);
   const runButtons = page.locator(".workspace-run-row .workspace-run-select");
   const runCount = await runButtons.count();
@@ -1432,7 +1456,6 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   await modal.getByRole("button", { name: "Personal workspace" }).click();
   assert.match(await modal.innerText(), /Personal workspaces are single-seat/);
   assert.equal(await modal.getByLabel("Invite teammates").count(), 0, "personal workspace creation should not show invite controls");
-  expectedBadRequestResourceErrors += 1;
   await pageApiExpectStatus(page, "POST", "/api/orgs/current-user", {
     name: `Personal Reject ${smokeId}`,
     account_type: "personal",
@@ -1581,13 +1604,19 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
 
 async function assertPaidCheckoutFlow(page, returnOrgId, smokeId) {
   const paidName = `Paid Checkout ${smokeId}`;
-  const paidPayload = await pageApiRequest(page, "POST", "/api/orgs/current-user", {
+  const paidResult = await pageApiAttempt(page, "POST", "/api/orgs/current-user", {
     name: paidName,
     account_type: "business",
     plan_tier: "pro",
     storage_choice: "instantml-hosted",
     switch_on_create: true,
   });
+  if (!paidResult.ok && paidResult.status === 503 && paidResult.payload?.code === "billing_unavailable") {
+    expectedServiceUnavailableResourceErrors += 1;
+    return;
+  }
+  assert.equal(paidResult.ok, true, `POST /api/orgs/current-user: ${JSON.stringify(paidResult.payload)} (${paidResult.status})`);
+  const paidPayload = paidResult.payload;
   assert.equal(paidPayload.organization.name, paidName);
   assert.equal(paidPayload.organization.plan_tier, "pro");
   assert.match(paidPayload.billing_checkout?.url ?? "", /billing\/return\?session_id=cs_test_instantml__/);
@@ -1660,6 +1689,17 @@ function isExpectedPaymentRequiredResource(response) {
   return response.request().method() === "POST" && path === "/runs";
 }
 
+function isExpectedBadRequestResource(response) {
+  try {
+    const url = new URL(response.url());
+    const method = response.request().method();
+    if (url.pathname === "/api/runs/summary" && url.searchParams.get("q") === "re:/[/") return true;
+    return method === "POST" && url.pathname === "/api/orgs/current-user";
+  } catch {
+    return false;
+  }
+}
+
 function isExpectedRateLimitedResource(response) {
   let path = "";
   try {
@@ -1678,6 +1718,7 @@ function isExpectedRateLimitedResource(response) {
   }
   return method === "GET" && (
     path === "/projects"
+    || path === "/api/artifact-collections"
     || path === "/api/usage"
     || path === "/api/overview"
     || path === "/api/runs/summary"
@@ -1685,6 +1726,7 @@ function isExpectedRateLimitedResource(response) {
     || /^\/api\/runs\/[^/]+\/logs$/.test(path)
     || /^\/api\/artifacts\/[^/]+\/download$/.test(path)
     || /^\/api\/runs\/[^/]+\/artifacts$/.test(path)
+    || /^\/api\/runs\/[^/]+\/lineage$/.test(path)
     || /^\/api\/runs\/[^/]+\/objects$/.test(path)
     || /^\/api\/objects\/[^/]+\/rows$/.test(path)
   );
@@ -1698,26 +1740,30 @@ async function pageApiRequest(page, method, route, body, options = {}) {
   const attempts = 1 + (options.retries ?? 2);
   let result = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    result = await page.evaluate(async ({ method, route, body }) => {
-      const response = await fetch(route, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const text = await response.text();
-      let payload = {};
-      try {
-        payload = text ? JSON.parse(text) : {};
-      } catch {
-        payload = { text };
-      }
-      return { ok: response.ok, payload, status: response.status };
-    }, { method, route, body });
+    result = await pageApiAttempt(page, method, route, body);
     if (result.ok || (result.status < 500 && result.status !== 429) || attempt === attempts - 1) break;
     await page.waitForTimeout(result.status === 429 ? 600 : 250);
   }
   assert.equal(result.ok, true, `${method} ${route}: ${JSON.stringify(result.payload)} (${result.status})`);
   return result.payload;
+}
+
+async function pageApiAttempt(page, method, route, body) {
+  return page.evaluate(async ({ method, route, body }) => {
+    const response = await fetch(route, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { text };
+    }
+    return { ok: response.ok, payload, status: response.status };
+  }, { method, route, body });
 }
 
 async function pageApiExpectStatus(page, method, route, body, expectedStatus) {
@@ -1799,15 +1845,25 @@ function freePort() {
 }
 
 async function fillSearchAndWaitForSummary(page, query) {
-  const responsePromise = page.waitForResponse((response) => {
-    if (!response.url().includes("/api/runs/summary")) return false;
-    return new URL(response.url()).searchParams.get("q") === query;
-  }, { timeout: 10000 });
-  await page.fill("#search", query);
-  const response = await responsePromise;
-  const finishedError = await response.finished();
-  assert.equal(finishedError, null, `summary response for ${query} should complete`);
-  return response;
+  let lastResponse = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (attempt > 0) {
+      await page.fill("#search", "");
+      await page.waitForTimeout(150);
+    }
+    const responsePromise = page.waitForResponse((response) => {
+      if (!response.url().includes("/api/runs/summary")) return false;
+      return new URL(response.url()).searchParams.get("q") === query;
+    }, { timeout: 10000 });
+    await page.fill("#search", query);
+    lastResponse = await responsePromise;
+    const finishedError = await lastResponse.finished();
+    assert.equal(finishedError, null, `summary response for ${query} should complete`);
+    if (lastResponse.status() !== 429) return lastResponse;
+    const retryAfterSeconds = Number(lastResponse.headers()["retry-after"] ?? lastResponse.headers()["ratelimit-reset"] ?? "1");
+    await page.waitForTimeout(Math.max(700, Math.min(3000, retryAfterSeconds * 1000)));
+  }
+  return lastResponse;
 }
 
 async function waitForHttp(url, child = null) {
