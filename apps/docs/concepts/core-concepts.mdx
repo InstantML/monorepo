@@ -74,6 +74,13 @@ Good metric keys are stable and namespaced:
 
 Use consistent names across runs so the dashboard can compare them directly.
 
+Scalar metrics become line charts in Metrics, Run Detail, and Runs workspace
+line panels. Compare shows scalar metrics as sortable values and columns. The
+Runs workspace can also summarize loaded runs with latest-value bar panels,
+value histogram panels, dot plots, and scatter plots; scatter combines any two
+numeric loaded-run fields, including metric aggregates, config fields, metadata
+fields, duration, or created time.
+
 ## Step
 
 Step is the x-axis coordinate for metric series. Steps must be finite,
@@ -161,6 +168,10 @@ Current public object types include:
 
 The dashboard fetches object manifests separately from run summaries so hidden
 tabs do not load large object payloads by accident.
+
+Rich-object histograms are previewed in Run Detail and artifact/object
+surfaces. They are separate from Runs workspace value histogram panels, which
+plot scalar metric summary values across the currently selected or loaded runs.
 
 ## Report
 

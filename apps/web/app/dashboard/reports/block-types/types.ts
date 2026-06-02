@@ -1,6 +1,8 @@
 // Shared TypeScript type definitions for block-based report blocks.
 // Mirrors the Rust block validation in apps/rust-server/src/store/reports/.
 
+import { CHART_PALETTE } from "../../../../src/chart-colors.js";
+
 export type HeadingLevel = 1 | 2 | 3;
 export type CalloutVariant = "info" | "warn" | "success";
 export type LlmSummaryAngle =
@@ -369,20 +371,10 @@ export interface ReportSummary {
 }
 
 /**
- * 8-color accent palette for the run-set table color dot picker. First slot
- * is the dashboard's primary accent token (Bolt-green); the rest are
- * distinguishable hues that pair well against the surface tokens.
+ * 8-color palette for the run-set table color dot picker. These mirror the
+ * calmer dashboard chart hues while remaining explicit per-runset settings.
  */
-export const RUN_COLOR_PALETTE: string[] = [
-  "#5d89dd",
-  "#dc5b55",
-  "#f59e0b",
-  "#8b7cf6",
-  "#2ec4b6",
-  "#10b981",
-  "#ec4899",
-  "#6366f1",
-];
+export const RUN_COLOR_PALETTE: string[] = CHART_PALETTE.slice(0, 8);
 
 export const SUPPORTED_CALLOUT_VARIANTS: CalloutVariant[] = ["info", "warn", "success"];
 export const SUPPORTED_HEADING_LEVELS: HeadingLevel[] = [1, 2, 3];

@@ -85,6 +85,24 @@ test("chart SVG export can align axes to rendered chart padding", () => {
   assert.match(svg, /<line x1="56" x2="56" y1="56" y2="104"/);
 });
 
+test("chart SVG export avoids small-series color collisions", () => {
+  const svg = chartSeriesToSvg({
+    metricKey: "loss",
+    series: [
+      { ...plottedSeries[0], id: "baseline", name: "baseline" },
+      { ...plottedSeries[0], id: "12-layer", name: "12-layer" },
+      { ...plottedSeries[0], id: "bottleneck-512", name: "bottleneck-512" },
+    ],
+    width: 240,
+    height: 160,
+    padding: 28,
+    xMode: "step",
+  });
+  const strokes = [...svg.matchAll(/<polyline[^>]+stroke="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(strokes).size, 3);
+  assert.doesNotMatch(svg, /stroke-dasharray/);
+});
+
 test("export filenames are filesystem-friendly and content-disposition aware", () => {
   assert.equal(safeExportFilename("Eval/Loss final.csv"), "eval-loss-final.csv");
   assert.equal(safeExportFilename("   "), "export");

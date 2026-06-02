@@ -43,7 +43,7 @@ const IDENTITY_PALETTE = [
   "#7da1e8", // blue
   "#c084fc", // violet
   "#5eead4", // teal
-  "#8b7cf6", // indigo
+  "#7c5cc4", // indigo
   "#38bdf8", // sky
   "#f0abfc", // orchid
   "#22d3ee", // cyan

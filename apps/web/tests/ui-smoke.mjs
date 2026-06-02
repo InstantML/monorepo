@@ -648,18 +648,32 @@ try {
   await page.waitForFunction(() => !document.querySelector(".panel-drawer"));
   await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
   await page.waitForSelector(".panel-drawer");
+  await page.getByRole("button", { name: "Scatter" }).click();
+  await page.waitForFunction(() => document.querySelector(".chart-type-segment button.active")?.textContent?.includes("Scatter"));
   await page.locator(".drawer-metric-row").first().click();
-  await page.waitForSelector(".workspace-panel-card", { timeout: 10000 });
+  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 10000 });
+  assert.match(await page.locator(".workspace-panel-card").first().innerText(), /Scatter|Summary values|plotted/);
   await page.waitForFunction(() => !document.querySelector(".panel-drawer") && document.querySelector("#status-message")?.textContent?.includes("Undo"));
   await page.keyboard.press(`${commandKey}+Z`);
   await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length === 0);
   await page.keyboard.press(`${commandKey}+Shift+Z`);
-  await page.waitForSelector(".workspace-panel-card", { timeout: 10000 });
+  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 10000 });
   await page.locator(".workspace-panel-card").first().hover();
   const actionOpacity = await page.locator(".workspace-panel-card .panel-card-actions").first().evaluate((node) => getComputedStyle(node).opacity);
   assert.ok(Number(actionOpacity) > 0.5, `panel actions should stay visible enough to avoid invisible destructive targets, got ${actionOpacity}`);
   await page.locator('.workspace-panel-card button[aria-label^="Edit"]').first().click();
   await page.waitForSelector(".edit-drawer");
+  assert.equal(await page.locator("#edit-panel-x-field").count(), 1);
+  assert.equal(await page.locator("#edit-panel-y-field").count(), 1);
+  const scatterFieldOptionCount = await page.locator("#edit-panel-y-field option").count();
+  assert.ok(scatterFieldOptionCount >= 2, `expected editable scatter X/Y fields, got ${scatterFieldOptionCount}`);
+  await chooseSelect(page, "#edit-panel-x-field", { index: 0 });
+  await chooseSelect(page, "#edit-panel-y-field", { index: 1 });
+  const editedScatterFields = await page.evaluate(() => ({
+    x: document.querySelector("#edit-panel-x-field")?.value,
+    y: document.querySelector("#edit-panel-y-field")?.value,
+  }));
+  assert.notEqual(editedScatterFields.x, editedScatterFields.y, "scatter smoke should exercise distinct X and Y fields");
   const panelCountBeforeEditTab = await page.locator(".workspace-panel-card").count();
   await page.keyboard.press("Tab");
   assert.equal(await page.locator(".edit-drawer").count(), 1);
@@ -667,6 +681,17 @@ try {
   await page.fill('.edit-drawer label:has-text("Title") input', "Smoke panel");
   await page.waitForFunction(() => document.querySelector(".workspace-panel-card h3")?.textContent?.includes("Smoke panel"));
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
+  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 10000 });
+  await page.locator(".workspace-panel-card").first().hover();
+  await page.locator('.workspace-panel-card button[aria-label^="Fullscreen"]').first().click();
+  await page.waitForSelector(".fullscreen-panel-card .scatter-panel-chart", { timeout: 10000 });
+  await page.locator(".fullscreen-modal").getByRole("button", { name: "Close fullscreen panel" }).click();
+  await page.waitForFunction(() => !document.querySelector(".fullscreen-modal"));
+  await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(250);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 15000 });
+  assert.match(await page.locator(".workspace-panel-card").first().innerText(), /Smoke panel|Scatter|Summary values/);
   await page.locator(".workspace-section .section-title-button").first().click();
   await page.waitForFunction(() => document.querySelector(".workspace-section")?.classList.contains("collapsed"));
   await page.locator(".workspace-section .section-title-button").first().click();

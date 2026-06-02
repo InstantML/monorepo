@@ -4,8 +4,10 @@ import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plu
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 
+import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
+import { fieldLabel } from "../../../src/dashboard-panels.js";
 import { BULK_SELECT_MATCHING_LIMIT, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
-import { metricTitle, runConfigSummary, runNoteText, runRailTooltip, workspacePanelTypeLabel } from "../../dashboard-models";
+import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runNoteText, runRailTooltip, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { WorkspaceSectionView } from "./workspace-panel-card";
@@ -70,10 +72,11 @@ function readDraggedPanel(event: DragEvent<HTMLElement>): DraggedWorkspacePanel 
   }
 }
 
-function panelMatchesSearch(section: { name: string }, panel: { title: string; metricKey: string; type: string }, search: string) {
+function panelMatchesSearch(section: { name: string }, panel: { title: string; metricKey: string; type: string; xField?: string; yField?: string }, search: string) {
   const needle = search.trim().toLowerCase();
   if (!needle) return true;
-  return `${section.name} ${panel.title} ${panel.metricKey} ${workspacePanelTypeLabel(panel.type as WorkspacePanelType)}`.toLowerCase().includes(needle);
+  const scatterFields = panel.type === "scatter" ? `${fieldLabel(panel.xField)} ${fieldLabel(panel.yField)}` : "";
+  return `${section.name} ${panel.title} ${panel.metricKey} ${workspacePanelTypeLabel(panel.type as WorkspacePanelType)} ${scatterFields}`.toLowerCase().includes(needle);
 }
 
 export function RunsWorkspace({
@@ -354,6 +357,7 @@ export function RunsWorkspace({
             const uploadHealth = uploadHealthForRun(run);
             const configSummary = runConfigSummary(run);
             const compactConfigSummary = compactRailConfigSummary(run);
+            const runColor = chartColor(stableChartIndex(run.id || run.name, index));
             return (
               <div
                 className={`workspace-run-row ${selected ? "selected" : ""}`}
@@ -376,7 +380,7 @@ export function RunsWorkspace({
                   title={runRailTooltip(run)}
                   type="button"
                 >
-                  <i className={`legend-dot dot-${index % 5}`} aria-hidden="true" />
+                  <i className="legend-dot" style={{ backgroundColor: runColor }} aria-hidden="true" />
                   <span className="workspace-run-body">
                     <strong>{compactRailRunName(run.name)}</strong>
                     <small title={`${run.project} · ${configSummary}`}>{run.project} · {compactConfigSummary}</small>
@@ -506,7 +510,7 @@ export function RunsWorkspace({
               <small>Add the next available metric as a {workspacePanelTypeLabel(addPanelType).toLowerCase()} panel.</small>
             </button>
             <div className="chart-type-segment" role="group" aria-label="Chart type">
-              {(["line", "bar", "histogram", "dot"] as WorkspacePanelType[]).map((type) => (
+              {WORKSPACE_PANEL_TYPES.map((type) => (
                 <button
                   aria-pressed={addPanelType === type}
                   className={addPanelType === type ? "active" : ""}

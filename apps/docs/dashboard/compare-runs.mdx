@@ -22,10 +22,13 @@ Use the Runs workspace for the broad scan:
 - Sort by newest, selected metric latest or best value, name, status, or
   duration.
 - Select runs from the rail to drive charts and comparison views.
-- Add line, bar, histogram, or dot panels for metric summaries and series.
+- Add line panels for metric series, bar/value histogram/dot panels for metric
+  summaries, and scatter panels for two loaded numeric run fields.
 
 The run list uses bounded summary data. Full metric series are fetched through
-separate chart requests when a panel needs them.
+separate chart requests when a line panel needs them. Scatter, bar, value
+histogram, and dot panels stay on loaded summaries so comparison scanning does
+not accidentally fetch every metric history.
 
 ## Run Detail
 

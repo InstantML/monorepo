@@ -40,14 +40,23 @@ ${chartsCss}
 <div id="root"></div>
 <script type="module">
 import { normalizeSeries, smoothSeries, chartDomain, axisTicks, formatMetricValue, formatAxisTick, formatAxisValue } from "/src/charts.js";
+import { chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "/src/chart-colors.js";
 
 const W = 760, H = 420, PAD = 60;
-const palette = ["#dc5b55","#5d89dd","var(--accent)","var(--warm)","#8b7cf6"];
-const color = (i) => palette[i % palette.length];
+const colorIndexFor = (item, fallback) => stableChartIndex(item?.id ?? item?.identifier ?? item?.name, fallback);
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+}[char]));
 
 function renderChart(series, { metricKey, smoothing = 0, identifierField = "name", hoverFrac = null }) {
   const prepared = smoothSeries(series, smoothing);
   const normalized = normalizeSeries(prepared, W, H, PAD, "step", metricKey);
+  const useLineStyles = normalized.length > 12;
+  const styleIndexes = chartStyleIndexesForItems(normalized);
   const domain = chartDomain(prepared, "step", metricKey);
   const xSpan = Math.max(1e-9, domain.maxX - domain.minX);
   const ySpan = Math.max(1e-9, domain.maxY - domain.minY);
@@ -61,7 +70,7 @@ function renderChart(series, { metricKey, smoothing = 0, identifierField = "name
     svg += '<text class="tick-label" x="'+(PAD-10)+'" y="'+(yPos(t)+4)+'" text-anchor="end">'+formatAxisTick(t)+'</text>';
   }
   for (const t of xTicks) {
-    svg += '<line class="grid-line" x1="'+xPos(t)+'" x2="'+xPos(t)+'" y1="'+PAD+'" y2="'+(H-PAD)+'"/>';
+    svg += '<line class="grid-line vertical" x1="'+xPos(t)+'" x2="'+xPos(t)+'" y1="'+PAD+'" y2="'+(H-PAD)+'"/>';
     svg += '<text class="tick-label" x="'+xPos(t)+'" y="'+(H-22)+'" text-anchor="middle">'+formatAxisValue(t,"step")+'</text>';
   }
   svg += '<line class="axis" x1="'+PAD+'" x2="'+(W-PAD)+'" y1="'+(H-PAD)+'" y2="'+(H-PAD)+'"/>';
@@ -73,22 +82,25 @@ function renderChart(series, { metricKey, smoothing = 0, identifierField = "name
   if (hoverFrac !== null) {
     const targetX = domain.minX + xSpan * hoverFrac;
     normalized.forEach((item, i) => {
+      const colorIndex = styleIndexes[i] ?? colorIndexFor(item, i);
       const pts = item.normalizedPoints || [];
       let best = null;
       for (const p of pts) if (!best || Math.abs(p.xValue - targetX) < Math.abs(best.xValue - targetX)) best = p;
-      if (best) { hoverPoints.push({ item, i, p: best }); }
+      if (best) { hoverPoints.push({ item, i, colorIndex, p: best }); }
     });
     if (hoverPoints.length) hoverX = hoverPoints[0].p.x;
   }
   if (hoverX !== null) svg += '<line class="hover-guide" x1="'+hoverX+'" x2="'+hoverX+'" y1="'+PAD+'" y2="'+(H-PAD)+'"/>';
 
   normalized.forEach((item, i) => {
-    const stroke = color(i);
-    svg += '<polyline class="series series-'+(i%5)+(item.smoothed?" series-raw":"")+'" points="'+item.path+'" style="stroke:'+stroke+'"/>';
+    const colorIndex = styleIndexes[i] ?? colorIndexFor(item, i);
+    const stroke = chartColor(colorIndex);
+    const lineStyle = chartLineStyleClass(useLineStyles ? colorIndex : 0);
+    svg += '<polyline class="series series-'+(colorIndex%5)+' '+lineStyle+(item.smoothed?" series-raw":"")+'" points="'+item.path+'" style="stroke:'+stroke+'"/>';
     if (item.smoothed && item.smoothPath)
-      svg += '<polyline class="series series-'+(i%5)+' series-smooth" points="'+item.smoothPath+'" style="stroke:'+stroke+'"/>';
-    for (const p of (item.normalizedPoints||[])) {
-      svg += '<circle class="series-point point-'+(i%5)+(item.smoothed?" series-point-raw":"")+'" cx="'+p.x+'" cy="'+(p.displayY ?? p.y)+'" r="2.4" style="fill:'+stroke+';stroke:var(--chart-card-bg)"/>';
+      svg += '<polyline class="series series-'+(colorIndex%5)+' '+lineStyle+' series-smooth" points="'+item.smoothPath+'" style="stroke:'+stroke+'"/>';
+    if ((item.normalizedPoints?.length ?? 0) <= 2) for (const p of (item.normalizedPoints||[])) {
+      svg += '<circle class="series-point point-'+(colorIndex%5)+(item.smoothed?" series-point-raw":"")+'" cx="'+p.x+'" cy="'+(p.displayY ?? p.y)+'" r="2.4" style="fill:'+stroke+';stroke:var(--chart-card-bg)"/>';
     }
   });
   if (hoverPoints.length) {
@@ -101,21 +113,27 @@ function renderChart(series, { metricKey, smoothing = 0, identifierField = "name
   if (hoverPoints.length) {
     const top = (hoverPoints[0].p.displayY ?? hoverPoints[0].p.y) / H * 100;
     const left = Math.min(82, Math.max(18, hoverPoints[0].p.x / W * 100));
-    const ranked = [...hoverPoints].sort((a, b) => (b.p.value ?? -Infinity) - (a.p.value ?? -Infinity)).slice(0, 8);
+    const ranked = [...hoverPoints].sort((a, b) => ((b.p.smoothedValue ?? b.p.value) ?? -Infinity) - ((a.p.smoothedValue ?? a.p.value) ?? -Infinity)).slice(0, 8);
     tooltip = '<div class="chart-tooltip" style="left:'+left+'%;top:'+top+'%">'
       + '<div class="chart-tooltip-head">Step ' + hoverPoints[0].p.step + '</div>'
-      + '<div class="chart-tooltip-cols"><span>Value</span><span>Name</span></div>'
-      + ranked.map(({item,i,p}) => {
+      + '<div class="chart-tooltip-cols"><span>Raw / EMA</span><span>Name</span></div>'
+      + ranked.map(({item,colorIndex,p}) => {
           const id = item[identifierField] ?? item.name;
-          const sm = (item.smoothed && Number.isFinite(p.smoothedValue)) ? ' <em class="tooltip-smoothed">('+formatMetricValue(p.smoothedValue)+')</em>' : '';
-          return '<span class="chart-tooltip-row"><b style="color:'+color(i)+'">'+formatMetricValue(p.value)+sm+'</b>'
-            + '<span class="chart-tooltip-name"><i class="legend-dot" style="background:'+color(i)+'"></i> '+id+'</span></span>';
+          const stroke = chartColor(colorIndex);
+          const sm = (item.smoothed && Number.isFinite(p.smoothedValue)) ? '<span class="tooltip-raw">raw '+formatMetricValue(p.value)+'</span><em class="tooltip-smoothed">EMA '+formatMetricValue(p.smoothedValue)+'</em>' : formatMetricValue(p.value);
+          return '<span class="chart-tooltip-row"><b style="color:'+stroke+'">'+sm+'</b>'
+            + '<span class="chart-tooltip-name"><i class="legend-line '+chartLineStyleClass(useLineStyles ? colorIndex : 0)+'" style="background-color:'+stroke+';color:'+stroke+'"></i> '+escapeHtml(id)+'</span></span>';
         }).join("")
+      + (hoverPoints.length > ranked.length ? '<div class="chart-tooltip-more">Showing '+ranked.length+' of '+hoverPoints.length+'</div>' : '')
       + '</div>';
   }
 
-  const legend = '<div class="chart-legend">' + normalized.map((item,i) =>
-    '<span class="legend-chip"><i class="legend-dot" style="background:'+color(i)+'"></i>'+(item[identifierField] ?? item.name)+'</span>').join("") + '</div>';
+  const legendItems = normalized.length <= 12 ? normalized : normalized.slice(0, 8);
+  const legend = '<div class="chart-legend">' + legendItems.map((item,i) => {
+    const colorIndex = styleIndexes[i] ?? colorIndexFor(item, i);
+    const stroke = chartColor(colorIndex);
+    return '<span class="legend-chip"><i class="legend-line '+chartLineStyleClass(useLineStyles ? colorIndex : 0)+'" style="background-color:'+stroke+';color:'+stroke+'"></i>'+escapeHtml(item[identifierField] ?? item.name)+'</span>';
+  }).join("") + (normalized.length > legendItems.length ? '<span class="legend-chip legend-overflow">+'+(normalized.length - legendItems.length)+' more plotted</span>' : '') + '</div>';
   return '<div class="chart-area">'+legend+svg+tooltip+'</div>';
 }
 
@@ -151,6 +169,11 @@ const audio = audioDefs.map((d)=>{
   for(let step=0;step<d.steps;step++){ v=Math.max(2.6, v-0.0028-r()*0.0008+(r()-0.5)*0.03); points.push({key:"m",step,value:Number(v.toFixed(5)),created_at:new Date(Date.UTC(2026,0,1,0,0,step)).toISOString()}); }
   return {id:d.name,name:d.name,notes:d.notes,tags:(d.tags||[]).join(", "),group:"all",points};
 });
+const dense = Array.from({length:18},(_,idx)=>{
+  const r=rng(600+idx); let v=2.4 + idx * 0.012; const points=[];
+  for(let step=0;step<50;step++){ v=Math.max(1.7, v-0.004-r()*0.001+(r()-0.5)*0.025); points.push({key:"m",step,value:Number(v.toFixed(5)),created_at:new Date(Date.UTC(2026,0,1,0,0,step)).toISOString()}); }
+  return {id:"dense-"+String(idx+1).padStart(2,"0"),name:"dense-"+String(idx+1).padStart(2,"0"),notes:"dense run "+(idx+1),tags:"dense",group:"all",points};
+});
 
 const scenarios = [
   {id:"01-tiny-loss",title:"Tiny magnitude (all values < 0.01)",desc:"3 runs / 6 points each, train/loss ~0.001–0.009 — must fill the plot, not squish to the floor.",chart:()=>renderChart(tiny,{metricKey:"train/loss"})},
@@ -158,9 +181,10 @@ const scenarios = [
   {id:"03-flat-single",title:"Single / flat value",desc:"One point at 0.00004 — opens a magnitude-relative window so the marker sits mid-chart.",chart:()=>renderChart(flat,{metricKey:"train/loss",hoverFrac:0.5})},
   {id:"04-audio-no-smooth",title:"Noisy curve, no smoothing",desc:"train/audio_loss, smoothing 0.",chart:()=>renderChart(audio,{metricKey:"train/audio_loss",smoothing:0})},
   {id:"05-audio-smoothed",title:"EMA smoothing overlay",desc:"smoothing 70 — raw data faded, smoothed curve opaque on top.",chart:()=>renderChart(audio,{metricKey:"train/audio_loss",smoothing:70})},
-  {id:"06-hover-smoothed",title:"Hover tooltip (run, value, smoothed, identifier)",desc:"Tooltip shows value and smoothed value in parentheses.",chart:()=>renderChart(audio,{metricKey:"train/audio_loss",smoothing:60,hoverFrac:0.55})},
+  {id:"06-hover-smoothed",title:"Hover tooltip (run, raw, EMA, identifier)",desc:"Tooltip labels raw and EMA values explicitly.",chart:()=>renderChart(audio,{metricKey:"train/audio_loss",smoothing:60,hoverFrac:0.55})},
   {id:"07-identifier-tags",title:"Identifier = Tags",desc:"Legend + tooltip use run tags as the identifier.",chart:()=>renderChart(audio,{metricKey:"train/audio_loss",smoothing:60,identifierField:"tags",hoverFrac:0.55})},
   {id:"08-identifier-notes",title:"Identifier = Notes",desc:"Legend + tooltip use run notes as the identifier.",chart:()=>renderChart(audio,{metricKey:"train/audio_loss",smoothing:60,identifierField:"notes",hoverFrac:0.55})},
+  {id:"09-dense-overflow",title:"Dense comparison with overflow",desc:"18 runs force legend overflow, repeated line styles, and tooltip row disclosure.",chart:()=>renderChart(dense,{metricKey:"train/audio_loss",smoothing:50,hoverFrac:0.5})},
 ];
 
 const root = document.getElementById("root");
@@ -168,7 +192,7 @@ for (const s of scenarios) {
   const div = document.createElement("div");
   div.className = "scenario";
   div.id = s.id;
-  div.innerHTML = '<h3>'+s.title+'</h3><p>'+s.desc+'</p>'+s.chart();
+  div.innerHTML = '<h3>'+escapeHtml(s.title)+'</h3><p>'+escapeHtml(s.desc)+'</p>'+s.chart();
   root.appendChild(div);
 }
 window.__SCENARIOS__ = scenarios.map(s=>s.id);
@@ -209,8 +233,12 @@ try {
     console.log("[visual] captured", id);
   }
   await page.screenshot({ path: path.join(outDir, "00-all.png"), fullPage: true });
-  if (errors.length) console.log("[visual] CONSOLE ERRORS:", JSON.stringify(errors, null, 2));
-  else console.log("[visual] no console errors");
+  if (errors.length) {
+    console.error("[visual] CONSOLE ERRORS:", JSON.stringify(errors, null, 2));
+    throw new Error(`Chart visual harness captured ${errors.length} console/page error(s).`);
+  } else {
+    console.log("[visual] no console errors");
+  }
   console.log("[visual] DONE ->", outDir);
 } finally {
   await browser.close();

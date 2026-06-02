@@ -1,4 +1,5 @@
 import { queryString } from "../src/api.js";
+import { defaultScatterFields, parseFieldId } from "../src/dashboard-panels.js";
 import { bestMetric, durationLabel, formatNumber, metricGoal } from "../src/state.js";
 import { WORKSPACE_VIEW_PREFIX } from "./dashboard/state/storage-keys";
 
@@ -192,21 +193,36 @@ export function buildManualWorkspace(project: string): WorkspaceView {
   };
 }
 
-const workspacePanelTypes = new Set<WorkspacePanelType>(["line", "bar", "histogram", "dot"]);
+export const WORKSPACE_PANEL_TYPES: WorkspacePanelType[] = ["line", "bar", "histogram", "dot", "scatter"];
+const workspacePanelTypes = new Set<WorkspacePanelType>(WORKSPACE_PANEL_TYPES);
 
 export function workspacePanelTypeLabel(type: WorkspacePanelType) {
   if (type === "bar") return "Bar";
-  if (type === "histogram") return "Histogram";
+  if (type === "histogram") return "Value histogram";
   if (type === "dot") return "Dot plot";
+  if (type === "scatter") return "Scatter";
   return "Line";
 }
 
 export function workspacePanelForMetric(metricKey: string, type: WorkspacePanelType = "line"): WorkspacePanel {
   const safeType = workspacePanelTypes.has(type) ? type : "line";
+  const metricTitleText = metricTitle(metricKey);
+  if (safeType === "scatter") {
+    const fields = defaultScatterFields(metricKey);
+    return {
+      id: `panel-${stableId(`${safeType}-${metricKey}`)}`,
+      type: safeType,
+      title: `${metricTitleText} Scatter`,
+      metricKey,
+      xField: fields.xField,
+      yField: fields.yField,
+      layout: defaultWorkspacePanelLayout,
+    };
+  }
   return {
     id: `panel-${stableId(`${safeType}-${metricKey}`)}`,
     type: safeType,
-    title: safeType === "line" ? metricTitle(metricKey) : `${metricTitle(metricKey)} ${workspacePanelTypeLabel(safeType)}`,
+    title: safeType === "line" ? metricTitleText : `${metricTitleText} ${workspacePanelTypeLabel(safeType)}`,
     metricKey,
     layout: defaultWorkspacePanelLayout,
   };
@@ -251,12 +267,16 @@ export function workspaceMetricKeys(view: WorkspaceView, search = "") {
   const keys: string[] = [];
   for (const section of view.sections) {
     for (const panel of section.panels) {
-      if (panel.type !== "line") continue;
+      if (!workspacePanelNeedsMetricSeries(panel)) continue;
       if (needle && !`${section.name} ${panel.title} ${panel.metricKey}`.toLowerCase().includes(needle)) continue;
       keys.push(panel.metricKey);
     }
   }
   return [...new Set(keys)].sort();
+}
+
+export function workspacePanelNeedsMetricSeries(panel: WorkspacePanel) {
+  return panel.type === "line";
 }
 
 export function metricKeysMissingPanels(view: WorkspaceView, metricKeys: string[]) {
@@ -290,13 +310,22 @@ function sanitizeWorkspacePanel(panel: unknown, index: number) {
   const type = typeof panel.type === "string" && workspacePanelTypes.has(panel.type as WorkspacePanelType)
     ? panel.type as WorkspacePanelType
     : "line";
-  return {
+  const base = {
     id: typeof panel.id === "string" && panel.id ? panel.id.slice(0, 80) : `panel-${index}`,
     type,
     title: typeof panel.title === "string" && panel.title.trim() ? panel.title.slice(0, 80) : metricTitle(panel.metricKey),
     metricKey: panel.metricKey.slice(0, 256),
     layout: sanitizePanelLayout(panel.layout),
     settings: sanitizePanelSettings(panel.settings),
+  };
+  if (type !== "scatter") return base;
+  const xField = sanitizeFieldRef(panel.xField);
+  const yField = sanitizeFieldRef(panel.yField);
+  if (!xField || !yField) return null;
+  return {
+    ...base,
+    xField,
+    yField,
   };
 }
 
@@ -321,6 +350,12 @@ function sanitizePanelSettings(settings: unknown): Partial<WorkspacePanelSetting
 
 function boundedNumber(value: unknown, min: number, max: number) {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : undefined;
+}
+
+function sanitizeFieldRef(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const field = value.slice(0, 512);
+  return parseFieldId(field) ? field : undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, any> {

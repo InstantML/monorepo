@@ -3,17 +3,20 @@
 import { useLayoutEffect, useState } from "react";
 import { X } from "lucide-react";
 
-import { workspacePanelTypeLabel } from "../../dashboard-models";
+import { defaultScatterFields, fieldLabel, parseFieldId } from "../../../src/dashboard-panels.js";
+import { WORKSPACE_PANEL_TYPES, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
+import type { SelectOption } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { resolveWorkspaceSettings } from "./panel-settings";
-import type { WorkspacePanel, WorkspacePanelSettings, WorkspacePanelType, WorkspaceSection, WorkspaceView } from "../../dashboard-types";
+import type { WorkspaceFieldOption, WorkspacePanel, WorkspacePanelSettings, WorkspacePanelType, WorkspaceSection, WorkspaceView } from "../../dashboard-types";
 
 function workspacePanelTypesFromValue(value: string): WorkspacePanelType {
-  return value === "bar" || value === "histogram" || value === "dot" ? value : "line";
+  return WORKSPACE_PANEL_TYPES.includes(value as WorkspacePanelType) ? value as WorkspacePanelType : "line";
 }
 
 export function PanelEditDrawer({
+  fieldOptions,
   metricOptions,
   onClose,
   onUpdate,
@@ -21,9 +24,10 @@ export function PanelEditDrawer({
   section,
   view,
 }: {
+  fieldOptions: WorkspaceFieldOption[];
   metricOptions: string[];
   onClose: () => void;
-  onUpdate: (patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
+  onUpdate: (patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; xField?: string; yField?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
   panel: WorkspacePanel;
   section: WorkspaceSection;
   view: WorkspaceView;
@@ -31,6 +35,37 @@ export function PanelEditDrawer({
   const settings = resolveWorkspaceSettings(view, section, panel);
   const drawerRef = useFocusTrap<HTMLElement>(true, onClose, "input, button[aria-label='Close edit panel']");
   const side = useDrawerSide(panel.id);
+  const isValidField = (value: string | undefined): value is string => Boolean(value && parseFieldId(value));
+  const fallbackScatterFields = defaultScatterFields(panel.metricKey, fieldOptions);
+  const defaultXField = isValidField(panel.xField) ? panel.xField : fallbackScatterFields.xField;
+  const defaultYField = isValidField(panel.yField) ? panel.yField : fallbackScatterFields.yField;
+  const fieldSelectOptionMap = new Map<string, SelectOption>();
+  for (const field of fieldOptions) {
+    const runWord = field.availableCount === 1 ? "run" : "runs";
+    fieldSelectOptionMap.set(field.id, {
+      value: field.id,
+      label: field.label,
+      description: `${field.availableCount} ${runWord} available`,
+    });
+  }
+  for (const fieldId of [panel.xField, panel.yField]) {
+    if (isValidField(fieldId) && !fieldSelectOptionMap.has(fieldId)) {
+      fieldSelectOptionMap.set(fieldId, { value: fieldId, label: fieldLabel(fieldId), description: "Saved field not present in loaded runs" });
+    }
+  }
+  const fieldSelectOptions = [...fieldSelectOptionMap.values()];
+  function updateType(value: string) {
+    const type = workspacePanelTypesFromValue(value);
+    if (type === "scatter") {
+      onUpdate({
+        type,
+        xField: defaultXField,
+        yField: defaultYField,
+      });
+      return;
+    }
+    onUpdate({ type });
+  }
   return (
     <aside className="panel-drawer edit-drawer" data-side={side} role="dialog" aria-modal="true" aria-label="Edit panel" ref={drawerRef} tabIndex={-1}>
       <div className="drawer-head">
@@ -41,61 +76,85 @@ export function PanelEditDrawer({
         className="full"
         id="edit-panel-type"
         label="Chart type"
-        onChange={(type) => onUpdate({ type: workspacePanelTypesFromValue(type) })}
-        options={[
-          { value: "line", label: "Line" },
-          { value: "bar", label: "Bar" },
-          { value: "histogram", label: "Histogram" },
-          { value: "dot", label: "Dot plot" },
-        ]}
+        onChange={updateType}
+        options={WORKSPACE_PANEL_TYPES.map((type) => ({ value: type, label: workspacePanelTypeLabel(type) }))}
         value={panel.type}
       />
       <label className="control full">
         Title
         <input aria-label="Panel title" value={panel.title} onChange={(event) => onUpdate({ title: event.target.value })} />
       </label>
-      <CustomSelect
-        className="full"
-        id="edit-panel-metric"
-        label="Y"
-        onChange={(metricKey) => onUpdate({ metricKey })}
-        options={metricOptions.length ? metricOptions.map((metric) => ({ value: metric, label: metric })) : [{ value: panel.metricKey, label: panel.metricKey }]}
-        value={panel.metricKey}
-      />
-      <CustomSelect
-        className="full"
-        id="edit-panel-x"
-        label="X axis"
-        onChange={(xMode) => onUpdate({ settings: { xMode: xMode === "time" ? "time" : "step" } })}
-        options={[{ value: "step", label: "Step" }, { value: "time", label: "Logged time" }]}
-        value={settings.xMode}
-      />
-      <CustomSelect
-        className="full"
-        id="edit-panel-group"
-        label="Group"
-        onChange={(groupBy) => onUpdate({ settings: { groupBy } })}
-        options={[
-          { value: "", label: "None" },
-          { value: "seed", label: "Seed" },
-          { value: "tag", label: "First tag" },
-          { value: "config:algo", label: "Config: algo" },
-          { value: "config:policy", label: "Config: policy" },
-        ]}
-        value={settings.groupBy}
-      />
+      {panel.type === "scatter" ? (
+        <>
+          <CustomSelect
+            className="full"
+            disabled={!fieldSelectOptions.length}
+            id="edit-panel-x-field"
+            label="X field"
+            onChange={(xField) => onUpdate({ xField })}
+            options={fieldSelectOptions.length ? fieldSelectOptions : [{ value: "", label: "No numeric fields" }]}
+            value={isValidField(panel.xField) ? panel.xField : fieldSelectOptions[0]?.value ?? ""}
+          />
+          <CustomSelect
+            className="full"
+            disabled={!fieldSelectOptions.length}
+            id="edit-panel-y-field"
+            label="Y field"
+            onChange={(yField) => onUpdate({ yField })}
+            options={fieldSelectOptions.length ? fieldSelectOptions : [{ value: "", label: "No numeric fields" }]}
+            value={isValidField(panel.yField) ? panel.yField : fieldSelectOptions.find((option) => option.value !== panel.xField)?.value ?? fieldSelectOptions[0]?.value ?? ""}
+          />
+        </>
+      ) : (
+        <>
+          <CustomSelect
+            className="full"
+            id="edit-panel-metric"
+            label="Y"
+            onChange={(metricKey) => onUpdate({ metricKey })}
+            options={metricOptions.length ? metricOptions.map((metric) => ({ value: metric, label: metric })) : [{ value: panel.metricKey, label: panel.metricKey }]}
+            value={panel.metricKey}
+          />
+          <CustomSelect
+            className="full"
+            id="edit-panel-x"
+            label="X axis"
+            onChange={(xMode) => onUpdate({ settings: { xMode: xMode === "time" ? "time" : "step" } })}
+            options={[{ value: "step", label: "Step" }, { value: "time", label: "Logged time" }]}
+            value={settings.xMode}
+          />
+          <CustomSelect
+            className="full"
+            id="edit-panel-group"
+            label="Group"
+            onChange={(groupBy) => onUpdate({ settings: { groupBy } })}
+            options={[
+              { value: "", label: "None" },
+              { value: "seed", label: "Seed" },
+              { value: "tag", label: "First tag" },
+              { value: "config:algo", label: "Config: algo" },
+              { value: "config:policy", label: "Config: policy" },
+            ]}
+            value={settings.groupBy}
+          />
+        </>
+      )}
       <label className="control full">
         Max runs to show
         <input aria-label="Max runs to show" type="number" min="1" max="25" value={settings.maxRuns} onChange={(event) => onUpdate({ settings: { maxRuns: Number(event.target.value) } })} />
       </label>
-      <label className="control full">
-        Smoothing
-        <input aria-label="Panel smoothing" type="range" min="0" max="90" step="10" value={settings.smoothing} onChange={(event) => onUpdate({ settings: { smoothing: Number(event.target.value) } })} />
-      </label>
-      <label className="toggle-control drawer-toggle">
-        <span>Show group average</span>
-        <input aria-label="Show group average" type="checkbox" checked={settings.groupAverage} onChange={(event) => onUpdate({ settings: { groupAverage: event.target.checked } })} />
-      </label>
+      {panel.type !== "scatter" ? (
+        <>
+          <label className="control full">
+            Smoothing
+            <input aria-label="Panel smoothing" type="range" min="0" max="90" step="10" value={settings.smoothing} onChange={(event) => onUpdate({ settings: { smoothing: Number(event.target.value) } })} />
+          </label>
+          <label className="toggle-control drawer-toggle">
+            <span>Show group average</span>
+            <input aria-label="Show group average" type="checkbox" checked={settings.groupAverage} onChange={(event) => onUpdate({ settings: { groupAverage: event.target.checked } })} />
+          </label>
+        </>
+      ) : null}
     </aside>
   );
 }

@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import ts from "typescript";
 
+import { metricFieldId, parseFieldId } from "../src/dashboard-panels.js";
 import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "../src/workspace-view-api.js";
 
 // The UI overhaul centralised browser-persistence keys into
@@ -12,6 +16,29 @@ import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "../
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const storageKeys = readFileSync(`${root}app/dashboard/state/storage-keys.ts`, "utf8");
+
+async function importDashboardModelsForTest() {
+  const tempDir = mkdtempSync(join(tmpdir(), "instantml-dashboard-models-"));
+  const storageModulePath = join(tempDir, "storage-keys.mjs");
+  const modelsModulePath = join(tempDir, "dashboard-models.mjs");
+  writeFileSync(storageModulePath, `export const WORKSPACE_VIEW_PREFIX = ${JSON.stringify(REQUIRED.WORKSPACE_VIEW_PREFIX)};\n`);
+  const compiled = ts.transpileModule(readFileSync(`${root}app/dashboard-models.ts`, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText
+    .replace(/from "\.\.\/src\/api\.js"/g, `from ${JSON.stringify(pathToFileURL(`${root}src/api.js`).href)}`)
+    .replace(/from "\.\.\/src\/dashboard-panels\.js"/g, `from ${JSON.stringify(pathToFileURL(`${root}src/dashboard-panels.js`).href)}`)
+    .replace(/from "\.\.\/src\/state\.js"/g, `from ${JSON.stringify(pathToFileURL(`${root}src/state.js`).href)}`)
+    .replace(/from "\.\/dashboard\/state\/storage-keys"/g, `from ${JSON.stringify(pathToFileURL(storageModulePath).href)}`);
+  writeFileSync(modelsModulePath, compiled);
+  try {
+    return await import(`${pathToFileURL(modelsModulePath).href}?t=${Date.now()}`);
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+}
 
 const REQUIRED = {
   THEME_KEY: "instantml:next:theme",
@@ -46,9 +73,183 @@ test("shell + models no longer redeclare raw persistence-key literals", () => {
 test("workspace model accepts the revised panel schema and non-line types", () => {
   const models = readFileSync(`${root}app/dashboard-models.ts`, "utf8");
   const types = readFileSync(`${root}app/dashboard-types.ts`, "utf8");
+  const editDrawer = readFileSync(`${root}app/dashboard/runs/panel-edit-drawer.tsx`, "utf8");
+  const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
   assert.match(models, /WORKSPACE_SCHEMA_VERSION\s*=\s*2/, "workspace schema should migrate to v2");
-  assert.match(types, /WorkspacePanelType\s*=\s*"line"\s*\|\s*"bar"\s*\|\s*"histogram"\s*\|\s*"dot"/, "panel types should include the first non-line chart set");
-  assert.match(models, /panel\.type !== "line"/, "only line panels should fetch full metric series");
+  assert.match(models, /export const WORKSPACE_PANEL_TYPES:[\s\S]*"scatter"/, "workspace chart type options should have one exported source of truth");
+  assert.match(types, /WorkspacePanelType\s*=\s*"line"\s*\|\s*"bar"\s*\|\s*"histogram"\s*\|\s*"dot"\s*\|\s*"scatter"/, "panel types should include summary scatter charts");
+  assert.match(types, /type: "scatter";[\s\S]*xField: string;[\s\S]*yField: string;/, "scatter panels should require explicit numeric field references");
+  assert.match(types, /type: "bar" \| "histogram" \| "dot";[\s\S]*xField\?: never;[\s\S]*yField\?: never;/, "summary panels should reject scatter-only fields at the type layer");
+  assert.match(types, /WorkspaceFieldSource\s*=\s*"metric"\s*\|\s*"config"\s*\|\s*"metadata"\s*\|\s*"run"/, "workspace field options should expose literal field sources");
+  assert.match(types, /valueType: "number";/, "workspace field options should stay numeric-only until another field type is designed");
+  assert.match(models, /panel\.type === "line"/, "only line panels should fetch full metric series");
+  assert.match(models, /type !== "scatter"[\s\S]*return base/, "non-scatter panels should not require scatter field references during migration");
+  assert.match(models, /parseFieldId\(field\) \? field : undefined/, "persisted scatter field references should be semantically validated");
+  assert.match(editDrawer, /defaultScatterFields\(panel\.metricKey, fieldOptions\)/, "scatter edit defaults should use one parser-safe field helper");
+  assert.doesNotMatch(editDrawer, /FieldId\s*=[^;\n]*""/, "scatter edit defaults should not fall back to an empty field id");
+  assert.match(editDrawer, /WORKSPACE_PANEL_TYPES\.map/, "edit drawer chart options should use the shared panel type list");
+  assert.match(runsWorkspace, /WORKSPACE_PANEL_TYPES\.map/, "add-panel chart options should use the shared panel type list");
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+  assert.match(shell, /mergeFreshRecord\(primary\.metric_aggregates, fallback\.metric_aggregates\)/, "richer selected runs should preserve cached metric aggregates while fresh values win");
+  assert.match(shell, /return primary;/, "run summary merges should avoid new object allocation when fallback data adds nothing");
+});
+
+test("runs workspace panel drawer remains reachable on mobile", () => {
+  const mobileCss = readFileSync(`${root}app/styles/mobile.css`, "utf8");
+  const drawerRule = mobileCss.match(/\.panel-drawer,\s*\n\s*\.runs-workspace\.drawer-open \.panel-drawer\s*\{(?<body>[\s\S]*?)\n\s*\}/)?.groups?.body ?? "";
+  assert.match(drawerRule, /position:\s*fixed;/, "mobile add-panel drawer should render as a fixed bottom sheet");
+  assert.match(drawerRule, /inset:\s*auto 0 0 0;/, "mobile add-panel drawer should be anchored to the viewport bottom");
+  assert.match(drawerRule, /max-height:\s*86vh;/, "mobile add-panel drawer should stay inside the viewport");
+});
+
+test("workspace sanitizer round-trips scatter panels and keeps non-scatter migration compatible", async () => {
+  const models = await importDashboardModelsForTest();
+  const yField = metricFieldId("eval/return_mean", "best");
+  const sanitized = models.sanitizeWorkspaceView({
+    schemaVersion: 1,
+    id: "workspace-scatter",
+    name: "Scatter workspace",
+    mode: "manual",
+    project: "demo",
+    settings: { maxRuns: 99, hideEmptySections: true, sectionOrganization: "manual" },
+    sections: [{
+      id: "section-a",
+      name: "Charts",
+      panels: [
+        {
+          id: "scatter-a",
+          type: "scatter",
+          title: "Return scatter",
+          metricKey: "eval/return_mean",
+          xField: "run:duration_seconds",
+          yField,
+          settings: { maxRuns: 99 },
+        },
+        {
+          id: "line-a",
+          type: "line",
+          title: "Loss",
+          metricKey: "train/loss",
+          xField: "run:duration_seconds",
+          yField,
+        },
+        {
+          id: "scatter-invalid",
+          type: "scatter",
+          title: "Invalid scatter",
+          metricKey: "train/loss",
+          xField: "",
+          yField: "not-a-field",
+        },
+        {
+          id: "scatter-bad-pointer",
+          type: "scatter",
+          title: "Bad pointer",
+          metricKey: "train/loss",
+          xField: "config:foo",
+          yField,
+        },
+        {
+          id: "scatter-bad-encoding",
+          type: "scatter",
+          title: "Bad encoding",
+          metricKey: "train/loss",
+          xField: "metadata:%E0%A4%A",
+          yField,
+        },
+        {
+          id: "scatter-bad-metric",
+          type: "scatter",
+          title: "Bad metric",
+          metricKey: "train/loss",
+          xField: "run:created_at_unix",
+          yField: "metric:%E0%A4%A:best",
+        },
+      ],
+    }],
+    updatedAt: "2026-06-02T00:00:00.000Z",
+  }, ["eval/return_mean", "train/loss"], "demo");
+
+  assert.equal(sanitized.schemaVersion, models.WORKSPACE_SCHEMA_VERSION);
+  assert.equal(sanitized.settings.maxRuns, 25);
+  assert.equal(sanitized.settings.hideEmptySections, true);
+  assert.equal(sanitized.settings.sectionOrganization, "manual");
+  const panels = sanitized.sections[0].panels;
+  assert.equal(panels.length, 2, "invalid scatter panels should be dropped during migration");
+  const scatter = panels.find((panel) => panel.id === "scatter-a");
+  assert.equal(scatter.type, "scatter");
+  assert.equal(scatter.xField, "run:duration_seconds");
+  assert.equal(scatter.yField, yField);
+  assert.equal(scatter.settings.maxRuns, 25);
+  const line = panels.find((panel) => panel.id === "line-a");
+  assert.equal(line.type, "line");
+  assert.equal(line.xField, undefined);
+  assert.equal(line.yField, undefined);
+});
+
+test("workspace sanitizer preserves legacy v1 panel payloads without scatter fields", async () => {
+  const models = await importDashboardModelsForTest();
+  const legacyPanels = [
+    { id: "line-old", type: "line", title: "Loss", metricKey: "train/loss" },
+    { id: "bar-old", type: "bar", title: "Accuracy bars", metricKey: "eval/accuracy" },
+    { id: "hist-old", type: "histogram", title: "Reward histogram", metricKey: "eval/reward" },
+    { id: "dot-old", type: "dot", title: "Latency dots", metricKey: "system/latency_ms" },
+    { id: "unknown-old", type: "area", title: "Legacy unknown", metricKey: "custom/value" },
+  ];
+  const sanitized = models.sanitizeWorkspaceView({
+    schemaVersion: 1,
+    id: "legacy-workspace",
+    name: "Legacy workspace",
+    mode: "manual",
+    project: "demo",
+    settings: { maxRuns: 5, hideEmptySections: false, sectionOrganization: "manual" },
+    sections: [{
+      id: "legacy-section",
+      name: "Legacy charts",
+      panels: legacyPanels,
+    }],
+    updatedAt: "2026-05-31T00:00:00.000Z",
+  }, legacyPanels.map((panel) => panel.metricKey), "demo");
+
+  assert.equal(sanitized.schemaVersion, models.WORKSPACE_SCHEMA_VERSION);
+  assert.equal(sanitized.sections.length, 1);
+  assert.deepEqual(
+    sanitized.sections[0].panels.map((panel) => [panel.id, panel.type, panel.metricKey, panel.xField, panel.yField]),
+    [
+      ["line-old", "line", "train/loss", undefined, undefined],
+      ["bar-old", "bar", "eval/accuracy", undefined, undefined],
+      ["hist-old", "histogram", "eval/reward", undefined, undefined],
+      ["dot-old", "dot", "system/latency_ms", undefined, undefined],
+      ["unknown-old", "line", "custom/value", undefined, undefined],
+    ],
+  );
+  assert.deepEqual(models.workspaceMetricKeys(sanitized), ["custom/value", "train/loss"]);
+});
+
+test("workspace scatter panel creation emits parser-safe default field ids", async () => {
+  const models = await importDashboardModelsForTest();
+  const normalScatter = models.workspacePanelForMetric("eval/return_mean", "scatter");
+  assert.equal(normalScatter.type, "scatter");
+  assert.equal(parseFieldId(normalScatter.xField)?.source, "run");
+  assert.equal(parseFieldId(normalScatter.yField)?.source, "metric");
+
+  const encodedLengthExpansionMetric = "é".repeat(190);
+  const fallbackScatter = models.workspacePanelForMetric(encodedLengthExpansionMetric, "scatter");
+  assert.equal(fallbackScatter.type, "scatter");
+  assert.equal(parseFieldId(fallbackScatter.xField)?.source, "run");
+  assert.equal(parseFieldId(fallbackScatter.yField)?.source, "run");
+  assert.notEqual(fallbackScatter.yField, "", "scatter fallback y field should never persist an empty field id");
+
+  const sanitized = models.sanitizeWorkspaceView({
+    schemaVersion: models.WORKSPACE_SCHEMA_VERSION,
+    id: "scatter-created",
+    name: "Scatter created",
+    mode: "manual",
+    project: "demo",
+    sections: [{ id: "section-created", name: "Created", panels: [fallbackScatter] }],
+  }, [encodedLengthExpansionMetric], "demo");
+  assert.equal(sanitized.sections[0].panels.length, 1, "parser-safe scatter defaults should survive reload sanitization");
+  assert.equal(sanitized.sections[0].panels[0].type, "scatter");
 });
 
 test("dashboard shell protects control-plane state from stale UI interactions", () => {

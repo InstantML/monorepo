@@ -8,7 +8,9 @@ description: "Inspect metric series, grouped averages, smoothing, zoom, and poin
 ![Metrics dashboard](/images/product/dashboard-metrics.png)
 
 Metrics views are optimized for asking, "what happened to this metric across
-the selected runs?"
+the selected runs?" They are line-chart focused: use them for scalar metric
+series over training step or logged time. Use the Runs workspace when you need
+bar, value histogram, dot, or scatter panels over loaded run summaries.
 
 ## Metric catalog
 
@@ -29,21 +31,35 @@ Current chart controls include:
 - Group by seed, first tag, or the current fixed config grouping options such
   as `algo` and `policy`.
 - Range brush zoom.
-- Hover readouts with run name, metric, step, and value.
+- Hover readouts with run name, step or logged time, raw value, and smoothed
+  value when smoothing is active.
 - Chart CSV export for the plotted sample.
-- Chart image export for the visible graph.
+- SVG image export for the visible graph.
 
 Unit-bounded metrics such as accuracy, F1, precision, recall, and AUC use a
 normalized `0..1` y-axis. Return, reward, and loss metrics auto-scale.
+
+## Line chart readability
+
+Metric charts share the same visual system as Runs workspace line panels:
+
+- Stable color assignment keeps the same run visually consistent across chart
+  reloads.
+- Dashed line styles are added after the palette wraps so larger selected sets
+  remain distinguishable.
+- Dense charts draw series paths on canvas and keep SVG axes, legends, and
+  hover state above the canvas.
+- Legends show the first visible run labels and add an overflow chip when the
+  selected set is larger than the visible legend budget.
 
 ## Export chart evidence
 
 Use the chart export buttons when you need to move evidence into a notebook,
 issue, report, or lab note. CSV export contains the already plotted data,
 including the visible sample, grouping labels, series type, source run count for
-aggregates, step/time, value, and smoothed value when smoothing is active. Image
-export renders the visible chart client-side without requesting additional
-history.
+aggregates, step/time, value, and smoothed value when smoothing is active. SVG
+image export renders the visible chart client-side without requesting
+additional history.
 
 Chart export is intentionally bounded to avoid browser jank. It is disabled
 when a chart has more than 120 series or more than 20,000 plotted points. Use

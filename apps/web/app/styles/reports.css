@@ -1215,11 +1215,11 @@ a.report-pane__action:hover {
   height: auto;
 }
 
-.series-bar.series-0 { fill: var(--accent, #5d89dd); }
-.series-bar.series-1 { fill: #dc5b55; }
-.series-bar.series-2 { fill: var(--warm, #f59e0b); }
-.series-bar.series-3 { fill: #8b7cf6; }
-.series-bar.series-4 { fill: #2ec4b6; }
+.series-bar.series-0 { fill: #2f80ed; }
+.series-bar.series-1 { fill: #12a67a; }
+.series-bar.series-2 { fill: #d65f74; }
+.series-bar.series-3 { fill: #e0a33f; }
+.series-bar.series-4 { fill: #7c5cc4; }
 
 
 /* ───── v1.2 run-set table widget ───── */

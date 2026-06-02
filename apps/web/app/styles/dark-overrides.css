@@ -250,12 +250,16 @@
   box-shadow: inset 0 0 0 3px var(--surface);
 }
 
-:root[data-theme="dark"] .workspace-panel-meta span,
 :root[data-theme="dark"] .section-title-button span,
 :root[data-theme="dark"] .workspace-run-tags b,
 :root[data-theme="dark"] .workspace-run-tags em {
   border-color: var(--line);
   background: var(--surface-soft);
+}
+
+:root[data-theme="dark"] .workspace-panel-meta span {
+  border-color: transparent;
+  background: transparent;
 }
 
 :root[data-theme="dark"] .panel-drag-handle:hover {
@@ -274,6 +278,10 @@
 
 :root[data-theme="dark"] .legend-chip {
   color: var(--text);
+}
+
+:root[data-theme="dark"] .chart-legend .legend-chip {
+  background: transparent;
 }
 
 :root[data-theme="dark"] .panel,
@@ -325,7 +333,6 @@
 
 :root[data-theme="dark"] .stat,
 :root[data-theme="dark"] .analysis-stat,
-:root[data-theme="dark"] .workspace-panel-meta span,
 :root[data-theme="dark"] .section-title-button span,
 :root[data-theme="dark"] .shortcut-row,
 :root[data-theme="dark"] .readout-card,
@@ -342,6 +349,10 @@
 :root[data-theme="dark"] .setting-row,
 :root[data-theme="dark"] .api-row {
   background: #0d1624;
+}
+
+:root[data-theme="dark"] .workspace-panel-meta span {
+  background: transparent;
 }
 
 :root[data-theme="dark"] .workspace-panel-meta .panel-data-gap {
@@ -458,7 +469,11 @@
 
 :root[data-theme="dark"] .axis,
 :root[data-theme="dark"] .grid-line {
-  stroke: #21334b;
+  stroke: var(--chart-grid);
+}
+
+:root[data-theme="dark"] .axis {
+  stroke: var(--chart-axis);
 }
 
 :root[data-theme="dark"] .tick-label,

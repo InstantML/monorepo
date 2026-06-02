@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, svgPointFromClient } from "../../../src/charts.js";
+import { chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
@@ -13,23 +14,8 @@ import type { HoverPoint } from "../../dashboard-types";
 
 type ChartZoomRange = { min: number; max: number } | null;
 
-const chartPalette = [
-  "#dc5b55",
-  "#5d89dd",
-  "var(--accent)",
-  "var(--warm)",
-  "#8b7cf6",
-  "#2ec4b6",
-  "#e45f8c",
-  "#7bc96f",
-  "#14b8a6",
-  "#f4a261",
-  "#9ca3af",
-  "#cbd5e1",
-];
-
-function chartColor(index: number) {
-  return chartPalette[index % chartPalette.length];
+function chartSeriesColorIndex(item: any, fallback: number) {
+  return stableChartIndex(item?.id ?? item?.identifier ?? item?.name, fallback);
 }
 
 function sanitizeRange(range: ChartZoomRange | undefined, domain: any): ChartZoomRange {
@@ -42,8 +28,9 @@ function sanitizeRange(range: ChartZoomRange | undefined, domain: any): ChartZoo
 
 const TOOLTIP_ROW_LIMIT = 8;
 
-function tooltipRows(normalizedSeries: any[], xValue: number, xMode: string, activeRunId?: string) {
+function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
   const rows = normalizedSeries.map((item, index) => {
+    const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
     const points = item.normalizedPoints ?? [];
     const nearest = points.reduce((best: any, point: any) => {
       if (!best) return point;
@@ -56,15 +43,18 @@ function tooltipRows(normalizedSeries: any[], xValue: number, xMode: string, act
       name: item.identifier ?? item.name,
       value: nearest?.value ?? null,
       smoothedValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : null,
+      rankValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : nearest?.value ?? null,
       label: xMode === "time" ? formatAxisValue(nearest?.xValue, xMode) : `Step ${formatNumber(nearest?.step, 0)}`,
+      colorIndex,
+      lineStyleClass: chartLineStyleClass(useLineStyles ? colorIndex : 0),
     };
   });
   // Rank by value at the hovered x (descending) like wandb/neptune, but keep the
   // actively-hovered run pinned to the top so it stays easy to read.
   rows.sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
-    const av = a.value ?? Number.NEGATIVE_INFINITY;
-    const bv = b.value ?? Number.NEGATIVE_INFINITY;
+    const av = a.rankValue ?? Number.NEGATIVE_INFINITY;
+    const bv = b.rankValue ?? Number.NEGATIVE_INFINITY;
     return bv - av;
   });
   return rows.slice(0, TOOLTIP_ROW_LIMIT);
@@ -98,6 +88,8 @@ function MiniRange({
   const activeRange = sanitizeRange(draftRange ?? zoomRange, domain);
   const activeMinX = activeRange ? miniX(activeRange.min) : 0;
   const activeMaxX = activeRange ? miniX(activeRange.max) : 0;
+  const rangeStyleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
+  const useLineStyles = normalizedSeries.length > 12;
 
   function valueFromClient(target: SVGSVGElement, clientX: number, clientY: number) {
     const rect = target.getBoundingClientRect();
@@ -181,13 +173,17 @@ function MiniRange({
         onPointerUp={finishPointerRange}
         role="img"
       >
-        {normalizedSeries.slice(0, 5).map((item, index) => (
-          <polyline
-            className={`range-series series-${index % 5}`}
-            key={item.id}
-            points={(item.normalizedPoints ?? []).map((point: any) => `${miniX(point.xValue).toFixed(2)},${miniY(point.value).toFixed(2)}`).join(" ")}
-          />
-        ))}
+        {normalizedSeries.slice(0, 5).map((item, index) => {
+          const colorIndex = rangeStyleIndexes[index] ?? chartSeriesColorIndex(item, index);
+          return (
+            <polyline
+              className={`range-series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`}
+              key={item.id}
+              points={(item.normalizedPoints ?? []).map((point: any) => `${miniX(point.xValue).toFixed(2)},${miniY(point.value).toFixed(2)}`).join(" ")}
+              style={{ stroke: chartColor(colorIndex) }}
+            />
+          );
+        })}
         {activeRange ? (
           <>
             <rect className="range-window" x={activeMinX} y={3} width={Math.max(2, activeMaxX - activeMinX)} height={miniHeight - 6} />
@@ -240,8 +236,12 @@ export function MetricChart({
   zoomRange?: ChartZoomRange;
 }) {
   const denseChart = shouldUseDenseChart(normalizedSeries);
+  const useLineStyles = normalizedSeries.length > 12;
+  const styleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
   const visibleHover = hover;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hoverIndex = visibleHover ? normalizedSeries.findIndex((item) => item.id === visibleHover.runId) : -1;
+  const activeSeries = hoverIndex >= 0 ? normalizedSeries[hoverIndex] : null;
   useEffect(() => {
     if (!denseChart) return;
     const canvas = canvasRef.current;
@@ -274,8 +274,10 @@ export function MetricChart({
     normalizedSeries.forEach((item, index) => {
       const points = item.normalizedPoints ?? [];
       if (!points.length) return;
-      context.strokeStyle = chartColor(index);
-      context.fillStyle = chartColor(index);
+      const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
+      context.strokeStyle = chartColor(colorIndex);
+      context.fillStyle = chartColor(colorIndex);
+      context.setLineDash(useLineStyles ? chartCanvasDashArray(colorIndex) : []);
       if (points.length === 1) {
         context.globalAlpha = baseAlpha;
         context.beginPath();
@@ -297,8 +299,9 @@ export function MetricChart({
         strokePoints(points, "y");
       }
     });
+    context.setLineDash([]);
     context.globalAlpha = 1;
-  }, [denseChart, height, normalizedSeries, width]);
+  }, [denseChart, height, normalizedSeries, styleIndexes, useLineStyles, width]);
 
   const exportBlockedReason = useMemo(
     () => (exportFilenameBase ? chartExportBlockedReason(normalizedSeries) : ""),
@@ -326,12 +329,19 @@ export function MetricChart({
   const ySpan = (domain.maxY - domain.minY) || 1;
   const xPos = (value: number) => padding + ((value - domain.minX) / xSpan) * (width - padding * 2);
   const yPos = (value: number) => height - padding - ((value - domain.minY) / ySpan) * (height - padding * 2);
-  const hoverRows = visibleHover ? tooltipRows(normalizedSeries, visibleHover.point.xValue, xMode, visibleHover.runId) : [];
+  const hoverRows = visibleHover ? tooltipRows(normalizedSeries, styleIndexes, visibleHover.point.xValue, xMode, useLineStyles, visibleHover.runId) : [];
+  const hiddenHoverRows = visibleHover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
+  const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
   const hoverEdge = visibleHover ? (visibleHover.point.x < width * 0.3 ? "edge-left" : visibleHover.point.x > width * 0.62 ? "edge-right" : "") : "";
   const hoverLeft = visibleHover ? (hoverEdge === "edge-left" ? "16px" : `${Math.min(82, Math.max(18, (visibleHover.point.x / width) * 100))}%`) : "0px";
-  const hoverIndex = visibleHover ? normalizedSeries.findIndex((item) => item.id === visibleHover.runId) : -1;
   const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
   const legendSeries = normalizedSeries.slice(0, legendLimit);
+  const hiddenLegendSeries = normalizedSeries.slice(legendSeries.length);
+  const hiddenLegendSample = hiddenLegendSeries.slice(0, 6).map((item) => item.identifier ?? item.name);
+  const hiddenLegendTitle = hiddenLegendSeries.length
+    ? `${hiddenLegendSeries.length} additional plotted series${hiddenLegendSample.length ? `: ${hiddenLegendSample.join(", ")}${hiddenLegendSeries.length > hiddenLegendSample.length ? ", ..." : ""}` : ""}`
+    : "";
+  const hoverClassFor = (item: any) => visibleHover ? (item.id === visibleHover.runId ? " series-active" : " series-muted") : "";
 
   function downloadChartCsv() {
     if (exportBlockedReason) return;
@@ -376,10 +386,20 @@ export function MetricChart({
         </div>
       ) : null}
       <div className="chart-legend">
-        {legendSeries.map((item, index) => (
-          <span className="legend-chip" key={item.id} title={item.identifier ?? item.name}><i className={`legend-dot dot-${index % 5}`} style={{ backgroundColor: chartColor(index) }} /> {item.identifier ?? item.name}</span>
-        ))}
-        {normalizedSeries.length > legendSeries.length ? <span className="legend-chip legend-overflow" title={normalizedSeries.slice(legendSeries.length).map((item) => item.identifier ?? item.name).join(", ")}>+{normalizedSeries.length - legendSeries.length} more plotted</span> : null}
+        {legendSeries.map((item, index) => {
+          const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
+          return (
+            <span className="legend-chip" key={item.id} title={item.identifier ?? item.name}><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> {item.identifier ?? item.name}</span>
+          );
+        })}
+        {hiddenLegendSeries.length ? (
+          <span
+            className="legend-chip legend-overflow"
+            title={hiddenLegendTitle}
+          >
+            +{hiddenLegendSeries.length} more plotted
+          </span>
+        ) : null}
       </div>
       <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }} onMouseLeave={onLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
@@ -392,7 +412,7 @@ export function MetricChart({
           ))}
           {xTicks.map((tick) => (
             <g key={`x-${tick}`}>
-              <line className="grid-line" x1={xPos(tick)} x2={xPos(tick)} y1={padding} y2={height - padding} />
+              <line className="grid-line vertical" x1={xPos(tick)} x2={xPos(tick)} y1={padding} y2={height - padding} />
               <text className="tick-label" x={xPos(tick)} y={height - 25} textAnchor="middle">{formatAxisValue(tick, xMode)}</text>
             </g>
           ))}
@@ -401,29 +421,55 @@ export function MetricChart({
           <text className="axis-label" x={width / 2} y={height - 5} textAnchor="middle">{xMode === "time" ? "Logged time" : "Training step"}</text>
           <text className="axis-label" x={10} y={height / 2} textAnchor="middle" transform={`rotate(-90 10 ${height / 2})`}>{metricTitle(metricKey)}</text>
           {visibleHover ? <line className="hover-guide" x1={visibleHover.point.x} x2={visibleHover.point.x} y1={padding} y2={height - padding} /> : null}
-          {!denseChart ? normalizedSeries.map((item, index) => (
-            <g key={item.id}>
-              <polyline
-                className={`series series-${index % 5}${item.smoothed ? " series-raw" : ""}`}
-                points={item.path}
-                style={{ stroke: chartColor(index) }}
-              />
-              {item.smoothed && item.smoothPath ? (
-                <polyline className={`series series-${index % 5} series-smooth`} points={item.smoothPath} style={{ stroke: chartColor(index) }} />
-              ) : null}
-              {(item.normalizedPoints?.length ?? 0) <= sparsePointThreshold ? (item.normalizedPoints ?? []).map((point: any) => (
-                <circle
-                  key={`${item.id}-${point.step}-${point.created_at}`}
-                  className={`series-point point-${index % 5}`}
-                  cx={point.x}
-                  cy={point.displayY ?? point.y}
-                  style={{ fill: chartColor(index), stroke: "var(--chart-card-bg, var(--surface))" }}
-                  onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance: 0 })}
-                  r={2.4}
+          {!denseChart ? normalizedSeries.map((item, index) => {
+            const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
+            return (
+              <g key={item.id}>
+                <polyline
+                  className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}${item.smoothed ? " series-raw" : ""}${hoverClassFor(item)}`}
+                  points={item.path}
+                  style={{ stroke: chartColor(colorIndex) }}
                 />
-              )) : null}
-            </g>
-          )) : null}
+                {item.smoothed && item.smoothPath ? (
+                  <polyline
+                    className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)} series-smooth${hoverClassFor(item)}`}
+                    points={item.smoothPath}
+                    style={{ stroke: chartColor(colorIndex) }}
+                  />
+                ) : null}
+                {(item.normalizedPoints?.length ?? 0) <= sparsePointThreshold ? (item.normalizedPoints ?? []).map((point: any) => (
+                  <circle
+                    key={`${item.id}-${point.step}-${point.created_at}`}
+                    className={`series-point point-${colorIndex % 5}`}
+                    cx={point.x}
+                    cy={point.displayY ?? point.y}
+                    style={{ fill: chartColor(colorIndex), stroke: "var(--chart-card-bg, var(--surface))" }}
+                    onMouseEnter={() => onPointHover({ runId: item.id, runName: item.name, identifier: item.identifier ?? item.name, group: item.group, point, distance: 0 })}
+                    r={2.4}
+                  />
+                )) : null}
+              </g>
+            );
+          }) : null}
+          {denseChart && activeSeries ? (() => {
+            const colorIndex = styleIndexes[hoverIndex] ?? chartSeriesColorIndex(activeSeries, hoverIndex);
+            return (
+              <g key={`${activeSeries.id}-active-overlay`}>
+                <polyline
+                  className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}${activeSeries.smoothed ? " series-raw" : ""} series-active`}
+                  points={activeSeries.path}
+                  style={{ stroke: chartColor(colorIndex) }}
+                />
+                {activeSeries.smoothed && activeSeries.smoothPath ? (
+                  <polyline
+                    className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)} series-smooth series-active`}
+                    points={activeSeries.smoothPath}
+                    style={{ stroke: chartColor(colorIndex) }}
+                  />
+                ) : null}
+              </g>
+            );
+          })() : null}
           {visibleHover ? (
             <>
               <circle
@@ -431,7 +477,7 @@ export function MetricChart({
                 cx={visibleHover.point.x}
                 cy={visibleHover.point.displayY ?? visibleHover.point.y}
                 r={3.2}
-                style={{ fill: hoverIndex >= 0 ? chartColor(hoverIndex) : "var(--accent)", stroke: "var(--chart-card-bg, var(--surface))" }}
+                style={{ fill: activeSeries ? chartColor(styleIndexes[hoverIndex] ?? chartSeriesColorIndex(activeSeries, hoverIndex)) : "var(--accent)", stroke: "var(--chart-card-bg, var(--surface))" }}
               />
               <circle className="hover-ring" cx={visibleHover.point.x} cy={visibleHover.point.displayY ?? visibleHover.point.y} r={8} />
             </>
@@ -441,19 +487,25 @@ export function MetricChart({
       {visibleHover ? (
         <div
           className={`chart-tooltip ${hoverEdge}`}
+          role="tooltip"
           style={{ left: hoverLeft, top: `${Math.min(76, Math.max(18, ((visibleHover.point.displayY ?? visibleHover.point.y) / height) * 100))}%` }}
         >
           <div className="chart-tooltip-head">{xMode === "time" ? formatAxisValue(visibleHover.point.xValue, xMode) : `Step ${formatNumber(visibleHover.point.step, 0)}`}</div>
-          <div className="chart-tooltip-cols"><span>Value</span><span>Name</span></div>
+          <div className="chart-tooltip-cols"><span>{smoothedHoverRows ? "Raw / EMA" : "Value"}</span><span>Name</span></div>
           {hoverRows.map((row) => (
             <span className={`chart-tooltip-row${row.active ? " active" : ""}`} key={row.id}>
-              <b style={{ color: chartColor(row.index) }}>
-                {formatMetricValue(row.value)}
-                {row.smoothedValue !== null ? <em className="tooltip-smoothed"> ({formatMetricValue(row.smoothedValue)})</em> : null}
+              <b style={{ color: chartColor(row.colorIndex) }}>
+                {row.smoothedValue !== null ? (
+                  <>
+                    <span className="tooltip-raw">raw {formatMetricValue(row.value)}</span>
+                    <em className="tooltip-smoothed">EMA {formatMetricValue(row.smoothedValue)}</em>
+                  </>
+                ) : formatMetricValue(row.value)}
               </b>
-              <span className="chart-tooltip-name"><i className="legend-dot" style={{ backgroundColor: chartColor(row.index) }} /> {row.name}</span>
+              <span className="chart-tooltip-name"><i className={`legend-line ${row.lineStyleClass}`} style={{ backgroundColor: chartColor(row.colorIndex), color: chartColor(row.colorIndex) }} /> {row.name}</span>
             </span>
           ))}
+          {hiddenHoverRows ? <div className="chart-tooltip-more">Showing {hoverRows.length} of {normalizedSeries.length}</div> : null}
         </div>
       ) : null}
       {showRange ? (
