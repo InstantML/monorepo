@@ -118,6 +118,8 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /compareArtifactInflightRef\.current\.get\(runId\) === entry/, "settled older artifact requests must not delete newer in-flight promises");
   assert.match(shell, /if \(queryInput !== query\) \{[\s\S]*setQuery\(queryInput\);[\s\S]*Select matching runs again[\s\S]*return;/, "select-all matching should not run against a stale debounced search query");
   assert.match(shell, /function searchErrorFromApi\(error: unknown, query: string\): RunSearchError \| null/, "dashboard should only surface allowlisted structured run-search errors");
+  assert.match(shell, /RUN_LOAD_STATUS_TABS/, "background run loading should only update status copy on run-data tabs");
+  assert.match(shell, /!shouldSurfaceRunLoadMessage\(activeTabRef\.current\)/, "reports and other independent tabs should not show unrelated run-load failures");
   assert.match(shell, /setSearchError\(nextSearchError\);[\s\S]*setMessage\(previousMessage\);[\s\S]*return;/, "invalid run-search loads should keep the last valid results and message");
   assert.match(shell, /searchError=\{searchError\}/, "topbar should receive committed-query search validation state");
   assert.match(shell, /selectAllMatchingDisabled=\{queryInput !== query \|\| Boolean\(searchError && searchError\.query === query\)\}/, "bulk selection should stay disabled for stale or invalid committed searches");

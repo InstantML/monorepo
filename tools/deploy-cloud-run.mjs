@@ -1680,12 +1680,27 @@ async function verifyPublicRouter(url) {
   const checks = [
     {
       path: "/api/auth/config",
-      expect: (text) => JSON.parse(text).service_plane === "control",
+      expect: (response, text) => response.ok && JSON.parse(text).service_plane === "control",
       label: "control auth config",
     },
     {
+      path: "/api/workspace-views",
+      expect: (response, text) => response.status === 401 && /browser session required|missing bearer token/i.test(text),
+      label: "control workspace views route",
+    },
+    {
+      path: "/api/reports",
+      expect: (response, text) => response.status === 401 && /browser session required|missing bearer token/i.test(text),
+      label: "control reports route",
+    },
+    {
+      path: "/api/reports/panels",
+      expect: (response, text) => response.status === 401 && /browser session required|missing bearer token/i.test(text),
+      label: "control reports panels route",
+    },
+    {
       path: "/openapi.json",
-      expect: (text) => JSON.parse(text)["x-instantml-service-plane"] === "data",
+      expect: (response, text) => response.ok && JSON.parse(text)["x-instantml-service-plane"] === "data",
       label: "data OpenAPI default route",
     },
   ];
@@ -1695,7 +1710,7 @@ async function verifyPublicRouter(url) {
       try {
         const response = await fetch(`${url}${check.path}`);
         const text = await response.text();
-        if (response.ok && check.expect(text)) {
+        if (check.expect(response, text)) {
           console.log(`public router ${check.path} ok`);
           lastError = "";
           break;

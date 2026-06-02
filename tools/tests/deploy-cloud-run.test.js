@@ -283,6 +283,9 @@ test("deploy helper keeps public router control paths and backend timeout comple
   ]) {
     assert.match(source, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }
+  assert.match(source, /path: "\/api\/reports"/, "public router smoke should verify the reports collection route");
+  assert.match(source, /path: "\/api\/reports\/panels"/, "public router smoke should verify report subroutes");
+  assert.match(source, /response\.status === 401/, "protected control route smoke checks should accept auth failures, not route misses");
   assert.match(source, /function backendServiceTimeout/);
   assert.match(source, /--timeout", backendServiceTimeout\(\)/);
   assert.match(source, /Timeout sec is not supported for a backend service with Serverless network endpoint groups/);

@@ -181,6 +181,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
+const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts", "checkpoints"]);
 
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
@@ -197,6 +198,10 @@ function messageTone(message: string): "error" | "loading" | "ok" {
 
 function isWarehouseStartingError(error: unknown) {
   return error instanceof ApiError && error.code === "warehouse_unavailable";
+}
+
+function shouldSurfaceRunLoadMessage(tab: TabId) {
+  return RUN_LOAD_STATUS_TABS.has(tab);
 }
 
 type RunSearchError = {
@@ -402,6 +407,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const compareArtifactCacheVersionRef = useRef(0);
   const messageRef = useRef("Loading runs...");
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
+  const activeTabRef = useRef(activeTab);
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
   const [sessionPayload, setSessionPayload] = useState<DashboardSessionPayload | null>(null);
@@ -584,6 +590,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     messageRef.current = message;
   }, [message]);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
   useLayoutEffect(() => {
     dashboardSelectionFilterKeyRef.current = dashboardSelectionFilterKey;
   }, [dashboardSelectionFilterKey]);
@@ -1024,7 +1033,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (!silent) {
       setDashboardLoading(true);
       setLoadingDetail("Loading runs");
-      setMessage("Loading runs...");
+      if (shouldSurfaceRunLoadMessage(activeTabRef.current)) setMessage("Loading runs...");
     }
     let keepLoadingScreen = false;
     try {
@@ -1065,6 +1074,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
       if (silent) {
         // Keep the user's current status message stable during background polls.
+      } else if (!shouldSurfaceRunLoadMessage(activeTabRef.current)) {
+        // Non-run tabs (notably Reports) own their visible error/status copy.
+        // The shared run directory can refresh in the background without
+        // making a healthy tab look broken because an unrelated data route
+        // failed.
       } else if (overviewResult.status === "rejected" && !isWarehouseStartingError(overviewResult.reason)) {
         setMessage("Runs loaded. Overview is still syncing.");
       } else {
@@ -1073,10 +1087,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } catch (error) {
       if (requestId === dashboardRequestRef.current && !isAbortError(error)) {
         const detail = error instanceof Error ? error.message : "Unable to load runs.";
-        if (!silent) setMessage(detail);
+        if (!silent && shouldSurfaceRunLoadMessage(activeTabRef.current)) setMessage(detail);
         if (isWarehouseStartingError(error) && !options.signal?.aborted) {
           setLoadingDetail("Starting data warehouse");
-          keepLoadingScreen = !initialLoadDone;
+          keepLoadingScreen = shouldSurfaceRunLoadMessage(activeTabRef.current) && !initialLoadDone;
           warehouseRetryTimerRef.current = window.setTimeout(() => {
             warehouseRetryTimerRef.current = null;
             if (!options.signal?.aborted) void loadDashboard();
