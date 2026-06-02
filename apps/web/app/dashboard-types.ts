@@ -280,7 +280,7 @@ export type RunTimelineRow = {
 };
 
 export type WorkspaceMode = "automatic" | "manual";
-export type WorkspacePanelType = "line" | "bar" | "histogram" | "dot";
+export type WorkspacePanelType = "line" | "bar" | "histogram" | "dot" | "scatter";
 
 export type WorkspacePanelSettings = {
   xMode: "step" | "time";
@@ -295,13 +295,43 @@ export type WorkspacePanelLayout = {
   h: number;
 };
 
-export type WorkspacePanel = {
+type BaseWorkspacePanel = {
   id: string;
-  type: WorkspacePanelType;
   title: string;
   metricKey: string;
   layout?: WorkspacePanelLayout;
   settings?: Partial<WorkspacePanelSettings>;
+};
+
+export type LineWorkspacePanel = BaseWorkspacePanel & {
+  type: "line";
+  xField?: never;
+  yField?: never;
+};
+
+export type SummaryWorkspacePanel = BaseWorkspacePanel & {
+  type: "bar" | "histogram" | "dot";
+  xField?: never;
+  yField?: never;
+};
+
+export type ScatterWorkspacePanel = BaseWorkspacePanel & {
+  type: "scatter";
+  xField: string;
+  yField: string;
+};
+
+export type WorkspacePanel = LineWorkspacePanel | SummaryWorkspacePanel | ScatterWorkspacePanel;
+
+export type WorkspaceFieldSource = "metric" | "config" | "metadata" | "run";
+
+export type WorkspaceFieldOption = {
+  id: string;
+  label: string;
+  source: WorkspaceFieldSource;
+  valueType: "number";
+  availableCount: number;
+  missingCount: number;
 };
 
 export type WorkspaceSection = {

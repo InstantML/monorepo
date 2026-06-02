@@ -321,15 +321,18 @@
 }
 
 /* ── Canvas + panels — flat cards, mono meta ───────────────────────────── */
-.workspace-canvas,
-.workspace-panel-card {
+.workspace-canvas {
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: none;
+}
+
+.workspace-panel-card {
+  border-radius: var(--radius);
+  background: var(--chart-card-bg);
 }
 .workspace-panel-head h3 { font: 600 13px/1 var(--font-sans); }
 .workspace-panel-head small { font: 500 11px/1 var(--font-mono); color: var(--faint); }
-.legend-chip { font: 500 11px/1 var(--font-mono); color: var(--muted); }
+.legend-chip { font: 600 11px/1 var(--font-sans); color: var(--muted); }
 
 /* ── Analysis pages (Run Detail / Compare / Metrics) ───────────────────── */
 .analysis-page .panel,

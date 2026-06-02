@@ -23,6 +23,28 @@ test("run rail hover surfaces tags and notes, not just the name", () => {
   assert.match(workspaceSrc, /title=\{runRailTooltip\(run\)\}/);
 });
 
+test("run rail identity dots use the shared chart palette", () => {
+  const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
+  const chartsCss = read("app/styles/charts.css");
+  assert.match(workspaceSrc, /import \{ chartColor, stableChartIndex \}/);
+  assert.match(workspaceSrc, /const runColor = chartColor\(stableChartIndex\(run\.id \|\| run\.name, index\)\)/);
+  assert.match(workspaceSrc, /className="legend-dot" style=\{\{ backgroundColor: runColor \}\}/);
+  assert.doesNotMatch(workspaceSrc, /dot-\$\{index % 5\}/);
+  assert.doesNotMatch(chartsCss, /\.dot-0/);
+});
+
+test("workspace chart visual polish preserves geometry and dark-mode marker outlines", () => {
+  const panelsCss = read("app/styles/panels.css");
+  const chartsCss = read("app/styles/charts.css");
+  assert.match(panelsCss, /--fullscreen-chart-width: min\(100%, 1120px, calc\(213\.954vh - 509px\)\)/);
+  assert.match(chartsCss, /\.fullscreen-panel-card \.metric-chart-frame[\s\S]*?width: var\(--fullscreen-chart-width[\s\S]*?aspect-ratio: 920 \/ 430/);
+  assert.match(chartsCss, /\.fullscreen-panel-card \.chart-range-row[\s\S]*?width: var\(--fullscreen-chart-width/);
+  assert.match(panelsCss, /\.fullscreen-panel-card \.metric-chart[\s\S]*?width: var\(--fullscreen-chart-width\)[\s\S]*?aspect-ratio: 920 \/ 430/);
+  assert.match(panelsCss, /\.fullscreen-panel-card \.alt-panel-chart svg[\s\S]*?width: var\(--fullscreen-chart-width\)[\s\S]*?aspect-ratio: 920 \/ 430/);
+  assert.match(panelsCss, /\.summary-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
+  assert.match(panelsCss, /\.scatter-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
+});
+
 test("runs workspace exposes a visible select-all-on-page control with a count", () => {
   const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
   assert.match(workspaceSrc, /workspace-rail-page-select/);

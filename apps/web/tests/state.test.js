@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
-import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, chartPointCount, chunkRunIds, histogramBins, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, shouldUseDenseChart } from "../src/dashboard-panels.js";
+import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, buildRunFieldCatalog, chartPointCount, chunkRunIds, fieldLabel, fieldValueForRun, histogramBins, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, metricFieldId, objectFieldId, parseFieldId, preferredScatterXField, scatterPointsForRuns, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
   MAX_SELECTED_RUNS,
@@ -138,6 +138,125 @@ test("latest-value panel helpers derive chart data from run summaries", () => {
   assert.deepEqual(indexedAxisTicks(12, 5), [0, 3, 6, 8, 11]);
   assert.deepEqual(indexedAxisTicks(1, 5), [0]);
   assert.deepEqual(indexedAxisTicks(0, 5), []);
+});
+
+test("run field catalog encodes numeric run fields and builds scatter points", () => {
+  const runs = [
+    {
+      id: "a",
+      name: "run-a",
+      config: { optimizer: { "learning/rate": 0.001 }, seed: 7, enabled: true, blank: "", absent: null, list: [1], emptyList: [], objectValue: { label: "not numeric" }, numericString: "12", hugeNumericString: "1".repeat(10_000) },
+      metadata: { hardware: { "gpu:model": "A100", count: 4 }, "": { odd: 1 }, hugeNumericString: "1".repeat(10_000) },
+      metric_aggregates: {
+        "eval/accuracy:top1": { latest: 0.8, min: 0.4, max: 0.82, mean: 0.71 },
+        "train/loss": { latest: 0.25, min: 0.2, max: 0.9, mean: 0.4 },
+      },
+      created_at: "2026-05-01T00:00:00.000Z",
+      started_at: "2026-05-01T00:00:02.000Z",
+      finished_at: "2026-05-01T00:00:12.000Z",
+    },
+    {
+      id: "b",
+      name: "run-b",
+      config: { optimizer: { "learning/rate": 0.002 }, seed: 8 },
+      metadata: { hardware: { count: "bad" } },
+      metric_aggregates: {
+        "eval/accuracy:top1": { latest: 0.9, min: 0.6, max: 0.93, mean: 0.81 },
+        "train/loss": { latest: 0.3, min: 0.18, max: 0.8, mean: 0.5 },
+      },
+      created_at: "2026-05-02T00:00:00.000Z",
+      started_at: "2026-05-02T00:00:00.000Z",
+      finished_at: null,
+    },
+  ];
+  const metricBest = metricFieldId("eval/accuracy:top1", "best");
+  const configLearningRate = objectFieldId("config", ["optimizer", "learning/rate"]);
+  const escapedConfigPath = objectFieldId("config", ["space key", "tilde~and/slash", "dot.key"]);
+  const metadataGpuCount = objectFieldId("metadata", ["hardware", "count"]);
+  const metadataOddPath = objectFieldId("metadata", ["", "odd"]);
+  const malformedSurrogateMetric = metricFieldId("\uD800", "latest");
+
+  assert.deepEqual(parseFieldId(metricBest), { source: "metric", key: "eval/accuracy:top1", aggregation: "best" });
+  assert.deepEqual(parseFieldId(configLearningRate), { source: "config", path: ["optimizer", "learning/rate"] });
+  assert.deepEqual(parseFieldId(escapedConfigPath), { source: "config", path: ["space key", "tilde~and/slash", "dot.key"] });
+  assert.deepEqual(parseFieldId(metadataOddPath), { source: "metadata", path: ["", "odd"] });
+  assert.deepEqual(parseFieldId(malformedSurrogateMetric), { source: "metric", key: "\uFFFD", aggregation: "latest" });
+  assert.equal(parseFieldId("metric:%E0%A4%A:best"), null, "malformed encoded metric keys should be rejected");
+  assert.equal(parseFieldId("metric::best"), null, "empty metric keys should be rejected");
+  assert.equal(parseFieldId("metric:reward:latest:extra"), null, "extra metric id segments should be rejected");
+  assert.equal(parseFieldId("config:foo"), null, "config fields must use encoded JSON pointers");
+  assert.equal(parseFieldId("metadata:%E0%A4%A"), null, "malformed encoded metadata paths should be rejected");
+  assert.equal(parseFieldId(`metric:${"a".repeat(600)}:best`), null, "overlong field ids should be rejected");
+  assert.equal(parseFieldId(`config:${encodeURIComponent(`/${"a".repeat(220)}`)}`), null, "overlong object path segments should be rejected");
+  assert.equal(metricFieldId("é".repeat(190), "best"), "", "metric field ids should not emit encoded values that fail parser length limits");
+  assert.equal(objectFieldId("config", ["é".repeat(120)]), "", "object field ids should not emit encoded pointers that fail parser length limits");
+  assert.equal(objectFieldId("config", ["a".repeat(100), "b".repeat(100)]), "", "overlong encoded object pointers should be skipped");
+  assert.equal(fieldLabel(configLearningRate), "config.optimizer.learning/rate");
+  assert.equal(fieldLabel(metricBest), "eval/accuracy:top1 best (max)");
+  assert.equal(fieldLabel(metricFieldId("train/loss", "best")), "train/loss best (min)");
+  assert.equal(fieldValueForRun(runs[0], metricBest), 0.82);
+  assert.equal(fieldValueForRun(runs[0], metricFieldId("train/loss", "best")), 0.2);
+  assert.equal(fieldValueForRun(runs[0], configLearningRate), 0.001);
+  assert.equal(fieldValueForRun(runs[0], "run:duration_seconds"), 10);
+  assert.equal(fieldValueForRun(runs[1], "run:duration_seconds"), null);
+
+  const catalog = buildRunFieldCatalog(runs, ["manual/metric"]);
+  const catalogIds = new Set(catalog.map((field) => field.id));
+  assert(catalog.some((field) => field.id === metricBest && field.availableCount === 2));
+  assert(catalog.some((field) => field.id === configLearningRate && field.availableCount === 2));
+  assert(catalog.some((field) => field.id === metadataGpuCount && field.availableCount === 1 && field.missingCount === 1));
+  assert(catalog.some((field) => field.id === objectFieldId("config", ["numericString"]) && field.availableCount === 1));
+  assert.equal(catalogIds.has(objectFieldId("config", ["enabled"])), false, "booleans should not become numeric scatter fields");
+  assert.equal(catalogIds.has(objectFieldId("config", ["blank"])), false, "empty strings should not become numeric scatter fields");
+  assert.equal(catalogIds.has(objectFieldId("config", ["absent"])), false, "null values should not become numeric scatter fields");
+  assert.equal(catalogIds.has(objectFieldId("config", ["list"])), false, "arrays should not become numeric scatter fields");
+  assert.equal(catalogIds.has(objectFieldId("config", ["emptyList"])), false, "empty arrays should not become numeric scatter fields");
+  assert.equal(catalogIds.has(objectFieldId("config", ["objectValue"])), false, "objects should not become numeric scatter fields");
+  assert.equal(catalogIds.has(objectFieldId("config", ["hugeNumericString"])), false, "huge numeric strings should not be coerced into scatter fields");
+  assert.equal(catalogIds.has(objectFieldId("metadata", ["hugeNumericString"])), false, "huge metadata strings should not be coerced into scatter fields");
+  assert.equal(fieldValueForRun(runs[0], objectFieldId("config", ["hugeNumericString"])), null, "huge numeric strings should be rejected before Number coercion");
+
+  const scatter = scatterPointsForRuns(runs, configLearningRate, metricBest);
+  assert.deepEqual(scatter.points.map((point) => [point.id, point.x, point.y]), [["a", 0.001, 0.82], ["b", 0.002, 0.93]]);
+  assert.equal(scatter.missing, 0);
+  assert.equal(scatterPointsForRuns(runs, "run:duration_seconds", metricBest).missing, 1);
+
+  const wideConfig = Object.fromEntries(Array.from({ length: 700 }, (_, index) => [`wide_${index}`, index]));
+  const wideCatalog = buildRunFieldCatalog([{ id: "wide", config: wideConfig, metadata: {}, metric_aggregates: {} }], []);
+  const wideConfigFields = wideCatalog.filter((field) => field.id.startsWith("config:"));
+  assert(wideConfigFields.length <= 240, "wide config traversal should respect the bounded catalog budget");
+
+  const wideMetrics = Object.fromEntries(Array.from({ length: 1_000 }, (_, index) => [`metric_${index}`, { latest: index, min: index - 1, max: index + 1, mean: index }]));
+  const wideMetricCatalog = buildRunFieldCatalog([{ id: "wide-metrics", config: {}, metadata: {}, metric_aggregates: wideMetrics }], Object.keys(wideMetrics));
+  const wideMetricFields = wideMetricCatalog.filter((field) => field.id.startsWith("metric:"));
+  assert(wideMetricFields.length <= 240, "wide metric aggregates should respect the bounded catalog budget before catalog expansion");
+
+  const metricHeavyCatalog = buildRunFieldCatalog([{ id: "metric-heavy", config: { learning_rate: 0.001, seed: 9 }, metadata: {}, metric_aggregates: wideMetrics }], Object.keys(wideMetrics));
+  assert(metricHeavyCatalog.some((field) => field.id === objectFieldId("config", ["learning_rate"])), "metric-heavy catalogs should keep config fields available for scatter defaults");
+  assert(metricHeavyCatalog.some((field) => field.id === objectFieldId("config", ["seed"])), "metric-heavy catalogs should not crowd out numeric hyperparameters");
+
+  const invalidSupplementalMetrics = Array.from({ length: 2_000 }, (_, index) => `${"x".repeat(220)}-${index}`);
+  const supplementalCatalog = buildRunFieldCatalog([{ id: "supplemental", config: { learning_rate: 0.001 }, metadata: {}, metric_aggregates: {} }], invalidSupplementalMetrics);
+  assert.equal(supplementalCatalog.some((field) => field.id === objectFieldId("config", ["learning_rate"])), true, "invalid supplemental metric keys should not block config fields");
+  assert.equal(supplementalCatalog.filter((field) => field.id.startsWith("metric:")).length, 0, "invalid supplemental metric keys should be skipped");
+
+  const longPointerSegment = "p".repeat(100);
+  const longPointerCatalog = buildRunFieldCatalog([{ id: "long-pointer", config: { [longPointerSegment]: { [longPointerSegment]: 1 } }, metadata: {}, metric_aggregates: {} }], []);
+  assert.equal(longPointerCatalog.some((field) => field.label.includes(longPointerSegment)), false, "overlong multi-segment object pointers should not enter the catalog");
+
+  const inheritedConfig = Object.create({ inherited_number: 5 });
+  inheritedConfig.own_number = 9;
+  const inheritedRun = { id: "inherited", config: inheritedConfig, metadata: {}, metric_aggregates: {} };
+  const inheritedCatalog = buildRunFieldCatalog([inheritedRun], []);
+  assert.equal(inheritedCatalog.some((field) => field.label === "config.inherited_number"), false, "inherited config properties should not enter the catalog");
+  assert.equal(fieldValueForRun(inheritedRun, objectFieldId("config", ["inherited_number"])), null, "inherited config properties should not resolve as values");
+  assert.equal(fieldValueForRun(inheritedRun, objectFieldId("config", ["own_number"])), 9);
+
+  const longMetric = "m".repeat(220);
+  const boundedCatalog = buildRunFieldCatalog([{ id: "long", config: { ["k".repeat(220)]: 1 }, metadata: {}, metric_aggregates: { [longMetric]: { latest: 1 } } }], [longMetric]);
+  assert.equal(boundedCatalog.some((field) => field.id.includes(longMetric.slice(0, 20))), false, "overlong metric and object field names should be skipped");
+
+  assert.equal(preferredScatterXField(catalog), configLearningRate, "scatter panels should prefer experiment config fields on X");
 });
 
 test("visibleSelectionState reports none/some/all", () => {

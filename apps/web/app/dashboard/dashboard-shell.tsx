@@ -11,7 +11,7 @@ import { downloadBlob, filenameFromContentDisposition, safeExportFilename } from
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
-import { adaptiveMetricSeriesLimit, chunkRunIds, mergeMetricSeriesPatches } from "../../src/dashboard-panels.js";
+import { adaptiveMetricSeriesLimit, buildRunFieldCatalog, chunkRunIds, defaultScatterFields, mergeMetricSeriesPatches, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
 import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
@@ -61,11 +61,12 @@ import {
   sanitizeWorkspaceView,
   stableId,
   workspaceMetricKeys,
+  workspacePanelNeedsMetricSeries,
   workspacePanelForMetric,
   workspaceStorageKey,
 } from "../dashboard-models";
 import { AppLoadingScreen } from "../loading-screen";
-import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
+import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
 import type { RunWorkspaceTabId } from "./components/run-workspace";
 import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
@@ -241,6 +242,74 @@ function mergeRunTagsAndNotes(run: RunSummary, tags: string[], notes: string) {
   if (notes) metadata.notes = notes;
   else delete metadata.notes;
   return { ...run, tags, metadata };
+}
+
+function boundedOwnKeyCount(record: Record<string, unknown> | null | undefined, limit = 64) {
+  if (!record || typeof record !== "object") return 0;
+  let count = 0;
+  for (const key in record) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    count += 1;
+    if (count >= limit) return limit;
+  }
+  return count;
+}
+
+function hasOwnRecordKeys(record: Record<string, unknown> | null | undefined) {
+  return boundedOwnKeyCount(record, 1) > 0;
+}
+
+function fallbackHasAdditionalKeys(primary: Record<string, unknown> | null | undefined, fallback: Record<string, unknown> | null | undefined) {
+  if (!fallback || typeof fallback !== "object") return false;
+  if (!primary || typeof primary !== "object") return hasOwnRecordKeys(fallback);
+  let checked = 0;
+  for (const key in fallback) {
+    if (!Object.prototype.hasOwnProperty.call(fallback, key)) continue;
+    if (!Object.prototype.hasOwnProperty.call(primary, key)) return true;
+    checked += 1;
+    if (checked >= 64) return true;
+  }
+  return false;
+}
+
+function mergeFreshRecord<T extends Record<string, unknown>>(primary: T | null | undefined, fallback: T | null | undefined): T {
+  if (!hasOwnRecordKeys(primary)) return (fallback ?? {}) as T;
+  if (!fallbackHasAdditionalKeys(primary, fallback)) return primary as T;
+  return { ...(fallback ?? {}), ...primary } as T;
+}
+
+function richerRunSummary(primary: RunSummary | null | undefined, fallback: RunSummary | null | undefined) {
+  if (!primary) return fallback ?? null;
+  if (!fallback) return primary;
+  const primaryConfigKeys = boundedOwnKeyCount(primary.config);
+  const fallbackConfigKeys = boundedOwnKeyCount(fallback.config);
+  const config = fallbackConfigKeys > primaryConfigKeys ? fallback.config : primary.config;
+  const metadata = mergeFreshRecord(primary.metadata, fallback.metadata);
+  const latestMetrics = mergeFreshRecord(primary.latest_metrics, fallback.latest_metrics);
+  const metricAggregates = mergeFreshRecord(primary.metric_aggregates, fallback.metric_aggregates);
+  const artifactCounts = primary.artifact_counts ?? fallback.artifact_counts;
+  if (
+    config === primary.config &&
+    metadata === primary.metadata &&
+    latestMetrics === primary.latest_metrics &&
+    metricAggregates === primary.metric_aggregates &&
+    artifactCounts === primary.artifact_counts
+  ) return primary;
+  return {
+    ...fallback,
+    ...primary,
+    config,
+    metadata,
+    latest_metrics: latestMetrics,
+    metric_aggregates: metricAggregates,
+    artifact_counts: artifactCounts,
+  };
+}
+
+function sanitizeWorkspaceFieldPatch(value: string | undefined) {
+  if (typeof value !== "string") return undefined;
+  const field = value.slice(0, 512);
+  return parseFieldId(field) ? field : undefined;
 }
 
 function pruneRunDetails(
@@ -574,7 +643,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const selectedRuns = useMemo(() => {
     const directory = runDirectoryRef.current;
     return selectedRunIds
-      .map((id) => selectedRunDetails[id] ?? directory.get(id) ?? sortedRuns.find((run) => run.id === id))
+      .map((id) => {
+        const pageRun = sortedRuns.find((run) => run.id === id);
+        const cachedRun = directory.get(id);
+        return richerRunSummary(selectedRunDetails[id] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
+      })
       .filter(Boolean) as RunSummary[];
   }, [selectedRunDetails, selectedRunIds, sortedRuns]);
   const metricSeriesRuns = useMemo(
@@ -609,8 +682,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     // directory. This keeps off-page selected runs resolvable without making
     // render phase impure.
     const directory = runDirectoryRef.current;
-    for (const run of sortedRuns) directory.set(run.id, run);
-    for (const run of Object.values(selectedRunDetails)) directory.set(run.id, run);
+    for (const run of sortedRuns) directory.set(run.id, richerRunSummary(run, directory.get(run.id)) ?? run);
+    for (const run of Object.values(selectedRunDetails)) directory.set(run.id, richerRunSummary(run, directory.get(run.id)) ?? run);
   }, [selectedRunDetails, sortedRuns]);
   useEffect(() => {
     selectedRunsRef.current = selectedRuns;
@@ -635,7 +708,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const compareRunKey = compareRunIds.join(",");
   const compareRuns = useMemo(() => (
     compareRunIds
-      .map((id) => selectedRunDetails[id] ?? sortedRuns.find((run) => run.id === id))
+      .map((id) => {
+        const pageRun = sortedRuns.find((run) => run.id === id);
+        const cachedRun = runDirectoryRef.current.get(id);
+        return richerRunSummary(selectedRunDetails[id] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
+      })
       .filter(Boolean) as RunSummary[]
   ), [compareRunIds, selectedRunDetails, sortedRuns]);
   const compareOverflowCount = Math.max(0, selectedRuns.length - compareRunIds.length);
@@ -871,24 +948,50 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const workspacePanelMetricKey = useMemo(() => workspacePanelMetrics.join("\u0000"), [workspacePanelMetrics]);
   const availableWorkspaceMetrics = useMemo(() => allMetricOptions.slice(0, MAX_METRIC_OPTIONS), [allMetricOptions]);
   const maxWorkspacePanelRuns = useMemo(() => {
-    const values = workspaceView.sections.flatMap((section) => section.panels.map((panel) => panel.settings?.maxRuns ?? section.settings?.maxRuns ?? workspaceView.settings.maxRuns));
+    const values = workspaceView.sections.flatMap((section) => (
+      section.panels
+        .filter((panel) => workspacePanelNeedsMetricSeries(panel))
+        .map((panel) => panel.settings?.maxRuns ?? section.settings?.maxRuns ?? workspaceView.settings.maxRuns)
+    ));
     return Math.max(1, Math.min(25, ...values, workspaceView.settings.maxRuns));
   }, [workspaceView]);
   const workspacePanelRuns = useMemo(() => (
     selectedRuns.length ? selectedRuns.slice(0, MAX_SELECTED_RUNS) : sortedRuns
   ), [selectedRuns, sortedRuns]);
-  const workspaceFetchRuns = useMemo(() => {
-    if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
-    return sortedRuns.slice(0, maxWorkspacePanelRuns);
-  }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
-  const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
-  const hasLiveWorkspaceRun = useMemo(() => workspaceFetchRuns.some((run) => run.status === "running"), [workspaceFetchRuns]);
   const editingPanelContext = useMemo(() => {
     if (!editingPanelRef) return null;
     const section = workspaceView.sections.find((item) => item.id === editingPanelRef.sectionId);
     const panel = section?.panels.find((item) => item.id === editingPanelRef.panelId);
     return section && panel ? { section, panel } : null;
   }, [editingPanelRef, workspaceView]);
+  const editingScatterMaxRuns = useMemo(() => {
+    if (editingPanelContext?.panel.type !== "scatter") return 0;
+    return Math.max(1, Math.min(
+      25,
+      editingPanelContext.panel.settings?.maxRuns
+        ?? editingPanelContext.section.settings?.maxRuns
+        ?? workspaceView.settings.maxRuns
+        ?? 10,
+    ));
+  }, [
+    editingPanelContext?.panel.type,
+    editingPanelContext?.panel.settings?.maxRuns,
+    editingPanelContext?.section.settings?.maxRuns,
+    workspaceView.settings.maxRuns,
+  ]);
+  const workspaceFieldOptions = useMemo(
+    () => {
+      if (!editingScatterMaxRuns) return [];
+      return buildRunFieldCatalog(workspacePanelRuns.slice(0, editingScatterMaxRuns), allMetricOptions) as WorkspaceFieldOption[];
+    },
+    [allMetricOptions, editingScatterMaxRuns, workspacePanelRuns],
+  );
+  const workspaceFetchRuns = useMemo(() => {
+    if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
+    return sortedRuns.slice(0, maxWorkspacePanelRuns);
+  }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
+  const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
+  const hasLiveWorkspaceRun = useMemo(() => workspaceFetchRuns.some((run) => run.status === "running"), [workspaceFetchRuns]);
   const fullscreenPanelContext = useMemo(() => {
     if (!fullscreenPanelRef) return null;
     const section = workspaceView.sections.find((item) => item.id === fullscreenPanelRef.sectionId);
@@ -1327,7 +1430,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     if (!dashboardAuthorized || !initialLoadDone) return undefined;
     const onMetricChart = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
-    const onWorkspaceChart = activeTab === "runs";
+    const onWorkspaceChart = activeTab === "runs" && workspacePanelMetrics.length > 0;
     const live = (onMetricChart && hasLiveMetricSeriesRun) || (onWorkspaceChart && hasLiveWorkspaceRun);
     if (!live) {
       // A run just stopped (or we left a chart tab): one last refresh so the
@@ -1344,7 +1447,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     };
     const interval = window.setInterval(tick, LIVE_SERIES_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [activeTab, dashboardAuthorized, hasLiveMetricSeriesRun, hasLiveWorkspaceRun, initialLoadDone, runWorkspaceTab]);
+  }, [activeTab, dashboardAuthorized, hasLiveMetricSeriesRun, hasLiveWorkspaceRun, initialLoadDone, runWorkspaceTab, workspacePanelMetrics.length]);
 
   useEffect(() => {
     if (queryInput === query) return undefined;
@@ -2647,7 +2750,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const ids = capSelectionToMatching(matchingRuns.map((run) => run.id).filter(Boolean));
       setSelectedRunDetails((current) => {
         const next = { ...current };
-        for (const run of matchingRuns) if (run?.id) next[run.id] = run;
+        for (const run of matchingRuns) {
+          if (!run?.id) continue;
+          const cached = runDirectoryRef.current.get(run.id) ?? sortedRuns.find((candidate) => candidate.id === run.id);
+          next[run.id] = richerRunSummary(run, current[run.id] ?? cached) ?? run;
+        }
         return next;
       });
       setSelectedRunIds(ids);
@@ -2835,11 +2942,28 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   function addWorkspacePanel(sectionId: string, panelMetric: string, type: WorkspacePanelType = "line") {
     if (!sectionId || !panelMetric) return;
+    const basePanel = workspacePanelForMetric(panelMetric, type);
+    const panelId = `panel-${stableId(`${type}-${panelMetric}`)}-${Date.now().toString(36)}`;
+    const panel: WorkspacePanel = type === "scatter"
+      ? {
+        ...basePanel,
+        ...defaultScatterFields(panelMetric, buildRunFieldCatalog((selectedRuns.length ? selectedRuns : sortedRuns).slice(0, 10), allMetricOptions)),
+        id: panelId,
+        type: "scatter",
+      }
+      : {
+        id: panelId,
+        type,
+        title: basePanel.title,
+        metricKey: basePanel.metricKey,
+        layout: basePanel.layout,
+        settings: basePanel.settings,
+      };
     updateWorkspace((current) => ({
       ...current,
       mode: current.mode === "manual" ? "manual" : current.mode,
       sections: current.sections.map((section) => section.id === sectionId
-        ? { ...section, panels: [...section.panels, { ...workspacePanelForMetric(panelMetric, type), id: `panel-${stableId(`${type}-${panelMetric}`)}-${Date.now().toString(36)}` }] }
+        ? { ...section, panels: [...section.panels, panel] }
         : section),
     }));
     setAddPanelSectionId("");
@@ -2927,22 +3051,47 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }), "Panel size saved. Undo available.");
   }
 
-  function updateEditingPanel(patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; settings?: Partial<WorkspacePanelSettings> }) {
+  function updateEditingPanel(patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; xField?: string; yField?: string; settings?: Partial<WorkspacePanelSettings> }) {
     if (!editingPanelRef) return;
     updateWorkspace((current) => ({
       ...current,
       sections: current.sections.map((section) => section.id === editingPanelRef.sectionId
         ? {
           ...section,
-          panels: section.panels.map((panel) => panel.id === editingPanelRef.panelId
-            ? {
-              ...panel,
-              type: patch.type ?? panel.type,
-              title: patch.title ?? panel.title,
-              metricKey: patch.metricKey ?? panel.metricKey,
-              settings: patch.settings ? { ...(panel.settings ?? {}), ...patch.settings } : panel.settings,
+          panels: section.panels.map((panel) => {
+            if (panel.id !== editingPanelRef.panelId) return panel;
+            const type = patch.type ?? panel.type;
+            const title = patch.title ?? panel.title;
+            const metricKey = patch.metricKey ?? panel.metricKey;
+            const settings = patch.settings ? { ...(panel.settings ?? {}), ...patch.settings } : panel.settings;
+            if (type === "scatter") {
+              const defaults = defaultScatterFields(metricKey, workspaceFieldOptions);
+              const xField = sanitizeWorkspaceFieldPatch(patch.xField)
+                ?? (panel.type === "scatter" ? panel.xField : undefined)
+                ?? defaults.xField;
+              const yField = sanitizeWorkspaceFieldPatch(patch.yField)
+                ?? (panel.type === "scatter" ? panel.yField : undefined)
+                ?? defaults.yField;
+              return {
+                id: panel.id,
+                type: "scatter",
+                title,
+                metricKey,
+                layout: panel.layout,
+                settings,
+                xField,
+                yField,
+              };
             }
-            : panel),
+            return {
+              id: panel.id,
+              type,
+              title,
+              metricKey,
+              layout: panel.layout,
+              settings,
+            };
+          }),
         }
         : section),
     }));
@@ -3335,6 +3484,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               summaryTotal={summary.total}
               tableColumns={tableColumns}
               workspacePanelRuns={workspacePanelRuns}
+              workspaceFieldOptions={workspaceFieldOptions}
               workspaceSeries={workspaceSeries}
               workspaceView={workspaceView}
             />

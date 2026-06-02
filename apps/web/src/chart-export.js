@@ -1,22 +1,8 @@
 import { axisTicks, formatAxisTick, formatAxisValue } from "./charts.js";
+import { CHART_PALETTE, chartColor, chartStyleIndexesForItems, chartSvgDashAttr, stableChartIndex } from "./chart-colors.js";
 
 export const CHART_EXPORT_MAX_SERIES = 120;
 export const CHART_EXPORT_MAX_POINTS = 20_000;
-
-const EXPORT_PALETTE = [
-  "#dc5b55",
-  "#5d89dd",
-  "#2f9d8f",
-  "#c07a2d",
-  "#8b7cf6",
-  "#2ec4b6",
-  "#e45f8c",
-  "#7bc96f",
-  "#14b8a6",
-  "#f4a261",
-  "#6b7280",
-  "#94a3b8",
-];
 
 /**
  * @param {Array<Record<string, any>>} [series]
@@ -108,17 +94,21 @@ export function chartSeriesToSvg({ metricKey = "", series = [], width = 560, hei
   const title = metricKey || "metric";
   const paths = [];
   const legendItems = [];
+  const useLineStyles = (series?.length ?? 0) > CHART_PALETTE.length;
+  const styleIndexes = chartStyleIndexesForItems(series);
   for (const [index, item] of (series ?? []).entries()) {
-    const color = EXPORT_PALETTE[index % EXPORT_PALETTE.length];
+    const colorIndex = styleIndexes[index] ?? stableChartIndex(item.id ?? item.identifier ?? item.name, index);
+    const color = chartColor(colorIndex);
+    const dash = useLineStyles ? chartSvgDashAttr(colorIndex) : "";
     if (index < 8) {
       const label = item.identifier ?? item.name ?? item.id ?? `series ${index + 1}`;
-      legendItems.push(`<g transform="translate(0 ${index * 14})"><line x1="0" x2="10" y1="0" y2="0" stroke="${color}" stroke-width="2"/><text x="14" y="3.5" font-size="10" fill="#243241">${xmlText(label)}</text></g>`);
+      legendItems.push(`<g transform="translate(0 ${index * 14})"><line x1="0" x2="10" y1="0" y2="0" stroke="${color}" stroke-width="2"${dash}/><text x="14" y="3.5" font-size="10" fill="#243241">${xmlText(label)}</text></g>`);
     }
     if (item.path) {
-      paths.push(`<polyline points="${xmlAttr(item.path)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="${item.smoothed ? "0.32" : "0.9"}"/>`);
+      paths.push(`<polyline points="${xmlAttr(item.path)}" fill="none" stroke="${color}" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"${dash} opacity="${item.smoothed ? "0.22" : "0.92"}"/>`);
     }
     if (item.smoothed && item.smoothPath) {
-      paths.push(`<polyline points="${xmlAttr(item.smoothPath)}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>`);
+      paths.push(`<polyline points="${xmlAttr(item.smoothPath)}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${dash} opacity="1"/>`);
     }
     if ((item.normalizedPoints?.length ?? 0) === 1) {
       const point = item.normalizedPoints[0];
@@ -126,10 +116,10 @@ export function chartSeriesToSvg({ metricKey = "", series = [], width = 560, hei
     }
   }
   const grid = domain ? [
-    ...yTicks.map((tick) => `<g><line x1="${safePadding}" x2="${safeWidth - safePadding}" y1="${numberAttr(yPos(tick))}" y2="${numberAttr(yPos(tick))}" stroke="#e5edf4"/><text x="${safePadding - 6}" y="${numberAttr(yPos(tick) + 4)}" text-anchor="end" font-size="10" fill="#536171">${xmlText(formatAxisTick(tick))}</text></g>`),
-    ...xTicks.map((tick) => `<g><line x1="${numberAttr(xPos(tick))}" x2="${numberAttr(xPos(tick))}" y1="${safePadding}" y2="${safeHeight - safePadding}" stroke="#e5edf4"/><text x="${numberAttr(xPos(tick))}" y="${safeHeight - 10}" text-anchor="middle" font-size="10" fill="#536171">${xmlText(formatAxisValue(tick, xMode))}</text></g>`),
-    `<line x1="${safePadding}" x2="${safeWidth - safePadding}" y1="${safeHeight - safePadding}" y2="${safeHeight - safePadding}" stroke="#7b8998"/>`,
-    `<line x1="${safePadding}" x2="${safePadding}" y1="${safePadding}" y2="${safeHeight - safePadding}" stroke="#7b8998"/>`,
+    ...yTicks.map((tick) => `<g><line x1="${safePadding}" x2="${safeWidth - safePadding}" y1="${numberAttr(yPos(tick))}" y2="${numberAttr(yPos(tick))}" stroke="#e5e7eb" opacity="0.42"/><text x="${safePadding - 6}" y="${numberAttr(yPos(tick) + 4)}" text-anchor="end" font-size="10" font-weight="600" fill="#94a3b8">${xmlText(formatAxisTick(tick))}</text></g>`),
+    ...xTicks.map((tick) => `<g><line x1="${numberAttr(xPos(tick))}" x2="${numberAttr(xPos(tick))}" y1="${safePadding}" y2="${safeHeight - safePadding}" stroke="#e5e7eb" opacity="0.24"/><text x="${numberAttr(xPos(tick))}" y="${safeHeight - 10}" text-anchor="middle" font-size="10" font-weight="600" fill="#94a3b8">${xmlText(formatAxisValue(tick, xMode))}</text></g>`),
+    `<line x1="${safePadding}" x2="${safeWidth - safePadding}" y1="${safeHeight - safePadding}" y2="${safeHeight - safePadding}" stroke="#cbd5e1" opacity="0.45"/>`,
+    `<line x1="${safePadding}" x2="${safePadding}" y1="${safePadding}" y2="${safeHeight - safePadding}" stroke="#cbd5e1" opacity="0.45"/>`,
   ] : [];
   const legend = legendItems.length ? [
     `<g transform="translate(${safePadding} 28)" font-family="Inter, Arial, sans-serif">`,

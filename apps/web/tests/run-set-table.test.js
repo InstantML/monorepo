@@ -18,6 +18,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { CHART_PALETTE } from "../src/chart-colors.js";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const blockTypesDir = path.join(
   __dirname,
@@ -68,6 +70,23 @@ test("Runset type carries the v1.2 run_settings shape", () => {
   assert.ok(/disabled\?: boolean/.test(src), "RunsetRunSettings.disabled must be optional bool");
   assert.ok(/color\?: string/.test(src), "RunsetRunSettings.color must be optional string");
   assert.ok(/RUN_COLOR_PALETTE/.test(src), "8-color palette constant must be exported");
+});
+
+test("Runset default colors intentionally mirror the shared dashboard palette", () => {
+  const typesSrc = read("types.ts");
+  const tableSrc = read("run-set-table.tsx");
+  assert.deepEqual(CHART_PALETTE.slice(0, 8), [
+    "#2f80ed",
+    "#12a67a",
+    "#d65f74",
+    "#e0a33f",
+    "#7c5cc4",
+    "#3b9ba7",
+    "#8a96a8",
+    "#d97745",
+  ]);
+  assert.match(typesSrc, /RUN_COLOR_PALETTE:\s*string\[\]\s*=\s*CHART_PALETTE\.slice\(0,\s*8\)/);
+  assert.match(tableSrc, /settings\.color\s*\?\?\s*RUN_COLOR_PALETTE\[index\s*%\s*RUN_COLOR_PALETTE\.length\]/);
 });
 
 test("AddPanelModal module exists and exposes both tabs", () => {

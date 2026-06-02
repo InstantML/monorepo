@@ -462,14 +462,17 @@
   /* Panels and drawer */
   .panel-drawer,
   .runs-workspace.drawer-open .panel-drawer {
-    position: relative;
-    z-index: calc(var(--z-pop, 100) - 1);
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: var(--z-pop, 100);
     width: auto;
+    max-height: 86vh;
     height: auto;
+    overflow-y: auto;
     border: 0;
     border-top: 1px solid var(--line);
-    border-radius: 0;
-    box-shadow: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    box-shadow: 0 -18px 50px rgba(24, 34, 45, 0.18);
   }
   .panel-drawer-backdrop {
     inset: 0;
@@ -548,7 +551,7 @@
     width: auto;
     max-height: 86vh;
     border-radius: var(--radius) var(--radius) 0 0;
-    z-index: 55;
+    z-index: var(--z-pop, 100);
   }
 
   /* ── Quick search & modal dialogs full-width on phones ───────────────── */

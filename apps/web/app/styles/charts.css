@@ -3,20 +3,16 @@
  * .range-*, .fullscreen-panel-*.
  * ─────────────────────────────────────────────────────────────────────────── */
 
-/* The chart is wrapped in .metric-chart-frame (canvas + overlay SVG for
- * dense charts), and .metric-chart-frame .metric-chart forces the inner SVG
- * to fill the frame. So the frame itself must carry the fullscreen sizing,
- * or it takes full width at a fixed aspect ratio and overflows the chart
- * area. Bound it by the grid row it occupies (height:100% of the 1fr track)
- * so it can never overflow the modal regardless of legend height; the
- * canvas/SVG letterbox within it (object-fit/viewBox) staying aligned. */
+/* The chart is wrapped in .metric-chart-frame (canvas + overlay SVG for dense
+ * charts), and the inner SVG fills that frame. In fullscreen the frame should
+ * be width-bound like the modal, with a capped height so the range brush stays
+ * reachable below the chart. */
 .fullscreen-panel-card .metric-chart-frame {
   justify-self: center;
-  align-self: center;
-  height: 100%;
-  width: auto;
-  max-width: min(100%, 1120px);
-  min-height: 0;
+  align-self: start;
+  width: var(--fullscreen-chart-width, min(100%, 1120px));
+  height: auto;
+  aspect-ratio: 920 / 430;
 }
 
 .fullscreen-panel-card .axis-label,
@@ -26,7 +22,7 @@
 
 .fullscreen-panel-card .chart-range-row {
   display: flex;
-  width: min(100%, 1120px);
+  width: var(--fullscreen-chart-width, min(100%, 1120px));
   margin: 10px auto 0;
 }
 
@@ -824,39 +820,33 @@ small {
   font-style: italic;
 }
 
-.legend-dot {
+.legend-dot,
+.legend-line {
   width: 8px;
   height: 8px;
   flex: 0 0 auto;
   border-radius: 50%;
 }
 
-/* In the legend the swatch reads as a short line stroke (wandb style); the
- * round dot is kept for the hover tooltip rows. */
-.chart-legend .legend-dot {
+/* In legends and tooltips the swatch reads as a short line stroke, matching
+ * the plotted stroke style rather than a generic dot. */
+.chart-legend .legend-dot,
+.chart-legend .legend-line {
   width: 16px;
   height: 3px;
   border-radius: 2px;
 }
 
-.dot-0 {
-  background: #dc5b55;
+.legend-line.line-style-1 {
+  background: repeating-linear-gradient(90deg, currentColor 0 6px, transparent 6px 10px) !important;
 }
 
-.dot-1 {
-  background: #5d89dd;
+.legend-line.line-style-2 {
+  background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 6px) !important;
 }
 
-.dot-2 {
-  background: var(--accent);
-}
-
-.dot-3 {
-  background: var(--warm);
-}
-
-.dot-4 {
-  background: #8b7cf6;
+.legend-line.line-style-3 {
+  background: repeating-linear-gradient(90deg, currentColor 0 9px, transparent 9px 12px, currentColor 12px 14px, transparent 14px 17px) !important;
 }
 
 .metric-chart {
@@ -907,24 +897,30 @@ small {
 /* Faint, hairline gridlines — the reference charts let the data carry the eye
  * rather than a heavy grid. */
 .grid-line {
-  opacity: 0.5;
+  opacity: 0.42;
   shape-rendering: crispEdges;
+}
+
+.grid-line.vertical {
+  opacity: 0.24;
 }
 
 /* Drop the heavy axis spine to a barely-there hairline, wandb/neptune style. */
 .axis {
   stroke: var(--chart-axis);
-  opacity: 0.55;
+  opacity: 0.45;
 }
 
 .axis-label {
   fill: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 650;
 }
 
 .tick-label {
   fill: var(--chart-tick, var(--muted));
   font-size: 10px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -932,8 +928,29 @@ small {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.5;
-  opacity: 0.95;
+  stroke-width: 1.45;
+  opacity: 0.92;
+}
+
+.series.line-style-1 {
+  stroke-dasharray: 6 4;
+}
+
+.series.line-style-2 {
+  stroke-dasharray: 2 4;
+}
+
+.series.line-style-3 {
+  stroke-dasharray: 9 3 2 3;
+}
+
+.series.series-muted {
+  opacity: 0.28;
+}
+
+.series.series-active {
+  opacity: 1;
+  stroke-width: 1.9;
 }
 
 .series-point {
@@ -947,19 +964,42 @@ small {
  * signal, with the raw series kept faintly visible ("slightly opaque") behind
  * it for context. */
 .series.series-raw {
-  opacity: 0.3;
+  opacity: 0.22;
   stroke-width: 1;
+}
+
+.series.series-raw.series-muted {
+  opacity: 0.1;
+}
+
+.series.series-raw.series-active {
+  opacity: 0.34;
+  stroke-width: 1.1;
 }
 
 .series.series-smooth {
   opacity: 1;
-  stroke-width: 1.65;
+  stroke-width: 1.5;
+}
+
+.series.series-smooth.series-muted {
+  opacity: 0.32;
+  stroke-width: 1.15;
+}
+
+.series.series-smooth.series-active {
+  opacity: 1;
+  stroke-width: 1.9;
 }
 
 .tooltip-smoothed {
   font-style: normal;
   opacity: 0.7;
   font-weight: 600;
+}
+
+.tooltip-raw {
+  margin-right: 7px;
 }
 
 /* Filled marker shown at the hovered sample (markers are otherwise omitted on
@@ -983,47 +1023,47 @@ small {
 
 .series-0,
 .point-0 {
-  stroke: #dc5b55;
+  stroke: #2f80ed;
 }
 
 .point-0 {
-  fill: #dc5b55;
+  fill: #2f80ed;
 }
 
 .series-1,
 .point-1 {
-  stroke: #5d89dd;
+  stroke: #12a67a;
 }
 
 .point-1 {
-  fill: #5d89dd;
+  fill: #12a67a;
 }
 
 .series-2,
 .point-2 {
-  stroke: var(--accent);
+  stroke: #d65f74;
 }
 
 .point-2 {
-  fill: var(--accent);
+  fill: #d65f74;
 }
 
 .series-3,
 .point-3 {
-  stroke: var(--warm);
+  stroke: #e0a33f;
 }
 
 .point-3 {
-  fill: var(--warm);
+  fill: #e0a33f;
 }
 
 .series-4,
 .point-4 {
-  stroke: #8b7cf6;
+  stroke: #7c5cc4;
 }
 
 .point-4 {
-  fill: #8b7cf6;
+  fill: #7c5cc4;
 }
 
 /* Light, wandb/neptune-style readout: a clean card with a step header, a
@@ -1063,7 +1103,7 @@ small {
 
 .chart-tooltip-cols {
   display: grid;
-  grid-template-columns: minmax(72px, auto) 1fr;
+  grid-template-columns: minmax(112px, auto) 1fr;
   gap: 10px;
   padding: 3px 0 4px;
   margin-bottom: 2px;
@@ -1076,7 +1116,7 @@ small {
 
 .chart-tooltip-row {
   display: grid;
-  grid-template-columns: minmax(72px, auto) 1fr;
+  grid-template-columns: minmax(112px, auto) 1fr;
   align-items: center;
   gap: 10px;
   white-space: nowrap;
@@ -1111,6 +1151,22 @@ small {
   height: 9px;
   flex: 0 0 auto;
   border-radius: 50%;
+}
+
+.chart-tooltip .legend-line {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.chart-tooltip-more {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
 }
 
 .workspace-panel-card .chart-tooltip {
@@ -1150,6 +1206,18 @@ small {
   fill: none;
   opacity: 0.58;
   stroke-width: 1.4;
+}
+
+.range-series.line-style-1 {
+  stroke-dasharray: 6 4;
+}
+
+.range-series.line-style-2 {
+  stroke-dasharray: 2 4;
+}
+
+.range-series.line-style-3 {
+  stroke-dasharray: 9 3 2 3;
 }
 
 .range-window {

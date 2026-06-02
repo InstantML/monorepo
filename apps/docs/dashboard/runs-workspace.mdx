@@ -1,6 +1,6 @@
 ---
 title: "Runs workspace"
-description: "Search, select, sort, chart, and save workspace views for many runs."
+description: "Search, select, sort, visualize, and save workspace views for many runs."
 ---
 
 # Runs workspace
@@ -8,7 +8,8 @@ description: "Search, select, sort, chart, and save workspace views for many run
 ![Runs workspace](/images/product/dashboard-runs.png)
 
 The Runs workspace is the daily command center. It combines a run selector,
-summary stats, metric panels, saved views, and a bounded server-backed run list.
+summary stats, visualization panels, saved views, and a bounded server-backed
+run list.
 
 ## Search and sort
 
@@ -56,15 +57,32 @@ reason instead of silently exporting a partial subset.
 Automatic mode creates a capped high-signal set of line panels from logged
 metric keys. Manual mode starts blank so you can add only the charts you need.
 
-Panel types:
+Current visualization panel types:
 
 - Line panels for metric series.
 - Bar panels for latest values.
-- Histogram panels for distributions.
+- Value histogram panels for latest-value distributions across the current run
+  set.
 - Dot panels for point-style comparisons.
+- Scatter panels for two numeric loaded-run fields, such as a config value
+  versus a best metric aggregate.
 
 Line panels load selected-run series through bounded chunked requests. Dense
-series render paths on canvas while preserving axes and hover readouts.
+series render paths on canvas while preserving axes, legends, hover readouts,
+raw values, and smoothed values when smoothing is active. Large comparisons use
+the stable chart palette first, then dashed line styles after the palette wraps
+so overlapping runs stay distinguishable.
+
+Scatter, bar, value histogram, and dot panels use already loaded run summaries,
+so they do not fetch full metric histories. Their scope is selected runs when a
+selection is active, otherwise the visible loaded run page capped by the panel
+limit. Scatter fields can come from metric summaries, config values, metadata,
+duration, or created time; the first scatter slice is summary-only and does not
+include lasso selection, density overlays, or project-wide all-matching queries.
+
+Line panels include chart CSV and SVG image export for the visible plotted sample.
+Summary panels are designed for fast visual comparison inside the workspace;
+use selected-run CSV export when you need raw run rows.
 
 ## Layouts and saved views
 

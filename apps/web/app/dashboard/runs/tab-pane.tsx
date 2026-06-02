@@ -8,8 +8,9 @@ import { RunsCommandbar } from "./runs-commandbar";
 import { RunsWorkspace } from "./runs-workspace";
 import { Stats } from "./runs-stats";
 import { WorkspacePanelCard } from "./workspace-panel-card";
+import { fieldLabel } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
-import type { Overview, RunSummary, TableColumns, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
+import type { Overview, RunSummary, TableColumns, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 
@@ -77,7 +78,7 @@ type Props = {
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   onToggleRun: (runId: string, options?: { shift?: boolean }) => void;
   onToggleSection: (sectionId: string) => void;
-  onUpdateEditingPanel: (patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
+  onUpdateEditingPanel: (patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; xField?: string; yField?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
   orgMemberships: OrgMembershipSummary[];
   orgName: string;
   orgSwitchBusy: boolean;
@@ -102,6 +103,7 @@ type Props = {
   status: string;
   summaryTotal: number;
   tableColumns: TableColumns;
+  workspaceFieldOptions: WorkspaceFieldOption[];
   workspacePanelRuns: RunSummary[];
   workspaceSeries: Record<string, MetricSeries[]>;
   workspaceView: WorkspaceView;
@@ -187,12 +189,18 @@ export function RunsTabPane({
   status,
   summaryTotal,
   tableColumns,
+  workspaceFieldOptions,
   workspacePanelRuns,
   workspaceSeries,
   workspaceView,
 }: Props) {
   const showEmptyCallout = initialLoadDone && !dashboardLoading && summaryTotal === 0 && projects.length === 0 && !project && !query && !status;
   const nonCurrentMemberships = orgMemberships.filter((m) => !m.is_current);
+  const fullscreenPanelSubtitle = fullscreenPanelContext
+    ? fullscreenPanelContext.panel.type === "scatter" && fullscreenPanelContext.panel.xField && fullscreenPanelContext.panel.yField
+      ? `${fieldLabel(fullscreenPanelContext.panel.xField)} x ${fieldLabel(fullscreenPanelContext.panel.yField)}`
+      : fullscreenPanelContext.panel.metricKey ?? "Metric"
+    : "Metric";
 
   return (
     <>
@@ -306,6 +314,7 @@ export function RunsTabPane({
       />
       {editingPanelContext ? (
         <PanelEditDrawer
+          fieldOptions={workspaceFieldOptions}
           metricOptions={allMetricOptions}
           onClose={onCloseEditingPanel}
           onUpdate={onUpdateEditingPanel}
@@ -343,7 +352,7 @@ export function RunsTabPane({
             <div className="drawer-head">
               <div className="fullscreen-title-block">
                 <h2>{fullscreenPanelContext.panel.title}</h2>
-                <span>{fullscreenPanelContext.panel.metricKey ?? "Metric"} · {fullscreenPanelContext.section.name} · {fullscreenPanelIndex + 1} of {fullscreenPanelOrder.length}</span>
+                <span>{fullscreenPanelSubtitle} · {fullscreenPanelContext.section.name} · {fullscreenPanelIndex + 1} of {fullscreenPanelOrder.length}</span>
               </div>
               <div className="fullscreen-nav-actions">
                 <button
