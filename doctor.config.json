@@ -12,14 +12,11 @@
   "surfaces": {
     "score": {
       "excludeCategories": [
+        "Security",
+        "Bugs",
         "Accessibility",
-        "Architecture",
-        "Bundle Size",
-        "Correctness",
-        "Next.js",
         "Performance",
-        "Server",
-        "State & Effects"
+        "Maintainability"
       ]
     }
   }

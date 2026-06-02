@@ -75,10 +75,10 @@ function RunMetricTable({ rows }: { rows: RunMetricRow[] }) {
       {rows.slice(0, 12).map((row) => (
         <div className="metric-summary-row" key={row.key}>
           <strong title={row.key}>{shortMetricName(row.key)}</strong>
-          <span>{formatNumber(row.latest, 3)}</span>
-          <span title={metricGoalLabel(row.key)}>{formatNumber(metricGoal(row.key) === "minimize" ? row.min : row.max, 3)}</span>
-          <span>{formatNumber(row.mean, 3)}</span>
-          <span>{formatNumber(row.bestStep, 0)}</span>
+          <span data-label="Latest">{formatNumber(row.latest, 3)}</span>
+          <span data-label="Goal" title={metricGoalLabel(row.key)}>{formatNumber(metricGoal(row.key) === "minimize" ? row.min : row.max, 3)}</span>
+          <span data-label="Mean">{formatNumber(row.mean, 3)}</span>
+          <span data-label="Step">{formatNumber(row.bestStep, 0)}</span>
         </div>
       ))}
     </div>
@@ -89,9 +89,13 @@ function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
 }
 
-function copyText(value: string) {
+async function copyText(value: string) {
   if (!value) return;
-  void navigator.clipboard?.writeText(value);
+  try {
+    await navigator.clipboard?.writeText(value);
+  } catch {
+    // Visible IDs/snippets remain selectable when clipboard permission is denied.
+  }
 }
 
 function CheckpointList({
@@ -169,7 +173,7 @@ function CheckpointList({
                 )}
                 <button
                   className="copy-button"
-                  onClick={() => copyText(buildCheckpointResumeCode(artifact, run))}
+                  onClick={() => void copyText(buildCheckpointResumeCode(artifact, run))}
                   type="button"
                 >
                   <Copy size={13} /> Resume Code

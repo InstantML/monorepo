@@ -22,9 +22,12 @@ type IndexEntry = {
 
 function buildIndex(navigation: DocsNavigation): IndexEntry[] {
   const entries: IndexEntry[] = [];
+  const seenPaths = new Set<string>();
   for (const tab of navigation) {
     for (const group of tab.groups) {
       for (const page of group.pages) {
+        if (seenPaths.has(page.path)) continue;
+        seenPaths.add(page.path);
         entries.push({
           path: page.path,
           title: page.title,
@@ -111,8 +114,9 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
+      event.preventDefault();
       setOpen(false);
-      inputRef.current?.blur();
+      inputRef.current?.focus({ preventScroll: true });
       return;
     }
     if (results.length === 0) return;
@@ -178,7 +182,7 @@ export function DocsSearch({ navigation }: { navigation: DocsNavigation }) {
                 }
                 href={pageUrl(result.path)}
                 id={`docs-search-result-${index}`}
-                key={result.path}
+                key={`${result.path}-${result.tab}-${result.group}`}
                 role="option"
                 aria-selected={index === activeIndex}
                 onMouseEnter={() => setActiveIndex(index)}

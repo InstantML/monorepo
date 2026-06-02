@@ -119,8 +119,8 @@ export function ImportsTabPane({ api, project }: Props) {
           <h1>Imports & Integrations</h1>
           <p>Move existing experiment history into InstantML without handing third-party tokens to the server.</p>
         </div>
-        <button className="icon-button" type="button" onClick={() => void loadJobs(true)} aria-label="Refresh import jobs">
-          <RefreshCw size={16} />
+        <button className="secondary compact-button imports-refresh-button" type="button" onClick={() => void loadJobs(true)} aria-label="Refresh import jobs">
+          <RefreshCw size={16} /> Refresh
         </button>
       </header>
 
@@ -193,12 +193,12 @@ export function ImportsTabPane({ api, project }: Props) {
       ) : mode === "dual" ? (
         <SnippetPanel
           title="Dual-log to W&B and InstantML"
-          command={'run = im.init(project="demo", shadow_wandb=True)\\nrun.log({"train/loss": 0.12}, step=1)\\nrun.finish()'}
+          command={'run = im.init(project="demo", shadow_wandb=True)\nrun.log({"train/loss": 0.12}, step=1)\nrun.finish()'}
         />
       ) : (
         <SnippetPanel
           title="Framework adapters"
-          command={'from instantml import InstantMLLogger, InstantMLCallback, InstantMLKerasCallback\\n# Lightning: Trainer(logger=InstantMLLogger(project="demo"))\\n# HF: Trainer(callbacks=[InstantMLCallback(project="demo")])\\n# Keras: model.fit(..., callbacks=[InstantMLKerasCallback(project="demo")])'}
+          command={'from instantml import InstantMLLogger, InstantMLCallback, InstantMLKerasCallback\n# Lightning: Trainer(logger=InstantMLLogger(project="demo"))\n# HF: Trainer(callbacks=[InstantMLCallback(project="demo")])\n# Keras: model.fit(..., callbacks=[InstantMLKerasCallback(project="demo")])'}
         />
       )}
 
@@ -217,6 +217,16 @@ export function ImportsTabPane({ api, project }: Props) {
                 const canCommit = job.status === "dry_run_ready" || (job.status === "failed" && job.progress?.resumable === true);
                 const commitLabel = job.status === "failed" ? "Retry" : "Commit";
                 const canCancel = !["committed", "completed", "cancelled", "committing"].includes(job.status);
+                const commitDisabledReason = actionJobId === job.id
+                  ? "Import action is in progress."
+                  : canCommit
+                    ? `${commitLabel} import #${job.id}`
+                    : `Import #${job.id} is ${job.status}; only dry-run-ready or resumable failed jobs can be committed.`;
+                const cancelDisabledReason = actionJobId === job.id
+                  ? "Import action is in progress."
+                  : canCancel
+                    ? `Cancel import #${job.id}`
+                    : `Import #${job.id} is ${job.status} and can no longer be cancelled.`;
                 const summary = summarizeJob(job);
                 return (
                   <tr key={job.id}>
@@ -227,15 +237,15 @@ export function ImportsTabPane({ api, project }: Props) {
                     <td>{String(job.warnings?.length ?? job.summary?.warnings ?? 0)}</td>
                     <td><span className={`imports-status imports-status--${job.status}`}>{job.status}</span></td>
                     <td>{job.created_at ? new Date(job.created_at).toLocaleString() : "-"}</td>
-                    <td>
-                      <div className="imports-actions">
-                        <button type="button" onClick={() => runJobAction(job, "commit")} disabled={actionJobId === job.id || !canCommit}>
-                          {commitLabel}
-                        </button>
-                        <button type="button" onClick={() => runJobAction(job, "cancel")} disabled={actionJobId === job.id || !canCancel}>
-                          Cancel
-                        </button>
-                      </div>
+	                    <td>
+	                      <div className="imports-actions">
+	                        <button type="button" onClick={() => runJobAction(job, "commit")} disabled={actionJobId === job.id || !canCommit} title={commitDisabledReason}>
+	                          {commitLabel}
+	                        </button>
+	                        <button type="button" onClick={() => runJobAction(job, "cancel")} disabled={actionJobId === job.id || !canCancel} title={cancelDisabledReason}>
+	                          Cancel
+	                        </button>
+	                      </div>
                     </td>
                   </tr>
                 );
@@ -247,8 +257,8 @@ export function ImportsTabPane({ api, project }: Props) {
         </div>
         {jobs.some((job) => job.warnings?.length) ? (
           <div className="imports-warnings" aria-label="Import warnings">
-            {jobs.flatMap((job) => (job.warnings ?? []).slice(0, 3).map((warning, index) => (
-              <p key={`${job.id}-${index}`}>
+            {jobs.flatMap((job) => (job.warnings ?? []).slice(0, 3).map((warning) => (
+              <p key={`${job.id}-${String(warning.code ?? warning.message ?? "warning")}`}>
                 <strong>{job.source_type} #{job.id}</strong>: {String(warning.message ?? warning.code ?? "Warning")}
               </p>
             )))}
@@ -281,7 +291,7 @@ function SnippetPanel({ title, command }: { title: string; command: string }) {
         </button>
       </div>
       <pre><code>{command}</code></pre>
-      {copyState ? <p className="imports-message">{copyState === "copied" ? "Snippet copied." : "Copy failed. Select and copy the snippet manually."}</p> : null}
+      {copyState ? <p className="imports-message" role={copyState === "failed" ? "alert" : "status"} aria-live="polite">{copyState === "copied" ? "Snippet copied." : "Copy failed. Select and copy the snippet manually."}</p> : null}
     </section>
   );
 }

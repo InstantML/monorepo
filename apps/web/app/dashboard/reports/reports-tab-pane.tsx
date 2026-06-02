@@ -72,7 +72,7 @@ const EMPTY_HISTORY_SNAPSHOT: HistorySnapshot = {
  * component that fires `onChange` for every edit; this pane debounces
  * those into one PATCH per 800 ms of quiet.
  */
-export function ReportsTabPane() {
+export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boolean }) {
   const pathname = usePathname();
   const api = useMemo(() => new ApiClient(), []);
   const [summaries, setSummaries] = useState<ReportSummary[]>([]);
@@ -252,6 +252,10 @@ export function ReportsTabPane() {
   }, [mode, loadReport]);
 
   const handleCreate = useCallback(async () => {
+    if (!canEditReports) {
+      setError("Report editing is available to workspace writers.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -268,7 +272,7 @@ export function ReportsTabPane() {
     } finally {
       setBusy(false);
     }
-  }, [api, loadList]);
+  }, [api, canEditReports, loadList]);
 
   const handleEditorChange = useCallback(
     (
@@ -376,6 +380,7 @@ export function ReportsTabPane() {
 
   const handleShare = useCallback(async () => {
     if (!activeReport) return;
+    if (!canEditReports) return;
     setBusy(true);
     setError(null);
     try {
@@ -398,7 +403,7 @@ export function ReportsTabPane() {
     } finally {
       setBusy(false);
     }
-  }, [activeReport, api, flushPendingEdits]);
+  }, [activeReport, api, canEditReports, flushPendingEdits]);
 
   // Flush pending save before leaving the editor. Also flush any pending
   // history-coalesce snapshot so the last burst is preserved if the user
@@ -433,7 +438,9 @@ export function ReportsTabPane() {
           busy={busy}
           onOpen={(reportId) => openReport(reportId)}
           onCreate={() => void handleCreate()}
+          canEditReports={canEditReports}
           onDelete={(reportId, title) => {
+            if (!canEditReports) return;
             if (!window.confirm(`Delete "${title || "Untitled report"}"? This cannot be undone.`)) {
               return;
             }
@@ -454,6 +461,15 @@ export function ReportsTabPane() {
       ) : null}
       {mode.kind === "open" && activeReport ? (
         <section className="report-pane">
+          {(() => {
+            const shareTitle = !canEditReports
+              ? "Read-only workspaces cannot create or rotate share links"
+              : busy
+                ? "Report action in progress"
+                : activeReport.share_token
+                  ? "Rotate share link"
+                  : "Create share link";
+            return (
           <ReportToolbar onBack={() => void flushAndLeave({ kind: "list" })}>
             <div className="report-pane__toolbar-spacer" />
             <AutoSavePill status={autoSave} onRetry={handleRetry} />
@@ -483,7 +499,9 @@ export function ReportsTabPane() {
               type="button"
               className="report-pane__icon-button"
               onClick={() => void handleShare()}
-              title={activeReport.share_token ? "Rotate share link" : "Create share link"}
+              disabled={!canEditReports || busy}
+              aria-label={shareTitle}
+              title={shareTitle}
             >
               {activeReport.share_token ? "Rotate share" : "Share"}
             </button>
@@ -496,6 +514,8 @@ export function ReportsTabPane() {
               Export
             </button>
           </ReportToolbar>
+            );
+          })()}
           {activeReport.share_token ? (
             <p className="report-pane__share">
               Public share URL ·{" "}
@@ -512,6 +532,7 @@ export function ReportsTabPane() {
             report={activeReport}
             autoFocusTitle={Boolean(mode.kind === "open" && mode.autoFocus)}
             onChange={handleEditorChange}
+            readOnly={!canEditReports}
             onUndo={handleUndo}
             onRedo={handleRedo}
           />
@@ -548,12 +569,14 @@ function ReportToolbar({
 function ReportsListPane({
   summaries,
   busy,
+  canEditReports,
   onOpen,
   onCreate,
   onDelete,
 }: {
   summaries: ReportSummary[];
   busy: boolean;
+  canEditReports: boolean;
   onOpen: (reportId: string) => void;
   onCreate: () => void;
   onDelete: (reportId: string, title: string) => void;
@@ -574,7 +597,8 @@ function ReportsListPane({
               type="button"
               className="report-pane__icon-button"
               onClick={() => onCreate()}
-              disabled={busy}
+              disabled={busy || !canEditReports}
+              title={canEditReports ? "New report" : "Report editing requires workspace write access"}
             >
               <Plus size={14} aria-hidden="true" /> New report
             </button>
@@ -589,15 +613,18 @@ function ReportsListPane({
             <div className="report-list__empty">
               <FileText size={22} aria-hidden="true" />
               <strong>No reports yet</strong>
-              <span>Create the first writeup for this workspace.</span>
-              <button
-                type="button"
-                className="report-pane__icon-button"
-                onClick={() => onCreate()}
-                disabled={busy}
-              >
-                <Plus size={14} aria-hidden="true" /> Create report
-              </button>
+              <span>{canEditReports ? "Create the first writeup for this workspace." : "This workspace is read-only. Shared reports will appear here."}</span>
+              {canEditReports ? (
+                <button
+                  type="button"
+                  className="report-pane__icon-button"
+                  onClick={() => onCreate()}
+                  disabled={busy}
+                  title="Create report"
+                >
+                  <Plus size={14} aria-hidden="true" /> Create report
+                </button>
+              ) : null}
             </div>
           ) : (
             <ul className="report-list">
@@ -642,7 +669,8 @@ function ReportsListPane({
                       className="report-pane__icon-button report-pane__icon-button--danger"
                       onClick={() => onDelete(summary.id, summary.title)}
                       aria-label={`Delete report ${summary.title}`}
-                      disabled={busy}
+                      disabled={busy || !canEditReports}
+                      title={canEditReports ? "Delete report" : "Report editing requires workspace write access"}
                     >
                       <Trash2 size={13} aria-hidden="true" />
                     </button>

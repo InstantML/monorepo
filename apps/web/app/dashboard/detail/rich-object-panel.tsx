@@ -6,9 +6,13 @@ import { compactValue, formatBytes, shortValue } from "../../dashboard-models";
 import { ArtifactMediaPreview } from "./artifact-panel";
 import type { Artifact, LoggedObject, LoggedObjectRow } from "../../dashboard-types";
 
-function copyText(value: string) {
+async function copyText(value: string) {
   if (!value) return;
-  void navigator.clipboard?.writeText(value);
+  try {
+    await navigator.clipboard?.writeText(value);
+  } catch {
+    // Visible IDs/snippets remain selectable when clipboard permission is denied.
+  }
 }
 
 function artifactFromLoggedObject(object: LoggedObject): Artifact | null {
@@ -84,7 +88,7 @@ function RichObjectCard({ object, rows }: { object: LoggedObject; rows: LoggedOb
         {artifact ? <span>{formatBytes(artifact.size_bytes)}</span> : null}
         <button
           className="copy-button"
-          onClick={() => copyText(String(object.id))}
+          onClick={() => void copyText(String(object.id))}
           title="Copy this object's unique ID to the clipboard (use it with the SDK/API to reference this object)"
           type="button"
         ><Copy size={13} /> Copy ID</button>

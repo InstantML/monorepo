@@ -13,9 +13,13 @@ function artifactDownloadUrl(artifact: Artifact) {
   return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
 }
 
-function copyText(value: string) {
+async function copyText(value: string) {
   if (!value) return;
-  void navigator.clipboard?.writeText(value);
+  try {
+    await navigator.clipboard?.writeText(value);
+  } catch {
+    // Visible IDs/snippets remain selectable when clipboard permission is denied.
+  }
 }
 
 export function ArtifactMediaPreview({ artifact, compact = false, fallback = false }: { artifact: Artifact; compact?: boolean; fallback?: boolean }) {
@@ -54,7 +58,7 @@ export function ArtifactPanel({ title, items }: { title: string; items: Artifact
               ) : null}
               <button
                 className="copy-button"
-                onClick={() => copyText(artifact.id)}
+                onClick={() => void copyText(artifact.id)}
                 title="Copy this artifact's unique ID to the clipboard (use it with the SDK/API to reference this file)"
                 type="button"
               ><Copy size={13} /> Copy ID</button>

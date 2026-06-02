@@ -133,6 +133,7 @@ export function RunsCommandbar({
       </div>
       <button
         aria-label={selectedRunCount ? `Export ${selectedRunCount} selected runs as CSV` : "Export selected runs as CSV"}
+        aria-disabled={selectedRunExportDisabled || undefined}
         aria-describedby={exportHelpId}
         className="secondary compact-button export-selected-runs-button"
         disabled={exportSelectedBusy}
@@ -142,6 +143,7 @@ export function RunsCommandbar({
       >
         <Download size={15} /> {exportSelectedBusy ? "Exporting" : "Export CSV"}
       </button>
+      {selectedRunExportDisabled ? <span className="export-selected-runs-help">{selectedRunExportTitle}</span> : null}
       <span className="visually-hidden" id={exportHelpId}>{selectedRunExportTitle}</span>
       <button className="icon-button framed" type="button" aria-label="Refresh runs" onClick={onRefresh}><RefreshCw size={16} /></button>
     </div>

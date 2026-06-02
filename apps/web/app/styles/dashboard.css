@@ -518,6 +518,10 @@
   display: none;
 }
 
+.nav-drawer-head {
+  display: none;
+}
+
 .tab-scroll,
 .tab-group {
   display: grid;

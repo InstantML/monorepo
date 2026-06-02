@@ -75,6 +75,7 @@ export function PublicReportPage({ shareToken }: Props) {
   }
   return (
     <main className="public-report">
+      <p className="public-report__context">Read-only public report</p>
       <ReportEditor report={report} readOnly />
     </main>
   );

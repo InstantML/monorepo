@@ -364,6 +364,20 @@ button.primary-button,
 }
 button.primary-button:hover,
 .primary-button:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+button.primary-button:disabled,
+.primary-button[aria-disabled="true"] {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+button.primary-button:disabled:hover,
+.primary-button[aria-disabled="true"]:hover {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
 button.secondary,
 .secondary {
   background: var(--surface);
@@ -1229,11 +1243,6 @@ textarea:focus {
   width: 30px;
   height: 30px;
 }
-.brandbar-user-avatar .cl-userButtonAvatarBox,
-.brandbar-user-avatar .cl-userButtonTrigger {
-  width: 30px;
-  height: 30px;
-}
 
 /* Workbar — 44px control row */
 .workbar {
@@ -1781,9 +1790,37 @@ textarea:focus {
 
 /* Two-col secondary layout: align rails to mock proportion */
 .tab-grid.two-col { grid-template-columns: minmax(0, 1fr) 332px; gap: 16px; }
+.tab-grid.two-col.api-tab-grid { grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr); }
 .settings-grid { gap: 16px; }
 .insight-stack { gap: 12px; }
 .settings-list, .api-list { gap: 10px; }
+
+.api-list .api-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.api-list .api-row code {
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.api-list .api-row small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.api-list .api-row .copy-button {
+  width: auto;
+  justify-self: end;
+  white-space: nowrap;
+}
 
 .admin-stack,
 .admin-list,
@@ -1823,6 +1860,22 @@ textarea:focus {
   margin: -4px 0 0;
   color: var(--muted);
   font: 500 12px/1.45 var(--font-sans);
+}
+
+.admin-message {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text-2);
+  padding: 9px 10px;
+  font: 600 12px/1.4 var(--font-sans);
+}
+
+.admin-message.error {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--line));
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+  color: var(--danger);
 }
 
 /* Usage warnings should read as warnings, matching the redesign's

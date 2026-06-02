@@ -229,15 +229,24 @@ body:has(.docs-route) {
   align-items: stretch;
   gap: 6px;
   overflow-x: auto;
-  scrollbar-width: none;
+  padding-bottom: 6px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 
 .docs-route-tabs::-webkit-scrollbar {
-  display: none;
+  height: 6px;
+  display: block;
+}
+
+.docs-route-tabs::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(23, 33, 27, 0.18);
 }
 
 .docs-route-tab {
   position: relative;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   padding: 12px 12px;
@@ -788,6 +797,9 @@ body:has(.docs-route) {
 }
 
 .docs-route-api-row code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
   color: #17211b;
   font-size: 14px;
 }
@@ -824,6 +836,35 @@ body:has(.docs-route) {
 }
 
 @media (max-width: 960px) {
+  .docs-route {
+    --docs-topbar-height: 148px;
+  }
+
+  .docs-route-topbar-row-primary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px 14px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .docs-route-brand {
+    grid-column: 1;
+  }
+
+  .docs-route-topbar-actions {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .docs-route-search {
+    display: flex;
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
   .docs-route-shell {
     grid-template-columns: minmax(0, 1fr);
     padding: 22px clamp(20px, 4vw, 32px) 64px;
@@ -841,10 +882,6 @@ body:has(.docs-route) {
     display: none;
   }
 
-  .docs-route-search {
-    display: none;
-  }
-
   .docs-route-article-header {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -855,15 +892,54 @@ body:has(.docs-route) {
 }
 
 @media (max-width: 640px) {
+  .docs-route {
+    --docs-topbar-height: 162px;
+  }
+
   .docs-route-topbar-row-primary {
-    flex-wrap: wrap;
     padding-top: 10px;
     padding-bottom: 10px;
   }
 
   .docs-route-topbar-actions {
-    margin-left: auto;
     gap: 10px;
+  }
+
+  .docs-route-topbar-actions a {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .docs-route-topbar-row-secondary {
+    position: relative;
+    padding-right: 0;
+  }
+
+  .docs-route-topbar-row-secondary::after {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 44px;
+    background: linear-gradient(90deg, rgba(247, 248, 245, 0), rgba(247, 248, 245, 0.82) 45%, rgba(247, 248, 245, 0.98));
+    content: "";
+    pointer-events: none;
+  }
+
+  .docs-route-tabs {
+    width: 100%;
+    padding-right: 44px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .docs-route-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .docs-route-tab.is-active {
+    order: -1;
   }
 
   .docs-route-card-grid,

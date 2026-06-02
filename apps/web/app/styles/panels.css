@@ -90,6 +90,10 @@
   scroll-margin-top: calc(var(--topbar-height) + var(--runs-filter-sticky-height) + 74px);
 }
 
+.workspace-panel-grid > .workspace-panel-card:only-child {
+  grid-column: 1 / -1;
+}
+
 .workspace-panel-head {
   display: flex;
   align-items: flex-start;
@@ -147,10 +151,9 @@
 .workspace-panel-head small {
   display: block;
   min-width: 0;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: min(520px, 100%);
+  overflow-wrap: anywhere;
+  white-space: normal;
   line-height: 1.25;
 }
 
@@ -391,7 +394,7 @@
 .panel-drawer {
   position: sticky;
   top: var(--topbar-height);
-  z-index: 8;
+  z-index: calc(var(--z-pop, 100) - 1);
   display: grid;
   align-content: start;
   gap: 14px;
@@ -400,6 +403,14 @@
   border-left: 1px solid var(--line);
   background: var(--surface);
   padding: 14px;
+}
+
+.panel-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-pop, 100) - 2);
+  background: rgba(9, 14, 20, 0.22);
+  backdrop-filter: blur(1px);
 }
 
 .edit-drawer {
@@ -551,7 +562,7 @@
 .workspace-modal {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--z-pop, 100);
   display: grid;
   place-items: center;
   background: rgba(9, 14, 20, 0.48);

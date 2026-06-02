@@ -396,7 +396,17 @@ button.compare-row-head.active {
 }
 
 .browser-row {
-  grid-template-columns: 34px minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto minmax(112px, auto) minmax(86px, auto);
+}
+
+.browser-row .copy-button {
+  min-width: 86px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.browser-row .artifact-download {
+  min-width: 112px;
 }
 
 .browser-icon {
@@ -500,6 +510,10 @@ button.compare-row-head.active {
   cursor: not-allowed;
 }
 
+.copy-button.unavailable[role="status"] {
+  cursor: help;
+}
+
 .artifact-workspace {
   display: grid;
   grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr) minmax(320px, 0.58fr);
@@ -542,12 +556,27 @@ button.compare-row-head.active {
 
 .artifact-catalog-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 118px;
+  grid-template-columns: minmax(180px, 1fr) minmax(128px, max-content) auto;
   gap: 8px;
+  align-items: end;
+  width: min(100%, 560px);
 }
 
 .artifact-catalog-controls .control {
   min-width: 0;
+}
+
+.artifact-catalog-panel .panel-head,
+.artifact-version-panel .panel-head,
+.artifact-manifest-panel .panel-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.artifact-catalog-panel .panel-head h2,
+.artifact-version-panel .panel-head h2,
+.artifact-manifest-panel .panel-head h2 {
+  min-width: min(100%, 220px);
 }
 
 .artifact-collection-list,
@@ -761,6 +790,23 @@ button.compare-row-head.active {
     grid-column: 1 / -1;
   }
 
+  .artifact-catalog-controls,
+  .artifact-version-panel .panel-controls,
+  .artifact-manifest-panel .panel-controls {
+    width: 100%;
+  }
+
+  .artifact-catalog-panel .panel-head,
+  .artifact-version-panel .panel-head,
+  .artifact-manifest-panel .panel-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .artifact-catalog-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(118px, auto) auto;
+  }
+
   .metrics-chart-surface {
     order: 1;
   }
@@ -769,7 +815,8 @@ button.compare-row-head.active {
     order: 2;
   }
 
-  .metrics-analysis .inspector {
+  .metrics-analysis .inspector,
+  .metric-insights-panel {
     order: 3;
   }
 
@@ -1016,6 +1063,10 @@ button.compare-row-head.active {
     grid-template-columns: 1fr 1fr;
   }
 
+  .compare-toolbar .compare-search-control {
+    grid-column: 1 / -1;
+  }
+
   .compare-summary {
     grid-template-columns: 1fr 1fr;
   }
@@ -1139,6 +1190,15 @@ button.compare-row-head.active {
   .artifact-manifest-row,
   .artifact-lineage-edge {
     grid-template-columns: 1fr;
+  }
+
+  .artifact-catalog-controls {
+    align-items: stretch;
+  }
+
+  .artifact-catalog-controls .copy-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .artifact-manifest-row .copy-button {

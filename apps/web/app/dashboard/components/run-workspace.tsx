@@ -49,9 +49,13 @@ type ApiLike = {
 };
 const RUN_WORKSPACE_REQUEST_RETRY_DELAYS_MS = [250, 700, 1_500];
 
-function copyText(value: string) {
+async function copyText(value: string) {
   if (!value) return;
-  void navigator.clipboard?.writeText(value);
+  try {
+    await navigator.clipboard?.writeText(value);
+  } catch {
+    // Keep the visible resume snippet/selectable ID as a manual fallback.
+  }
 }
 type ConsoleLogLine = {
   created_at: string;
@@ -435,7 +439,7 @@ function EvidencePreview({ item, rowsByObjectId, run }: { item: any; rowsByObjec
             <p>{item.artifact.type} · {item.artifact.step === null ? "no step" : `step ${item.artifact.step}`}</p>
           </div>
           {resumeCode ? (
-            <button className="copy-button" onClick={() => copyText(resumeCode)} type="button">
+            <button className="copy-button" onClick={() => void copyText(resumeCode)} type="button">
               <Copy size={13} /> Resume Code
             </button>
           ) : null}
@@ -551,7 +555,10 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
     setLoading(true);
     setError("");
     setLineage(null);
-    api.get(`/api/runs/${run.id}/lineage`, { signal: controller.signal })
+    retryTransientRequest(
+      () => api.get(`/api/runs/${run.id}/lineage`, { signal: controller.signal }),
+      { signal: controller.signal, delays: RUN_WORKSPACE_REQUEST_RETRY_DELAYS_MS },
+    )
       .then((payload) => {
         if (requestKey !== requestKeyRef.current) return;
         setLineage(payload as RunLineage);
