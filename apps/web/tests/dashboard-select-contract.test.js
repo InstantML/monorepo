@@ -80,3 +80,9 @@ test("selected run export remains reachable when validation has feedback", () =>
   assert.match(commandbarSrc, /disabled=\{exportSelectedBusy\}/);
   assert.doesNotMatch(commandbarSrc, /disabled=\{exportSelectedBusy \|\| selectedRunExportDisabled\}/);
 });
+
+test("dashboard breadcrumb labels the empty project scope as all projects", () => {
+  const topbarSrc = read("app/dashboard/chrome/topbar.tsx");
+  assert.match(topbarSrc, /\{project \|\| "All projects"\}/);
+  assert.doesNotMatch(topbarSrc, /\{project \|\| "demo"\}/);
+});
