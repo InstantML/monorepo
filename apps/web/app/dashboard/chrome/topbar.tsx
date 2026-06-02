@@ -774,7 +774,7 @@ export function DashboardTopbar({
           </span>
           <span className="org-switcher-label" aria-label="Workspace">{workspaceName || "Workspace"}</span>
           <nav className="breadcrumb" aria-label="Breadcrumb">
-            <span className="crumb">{project || "demo"}</span>
+            <span className="crumb">{project || "All projects"}</span>
             <span className="sep" aria-hidden="true">/</span>
             {activeTab === "detail" ? (
               <>
