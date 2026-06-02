@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import ts from "typescript";
 
-import { metricFieldId, parseFieldId } from "../src/dashboard-panels.js";
+import { metricFieldId, objectFieldId, parseFieldId } from "../src/dashboard-panels.js";
 import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "../src/workspace-view-api.js";
 
 // The UI overhaul centralised browser-persistence keys into
@@ -76,18 +76,26 @@ test("workspace model accepts the revised panel schema and non-line types", () =
   const editDrawer = readFileSync(`${root}app/dashboard/runs/panel-edit-drawer.tsx`, "utf8");
   const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
   assert.match(models, /WORKSPACE_SCHEMA_VERSION\s*=\s*2/, "workspace schema should migrate to v2");
-  assert.match(models, /export const WORKSPACE_PANEL_TYPES:[\s\S]*"scatter"/, "workspace chart type options should have one exported source of truth");
-  assert.match(types, /WorkspacePanelType\s*=\s*"line"\s*\|\s*"bar"\s*\|\s*"histogram"\s*\|\s*"dot"\s*\|\s*"scatter"/, "panel types should include summary scatter charts");
+  assert.match(models, /export const WORKSPACE_PANEL_TYPES:[\s\S]*"distribution"[\s\S]*"histogram_timeline"/, "workspace chart type options should have one exported source of truth");
+  assert.doesNotMatch(models, /WORKSPACE_PANEL_TYPES:[\s\S]*"parallel"/, "parallel coordinates should stay in Insights, not saved Runs workspace panels");
+  assert.match(types, /\|\s*"scatter"[\s\S]*\|\s*"distribution"[\s\S]*\|\s*"histogram_timeline"/, "panel types should include the saved second-slice research charts");
   assert.match(types, /type: "scatter";[\s\S]*xField: string;[\s\S]*yField: string;/, "scatter panels should require explicit numeric field references");
+  assert.match(types, /type: "distribution";[\s\S]*valueField: string;[\s\S]*groupField\?: string;[\s\S]*replicateField\?: string;/, "distribution panels should persist value, group, and replicate fields");
+  assert.doesNotMatch(types, /type: "parallel"/, "parallel coordinates should not be part of the saved Runs workspace schema");
+  assert.match(types, /type: "histogram_timeline";[\s\S]*objectKey: string;/, "logged histogram timeline panels should persist an explicit object key");
   assert.match(types, /type: "bar" \| "histogram" \| "dot";[\s\S]*xField\?: never;[\s\S]*yField\?: never;/, "summary panels should reject scatter-only fields at the type layer");
   assert.match(types, /WorkspaceFieldSource\s*=\s*"metric"\s*\|\s*"config"\s*\|\s*"metadata"\s*\|\s*"run"/, "workspace field options should expose literal field sources");
   assert.match(types, /valueType: "number";/, "workspace field options should stay numeric-only until another field type is designed");
   assert.match(models, /panel\.type === "line"/, "only line panels should fetch full metric series");
-  assert.match(models, /type !== "scatter"[\s\S]*return base/, "non-scatter panels should not require scatter field references during migration");
+  assert.match(models, /type === "distribution"[\s\S]*sanitizeCategoricalFieldRef/, "distribution panels should validate categorical fields during migration");
+  assert.match(models, /type === "histogram_timeline"[\s\S]*sanitizeObjectKey/, "logged histogram panels should validate object keys during migration");
   assert.match(models, /parseFieldId\(field\) \? field : undefined/, "persisted scatter field references should be semantically validated");
   assert.match(editDrawer, /defaultScatterFields\(panel\.metricKey, fieldOptions\)/, "scatter edit defaults should use one parser-safe field helper");
   assert.doesNotMatch(editDrawer, /FieldId\s*=[^;\n]*""/, "scatter edit defaults should not fall back to an empty field id");
   assert.match(editDrawer, /WORKSPACE_PANEL_TYPES\.map/, "edit drawer chart options should use the shared panel type list");
+  assert.match(editDrawer, /Value field[\s\S]*Group field[\s\S]*Replicate field/, "distribution edit controls should expose value, group, and replicate fields");
+  assert.doesNotMatch(editDrawer, /Axis \$\{index \+ 1\}|axisFields|axisScales/, "Runs workspace edit controls should not expose parallel-coordinate axes");
+  assert.match(editDrawer, /Histogram object key/, "logged histogram edit controls should expose explicit object keys");
   assert.match(runsWorkspace, /WORKSPACE_PANEL_TYPES\.map/, "add-panel chart options should use the shared panel type list");
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
   assert.match(shell, /mergeFreshRecord\(primary\.metric_aggregates, fallback\.metric_aggregates\)/, "richer selected runs should preserve cached metric aggregates while fresh values win");
@@ -100,6 +108,22 @@ test("runs workspace panel drawer remains reachable on mobile", () => {
   assert.match(drawerRule, /position:\s*fixed;/, "mobile add-panel drawer should render as a fixed bottom sheet");
   assert.match(drawerRule, /inset:\s*auto 0 0 0;/, "mobile add-panel drawer should be anchored to the viewport bottom");
   assert.match(drawerRule, /max-height:\s*86vh;/, "mobile add-panel drawer should stay inside the viewport");
+});
+
+test("logged histogram and eval previews keep bounded object-only contracts", () => {
+  const models = readFileSync(`${root}app/dashboard-models.ts`, "utf8");
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+  const card = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
+  const richObjectPanel = readFileSync(`${root}app/dashboard/detail/rich-object-panel.tsx`, "utf8");
+
+  assert.match(models, /workspacePanelNeedsMetricSeries[\s\S]*panel\.type === "line"/, "only line workspace panels should fetch metric series");
+  assert.match(shell, /WORKSPACE_HISTOGRAM_TIMELINE_LIMIT\s*=\s*3/, "logged histogram timelines should cap visible object-key requests");
+  assert.match(shell, /function workspaceHistogramObjectKeys[\s\S]*section\.collapsed[\s\S]*slice\(0, 12\)/, "histogram timeline fetch keys should come from rendered, non-collapsed workspace panels");
+  assert.match(shell, /workspaceHistogramKeys\.slice\(WORKSPACE_HISTOGRAM_TIMELINE_LIMIT\)[\s\S]*capped: true/, "histogram timeline panels beyond the visible request cap should get an explicit capped state");
+  assert.match(shell, /kind: "histogram"[\s\S]*key: objectKey[\s\S]*limit: 100/, "histogram timelines should use selected-run bounded object reads");
+  assert.match(card, /timeline\?\.capped[\s\S]*first 3 visible logged histogram timelines[\s\S]*Compatible bins[\s\S]*Latest frame: bins changed/, "histogram timelines should render capped states, compatible-bin heatmaps, and incompatible-bin fallbacks");
+  assert.match(richObjectPanel, /object\.kind === "classification_eval"[\s\S]*ClassificationEvalPreview/, "classification eval objects should have a rich-object preview");
+  assert.match(richObjectPanel, /CurveSparkline label="PR"[\s\S]*CurveSparkline label="ROC"[\s\S]*eval-confusion/, "classification eval previews should show PR, ROC, and confusion matrix views");
 });
 
 test("workspace sanitizer round-trips scatter panels and keeps non-scatter migration compatible", async () => {
@@ -185,6 +209,65 @@ test("workspace sanitizer round-trips scatter panels and keeps non-scatter migra
   assert.equal(line.type, "line");
   assert.equal(line.xField, undefined);
   assert.equal(line.yField, undefined);
+});
+
+test("workspace sanitizer round-trips second-slice research panels", async () => {
+  const models = await importDashboardModelsForTest();
+  const valueField = metricFieldId("eval/return_mean", "best");
+  const groupField = objectFieldId("config", ["variant"]);
+  const seedField = objectFieldId("config", ["seed"]);
+  const sanitized = models.sanitizeWorkspaceView({
+    schemaVersion: models.WORKSPACE_SCHEMA_VERSION,
+    id: "research-panels",
+    name: "Research panels",
+    mode: "manual",
+    project: "demo",
+    sections: [{
+      id: "research-section",
+      name: "Research",
+      panels: [
+        {
+          id: "dist-a",
+          type: "distribution",
+          title: "Return by variant",
+          metricKey: "eval/return_mean",
+          valueField,
+          groupField,
+          replicateField: seedField,
+        },
+        {
+          id: "hist-timeline-a",
+          type: "histogram_timeline",
+          title: "Score distribution",
+          metricKey: "eval/score_distribution",
+          objectKey: "eval/score_distribution",
+        },
+        {
+          id: "dist-bad",
+          type: "distribution",
+          title: "Bad distribution",
+          metricKey: "eval/return_mean",
+          valueField: "not-a-field",
+        },
+        {
+          id: "hist-bad",
+          type: "histogram_timeline",
+          title: "Bad histogram",
+          metricKey: "eval/score_distribution",
+          objectKey: "",
+        },
+      ],
+    }],
+  }, ["eval/return_mean"], "demo");
+
+  const panels = sanitized.sections[0].panels;
+  assert.deepEqual(panels.map((panel) => panel.id), ["dist-a", "hist-timeline-a"]);
+  assert.equal(panels[0].type, "distribution");
+  assert.equal(panels[0].valueField, valueField);
+  assert.equal(panels[0].groupField, groupField);
+  assert.equal(panels[0].replicateField, seedField);
+  assert.equal(panels[1].type, "histogram_timeline");
+  assert.equal(panels[1].objectKey, "eval/score_distribution");
 });
 
 test("workspace sanitizer preserves legacy v1 panel payloads without scatter fields", async () => {

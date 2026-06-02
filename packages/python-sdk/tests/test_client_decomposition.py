@@ -13,6 +13,7 @@ import instantml.objects as objects
 def test_client_facade_exports_extracted_modules() -> None:
     assert client_module.Table is objects.Table
     assert client_module.Histogram is objects.Histogram
+    assert client_module.ClassificationEval is objects.ClassificationEval
     assert client_module.File is objects.File
     assert client_module.Artifact is objects.Artifact
     assert client_module.CheckpointPolicy is objects.CheckpointPolicy

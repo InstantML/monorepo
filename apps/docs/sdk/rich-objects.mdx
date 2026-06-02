@@ -1,9 +1,9 @@
 ---
-title: "Tables, histograms, and media"
-description: "Log rich objects for table previews, histogram previews, and media evidence."
+title: "Tables, histograms, evals, and media"
+description: "Log rich objects for table previews, histogram timelines, typed evaluation bundles, and media evidence."
 ---
 
-# Tables, histograms, and media
+# Tables, histograms, evals, and media
 
 Scalar metrics explain trends. Rich objects explain evidence.
 
@@ -43,6 +43,37 @@ run.log_objects(
 Histograms appear as previews in Run Detail and artifact/object surfaces. They
 are rich evidence objects, not the same surface as Runs workspace value
 histogram panels over scalar metric summaries.
+
+Runs workspace logged-histogram timeline panels can also read a selected run's
+histogram objects by explicit key. When frames share bin edges, the panel shows
+a heatmap over steps; when bins differ, it shows a selected-frame histogram so
+non-comparable frames are not implied to be comparable.
+
+## Classification evaluations
+
+Use `log_classification_eval(...)` for compact binary classification eval
+bundles. The SDK stores typed rich-object data rather than screenshots, so Run
+Detail can render PR/ROC curves, a confusion matrix, per-class metrics, and an
+optional prediction preview.
+
+```python
+run.log_classification_eval(
+    "eval/classification",
+    y_true=[0, 1, 1, 0],
+    y_score=[0.1, 0.8, 0.7, 0.2],
+    class_names=["negative", "positive"],
+    positive_label="positive",
+    split="validation",
+    threshold=0.5,
+    predictions=[{"id": "ex-1"}],
+    step=10,
+)
+```
+
+The MVP is binary-only. `y_score` is the positive-class score, `y_pred` is
+optional and defaults to `score >= threshold`, confusion matrix rows are true
+classes, and columns are predicted classes in `class_names` order. Prediction
+rows are optional and must include at most 100 preview rows.
 
 ## Media objects
 

@@ -66,6 +66,17 @@ Current visualization panel types:
 - Dot panels for point-style comparisons.
 - Scatter panels for two numeric loaded-run fields, such as a config value
   versus a best metric aggregate.
+- Distribution panels for visible-sample seed or ablation stability by a
+  categorical config, metadata, status, or first-tag field. Small groups render
+  strip points plus a median; larger groups add compact box summaries.
+- Logged histogram timeline panels for one primary run and one explicit
+  histogram object key. These use `GET /api/runs/:id/objects?kind=histogram`
+  with a key filter and render the latest 100 frames as a compatible-bin
+  heatmap or a selected-frame fallback when bins changed.
+  Add them by typing the histogram object key; metric rows are only suggestions
+  when a scalar metric happens to share the same key.
+
+![Logged histogram timeline panel](/images/product/dashboard-logged-histogram.png)
 
 Line panels load selected-run series through bounded chunked requests. Dense
 series render paths on canvas while preserving axes, legends, hover readouts,
@@ -73,12 +84,17 @@ raw values, and smoothed values when smoothing is active. Large comparisons use
 the stable chart palette first, then dashed line styles after the palette wraps
 so overlapping runs stay distinguishable.
 
-Scatter, bar, value histogram, and dot panels use already loaded run summaries,
-so they do not fetch full metric histories. Their scope is selected runs when a
-selection is active, otherwise the visible loaded run page capped by the panel
-limit. Scatter fields can come from metric summaries, config values, metadata,
-duration, or created time; the first scatter slice is summary-only and does not
-include lasso selection, density overlays, or project-wide all-matching queries.
+Scatter, distribution, bar, value histogram, and dot panels use already loaded
+run summaries, so they do not fetch full metric histories. Their scope is
+selected runs when a selection is active, otherwise the visible loaded run page
+capped by the panel limit. Scatter and distribution fields can come from metric
+summaries, config values, metadata, duration, status, first tag, or created
+time. Scatter and distribution panels are summary-only and do not make metric
+series or rich-object reads. These summary panels do not include lasso
+selection, density overlays, or project-wide all-matching queries.
+
+Parallel coordinates remain in **Insights** as an exploratory HPO/sweep view
+over loaded summaries rather than a saved Runs workspace panel.
 
 Line panels include chart CSV and SVG image export for the visible plotted sample.
 Summary panels are designed for fast visual comparison inside the workspace;

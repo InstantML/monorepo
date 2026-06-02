@@ -24,6 +24,11 @@ This directory contains the primary Rust backend for InstantML. The current stor
   runs, synchronous selected export is capped at 100 run IDs, and CSV responses
   use attachment/no-store/nosniff/sandbox headers.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
+- Validate rich object values for table, histogram, media, and
+  `classification_eval` objects. Histogram objects require finite bins/counts
+  with compatible lengths; classification eval objects are compact binary
+  bundles with bounded PR/ROC curves, 2x2 confusion matrices, per-class
+  metrics, and optional prediction previews.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
 
 ## Local Setup

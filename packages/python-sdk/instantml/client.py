@@ -59,6 +59,7 @@ from .objects import (
     Artifact,
     Audio,
     CheckpointPolicy,
+    ClassificationEval,
     File,
     Histogram,
     Image,
@@ -73,6 +74,7 @@ from .serialization import (
     _flatten,
     _flatten_numeric_value,
     _histogram_object_payload,
+    _classification_eval_object_payload,
     _json_serializable,
     _merge_metadata,
     _normalize_table_rows,
@@ -1600,7 +1602,7 @@ class Run:
 
     def log_objects(
         self,
-        objects: dict[str, Table | Histogram | Image | Video | Audio],
+        objects: dict[str, Table | Histogram | ClassificationEval | Image | Video | Audio],
         step: int | float | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
@@ -1608,6 +1610,35 @@ class Run:
         if not isinstance(objects, dict):
             raise TypeError("objects must be a dictionary")
         return [self._log_rich_object(key, value, step=step, metadata=metadata) for key, value in objects.items()]
+
+    def log_classification_eval(
+        self,
+        key: str,
+        *,
+        y_true: Any,
+        y_score: Any,
+        y_pred: Any | None = None,
+        class_names: list[str] | tuple[str, str] = ("negative", "positive"),
+        positive_label: str | int | None = None,
+        split: str = "validation",
+        threshold: int | float = 0.5,
+        predictions: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+        step: int | float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        step = _validate_step(step)
+        evaluation = ClassificationEval(
+            y_true=y_true,
+            y_score=y_score,
+            y_pred=y_pred,
+            class_names=class_names,
+            positive_label=positive_label,
+            split=split,
+            threshold=threshold,
+            predictions=predictions,
+            metadata=metadata,
+        )
+        return self._log_rich_object(key, evaluation, step=step, metadata=None)
 
     def log_table_object(
         self,
@@ -2014,7 +2045,7 @@ class Run:
     def _log_rich_object(
         self,
         key: str,
-        rich_object: Table | Histogram | Image | Video | Audio,
+        rich_object: Table | Histogram | ClassificationEval | Image | Video | Audio,
         step: int | float | None,
         metadata: dict[str, Any] | None,
     ) -> dict[str, Any]:
@@ -2026,6 +2057,9 @@ class Run:
         if isinstance(rich_object, Histogram):
             payload = _histogram_object_payload(object_key, rich_object, step, shared_metadata)
             return self._submit_or_spool_object(payload, {"histogram": object_key}, step)
+        if isinstance(rich_object, ClassificationEval):
+            payload = _classification_eval_object_payload(object_key, rich_object, step, shared_metadata)
+            return self._submit_or_spool_object(payload, {"classification_eval": object_key}, step)
         if isinstance(rich_object, (Image, Video, Audio)):
             if self.upload_mode == "spool":
                 raise InstantMLError("rich media object logging requires upload_mode='sync' until uploader response chaining is supported")

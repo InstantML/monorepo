@@ -88,7 +88,7 @@ views.
 ```json
 {
   "path": "config/optimizer",
-  "type": "text",
+  "type": "string_series",
   "step": 1,
   "timestamp": "2026-05-16T00:00:00Z",
   "value": "adam",
@@ -98,7 +98,7 @@ views.
 ```
 
 Attributes hold typed non-scalar context such as text series, config history,
-histograms, and file references.
+histograms, evaluation bundles, and file references.
 
 ## Rich object
 
@@ -120,8 +120,12 @@ Supported kinds:
 - `video`
 - `audio`
 - `histogram`
+- `classification_eval`
 
-Table row previews are paginated separately.
+Table row previews are paginated separately. Histogram object values use finite
+bins and nonnegative counts. `classification_eval` object values are compact
+binary classification bundles with bounded PR/ROC curves, a 2x2 confusion
+matrix, per-class metrics, and optional prediction rows.
 
 ## Artifact
 

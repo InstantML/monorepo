@@ -10,7 +10,7 @@ import { Stats } from "./runs-stats";
 import { WorkspacePanelCard } from "./workspace-panel-card";
 import { fieldLabel } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
-import type { Overview, RunSummary, TableColumns, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
+import type { HistogramTimelineState, Overview, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 
@@ -78,7 +78,18 @@ type Props = {
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   onToggleRun: (runId: string, options?: { shift?: boolean }) => void;
   onToggleSection: (sectionId: string) => void;
-  onUpdateEditingPanel: (patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; xField?: string; yField?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
+  onUpdateEditingPanel: (patch: {
+    title?: string;
+    type?: WorkspacePanelType;
+    metricKey?: string;
+    xField?: string;
+    yField?: string;
+    valueField?: string;
+    groupField?: string;
+    replicateField?: string;
+    objectKey?: string;
+    settings?: Partial<WorkspacePanelSettings>;
+  }) => void;
   orgMemberships: OrgMembershipSummary[];
   orgName: string;
   orgSwitchBusy: boolean;
@@ -103,7 +114,9 @@ type Props = {
   status: string;
   summaryTotal: number;
   tableColumns: TableColumns;
+  workspaceCategoricalFieldOptions: WorkspaceCategoricalFieldOption[];
   workspaceFieldOptions: WorkspaceFieldOption[];
+  workspaceHistogramTimelines: Record<string, HistogramTimelineState>;
   workspacePanelRuns: RunSummary[];
   workspaceSeries: Record<string, MetricSeries[]>;
   workspaceView: WorkspaceView;
@@ -189,7 +202,9 @@ export function RunsTabPane({
   status,
   summaryTotal,
   tableColumns,
+  workspaceCategoricalFieldOptions,
   workspaceFieldOptions,
+  workspaceHistogramTimelines,
   workspacePanelRuns,
   workspaceSeries,
   workspaceView,
@@ -308,12 +323,14 @@ export function RunsTabPane({
         summaryTotal={summaryTotal}
         tableColumns={tableColumns}
         view={workspaceView}
+        workspaceHistogramTimelines={workspaceHistogramTimelines}
         workspacePanelRuns={workspacePanelRuns}
         workspaceRuns={sortedRuns}
         workspaceSeries={workspaceSeries}
       />
       {editingPanelContext ? (
         <PanelEditDrawer
+          categoricalFieldOptions={workspaceCategoricalFieldOptions}
           fieldOptions={workspaceFieldOptions}
           metricOptions={allMetricOptions}
           onClose={onCloseEditingPanel}
@@ -384,6 +401,7 @@ export function RunsTabPane({
               section={fullscreenPanelContext.section}
               selectedRunIds={selectedRunIds}
               view={workspaceView}
+              workspaceHistogramTimelines={workspaceHistogramTimelines}
               workspacePanelRuns={workspacePanelRuns}
               workspaceSeries={workspaceSeries}
             />

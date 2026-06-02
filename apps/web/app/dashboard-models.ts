@@ -1,5 +1,5 @@
 import { queryString } from "../src/api.js";
-import { defaultScatterFields, parseFieldId } from "../src/dashboard-panels.js";
+import { defaultDistributionFields, defaultScatterFields, parseCategoricalFieldId, parseFieldId } from "../src/dashboard-panels.js";
 import { bestMetric, durationLabel, formatNumber, metricGoal } from "../src/state.js";
 import { WORKSPACE_VIEW_PREFIX } from "./dashboard/state/storage-keys";
 
@@ -193,7 +193,7 @@ export function buildManualWorkspace(project: string): WorkspaceView {
   };
 }
 
-export const WORKSPACE_PANEL_TYPES: WorkspacePanelType[] = ["line", "bar", "histogram", "dot", "scatter"];
+export const WORKSPACE_PANEL_TYPES: WorkspacePanelType[] = ["line", "bar", "histogram", "dot", "scatter", "distribution", "histogram_timeline"];
 const workspacePanelTypes = new Set<WorkspacePanelType>(WORKSPACE_PANEL_TYPES);
 
 export function workspacePanelTypeLabel(type: WorkspacePanelType) {
@@ -201,6 +201,8 @@ export function workspacePanelTypeLabel(type: WorkspacePanelType) {
   if (type === "histogram") return "Value histogram";
   if (type === "dot") return "Dot plot";
   if (type === "scatter") return "Scatter";
+  if (type === "distribution") return "Distribution";
+  if (type === "histogram_timeline") return "Logged histogram timeline";
   return "Line";
 }
 
@@ -216,6 +218,29 @@ export function workspacePanelForMetric(metricKey: string, type: WorkspacePanelT
       metricKey,
       xField: fields.xField,
       yField: fields.yField,
+      layout: defaultWorkspacePanelLayout,
+    };
+  }
+  if (safeType === "distribution") {
+    const fields = defaultDistributionFields(metricKey);
+    return {
+      id: `panel-${stableId(`${safeType}-${metricKey}`)}`,
+      type: safeType,
+      title: `${metricTitleText} Distribution`,
+      metricKey,
+      valueField: fields.valueField,
+      groupField: fields.groupField,
+      replicateField: fields.replicateField,
+      layout: defaultWorkspacePanelLayout,
+    };
+  }
+  if (safeType === "histogram_timeline") {
+    return {
+      id: `panel-${stableId(`${safeType}-${metricKey}`)}`,
+      type: safeType,
+      title: `${metricTitleText} timeline`,
+      metricKey,
+      objectKey: metricKey,
       layout: defaultWorkspacePanelLayout,
     };
   }
@@ -318,15 +343,38 @@ function sanitizeWorkspacePanel(panel: unknown, index: number) {
     layout: sanitizePanelLayout(panel.layout),
     settings: sanitizePanelSettings(panel.settings),
   };
-  if (type !== "scatter") return base;
-  const xField = sanitizeFieldRef(panel.xField);
-  const yField = sanitizeFieldRef(panel.yField);
-  if (!xField || !yField) return null;
-  return {
-    ...base,
-    xField,
-    yField,
-  };
+  if (type === "scatter") {
+    const xField = sanitizeFieldRef(panel.xField);
+    const yField = sanitizeFieldRef(panel.yField);
+    if (!xField || !yField) return null;
+    return {
+      ...base,
+      xField,
+      yField,
+    };
+  }
+  if (type === "distribution") {
+    const valueField = sanitizeFieldRef(panel.valueField);
+    const groupField = sanitizeCategoricalFieldRef(panel.groupField);
+    const replicateField = sanitizeCategoricalFieldRef(panel.replicateField);
+    if (!valueField) return null;
+    return {
+      ...base,
+      valueField,
+      groupField,
+      replicateField,
+    };
+  }
+  if (type === "histogram_timeline") {
+    const objectKey = sanitizeObjectKey(panel.objectKey ?? panel.metricKey);
+    if (!objectKey) return null;
+    return {
+      ...base,
+      metricKey: base.metricKey || objectKey,
+      objectKey,
+    };
+  }
+  return base;
 }
 
 export function sanitizePanelLayout(layout: unknown) {
@@ -356,6 +404,18 @@ function sanitizeFieldRef(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const field = value.slice(0, 512);
   return parseFieldId(field) ? field : undefined;
+}
+
+function sanitizeCategoricalFieldRef(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const field = value.slice(0, 512);
+  return parseCategoricalFieldId(field) ? field : undefined;
+}
+
+function sanitizeObjectKey(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const key = value.trim().slice(0, 256);
+  return key || undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, any> {

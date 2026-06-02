@@ -80,6 +80,33 @@ class Histogram:
         return cls(edges, _histogram_counts_for_edges(numeric_values, edges), metadata=metadata)
 
 
+class ClassificationEval:
+    """Binary classification evaluation rich object."""
+
+    def __init__(
+        self,
+        *,
+        y_true: Any,
+        y_score: Any,
+        y_pred: Any | None = None,
+        class_names: list[str] | tuple[str, str] = ("negative", "positive"),
+        positive_label: str | int | None = None,
+        split: str = "validation",
+        threshold: int | float = 0.5,
+        predictions: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.y_true = y_true
+        self.y_score = y_score
+        self.y_pred = y_pred
+        self.class_names = list(class_names)
+        self.positive_label = positive_label
+        self.split = split
+        self.threshold = threshold
+        self.predictions = list(predictions or [])
+        self.metadata = metadata
+
+
 @dataclass(frozen=True)
 class File:
     path: str

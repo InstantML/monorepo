@@ -5,14 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
-import { fieldLabel } from "../../../src/dashboard-panels.js";
+import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels.js";
 import { BULK_SELECT_MATCHING_LIMIT, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
 import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runNoteText, runRailTooltip, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { WorkspaceSectionView } from "./workspace-panel-card";
 import type { Dispatch, SetStateAction } from "react";
-import type { MetricSeries, RunSummary, TableColumns, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
+import type { HistogramTimelineState, MetricSeries, RunSummary, TableColumns, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 
 type DraggedWorkspacePanel = {
   panelId: string;
@@ -59,6 +59,10 @@ function visibleTagsForSearch(tags: string[], search: string, limit: number) {
   return [...matched, ...normalizedTags].filter((tag, index, values) => values.indexOf(tag) === index).slice(0, limit);
 }
 
+function preferredHistogramObjectKey(metricKeys: string[]) {
+  return metricKeys.find((key) => /histogram|distribution|score/i.test(key)) ?? metricKeys[0] ?? "";
+}
+
 function readDraggedPanel(event: DragEvent<HTMLElement>): DraggedWorkspacePanel | null {
   try {
     const raw = event.dataTransfer.getData("application/x-instantml-panel");
@@ -72,11 +76,13 @@ function readDraggedPanel(event: DragEvent<HTMLElement>): DraggedWorkspacePanel 
   }
 }
 
-function panelMatchesSearch(section: { name: string }, panel: { title: string; metricKey: string; type: string; xField?: string; yField?: string }, search: string) {
+function panelMatchesSearch(section: { name: string }, panel: { title: string; metricKey: string; type: string; xField?: string; yField?: string; valueField?: string; groupField?: string; replicateField?: string; objectKey?: string }, search: string) {
   const needle = search.trim().toLowerCase();
   if (!needle) return true;
   const scatterFields = panel.type === "scatter" ? `${fieldLabel(panel.xField)} ${fieldLabel(panel.yField)}` : "";
-  return `${section.name} ${panel.title} ${panel.metricKey} ${workspacePanelTypeLabel(panel.type as WorkspacePanelType)} ${scatterFields}`.toLowerCase().includes(needle);
+  const distributionFields = panel.type === "distribution" ? `${fieldLabel(panel.valueField)} ${panel.groupField ? categoricalFieldLabel(panel.groupField) : ""} ${panel.replicateField ? categoricalFieldLabel(panel.replicateField) : ""}` : "";
+  const objectFields = panel.type === "histogram_timeline" ? panel.objectKey : "";
+  return `${section.name} ${panel.title} ${panel.metricKey} ${workspacePanelTypeLabel(panel.type as WorkspacePanelType)} ${scatterFields} ${distributionFields} ${objectFields}`.toLowerCase().includes(needle);
 }
 
 export function RunsWorkspace({
@@ -128,6 +134,7 @@ export function RunsWorkspace({
   workspacePanelRuns,
   workspaceRuns,
   workspaceSeries,
+  workspaceHistogramTimelines,
 }: {
   addPanelSectionId: string;
   availableMetricKeys: string[];
@@ -177,19 +184,23 @@ export function RunsWorkspace({
   workspacePanelRuns: RunSummary[];
   workspaceRuns: RunSummary[];
   workspaceSeries: Record<string, MetricSeries[]>;
+  workspaceHistogramTimelines: Record<string, HistogramTimelineState>;
 }) {
   const hiddenPanelCount = view.sections.reduce((sum, section) => sum + section.panels.filter((panel) => !panelMatchesSearch(section, panel, panelSearch)).length, 0);
   const addDrawerRef = useFocusTrap<HTMLElement>(
     showAddPanelDrawer,
     () => onSetAddPanelSection(""),
-    ".drawer-metric-row:not([disabled]), .quick-add-card:not([disabled]), button[aria-label='Close add panels']",
+    "input[aria-label='Histogram object key to add'], .drawer-metric-row:not([disabled]), .quick-add-card:not([disabled]), button[aria-label='Close add panels']",
     "[data-add-panel-trigger='true']",
   );
   const [draggedPanel, setDraggedPanel] = useState<DraggedWorkspacePanel | null>(null);
   const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
+  const [addHistogramObjectKey, setAddHistogramObjectKey] = useState("");
   const draggedPanelRef = useRef<DraggedWorkspacePanel | null>(null);
   const pointerDragCleanupRef = useRef<() => void>(() => {});
   const activeAddSectionId = addPanelSectionId || view.sections[0]?.id || "";
+  const histogramObjectKey = addHistogramObjectKey.trim();
+  const canQuickAddPanel = addPanelType === "histogram_timeline" ? Boolean(histogramObjectKey) : Boolean(availableMetricKeys.length);
   useEffect(() => () => {
     pointerDragCleanupRef.current();
   }, []);
@@ -473,6 +484,7 @@ export function RunsWorkspace({
                 selectedRunIds={selectedRunIds}
                 visiblePanels={visiblePanels}
                 view={view}
+                workspaceHistogramTimelines={workspaceHistogramTimelines}
                 workspacePanelRuns={workspacePanelRuns}
                 workspaceSeries={workspaceSeries}
               />
@@ -504,10 +516,22 @@ export function RunsWorkspace({
               <h2>Add panels</h2>
               <button className="icon-button" type="button" aria-label="Close add panels" onClick={() => onSetAddPanelSection("")}><X size={16} /></button>
             </div>
-            <button className="quick-add-card" type="button" disabled={!availableMetricKeys.length} onClick={() => availableMetricKeys[0] && onAddPanel(activeAddSectionId, availableMetricKeys[0], addPanelType)}>
+            <button
+              className="quick-add-card"
+              type="button"
+              disabled={!canQuickAddPanel}
+              onClick={() => {
+                const key = addPanelType === "histogram_timeline" ? histogramObjectKey : availableMetricKeys[0];
+                if (key) onAddPanel(activeAddSectionId, key, addPanelType);
+              }}
+            >
               <span><Plus size={17} /></span>
               <strong>Quick add</strong>
-              <small>Add the next available metric as a {workspacePanelTypeLabel(addPanelType).toLowerCase()} panel.</small>
+              <small>
+                {addPanelType === "histogram_timeline"
+                  ? "Create a selected-run timeline for the histogram object key."
+                  : `Add the next available metric as a ${workspacePanelTypeLabel(addPanelType).toLowerCase()} panel.`}
+              </small>
             </button>
             <div className="chart-type-segment" role="group" aria-label="Chart type">
               {WORKSPACE_PANEL_TYPES.map((type) => (
@@ -515,7 +539,10 @@ export function RunsWorkspace({
                   aria-pressed={addPanelType === type}
                   className={addPanelType === type ? "active" : ""}
                   key={type}
-                  onClick={() => setAddPanelType(type)}
+                  onClick={() => {
+                    setAddPanelType(type);
+                    if (type === "histogram_timeline" && !addHistogramObjectKey.trim()) setAddHistogramObjectKey(preferredHistogramObjectKey(availableMetricKeys));
+                  }}
                   type="button"
                 >
                   {workspacePanelTypeLabel(type)}
@@ -530,8 +557,20 @@ export function RunsWorkspace({
               options={view.sections.map((section) => ({ value: section.id, label: section.name }))}
               value={activeAddSectionId}
             />
+            {addPanelType === "histogram_timeline" ? (
+              <label className="control full">
+                Histogram object key
+                <input
+                  aria-label="Histogram object key to add"
+                  onChange={(event) => setAddHistogramObjectKey(event.target.value)}
+                  placeholder="eval/score_distribution"
+                  value={addHistogramObjectKey}
+                />
+                <small>Use the exact key passed to `log_histogram(...)` or a histogram rich object.</small>
+              </label>
+            ) : null}
             <div className="drawer-group">
-              <h3>Charts</h3>
+              <h3>{addPanelType === "histogram_timeline" ? "Metric-key suggestions" : "Charts"}</h3>
               {availableMetricKeys.slice(0, 18).map((metric) => (
                 <button className="drawer-metric-row" key={metric} type="button" onClick={() => onAddPanel(activeAddSectionId, metric, addPanelType)}>
                   <Activity size={16} />
