@@ -192,6 +192,7 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
 .iml-fieldset{border:0;margin:0;padding:0;min-inline-size:0}
 .iml-legend{padding:0;float:none;width:100%;
   font:600 12px/1 var(--f-sans);color:var(--text-2)}
+.iml-fieldset>.iml-legend{margin-bottom:10px}
 .iml-seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:0;padding:0;margin:0}
 .iml-seg-opt{position:relative;display:grid;gap:5px;padding:12px 14px;
   border:1px solid var(--line);border-radius:var(--r);background:var(--bg-soft);
