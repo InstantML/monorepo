@@ -640,6 +640,12 @@ impl Store {
                 };
                 return control_store.insert_record(&control).await;
             }
+            // Hosted control records are global/control-plane data. If a test
+            // or legacy hosted configuration lacks a dedicated control store,
+            // keep the legacy primary-store fallback local to `metric_store`
+            // instead of routing through `metric_store_for_persist`, which may
+            // consult tenant routing and try to re-lock StoreData.
+            return self.metric_store.insert_operational_record(&row).await;
         }
         let metric_store = self.metric_store_for_persist(org_id).await?;
         metric_store.insert_operational_record(&row).await

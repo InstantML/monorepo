@@ -86,23 +86,28 @@ pub async fn create_organization(
             data.insert_membership(membership.clone());
         }
     } else {
-        let mut data = store.data.lock().await;
-        if data.orgs_by_slug.contains_key(&org.slug) {
-            return Err(AppError::conflict("organization already exists"));
-        }
-        if let Some(owner_id) = input.owner_user_id {
-            if !data.users.contains_key(&owner_id) {
-                return Err(AppError::not_found("owner user not found"));
+        {
+            let data = store.data.lock().await;
+            if data.orgs_by_slug.contains_key(&org.slug) {
+                return Err(AppError::conflict("organization already exists"));
+            }
+            if let Some(owner_id) = input.owner_user_id {
+                if !data.users.contains_key(&owner_id) {
+                    return Err(AppError::not_found("owner user not found"));
+                }
             }
         }
         store
             .persist_locked("organization", org.id, &org.id.to_string(), &org)
             .await?;
-        data.insert_org(org.clone());
         if let Some(membership) = &owner_membership {
             store
                 .persist_locked("membership", org.id, &membership.id.to_string(), membership)
                 .await?;
+        }
+        let mut data = store.data.lock().await;
+        data.insert_org(org.clone());
+        if let Some(membership) = &owner_membership {
             data.insert_membership(membership.clone());
         }
     }
@@ -239,15 +244,18 @@ pub async fn create_current_user_organization(
         data.insert_membership(owner.clone());
         (org, owner, user)
     } else {
-        let mut data = store.data.lock().await;
-        let (user, org, owner) = build(&data)?;
+        let (user, org, owner) = {
+            let data = store.data.lock().await;
+            build(&data)?
+        };
         store
             .persist_locked("organization", org.id, &org.id.to_string(), &org)
             .await?;
-        data.insert_org(org.clone());
         store
             .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
             .await?;
+        let mut data = store.data.lock().await;
+        data.insert_org(org.clone());
         data.insert_membership(owner.clone());
         (org, owner, user)
     };
@@ -540,31 +548,38 @@ pub async fn switch_session_organization(
     target_org_id: Uuid,
 ) -> AppResult<CreatedAuthSession> {
     let token_hash = hash_secret(token);
-    let mut data = store.data.lock().await;
-    let session_id = data
-        .sessions_by_hash
-        .get(&token_hash)
-        .copied()
-        .ok_or_else(|| AppError::unauthorized("invalid session"))?;
-    let session = data
-        .sessions
-        .get(&session_id)
-        .cloned()
-        .ok_or_else(|| AppError::unauthorized("invalid session"))?;
-    validate_session_org_switch(&data, &session.row, target_org_id)?;
-    if session.row.org_id == target_org_id {
-        let mut row = session.row.clone();
-        row.last_seen_at = Some(Utc::now());
-        let payload = session_payload_from_data(&data, row)?;
-        return Ok(CreatedAuthSession {
-            token: token.to_string(),
-            payload,
-            onboarding_api_key: None,
-            auto_provisioned: false,
-        });
-    }
+    let session = {
+        let data = store.data.lock().await;
+        let session_id = data
+            .sessions_by_hash
+            .get(&token_hash)
+            .copied()
+            .ok_or_else(|| AppError::unauthorized("invalid session"))?;
+        let session = data
+            .sessions
+            .get(&session_id)
+            .cloned()
+            .ok_or_else(|| AppError::unauthorized("invalid session"))?;
+        validate_session_org_switch(&data, &session.row, target_org_id)?;
+        if session.row.org_id == target_org_id {
+            let mut row = session.row.clone();
+            row.last_seen_at = Some(Utc::now());
+            let payload = session_payload_from_data(&data, row)?;
+            return Ok(CreatedAuthSession {
+                token: token.to_string(),
+                payload,
+                onboarding_api_key: None,
+                auto_provisioned: false,
+            });
+        }
+        session
+    };
 
     let (new_session, new_token) = new_session(session.row.user_id, target_org_id);
+    let mut revoked = session.clone();
+    revoked.row.revoked_at = Some(Utc::now());
+    revoked.row.last_seen_at = Some(Utc::now());
+
     store
         .persist_locked(
             "session",
@@ -573,11 +588,6 @@ pub async fn switch_session_organization(
             &new_session,
         )
         .await?;
-    data.insert_session(new_session.clone());
-
-    let mut revoked = session.clone();
-    revoked.row.revoked_at = Some(Utc::now());
-    revoked.row.last_seen_at = Some(Utc::now());
     store
         .persist_locked(
             "session",
@@ -586,6 +596,8 @@ pub async fn switch_session_organization(
             &revoked,
         )
         .await?;
+    let mut data = store.data.lock().await;
+    data.insert_session(new_session.clone());
     data.insert_session(revoked);
     let payload = session_payload_from_data(&data, new_session.row)?;
     Ok(CreatedAuthSession {

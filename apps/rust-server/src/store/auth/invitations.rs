@@ -72,27 +72,30 @@ pub(super) fn pending_invites_for_user(data: &StoreData, user_id: Uuid) -> Vec<M
 
 pub(super) async fn activate_invited_membership(
     store: &Store,
-    data: &mut StoreData,
     user_id: Uuid,
     org_id: Uuid,
 ) -> AppResult<Option<OrganizationRow>> {
-    let Some(mut membership) = data
-        .memberships
-        .values()
-        .find(|membership| {
-            membership.org_id == org_id
-                && membership.user_id == user_id
-                && membership.status == "invited"
-        })
-        .cloned()
-    else {
-        return Ok(None);
+    let (mut membership, org) = {
+        let data = store.data.lock().await;
+        let Some(membership) = data
+            .memberships
+            .values()
+            .find(|membership| {
+                membership.org_id == org_id
+                    && membership.user_id == user_id
+                    && membership.status == "invited"
+            })
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let org = data
+            .organizations
+            .get(&org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        (membership, org)
     };
-    let org = data
-        .organizations
-        .get(&org_id)
-        .cloned()
-        .ok_or_else(|| AppError::not_found("organization not found"))?;
     membership.status = "active".to_string();
     store
         .persist_locked(
@@ -102,6 +105,7 @@ pub(super) async fn activate_invited_membership(
             &membership,
         )
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_membership(membership);
     Ok(Some(org))
 }
@@ -119,8 +123,8 @@ pub async fn create_org_invitation(
     let role = validate_invitation_role(input.role.as_deref())?;
     let token = generate_invite_token()?;
     let token_hash = hash_secret(&token);
-    let (reservation, org_name) = {
-        let mut data = store.data.lock().await;
+    let (invitation, org_name) = {
+        let data = store.data.lock().await;
         let now = Utc::now();
         let org = data
             .organizations
@@ -193,22 +197,10 @@ pub async fn create_org_invitation(
             email_provider: None,
             provider_message_id: None,
         };
-        store
-            .persist_locked(
-                "org_invitation",
-                org_id,
-                &invitation.id.to_string(),
-                &invitation,
-            )
-            .await?;
-        let invitation_id = invitation.id;
-        data.insert_org_invitation(invitation.clone());
-        let reservation =
-            queue_invitation_delivery_locked(store, &mut data, invitation, email_config, now)
-                .await?;
-        debug_assert_eq!(reservation.invitation_id, invitation_id);
-        (reservation, org.name)
+        (invitation, org.name)
     };
+    let reservation =
+        queue_invitation_delivery(store, invitation, email_config, Utc::now()).await?;
     send_and_record_invitation(store, reservation, token, org_name, email_config).await
 }
 
@@ -249,8 +241,8 @@ pub async fn resend_org_invitation(
     ensure_billing_write_allowed(store, org_id, "resend an invitation").await?;
     let token = generate_invite_token()?;
     let token_hash = hash_secret(&token);
-    let (reservation, org_name) = {
-        let mut data = store.data.lock().await;
+    let (invitation, org_name) = {
+        let data = store.data.lock().await;
         if let Some(user_id) = actor_user_id {
             require_admin_in_data(&data, user_id, org_id)?;
         }
@@ -301,20 +293,10 @@ pub async fn resend_org_invitation(
         invitation.delivery_status = "queued".to_string();
         invitation.email_provider = None;
         invitation.provider_message_id = None;
-        store
-            .persist_locked(
-                "org_invitation",
-                org_id,
-                &invitation.id.to_string(),
-                &invitation,
-            )
-            .await?;
-        data.insert_org_invitation(invitation.clone());
-        let reservation =
-            queue_invitation_delivery_locked(store, &mut data, invitation, email_config, now)
-                .await?;
-        (reservation, org.name)
+        (invitation, org.name)
     };
+    let reservation =
+        queue_invitation_delivery(store, invitation, email_config, Utc::now()).await?;
     send_and_record_invitation(store, reservation, token, org_name, email_config).await
 }
 
@@ -324,17 +306,18 @@ pub async fn revoke_org_invitation(
     org_id: Uuid,
     invitation_id: Uuid,
 ) -> AppResult<PublicInvitationRow> {
-    let mut data = store.data.lock().await;
-    if let Some(user_id) = actor_user_id {
-        require_admin_in_data(&data, user_id, org_id)?;
-    }
     let now = Utc::now();
-    let mut invitation = data
-        .org_invitations
-        .get(&invitation_id)
-        .filter(|invitation| invitation.org_id == org_id)
-        .cloned()
-        .ok_or_else(|| AppError::not_found("invitation not found"))?;
+    let mut invitation = {
+        let data = store.data.lock().await;
+        if let Some(user_id) = actor_user_id {
+            require_admin_in_data(&data, user_id, org_id)?;
+        }
+        data.org_invitations
+            .get(&invitation_id)
+            .filter(|invitation| invitation.org_id == org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("invitation not found"))?
+    };
     if invitation.status != "pending" {
         return Err(AppError::conflict(
             "only pending invitations can be revoked",
@@ -351,6 +334,7 @@ pub async fn revoke_org_invitation(
             &invitation,
         )
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_org_invitation(invitation.clone());
     Ok(public_invitation_row(&invitation, now))
 }
@@ -440,8 +424,18 @@ pub async fn accept_invitation_for_user(
     if needs_billing_write {
         ensure_billing_write_allowed(store, org_id, "accept an invitation").await?;
     }
-    let (user, org) = {
-        let mut data = store.data.lock().await;
+    enum AcceptInvitationPlan {
+        Expired(OrgInvitationRow),
+        Accepted {
+            user: UserRow,
+            org: OrganizationRow,
+            membership: Option<MembershipRow>,
+            invitation: Option<OrgInvitationRow>,
+        },
+    }
+
+    let plan: AppResult<AcceptInvitationPlan> = {
+        let data = store.data.lock().await;
         let now = Utc::now();
         let invitation = invitation_by_token_hash(&data, &token_hash)?.clone();
         let user = data
@@ -480,94 +474,122 @@ pub async fn accept_invitation_for_user(
         if !already_accepted && invitation.expires_at <= now {
             let mut expired = invitation.clone();
             expired.status = "expired".to_string();
+            Ok(AcceptInvitationPlan::Expired(expired))
+        } else {
+            let existing_membership = data
+                .memberships
+                .values()
+                .find(|membership| {
+                    membership.org_id == invitation.org_id
+                        && membership.user_id == user_id
+                        && matches!(membership.status.as_str(), "active" | "invited")
+                })
+                .cloned();
+            if already_accepted
+                && existing_membership
+                    .as_ref()
+                    .is_none_or(|membership| membership.status != "active")
+            {
+                return Err(AppError::conflict("invitation has already been accepted"));
+            }
+            if existing_membership.is_none()
+                && reserved_seat_count_in_data(&data, invitation.org_id, now)
+                    > org.seat_limit.max(0) as usize
+            {
+                return Err(AppError::with_code(
+                    StatusCode::CONFLICT,
+                    "invite_seat_limit_reached",
+                    "organization seat limit reached",
+                ));
+            }
+            let membership = match existing_membership {
+                Some(mut membership) if membership.status == "invited" => {
+                    membership.status = "active".to_string();
+                    membership.role = invitation.role.clone();
+                    Some(membership)
+                }
+                Some(_) => None,
+                None => Some(membership_row(
+                    invitation.org_id,
+                    user_id,
+                    &invitation.role,
+                    "active",
+                )),
+            };
+            let accepted_invitation = if !already_accepted {
+                let mut accepted = invitation.clone();
+                accepted.status = "accepted".to_string();
+                accepted.accepted_at = Some(now);
+                accepted.accepted_by_user_id = Some(user_id);
+                Some(accepted)
+            } else {
+                None
+            };
+            Ok(AcceptInvitationPlan::Accepted {
+                user,
+                org,
+                membership,
+                invitation: accepted_invitation,
+            })
+        }
+    };
+
+    match plan? {
+        AcceptInvitationPlan::Expired(expired) => {
             store
                 .persist_locked(
                     "org_invitation",
-                    invitation.org_id,
-                    &invitation.id.to_string(),
+                    expired.org_id,
+                    &expired.id.to_string(),
                     &expired,
                 )
                 .await?;
+            let mut data = store.data.lock().await;
             data.insert_org_invitation(expired);
-            return Err(AppError::with_code(
+            Err(AppError::with_code(
                 StatusCode::GONE,
                 "invite_expired",
                 "invitation expired",
-            ));
+            ))
         }
-        let existing_membership = data
-            .memberships
-            .values()
-            .find(|membership| {
-                membership.org_id == invitation.org_id
-                    && membership.user_id == user_id
-                    && matches!(membership.status.as_str(), "active" | "invited")
-            })
-            .cloned();
-        if already_accepted
-            && existing_membership
-                .as_ref()
-                .is_none_or(|membership| membership.status != "active")
-        {
-            return Err(AppError::conflict("invitation has already been accepted"));
-        }
-        if existing_membership.is_none()
-            && reserved_seat_count_in_data(&data, invitation.org_id, now)
-                > org.seat_limit.max(0) as usize
-        {
-            return Err(AppError::with_code(
-                StatusCode::CONFLICT,
-                "invite_seat_limit_reached",
-                "organization seat limit reached",
-            ));
-        }
-        match existing_membership {
-            Some(mut membership) if membership.status == "invited" => {
-                membership.status = "active".to_string();
-                membership.role = invitation.role.clone();
+        AcceptInvitationPlan::Accepted {
+            user,
+            org,
+            membership,
+            invitation,
+        } => {
+            if let Some(membership) = &membership {
                 store
                     .persist_locked(
                         "membership",
-                        invitation.org_id,
+                        membership.org_id,
                         &membership.id.to_string(),
-                        &membership,
+                        membership,
                     )
                     .await?;
-                data.insert_membership(membership);
             }
-            Some(_) => {}
-            None => {
-                let membership =
-                    membership_row(invitation.org_id, user_id, &invitation.role, "active");
+            if let Some(invitation) = &invitation {
                 store
                     .persist_locked(
-                        "membership",
+                        "org_invitation",
                         invitation.org_id,
-                        &membership.id.to_string(),
-                        &membership,
+                        &invitation.id.to_string(),
+                        invitation,
                     )
                     .await?;
-                data.insert_membership(membership);
             }
+            if membership.is_some() || invitation.is_some() {
+                let mut data = store.data.lock().await;
+                if let Some(membership) = membership {
+                    data.insert_membership(membership);
+                }
+                if let Some(invitation) = invitation {
+                    data.insert_org_invitation(invitation);
+                }
+            }
+            create_session_for_org(store, user, org).await
         }
-        if !already_accepted {
-            let mut accepted = invitation.clone();
-            accepted.status = "accepted".to_string();
-            accepted.accepted_at = Some(now);
-            accepted.accepted_by_user_id = Some(user_id);
-            store
-                .persist_locked(
-                    "org_invitation",
-                    invitation.org_id,
-                    &invitation.id.to_string(),
-                    &accepted,
-                )
-                .await?;
-            data.insert_org_invitation(accepted);
-        }
-        (user, org)
-    };
-    create_session_for_org(store, user, org).await
+    }
 }
 
 pub async fn reserve_seat(
@@ -584,12 +606,18 @@ pub async fn reserve_seat(
             "invited seats can use admin, member, or viewer roles",
         ));
     }
-    let mut data = store.data.lock().await;
-    let org = data
-        .organizations
-        .get(&org_id)
-        .cloned()
-        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    let org = {
+        let data = store.data.lock().await;
+        let org = data
+            .organizations
+            .get(&org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        if let Some(user_id) = user_id {
+            require_admin_in_data(&data, user_id, org_id)?;
+        }
+        org
+    };
     if org.account_type == "personal" {
         return Err(AppError::with_code(
             StatusCode::BAD_REQUEST,
@@ -598,24 +626,24 @@ pub async fn reserve_seat(
         ));
     }
     let seat_limit = org.seat_limit as usize;
-    if let Some(user_id) = user_id {
-        require_admin_in_data(&data, user_id, org_id)?;
-    }
-    let invited_user = get_or_create_placeholder_user(store, &mut data, &email).await?;
-    if let Some(existing) = data
-        .memberships
-        .values()
-        .find(|membership| {
-            membership.org_id == org_id
-                && membership.user_id == invited_user.id
-                && matches!(membership.status.as_str(), "active" | "invited")
-        })
-        .cloned()
+    let invited_user = get_or_create_placeholder_user(store, &email).await?;
     {
-        return seat_row_from_data(&data, existing);
-    }
-    if reserved_seat_count_in_data(&data, org_id, Utc::now()) >= seat_limit {
-        return Err(AppError::conflict("organization seat limit reached"));
+        let data = store.data.lock().await;
+        if let Some(existing) = data
+            .memberships
+            .values()
+            .find(|membership| {
+                membership.org_id == org_id
+                    && membership.user_id == invited_user.id
+                    && matches!(membership.status.as_str(), "active" | "invited")
+            })
+            .cloned()
+        {
+            return seat_row_from_data(&data, existing);
+        }
+        if reserved_seat_count_in_data(&data, org_id, Utc::now()) >= seat_limit {
+            return Err(AppError::conflict("organization seat limit reached"));
+        }
     }
     let membership = membership_row(org_id, invited_user.id, &role, "invited");
     store
@@ -626,6 +654,7 @@ pub async fn reserve_seat(
             &membership,
         )
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_membership(membership.clone());
     seat_row_from_data(&data, membership)
 }
@@ -716,12 +745,13 @@ async fn send_and_record_invitation(
     };
     let sent = send_org_invite(email_config, email).await;
     let now = Utc::now();
-    let mut data = store.data.lock().await;
-    let mut updated = data
-        .org_invitations
-        .get(&reservation.invitation_id)
-        .cloned()
-        .ok_or_else(|| AppError::not_found("invitation not found"))?;
+    let mut updated = {
+        let data = store.data.lock().await;
+        data.org_invitations
+            .get(&reservation.invitation_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("invitation not found"))?
+    };
     let (provider, status, message_id, preview_link, delivery_error) = match sent {
         Ok(result) => {
             updated.delivery_status = "sent".to_string();
@@ -749,11 +779,13 @@ async fn send_and_record_invitation(
             )
         }
     };
-    let mut delivery = data
-        .email_deliveries
-        .get(&reservation.delivery_id)
-        .cloned()
-        .ok_or_else(|| AppError::internal("email delivery attempt is inconsistent"))?;
+    let mut delivery = {
+        let data = store.data.lock().await;
+        data.email_deliveries
+            .get(&reservation.delivery_id)
+            .cloned()
+            .ok_or_else(|| AppError::internal("email delivery attempt is inconsistent"))?
+    };
     delivery.provider = provider;
     delivery.status = status;
     delivery.provider_message_id = message_id;
@@ -774,6 +806,7 @@ async fn send_and_record_invitation(
             &delivery,
         )
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_org_invitation(updated.clone());
     data.insert_email_delivery(delivery);
     Ok(InvitationSendOutcome {
@@ -783,9 +816,8 @@ async fn send_and_record_invitation(
     })
 }
 
-async fn queue_invitation_delivery_locked(
+async fn queue_invitation_delivery(
     store: &Store,
-    data: &mut StoreData,
     mut invitation: OrgInvitationRow,
     email_config: &EmailConfig,
     attempted_at: DateTime<Utc>,
@@ -822,6 +854,7 @@ async fn queue_invitation_delivery_locked(
         .await?;
     let invitation_id = invitation.id;
     let delivery_id = delivery.id;
+    let mut data = store.data.lock().await;
     data.insert_org_invitation(invitation);
     data.insert_email_delivery(delivery);
     Ok(InvitationSendReservation {

@@ -136,83 +136,100 @@ pub(super) async fn create_verified_provider_session(
     if 1 + seat_emails.len() > plan.included_seats as usize {
         return Err(AppError::conflict("organization seat limit reached"));
     }
-    let mut data = store.data.lock().await;
     let identity_key = (provider.clone(), provider_subject.clone());
-    let mut user = if let Some(user_id) = data.identities.get(&identity_key).copied() {
-        data.users
-            .get(&user_id)
-            .cloned()
-            .ok_or_else(|| AppError::not_found("user not found"))?
-    } else if let Some(user_id) = data.users_by_email.get(&email).copied() {
-        if input.strict_email_linking && user_has_non_bootstrap_identity(&data, user_id) {
-            return Err(AppError::conflict(
-                "email already belongs to an existing account",
-            ));
+    let mut user_to_insert = None;
+    let mut identity_to_insert = None;
+    let mut user = {
+        let data = store.data.lock().await;
+        if let Some(user_id) = data.identities.get(&identity_key).copied() {
+            data.users
+                .get(&user_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("user not found"))?
+        } else if let Some(user_id) = data.users_by_email.get(&email).copied() {
+            if input.strict_email_linking && user_has_non_bootstrap_identity(&data, user_id) {
+                return Err(AppError::conflict(
+                    "email already belongs to an existing account",
+                ));
+            }
+            let user = data
+                .users
+                .get(&user_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("user not found"))?;
+            identity_to_insert = Some(IdentityRecord {
+                user_id: user.id,
+                provider: provider.clone(),
+                provider_subject: provider_subject.clone(),
+            });
+            user
+        } else {
+            let user = UserRow {
+                id: Uuid::new_v4(),
+                primary_email: email.clone(),
+                display_name: input.display_name,
+                avatar_url: input.avatar_url,
+                created_at: Utc::now(),
+                last_seen_at: Some(Utc::now()),
+            };
+            identity_to_insert = Some(IdentityRecord {
+                user_id: user.id,
+                provider: provider.clone(),
+                provider_subject: provider_subject.clone(),
+            });
+            user_to_insert = Some(user.clone());
+            user
         }
-        let user = data
-            .users
-            .get(&user_id)
-            .cloned()
-            .ok_or_else(|| AppError::not_found("user not found"))?;
-        let identity = IdentityRecord {
-            user_id: user.id,
-            provider,
-            provider_subject,
-        };
-        store
-            .persist_locked("identity", LOCAL_ORG_ID, &user.id.to_string(), &identity)
-            .await?;
-        data.identities
-            .insert((identity.provider, identity.provider_subject), user.id);
-        user
-    } else {
-        let user = UserRow {
-            id: Uuid::new_v4(),
-            primary_email: email.clone(),
-            display_name: input.display_name,
-            avatar_url: input.avatar_url,
-            created_at: Utc::now(),
-            last_seen_at: Some(Utc::now()),
-        };
-        let identity = IdentityRecord {
-            user_id: user.id,
-            provider,
-            provider_subject,
-        };
-        store
-            .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
-            .await?;
-        store
-            .persist_locked("identity", LOCAL_ORG_ID, &user.id.to_string(), &identity)
-            .await?;
-        data.insert_user(user.clone());
-        data.identities
-            .insert((identity.provider, identity.provider_subject), user.id);
-        user
     };
+    if let Some(new_user) = &user_to_insert {
+        store
+            .persist_locked("user", LOCAL_ORG_ID, &new_user.id.to_string(), new_user)
+            .await?;
+    }
+    if let Some(identity) = &identity_to_insert {
+        store
+            .persist_locked("identity", LOCAL_ORG_ID, &user.id.to_string(), identity)
+            .await?;
+    }
+    if user_to_insert.is_some() || identity_to_insert.is_some() {
+        let mut data = store.data.lock().await;
+        if let Some(new_user) = &user_to_insert {
+            data.insert_user(new_user.clone());
+        }
+        if let Some(identity) = &identity_to_insert {
+            data.identities.insert(
+                (identity.provider.clone(), identity.provider_subject.clone()),
+                identity.user_id,
+            );
+        }
+    }
     if user.primary_email != email {
-        if data
-            .users_by_email
-            .get(&email)
-            .copied()
-            .is_some_and(|existing_user_id| existing_user_id != user.id)
         {
-            return Err(AppError::conflict(
-                "verified email already belongs to an existing account",
-            ));
+            let data = store.data.lock().await;
+            if data
+                .users_by_email
+                .get(&email)
+                .copied()
+                .is_some_and(|existing_user_id| existing_user_id != user.id)
+            {
+                return Err(AppError::conflict(
+                    "verified email already belongs to an existing account",
+                ));
+            }
         }
         user.primary_email = email.clone();
         user.last_seen_at = Some(Utc::now());
         store
             .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
             .await?;
+        let mut data = store.data.lock().await;
         data.insert_user(user.clone());
     }
     if let Some(invite_token) = input.accept_invite_token.as_deref() {
         let user_id = user.id;
-        drop(data);
         return accept_invitation_for_user(store, invite_token, user_id).await;
     }
+    let data = store.data.lock().await;
     let existing_org = existing_org_for_auth(
         &data,
         user.id,
@@ -227,23 +244,24 @@ pub(super) async fn create_verified_provider_session(
         {
             org.plan_tier = "premium".to_string();
             org.seat_limit = PLAN_PREMIUM.included_seats;
+            drop(data);
             store
                 .persist_locked("organization", org.id, &org.id.to_string(), &org)
                 .await?;
+            let mut data = store.data.lock().await;
             data.insert_org(org.clone());
+        } else {
+            drop(data);
         }
-        ensure_shared_demo_billing_account(store, &mut data, &org).await?;
-        drop(data);
+        ensure_shared_demo_billing_account(store, &org).await?;
         return create_session_for_org(store, user, org).await;
     }
     // Legacy dev-google "accept invite by org id" path. Clerk hosted invites
     // are accepted only via `accept_invite_token` (handled earlier).
     if allow_legacy_invite_activation {
         if let Some(invite_org_id) = input.accept_invite_org_id {
-            if let Some(org) =
-                activate_invited_membership(store, &mut data, user.id, invite_org_id).await?
-            {
-                drop(data);
+            drop(data);
+            if let Some(org) = activate_invited_membership(store, user.id, invite_org_id).await? {
                 return create_session_for_org(store, user, org).await;
             }
             return Err(AppError::not_found("invitation not found"));
@@ -273,10 +291,10 @@ pub(super) async fn create_verified_provider_session(
                 // fall through to auto-create below
             }
             1 => {
-                let org = activate_invited_membership(store, &mut data, user.id, invites[0].org_id)
+                drop(data);
+                let org = activate_invited_membership(store, user.id, invites[0].org_id)
                     .await?
                     .ok_or_else(|| AppError::not_found("invitation not found"))?;
-                drop(data);
                 return create_session_for_org(store, user, org).await;
             }
             _ => {
@@ -358,23 +376,27 @@ pub(super) async fn create_verified_provider_session(
             STORAGE_STATE_READY.to_string()
         },
     };
+    drop(data);
     store
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_org(org.clone());
+    drop(data);
     let owner = membership_row(org.id, user.id, "owner", "active");
     store
         .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_membership(owner.clone());
-    ensure_shared_demo_billing_account(store, &mut data, &org).await?;
     drop(data);
+    ensure_shared_demo_billing_account(store, &org).await?;
     if paid_signup_requires_checkout {
-        let mut data = store.data.lock().await;
         let (session, token) = new_session(user.id, org.id);
         store
             .persist_locked("session", org.id, &session.row.id.to_string(), &session)
             .await?;
+        let mut data = store.data.lock().await;
         data.insert_session(session.clone());
         let mut payload = session_payload_from_data(&data, session.row.clone())?;
         drop(data);
@@ -399,26 +421,31 @@ pub(super) async fn create_verified_provider_session(
     if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
         store.ensure_tenant_route(&org).await?;
     }
-    let mut data = store.data.lock().await;
     for email in seat_emails {
-        let invited_user = get_or_create_placeholder_user(store, &mut data, &email).await?;
-        if data.memberships.values().any(|membership| {
-            membership.org_id == org.id
-                && membership.user_id == invited_user.id
-                && matches!(membership.status.as_str(), "active" | "invited")
-        }) {
+        let invited_user = get_or_create_placeholder_user(store, &email).await?;
+        let already_has_seat = {
+            let data = store.data.lock().await;
+            data.memberships.values().any(|membership| {
+                membership.org_id == org.id
+                    && membership.user_id == invited_user.id
+                    && matches!(membership.status.as_str(), "active" | "invited")
+            })
+        };
+        if already_has_seat {
             continue;
         }
         let invited = membership_row(org.id, invited_user.id, "member", "invited");
         store
             .persist_locked("membership", org.id, &invited.id.to_string(), &invited)
             .await?;
+        let mut data = store.data.lock().await;
         data.insert_membership(invited);
     }
     let (session, token) = new_session(user.id, org.id);
     store
         .persist_locked("session", org.id, &session.row.id.to_string(), &session)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
     drop(data);
@@ -499,12 +526,12 @@ async fn billing_blocks_tenant_route(store: &Store, org_id: Uuid) -> bool {
     }
 }
 
-async fn ensure_shared_demo_billing_account(
-    store: &Store,
-    data: &mut StoreData,
-    org: &OrganizationRow,
-) -> AppResult<()> {
-    if !is_shared_demo_org(org) || data.billing_accounts.contains_key(&org.id) {
+async fn ensure_shared_demo_billing_account(store: &Store, org: &OrganizationRow) -> AppResult<()> {
+    let should_create = {
+        let data = store.data.lock().await;
+        is_shared_demo_org(org) && !data.billing_accounts.contains_key(&org.id)
+    };
+    if !should_create {
         return Ok(());
     }
     let account = BillingAccountProjection {
@@ -534,6 +561,7 @@ async fn ensure_shared_demo_billing_account(
             &account,
         )
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_billing_account(account);
     Ok(())
 }
@@ -561,22 +589,26 @@ pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthS
 
 pub async fn revoke_session(store: &Store, token: &str) -> AppResult<()> {
     let token_hash = hash_secret(token);
-    let mut data = store.data.lock().await;
-    let Some(session_id) = data.sessions_by_hash.get(&token_hash).copied() else {
+    let Some(mut session) = ({
+        let data = store.data.lock().await;
+        let Some(session_id) = data.sessions_by_hash.get(&token_hash).copied() else {
+            return Ok(());
+        };
+        data.sessions.get(&session_id).cloned()
+    }) else {
         return Ok(());
     };
-    if let Some(mut session) = data.sessions.get(&session_id).cloned() {
-        session.row.revoked_at = Some(Utc::now());
-        store
-            .persist_locked(
-                "session",
-                session.row.org_id,
-                &session.row.id.to_string(),
-                &session,
-            )
-            .await?;
-        data.insert_session(session);
-    }
+    session.row.revoked_at = Some(Utc::now());
+    store
+        .persist_locked(
+            "session",
+            session.row.org_id,
+            &session.row.id.to_string(),
+            &session,
+        )
+        .await?;
+    let mut data = store.data.lock().await;
+    data.insert_session(session);
     Ok(())
 }
 

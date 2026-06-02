@@ -37,10 +37,10 @@ pub async fn update_dashboard_preferences(
         updated_at: Utc::now(),
     };
     let entity_id = dashboard_preference_entity_id(user_id);
-    let mut data = store.data.lock().await;
     store
         .persist_locked("dashboard_preference", ctx.org_id, &entity_id, &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_dashboard_preference(row.clone());
     Ok(json!({
         "preferences": {
@@ -119,10 +119,10 @@ pub async fn create_workspace_view(
         updated_at: now,
         deleted_at: None,
     };
-    let mut data = store.data.lock().await;
     store
         .persist_locked("workspace_view", ctx.org_id, &row.id.to_string(), &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_workspace_view(row.clone());
     Ok(json!({ "workspace_view": row }))
 }
@@ -146,8 +146,10 @@ pub async fn update_workspace_view(
 ) -> AppResult<Value> {
     let user_id = require_dashboard_write(store, ctx)?;
     ensure_billing_write_allowed(store, ctx.org_id, "update workspace views").await?;
-    let mut data = store.data.lock().await;
-    let existing = workspace_view_for_user(&data, ctx.org_id, user_id, view_id)?;
+    let existing = {
+        let data = store.data.lock().await;
+        workspace_view_for_user(&data, ctx.org_id, user_id, view_id)?
+    };
     let name = input
         .name
         .as_deref()
@@ -172,6 +174,7 @@ pub async fn update_workspace_view(
     store
         .persist_locked("workspace_view", ctx.org_id, &row.id.to_string(), &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_workspace_view(row.clone());
     Ok(json!({ "workspace_view": row }))
 }

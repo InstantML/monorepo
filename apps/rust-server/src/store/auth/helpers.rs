@@ -138,15 +138,17 @@ pub(super) fn validate_auth_mode(value: Option<&str>, signup_hint: bool) -> AppR
 
 pub(super) async fn get_or_create_placeholder_user(
     store: &Store,
-    data: &mut StoreData,
     email: &str,
 ) -> AppResult<UserRow> {
-    if let Some(id) = data.users_by_email.get(email).copied() {
-        return data
-            .users
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| AppError::internal("user email index is inconsistent"));
+    {
+        let data = store.data.lock().await;
+        if let Some(id) = data.users_by_email.get(email).copied() {
+            return data
+                .users
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| AppError::internal("user email index is inconsistent"));
+        }
     }
     let user = UserRow {
         id: Uuid::new_v4(),
@@ -159,6 +161,7 @@ pub(super) async fn get_or_create_placeholder_user(
     store
         .persist_locked("user", LOCAL_ORG_ID, &user.id.to_string(), &user)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_user(user.clone());
     Ok(user)
 }
