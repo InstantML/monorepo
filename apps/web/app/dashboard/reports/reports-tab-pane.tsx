@@ -21,7 +21,7 @@ import {
   Undo2,
 } from "lucide-react";
 
-import { ApiClient } from "../../../src/api.js";
+import { ApiClient, isAbortError } from "../../../src/api.js";
 import {
   createReport,
   deleteReport,
@@ -46,6 +46,7 @@ type Mode =
   | { kind: "open"; reportId: string; autoFocus?: boolean };
 
 const AUTO_SAVE_DELAY_MS = 800;
+const CREATE_REPORT_TIMEOUT_MS = 15_000;
 
 interface SavePayload {
   clientSeq: number;
@@ -258,18 +259,31 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
     }
     setBusy(true);
     setError(null);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), CREATE_REPORT_TIMEOUT_MS);
     try {
-      const created = await createReport(api, {
-        title: "Untitled report",
-        visibility: "private",
-      });
+      const created = await createReport(
+        api,
+        {
+          title: "Untitled report",
+          visibility: "private",
+        },
+        {
+          signal: controller.signal,
+        },
+      );
       if (created) {
         await loadList();
         openReport(created.id, { autoFocus: true });
       }
     } catch (createError) {
-      setError(messageFromError(createError));
+      setError(
+        isAbortError(createError)
+          ? "Creating the report timed out. Try again in a moment."
+          : messageFromError(createError),
+      );
     } finally {
+      window.clearTimeout(timeout);
       setBusy(false);
     }
   }, [api, canEditReports, loadList]);
