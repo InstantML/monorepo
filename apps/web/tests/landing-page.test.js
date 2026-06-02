@@ -124,7 +124,7 @@ test("LandingPage top navigation links to docs", () => {
 
 test("LandingPage migration copy matches implemented importer and shadow paths", () => {
   const src = fs.readFileSync(path.join(componentsDir, "LandingPage.tsx"), "utf8");
-  assert.match(src, /W&amp;B \/ MLflow \/ Neptune import paths/);
+  assert.match(src, /Import W&amp;B, MLflow, and Neptune JSON/);
   assert.match(src, /tools\/import-wandb-json\.mjs/);
   assert.match(src, /tools\/import-mlflow-json\.mjs/);
   assert.match(src, /tools\/import-neptune-json\.mjs/);
@@ -140,7 +140,7 @@ test("LandingPage SDK and speed copy stays implementation-accurate", () => {
   assert.doesNotMatch(src, /log_artifact<\/span>[\s\S]*?&quot;checkpoint&quot;/);
   assert.doesNotMatch(src, /The old tools work/);
   assert.doesNotMatch(src, /We&apos;ve watched serious ML teams/);
-  assert.match(src, /Hosted \+ Premium BYOC/);
+  assert.match(src, /Hosted SaaS plus Premium BYOC storage/);
   assert.match(src, /BYOC ClickHouse/);
 });
 

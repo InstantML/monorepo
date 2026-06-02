@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { LogoMark } from "./LogoMark";
 import { NavLogo } from "./NavLogo";
-import { HeroSpotlight } from "./HeroSpotlight";
 import { MaskingDemo } from "./MaskingDemo";
 import { AuditFeed } from "./AuditFeed";
 import { TtlRing } from "./TtlRing";
@@ -356,6 +355,81 @@ function MatrixCell({ label, status, tone }: { label: string; status: string; to
   );
 }
 
+function ProductHeroMock() {
+  const runs = [
+    ["sft-7b-1842", "0.218", "+3.1%", "finished"],
+    ["sft-7b-1841", "0.226", "+2.4%", "finished"],
+    ["sft-7b-1839", "0.241", "+1.2%", "running"],
+    ["sft-7b-1838", "0.244", "-0.4%", "failed"],
+  ];
+  const events = [
+    "run.log loss=0.226 step=18,400",
+    "checkpoint uploaded model-1841.pt",
+    "imported 8,420 W&B runs from json",
+    "compare rendered from summaries",
+  ];
+
+  return (
+    <div className="landing-product-shot" aria-label="InstantML run comparison preview">
+      <div className="landing-product-shot__topbar">
+        <div>
+          <span className="landing-product-shot__crumb">Projects / llm-7b-sft</span>
+          <strong>Runs</strong>
+        </div>
+        <span className="landing-product-shot__latency">newest page p95 236 ms</span>
+      </div>
+      <div className="landing-product-shot__body">
+        <aside className="landing-product-shot__sidebar">
+          {["Overview", "Runs", "Compare", "Artifacts", "Exports"].map((item) => (
+            <span key={item} className={item === "Runs" ? "is-active" : ""}>
+              {item}
+            </span>
+          ))}
+        </aside>
+        <div className="landing-product-shot__main">
+          <div className="landing-product-shot__toolbar">
+            <span>50,000 runs</span>
+            <span>metric-best sort: val/loss</span>
+            <span>2 selected</span>
+          </div>
+          <div className="landing-run-table">
+            {runs.map(([name, loss, delta, state]) => (
+              <div key={name} className="landing-run-table__row">
+                <span className="landing-run-name">{name}</span>
+                <span>{loss}</span>
+                <span className={delta.startsWith("+") ? "is-good" : "is-bad"}>{delta}</span>
+                <span className={`landing-run-state landing-run-state--${state}`}>
+                  {state}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="landing-product-shot__lower">
+            <div className="landing-mini-chart">
+              <div className="landing-mini-chart__header">
+                <strong>val/loss</strong>
+                <span>20,000 steps - bounded read 224 ms</span>
+              </div>
+              <svg viewBox="0 0 420 150" role="img" aria-label="Validation loss chart">
+                <path d="M8 128 C55 118 72 86 108 92 C146 99 152 64 190 70 C240 78 242 45 292 48 C336 51 356 30 412 24" />
+                <path d="M8 136 C66 120 88 118 126 96 C172 68 190 92 232 66 C282 36 310 54 412 38" />
+              </svg>
+            </div>
+            <div className="landing-event-feed">
+              {events.map((event) => (
+                <div key={event} className="landing-event-feed__row">
+                  <span />
+                  <p>{event}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
   return (
     <div>
@@ -398,58 +472,57 @@ export function LandingPage() {
 
       {/* Hero */}
       <div className="landing-hero-wrap">
-        <HeroSpotlight />
         <div className="bg-grid landing-bg-overlay" />
-        <div className="bg-scan landing-bg-overlay" />
         <Section className="landing-hero-section">
-          <div className="landing-hero-content">
-            <div className="hero-rise-1 landing-hero-badge">
-              <span className="status-live" />
-              <span className="landing-hero-badge__text">
-                Training observability for serious ML teams
-              </span>
+          <div className="landing-hero-layout">
+            <div className="landing-hero-content">
+              <div className="landing-hero-badge">
+                <span className="status-live" />
+                <span className="landing-hero-badge__text">
+                  Hosted benchmark: 50k runs / 522M metric points
+                </span>
+              </div>
+
+              <h1 className="landing-h1">
+                Compare 50,000 training runs without waiting on W&amp;B.
+              </h1>
+
+              <p className="landing-lede">
+                InstantML is experiment tracking for teams whose run lists,
+                charts, and exports have become part of the training bottleneck.
+                The current hosted benchmark keeps run pages, best-metric sort,
+                and chart reads comfortably under half a second.
+              </p>
+
+              <div className="landing-cta-row">
+                <Link href="/signup" className="landing-cta-primary">
+                  Bring us a real project
+                  <IconArrow />
+                </Link>
+                <a href="#developers" className="landing-cta-ghost">
+                  Read the SDK path
+                </a>
+              </div>
+
+              <div className="landing-proof-chips">
+                <span className="landing-proof-chip">
+                  <span className="landing-proof-chip__check"><IconCheck /></span>
+                  Import W&amp;B, MLflow, and Neptune JSON
+                </span>
+                <span className="landing-proof-chip">
+                  <span className="landing-proof-chip__check"><IconCheck /></span>
+                  Hosted SaaS plus Premium BYOC storage
+                </span>
+              </div>
             </div>
 
-            <h1 className="hero-rise-2 landing-h1">
-              The training tool
-              <span className="landing-h1-serif"> you keep open</span>
-              {" "}all day.
-            </h1>
-
-            <p className="hero-rise-3 landing-lede">
-              InstantML is a W&amp;B-style platform built for fast run
-              comparison. Hosted run lists, metric-best sort, overview counters,
-              and bounded chart reads stay sub-second on the current 50k-run
-              benchmark, with real artifacts, checkpoints, and predictable
-              pricing.
-            </p>
-
-            <div className="hero-rise-4 landing-cta-row">
-              <Link href="/signup" className="landing-cta-primary">
-                Become a design partner
-                <IconArrow />
-              </Link>
-              <a href="#developers" className="landing-cta-ghost">
-                See the SDK
-              </a>
-            </div>
-
-            <div className="hero-rise-4 landing-proof-chips">
-              <span className="landing-proof-chip">
-                <span className="landing-proof-chip__check"><IconCheck /></span>
-                W&amp;B / MLflow / Neptune import paths
-              </span>
-              <span className="landing-proof-chip">
-                <span className="landing-proof-chip__check"><IconCheck /></span>
-                Hosted + Premium BYOC
-              </span>
-            </div>
+            <ProductHeroMock />
           </div>
         </Section>
       </div>
 
       {/* Stats */}
-      <Section className="landing-stats-section">
+      <Section id="benchmark" className="landing-stats-section">
         <div className="landing-stats-grid">
           <StatCard
             k="Newest page p95"
@@ -472,17 +545,14 @@ export function LandingPage() {
       {/* How it works */}
       <Section id="how" className="landing-section-py">
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">How it works</p>
+          <p className="mono-label landing-mono-label">SDK path</p>
           <h2 className="landing-h2">
-            One pip install.{" "}
-            <span className="font-serif-italic landing-h2-muted">Three SDK calls.</span>
+            A small Python SDK backed by Rust and ClickHouse.
           </h2>
           <p className="landing-section-body">
-            The Python SDK is a thin, non-blocking layer over a Rust +
-            ClickHouse backend. Metrics buffer in-process and flush
-            asynchronously, so your training loop never waits on the
-            network. If the server is slow or offline, events spool to
-            disk and replay on reconnect.
+            Metrics buffer in-process and flush asynchronously, so your
+            training loop does not wait on the network. If the server is slow
+            or offline, events spool to disk and replay on reconnect.
           </p>
         </div>
 
@@ -508,15 +578,15 @@ export function LandingPage() {
       {/* Why teams switch */}
       <Section className="landing-section-py" id="switch">
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">Why teams switch</p>
+          <p className="mono-label landing-mono-label">Why it exists</p>
           <h2 className="landing-h2">
-            Familiar tools work.{" "}
-            <span className="font-serif-italic landing-h2-muted">The daily loop can still drag.</span>
+            The daily loop should not slow down as projects grow.
           </h2>
           <p className="landing-section-body">
-            When projects grow, teams need run lists, charts, storage, and
-            pricing that stay understandable. InstantML keeps the current
-            hosted read-path claim precise while building toward broader scale.
+            The problem is not that existing tools are useless. It is that
+            large projects make basic actions feel expensive: opening run
+            lists, sorting by a metric, comparing charts, exporting history,
+            and explaining the bill.
           </p>
         </div>
 
@@ -531,10 +601,9 @@ export function LandingPage() {
       <Section className="landing-section-py" id="pain">
         <div className="landing-section-intro-row">
           <div>
-            <p className="mono-label landing-mono-label">What we fix</p>
+            <p className="mono-label landing-mono-label">Product bets</p>
             <h2 className="landing-h2">
-              Three places{" "}
-              <span className="font-serif-italic landing-h2-muted">the current tools hurt.</span>
+              Three places we are deliberately opinionated.
             </h2>
           </div>
           <a href="#developers" className="landing-text-link">
@@ -553,10 +622,9 @@ export function LandingPage() {
       {/* Capabilities */}
       <Section className="landing-section-py" id="capabilities">
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">Capabilities</p>
+          <p className="mono-label landing-mono-label">In the product</p>
           <h2 className="landing-h2">
-            The daily workflow,{" "}
-            <span className="font-serif-italic landing-h2-muted">measured in milliseconds.</span>
+            Run comparison, artifacts, imports, and export are first-class.
           </h2>
         </div>
 
@@ -643,8 +711,7 @@ export function LandingPage() {
           <div>
             <p className="mono-label landing-mono-label">For developers</p>
             <h2 className="landing-h2">
-              <span className="font-serif-italic landing-h2-muted">pip install instantml.</span>{" "}
-              Three lines.
+              Three calls for the normal loop. More when you need artifacts.
             </h2>
             <p className="landing-section-body landing-dev-body">
               The SDK is intentionally small. Three calls —{" "}
@@ -674,8 +741,7 @@ export function LandingPage() {
         <div className="landing-section-intro">
           <p className="mono-label landing-mono-label">What ships today</p>
           <h2 className="landing-h2">
-            A real product,{" "}
-            <span className="font-serif-italic landing-h2-muted">not a roadmap deck.</span>
+            Concrete surface area, not a promise deck.
           </h2>
         </div>
 
@@ -716,8 +782,7 @@ export function LandingPage() {
               <LogoMark size={28} color="var(--accent)" />
             </div>
             <h2 className="landing-cta-h2">
-              Run your next experiment{" "}
-              <span className="font-serif-italic landing-h2-muted">on a tool that keeps up</span>.
+              Bring us the project that made your current tracker feel slow.
             </h2>
             <p className="landing-cta-desc">
               We&apos;re onboarding a small first cohort of design partners.
