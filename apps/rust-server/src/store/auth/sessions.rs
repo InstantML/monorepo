@@ -445,27 +445,36 @@ pub(super) async fn create_session_for_org(
     {
         store.ensure_tenant_route(&org).await?;
     }
-    let mut data = store.data.lock().await;
-    if !data.memberships.values().any(|membership| {
-        membership.org_id == org.id
-            && membership.user_id == user.id
-            && membership.status == "active"
-    }) {
-        if org.created_by_user_id != Some(user.id) {
-            return Err(AppError::forbidden(
-                "user is not an active member of the organization",
-            ));
+    let owner_to_insert = {
+        let data = store.data.lock().await;
+        if data.memberships.values().any(|membership| {
+            membership.org_id == org.id
+                && membership.user_id == user.id
+                && membership.status == "active"
+        }) {
+            None
+        } else {
+            if org.created_by_user_id != Some(user.id) {
+                return Err(AppError::forbidden(
+                    "user is not an active member of the organization",
+                ));
+            }
+            Some(membership_row(org.id, user.id, "owner", "active"))
         }
-        let owner = membership_row(org.id, user.id, "owner", "active");
+    };
+    if let Some(owner) = &owner_to_insert {
         store
             .persist_locked("membership", org.id, &owner.id.to_string(), &owner)
             .await?;
-        data.insert_membership(owner);
     }
     let (session, token) = new_session(user.id, org.id);
     store
         .persist_locked("session", org.id, &session.row.id.to_string(), &session)
         .await?;
+    let mut data = store.data.lock().await;
+    if let Some(owner) = owner_to_insert {
+        data.insert_membership(owner);
+    }
     data.insert_session(session.clone());
     let payload = session_payload_from_data(&data, session.row.clone())?;
     Ok(CreatedAuthSession {
