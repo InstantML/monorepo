@@ -19,8 +19,8 @@ import {
  */
 function fakeApi(routes) {
   const calls = [];
-  const handle = (method, path, body) => {
-    calls.push({ method, path, body });
+  const handle = (method, path, body, options = {}) => {
+    calls.push({ method, path, body, options });
     const handler = routes[`${method} ${path}`];
     if (!handler) {
       throw new Error(`No fake route registered for ${method} ${path}`);
@@ -30,7 +30,7 @@ function fakeApi(routes) {
   return {
     calls,
     get: (path) => Promise.resolve(handle("GET", path, undefined)),
-    post: (path, body) => Promise.resolve(handle("POST", path, body)),
+    post: (path, body, options) => Promise.resolve(handle("POST", path, body, options)),
     patch: (path, body) => Promise.resolve(handle("PATCH", path, body)),
     request: (path, options = {}) =>
       Promise.resolve(handle(options.method ?? "GET", path, undefined)),
@@ -76,6 +76,27 @@ test("createReport posts CreateReportRequest body and returns parsed report", as
   assert.equal(api.calls[0].body.title, "New");
   assert.equal(api.calls[0].body.template, "ablation");
   assert.equal(result?.id, sampleRow.id);
+});
+
+test("createReport forwards request options for abortable creates", async () => {
+  const sampleRow = {
+    id: "00000000-0000-0000-0000-000000000001",
+    org_id: "00000000-0000-0000-0000-000000000099",
+    project_id: null,
+    title: "New",
+    description: null,
+    blocks: [],
+    created_at: "2026-05-26T00:00:00Z",
+    updated_at: "2026-05-26T00:00:00Z",
+    visibility: "private",
+    schema_version: 1,
+  };
+  const api = fakeApi({
+    "POST /api/reports": { report: sampleRow },
+  });
+  const controller = new AbortController();
+  await createReport(api, { title: "New" }, { signal: controller.signal });
+  assert.equal(api.calls[0].options.signal, controller.signal);
 });
 
 test("fetchReport appends share token as query parameter", async () => {

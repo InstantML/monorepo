@@ -50,8 +50,8 @@ export async function listReports(api, query = {}) {
   };
 }
 
-export async function createReport(api, body) {
-  const payload = await api.post("/api/reports", body);
+export async function createReport(api, body, options = {}) {
+  const payload = await api.post("/api/reports", body, options);
   return reportFromPayload(payload);
 }
 

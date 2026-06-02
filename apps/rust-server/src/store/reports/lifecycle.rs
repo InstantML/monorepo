@@ -35,10 +35,10 @@ pub async fn create_report(
         visibility,
         deleted_at: None,
     };
-    let mut data = store.data.lock().await;
     store
         .persist_locked("report", ctx.org_id, &row.id.to_string(), &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_report(row.clone());
     Ok(row)
 }
@@ -50,8 +50,10 @@ pub async fn update_report(
     input: UpdateReportRequest,
 ) -> AppResult<ReportRow> {
     require_report_write(store, ctx)?;
-    let mut data = store.data.lock().await;
-    let existing = fetch_live_report(&data, ctx.org_id, report_id)?;
+    let existing = {
+        let data = store.data.lock().await;
+        fetch_live_report(&data, ctx.org_id, report_id)?
+    };
     if input.title.is_none()
         && input.description.is_none()
         && input.visibility.is_none()
@@ -89,6 +91,7 @@ pub async fn update_report(
     store
         .persist_locked("report", ctx.org_id, &row.id.to_string(), &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_report(row.clone());
     Ok(row)
 }
@@ -99,8 +102,10 @@ pub async fn delete_report(
     report_id: Uuid,
 ) -> AppResult<ReportRow> {
     require_report_write(store, ctx)?;
-    let mut data = store.data.lock().await;
-    let existing = fetch_live_report(&data, ctx.org_id, report_id)?;
+    let existing = {
+        let data = store.data.lock().await;
+        fetch_live_report(&data, ctx.org_id, report_id)?
+    };
     let row = ReportRow {
         deleted_at: Some(Utc::now()),
         updated_at: Utc::now(),
@@ -109,6 +114,7 @@ pub async fn delete_report(
     store
         .persist_locked("report", ctx.org_id, &row.id.to_string(), &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_report(row.clone());
     Ok(row)
 }
@@ -119,8 +125,10 @@ pub async fn rotate_share_token(
     report_id: Uuid,
 ) -> AppResult<ReportRow> {
     require_report_write(store, ctx)?;
-    let mut data = store.data.lock().await;
-    let existing = fetch_live_report(&data, ctx.org_id, report_id)?;
+    let existing = {
+        let data = store.data.lock().await;
+        fetch_live_report(&data, ctx.org_id, report_id)?
+    };
     // `generate_api_key` returns an opaque, high-entropy random token —
     // reusing the helper saves us standing up a parallel CSPRNG path.
     let raw = crate::auth::generate_api_key();
@@ -136,6 +144,7 @@ pub async fn rotate_share_token(
     store
         .persist_locked("report", ctx.org_id, &row.id.to_string(), &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_report(row.clone());
     Ok(row)
 }
