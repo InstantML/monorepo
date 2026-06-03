@@ -193,6 +193,10 @@ jobs:
           DEFAULT_ENV: ${{ github.event.inputs.environment }}
           DEFAULT_TOPOLOGY: ${{ github.event.inputs.topology }}
           PUBLIC_ROUTER: ${{ github.event.inputs.public_router }}
+          GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          CONTROL_CLOUD_SQL_CONNECTION: ${{ vars.INSTANTML_CLOUD_SQL_CONNECTION }}
+          CONTROL_DATABASE_URL_SECRET: ${{ vars.INSTANTML_CONTROL_DATABASE_URL_SECRET }}
           GH_EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF: ${{ github.ref }}
         run: |
@@ -225,16 +229,25 @@ jobs:
               frontend_base_url="https://instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
               clerk_jwt_issuer="https://clerk.instantml.ai"
+              enable_control_postgres="1"
+              cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
+              control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
               ;;
             staging)
               frontend_base_url="https://staging.instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://staging.instantml.ai"
               clerk_jwt_issuer="https://modern-mustang-72.clerk.accounts.dev"
+              enable_control_postgres="0"
+              cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-}"
+              control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
               ;;
             *)
               frontend_base_url="https://instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
               clerk_jwt_issuer="https://clerk.instantml.ai"
+              enable_control_postgres="0"
+              cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-}"
+              control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
               ;;
           esac
           echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
@@ -243,6 +256,9 @@ jobs:
           echo "frontend_base_url=${frontend_base_url}" >> "${GITHUB_OUTPUT}"
           echo "allowed_frontend_origins=${allowed_frontend_origins}" >> "${GITHUB_OUTPUT}"
           echo "clerk_jwt_issuer=${clerk_jwt_issuer}" >> "${GITHUB_OUTPUT}"
+          echo "enable_control_postgres=${enable_control_postgres}" >> "${GITHUB_OUTPUT}"
+          echo "cloud_sql_connection=${cloud_sql_connection}" >> "${GITHUB_OUTPUT}"
+          echo "control_database_url_secret=${control_database_url_secret}" >> "${GITHUB_OUTPUT}"
 
       - name: Reuse Pre-Built Image Tag
         id: image
@@ -287,6 +303,9 @@ jobs:
           # have already deprovisioned.
           INSTANTML_CLICKHOUSE_PROVISIONER: "database"
           INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true"
+          INSTANTML_ENABLE_CONTROL_POSTGRES: ${{ steps.inputs.outputs.enable_control_postgres }}
+          INSTANTML_CLOUD_SQL_CONNECTION: ${{ steps.inputs.outputs.cloud_sql_connection }}
+          INSTANTML_CONTROL_DATABASE_URL_SECRET: ${{ steps.inputs.outputs.control_database_url_secret }}
 
           # Auth + signup gating (Clerk hosted, allowlist by email).
           # AUTH_MODE differs between local dev (`local`) and prod
