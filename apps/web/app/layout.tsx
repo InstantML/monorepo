@@ -54,6 +54,9 @@ const logoIntroFlag = `
       document.documentElement.classList.add('no-logo-anim');
     } else {
       sessionStorage.setItem(k, '1');
+      window.setTimeout(function() {
+        document.documentElement.classList.add('no-logo-anim');
+      }, 1800);
     }
   } catch (e) {}
 })();

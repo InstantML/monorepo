@@ -93,6 +93,9 @@ body:has(.docs-route) {
   height: 22px;
   color: currentColor;
 }
+.docs-route .docs-route-brand-mark .instantml-mark-svg {
+  color: #000000;
+}
 .docs-route-brand-text {
   display: grid;
   gap: 1px;
