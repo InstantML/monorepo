@@ -1,0 +1,84 @@
+---
+title: "W&B alternative"
+description: "Evaluate InstantML as a W&B-style training observability option for small ML teams that care about fast comparison, imports, and predictable pricing."
+---
+
+# W&B alternative for small ML teams
+
+InstantML is a training observability platform for teams that want a
+W&B-style workflow with fast run comparison, clear pricing, and portable
+experiment data.
+
+Use this page if your team already understands experiment tracking but wants a
+tool that stays focused on the daily loop: log runs, compare metrics, inspect
+configs and artifacts, and keep enough context to reproduce a result.
+
+## When InstantML is a fit
+
+InstantML is a fit when you want:
+
+- Fast run tables and metric charts for many training runs.
+- A Python SDK for logging scalar metrics, configs, tags, notes, artifacts, and
+  checkpoints.
+- Hosted usage without tracked-hour billing.
+- W&B, Neptune, MLflow, and TensorBoard import paths for evaluation and
+  migration.
+- Data export and documented schemas so experiment history stays portable.
+- A product focused on training observability rather than a broad MLOps suite.
+
+InstantML is especially useful for lean ML teams, research groups,
+fine-tuning teams, and reinforcement-learning or simulation workflows where
+researchers compare many runs repeatedly throughout the day.
+
+## What to compare
+
+The best W&B alternative depends on what your team needs to keep. Compare tools
+against the workflow you run every day:
+
+| Question | Why it matters |
+| --- | --- |
+| Can the SDK log metrics without slowing the training loop? | Logging should not become the bottleneck in experiments. |
+| Can the run table stay fast as projects grow? | Teams often compare many more runs than they expected. |
+| Can charts fetch bounded metric series instead of full history? | Default dashboard reads should stay responsive. |
+| Are artifacts and checkpoints separate from scalar metric logging? | Large files should not block the metric hot path. |
+| Can you import or dual-log while evaluating? | Migration should not require a risky cutover. |
+| Is pricing understandable before the team scales? | Small teams need predictable costs. |
+| Can you export your data later? | Experiment history should remain portable. |
+
+## Why teams try InstantML
+
+InstantML focuses on the parts of experiment tracking that researchers keep
+open all day:
+
+- Run lists with summary values.
+- Metric-best and newest sorting.
+- Bounded chart reads for selected runs.
+- Side-by-side run comparison.
+- Tags, notes, configs, artifacts, checkpoints, and source metadata.
+- Import paths for existing experiment history.
+
+The current hosted benchmark covers a 50,000-run showcase project with
+522,000,000 metric points. In that benchmark, newest-page, metric-best sort,
+overview, and bounded chart reads stayed sub-second on the hosted ClickHouse
+path. See [Benchmarks](/benchmarks) for the current evidence and caveats.
+
+## Migration path
+
+You do not need to switch everything at once. A practical evaluation path is:
+
+1. Install the SDK in one representative training script.
+2. Log a small number of current runs to InstantML.
+3. Import one historical W&B project with a dry-run first.
+4. Compare run names, configs, tags, metric charts, notes, and artifact
+   references in the dashboard.
+5. Dual-log or import a larger project only after the shape looks right.
+
+For the CLI flow, see [W&B import guide](/guides/wandb-import-guide).
+
+## Boundaries
+
+InstantML does not claim full parity with every W&B workflow. It focuses first
+on training runs, scalar metrics, configs, tags, notes, artifacts, checkpoints,
+imports, and comparison. Vendor features and pricing change over time, so use
+this page as an InstantML workflow guide rather than a complete third-party
+feature audit.

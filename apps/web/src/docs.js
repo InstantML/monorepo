@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"];
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 const PAGE_TITLE_OVERRIDES = {
+  "guides/instantml-vs-mlflow": "InstantML vs MLflow",
+  "guides/wandb-alternative": "W&B alternative",
+  "guides/wandb-import-guide": "W&B import guide",
   "guides/wandb-neptune-imports": "W&B and Neptune imports",
 };
 
