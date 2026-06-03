@@ -120,42 +120,8 @@
   scroll-margin-top: var(--topbar-height);
 }
 
-.runs-workspace-filter .stat-grid {
-  display: grid;
-}
-
 .runs-workspace-filter .runs-commandbar {
   margin-bottom: 0;
-}
-
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.stat {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 46px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  padding: 9px 12px;
-}
-
-.stat span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.stat strong {
-  color: var(--text);
-  font-size: 18px;
-  font-variant-numeric: tabular-nums;
 }
 
 .workbench-grid {

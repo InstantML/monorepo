@@ -1,5 +1,4 @@
 export { RunsCommandbar } from "./runs-commandbar";
-export { Stats } from "./runs-stats";
 export { RunsWorkspace } from "./runs-workspace";
 export { WorkspacePanelCard } from "./workspace-panel-card";
 export { PanelEditDrawer } from "./panel-edit-drawer";

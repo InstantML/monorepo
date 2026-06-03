@@ -204,39 +204,13 @@
 }
 .page-head .ph-spacer { flex: 1; }
 
-/* ── Runs filter band: slim stat strip + tight commandbar ──────────────── */
+/* ── Runs filter band: tight commandbar ────────────────────────────────── */
 .runs-workspace-filter {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: none;
   padding: 0;
   gap: 0;
-}
-.runs-workspace-filter .stat-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0;
-  border-bottom: 1px solid var(--line-soft);
-}
-.stat {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 12px 16px;
-  border-right: 1px solid var(--line-soft);
-  border-radius: 0;
-  background: transparent;
-}
-.stat:last-child { border-right: 0; }
-.stat > span:first-child {
-  font: 600 11px/1 var(--font-mono);
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.stat strong {
-  font: 700 22px/1 var(--font-sans);
-  letter-spacing: var(--tracking-display);
-  color: var(--text);
 }
 .runs-commandbar {
   padding: 10px 12px;
