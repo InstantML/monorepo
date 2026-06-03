@@ -10,6 +10,8 @@ const repo = process.cwd();
 const externalApiBaseUrl = process.env.INSTANTML_UI_SMOKE_API_BASE || "";
 const backendMode = (process.env.INSTANTML_UI_SMOKE_BACKEND || "rust").toLowerCase();
 const fullWorkspaceSmoke = process.env.INSTANTML_UI_SMOKE_FULL_WORKSPACE === "1";
+const docsScreenshotMode = process.env.INSTANTML_UI_SMOKE_DOC_SCREENSHOTS === "1";
+const docsProductDir = path.join(repo, "apps/docs/images/product");
 if (!externalApiBaseUrl && backendMode !== "node") {
   const result = spawnSync("node", ["tools/rust-service-smoke.mjs", "ui"], {
     cwd: repo,
@@ -76,6 +78,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
   const errors = [];
   let expectedForbiddenResourceErrors = 0;
+  let expectedApiFailureConsoleErrors = 0;
   let expectedRateLimitResourceErrors = 0;
   const unexpectedForbiddenResourceUrls = [];
   const unexpectedPaymentRequiredResourceUrls = [];
@@ -107,18 +110,22 @@ try {
     if (response.status() === 403) {
       if (isExpectedForbiddenResource(response)) {
         expectedForbiddenResourceErrors += 1;
+        expectedApiFailureConsoleErrors += 1;
       } else {
         unexpectedForbiddenResourceUrls.push(response.url());
       }
     }
     if (response.status() === 402) {
-      if (!isExpectedPaymentRequiredResource(response)) {
+      if (isExpectedPaymentRequiredResource(response)) {
+        expectedApiFailureConsoleErrors += 1;
+      } else {
         unexpectedPaymentRequiredResourceUrls.push(response.url());
       }
     }
     if (response.status() === 429) {
       if (isExpectedRateLimitedResource(response)) {
         expectedRateLimitResourceErrors += 1;
+        expectedApiFailureConsoleErrors += 1;
       } else {
         unexpectedRateLimitResourceUrls.push(response.url());
       }
@@ -126,6 +133,7 @@ try {
     if (response.status() === 400) {
       if (isExpectedBadRequestResource(response)) {
         expectedBadRequestResourceErrors += 1;
+        expectedApiFailureConsoleErrors += 1;
       } else {
         unexpectedBadRequestResourceUrls.push(response.url());
       }
@@ -135,14 +143,14 @@ try {
   const webBaseUrl = `http://127.0.0.1:${webPort}`;
   const smokeId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   const ownerEmail = `ui-smoke-${smokeId}@example.com`;
-  const primaryOrgName = `UI Smoke ${smokeId}`;
+  const primaryOrgName = docsScreenshotMode ? "InstantML Demo Lab" : `UI Smoke ${smokeId}`;
   await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".landing-root", { timeout: 10000 });
   assert.equal(summaryUrls.length, 0, "public landing page should not fetch run summaries");
 
   await page.goto(`${webBaseUrl}/signup`, { waitUntil: "domcontentloaded" });
   await page.getByLabel("Email").fill(ownerEmail);
-  await page.getByLabel("Name").fill("UI Smoke");
+  await page.getByLabel("Name").fill(docsScreenshotMode ? "InstantML Demo" : "UI Smoke");
   await page.getByLabel("Business").check();
   await page.getByLabel("Organization").fill(primaryOrgName);
   await page.getByRole("button", { name: /Continue with Dev Google/ }).click();
@@ -155,18 +163,18 @@ try {
     const seedRun = (await pageApiRequest(page, "POST", "/runs", {
       project: "demo",
       name: "rl-ppo-seed-44",
-      config: { seed: 44, model: "rl", workload: "ppo" },
+      config: { seed: 44, variant: "tuned", model: "rl", workload: "ppo", learning_rate: 0.0001 },
       tags: ["demo", "rl", "seed-44"],
       metadata: { notes: "reward stability and rollout quality for seed 44" },
     })).run;
     const seedRunId = seedRun.id;
     await pageApiRequest(page, "POST", `/runs/${seedRunId}/metrics`, {
       step: 0,
-      metrics: { "eval/return_mean": 42, "train/reward": 84, "train/loss": 0.42, "system/cpu_percent": 38 },
+      metrics: { "eval/return_mean": 42, "eval/score_distribution": 0.7, "train/reward": 84, "train/loss": 0.42, "system/cpu_percent": 38 },
     });
     await pageApiRequest(page, "POST", `/runs/${seedRunId}/metrics`, {
       step: 1,
-      metrics: { "eval/return_mean": 44, "train/reward": 88, "train/loss": 0.37, "system/cpu_percent": 41 },
+      metrics: { "eval/return_mean": 44, "eval/score_distribution": 0.8, "train/reward": 88, "train/loss": 0.37, "system/cpu_percent": 41 },
     });
     const imageArtifact = (await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
       type: "file",
@@ -206,10 +214,80 @@ try {
     await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/objects`, {
       key: "eval/score_distribution",
       kind: "histogram",
+      step: 0,
+      metadata: { source: "ui-smoke" },
+      summary: {},
+      value: { bins: [0, 0.25, 0.5, 0.75, 1], counts: [5, 12, 9, 3] },
+    });
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/objects`, {
+      key: "eval/score_distribution",
+      kind: "histogram",
+      step: 1,
+      metadata: { source: "ui-smoke" },
+      summary: {},
+      value: { bins: [0, 0.25, 0.5, 0.75, 1], counts: [3, 8, 13, 7] },
+    });
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/objects`, {
+      key: "eval/score_distribution",
+      kind: "histogram",
       step: 2,
       metadata: { source: "ui-smoke" },
       summary: {},
-      value: { bins: [0, 0.5, 1], counts: [2, 5] },
+      value: { bins: [0, 0.25, 0.5, 0.75, 1], counts: [2, 5, 10, 16] },
+    });
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/objects`, {
+      key: "eval/classification",
+      kind: "classification_eval",
+      step: 2,
+      metadata: { source: "ui-smoke" },
+      summary: {
+        task: "binary_classification",
+        split: "validation",
+        sample_count: 20,
+        accuracy: 0.75,
+        macro_f1: 0.749,
+        class_names: ["negative", "positive"],
+        positive_label: "positive",
+      },
+      value: {
+        schema_version: 1,
+        task: "binary_classification",
+        split: "validation",
+        positive_label: "positive",
+        threshold: 0.5,
+        threshold_direction: "score_gte_threshold",
+        class_names: ["negative", "positive"],
+        sample_count: 20,
+        confusion_matrix: [[8, 2], [3, 7]],
+        per_class: [
+          { class_name: "negative", precision: 0.7272727273, recall: 0.8, f1: 0.7619047619, support: 10 },
+          { class_name: "positive", precision: 0.7777777778, recall: 0.7, f1: 0.7368421053, support: 10 },
+        ],
+        accuracy: 0.75,
+        macro_f1: 0.7493734336,
+        pr_curve: [
+          { threshold: 0.95, precision: 1, recall: 0.1 },
+          { threshold: 0.8, precision: 0.9, recall: 0.35 },
+          { threshold: 0.65, precision: 0.82, recall: 0.6 },
+          { threshold: 0.5, precision: 0.78, recall: 0.7 },
+          { threshold: 0.35, precision: 0.64, recall: 0.9 },
+          { threshold: 0.15, precision: 0.5, recall: 1 },
+        ],
+        roc_curve: [
+          { threshold: 0.95, tpr: 0.1, fpr: 0 },
+          { threshold: 0.8, tpr: 0.35, fpr: 0.05 },
+          { threshold: 0.65, tpr: 0.6, fpr: 0.15 },
+          { threshold: 0.5, tpr: 0.7, fpr: 0.2 },
+          { threshold: 0.35, tpr: 0.9, fpr: 0.5 },
+          { threshold: 0.15, tpr: 1, fpr: 1 },
+        ],
+        predictions: [
+          { id: "ex-1", true_label: "negative", predicted_label: "negative", score: 0.1, correct: true },
+          { id: "ex-2", true_label: "positive", predicted_label: "positive", score: 0.8, correct: true },
+          { id: "ex-3", true_label: "positive", predicted_label: "negative", score: 0.42, correct: false },
+          { id: "ex-4", true_label: "negative", predicted_label: "positive", score: 0.61, correct: false },
+        ],
+      },
     });
     await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/logs`, {
       stream: "stdout",
@@ -218,6 +296,26 @@ try {
         { line_number: 2, message: "\u001b[32mcheckpoint saved\u001b[0m", timestamp: "2026-05-14T00:00:01Z" },
       ],
     });
+    const demoVariants = ["baseline", "baseline", "baseline", "baseline", "baseline", "tuned", "tuned", "tuned", "tuned", "tuned"];
+    for (const [index, variant] of demoVariants.entries()) {
+      const seed = 50 + index;
+      const score = variant === "baseline" ? 38 + index * 1.1 : 45 + (index - 5) * 1.3;
+      const run = (await pageApiRequest(page, "POST", "/runs", {
+        project: "demo",
+        name: `rl-ppo-${variant}-seed-${seed}`,
+        config: { seed, variant, model: "rl", workload: "ppo", learning_rate: variant === "baseline" ? 0.0003 : 0.0001 },
+        tags: ["demo", variant],
+        metadata: { notes: `Synthetic ${variant} ablation seed ${seed}` },
+      })).run;
+      await pageApiRequest(page, "POST", `/runs/${run.id}/metrics`, {
+        step: 0,
+        metrics: { "eval/return_mean": score, "train/reward": score * 2, "train/loss": 1 / (index + 2) },
+      });
+      await pageApiRequest(page, "POST", `/runs/${run.id}/metrics`, {
+        step: 1,
+        metrics: { "eval/return_mean": score + 1.5, "train/reward": score * 2 + 3, "train/loss": 1 / (index + 3) },
+      });
+    }
   }
   for (let index = 1; index <= 30; index += 1) {
     const run = (await pageApiRequest(page, "POST", "/runs", { project: "pagination", name: `page-run-${String(index).padStart(2, "0")}`, config: { seed: index } })).run;
@@ -442,7 +540,7 @@ try {
       .filter(Boolean));
     throw new Error(`saved-view workspace panels did not restore expected metric set; saw ${JSON.stringify(panelKeys)}: ${error.message}`);
   });
-  await page.waitForFunction(() => document.querySelector(".stat strong")?.textContent?.trim() === "30");
+  await page.waitForFunction(() => document.querySelector("#status-filter option[value='']")?.textContent?.trim() === "All (30)");
   await chooseSelect(page, "#project-filter", "demo");
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
@@ -569,6 +667,19 @@ try {
     }));
     assert.ok(tablePreviewSize.headers <= 8, `table preview should cap columns, got ${tablePreviewSize.headers}`);
     assert.ok(tablePreviewSize.cells <= 160, `table preview should cap cells, got ${tablePreviewSize.cells}`);
+    await page.fill(".evidence-search input", "eval/classification");
+    await page.locator(".evidence-row", { hasText: "eval/classification" }).click();
+    await page.waitForSelector(".rich-object-card.kind-classification_eval .classification-eval-preview", { timeout: 10000 });
+    const evalPreviewText = await page.locator(".rich-object-card.kind-classification_eval").innerText();
+    assert.match(evalPreviewText, /\bPR\b/);
+    assert.match(evalPreviewText, /\bROC\b/);
+    assert.match(evalPreviewText, /Pred negative/);
+    assert.match(evalPreviewText, /Class\s+Precision\s+Recall\s+F1/);
+    if (docsScreenshotMode) {
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.screenshot({ path: path.join(docsProductDir, "dashboard-artifacts-evidence.png") });
+      await page.setViewportSize({ width: 1440, height: 1100 });
+    }
     await page.locator(".run-workspace-tabs").getByRole("button", { name: "Summary" }).click();
     await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa-checkpoint.json"));
     const forkName = `ui-smoke-fork-${Date.now()}`;
@@ -678,8 +789,9 @@ try {
   await page.keyboard.press("Tab");
   assert.equal(await page.locator(".edit-drawer").count(), 1);
   assert.equal(await page.locator(".workspace-panel-card").count(), panelCountBeforeEditTab);
-  await page.fill('.edit-drawer label:has-text("Title") input', "Smoke panel");
-  await page.waitForFunction(() => document.querySelector(".workspace-panel-card h3")?.textContent?.includes("Smoke panel"));
+  const scatterPanelTitle = docsScreenshotMode ? "Learning-rate sweep" : "Smoke panel";
+  await page.fill('.edit-drawer label:has-text("Title") input', scatterPanelTitle);
+  await page.waitForFunction((title) => document.querySelector(".workspace-panel-card h3")?.textContent?.includes(title), scatterPanelTitle);
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
   await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 10000 });
   await page.locator(".workspace-panel-card").first().hover();
@@ -691,7 +803,110 @@ try {
   await page.waitForTimeout(250);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 15000 });
-  assert.match(await page.locator(".workspace-panel-card").first().innerText(), /Smoke panel|Scatter|Summary values/);
+  assert.match(await page.locator(".workspace-panel-card").first().innerText(), new RegExp(`${escapeRegExp(scatterPanelTitle)}|Scatter|Summary values`));
+  await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
+  await page.waitForSelector(".panel-drawer");
+  await page.locator(".chart-type-segment").getByRole("button", { name: "Distribution", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".chart-type-segment button.active")?.textContent?.includes("Distribution"));
+  await page.locator(".drawer-metric-row", { hasText: "eval/return_mean" }).first().click();
+  const distributionCard = page.locator(".workspace-panel-card").filter({ has: page.locator(".distribution-panel-chart") }).first();
+  await distributionCard.waitFor({ state: "visible", timeout: 10000 });
+  assert.match(await distributionCard.innerText(), /Distribution|Visible-sample distribution|plotted/);
+  if (docsScreenshotMode) {
+    await page.fill("#search", "");
+    await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
+    await chooseSelect(page, "#sort-select", "metric-best");
+    await page.waitForFunction(() => {
+      const firstRun = document.querySelector(".workspace-run-open")?.getAttribute("title") ?? "";
+      const status = document.querySelector("#status-message")?.textContent ?? "";
+      return document.querySelector("#sort-select")?.value === "metric-best"
+        && firstRun.startsWith("rl-ppo")
+        && !/loading/i.test(status);
+    });
+    const clearSelected = page.locator(".workspace-run-rail").getByText(/^Clear \d+/);
+    if (await clearSelected.count()) {
+      await clearSelected.first().click();
+      await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row.selected").length === 0);
+    }
+    await page.locator("#panel-search").evaluate((input) => {
+      input.blur();
+    });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: path.join(docsProductDir, "dashboard-runs.png") });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+  }
+  await distributionCard.hover();
+  await distributionCard.locator('button[aria-label^="Edit"]').click();
+  await page.waitForSelector(".edit-drawer");
+  assert.equal(await page.locator("#edit-panel-value-field").count(), 1);
+  assert.equal(await page.locator("#edit-panel-group-field").count(), 1);
+  assert.equal(await page.locator("#edit-panel-replicate-field").count(), 1);
+  const distributionGroupOptionCount = await page.locator("#edit-panel-group-field option").count();
+  assert.ok(distributionGroupOptionCount >= 2, `expected editable distribution grouping fields, got ${distributionGroupOptionCount}`);
+  await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
+  await distributionCard.hover();
+  await distributionCard.locator('button[aria-label^="Fullscreen"]').click();
+  await page.waitForSelector(".fullscreen-panel-card .distribution-panel-chart", { timeout: 10000 });
+  const fullscreenDistributionText = await page.locator(".fullscreen-panel-card").innerText();
+  assert.match(fullscreenDistributionText, /Distribution|Visible-sample distribution|plotted/);
+  await page.locator(".fullscreen-modal").getByRole("button", { name: "Close fullscreen panel" }).click();
+  await page.waitForFunction(() => !document.querySelector(".fullscreen-modal"));
+  await page.fill("#search", 'name:"rl-ppo-seed-44"');
+  await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("rl-ppo-seed-44"));
+  await page.locator(".workspace-run-open").first().click();
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("rl-ppo-seed-44"));
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
+  const histogramObjectRequestsBefore = objectUrls.length;
+  await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
+  await page.waitForSelector(".panel-drawer");
+  await page.locator(".chart-type-segment").getByRole("button", { name: "Logged histogram timeline", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".chart-type-segment button.active")?.textContent?.includes("Logged histogram timeline"));
+  await page.getByLabel("Histogram object key to add").fill("eval/score_distribution");
+  await page.locator(".quick-add-card").click();
+  const histogramTimelineCard = page.locator(".workspace-panel-card").filter({ has: page.locator(".histogram-timeline-panel-chart") }).first();
+  await histogramTimelineCard.waitFor({ state: "visible", timeout: 10000 });
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll(".workspace-panel-card")]
+      .find((node) => node.querySelector(".histogram-timeline-panel-chart"));
+    const text = card?.textContent ?? "";
+    return text.includes("3 frames") && text.includes("Compatible bins");
+  });
+  const histogramObjectRequests = objectUrls.slice(histogramObjectRequestsBefore)
+    .filter((url) => url.includes("/api/runs/") && url.includes("/objects"))
+    .map((url) => new URL(url));
+  const scoreDistributionRequests = histogramObjectRequests
+    .filter((url) => url.searchParams.get("key") === "eval/score_distribution");
+  assert.ok(scoreDistributionRequests.length >= 1, `histogram timeline should make a selected-run object request, saw ${histogramObjectRequests.map((url) => url.toString()).join(", ")}`);
+  assert.equal(new Set(scoreDistributionRequests.map((url) => url.pathname)).size, 1, "histogram timeline should not fan out across runs");
+  assert.ok(
+    histogramObjectRequests.every((url) => url.searchParams.get("key") === "eval/score_distribution"),
+    `histogram timeline should only request the explicit object key, saw ${histogramObjectRequests.map((url) => url.toString()).join(", ")}`,
+  );
+  assert.equal(scoreDistributionRequests[0].searchParams.get("kind"), "histogram");
+  assert.equal(scoreDistributionRequests[0].searchParams.get("limit"), "100");
+  await histogramTimelineCard.hover();
+  await histogramTimelineCard.locator('button[aria-label^="Edit"]').click();
+  await page.waitForSelector(".edit-drawer");
+  assert.equal(await page.getByLabel("Histogram object key").inputValue(), "eval/score_distribution");
+  await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
+  await histogramTimelineCard.hover();
+  await histogramTimelineCard.locator('button[aria-label^="Fullscreen"]').click();
+  await page.waitForSelector(".fullscreen-panel-card .histogram-timeline-panel-chart", { timeout: 10000 });
+  assert.match(await page.locator(".fullscreen-panel-card").innerText(), /3 frames|Compatible bins/);
+  if (docsScreenshotMode) {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: path.join(docsProductDir, "dashboard-logged-histogram.png") });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+  }
+  await page.locator(".fullscreen-modal").getByRole("button", { name: "Close fullscreen panel" }).click();
+  await page.waitForFunction(() => !document.querySelector(".fullscreen-modal"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 15000 });
+  await page.waitForSelector(".workspace-panel-card .distribution-panel-chart", { timeout: 15000 });
+  await page.waitForSelector(".workspace-panel-card .histogram-timeline-panel-chart", { timeout: 15000 });
+  await page.fill("#search", "");
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 6);
   await page.locator(".workspace-section .section-title-button").first().click();
   await page.waitForFunction(() => document.querySelector(".workspace-section")?.classList.contains("collapsed"));
   await page.locator(".workspace-section .section-title-button").first().click();
@@ -1379,6 +1594,10 @@ try {
       expectedServiceUnavailableApiErrors -= 1;
       return false;
     }
+    if (expectedApiFailureConsoleErrors > 0 && isExpectedApiFailureConsoleError(error)) {
+      expectedApiFailureConsoleErrors -= 1;
+      return false;
+    }
     if (expectedRateLimitResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 429 (Too Many Requests)") {
       expectedRateLimitResourceErrors -= 1;
       return false;
@@ -1720,6 +1939,12 @@ function isExpectedServiceUnavailableApiError(error) {
   } catch {
     return false;
   }
+}
+
+function isExpectedApiFailureConsoleError(error) {
+  return error.startsWith("instantml_api_request ")
+    && error.includes("outcome")
+    && error.includes("failure");
 }
 
 async function openAccountWorkspaceMenu(page) {

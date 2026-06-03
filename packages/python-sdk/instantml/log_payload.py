@@ -5,18 +5,18 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from .objects import Audio, File, Histogram, Image, Table, Text, Video
+from .objects import Audio, ClassificationEval, File, Histogram, Image, Table, Text, Video
 from .validation import _is_scalar_number, _validate_plain_string, _validate_text
 
 
 def _classify_log_payload(
     data: dict[str, Any],
-) -> tuple[dict[str, float], dict[str, str], dict[str, Table | Histogram | Image | Video | Audio], dict[str, File]]:
+) -> tuple[dict[str, float], dict[str, str], dict[str, Table | Histogram | ClassificationEval | Image | Video | Audio], dict[str, File]]:
     if not isinstance(data, dict):
         raise TypeError("log data must be a dictionary")
     metrics: dict[str, float] = {}
     text: dict[str, str] = {}
-    objects: dict[str, Table | Histogram | Image | Video | Audio] = {}
+    objects: dict[str, Table | Histogram | ClassificationEval | Image | Video | Audio] = {}
     files: dict[str, File] = {}
     for raw_key, value in data.items():
         key = _validate_text(raw_key, "log key")
@@ -26,7 +26,7 @@ def _classify_log_payload(
             text[key] = value
         elif isinstance(value, Text):
             text[key] = _validate_plain_string(value.data, "text data")
-        elif isinstance(value, (Table, Histogram, Image, Video, Audio)):
+        elif isinstance(value, (Table, Histogram, ClassificationEval, Image, Video, Audio)):
             objects[key] = value
         elif isinstance(value, File):
             files[key] = value
@@ -40,14 +40,14 @@ def _classify_log_payload(
 def _classify_log_sequence(
     key: str,
     values: list[Any] | tuple[Any, ...],
-    objects: dict[str, Table | Histogram | Image | Video | Audio],
+    objects: dict[str, Table | Histogram | ClassificationEval | Image | Video | Audio],
     files: dict[str, File],
 ) -> None:
     if not values:
         raise ValueError(f"log sequence for {key!r} must not be empty")
     if all(_is_scalar_number(value) for value in values):
         raise TypeError(f"log sequence for {key!r} is numeric; use Histogram.from_values() or Table")
-    if all(isinstance(value, (Table, Histogram, Image, Video, Audio)) for value in values):
+    if all(isinstance(value, (Table, Histogram, ClassificationEval, Image, Video, Audio)) for value in values):
         for index, value in enumerate(values):
             objects[f"{key}/{index}"] = value
         return

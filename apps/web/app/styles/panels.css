@@ -305,6 +305,68 @@
   stroke-width: 1.4;
 }
 
+.histogram-timeline-panel-chart {
+  gap: 7px;
+}
+
+.histogram-timeline-panel-chart svg {
+  aspect-ratio: 720 / 300;
+  min-height: 160px;
+  max-height: 320px;
+}
+
+.fullscreen-panel-card .histogram-timeline-panel-chart svg {
+  max-height: none;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .histogram-timeline-panel-chart .histogram-frame-control {
+  order: 2;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .histogram-timeline-panel-chart .chart-legend {
+  order: 3;
+}
+
+.histogram-heat-cell {
+  shape-rendering: crispEdges;
+}
+
+.histogram-selected-frame {
+  stroke: var(--accent-strong);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.histogram-frame-control {
+  display: grid;
+  grid-template-columns: max-content minmax(96px, 1fr) max-content;
+  gap: 9px;
+  align-items: center;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.histogram-frame-control input {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent-strong);
+}
+
+.histogram-frame-control strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.distribution-sem line {
+  stroke-width: 1.15;
+  stroke-linecap: round;
+  opacity: 0.72;
+}
+
 .summary-dot {
   stroke: var(--chart-card-bg, var(--surface));
   stroke-width: 1.8;

@@ -11,7 +11,7 @@ import { downloadBlob, filenameFromContentDisposition, safeExportFilename } from
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
 import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
-import { adaptiveMetricSeriesLimit, buildRunFieldCatalog, chunkRunIds, defaultScatterFields, mergeMetricSeriesPatches, parseFieldId } from "../../src/dashboard-panels.js";
+import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
 import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
@@ -63,10 +63,11 @@ import {
   workspaceMetricKeys,
   workspacePanelNeedsMetricSeries,
   workspacePanelForMetric,
+  workspacePanelTypeLabel,
   workspaceStorageKey,
 } from "../dashboard-models";
 import { AppLoadingScreen } from "../loading-screen";
-import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
+import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HistogramTimelineState, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
 import type { RunWorkspaceTabId } from "./components/run-workspace";
 import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
@@ -169,6 +170,7 @@ const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 12;
 const MAX_EXPORT_SELECTED_RUNS = 100;
 const ARTIFACT_PAGE_LIMIT = 100;
+const WORKSPACE_HISTOGRAM_TIMELINE_LIMIT = 3;
 const WORKSPACE_HISTORY_LIMIT = 50;
 const WAREHOUSE_RETRY_MS = 5_000;
 // Cadence for refreshing metric series of in-flight (running) runs so charts
@@ -191,6 +193,32 @@ function boundedOptions(options: string[], activeValue: string, limit = MAX_METR
   const capped = options.slice(0, limit);
   if (activeValue && options.includes(activeValue) && !capped.includes(activeValue)) return [activeValue, ...capped.slice(0, Math.max(0, limit - 1))];
   return capped;
+}
+
+function workspaceHistogramObjectKeys(view: WorkspaceView, search = "", activePanel?: WorkspacePanel | null) {
+  const needle = search.trim().toLowerCase();
+  const keys: string[] = [];
+  const addKey = (key: string) => {
+    const trimmed = key.trim();
+    if (trimmed && !keys.includes(trimmed)) keys.push(trimmed);
+  };
+  if (activePanel?.type === "histogram_timeline") addKey(activePanel.objectKey);
+  for (const section of view.sections) {
+    if (section.collapsed) continue;
+    const visiblePanels = section.panels.filter((panel) => {
+      if (!needle) return true;
+      const scatterFields = panel.type === "scatter" ? `${fieldLabel(panel.xField)} ${fieldLabel(panel.yField)}` : "";
+      const distributionFields = panel.type === "distribution" ? `${fieldLabel(panel.valueField)} ${panel.groupField ? categoricalFieldLabel(panel.groupField) : ""} ${panel.replicateField ? categoricalFieldLabel(panel.replicateField) : ""}` : "";
+      const objectFields = panel.type === "histogram_timeline" ? panel.objectKey : "";
+      const searchable = `${section.name} ${panel.title} ${panel.metricKey} ${workspacePanelTypeLabel(panel.type)} ${scatterFields} ${distributionFields} ${objectFields}`;
+      return searchable.toLowerCase().includes(needle);
+    }).slice(0, 12);
+    for (const panel of visiblePanels) {
+      if (panel.type !== "histogram_timeline") continue;
+      addKey(panel.objectKey);
+    }
+  }
+  return keys;
 }
 
 function messageTone(message: string): "error" | "loading" | "ok" {
@@ -315,6 +343,18 @@ function sanitizeWorkspaceFieldPatch(value: string | undefined) {
   if (typeof value !== "string") return undefined;
   const field = value.slice(0, 512);
   return parseFieldId(field) ? field : undefined;
+}
+
+function sanitizeWorkspaceCategoricalFieldPatch(value: string | undefined) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const field = value.slice(0, 512);
+  return parseCategoricalFieldId(field) ? field : undefined;
+}
+
+function sanitizeWorkspaceObjectKeyPatch(value: string | undefined) {
+  if (typeof value !== "string") return undefined;
+  const key = value.trim().slice(0, 256);
+  return key || undefined;
 }
 
 function pruneRunDetails(
@@ -595,6 +635,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [editingPanelRef, setEditingPanelRef] = useState<{ sectionId: string; panelId: string } | null>(null);
   const [fullscreenPanelRef, setFullscreenPanelRef] = useState<{ sectionId: string; panelId: string } | null>(null);
   const [workspaceSeries, setWorkspaceSeries] = useState<Record<string, MetricSeries[]>>({});
+  const [workspaceHistogramTimelines, setWorkspaceHistogramTimelines] = useState<Record<string, HistogramTimelineState>>({});
   const [runsRailCollapsed, setRunsRailCollapsed] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
@@ -973,8 +1014,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const panel = section?.panels.find((item) => item.id === editingPanelRef.panelId);
     return section && panel ? { section, panel } : null;
   }, [editingPanelRef, workspaceView]);
-  const editingScatterMaxRuns = useMemo(() => {
-    if (editingPanelContext?.panel.type !== "scatter") return 0;
+  const editingFieldCatalogMaxRuns = useMemo(() => {
+    if (!editingPanelContext || !["scatter", "distribution"].includes(editingPanelContext.panel.type)) return 0;
     return Math.max(1, Math.min(
       25,
       editingPanelContext.panel.settings?.maxRuns
@@ -983,17 +1024,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         ?? 10,
     ));
   }, [
-    editingPanelContext?.panel.type,
+    editingPanelContext,
     editingPanelContext?.panel.settings?.maxRuns,
     editingPanelContext?.section.settings?.maxRuns,
     workspaceView.settings.maxRuns,
   ]);
   const workspaceFieldOptions = useMemo(
     () => {
-      if (!editingScatterMaxRuns) return [];
-      return buildRunFieldCatalog(workspacePanelRuns.slice(0, editingScatterMaxRuns), allMetricOptions) as WorkspaceFieldOption[];
+      if (!editingFieldCatalogMaxRuns) return [];
+      return buildRunFieldCatalog(workspacePanelRuns.slice(0, editingFieldCatalogMaxRuns), allMetricOptions) as WorkspaceFieldOption[];
     },
-    [allMetricOptions, editingScatterMaxRuns, workspacePanelRuns],
+    [allMetricOptions, editingFieldCatalogMaxRuns, workspacePanelRuns],
+  );
+  const workspaceCategoricalFieldOptions = useMemo(
+    () => {
+      if (!editingFieldCatalogMaxRuns) return [];
+      return buildRunCategoricalFieldCatalog(workspacePanelRuns.slice(0, editingFieldCatalogMaxRuns)) as WorkspaceCategoricalFieldOption[];
+    },
+    [editingFieldCatalogMaxRuns, workspacePanelRuns],
   );
   const workspaceFetchRuns = useMemo(() => {
     if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
@@ -1007,6 +1055,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const panel = section?.panels.find((item) => item.id === fullscreenPanelRef.panelId);
     return section && panel ? { section, panel } : null;
   }, [fullscreenPanelRef, workspaceView]);
+  const workspaceHistogramKeys = useMemo(
+    () => workspaceHistogramObjectKeys(workspaceView, panelSearch, fullscreenPanelContext?.panel ?? null),
+    [fullscreenPanelContext?.panel, panelSearch, workspaceView],
+  );
+  const workspaceHistogramKey = useMemo(() => workspaceHistogramKeys.join("\u0000"), [workspaceHistogramKeys]);
+  const workspaceHistogramLiveTick = primaryRun?.status === "running" ? liveSeriesTick : 0;
   const fullscreenPanelOrder = useMemo(() => (
     workspaceView.sections.flatMap((section) => section.panels.map((panel) => ({ sectionId: section.id, panelId: panel.id, title: panel.title })))
   ), [workspaceView]);
@@ -1843,6 +1897,76 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       controller.abort();
     };
   }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey, liveSeriesTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    async function loadWorkspaceHistograms() {
+      const runId = primaryRun?.id ?? "";
+      if (activeTab !== "runs" || !runId || !workspaceHistogramKeys.length) {
+        setWorkspaceHistogramTimelines({});
+        return;
+      }
+      const requestedKeys = workspaceHistogramKeys.slice(0, WORKSPACE_HISTOGRAM_TIMELINE_LIMIT);
+      const cappedStates = Object.fromEntries(workspaceHistogramKeys.slice(WORKSPACE_HISTOGRAM_TIMELINE_LIMIT).map((objectKey) => [objectKey, {
+        runId,
+        objectKey,
+        frames: [],
+        invalid: 0,
+        truncated: false,
+        compatibleBins: true,
+        capped: true,
+      } satisfies HistogramTimelineState]));
+      setWorkspaceHistogramTimelines({ ...Object.fromEntries(requestedKeys.map((objectKey) => [objectKey, {
+        runId,
+        objectKey,
+        frames: [],
+        invalid: 0,
+        truncated: false,
+        compatibleBins: true,
+        loading: true,
+      } satisfies HistogramTimelineState])), ...cappedStates });
+
+      const next: Record<string, HistogramTimelineState> = {};
+      for (const objectKey of requestedKeys) {
+        try {
+          const payload = await retryTransientRequest(
+            () => api.get(`/api/runs/${runId}/objects${queryString({ kind: "histogram", key: objectKey, limit: 100 })}`, { signal: controller.signal }),
+            { signal: controller.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS },
+          );
+          const parsed = histogramFramesFromObjects(payload.objects ?? []);
+          next[objectKey] = {
+            runId,
+            objectKey,
+            frames: parsed.frames,
+            invalid: parsed.invalid,
+            truncated: parsed.truncated,
+            compatibleBins: parsed.compatibleBins,
+          };
+        } catch (error) {
+          if (isAbortError(error)) return;
+          next[objectKey] = {
+            runId,
+            objectKey,
+            frames: [],
+            invalid: 0,
+            truncated: false,
+            compatibleBins: true,
+            error: error instanceof Error ? error.message : "Unable to load logged histogram frames.",
+          };
+        }
+        if (!cancelled) setWorkspaceHistogramTimelines({ ...next, ...cappedStates });
+      }
+      if (!cancelled) setWorkspaceHistogramTimelines({ ...next, ...cappedStates });
+    }
+    loadWorkspaceHistograms().catch((error) => {
+      if (!cancelled && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load logged histogram frames.");
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [activeTab, api, primaryRun?.id, workspaceHistogramKey, workspaceHistogramLiveTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2958,20 +3082,50 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     if (!sectionId || !panelMetric) return;
     const basePanel = workspacePanelForMetric(panelMetric, type);
     const panelId = `panel-${stableId(`${type}-${panelMetric}`)}-${Date.now().toString(36)}`;
+    const panelSeedRuns = (selectedRuns.length ? selectedRuns : sortedRuns).slice(0, 10);
+    const numericFields = buildRunFieldCatalog(panelSeedRuns, allMetricOptions) as WorkspaceFieldOption[];
+    const categoricalFields = buildRunCategoricalFieldCatalog(panelSeedRuns) as WorkspaceCategoricalFieldOption[];
+    const title = basePanel.title;
+    const metricKey = basePanel.metricKey;
+    const layout = basePanel.layout;
+    const settings = basePanel.settings;
     const panel: WorkspacePanel = type === "scatter"
       ? {
-        ...basePanel,
-        ...defaultScatterFields(panelMetric, buildRunFieldCatalog((selectedRuns.length ? selectedRuns : sortedRuns).slice(0, 10), allMetricOptions)),
         id: panelId,
         type: "scatter",
+        title,
+        metricKey,
+        layout,
+        settings,
+        ...defaultScatterFields(panelMetric, numericFields),
       }
+      : type === "distribution"
+        ? {
+          id: panelId,
+          type: "distribution",
+          title,
+          metricKey,
+          layout,
+          settings,
+          ...defaultDistributionFields(panelMetric, numericFields, categoricalFields),
+        }
+        : type === "histogram_timeline"
+            ? {
+              id: panelId,
+              type: "histogram_timeline",
+              title,
+              metricKey,
+              layout,
+              settings,
+              objectKey: panelMetric,
+            }
       : {
         id: panelId,
         type,
-        title: basePanel.title,
-        metricKey: basePanel.metricKey,
-        layout: basePanel.layout,
-        settings: basePanel.settings,
+        title,
+        metricKey,
+        layout,
+        settings,
       };
     updateWorkspace((current) => ({
       ...current,
@@ -3065,7 +3219,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }), "Panel size saved. Undo available.");
   }
 
-  function updateEditingPanel(patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; xField?: string; yField?: string; settings?: Partial<WorkspacePanelSettings> }) {
+  function updateEditingPanel(patch: {
+    title?: string;
+    type?: WorkspacePanelType;
+    metricKey?: string;
+    xField?: string;
+    yField?: string;
+    valueField?: string;
+    groupField?: string;
+    replicateField?: string;
+    objectKey?: string;
+    settings?: Partial<WorkspacePanelSettings>;
+  }) {
     if (!editingPanelRef) return;
     updateWorkspace((current) => ({
       ...current,
@@ -3095,6 +3260,43 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 settings,
                 xField,
                 yField,
+              };
+            }
+            if (type === "distribution") {
+              const defaults = defaultDistributionFields(metricKey, workspaceFieldOptions, workspaceCategoricalFieldOptions);
+              const valueField = sanitizeWorkspaceFieldPatch(patch.valueField)
+                ?? (panel.type === "distribution" ? panel.valueField : undefined)
+                ?? defaults.valueField;
+              const groupField = Object.prototype.hasOwnProperty.call(patch, "groupField")
+                ? sanitizeWorkspaceCategoricalFieldPatch(patch.groupField)
+                : (panel.type === "distribution" ? panel.groupField : undefined) ?? defaults.groupField;
+              const replicateField = Object.prototype.hasOwnProperty.call(patch, "replicateField")
+                ? sanitizeWorkspaceCategoricalFieldPatch(patch.replicateField)
+                : (panel.type === "distribution" ? panel.replicateField : undefined) ?? defaults.replicateField;
+              return {
+                id: panel.id,
+                type: "distribution",
+                title,
+                metricKey,
+                layout: panel.layout,
+                settings,
+                valueField,
+                groupField,
+                replicateField,
+              };
+            }
+            if (type === "histogram_timeline") {
+              const objectKey = sanitizeWorkspaceObjectKeyPatch(patch.objectKey)
+                ?? (panel.type === "histogram_timeline" ? panel.objectKey : undefined)
+                ?? metricKey;
+              return {
+                id: panel.id,
+                type: "histogram_timeline",
+                title,
+                metricKey: metricKey || objectKey,
+                layout: panel.layout,
+                settings,
+                objectKey,
               };
             }
             return {
@@ -3370,6 +3572,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         orgSwitchBusy={orgSwitchBusy}
         orgSwitchError={orgSwitchError}
         onSwitchOrg={switchOrganization}
+        overview={overview}
         metricUsagePercent={metricPercent}
         apiRequestUsagePercent={apiRequestsPercent}
         planLabel={activePlan}
@@ -3476,7 +3679,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               orgMemberships={orgMemberships}
               orgName={sessionPayload?.organization?.name ?? ""}
               orgSwitchBusy={orgSwitchBusy}
-              overview={overview}
               pageEnd={pageEnd}
               pageSize={pageSize}
               pageStart={pageStart}
@@ -3497,7 +3699,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               status={status}
               summaryTotal={summary.total}
               tableColumns={tableColumns}
+              workspaceHistogramTimelines={workspaceHistogramTimelines}
               workspacePanelRuns={workspacePanelRuns}
+              workspaceCategoricalFieldOptions={workspaceCategoricalFieldOptions}
               workspaceFieldOptions={workspaceFieldOptions}
               workspaceSeries={workspaceSeries}
               workspaceView={workspaceView}

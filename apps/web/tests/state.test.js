@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
-import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, buildRunFieldCatalog, chartPointCount, chunkRunIds, fieldLabel, fieldValueForRun, histogramBins, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, metricFieldId, objectFieldId, parseFieldId, preferredScatterXField, scatterPointsForRuns, shouldUseDenseChart } from "../src/dashboard-panels.js";
+import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, categoricalValueForRun, chartPointCount, chunkRunIds, defaultDistributionFields, defaultParallelFields, distributionSummaryForRuns, fieldLabel, fieldValueForRun, histogramBins, histogramFramesFromObjects, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, metricFieldId, objectFieldId, parallelCoordinatesForRuns, parseCategoricalFieldId, parseFieldId, preferredScatterXField, runCategoricalFieldId, scatterPointsForRuns, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
   MAX_SELECTED_RUNS,
@@ -257,6 +257,111 @@ test("run field catalog encodes numeric run fields and builds scatter points", (
   assert.equal(boundedCatalog.some((field) => field.id.includes(longMetric.slice(0, 20))), false, "overlong metric and object field names should be skipped");
 
   assert.equal(preferredScatterXField(catalog), configLearningRate, "scatter panels should prefer experiment config fields on X");
+});
+
+test("categorical fields drive distribution grouping and replicate metadata", () => {
+  const valueField = metricFieldId("eval/accuracy", "best");
+  const variantField = objectFieldId("config", ["variant"]);
+  const seedField = objectFieldId("config", ["seed"]);
+  const runs = [
+    { id: "a", name: "a", status: "finished", tags: ["baseline"], config: { variant: "base", seed: 1, lr: 0.001 }, metadata: {}, metric_aggregates: { "eval/accuracy": { max: 0.80 } } },
+    { id: "b", name: "b", status: "finished", tags: ["baseline"], config: { variant: "base", seed: 2, lr: 0.002 }, metadata: {}, metric_aggregates: { "eval/accuracy": { max: 0.82 } } },
+    { id: "c", name: "c", status: "finished", tags: ["candidate"], config: { variant: "candidate", seed: 1, lr: 0.001 }, metadata: {}, metric_aggregates: { "eval/accuracy": { max: 0.88 } } },
+    { id: "d", name: "d", status: "failed", tags: ["candidate"], config: { variant: "candidate", seed: 2, lr: 0.002 }, metadata: {}, metric_aggregates: { "eval/accuracy": { max: 0.9 } } },
+    { id: "e", name: "e", status: "finished", tags: [], config: { variant: "candidate", seed: 3 }, metadata: {}, metric_aggregates: {} },
+  ];
+
+  assert.deepEqual(parseCategoricalFieldId(runCategoricalFieldId("first_tag")), { source: "run", field: "first_tag" });
+  assert.equal(categoricalFieldLabel(variantField), "config.variant");
+  assert.equal(categoricalValueForRun(runs[0], runCategoricalFieldId("first_tag")), "baseline");
+  const catalog = buildRunCategoricalFieldCatalog(runs);
+  assert(catalog.some((field) => field.id === variantField && field.groupCount === 2));
+  assert(catalog.some((field) => field.id === seedField && field.groupCount === 3));
+  const numericCatalog = buildRunFieldCatalog(runs, ["eval/accuracy"]);
+  const defaults = defaultDistributionFields("eval/accuracy", numericCatalog, catalog);
+  assert.equal(defaults.valueField, valueField);
+  assert.equal(defaults.groupField, variantField, "variant should be preferred over seed for grouping");
+  assert.equal(defaults.replicateField, seedField, "seed should be treated as replicate metadata");
+
+  const summary = distributionSummaryForRuns(runs, valueField, variantField, seedField);
+  assert.equal(summary.plotted, 4);
+  assert.equal(summary.missing, 1);
+  assert.deepEqual(summary.groups.map((group) => [group.label, group.n, group.replicateCount]), [["base", 2, 2], ["candidate", 2, 2]]);
+  assert.equal(summary.groups[0].q1, null, "small groups should suppress quartile boxes");
+  assert.equal(summary.groups[0].sem, null, "small groups should suppress visible-sample SEM");
+
+  const fiveRunSummary = distributionSummaryForRuns([
+    ...runs,
+    { id: "f", name: "f", status: "finished", tags: ["baseline"], config: { variant: "base", seed: 4 }, metadata: {}, metric_aggregates: { "eval/accuracy": { max: 0.84 } } },
+    { id: "g", name: "g", status: "finished", tags: ["baseline"], config: { variant: "base", seed: 5 }, metadata: {}, metric_aggregates: { "eval/accuracy": { max: 0.86 } } },
+    { id: "h", name: "h", status: "finished", tags: ["baseline"], config: { variant: "base", seed: 6 }, metadata: {}, metric_aggregates: { "eval/accuracy": { max: 0.88 } } },
+  ], valueField, variantField, seedField);
+  const fiveRunGroup = fiveRunSummary.groups.find((group) => group.label === "base");
+  assert.equal(fiveRunGroup?.n, 5);
+  assert.notEqual(fiveRunGroup?.q1, null, "groups with five values can render quartile boxes");
+  assert.notEqual(fiveRunGroup?.sem, null, "groups with five values can render visible-sample SEM");
+});
+
+test("parallel helpers choose bounded non-seed axes and normalize traces", () => {
+  const lossBest = metricFieldId("train/loss", "best");
+  const lrField = objectFieldId("config", ["lr"]);
+  const seedField = objectFieldId("config", ["seed"]);
+  const runs = [
+    { id: "a", name: "a", config: { lr: 0.001, seed: 1 }, metadata: {}, metric_aggregates: { "train/loss": { min: 0.4 } }, started_at: "2026-01-01T00:00:00Z", finished_at: "2026-01-01T00:01:00Z" },
+    { id: "b", name: "b", config: { lr: 0.01, seed: 2 }, metadata: {}, metric_aggregates: { "train/loss": { min: 0.2 } }, started_at: "2026-01-01T00:00:00Z", finished_at: "2026-01-01T00:02:00Z" },
+  ];
+  const catalog = buildRunFieldCatalog(runs, ["train/loss"]);
+  const axes = defaultParallelFields("train/loss", catalog);
+  assert(axes.includes(lrField));
+  assert(axes.includes(lossBest));
+  assert.equal(axes.includes(seedField), false, "seed should not be a default parallel axis");
+  const data = parallelCoordinatesForRuns(runs, [lrField, "run:duration_seconds", lossBest], { [lrField]: "log" });
+  assert.equal(data.axes.length, 3);
+  assert.equal(data.axes[0].scale, "log");
+  assert.equal(data.traces.length, 2);
+  assert.deepEqual(data.traces[0].points.map((point) => point.axisIndex), [0, 1, 2]);
+});
+
+test("histogram frame parser rejects malformed frames and detects bin compatibility", () => {
+  const parsed = histogramFramesFromObjects([
+    { id: 2, key: "eval/scores", step: 2, value: { bins: [0, 0.5, 1], counts: [2, 3] } },
+    { id: 1, key: "eval/scores", step: 1, value: { bins: [0, 0.5, 1], counts: [1, 4] } },
+    { id: 3, key: "eval/scores", step: 3, value: { bins: [0, 1], counts: [-1] } },
+  ]);
+  assert.equal(parsed.frames.length, 2);
+  assert.equal(parsed.invalid, 1);
+  assert.equal(parsed.compatibleBins, true);
+  assert.deepEqual(parsed.frames.map((frame) => frame.step), [1, 2]);
+  const incompatible = histogramFramesFromObjects([
+    { id: 1, key: "eval/scores", step: 1, value: { bins: [0, 1], counts: [1] } },
+    { id: 2, key: "eval/scores", step: 2, value: { bins: [0, 0.5, 1], counts: [1, 1] } },
+  ]);
+  assert.equal(incompatible.compatibleBins, false);
+  const acceptedWide = histogramFramesFromObjects([
+    {
+      id: 3,
+      key: "eval/wide",
+      step: 3,
+      value: {
+        bins: Array.from({ length: 1025 }, (_item, index) => index),
+        counts: Array.from({ length: 1024 }, () => 1),
+      },
+    },
+  ]);
+  assert.equal(acceptedWide.invalid, 0);
+  assert.equal(acceptedWide.frames[0].counts.length, 1024);
+  const rejectedWide = histogramFramesFromObjects([
+    {
+      id: 4,
+      key: "eval/too-wide",
+      step: 4,
+      value: {
+        bins: Array.from({ length: 1026 }, (_item, index) => index),
+        counts: Array.from({ length: 1025 }, () => 1),
+      },
+    },
+  ]);
+  assert.equal(rejectedWide.invalid, 1);
 });
 
 test("visibleSelectionState reports none/some/all", () => {

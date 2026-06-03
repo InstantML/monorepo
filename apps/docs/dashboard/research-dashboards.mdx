@@ -6,7 +6,8 @@ description: "Use research dashboards for rank-aware metrics, grouped reducers, 
 # Distributed and Insights
 
 Some training workflows need more than a scalar line chart. InstantML includes
-Runs workspace panels for line, bar, value histogram, dot, and scatter
+Runs workspace panels for line, bar, value histogram, dot, scatter,
+seed/group distribution, and selected-run logged histogram timeline
 visualizations, plus research-oriented surfaces for distributed runs and
 loaded-summary analysis. These views operate on the selected run, selected
 runs, or the currently loaded summary page; they do not pull every run across
@@ -25,8 +26,29 @@ need grouped views.
 ![Insights dashboard](/images/product/dashboard-insights.png)
 
 Insights is for exploratory views over the loaded run summaries, such as
-grouped reducers, hyperparameter inspection, loaded-summary cluster cards, and
-evaluation metric summary cards.
+grouped reducers, hyperparameter scatter, loaded-summary cluster cards,
+parallel-coordinate traces for sweep/HPO tradeoffs, and evaluation metric
+summary cards. These traces are exploratory and summary-only; they are not
+saved Runs workspace panels.
+
+Parallel coordinates work best when the loaded or selected run summaries have
+several numeric config or summary fields with real variation: learning rate,
+batch size, duration, best validation score, return mean, loss, or accuracy.
+Keep seed as replicate metadata instead of a default axis, and use Runs
+workspace distribution panels when the main question is "is this variant stable
+across seeds?"
+
+Log the inputs with ordinary SDK run config and scalar metrics:
+
+```python
+import instantml as ro
+
+run = ro.init(
+    project="sweep",
+    config={"learning_rate": lr, "batch_size": batch_size, "seed": seed},
+)
+run.log_metrics({"eval/accuracy": accuracy, "train/loss": loss}, step=epoch)
+```
 
 ## When to use each surface
 

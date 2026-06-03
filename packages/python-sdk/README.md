@@ -10,6 +10,8 @@ This directory contains the Python SDK used by training scripts to send runs, me
   training reducers and coverage/outlier dashboards.
 - Log configs, searchable run tags, and searchable run notes.
 - Log rich table/histogram/image/audio/video objects.
+- Log compact binary classification evaluation bundles with typed PR/ROC,
+  confusion-matrix, per-class metric, and optional prediction data.
 - Log local file and artifact wrappers through the upload route. The SDK contract is unchanged for hosted R2 storage: it still sends the upload payload to the Rust API, which stores bytes in the organization's configured artifact backend and returns the public artifact metadata row with an opaque `instantml://artifacts/<artifact_id>` URI for stored bytes.
 - Log versioned artifacts with immutable manifests, `latest`/`best` aliases,
   explicit input/output lineage, safe downloads, and SDK-originated upload
@@ -66,6 +68,14 @@ run.log_objects({
     "eval/scores": ro.Histogram([0, 0.5, 1.0], [3, 9]),
     "eval/frame": ro.Image.from_data([[[255, 0, 0]]]),
 }, step=1)
+run.log_classification_eval(
+    "eval/classification",
+    y_true=[0, 1, 1, 0],
+    y_score=[0.1, 0.8, 0.7, 0.2],
+    class_names=["negative", "positive"],
+    positive_label="positive",
+    step=1,
+)
 checkpoint_policy = ro.CheckpointPolicy(every_steps=100)
 if checkpoint_policy.should_save(100):
     run.log_checkpoint_file("checkpoints/policy.pt", step=100)
@@ -430,8 +440,8 @@ Release upload uses `.github/workflows/python-sdk-release.yml` with PyPI/TestPyP
 older tests or scripts may import. The first decomposition slice moves leaf
 helpers into focused modules:
 
-- `instantml.objects`: table, histogram, file/artifact, checkpoint policy, text,
-  image, audio, and video value wrappers.
+- `instantml.objects`: table, histogram, classification eval, file/artifact,
+  checkpoint policy, text, image, audio, and video value wrappers.
 - `instantml.media`: local-file URI checks, file hashing, and lazy image/audio/
   video materialization helpers.
 - `instantml.log_payload`: `Run.log()` payload classification and rank-metric
@@ -466,7 +476,7 @@ run.finish()
 
 - finite numeric scalars -> metric batch
 - strings and `Text(...)` -> string series
-- `Table`, `Histogram`, `Image`, `Audio`, `Video` -> rich objects
+- `Table`, `Histogram`, `ClassificationEval`, `Image`, `Audio`, `Video` -> rich objects
 - `File(...)` and `Artifact(...)` -> artifact upload
 
 Mixed `log()` calls are deterministic but not atomic across routes: metrics are sent first, then text, table/histogram objects, files, and media objects. If a later request fails, earlier requests may already be stored. In `upload_mode="spool"`, each sub-event remains one fsynced request file. Rich media object helpers still require sync mode because object linking needs the upload response.

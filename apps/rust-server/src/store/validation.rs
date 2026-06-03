@@ -173,6 +173,10 @@ pub(super) fn attribute_from_input(
             ));
         }
     }
+    if kind == "histogram_series" {
+        validate_json_size(&input.value, "object value", MAX_OBJECT_VALUE_BYTES)?;
+        validate_histogram_value(&input.value)?;
+    }
     let row = AttributeRow {
         id: data.allocate_attribute_id(org_id),
         org_id,
@@ -211,7 +215,7 @@ pub(super) fn normalize_object_kind(kind: &str) -> AppResult<String> {
     let kind = validate_name(Some(kind), "kind")?;
     match kind.as_str() {
         "histogram" => Ok("histogram_series".to_string()),
-        "table" | "image" | "video" | "audio" => Ok(kind),
+        "table" | "image" | "video" | "audio" | "classification_eval" => Ok(kind),
         _ => Err(AppError::validation("unsupported object kind")),
     }
 }
@@ -246,12 +250,394 @@ pub(super) fn validate_table_rows(rows: &[Value]) -> AppResult<()> {
 }
 
 pub(super) fn validate_histogram_value(value: &Value) -> AppResult<()> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| AppError::validation("histogram value must be an object"))?;
     let bins = value
         .get("bins")
         .and_then(Value::as_array)
         .ok_or_else(|| AppError::validation("histogram value must include bins"))?;
-    if bins.len() > MAX_HISTOGRAM_BINS {
+    let counts = value
+        .get("counts")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::validation("histogram value must include counts"))?;
+    if bins.is_empty() || counts.is_empty() {
+        return Err(AppError::validation(
+            "histogram bins and counts must not be empty",
+        ));
+    }
+    if bins.len() > MAX_HISTOGRAM_BINS + 1 {
         return Err(AppError::validation("histogram has too many bins"));
+    }
+    if counts.len() > MAX_HISTOGRAM_BINS {
+        return Err(AppError::validation("histogram has too many counts"));
+    }
+    if bins.len() != counts.len() && bins.len() != counts.len() + 1 {
+        return Err(AppError::validation(
+            "histogram bins length must match counts length or counts length plus one",
+        ));
+    }
+    for value in bins {
+        if !value
+            .as_f64()
+            .map(|number| number.is_finite())
+            .unwrap_or(false)
+        {
+            return Err(AppError::validation(
+                "histogram bins must be finite numbers",
+            ));
+        }
+    }
+    for value in counts {
+        if !value
+            .as_f64()
+            .map(|number| number.is_finite() && number >= 0.0)
+            .unwrap_or(false)
+        {
+            return Err(AppError::validation(
+                "histogram counts must be nonnegative finite numbers",
+            ));
+        }
+    }
+    if let Some(metadata) = object.get("metadata") {
+        validate_json_size(metadata, "histogram metadata", MAX_OBJECT_METADATA_BYTES)?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_classification_eval_value(value: &Value) -> AppResult<()> {
+    validate_json_size(value, "classification eval value", MAX_OBJECT_VALUE_BYTES)?;
+    validate_eval_json_bounds(value, 0)?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| AppError::validation("classification eval value must be an object"))?;
+    if object.get("schema_version").and_then(Value::as_i64) != Some(1) {
+        return Err(AppError::validation(
+            "classification eval schema_version must be 1",
+        ));
+    }
+    if object.get("task").and_then(Value::as_str) != Some("binary_classification") {
+        return Err(AppError::validation(
+            "classification eval task must be binary_classification",
+        ));
+    }
+    let class_names = validate_eval_class_names(object.get("class_names"))?;
+    let positive_label = validate_eval_label(object.get("positive_label"), "positive_label")?;
+    if !class_names.contains(&positive_label) {
+        return Err(AppError::validation(
+            "classification eval positive_label must be one of class_names",
+        ));
+    }
+    if object
+        .get("threshold_direction")
+        .and_then(Value::as_str)
+        .unwrap_or("score_gte_threshold")
+        != "score_gte_threshold"
+    {
+        return Err(AppError::validation(
+            "classification eval threshold_direction must be score_gte_threshold",
+        ));
+    }
+    if let Some(split) = object.get("split").and_then(Value::as_str) {
+        validate_eval_string(split, "split", MAX_EVAL_STRING_BYTES)?;
+    }
+    if let Some(threshold) = object.get("threshold") {
+        validate_eval_metric(threshold, "threshold")?;
+    }
+    let sample_count = object
+        .get("sample_count")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| AppError::validation("classification eval sample_count is required"))?;
+    if sample_count > MAX_EVAL_SAMPLE_COUNT {
+        return Err(AppError::validation(
+            "classification eval sample_count is too large",
+        ));
+    }
+    let matrix_total =
+        validate_eval_confusion_matrix(object.get("confusion_matrix"), sample_count)?;
+    if matrix_total != sample_count {
+        return Err(AppError::validation(
+            "classification eval sample_count must match confusion_matrix total",
+        ));
+    }
+    for metric in ["accuracy", "macro_f1"] {
+        if let Some(value) = object.get(metric) {
+            validate_eval_metric(value, metric)?;
+        }
+    }
+    validate_eval_per_class(object.get("per_class"), &class_names)?;
+    validate_eval_curve(
+        object.get("pr_curve"),
+        &["threshold", "precision", "recall"],
+        "pr_curve",
+    )?;
+    validate_eval_curve(
+        object.get("roc_curve"),
+        &["threshold", "tpr", "fpr"],
+        "roc_curve",
+    )?;
+    validate_eval_predictions(object.get("predictions"), &class_names)?;
+    Ok(())
+}
+
+fn validate_eval_json_bounds(value: &Value, depth: usize) -> AppResult<()> {
+    if depth > MAX_EVAL_JSON_DEPTH {
+        return Err(AppError::validation("classification eval JSON is too deep"));
+    }
+    match value {
+        Value::String(text) => {
+            validate_eval_bounded_string(text, "classification eval string", MAX_EVAL_STRING_BYTES)
+        }
+        Value::Array(items) => {
+            for item in items {
+                validate_eval_json_bounds(item, depth + 1)?;
+            }
+            Ok(())
+        }
+        Value::Object(object) => {
+            for (key, item) in object {
+                validate_eval_bounded_string(
+                    key,
+                    "classification eval field",
+                    MAX_EVAL_STRING_BYTES,
+                )?;
+                validate_eval_json_bounds(item, depth + 1)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_eval_bounded_string(text: &str, field: &str, max_bytes: usize) -> AppResult<()> {
+    if text.len() <= max_bytes {
+        Ok(())
+    } else {
+        Err(AppError::validation(format!("{field} is invalid")))
+    }
+}
+
+fn validate_eval_string(text: &str, field: &str, max_bytes: usize) -> AppResult<()> {
+    if !text.is_empty() {
+        validate_eval_bounded_string(text, field, max_bytes)
+    } else {
+        Err(AppError::validation(format!("{field} is invalid")))
+    }
+}
+
+fn validate_eval_required_string(text: &str, field: &str, max_bytes: usize) -> AppResult<()> {
+    if !text.trim().is_empty() {
+        validate_eval_bounded_string(text, field, max_bytes)
+    } else {
+        Err(AppError::validation(format!("{field} is invalid")))
+    }
+}
+
+fn validate_eval_class_names(value: Option<&Value>) -> AppResult<Vec<String>> {
+    let values = value
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::validation("classification eval class_names are required"))?;
+    if values.len() != 2 {
+        return Err(AppError::validation(
+            "classification eval class_names must contain exactly two labels",
+        ));
+    }
+    let mut names = Vec::new();
+    for value in values {
+        let label = validate_eval_label(Some(value), "class_name")?;
+        validate_eval_string(&label, "class_name", MAX_EVAL_CLASS_NAME_BYTES)?;
+        if names.contains(&label) {
+            return Err(AppError::validation(
+                "classification eval class_names must be unique",
+            ));
+        }
+        names.push(label);
+    }
+    Ok(names)
+}
+
+fn validate_eval_label(value: Option<&Value>, field: &str) -> AppResult<String> {
+    let label = value
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::validation(format!("classification eval {field} is required")))?;
+    validate_eval_required_string(label, field, MAX_EVAL_CLASS_NAME_BYTES)?;
+    Ok(label.to_string())
+}
+
+fn validate_eval_metric(value: &Value, field: &str) -> AppResult<()> {
+    let number = value
+        .as_f64()
+        .ok_or_else(|| AppError::validation(format!("{field} must be a finite number in 0..1")))?;
+    if number.is_finite() && (0.0..=1.0).contains(&number) {
+        Ok(())
+    } else {
+        Err(AppError::validation(format!(
+            "{field} must be a finite number in 0..1"
+        )))
+    }
+}
+
+fn validate_eval_nonnegative_integer(value: &Value, field: &str) -> AppResult<()> {
+    value
+        .as_u64()
+        .map(|_| ())
+        .ok_or_else(|| AppError::validation(format!("{field} must be a nonnegative integer")))
+}
+
+fn validate_eval_nonnegative_integer_value(value: &Value, field: &str) -> AppResult<u64> {
+    value
+        .as_u64()
+        .ok_or_else(|| AppError::validation(format!("{field} must be a nonnegative integer")))
+}
+
+fn validate_eval_confusion_matrix(value: Option<&Value>, sample_count: u64) -> AppResult<u64> {
+    let rows = value
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::validation("classification eval confusion_matrix is required"))?;
+    if rows.len() != 2 {
+        return Err(AppError::validation(
+            "classification eval confusion_matrix must be 2x2",
+        ));
+    }
+    let mut total = 0_u64;
+    for row in rows {
+        let columns = row.as_array().ok_or_else(|| {
+            AppError::validation("classification eval confusion_matrix must be 2x2")
+        })?;
+        if columns.len() != 2 {
+            return Err(AppError::validation(
+                "classification eval confusion_matrix must be 2x2",
+            ));
+        }
+        for value in columns {
+            let cell = validate_eval_nonnegative_integer_value(value, "confusion_matrix cell")?;
+            if cell > sample_count {
+                return Err(AppError::validation(
+                    "classification eval confusion_matrix cell exceeds sample_count",
+                ));
+            }
+            total = total.checked_add(cell).ok_or_else(|| {
+                AppError::validation("classification eval confusion_matrix total is too large")
+            })?;
+            if total > sample_count {
+                return Err(AppError::validation(
+                    "classification eval confusion_matrix total exceeds sample_count",
+                ));
+            }
+        }
+    }
+    Ok(total)
+}
+
+fn validate_eval_per_class(value: Option<&Value>, class_names: &[String]) -> AppResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let rows = value
+        .as_array()
+        .ok_or_else(|| AppError::validation("classification eval per_class must be an array"))?;
+    if rows.len() > 2 {
+        return Err(AppError::validation(
+            "classification eval per_class has too many rows",
+        ));
+    }
+    for row in rows {
+        let object = row.as_object().ok_or_else(|| {
+            AppError::validation("classification eval per_class rows must be objects")
+        })?;
+        let label = validate_eval_label(object.get("class_name"), "per_class class_name")?;
+        if !class_names.contains(&label) {
+            return Err(AppError::validation(
+                "classification eval per_class class_name must be in class_names",
+            ));
+        }
+        for metric in ["precision", "recall", "f1"] {
+            validate_eval_metric(
+                object
+                    .get(metric)
+                    .ok_or_else(|| AppError::validation(format!("{metric} is required")))?,
+                metric,
+            )?;
+        }
+        validate_eval_nonnegative_integer(
+            object
+                .get("support")
+                .ok_or_else(|| AppError::validation("support is required"))?,
+            "support",
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_eval_curve(value: Option<&Value>, fields: &[&str], label: &str) -> AppResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let points = value.as_array().ok_or_else(|| {
+        AppError::validation(format!("classification eval {label} must be an array"))
+    })?;
+    if points.len() > MAX_EVAL_CURVE_POINTS {
+        return Err(AppError::validation(format!(
+            "classification eval {label} has too many points"
+        )));
+    }
+    for point in points {
+        let object = point.as_object().ok_or_else(|| {
+            AppError::validation(format!(
+                "classification eval {label} points must be objects"
+            ))
+        })?;
+        for field in fields {
+            validate_eval_metric(
+                object
+                    .get(*field)
+                    .ok_or_else(|| AppError::validation(format!("{label}.{field} is required")))?,
+                &format!("{label}.{field}"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_eval_predictions(value: Option<&Value>, class_names: &[String]) -> AppResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let rows = value
+        .as_array()
+        .ok_or_else(|| AppError::validation("classification eval predictions must be an array"))?;
+    if rows.len() > MAX_EVAL_PREDICTION_ROWS {
+        return Err(AppError::validation(
+            "classification eval predictions has too many rows",
+        ));
+    }
+    for row in rows {
+        validate_json_size(row, "prediction row", MAX_EVAL_PREDICTION_ROW_BYTES)?;
+        let object = row.as_object().ok_or_else(|| {
+            AppError::validation("classification eval prediction rows must be objects")
+        })?;
+        if let Some(id) = object.get("id").and_then(Value::as_str) {
+            validate_eval_string(id, "prediction id", MAX_EVAL_STRING_BYTES)?;
+        }
+        for field in ["true_label", "predicted_label"] {
+            let label = validate_eval_label(object.get(field), field)?;
+            if !class_names.contains(&label) {
+                return Err(AppError::validation(format!(
+                    "classification eval {field} must be in class_names"
+                )));
+            }
+        }
+        validate_eval_metric(
+            object
+                .get("score")
+                .ok_or_else(|| AppError::validation("prediction score is required"))?,
+            "prediction score",
+        )?;
+        if !object.get("correct").and_then(Value::as_bool).is_some() {
+            return Err(AppError::validation(
+                "classification eval prediction correct must be boolean",
+            ));
+        }
     }
     Ok(())
 }
@@ -831,6 +1217,45 @@ mod tests {
     }
 
     #[test]
+    fn attribute_from_input_validates_histogram_series_values() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let mut data = StoreData::default();
+        let valid = AttributeInput {
+            path: "eval/scores".to_string(),
+            kind: "histogram_series".to_string(),
+            step: Some(json!(1)),
+            timestamp: None,
+            value: json!({"bins": [0, 1], "counts": [3]}),
+            summary: None,
+            artifact_id: None,
+        };
+        assert!(attribute_from_input(&mut data, org_id, run_id, valid).is_ok());
+
+        let invalid_counts = AttributeInput {
+            path: "eval/scores".to_string(),
+            kind: "histogram_series".to_string(),
+            step: Some(json!(1)),
+            timestamp: None,
+            value: json!({"bins": [0, 1], "counts": [-1]}),
+            summary: None,
+            artifact_id: None,
+        };
+        assert!(attribute_from_input(&mut data, org_id, run_id, invalid_counts).is_err());
+
+        let oversized_value = AttributeInput {
+            path: "eval/scores".to_string(),
+            kind: "histogram_series".to_string(),
+            step: Some(json!(1)),
+            timestamp: None,
+            value: json!({"bins": [0, 1], "counts": [3], "metadata": {"blob": "x".repeat(MAX_OBJECT_VALUE_BYTES)}}),
+            summary: None,
+            artifact_id: None,
+        };
+        assert!(attribute_from_input(&mut data, org_id, run_id, oversized_value).is_err());
+    }
+
+    #[test]
     fn object_value_preserves_artifact_storage_backend_for_media_previews() {
         let org_id = Uuid::from_u128(1);
         let run_id = Uuid::from_u128(2);
@@ -886,6 +1311,86 @@ mod tests {
         assert!(validate_table_rows(&[json!(["not", "object"])]).is_err());
         assert!(validate_histogram_value(&json!({"bins": [0, 1], "counts": [3]})).is_ok());
         assert!(validate_histogram_value(&json!({"counts": [3]})).is_err());
+        assert!(validate_histogram_value(&json!({"bins": [0, 1], "counts": [-1]})).is_err());
+        assert!(validate_histogram_value(&json!({"bins": [0, 1, 2], "counts": [1]})).is_err());
+        let max_edges = (0..=MAX_HISTOGRAM_BINS)
+            .map(|value| json!(value))
+            .collect::<Vec<_>>();
+        let max_counts = (0..MAX_HISTOGRAM_BINS)
+            .map(|_| json!(1))
+            .collect::<Vec<_>>();
+        assert!(
+            validate_histogram_value(&json!({"bins": max_edges, "counts": max_counts})).is_ok()
+        );
+        let too_many_edges = (0..=(MAX_HISTOGRAM_BINS + 1))
+            .map(|value| json!(value))
+            .collect::<Vec<_>>();
+        let max_counts = (0..MAX_HISTOGRAM_BINS)
+            .map(|_| json!(1))
+            .collect::<Vec<_>>();
+        assert!(
+            validate_histogram_value(&json!({"bins": too_many_edges, "counts": max_counts}))
+                .is_err()
+        );
+        let max_edges = (0..=MAX_HISTOGRAM_BINS)
+            .map(|value| json!(value))
+            .collect::<Vec<_>>();
+        let too_many_counts = (0..=MAX_HISTOGRAM_BINS)
+            .map(|_| json!(1))
+            .collect::<Vec<_>>();
+        assert!(
+            validate_histogram_value(&json!({"bins": max_edges, "counts": too_many_counts}))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn classification_eval_validation_enforces_binary_schema_and_bounds() {
+        let valid = json!({
+            "schema_version": 1,
+            "task": "binary_classification",
+            "split": "validation",
+            "positive_label": "positive",
+            "threshold": 0.5,
+            "threshold_direction": "score_gte_threshold",
+            "class_names": ["negative", "positive"],
+            "sample_count": 4,
+            "confusion_matrix": [[2, 0], [1, 1]],
+            "per_class": [
+                {"class_name": "negative", "precision": 0.67, "recall": 1.0, "f1": 0.8, "support": 2},
+                {"class_name": "positive", "precision": 1.0, "recall": 0.5, "f1": 0.67, "support": 2}
+            ],
+            "accuracy": 0.75,
+            "macro_f1": 0.735,
+            "pr_curve": [{"threshold": 0.5, "precision": 1.0, "recall": 0.5}],
+            "roc_curve": [{"threshold": 0.5, "tpr": 0.5, "fpr": 0.0}],
+            "predictions": [{"id": "ex-1", "true_label": "positive", "predicted_label": "positive", "score": 0.9, "correct": true}],
+            "metadata": {"notes": ""}
+        });
+        assert!(validate_classification_eval_value(&valid).is_ok());
+        assert!(normalize_object_kind("classification_eval").is_ok());
+
+        let mut bad_task = valid.clone();
+        bad_task["task"] = json!("multiclass");
+        assert!(validate_classification_eval_value(&bad_task).is_err());
+
+        let mut bad_matrix = valid.clone();
+        bad_matrix["confusion_matrix"] = json!([[1, 2, 3], [4, 5, 6]]);
+        assert!(validate_classification_eval_value(&bad_matrix).is_err());
+
+        let mut bad_sample_count = valid.clone();
+        bad_sample_count["sample_count"] = json!(999);
+        assert!(validate_classification_eval_value(&bad_sample_count).is_err());
+
+        let mut overflowing_matrix = valid.clone();
+        overflowing_matrix["confusion_matrix"] = json!([[u64::MAX, 0], [0, 0]]);
+        assert!(validate_classification_eval_value(&overflowing_matrix).is_err());
+
+        let mut too_many_predictions = valid.clone();
+        too_many_predictions["predictions"] = json!((0..=MAX_EVAL_PREDICTION_ROWS).map(|index| {
+            json!({"id": format!("ex-{index}"), "true_label": "positive", "predicted_label": "positive", "score": 0.9, "correct": true})
+        }).collect::<Vec<_>>());
+        assert!(validate_classification_eval_value(&too_many_predictions).is_err());
     }
 
     #[test]

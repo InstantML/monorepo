@@ -104,6 +104,7 @@ pub async fn create_object(
     let mut value = input
         .value
         .unwrap_or_else(|| json!({ "kind": requested_kind, "metadata": metadata.clone() }));
+    validate_json_size(&value, "object value", MAX_OBJECT_VALUE_BYTES)?;
     let rows = input.rows.unwrap_or_default();
     if is_table {
         validate_table_rows(&rows)?;
@@ -114,6 +115,8 @@ pub async fn create_object(
     }
     if kind == "histogram_series" {
         validate_histogram_value(&value)?;
+    } else if kind == "classification_eval" {
+        validate_classification_eval_value(&value)?;
     }
     let mut data = store.data.lock().await;
     let run = fetch_run_in_data(&data, ctx, run_id)?;
@@ -237,7 +240,7 @@ pub async fn list_objects(
         .filter(|row| {
             matches!(
                 row.kind.as_str(),
-                "table" | "image" | "video" | "audio" | "histogram_series"
+                "table" | "image" | "video" | "audio" | "histogram_series" | "classification_eval"
             )
         })
         .filter(|row| {

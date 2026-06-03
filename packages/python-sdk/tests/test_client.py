@@ -17,6 +17,7 @@ import pytest
 import instantml as ro
 import instantml.async_queue as async_queue
 import instantml.client as client_module
+import instantml.serialization as serialization_module
 import instantml.source as source_module
 import instantml.uploader as uploader
 from instantml.async_queue import AsyncQueueRepository, DeliveryResult, EnqueueBatchResult, drain_queue_once
@@ -1438,6 +1439,181 @@ def test_rich_object_helper_edge_cases(tmp_path):
         run.log_image("images/missing", str(tmp_path / "missing.png"), step=1)
     with pytest.raises(TypeError, match="unsupported"):
         run._log_rich_object("x", object(), step=1, metadata=None)
+
+
+def test_log_classification_eval_builds_binary_eval_object(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {"object": {"id": len(calls), **body}}
+
+    run = ro.Run(client=FakeClient(), run_id="run-1")
+    result = run.log_classification_eval(
+        "eval/classification",
+        y_true=[0, 1, 1, 0],
+        y_score=[0.1, 0.8, 0.7, 0.2],
+        class_names=["negative", "positive"],
+        positive_label="positive",
+        split="validation",
+        threshold=0.5,
+        predictions=[{"id": "ex-1"}],
+        metadata={"dataset": "holdout"},
+        step=4,
+    )
+
+    assert result["kind"] == "classification_eval"
+    assert calls[0][1] == "/api/runs/run-1/objects"
+    payload = calls[0][2]
+    assert payload["key"] == "eval/classification"
+    assert payload["kind"] == "classification_eval"
+    assert payload["step"] == 4
+    assert payload["metadata"] == {"dataset": "holdout"}
+    assert payload["summary"]["sample_count"] == 4
+    assert payload["summary"]["accuracy"] == 1.0
+    value = payload["value"]
+    assert value["schema_version"] == 1
+    assert value["task"] == "binary_classification"
+    assert value["threshold_direction"] == "score_gte_threshold"
+    assert value["class_names"] == ["negative", "positive"]
+    assert value["confusion_matrix"] == [[2, 0], [0, 2]]
+    assert value["per_class"][1]["precision"] == 1.0
+    assert value["per_class"][1]["recall"] == 1.0
+    assert value["predictions"][0] == {
+        "id": "ex-1",
+        "true_label": "negative",
+        "predicted_label": "negative",
+        "score": 0.1,
+        "correct": True,
+    }
+    assert len(value["pr_curve"]) == 4
+    assert len(value["roc_curve"]) == 4
+    assert value["metadata"] == {"dataset": "holdout"}
+
+    generic = run.log_objects({
+        "eval/wrapper": ro.ClassificationEval(
+            y_true=["negative", "positive"],
+            y_score=[0.4, 0.6],
+            class_names=["negative", "positive"],
+        )
+    }, step=5)[0]
+    assert generic["kind"] == "classification_eval"
+    assert calls[1][2]["summary"]["accuracy"] == 1.0
+
+    run.log_classification_eval(
+        "eval/many-thresholds",
+        y_true=[index % 2 for index in range(1000)],
+        y_score=[index / 999 for index in range(1000)],
+        class_names=["negative", "positive"],
+    )
+    many_thresholds_value = calls[2][2]["value"]
+    assert len(many_thresholds_value["pr_curve"]) == 200
+    assert len(many_thresholds_value["roc_curve"]) == 200
+    assert many_thresholds_value["pr_curve"][0]["threshold"] > many_thresholds_value["pr_curve"][-1]["threshold"]
+
+
+def test_log_classification_eval_accepts_tuple_inputs_and_explicit_predictions():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {"object": {"id": len(calls), **body}}
+
+    run = ro.Run(client=FakeClient(), run_id="run-1")
+    result = run.log_classification_eval(
+        "eval/explicit",
+        y_true=(0, 1),
+        y_score=(0.7, 0.4),
+        y_pred=(1, 0),
+        class_names=("negative", "positive"),
+    )
+
+    assert result["kind"] == "classification_eval"
+    value = calls[0][2]["value"]
+    assert value["confusion_matrix"] == [[0, 1], [1, 0]]
+    assert value["accuracy"] == 0.0
+
+
+def test_log_classification_eval_validates_inputs(monkeypatch):
+    class FailingClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            raise AssertionError("network should not be used for invalid eval payloads")
+
+    run = ro.Run(client=FailingClient(), run_id="run-1")
+    with pytest.raises(ValueError, match="at least one sample"):
+        run.log_classification_eval("eval/bad", y_true=[], y_score=[])
+    monkeypatch.setattr(serialization_module, "MAX_CLASSIFICATION_EVAL_SAMPLE_COUNT", 1)
+    with pytest.raises(ValueError, match="at most 1 samples"):
+        run.log_classification_eval("eval/bad", y_true=[0, 1], y_score=[0.1, 0.2])
+    monkeypatch.setattr(serialization_module, "MAX_CLASSIFICATION_EVAL_SAMPLE_COUNT", 1_000_000)
+    with pytest.raises(TypeError, match="must be a list"):
+        run.log_classification_eval("eval/bad", y_true="bad", y_score=[0.1])
+    with pytest.raises(ValueError, match="exactly two"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1], class_names=["negative"])
+    with pytest.raises(ValueError, match="same length"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1, 0.2])
+    with pytest.raises(ValueError, match="y_pred"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1], y_pred=[0, 1])
+    with pytest.raises(ValueError, match="class_names"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1], class_names=["same", "same"])
+    with pytest.raises(ValueError, match="128 bytes"):
+        run.log_classification_eval(
+            "eval/bad",
+            y_true=[0],
+            y_score=[0.1],
+            class_names=["negative", "p" * 129],
+        )
+    with pytest.raises(ValueError, match="0..1"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[1.2])
+    with pytest.raises(TypeError, match="threshold"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.2], threshold="high")
+    with pytest.raises(ValueError, match="threshold"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.2], threshold=1.5)
+    with pytest.raises(TypeError, match="strings or class indices"):
+        run.log_classification_eval("eval/bad", y_true=[True], y_score=[0.2])
+    with pytest.raises(ValueError, match="class indices"):
+        run.log_classification_eval("eval/bad", y_true=[2], y_score=[0.2])
+    with pytest.raises(ValueError, match="class_names"):
+        run.log_classification_eval("eval/bad", y_true=["missing"], y_score=[0.2])
+    with pytest.raises(TypeError, match="strings or class indices"):
+        run.log_classification_eval("eval/bad", y_true=[object()], y_score=[0.2])
+    with pytest.raises(TypeError, match="predictions"):
+        serialization_module._normalize_eval_predictions(
+            {"id": "ex-1"},
+            ["negative"],
+            ["negative"],
+            [0.2],
+            ["negative", "positive"],
+        )
+    with pytest.raises(ValueError, match="at most 100"):
+        run.log_classification_eval(
+            "eval/bad",
+            y_true=[0],
+            y_score=[0.2],
+            predictions=[{"id": f"ex-{index}"} for index in range(101)],
+        )
+    with pytest.raises(TypeError, match="correct"):
+        run.log_classification_eval(
+            "eval/bad",
+            y_true=[0],
+            y_score=[0.2],
+            predictions=[{"id": "ex-1", "correct": "yes"}],
+        )
+    with pytest.raises(TypeError, match="prediction rows"):
+        run.log_classification_eval(
+            "eval/bad",
+            y_true=[0],
+            y_score=[0.2],
+            predictions=[object()],
+        )
 
 
 def test_context_manager_finishes_successfully():

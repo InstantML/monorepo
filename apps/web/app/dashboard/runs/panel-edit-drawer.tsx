@@ -3,19 +3,20 @@
 import { useLayoutEffect, useState } from "react";
 import { X } from "lucide-react";
 
-import { defaultScatterFields, fieldLabel, parseFieldId } from "../../../src/dashboard-panels.js";
+import { categoricalFieldLabel, defaultDistributionFields, defaultScatterFields, fieldLabel, parseCategoricalFieldId, parseFieldId } from "../../../src/dashboard-panels.js";
 import { WORKSPACE_PANEL_TYPES, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import type { SelectOption } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { resolveWorkspaceSettings } from "./panel-settings";
-import type { WorkspaceFieldOption, WorkspacePanel, WorkspacePanelSettings, WorkspacePanelType, WorkspaceSection, WorkspaceView } from "../../dashboard-types";
+import type { WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelSettings, WorkspacePanelType, WorkspaceSection, WorkspaceView } from "../../dashboard-types";
 
 function workspacePanelTypesFromValue(value: string): WorkspacePanelType {
   return WORKSPACE_PANEL_TYPES.includes(value as WorkspacePanelType) ? value as WorkspacePanelType : "line";
 }
 
 export function PanelEditDrawer({
+  categoricalFieldOptions,
   fieldOptions,
   metricOptions,
   onClose,
@@ -24,10 +25,22 @@ export function PanelEditDrawer({
   section,
   view,
 }: {
+  categoricalFieldOptions: WorkspaceCategoricalFieldOption[];
   fieldOptions: WorkspaceFieldOption[];
   metricOptions: string[];
   onClose: () => void;
-  onUpdate: (patch: { title?: string; type?: WorkspacePanelType; metricKey?: string; xField?: string; yField?: string; settings?: Partial<WorkspacePanelSettings> }) => void;
+  onUpdate: (patch: {
+    title?: string;
+    type?: WorkspacePanelType;
+    metricKey?: string;
+    xField?: string;
+    yField?: string;
+    valueField?: string;
+    groupField?: string;
+    replicateField?: string;
+    objectKey?: string;
+    settings?: Partial<WorkspacePanelSettings>;
+  }) => void;
   panel: WorkspacePanel;
   section: WorkspaceSection;
   view: WorkspaceView;
@@ -36,9 +49,14 @@ export function PanelEditDrawer({
   const drawerRef = useFocusTrap<HTMLElement>(true, onClose, "input, button[aria-label='Close edit panel']");
   const side = useDrawerSide(panel.id);
   const isValidField = (value: string | undefined): value is string => Boolean(value && parseFieldId(value));
+  const isValidCategoricalField = (value: string | undefined): value is string => Boolean(value && parseCategoricalFieldId(value));
   const fallbackScatterFields = defaultScatterFields(panel.metricKey, fieldOptions);
   const defaultXField = isValidField(panel.xField) ? panel.xField : fallbackScatterFields.xField;
   const defaultYField = isValidField(panel.yField) ? panel.yField : fallbackScatterFields.yField;
+  const fallbackDistributionFields = defaultDistributionFields(panel.metricKey, fieldOptions, categoricalFieldOptions);
+  const defaultValueField = panel.type === "distribution" && isValidField(panel.valueField) ? panel.valueField : fallbackDistributionFields.valueField;
+  const defaultGroupField = panel.type === "distribution" && isValidCategoricalField(panel.groupField) ? panel.groupField : fallbackDistributionFields.groupField;
+  const defaultReplicateField = panel.type === "distribution" && isValidCategoricalField(panel.replicateField) ? panel.replicateField : fallbackDistributionFields.replicateField;
   const fieldSelectOptionMap = new Map<string, SelectOption>();
   for (const field of fieldOptions) {
     const runWord = field.availableCount === 1 ? "run" : "runs";
@@ -54,6 +72,22 @@ export function PanelEditDrawer({
     }
   }
   const fieldSelectOptions = [...fieldSelectOptionMap.values()];
+  const categoricalSelectOptionMap = new Map<string, SelectOption>();
+  categoricalSelectOptionMap.set("", { value: "", label: "None", description: "Do not group by a categorical field" });
+  for (const field of categoricalFieldOptions) {
+    const runWord = field.availableCount === 1 ? "run" : "runs";
+    categoricalSelectOptionMap.set(field.id, {
+      value: field.id,
+      label: field.label,
+      description: `${field.groupCount} groups across ${field.availableCount} ${runWord}`,
+    });
+  }
+  for (const fieldId of [panel.type === "distribution" ? panel.groupField : undefined, panel.type === "distribution" ? panel.replicateField : undefined]) {
+    if (isValidCategoricalField(fieldId) && !categoricalSelectOptionMap.has(fieldId)) {
+      categoricalSelectOptionMap.set(fieldId, { value: fieldId, label: categoricalFieldLabel(fieldId), description: "Saved field not present in loaded runs" });
+    }
+  }
+  const categoricalSelectOptions = [...categoricalSelectOptionMap.values()];
   function updateType(value: string) {
     const type = workspacePanelTypesFromValue(value);
     if (type === "scatter") {
@@ -61,6 +95,22 @@ export function PanelEditDrawer({
         type,
         xField: defaultXField,
         yField: defaultYField,
+      });
+      return;
+    }
+    if (type === "distribution") {
+      onUpdate({
+        type,
+        valueField: defaultValueField,
+        groupField: defaultGroupField,
+        replicateField: defaultReplicateField,
+      });
+      return;
+    }
+    if (type === "histogram_timeline") {
+      onUpdate({
+        type,
+        objectKey: panel.type === "histogram_timeline" ? panel.objectKey : panel.metricKey,
       });
       return;
     }
@@ -105,6 +155,44 @@ export function PanelEditDrawer({
             value={isValidField(panel.yField) ? panel.yField : fieldSelectOptions.find((option) => option.value !== panel.xField)?.value ?? fieldSelectOptions[0]?.value ?? ""}
           />
         </>
+      ) : panel.type === "distribution" ? (
+        <>
+          <CustomSelect
+            className="full"
+            disabled={!fieldSelectOptions.length}
+            id="edit-panel-value-field"
+            label="Value field"
+            onChange={(valueField) => onUpdate({ valueField })}
+            options={fieldSelectOptions.length ? fieldSelectOptions : [{ value: "", label: "No numeric fields" }]}
+            value={defaultValueField}
+          />
+          <CustomSelect
+            className="full"
+            id="edit-panel-group-field"
+            label="Group field"
+            onChange={(groupField) => onUpdate({ groupField })}
+            options={categoricalSelectOptions}
+            value={defaultGroupField ?? ""}
+          />
+          <CustomSelect
+            className="full"
+            id="edit-panel-replicate-field"
+            label="Replicate field"
+            onChange={(replicateField) => onUpdate({ replicateField })}
+            options={categoricalSelectOptions}
+            value={defaultReplicateField ?? ""}
+          />
+        </>
+      ) : panel.type === "histogram_timeline" ? (
+        <label className="control full">
+          Object key
+          <input
+            aria-label="Histogram object key"
+            value={panel.objectKey}
+            onChange={(event) => onUpdate({ objectKey: event.target.value, metricKey: event.target.value })}
+            placeholder="eval/score_distribution"
+          />
+        </label>
       ) : (
         <>
           <CustomSelect
@@ -139,11 +227,13 @@ export function PanelEditDrawer({
           />
         </>
       )}
-      <label className="control full">
-        Max runs to show
-        <input aria-label="Max runs to show" type="number" min="1" max="25" value={settings.maxRuns} onChange={(event) => onUpdate({ settings: { maxRuns: Number(event.target.value) } })} />
-      </label>
-      {panel.type !== "scatter" ? (
+      {panel.type === "histogram_timeline" ? null : (
+        <label className="control full">
+          Max runs to show
+          <input aria-label="Max runs to show" type="number" min="1" max="25" value={settings.maxRuns} onChange={(event) => onUpdate({ settings: { maxRuns: Number(event.target.value) } })} />
+        </label>
+      )}
+      {panel.type === "line" ? (
         <>
           <label className="control full">
             Smoothing
