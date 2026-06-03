@@ -88,7 +88,7 @@ Reference elements to adapt:
 
 - W&B: dark global header, left app rail, run selector sidebar, workspace toolbar, panel sections, add-panel drawer, full-screen panel editor.
 - InstantML: keep the existing topbar and rail. Inside the `Runs` tab, use a two-layer workspace:
-  - `runs-workspace-filter`: a full-width top rectangle containing project/status/search/sort/metric/table controls.
+  - `runs-workspace-filter`: a full-width top rectangle containing project/status/search/sort/metric/table controls. Passive run totals should stay folded into actionable controls such as the status filter labels, not a separate stat strip.
   - `runs-workspace-layout`: left run selector plus main canvas.
   - `workspace-canvas`: panel toolbar, sections, and add-section footer.
   - `panel-drawer`: right-side add/edit drawer on desktop; full-width sheet on mobile.

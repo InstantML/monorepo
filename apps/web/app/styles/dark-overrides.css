@@ -331,7 +331,6 @@
   background: #0e1623;
 }
 
-:root[data-theme="dark"] .stat,
 :root[data-theme="dark"] .analysis-stat,
 :root[data-theme="dark"] .section-title-button span,
 :root[data-theme="dark"] .shortcut-row,

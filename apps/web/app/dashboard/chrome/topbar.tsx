@@ -12,7 +12,7 @@ import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import { CustomSelect } from "../ui/select";
 import type { SelectOption } from "../ui/select";
-import type { TabId } from "../../dashboard-types";
+import type { Overview, TabId } from "../../dashboard-types";
 import { useFocusTrap } from "../ui/use-focus-trap";
 
 export type OrgMembershipSummary = {
@@ -52,6 +52,10 @@ export type WorkspaceNameAvailability = {
 };
 
 const ORG_SWITCHER_SEARCH_THRESHOLD = 7;
+
+function countSuffix(count: number) {
+  return ` (${new Intl.NumberFormat("en-US").format(Math.max(0, count))})`;
+}
 
 type AccountUser = {
   primary_email?: string | null;
@@ -607,6 +611,7 @@ export function DashboardTopbar({
   orgSwitchBusy,
   orgSwitchError,
   onSwitchOrg,
+  overview,
   planLabel,
   project,
   projects,
@@ -655,6 +660,7 @@ export function DashboardTopbar({
   orgSwitchBusy: boolean;
   orgSwitchError: string;
   onSwitchOrg: (orgId: string) => void;
+  overview: Overview;
   planLabel: string;
   project: string;
   projects: string[];
@@ -687,6 +693,14 @@ export function DashboardTopbar({
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
   const workbarInert = compactFilters && !mobileFiltersOpen;
+  const showStatusCounts = !status;
+  const finishedRuns = Math.max(0, overview.total_runs - overview.active_runs - overview.failed_runs);
+  const statusOptions: SelectOption[] = [
+    { value: "", label: `All${showStatusCounts ? countSuffix(overview.total_runs) : ""}` },
+    { value: "running", label: `Running${showStatusCounts ? countSuffix(overview.active_runs) : ""}` },
+    { value: "finished", label: `Finished${showStatusCounts ? countSuffix(finishedRuns) : ""}` },
+    { value: "failed", label: `Failed${showStatusCounts ? countSuffix(overview.failed_runs) : ""}` },
+  ];
   const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
     ? ` Column ${searchError.position}.`
     : "";
@@ -849,12 +863,7 @@ export function DashboardTopbar({
             label="Status"
             value={status}
             onChange={onStatus}
-            options={[
-              { value: "", label: "All" },
-              { value: "running", label: "Running" },
-              { value: "finished", label: "Finished" },
-              { value: "failed", label: "Failed" },
-            ]}
+            options={statusOptions}
           />
           <span className="workbar-divider" aria-hidden="true" />
           <div

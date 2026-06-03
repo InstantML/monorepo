@@ -119,9 +119,10 @@ async fn create_api_key_inner(
     ensure_billing_write_allowed(store, org_id, "create API keys").await?;
     require_org_storage_ready(&org)?;
     store.ensure_tenant_route(&org).await?;
-    let mut data = store.data.lock().await;
-    let project_id =
-        resolve_key_project(&data, org_id, input.project_id, input.project.as_deref())?;
+    let project_id = {
+        let data = store.data.lock().await;
+        resolve_key_project(&data, org_id, input.project_id, input.project.as_deref())?
+    };
     let demo_org = is_shared_demo_org(&org);
     let default_scopes = if demo_org {
         DEMO_API_KEY_SCOPES
@@ -176,6 +177,7 @@ async fn create_api_key_inner(
     store
         .persist_locked("api_key", org_id, &key.id.to_string(), &record)
         .await?;
+    let mut data = store.data.lock().await;
     data.service_accounts
         .insert(service_account.id, service_account.clone());
     data.insert_api_key(record);
@@ -209,17 +211,19 @@ pub async fn revoke_api_key(
     org_id: Uuid,
     api_key_id: Uuid,
 ) -> AppResult<PublicApiKeyRow> {
-    let mut data = store.data.lock().await;
-    let mut record = data
-        .api_keys
-        .get(&api_key_id)
-        .cloned()
-        .filter(|key| key.row.org_id == org_id)
-        .ok_or_else(|| AppError::not_found("api key not found"))?;
+    let mut record = {
+        let data = store.data.lock().await;
+        data.api_keys
+            .get(&api_key_id)
+            .cloned()
+            .filter(|key| key.row.org_id == org_id)
+            .ok_or_else(|| AppError::not_found("api key not found"))?
+    };
     record.row.revoked_at = Some(Utc::now());
     store
         .persist_locked("api_key", org_id, &api_key_id.to_string(), &record)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_api_key(record.clone());
     Ok(record.row)
 }
@@ -229,17 +233,19 @@ pub async fn disable_service_account(
     org_id: Uuid,
     service_account_id: Uuid,
 ) -> AppResult<ServiceAccountRow> {
-    let mut data = store.data.lock().await;
-    let mut row = data
-        .service_accounts
-        .get(&service_account_id)
-        .cloned()
-        .filter(|account| account.org_id == org_id)
-        .ok_or_else(|| AppError::not_found("service account not found"))?;
+    let mut row = {
+        let data = store.data.lock().await;
+        data.service_accounts
+            .get(&service_account_id)
+            .cloned()
+            .filter(|account| account.org_id == org_id)
+            .ok_or_else(|| AppError::not_found("service account not found"))?
+    };
     row.disabled_at = Some(Utc::now());
     store
         .persist_locked("service_account", org_id, &row.id.to_string(), &row)
         .await?;
+    let mut data = store.data.lock().await;
     data.service_accounts.insert(row.id, row.clone());
     Ok(row)
 }

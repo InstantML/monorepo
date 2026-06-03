@@ -5,10 +5,8 @@ InstantML is a training-loop observability SDK for logging runs, scalar metrics,
 ## Install
 
 ```bash
-pip install --pre instantml
+pip install instantml
 ```
-
-(The `--pre` flag opts in to the current alpha. Drop it once `0.1.0` ships.)
 
 ## Log in
 

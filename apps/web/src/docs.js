@@ -117,7 +117,7 @@ const loadDocsMarkdownByPath = cache(async function loadDocsMarkdownByPath(pageP
 });
 
 export async function loadDocsMarkdownIndex() {
-  const pages = await markdownPagesFromConfig();
+  const pages = await loadPublicDocsPages();
   const lines = [
     "# InstantML Docs",
     "",
@@ -135,7 +135,7 @@ export async function loadDocsMarkdownIndex() {
 }
 
 export async function loadDocsMarkdownFull() {
-  const pages = await markdownPagesFromConfig();
+  const pages = await loadPublicDocsPages();
   const sections = [
     "# InstantML Docs",
     "",
@@ -403,7 +403,7 @@ async function apiReferenceMarkdown() {
   ].filter((line, index, lines) => line || lines[index - 1] !== "").join("\n").trimEnd() + "\n";
 }
 
-const markdownPagesFromConfig = cache(async function markdownPagesFromConfig() {
+export const loadPublicDocsPages = cache(async function loadPublicDocsPages() {
   const config = await loadDocsConfig();
   const navigation = flattenDocsNavigation(config);
   const pages = [];

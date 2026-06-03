@@ -216,7 +216,10 @@ production. It reads the public MDX/OpenAPI source from `apps/docs`, so run
 still useful for validating the Mintlify source view, but it is not required
 for the Next `/docs` route. The app also rewrites `/docs/:path*.md` to a
 Markdown response generated from the same source so agents can read pages such
-as `/docs/quickstart.md` without HTML.
+as `/docs/quickstart.md` without HTML. Public docs pages are included in
+`/sitemap.xml` from `apps/docs/docs.json` navigation and each rendered docs URL
+sets a self-referencing canonical, so route metadata should be updated alongside
+docs routing changes.
 
 Staging and production frontend builds must use a
 `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as the
@@ -338,7 +341,7 @@ The hosted ClickHouse smoke is API/SDK-facing rather than browser-facing: it sig
 
 The smoke also covers the keyboard-workflow MVP: shortcut help, quick search to run detail, compact rail-label search for long run names, Runs selector collapse/restore, Runs/canvas focus handoff, `Esc` drawer dismissal, workspace undo/redo, and fullscreen panel arrow traversal.
 
-The Runs workspace keeps its summary/filter block pinned below the top bar on desktop, with both the selector rail and panel toolbar pinned underneath it while panel sections scroll. The run rail uses compact selected-run rows and a fixed footer so pagination controls remain visible.
+The Runs workspace keeps its filter/command block pinned below the top bar on desktop, with run totals folded into the status filter labels instead of a separate stat strip. The selector rail and panel toolbar pin underneath it while panel sections scroll. The run rail uses compact selected-run rows and a fixed footer so pagination controls remain visible.
 
 Pagination coverage includes Rust cursor requests, cursor clearing after filter changes, Previous-page behavior, and deprecated Node offset fallback.
 

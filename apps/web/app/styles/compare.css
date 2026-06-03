@@ -998,7 +998,6 @@ button.compare-row-head.active {
   .metrics-grid,
   .detail-grid,
   .artifact-grid,
-  .stat-grid,
   .tab-grid.two-col,
   .settings-grid {
     grid-template-columns: 1fr;
