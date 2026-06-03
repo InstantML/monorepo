@@ -17,6 +17,7 @@ import pytest
 import instantml as ro
 import instantml.async_queue as async_queue
 import instantml.client as client_module
+import instantml.serialization as serialization_module
 import instantml.source as source_module
 import instantml.uploader as uploader
 from instantml.async_queue import AsyncQueueRepository, DeliveryResult, EnqueueBatchResult, drain_queue_once
@@ -1514,7 +1515,32 @@ def test_log_classification_eval_builds_binary_eval_object(monkeypatch):
     assert many_thresholds_value["pr_curve"][0]["threshold"] > many_thresholds_value["pr_curve"][-1]["threshold"]
 
 
-def test_log_classification_eval_validates_inputs():
+def test_log_classification_eval_accepts_tuple_inputs_and_explicit_predictions():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {"object": {"id": len(calls), **body}}
+
+    run = ro.Run(client=FakeClient(), run_id="run-1")
+    result = run.log_classification_eval(
+        "eval/explicit",
+        y_true=(0, 1),
+        y_score=(0.7, 0.4),
+        y_pred=(1, 0),
+        class_names=("negative", "positive"),
+    )
+
+    assert result["kind"] == "classification_eval"
+    value = calls[0][2]["value"]
+    assert value["confusion_matrix"] == [[0, 1], [1, 0]]
+    assert value["accuracy"] == 0.0
+
+
+def test_log_classification_eval_validates_inputs(monkeypatch):
     class FailingClient:
         offline_dir = None
 
@@ -1522,8 +1548,20 @@ def test_log_classification_eval_validates_inputs():
             raise AssertionError("network should not be used for invalid eval payloads")
 
     run = ro.Run(client=FailingClient(), run_id="run-1")
+    with pytest.raises(ValueError, match="at least one sample"):
+        run.log_classification_eval("eval/bad", y_true=[], y_score=[])
+    monkeypatch.setattr(serialization_module, "MAX_CLASSIFICATION_EVAL_SAMPLE_COUNT", 1)
+    with pytest.raises(ValueError, match="at most 1 samples"):
+        run.log_classification_eval("eval/bad", y_true=[0, 1], y_score=[0.1, 0.2])
+    monkeypatch.setattr(serialization_module, "MAX_CLASSIFICATION_EVAL_SAMPLE_COUNT", 1_000_000)
+    with pytest.raises(TypeError, match="must be a list"):
+        run.log_classification_eval("eval/bad", y_true="bad", y_score=[0.1])
+    with pytest.raises(ValueError, match="exactly two"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1], class_names=["negative"])
     with pytest.raises(ValueError, match="same length"):
         run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1, 0.2])
+    with pytest.raises(ValueError, match="y_pred"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1], y_pred=[0, 1])
     with pytest.raises(ValueError, match="class_names"):
         run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.1], class_names=["same", "same"])
     with pytest.raises(ValueError, match="128 bytes"):
@@ -1535,8 +1573,26 @@ def test_log_classification_eval_validates_inputs():
         )
     with pytest.raises(ValueError, match="0..1"):
         run.log_classification_eval("eval/bad", y_true=[0], y_score=[1.2])
+    with pytest.raises(TypeError, match="threshold"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.2], threshold="high")
+    with pytest.raises(ValueError, match="threshold"):
+        run.log_classification_eval("eval/bad", y_true=[0], y_score=[0.2], threshold=1.5)
+    with pytest.raises(TypeError, match="strings or class indices"):
+        run.log_classification_eval("eval/bad", y_true=[True], y_score=[0.2])
     with pytest.raises(ValueError, match="class indices"):
         run.log_classification_eval("eval/bad", y_true=[2], y_score=[0.2])
+    with pytest.raises(ValueError, match="class_names"):
+        run.log_classification_eval("eval/bad", y_true=["missing"], y_score=[0.2])
+    with pytest.raises(TypeError, match="strings or class indices"):
+        run.log_classification_eval("eval/bad", y_true=[object()], y_score=[0.2])
+    with pytest.raises(TypeError, match="predictions"):
+        serialization_module._normalize_eval_predictions(
+            {"id": "ex-1"},
+            ["negative"],
+            ["negative"],
+            [0.2],
+            ["negative", "positive"],
+        )
     with pytest.raises(ValueError, match="at most 100"):
         run.log_classification_eval(
             "eval/bad",
@@ -1550,6 +1606,13 @@ def test_log_classification_eval_validates_inputs():
             y_true=[0],
             y_score=[0.2],
             predictions=[{"id": "ex-1", "correct": "yes"}],
+        )
+    with pytest.raises(TypeError, match="prediction rows"):
+        run.log_classification_eval(
+            "eval/bad",
+            y_true=[0],
+            y_score=[0.2],
+            predictions=[object()],
         )
 
 
