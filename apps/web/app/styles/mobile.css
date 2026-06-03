@@ -349,7 +349,7 @@
     padding: 4px 4px 6px;
   }
 
-  /* ── Stats / commandbar / filter island ──────────────────────────────── */
+  /* ── Commandbar / filter island ──────────────────────────────────────── */
   .runs-workspace-filter {
     position: sticky;
     top: var(--topbar-height);
@@ -357,16 +357,6 @@
     border-radius: var(--radius);
     gap: 8px;
   }
-  .stat-grid,
-  .runs-workspace-filter .stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-  }
-  .stat {
-    min-height: 52px;
-    padding: 8px 10px;
-  }
-  .stat strong { font-size: 16px; }
 
   .runs-commandbar {
     display: grid;
@@ -699,8 +689,7 @@
 }
 
 @media (max-width: 480px) {
-  .run-kpi-grid,
-  .stat-grid {
+  .run-kpi-grid {
     grid-template-columns: 1fr;
   }
   .runs-commandbar {
@@ -1088,8 +1077,6 @@
     flex: 0 0 auto;
   }
 
-  /* L10: stat-grid 5th orphan stat — hide on mobile (lowest-actionable stat). */
-  .stat-grid > .stat:nth-child(5) { display: none; }
 }
 
 /* ── Touch / coarse-pointer specific ─────────────────────────────────────

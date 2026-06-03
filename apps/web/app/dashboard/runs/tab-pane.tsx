@@ -6,11 +6,9 @@ import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
 import { RunsCommandbar } from "./runs-commandbar";
 import { RunsWorkspace } from "./runs-workspace";
-import { Stats } from "./runs-stats";
 import { WorkspacePanelCard } from "./workspace-panel-card";
 import { fieldLabel } from "../../../src/dashboard-panels.js";
-import { formatNumber } from "../../../src/state.js";
-import type { HistogramTimelineState, Overview, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
+import type { HistogramTimelineState, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 
@@ -93,7 +91,6 @@ type Props = {
   orgMemberships: OrgMembershipSummary[];
   orgName: string;
   orgSwitchBusy: boolean;
-  overview: Overview;
   pageEnd: number;
   pageSize: number;
   pageStart: number;
@@ -181,7 +178,6 @@ export function RunsTabPane({
   orgMemberships,
   orgName,
   orgSwitchBusy,
-  overview,
   pageEnd,
   pageSize,
   pageStart,
@@ -254,7 +250,6 @@ export function RunsTabPane({
         </>
       ) : null}
       <div className="runs-workspace-filter">
-        <Stats overview={overview} metricKey={metricKey} />
         <RunsCommandbar
           columnsOpen={columnsOpen}
           exportSelectedBusy={exportSelectedBusy}

@@ -540,7 +540,7 @@ try {
       .filter(Boolean));
     throw new Error(`saved-view workspace panels did not restore expected metric set; saw ${JSON.stringify(panelKeys)}: ${error.message}`);
   });
-  await page.waitForFunction(() => document.querySelector(".stat strong")?.textContent?.trim() === "30");
+  await page.waitForFunction(() => document.querySelector("#status-filter option[value='']")?.textContent?.trim() === "All (30)");
   await chooseSelect(page, "#project-filter", "demo");
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });

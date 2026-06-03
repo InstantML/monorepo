@@ -338,7 +338,7 @@ The hosted ClickHouse smoke is API/SDK-facing rather than browser-facing: it sig
 
 The smoke also covers the keyboard-workflow MVP: shortcut help, quick search to run detail, compact rail-label search for long run names, Runs selector collapse/restore, Runs/canvas focus handoff, `Esc` drawer dismissal, workspace undo/redo, and fullscreen panel arrow traversal.
 
-The Runs workspace keeps its summary/filter block pinned below the top bar on desktop, with both the selector rail and panel toolbar pinned underneath it while panel sections scroll. The run rail uses compact selected-run rows and a fixed footer so pagination controls remain visible.
+The Runs workspace keeps its filter/command block pinned below the top bar on desktop, with run totals folded into the status filter labels instead of a separate stat strip. The selector rail and panel toolbar pin underneath it while panel sections scroll. The run rail uses compact selected-run rows and a fixed footer so pagination controls remain visible.
 
 Pagination coverage includes Rust cursor requests, cursor clearing after filter changes, Previous-page behavior, and deprecated Node offset fallback.
 
