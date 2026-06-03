@@ -69,6 +69,9 @@ test("public docs page list is derived from docs navigation for sitemap/static p
 
   assert.ok(paths.includes("index"));
   assert.ok(paths.includes("quickstart"));
+  assert.ok(paths.includes("guides/wandb-alternative"));
+  assert.ok(paths.includes("guides/instantml-vs-mlflow"));
+  assert.ok(paths.includes("guides/wandb-import-guide"));
   assert.ok(paths.includes("sdk/logging"));
   assert.ok(paths.includes("dashboard/runs-workspace"));
   assert.ok(paths.includes("api-reference"));
@@ -165,6 +168,9 @@ test("docs links and assets are mapped to same-origin /docs URLs", () => {
 });
 
 test("docs navigation title overrides preserve source branding", () => {
+  assert.equal(pagePathToTitle("guides/wandb-alternative"), "W&B alternative");
+  assert.equal(pagePathToTitle("guides/wandb-import-guide"), "W&B import guide");
+  assert.equal(pagePathToTitle("guides/instantml-vs-mlflow"), "InstantML vs MLflow");
   assert.equal(pagePathToTitle("guides/wandb-neptune-imports"), "W&B and Neptune imports");
   assert.equal(pagePathToTitle("guides/export-usage-limits"), "Export Usage Limits");
 });
@@ -276,6 +282,23 @@ test("import docs describe metadata-only artifact bundles", async () => {
 
   const importApi = await loadDocsMarkdown(["api", "import-export-usage.md"]);
   assert.match(importApi.markdown, /run-level metadata-only versioned artifact bundles/);
+});
+
+test("buyer-intent docs expose comparison and W&B import guidance", async () => {
+  const wandbAlternative = await loadDocsMarkdown(["guides", "wandb-alternative.md"]);
+  assert.match(wandbAlternative.markdown, /^# W&B alternative for small ML teams/m);
+  assert.match(wandbAlternative.markdown, /W&B-style workflow/);
+  assert.match(wandbAlternative.markdown, /\[W&B import guide\]\(\/docs\/guides\/wandb-import-guide\.md\)/);
+
+  const mlflowComparison = await loadDocsMarkdown(["guides", "instantml-vs-mlflow.md"]);
+  assert.match(mlflowComparison.markdown, /^# InstantML vs MLflow/m);
+  assert.match(mlflowComparison.markdown, /hosted-first training observability/);
+  assert.match(mlflowComparison.markdown, /open-source experiment tracking/);
+
+  const wandbImportGuide = await loadDocsMarkdown(["guides", "wandb-import-guide.md"]);
+  assert.match(wandbImportGuide.markdown, /^# W&B import guide/m);
+  assert.match(wandbImportGuide.markdown, /Your W&B\s+credentials stay on your machine/);
+  assert.match(wandbImportGuide.markdown, /instantml import wandb/);
 });
 
 test("docs markdown loader mirrors pages and agent indexes", async () => {

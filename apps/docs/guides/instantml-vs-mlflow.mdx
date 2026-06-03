@@ -1,0 +1,76 @@
+---
+title: "InstantML vs MLflow"
+description: "Compare InstantML and MLflow for training observability, experiment tracking, UI workflows, imports, and data portability."
+---
+
+# InstantML vs MLflow
+
+InstantML and MLflow both help teams keep experiment history understandable.
+The practical difference is where each tool is strongest.
+
+MLflow is a familiar open-source experiment tracking and model lifecycle tool.
+InstantML is a hosted-first training observability product focused on fast run
+comparison, dense dashboard workflows, predictable pricing, and import paths
+from existing trackers.
+
+## Short version
+
+Choose InstantML when your daily pain is comparing many runs quickly,
+understanding training behavior, preserving artifact/checkpoint context, and
+giving a small ML team a hosted dashboard without operating the tracking stack.
+
+Choose MLflow when your team wants an open-source tracking server and is
+comfortable operating, customizing, and integrating that stack directly.
+
+## Comparison
+
+| Area | InstantML | MLflow |
+| --- | --- | --- |
+| Primary shape | Hosted training observability for ML teams. | Open-source ML lifecycle and experiment tracking stack. |
+| Daily UI focus | Dense run comparison, metric charts, artifacts, checkpoints, and dashboard workflows. | General experiment tracking and model lifecycle workflows. |
+| Setup | Hosted app plus Python SDK. | Self-managed or managed MLflow deployment. |
+| Run comparison | Designed around fast run tables, selected-run charts, side-by-side evidence, and bounded metric reads. | Depends on the MLflow UI/deployment and any custom extensions. |
+| Imports | W&B, Neptune, MLflow, and TensorBoard import paths. | Native MLflow history is already in MLflow; other imports depend on your migration work. |
+| Pricing model | Free, Pro, and Premium hosted tiers with documented usage limits and no tracked-hour billing. | Open-source software; hosted/managed costs depend on your infrastructure or provider. |
+| Portability | Documented APIs, export paths, and explicit schemas. | Open-source server and tracking data model. |
+
+## When InstantML is the better first test
+
+Try InstantML first if:
+
+- Your team wants a hosted product instead of operating tracking
+  infrastructure.
+- Researchers spend real time sorting runs, comparing metrics, and opening
+  charts.
+- You already have W&B, Neptune, TensorBoard, or MLflow history that you want to
+  import for evaluation.
+- You care about predictable hosted pricing and documented usage limits.
+- You want artifact and checkpoint workflows to be visible in the same
+  comparison surface as metrics and configs.
+
+## When MLflow may be the better fit
+
+MLflow may be a better fit if:
+
+- Your organization already operates MLflow successfully.
+- You want an open-source server as the primary product surface.
+- Your platform team expects to customize the tracking and model lifecycle
+  stack directly.
+- Your needs are broader than training observability and align with your
+  existing MLflow deployment.
+
+## Migration and coexistence
+
+InstantML can import transformed MLflow JSON through the import API and CLI
+flow. This lets teams evaluate InstantML from existing run history before
+changing current training scripts.
+
+For broader migration planning, start with [Imports](/guides/imports). For
+pricing and limits, see [Pricing and limits](/guides/pricing-limits-billing).
+
+## Bottom line
+
+InstantML is not trying to replace the value of open-source MLflow for teams
+that want to own and operate their stack. It is built for teams that want a
+fast, hosted, training-focused experiment tracking workflow with clear
+migration paths and less dashboard friction.
