@@ -12,6 +12,7 @@ import {
   loadDocsMarkdownFull,
   loadDocsMarkdownIndex,
   loadDocsPage,
+  loadPublicDocsPages,
   mapDocsAssetSrc,
   pagePathToTitle,
   parseDocsMdx,
@@ -41,11 +42,37 @@ test("docs app route renders docs source instead of redirecting to a docs host",
   assert.doesNotMatch(route, /docs\.instantml\.ai|localhost:3001|INSTANTML_DOCS_BASE/);
 });
 
+test("docs routes declare self canonicals and static public rendering", async () => {
+  const route = await readFile(path.join(webRoot, "app", "docs", "[[...slug]]", "page.tsx"), "utf8");
+  const sitemap = await readFile(path.join(webRoot, "app", "sitemap.ts"), "utf8");
+
+  assert.match(route, /dynamic = "force-static"/);
+  assert.match(route, /generateStaticParams/);
+  assert.match(route, /loadPublicDocsPages/);
+  assert.match(route, /alternates:\s*\{\s*canonical:\s*routePath\s*\}/);
+  assert.match(route, /robots:\s*\{\s*index:\s*true,\s*follow:\s*true\s*\}/);
+  assert.doesNotMatch(route, /alternates:\s*\{\s*canonical:\s*"\/"\s*\}/);
+  assert.match(sitemap, /loadPublicDocsPages/);
+  assert.match(sitemap, /docsUrl\(page\.path\)/);
+});
+
 test("docs loader caches static filesystem work for server renders", async () => {
   const docs = await readFile(path.join(webRoot, "src", "docs.js"), "utf8");
   assert.match(docs, /from "react"/, "docs loader should use React cache for request-level dedupe");
   assert.match(docs, /loadDocsPageByPath\s*=\s*cache/, "metadata and page loads should dedupe by normalized docs path");
   assert.match(docs, /loadApiReferenceEndpoints\s*=\s*cache/, "generated API reference parsing should be cached");
+});
+
+test("public docs page list is derived from docs navigation for sitemap/static params", async () => {
+  const pages = await loadPublicDocsPages();
+  const paths = pages.map((page) => page.path);
+
+  assert.ok(paths.includes("index"));
+  assert.ok(paths.includes("quickstart"));
+  assert.ok(paths.includes("sdk/logging"));
+  assert.ok(paths.includes("dashboard/runs-workspace"));
+  assert.ok(paths.includes("api-reference"));
+  assert.equal(new Set(paths).size, paths.length);
 });
 
 test("first-run onboarding links to human and agent quickstart docs", async () => {

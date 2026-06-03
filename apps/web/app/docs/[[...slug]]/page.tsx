@@ -12,6 +12,7 @@ import { InstantMlMark } from "../../instantml-mark";
 import {
   docsMarkdownUrl,
   docsHref,
+  loadPublicDocsPages,
   loadDocsPage,
   mapDocsAssetSrc,
 } from "../../../src/docs";
@@ -38,20 +39,53 @@ type DocsBlock =
   | { type: "cards"; cards: Array<{ title: string; icon: string; href: string; description: string }> };
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
+
+const SITE_URL = "https://instantml.ai";
+
+function docsRoutePath(pagePath: string) {
+  if (pagePath === "index") return "/docs";
+  return `/docs/${pagePath}`;
+}
+
+export async function generateStaticParams() {
+  const pages = await loadPublicDocsPages();
+  return pages.map((page: { path: string }) => ({
+    slug: page.path === "index" ? [] : page.path.split("/"),
+  }));
+}
 
 export async function generateMetadata({ params }: DocsParams): Promise<Metadata> {
   const { slug = [] } = await params;
   try {
     const page = await loadDocsPage(slug);
+    const routePath = docsRoutePath(page.path);
+    const title = `${page.title} | InstantML Docs`;
     return {
-      title: `${page.title} | InstantML Docs`,
+      title,
       description: page.description,
+      alternates: { canonical: routePath },
+      robots: { index: true, follow: true },
+      openGraph: {
+        type: "website",
+        url: `${SITE_URL}${routePath}`,
+        siteName: "InstantML",
+        title: `${title} · InstantML`,
+        description: page.description,
+        locale: "en_US",
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: `${title} · InstantML`,
+        description: page.description,
+      },
     };
   } catch {
     return {
       title: "InstantML Docs",
       description: "InstantML documentation.",
+      alternates: { canonical: "/docs" },
+      robots: { index: true, follow: true },
     };
   }
 }

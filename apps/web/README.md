@@ -216,7 +216,10 @@ production. It reads the public MDX/OpenAPI source from `apps/docs`, so run
 still useful for validating the Mintlify source view, but it is not required
 for the Next `/docs` route. The app also rewrites `/docs/:path*.md` to a
 Markdown response generated from the same source so agents can read pages such
-as `/docs/quickstart.md` without HTML.
+as `/docs/quickstart.md` without HTML. Public docs pages are included in
+`/sitemap.xml` from `apps/docs/docs.json` navigation and each rendered docs URL
+sets a self-referencing canonical, so route metadata should be updated alongside
+docs routing changes.
 
 Staging and production frontend builds must use a
 `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from the same Clerk application as the
