@@ -27,6 +27,19 @@ Start with:
   logging, fork/resume, scope, and docs-sync guidance.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
 
+Optional deeper product-research context lives in the separate InstantML
+product wiki repo. If it is available locally, link it into this workspace with:
+
+```bash
+mkdir -p .context
+ln -sfn /path/to/instantML/product .context/product
+```
+
+The `.context` directory is gitignored, so this symlink is local workspace
+context, not a monorepo dependency. Implementation-relevant product decisions
+should still be copied or summarized into `PRODUCT_STRATEGY.md`,
+`docs/product/`, or `docs/design/`.
+
 ## Repository Structure
 
 ```text
