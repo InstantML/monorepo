@@ -28,6 +28,10 @@ Three guardrails apply:
    The runner exchanges its short-lived OIDC token for a GCP access token
    scoped to the `gha-cloud-run-deployer` service account (configurable per
    project; see the operator doc).
+4. The deploy helper promotes each Cloud Run service to the latest ready
+   revision after `gcloud run deploy` and verifies 100% traffic points at that
+   revision and image tag. This prevents a deploy from only creating a revision
+   while the public route remains pinned to an older one.
 
 Secrets — `CLERK_SECRET_KEY`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`,
 `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, the Stripe / R2 / Resend keys,

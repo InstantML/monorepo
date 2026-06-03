@@ -1115,12 +1115,27 @@ function deployService(target, serviceAccountEmail, staticEgressIp, envVars, sec
   } finally {
     fs.rmSync(envFilePath, { force: true });
   }
-  const url = capture(["run", "services", "describe", target.service, "--region", region, "--format=value(status.url)"]).trim();
+  promoteCloudRunTrafficToLatest(target);
+  const description = describeCloudRunService(target);
+  const url = description?.status?.url || "";
   if (!url) fail("Cloud Run deploy succeeded but service URL was not returned.");
-  const description = JSON.parse(capture(["run", "services", "describe", target.service, "--region", region, "--format=json"]));
   verifyCloudRunScaling(target, description);
   verifyCloudRunSessionAffinity(target, description);
+  verifyCloudRunTraffic(target, description);
+  verifyCloudRunImage(target, description);
   return url;
+}
+
+function promoteCloudRunTrafficToLatest(target) {
+  run([
+    "run", "services", "update-traffic", target.service,
+    "--region", region,
+    "--to-latest",
+  ], { timeout: 10 * 60 * 1000 });
+}
+
+function describeCloudRunService(target) {
+  return JSON.parse(capture(["run", "services", "describe", target.service, "--region", region, "--format=json"]));
 }
 
 function appendStartupProbeArgs(args, containerPort) {
@@ -1172,6 +1187,38 @@ function verifyCloudRunSessionAffinity(target, description) {
   if (enabled !== Boolean(target.sessionAffinity)) {
     fail(`${target.service} session-affinity verification failed; expected ${Boolean(target.sessionAffinity)}, got ${raw ?? "unset"}.`);
   }
+}
+
+function verifyCloudRunTraffic(target, description) {
+  const latestReady = description?.status?.latestReadyRevisionName;
+  if (!latestReady) {
+    fail(`${target.service} traffic verification failed; Cloud Run did not report latestReadyRevisionName.`);
+  }
+  const traffic = Array.isArray(description?.status?.traffic) ? description.status.traffic : [];
+  const active = traffic.filter((entry) => Number(entry?.percent || 0) > 0);
+  if (active.length !== 1) {
+    fail(`${target.service} traffic verification failed; expected one active target, got ${JSON.stringify(traffic)}.`);
+  }
+  const [targetTraffic] = active;
+  if (Number(targetTraffic.percent) !== 100 || targetTraffic.revisionName !== latestReady) {
+    fail(`${target.service} traffic verification failed; expected 100% on ${latestReady}, got ${JSON.stringify(traffic)}.`);
+  }
+}
+
+function verifyCloudRunImage(target, description) {
+  const actual = serviceTemplateImage(description);
+  if (!actual) {
+    fail(`${target.service} image verification failed; Cloud Run did not report a template image.`);
+  }
+  if (actual !== image) {
+    fail(`${target.service} image verification failed; expected ${image}, got ${actual}.`);
+  }
+}
+
+function serviceTemplateImage(description) {
+  return description?.spec?.template?.spec?.containers?.[0]?.image
+    || description?.template?.containers?.[0]?.image
+    || "";
 }
 
 function serviceScaling(description) {
