@@ -107,7 +107,7 @@ export default async function DocsPage({ params }: DocsParams) {
         <div className="docs-route-topbar-row docs-route-topbar-row-primary">
           <Link className="docs-route-brand" href="/docs" aria-label="InstantML Docs home">
             <span className="docs-route-brand-mark" aria-hidden>
-              <InstantMlMark animated={false} />
+              <InstantMlMark />
             </span>
             <span className="docs-route-brand-text">
               <strong>InstantML</strong>
