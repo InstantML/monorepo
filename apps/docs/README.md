@@ -56,6 +56,9 @@ The current production docs path is the same-origin web route
 The web app also serves Markdown mirrors for every public page, such as
 `https://instantml.ai/docs/quickstart.md`, plus `/llms.txt` and
 `/llms-full.txt` for agent and offline-reader ingestion.
+The web sitemap is generated from `docs.json` navigation, and the Next `/docs`
+route sets self-referencing canonical metadata for each public docs URL. Keep
+navigation entries current when adding pages that should be indexed.
 
 If a separate `docs.instantml.ai` site is reintroduced later, add the domain in
 Mintlify, create the verification `TXT` records shown in the dashboard, wait
