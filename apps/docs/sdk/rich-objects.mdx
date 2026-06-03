@@ -1,11 +1,28 @@
 ---
-title: "Tables, histograms, and media"
-description: "Log rich objects for table previews, histogram previews, and media evidence."
+title: "Tables, histograms, evals, and media"
+description: "Log rich objects for table previews, histogram timelines, typed evaluation bundles, and media evidence."
 ---
 
-# Tables, histograms, and media
+# Tables, histograms, evals, and media
 
 Scalar metrics explain trends. Rich objects explain evidence.
+
+Use scalar metrics for one numeric value per step. Use rich objects when the
+dashboard needs structured evidence:
+
+- `run.log_table_object(...)` for prediction samples, eval rows, and compact
+  per-example diagnostics in Run Detail.
+- `run.log_objects({"key": ro.Histogram.from_values(...)})` for score,
+  confidence, activation, gradient, reward, weight, or latency distributions in
+  Run Detail and selected-run logged-histogram timelines.
+- `run.log_classification_eval(...)` for binary PR/ROC curves, confusion
+  matrix, per-class metrics, and optional prediction rows in Run Detail.
+- `ro.Image`, `ro.Video`, and `ro.Audio` for rollout evidence, generated
+  examples, custom diagnostics, and audio samples.
+
+For Runs workspace summary panels, keep logging scalar metrics with
+`run.log_metrics(...)`. For selected-run histogram timelines, log histogram
+objects under the same key at multiple steps.
 
 ## Tables
 
@@ -34,8 +51,15 @@ Use histograms for distributions such as logits, rewards, gradient norms, or
 latency samples.
 
 ```python
+confidence_bins = [index / 8 for index in range(9)]
+
 run.log_objects(
-    {"eval/confidence": ro.Histogram.from_values([0.91, 0.72, 0.88, 0.43], bins=8)},
+    {
+        "eval/confidence": ro.Histogram.from_values(
+            [0.91, 0.72, 0.88, 0.43],
+            bins=confidence_bins,
+        )
+    },
     step=10,
 )
 ```
@@ -43,6 +67,41 @@ run.log_objects(
 Histograms appear as previews in Run Detail and artifact/object surfaces. They
 are rich evidence objects, not the same surface as Runs workspace value
 histogram panels over scalar metric summaries.
+
+Runs workspace logged-histogram timeline panels can also read a selected run's
+histogram objects by explicit key. When frames share bin edges, the panel shows
+a heatmap over steps; when bins differ, it shows a selected-frame histogram so
+non-comparable frames are not implied to be comparable.
+
+For the cleanest timeline heatmap, keep bin edges stable for a given object
+key. If you need adaptive bins, the panel still works, but it falls back to a
+single selected frame because different bin edges are not directly comparable.
+
+## Classification evaluations
+
+Use `log_classification_eval(...)` for compact binary classification eval
+bundles. The SDK stores typed rich-object data rather than screenshots, so Run
+Detail can render PR/ROC curves, a confusion matrix, per-class metrics, and an
+optional prediction preview.
+
+```python
+run.log_classification_eval(
+    "eval/classification",
+    y_true=[0, 1, 1, 0],
+    y_score=[0.1, 0.8, 0.7, 0.2],
+    class_names=["negative", "positive"],
+    positive_label="positive",
+    split="validation",
+    threshold=0.5,
+    predictions=[{"id": "ex-1"}],
+    step=10,
+)
+```
+
+The MVP is binary-only. `y_score` is the positive-class score, `y_pred` is
+optional and defaults to `score >= threshold`, confusion matrix rows are true
+classes, and columns are predicted classes in `class_names` order. Prediction
+rows are optional and must include at most 100 preview rows.
 
 ## Media objects
 

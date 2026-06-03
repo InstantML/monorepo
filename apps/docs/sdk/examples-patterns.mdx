@@ -46,6 +46,71 @@ run.finish()
 Compare by validation metrics first, then use Run Detail for config, artifacts,
 and source context.
 
+## Chart-ready logging
+
+Most dashboard visualizations come from stable metric keys plus run config.
+Use config for fields you want to group or plot against, and use scalar metric
+keys for values you want to chart or sort.
+
+```python
+import instantml as ro
+
+confidence_bins = [index / 32 for index in range(33)]
+
+run = ro.init(
+    project="ablation",
+    name=f"{variant}-seed-{seed}",
+    config={
+        "variant": variant,
+        "seed": seed,
+        "learning_rate": lr,
+        "batch_size": batch_size,
+        "model": model_name,
+    },
+    tags=[variant],
+)
+
+for epoch in range(1, epochs + 1):
+    run.log_metrics(
+        {
+            "train/loss": train_loss,
+            "eval/accuracy": eval_accuracy,
+            "eval/macro_f1": macro_f1,
+            "system/throughput": examples_per_second,
+        },
+        step=epoch,
+    )
+    run.log_objects(
+        {
+            "eval/confidence": ro.Histogram.from_values(
+                confidence_scores,
+                bins=confidence_bins,
+            )
+        },
+        step=epoch,
+    )
+
+run.log_classification_eval(
+    "eval/classification",
+    y_true=validation_labels,
+    y_score=positive_class_scores,
+    class_names=["negative", "positive"],
+    positive_label="positive",
+    step=epochs,
+)
+```
+
+This shape gives you:
+
+- Line charts for `train/loss` and `eval/accuracy`.
+- Bar, dot, and value histogram panels from latest scalar summaries.
+- Scatter panels such as `config.learning_rate` versus `eval/accuracy best`.
+- Distribution panels grouped by `config.variant` with `config.seed` as
+  replicate metadata.
+- Logged histogram timelines for `eval/confidence` on a selected run when
+  frames share `confidence_bins`.
+- Classification eval previews in Run Detail without saving screenshots.
+
 ## RL or simulation
 
 ```python

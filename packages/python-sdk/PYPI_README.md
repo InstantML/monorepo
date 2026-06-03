@@ -1,6 +1,6 @@
 # InstantML Python SDK
 
-InstantML is a training-loop observability SDK for logging runs, scalar metrics, rank-aware distributed metrics, configs, tags, notes, artifacts, checkpoints, tables, histograms, media, and source context to the InstantML platform.
+InstantML is a training-loop observability SDK for logging runs, scalar metrics, rank-aware distributed metrics, configs, tags, notes, artifacts, checkpoints, tables, histograms, classification eval bundles, media, and source context to the InstantML platform.
 
 ## Install
 
@@ -48,6 +48,19 @@ for step, batch in enumerate(loader):
         weight=len(batch),
     )
 run.finish()
+```
+
+For binary classification evals, log a typed rich object instead of a screenshot:
+
+```python
+run.log_classification_eval(
+    "eval/classification",
+    y_true=[0, 1, 1, 0],
+    y_score=[0.1, 0.8, 0.7, 0.2],
+    class_names=["negative", "positive"],
+    positive_label="positive",
+    step=10,
+)
 ```
 
 To upload checkpoints, use an API key that includes `artifacts:write`:

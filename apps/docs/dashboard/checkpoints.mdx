@@ -40,13 +40,15 @@ the retry reason in metadata. The API and SDK can accept additional fork fields
 such as tags, notes, metadata, and config overrides, but the current dashboard
 modal exposes only name, reason, and config inheritance.
 
-After creation, the dashboard selects the child run and opens Run Detail Graph.
+After creation, the dashboard selects the forked child run and opens Run Detail
+Graph.
 
 ![Run lineage graph](/images/product/dashboard-lineage-graph.png)
 
-The lineage panel reads a bounded direct graph: parent, selected run,
-checkpoint artifact, child runs, and whether more children exist beyond the
-current limit.
+The lineage panel reads a bounded direct graph. The captured child-run state
+shows the selected fork, its parent run, the checkpoint artifact that produced
+it, and an empty direct-children region when no runs have forked from the
+selected child yet.
 
 ## Log checkpoint bytes
 

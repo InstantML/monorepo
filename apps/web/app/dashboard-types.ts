@@ -149,6 +149,27 @@ export type LoggedObjectRow = {
   created_at: string;
 };
 
+export type HistogramTimelineFrame = {
+  id: number;
+  key: string;
+  step: number;
+  bins: number[];
+  counts: number[];
+  total: number;
+};
+
+export type HistogramTimelineState = {
+  runId: string;
+  objectKey: string;
+  frames: HistogramTimelineFrame[];
+  invalid: number;
+  truncated: boolean;
+  compatibleBins: boolean;
+  capped?: boolean;
+  loading?: boolean;
+  error?: string;
+};
+
 export type HoverPoint = {
   runId: string;
   runName: string;
@@ -280,7 +301,14 @@ export type RunTimelineRow = {
 };
 
 export type WorkspaceMode = "automatic" | "manual";
-export type WorkspacePanelType = "line" | "bar" | "histogram" | "dot" | "scatter";
+export type WorkspacePanelType =
+  | "line"
+  | "bar"
+  | "histogram"
+  | "dot"
+  | "scatter"
+  | "distribution"
+  | "histogram_timeline";
 
 export type WorkspacePanelSettings = {
   xMode: "step" | "time";
@@ -307,21 +335,68 @@ export type LineWorkspacePanel = BaseWorkspacePanel & {
   type: "line";
   xField?: never;
   yField?: never;
+  valueField?: never;
+  groupField?: never;
+  replicateField?: never;
+  axisFields?: never;
+  axisScales?: never;
+  objectKey?: never;
 };
 
 export type SummaryWorkspacePanel = BaseWorkspacePanel & {
   type: "bar" | "histogram" | "dot";
   xField?: never;
   yField?: never;
+  valueField?: never;
+  groupField?: never;
+  replicateField?: never;
+  axisFields?: never;
+  axisScales?: never;
+  objectKey?: never;
 };
 
 export type ScatterWorkspacePanel = BaseWorkspacePanel & {
   type: "scatter";
   xField: string;
   yField: string;
+  valueField?: never;
+  groupField?: never;
+  replicateField?: never;
+  axisFields?: never;
+  axisScales?: never;
+  objectKey?: never;
 };
 
-export type WorkspacePanel = LineWorkspacePanel | SummaryWorkspacePanel | ScatterWorkspacePanel;
+export type DistributionWorkspacePanel = BaseWorkspacePanel & {
+  type: "distribution";
+  valueField: string;
+  groupField?: string;
+  replicateField?: string;
+  xField?: never;
+  yField?: never;
+  axisFields?: never;
+  axisScales?: never;
+  objectKey?: never;
+};
+
+export type HistogramTimelineWorkspacePanel = BaseWorkspacePanel & {
+  type: "histogram_timeline";
+  objectKey: string;
+  xField?: never;
+  yField?: never;
+  valueField?: never;
+  groupField?: never;
+  replicateField?: never;
+  axisFields?: never;
+  axisScales?: never;
+};
+
+export type WorkspacePanel =
+  | LineWorkspacePanel
+  | SummaryWorkspacePanel
+  | ScatterWorkspacePanel
+  | DistributionWorkspacePanel
+  | HistogramTimelineWorkspacePanel;
 
 export type WorkspaceFieldSource = "metric" | "config" | "metadata" | "run";
 
@@ -332,6 +407,16 @@ export type WorkspaceFieldOption = {
   valueType: "number";
   availableCount: number;
   missingCount: number;
+};
+
+export type WorkspaceCategoricalFieldOption = {
+  id: string;
+  label: string;
+  source: WorkspaceFieldSource;
+  valueType: "category";
+  availableCount: number;
+  missingCount: number;
+  groupCount: number;
 };
 
 export type WorkspaceSection = {

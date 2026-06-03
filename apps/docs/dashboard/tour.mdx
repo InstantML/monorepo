@@ -19,7 +19,8 @@ Use Runs for the broadest view of a project:
 - Export selected runs as bounded CSV from the command bar.
 - Review maintained summary values without loading full metric history.
 - Build line panels from metric series, summary panels from metric aggregates,
-  and scatter panels from two loaded numeric run fields.
+  scatter panels from two loaded numeric run fields, seed/group distribution
+  panels, and selected-run logged histogram timeline panels.
 - Save named workspace views when the layout should survive a reload.
 
 ## Organizations and workspaces
@@ -47,8 +48,9 @@ source context, logs, files, system information, and graph-style run evidence.
 
 ![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
 
-The Files tab shows checkpoints, rich objects, media, and artifact metadata for
-the selected run without loading those payloads on the initial summary view.
+The Files tab shows checkpoints, rich objects, evaluation bundles, media, and
+artifact metadata for the selected run without loading those payloads on the
+initial summary view.
 
 ## Compare
 
@@ -77,10 +79,11 @@ Checkpoint rows expose download, resume-code, and fork actions. Forking creates
 a linked child run record only; training starts when a user or script attaches
 to that run and logs new data.
 
-![Lineage graph](/images/product/dashboard-lineage-graph.png)
+![Lineage graph showing a forked child run with no direct children yet](/images/product/dashboard-lineage-graph.png)
 
-The Graph tab shows the selected run's direct parent, checkpoint, and child
-context.
+The Graph tab shows the selected run's direct parent, checkpoint, and bounded
+child context. The captured state is a forked child run with no direct children
+yet.
 
 ## Artifacts
 

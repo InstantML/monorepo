@@ -2,376 +2,571 @@
 
 Date: 2026-06-02
 
-Status: Revised after fresh review
+Status: Revised after fresh review, accepted for narrow second slice
 
 Owner: Codex
 
 ## Summary
 
-InstantML needs better graph workflows for the questions researchers ask during
-run comparison: which tradeoffs are real, which seeds are stable, which
-distributions drift over time, and which model failures need inspection. W&B
-and Neptune both expose a broader chart menu than InstantML, but this design
-does not treat menu parity as the implementation target. The first accepted
-slice promotes one high-value workflow into the daily Runs workspace: a saved,
-summary-only scatter panel over loaded or selected runs.
+InstantML needs graph workflows for the questions researchers ask while
+comparing training runs: which seed variance is real, which hyperparameters
+trade off against quality, which distributions drift over training, and which
+evaluation failures need inspection. The first accepted slice shipped a
+summary-only Runs workspace field catalog plus saved scatter panels.
 
-The reviewed first slice contains:
+This second slice promotes the remaining requested graph workflows with
+bounded, testable contracts:
 
-- a reusable loaded-run field catalog,
-- backward-compatible workspace panel schema migration and sanitization,
-- saved Runs workspace scatter panels,
-- chart-specific add/edit controls for scatter, and
-- docs/tests proving scatter does not fetch scalar metric series or rich
-  objects.
+- seed/group distribution panels over loaded run summaries,
+- selected-run logged-histogram timeline panels backed by existing rich-object
+  reads,
+- parallel-coordinate analysis kept in Insights rather than saved Runs
+  workspace panels,
+- and a typed binary classification evaluation bundle logged by the Python SDK
+  and rendered from rich objects.
 
-Distribution panels, histogram-over-step, parallel coordinates, and typed
-evaluation objects remain important follow-ups, but fresh execution reviewers
-blocked them from this PR because they need additional field/group semantics,
-object validation, endpoint/windowing contracts, SDK APIs, and heavier browser
-QA.
+Distribution panels are summary-only. They must not fetch
+`/api/metrics/series` or `/objects`. Histogram timeline and evaluation bundle
+views are selected-run rich-object workflows and stay bounded to one active run
+until a separate multi-run object-series endpoint exists. Parallel coordinates
+remain an exploratory Insights/HPO surface over loaded summaries and are not a
+saved Runs workspace panel type.
 
 ## Goals
 
-- Let researchers plot two numeric loaded-run fields in the Runs workspace.
-- Keep scatter panels synchronized with the current Runs filter and selection
-  scope.
-- Make panel scope visible so users do not mistake a paginated subset for a
-  project-wide analysis.
-- Add stable persisted field references with escaping rules.
-- Preserve existing line, bar, latest-value histogram, and dot panel behavior.
-- Keep initial Runs load free of new object or metric-series fan-out.
+- Add saved Runs workspace distribution panels that expose visible-sample seed
+  variance and ablation stability from current run summaries.
+- Add selected-run logged-histogram timeline panels over
+  `/api/runs/:id/objects?kind=histogram&key=...`.
+- Keep parallel-coordinate HPO/sweep inspection in Insights instead of adding a
+  saved Runs workspace panel type.
+- Add a typed SDK helper, `log_classification_eval(...)`, that logs compact
+  binary PR, ROC, confusion matrix, per-class metrics, and optional prediction
+  rows.
+- Keep every new workflow backward compatible with existing saved workspace
+  view payloads and rich-object readers.
+- Keep initial Runs workspace loads free of new metric-series/object fan-out.
 
 ## Non-Goals
 
-- No distribution, histogram-series, parallel-coordinate, or evaluation-object
-  implementation in this PR.
-- No generic Vega, Plotly, query, or custom-code chart editor.
-- No server-side chart query language.
-- No lasso selection, regression/frontier line, density overlay, or brushing in
-  scatter v1.
-- No project-wide all-matching scatter until a bounded backend summary/export
-  contract is designed.
+- No project-wide or multi-run histogram-series endpoint in this slice.
+- No automatic histogram-key catalog endpoint in this slice.
+- No generic chart query language, Vega/Plotly editor, or custom-code chart.
+- No lasso/brushing/filtering across panels in this slice.
+- No server-side distribution aggregation in this slice.
+- No saved Runs workspace parallel-coordinate panel in this slice.
+- No image-only evaluation screenshots. Evaluation bundles must be typed data.
+- No one-vs-rest PR/ROC curves or probability-vector storage in the eval MVP.
 
 ## Users And Use Cases
 
-- Fine-tuning engineers compare learning rate, dataset version, model size,
-  validation loss, F1, calibration, and runtime tradeoffs across the current run
-  set.
-- Sweep users inspect whether numeric configs correlate with the active metric
-  without leaving the Runs workspace.
-- Researchers identify outliers, hover for run identity, and click through to
-  the existing selected-run workflow.
+- Fine-tuning engineers compare whether validation loss or F1 improvements are
+  stable across visible seeds, not just best-run spikes.
+- Sweep users inspect how learning rate, batch size, duration, and metrics
+  interact across selected or currently visible runs in Insights.
+- Researchers inspect the latest logged histogram frames for a selected run,
+  such as score, activation, gradient, or weight distributions over recent
+  training steps.
+- Classification researchers log a compact evaluation package once per eval
+  step and inspect binary PR/ROC curves, confusion matrix, per-class metrics,
+  and selected prediction rows without hand-assembling custom objects.
 
 ## Proposed Design
 
-### Accepted First Slice
+### Already Shipped First Slice
 
-Implement only:
+The first slice remains the foundation:
 
-1. Loaded-run field catalog.
-2. Workspace schema migration/sanitization for `scatter`.
-3. Runs workspace scatter panel.
-4. Chart-type-specific add/edit controls for scatter.
-5. Unit/static tests and docs.
+1. Stable numeric field IDs:
+   - `metric:<encoded_metric_key>:latest`
+   - `metric:<encoded_metric_key>:min`
+   - `metric:<encoded_metric_key>:max`
+   - `metric:<encoded_metric_key>:mean`
+   - `metric:<encoded_metric_key>:best`
+   - `config:<encoded_json_pointer>`
+   - `metadata:<encoded_json_pointer>`
+   - `run:duration_seconds`
+   - `run:created_at_unix`
+2. `buildRunFieldCatalog(...)` over loaded summaries.
+3. Saved summary-only scatter panels.
+4. Sanitized backward-compatible workspace view payloads.
 
-### Field Catalog
+### Categorical Field Contract
 
-Create a helper that derives numeric fields from already loaded run summaries.
-Persist field IDs as URL-encoded segments:
+Add a separate categorical field parser and catalog. Numeric field parsing stays
+unchanged for scatter and distribution values.
 
-- `metric:<encoded_metric_key>:latest`
-- `metric:<encoded_metric_key>:min`
-- `metric:<encoded_metric_key>:max`
-- `metric:<encoded_metric_key>:mean`
-- `metric:<encoded_metric_key>:best`
+Supported categorical field IDs:
+
+- `run:status`
+- `run:first_tag`
 - `config:<encoded_json_pointer>`
 - `metadata:<encoded_json_pointer>`
-- `run:duration_seconds`
-- `run:created_at_unix`
 
-`encodeURIComponent` is used for each dynamic segment. Config and metadata
-paths are encoded as JSON Pointer strings so `/` and `~` inside field names are
-unambiguous. Dots are path separators for display only. Tests must cover metric
-keys and paths containing `/`, `.`, `:`, spaces, and nested config keys.
+The config/metadata encoding is identical to numeric field IDs. Example:
+`config:%2Fvariant`, not `config:/variant`. `run:tag` is not accepted in this
+slice because multi-valued grouping would duplicate runs across groups; users
+can use `run:first_tag` for a bounded tag grouping.
 
-Each catalog item includes:
+The categorical catalog includes:
 
 - `id`
 - `label`
-- `source`: `metric`, `config`, `metadata`, or `run`
-- `valueType`: `number`
+- `source`
 - `availableCount`
 - `missingCount`
+- `groupCount`
 
-Non-finite values are excluded from geometry and counted as missing. The
-`best` metric aggregate uses the existing `metricGoal()` helper to pick `min`
-for minimize metrics and `max` for maximize metrics.
+Group labels are capped to 80 characters. Fields with more than 24 distinct
+groups are excluded from default recommendations and still render with visible
+truncation if loaded from a saved view.
 
-### Scatter Panel
+### Distribution Panel
 
-Panel fields:
+Add `distribution` to Runs workspace panel types. It uses:
 
-```ts
-type ScatterWorkspacePanel = {
-  id: string;
-  type: "scatter";
-  title: string;
-  metricKey: string; // compatibility fallback; usually mirrors yField label
-  xField: string;
-  yField: string;
-  layout?: WorkspacePanelLayout;
-  settings?: Partial<WorkspacePanelSettings>;
-};
+- `valueField`: required numeric field ID,
+- `groupField`: optional categorical field ID,
+- `replicateField`: optional categorical field ID, normally seed,
+- `metricKey`: compatibility fallback, typically the value metric key.
+
+Default selection:
+
+1. `valueField`: current metric `best` when parseable, otherwise first numeric
+   metric/config field.
+2. `groupField`: preferred low-cardinality non-seed config/metadata field whose
+   label matches `variant`, `group`, `dataset`, `model`, `policy`, `algo`, or
+   `method`; otherwise `run:first_tag` when it has 2-12 groups; otherwise
+   ungrouped.
+3. `replicateField`: a low-cardinality config/metadata field matching `seed`
+   when present. Seed is never the default `groupField`.
+
+The renderer computes, per group:
+
+- `n`,
+- missing count,
+- unique replicate count,
+- min,
+- q1,
+- median,
+- q3,
+- max,
+- mean,
+- visible-sample standard error of the mean.
+
+Visual honesty rules:
+
+- For `n < 5`, render strip points plus median only. Suppress the quartile box
+  and SEM.
+- For `n >= 5`, render a compact box-and-strip plot.
+- SEM is shown only when `n >= 5` and is labeled `visible-sample SEM`.
+- Strip points are capped at 25 per group with deterministic sampling and a
+  `25 of N shown` label.
+- The panel footer shows selected/current-page scope, plotted `n`, cap state,
+  missing count, and unique replicate count when a replicate field exists.
+
+This covers the requested box/violin/strip workflow without introducing a
+density estimate that would be misleading on small seed counts.
+
+### Parallel Coordinates In Insights
+
+Parallel coordinates stay in the Insights tab for this slice. That keeps the
+Runs workspace focused on saved comparison panels while preserving the existing
+HPO/sweep power-user workflow over loaded run summaries.
+
+The reusable helper layer still supports deterministic numeric-axis selection,
+seed exclusion, log-scale hints for learning-rate-like fields, per-axis
+normalization, missing-run accounting, and axis caps. The saved Runs workspace
+schema and add/edit panel controls do not include `parallel`.
+
+### Selected-Run Logged Histogram Timeline
+
+The user-facing chart label is `Logged histogram timeline`. The existing summary
+histogram label remains `Value histogram`.
+
+Use the existing selected-run object route only when a saved panel has an
+explicit object key:
+
+```text
+GET /api/runs/:id/objects?kind=histogram&key=<key>&limit=100
 ```
 
-Scatter operates on the same resolved run set as other workspace panels:
-selected visible runs first, otherwise visible loaded runs capped by
-`maxRuns`. The panel footer shows the plotted count, missing count, and that the
-scope is selected or visible loaded runs.
+The backend already normalizes public `histogram` to stored
+`histogram_series`. The selected-run MVP:
 
-Required states:
+- does not auto-discover keys by reading all histogram objects,
+- uses the panel `objectKey` as the authoritative saved key,
+- stores `metricKey` as the same object key for legacy panel compatibility,
+- fetches at most 100 latest frames for the selected key,
+- labels the visual as `latest 100 frames` when the returned page reaches the
+  limit,
+- sorts those returned frames by step ascending for rendering,
+- validates finite bins/counts on the server at write time and on the client at
+  read time for legacy rows,
+- renders a heatmap only when frames share compatible bin edges,
+- otherwise renders a selected-frame histogram with a non-comparable-bins
+  warning,
+- exposes a scrubber/frame control,
+- and shows clear empty/truncated states.
 
-- no numeric fields,
-- missing saved x/y field,
-- no overlapping data for x/y,
-- populated scatter,
-- truncated/capped scope.
+Frontend request policy:
 
-Clicking a point should use the existing workspace selection/inspection action
-if available. If that integration is too invasive for this slice, the point
-must at least expose a hover/title with the run name and values, and the design
-should record table-linked click selection as the next scatter follow-up.
+- Fetch only for the primary selected run.
+- Fetch only when `objectKey` is non-empty.
+- Deduplicate requests by `(primaryRunId, "histogram", objectKey)`.
+- Limit active histogram timeline fetches to 3 visible panels per workspace
+  render; later panels show a capped empty state.
+- Use request concurrency `1` for object reads.
+- Abort when primary run or object key changes.
 
-### Workspace Schema
+This slice does not add a new endpoint. Multi-run or full-training histogram
+drift needs a separate bounded endpoint with order, stride, first/last coverage,
+and OpenAPI/codegen.
 
-Current panels remain valid. The sanitizer must accept `scatter`, preserve
-`xField` and `yField`, and cap string lengths. Color/group semantics are
-deferred until there is a visible control and legend behavior. Invalid scatter
-panels are dropped or normalized only when required fields are missing. Existing
-line/bar/latest-histogram/dot panels must round-trip unchanged.
+### Binary Classification Evaluation Bundle
 
-### Deferred Follow-Ups
+Add a rich-object kind `classification_eval`. The SDK helper logs one object
+under a user-supplied key:
 
-Distribution panel:
+```python
+run.log_classification_eval(
+    "eval/classification",
+    y_true=[0, 1, 1, 0],
+    y_score=[0.1, 0.8, 0.7, 0.2],
+    y_pred=[0, 1, 1, 0],
+    class_names=["negative", "positive"],
+    positive_label="positive",
+    split="validation",
+    threshold=0.5,
+    step=10,
+    predictions=[
+        {"id": "ex-1", "true_label": "positive", "predicted_label": "positive", "score": 0.8}
+    ],
+)
+```
 
-- Requires numeric and categorical field catalogs.
-- Must support explicit grouping by config/tag/metadata/seed.
-- Must show `n`, missing count, median/IQR, and mean/CI or SEM.
-- Must avoid arbitrary first-tag defaults.
+MVP semantics:
 
-Histogram-series:
+- `task` is `binary_classification`.
+- `class_names` must contain exactly two unique labels.
+- `positive_label` must be one of `class_names`.
+- `y_true` labels must be class names or integer class indices.
+- `y_score` is a one-dimensional positive-class score array.
+- `y_pred` is optional. When omitted, predictions are derived by
+  `score >= threshold`.
+- `threshold_direction` is fixed to `score >= threshold predicts positive`.
+- Confusion matrix orientation is rows=true class, columns=predicted class, in
+  `class_names` order.
+- Zero-division precision/recall/F1 values are `0.0`.
+- PR/ROC thresholds are generated from sorted unique scores, capped to 200
+  curve points through deterministic endpoint-preserving downsampling.
+- Prediction rows are opt-in, accepted up to 100, and normalized to
+  `id`, `true_label`, `predicted_label`, `score`, `correct`.
 
-- Must align public `histogram` object kind with stored `histogram_series`.
-- Must support both rich-object and attribute-style histogram paths or document
-  exactly which path is supported.
-- Needs object `value` byte caps, finite bins/counts validation, step/window
-  semantics, visible truncation, selected-frame histogram, and a step/time
-  scrubber before implementation.
+Backend validation accepts `classification_eval` objects and enforces:
 
-Classification evaluation objects:
+- `schema_version == 1`,
+- `task == "binary_classification"`,
+- max object value bytes: 64 KiB,
+- max metadata bytes: existing 16 KiB,
+- max summary bytes: existing 16 KiB,
+- max JSON depth: 8,
+- max string bytes per value: 1 KiB,
+- exactly two class names, each <= 128 bytes,
+- `sample_count <= 1_000_000`,
+- 2x2 nonnegative integer confusion matrix whose total matches
+  `sample_count`,
+- metric values in `0..1`,
+- support counts are nonnegative integers,
+- at most 200 PR points and 200 ROC points,
+- curve numeric values are finite and in `0..1`,
+- at most 100 prediction rows,
+- prediction row JSON <= 2 KiB.
 
-- Need a separate backend/SDK contract.
-- Current backend rejects unknown object kinds and does not cap arbitrary object
-  value size, so this cannot be a frontend-only change.
-- Must include `split`, `step`, `positive_label`, threshold policy,
-  normalization mode, class support counts, and optional prediction table links.
-- PR, confusion matrix, and per-class metrics are higher priority than ROC for
-  imbalanced classification.
+The UI renders classification eval objects in rich-object panels with:
 
-Parallel coordinates:
+- PR and ROC sparklines when present,
+- confusion matrix heatmap,
+- per-class metric table,
+- compact prediction row preview when present,
+- and an empty state when curves are missing rather than implying a logging
+  failure.
 
-- Deferred until axis selection, hover/table highlighting, log/invert controls,
-  and ideally brushing/filtering are accepted.
-- Otherwise it risks becoming visual parity without workflow value.
+## Panel Controls
 
-Roadmap-only graph types:
+Add drawer controls use the existing chart-type segmented control with these
+labels:
 
-- calibration/reliability plots,
-- residual plots,
-- metric correlation heatmaps,
-- resource/rank heatmaps,
-- faceted small-multiple line charts,
-- Pareto/frontier views, and
-- embedding/projector views.
+- `Line`
+- `Bar`
+- `Value histogram`
+- `Dot plot`
+- `Scatter`
+- `Distribution`
+- `Logged histogram timeline`
+
+Distribution edit controls:
+
+- `Value field`
+- `Group field`
+- `Replicate field`
+- `Max runs to show`
+
+Logged histogram timeline edit controls:
+
+- `Object key`
+- disabled help text when no primary run is selected,
+- `Max frames` fixed to 100 in this slice.
+- no `Max runs to show`, because the panel is explicitly selected-run only.
+
+Line/bar/value-histogram/dot controls keep their existing metric and axis
+settings. Scatter keeps `X field`, `Y field`, and `Max runs to show`.
 
 ## Component Impact
 
 Backend:
 
-- No backend change in the accepted first slice.
+- Extend object kind validation to accept `classification_eval`.
+- Add generic object value size caps and stricter histogram bin/count
+  validation.
+- Keep list/create object route shapes unchanged and OpenAPI/codegen current.
 
 Frontend:
 
-- Add field-catalog helpers.
-- Extend workspace panel types, labels, sanitization, add drawer, edit drawer,
-  and panel rendering for scatter.
-- Keep scatter summary-only.
+- Extend workspace panel types, sanitizer, add drawer, edit drawer, and Runs
+  workspace rendering for `distribution` and `histogram_timeline`.
+- Extend dashboard panel helpers for categorical fields, distribution
+  summaries, Insights parallel-coordinate traces, histogram frame parsing, and
+  eval object parsing.
+- Extend Run Detail rich-object previews for classification eval objects.
 
 Python SDK:
 
-- No SDK change in the accepted first slice.
+- Add `ClassificationEval` wrapper and `Run.log_classification_eval(...)`.
+- Keep existing `log_objects(...)`, `log_histogram(...)`, and public imports
+  backward compatible.
 
 Storage:
 
-- No storage change. Existing workspace view JSON payloads persist the new
-  scatter fields.
+- No new tables. Evaluation bundles and histogram frames remain typed
+  attributes/rich objects.
 
 Docs:
 
-- Update web README and Runs workspace docs.
+- Update web README, SDK README/PYPI README, rich object docs, Runs workspace
+  docs, and core concepts.
 
 ## Data Model
 
-`WorkspacePanelType` gains `scatter`.
-
-`WorkspacePanel` gains optional fields:
+`WorkspacePanelType` gains:
 
 ```ts
-xField?: string;
-yField?: string;
+"distribution" | "histogram_timeline"
 ```
 
-The current `metricKey` field remains for compatibility with existing helpers
-and saved-view payloads. Scatter renderers should prefer `xField`/`yField`.
+Additional saved panel fields:
+
+```ts
+valueField?: string;
+groupField?: string;
+replicateField?: string;
+objectKey?: string;
+```
+
+Compatibility rules:
+
+- Existing panel payloads remain valid.
+- `metricKey` remains required for every panel as the legacy fallback.
+- Invalid new field references drop only the invalid new panel, not the whole
+  workspace view.
+- Distribution always caps at `settings.maxRuns`, including when explicit
+  selections exceed that cap.
+
+`classification_eval` object value shape:
+
+```json
+{
+  "schema_version": 1,
+  "task": "binary_classification",
+  "split": "validation",
+  "positive_label": "positive",
+  "threshold": 0.5,
+  "threshold_direction": "score_gte_threshold",
+  "class_names": ["negative", "positive"],
+  "sample_count": 100,
+  "confusion_matrix": [[50, 4], [6, 40]],
+  "per_class": [
+    {"class_name": "negative", "precision": 0.893, "recall": 0.926, "f1": 0.909, "support": 54},
+    {"class_name": "positive", "precision": 0.909, "recall": 0.87, "f1": 0.889, "support": 46}
+  ],
+  "accuracy": 0.9,
+  "macro_f1": 0.899,
+  "pr_curve": [{"threshold": 0.1, "precision": 0.81, "recall": 0.98}],
+  "roc_curve": [{"threshold": 0.1, "tpr": 0.98, "fpr": 0.22}],
+  "predictions": [{"id": "ex-1", "true_label": "positive", "predicted_label": "positive", "score": 0.91, "correct": true}]
+}
+```
 
 ## API Contracts
 
-No new API contract in the accepted first slice. Scatter uses loaded
-`RunSummary` data only.
+No new route is required for distribution, Insights parallel coordinates, or selected-run
+logged-histogram timeline.
+
+Changed existing route:
+
+- `POST /api/runs/:id/objects` accepts `kind="classification_eval"`.
+- `GET /api/runs/:id/objects?kind=classification_eval` returns those objects
+  through the existing object envelope.
+- `GET /api/runs/:id/objects?kind=histogram&key=...` remains the selected-run
+  logged-histogram timeline source.
+
+OpenAPI/codegen must be regenerated after backend validation/docs changes.
 
 ## Performance Considerations
 
-- Scatter derives points from current `workspacePanelRuns`; no new network
-  request.
-- Field catalog derivation should be memoized by run set and metric catalog.
-- Rendered marks are capped by `maxRuns` and selected-run caps.
-- Initial Runs load must make zero new object requests and scatter must not
-  request `/api/metrics/series`.
+- Distribution operates on `workspacePanelRuns`, capped by `settings.maxRuns`,
+  including selected-run scopes.
+- Distribution sorting and quantile work is O(groups * n log n) over at most 25
+  default panel runs.
+- Histogram timeline reads at most 100 objects for one selected run and one
+  key. No selected-run fan-out is allowed.
+- Histogram requests are deduped and concurrency-limited to 1.
+- Classification eval payloads are compact JSON with backend size limits.
+- Initial Runs load must not fetch objects unless a visible
+  `histogram_timeline` panel exists, a primary run is selected, and that panel
+  has an explicit object key.
 
 ## Simplicity Review
 
-The accepted slice changes only the frontend workspace schema and rendering. It
-does not change ClickHouse, Rust endpoints, SDK APIs, or scalar metric storage.
-That keeps the feature reviewable and preserves the existing dashboard
-performance model.
-
-Deferred complexity is documented in follow-up sections instead of being
-half-implemented.
+The design uses existing summaries and object routes first. The only backend
+contract expansion is the typed evaluation object plus stronger rich-object
+validation. This avoids a premature multi-run object-series API while still
+delivering the selected-run logged-histogram workflow. Distribution uses a
+box-and-strip plot instead of a violin because seed counts are often small and
+density estimates imply more support than the data has.
 
 ## Failure Modes
 
-- Saved field no longer exists: keep the panel and show a missing-field state.
-- Selected fields have no overlapping finite values: show an empty chart state.
-- Run subset is capped: show plotted and missing counts.
-- Unknown panel type in an old/future payload: sanitizer keeps existing fallback
-  behavior and drops/normalizes safely.
+- No finite numeric value fields: distribution add controls are
+  disabled and panels render `No numeric fields are available in this scope`.
+- Saved numeric/group field no longer exists: keep the panel editable and show
+  `Saved field is not present in the loaded runs`.
+- Distribution has one group only: render one visible-sample distribution and
+  label it `Ungrouped visible runs`.
+- Distribution group `n < 5`: render strip plus median and show
+  `not enough replicates for box/SEM`.
+- Run subset is capped: show plotted count, cap, missing count, and selected or
+  current-page scope.
+- No primary run selected for histogram: show `Select one run to load logged
+  histogram frames`.
+- Selected run has no panel `objectKey`: show `Choose a histogram object key`.
+- Histogram object route errors: retry transient failures through the existing
+  request helper, then show the route error in the panel.
+- Histogram returns 100 frames: label `latest 100 frames`.
+- Histogram frames have incompatible bins: suppress heatmap and show the
+  selected-frame histogram only.
+- Eval object has no PR/ROC curve: show confusion matrix and metrics; curve
+  area says `Curve data was not logged`.
+- Older clients do not know `classification_eval`: existing object list still
+  returns JSON; older UIs show preview unavailable.
 
 ## Testing Plan
 
-- Unit tests for field ID encoding/decoding, catalog extraction, best metric
-  resolution, nested config/metadata paths, non-finite filtering, and scatter
-  point generation.
-- Workspace sanitizer tests for scatter round-trip and backward compatibility
-  with line/bar/histogram/dot.
-- Static tests proving only line panels fetch full metric series.
-- Component/static tests for scatter add/edit controls and labels.
-- Browser QA against local Rust/ClickHouse for adding, editing, fullscreening,
-  and saving/reloading scatter panels.
+- Unit tests for categorical field ID encoding/decoding and group extraction.
+- Unit tests for distribution quantiles, SEM suppression, replicate counts,
+  missing counts, and deterministic strip caps.
+- Unit tests for parallel helper axis selection, log scaling, normalization,
+  constant axes, missing axes, and capped runs/axes used by Insights.
+- Unit tests for histogram frame parsing, compatible-bin heatmap dimensions,
+  incompatible-bin fallback, key extraction from saved panel state, and invalid
+  finite-value rejection.
+- Workspace sanitizer tests for new panel types and legacy payloads.
+- Static tests proving only line panels request metric series and only
+  histogram timeline panels request objects.
+- SDK tests for `ClassificationEval`, `log_classification_eval(...)`,
+  prediction caps, PR/ROC/confusion helpers, and validation failures.
+- Rust tests for object kind validation, generic value size caps, histogram
+  count validation, and classification eval caps.
+- UI smoke coverage for adding/editing/fullscreening/reloading distribution and
+  logged-histogram timeline panels, plus Insights parallel-coordinate rendering.
+- Browser QA against local Rust/ClickHouse with seeded histogram and eval
+  objects.
 
 ## Documentation Plan
 
 - `docs/design/2026-06-02-chart-type-parity.md`
 - `apps/web/README.md`
+- `apps/rust-server/README.md`
+- `packages/python-sdk/README.md`
+- `packages/python-sdk/PYPI_README.md`
 - `apps/docs/dashboard/runs-workspace.mdx`
+- `apps/docs/sdk/rich-objects.mdx`
+- `apps/docs/concepts/core-concepts.mdx`
 
 ## Alternatives Considered
 
-- Implement all requested chart types together. Rejected by four fresh
-  reviewers as too broad and unsafe for one PR.
-- Add histogram-series first. Valuable, but blocked until object value caps,
-  histogram validation, and object windowing semantics are accepted.
-- Add classification eval helpers first. Valuable, but it is a backend/SDK API
-  contract change and not safe as a frontend-only slice.
-- Add parallel coordinates first. Rejected because the useful MVP needs heavier
-  interaction design than this PR can safely deliver.
+- Add a multi-run histogram-series endpoint now. Rejected for this slice: the
+  selected-run object route is enough for a useful MVP, while multi-run object
+  windows need separate limits and OpenAPI shape.
+- Auto-discover histogram keys from all selected-run objects. Rejected because
+  the existing route returns full values and newest frames, not a bounded key
+  catalog.
+- Ship violin plots immediately. Rejected: small seed counts make kernel
+  density visually overconfident. Box/median/strip is more honest.
+- Implement classification eval as screenshots or generic tables. Rejected:
+  the product requirement is typed rich objects and an SDK helper.
+- Add saved Runs workspace parallel-coordinate panels. Rejected for this slice:
+  the accepted scope keeps parallel coordinates in Insights as an exploratory
+  HPO/sweep surface.
 
 ## Review Notes
 
+Previous first-slice reviewers approved the scatter-only foundation and
+explicitly deferred the features now covered by this second-slice contract.
+
 Fresh execution reviewer 1:
 
-- Finding: The first implementation slice was too broad and crossed frontend,
-  backend, SDK, storage, and object-contract boundaries.
-- Risk: Partial implementation would create misleading or unsafe graph
-  surfaces, especially for histogram-series and evaluation objects.
-- Recommended edit: Revise to field catalog plus saved Runs scatter only;
-  leave distribution, histogram-series, parallel, and eval objects as separate
-  accepted slices.
+- Finding: Categorical field IDs, object-key panel creation, histogram key
+  discovery, eval semantics, and selected-run caps were not executable enough.
+- Risk: Saved panels could be dropped, histogram panels could not be created,
+  eval tests would be ambiguous, and selected-run panels could overfetch.
+- Recommended edit: Add exact categorical IDs, require explicit histogram
+  `objectKey`, state compatibility fallback values, define eval calculations,
+  and cap distribution at `settings.maxRuns`.
 - Decision: Accepted.
 
 Fresh execution/security reviewer 2:
 
-- Finding: Workspace sanitizer would drop new panel fields; object payload
-  validation is insufficient for histogram/eval work; field ID grammar was
-  ambiguous.
-- Risk: Saved panels could silently lose fields, object payloads could exceed
-  intended bounds, and persisted field IDs could fail for normal metric names.
-- Recommended edit: Add explicit sanitizer rules and tests for scatter, block
-  object-backed graph types, and use escaped field ID segments.
+- Finding: Rich-object value caps, histogram server validation, histogram key
+  strategy, object request fan-out, and eval semantic caps were underspecified.
+- Risk: Large stored JSON or saved views could create oversized responses,
+  malformed histogram/eval data, or object-read denial-of-service.
+- Recommended edit: Add explicit byte/depth/count caps, server-authoritative
+  histogram/eval validators, no automatic key discovery, and deduped
+  concurrency-limited object reads.
 - Decision: Accepted.
 
 Fresh ML product reviewer 1:
 
-- Finding: Loaded-run scope can mislead researchers, distribution needs stronger
-  seed/group semantics, and scatter needs to inherit the Runs workflow.
-- Risk: Users may draw false project-wide conclusions from a paginated subset or
-  get a chart that is visually present but not workflow-linked.
-- Recommended edit: Show plotted/scope counts, prioritize explicit scope
-  language, and require hover/run identity for scatter.
-- Decision: Accepted for scatter; distribution is deferred.
+- Finding: Grouping by seed confuses replication with variants; capped
+  summaries and SEM can look more authoritative than the visible sample.
+- Risk: Researchers could draw false conclusions about ablation stability or
+  full-training drift.
+- Recommended edit: Treat seed as `replicateField`, show scope/caps/missing
+  values, suppress SEM for small groups, label histogram panels as latest
+  frames, and avoid heatmaps for incompatible bins.
+- Decision: Accepted.
 
 Fresh ML workflow reviewer 2:
 
-- Finding: The original draft still led with W&B/Neptune parity and
-  under-specified best metric semantics, histogram drift workflows, and eval
-  metadata.
-- Risk: The roadmap could match chart menus without solving training-debugging
-  questions.
-- Recommended edit: Reframe around tradeoffs, seed stability, distribution
-  drift, and evaluation failures; add best metric fields; demote parallel until
-  interaction requirements are accepted.
+- Finding: Panel controls, histogram naming, tiny-group rendering, eval fields,
+  and empty states needed exact product language.
+- Risk: Users could confuse summary histograms with logged histograms, see
+  overconfident boxes, or misunderstand absent eval curves.
+- Recommended edit: Add panel control labels, rename object panel to `Logged
+  histogram timeline`, suppress box/SEM below `n=5`, narrow eval MVP to binary
+  curves, and enumerate empty states.
 - Decision: Accepted.
-
-Final security diff reviewer:
-
-- Finding: Malformed encoded field IDs and unbounded supplemental metric keys
-  could waste client CPU.
-- Resolution: Field decoding now normalizes malformed segments to `null`, and
-  catalog derivation bounds metric keys, nested-field traversal, and loaded-run
-  sampling.
-
-Final performance diff reviewer:
-
-- Finding: Field catalog and enriched run summaries could allocate heavily on
-  large visible run sets or repeated panel renders.
-- Resolution: Catalog derivation samples a bounded run set, caps leaves and
-  nodes, and avoids fallback summary merging when the primary summary already
-  has all keys.
-
-Final product/frontend diff reviewers:
-
-- Finding: Scatter defaults and empty states could overemphasize metrics,
-  understate current-page scope, or clip field labels.
-- Resolution: Defaults now prefer numeric config/run fields for x-axis, best
-  metric labels show direction, empty states name missing fields, and legend
-  labels wrap without clipping.
-
-Final cleanliness diff reviewer:
-
-- Finding: The review should keep the implementation scoped and leave unrelated
-  worktree changes alone.
-- Resolution: The PR remains frontend/docs/tests only, and unrelated `TODO.md`
-  edits are intentionally excluded from the commit.
 
 ## Coverage Exceptions
 
@@ -379,5 +574,4 @@ None planned.
 
 ## Decision
 
-Accepted for the first slice only: loaded-run field catalog, workspace schema
-migration/sanitization, and summary-only Runs scatter panels.
+Accepted for a narrow second slice after fresh review.

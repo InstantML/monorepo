@@ -1,12 +1,13 @@
 ---
 title: "Attributes and objects API"
-description: "Write typed attributes, create rich objects, list object manifests, and page table rows."
+description: "Write typed attributes, create rich objects, list object envelopes, and page table rows."
 ---
 
 # Attributes and objects API
 
 Attributes store typed non-scalar context. Rich objects store first-class table,
-media, and histogram payloads for Run Detail and artifact-style inspection.
+media, histogram, and evaluation payloads for Run Detail and artifact-style
+inspection.
 
 ## Write attributes
 
@@ -21,7 +22,7 @@ Content-Type: application/json
   "attributes": [
     {
       "path": "config/optimizer",
-      "type": "text",
+      "type": "string_series",
       "step": 1,
       "timestamp": "2026-05-16T00:00:00Z",
       "value": "adam",
@@ -35,12 +36,13 @@ Content-Type: application/json
 Single-attribute form can put `path`, `type`, `step`, `timestamp`, `value`,
 and `summary` at the top level.
 
-Use rich object endpoints for tables and media.
+Use rich object endpoints for tables, media, logged histograms, and typed
+evaluation bundles.
 
 ## List attributes
 
 ```http
-GET /api/runs/{run_id}/attributes?type=text&path_prefix=config/&limit=100
+GET /api/runs/{run_id}/attributes?type=string_series&path_prefix=config/&limit=100
 Authorization: Bearer instantml_...
 ```
 
@@ -81,9 +83,13 @@ Supported kinds:
 - `video`
 - `audio`
 - `histogram`
+- `classification_eval`
 
 Media objects require an artifact ID from the same run. Tables accept up to
-1,000 rows per create request.
+1,000 rows per create request. Histogram objects require finite bins and
+nonnegative counts with compatible lengths. `classification_eval` objects are
+compact binary classification bundles with PR/ROC curves, a confusion matrix,
+per-class metrics, and optional prediction preview rows.
 
 ## List rich objects
 
@@ -92,7 +98,13 @@ GET /api/runs/{run_id}/objects?kind=table&limit=100&offset=0
 Authorization: Bearer instantml_...
 ```
 
-The response includes object manifests, not full table contents.
+The response includes object envelopes with inline values for non-table rich
+objects. Table row contents are paged separately through the rows endpoint.
+
+Use `kind=histogram&key=...&limit=100` to read selected-run logged histogram
+frames for Runs workspace timeline panels. The current API reads one run and
+one explicit object key; multi-run histogram timelines need a separate bounded
+endpoint.
 
 ## Page table rows
 
