@@ -30,6 +30,7 @@ test("docs app route renders docs source instead of redirecting to a docs host",
   assert.match(route, /DocsSidebar/);
   assert.match(route, /DocsCodeBlock/);
   assert.match(route, /DocsAgentMarkdownButton/);
+  assert.match(route, /<InstantMlMark animated=\{false\}/);
   assert.match(route, /Open \.md/);
   assert.match(agentButton, /fetch\(href/);
   assert.match(agentButton, /Copy \.md for agent/);

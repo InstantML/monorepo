@@ -16,15 +16,17 @@
 // pre-brand-refresh callers. The newer landing-side component lives at
 // components/landing/LogoMark.tsx and renders the same shape.
 export function InstantMlMark({
+  animated = true,
   className = "",
   size,
   loading = false,
 }: {
+  animated?: boolean;
   className?: string;
   size?: number;
   loading?: boolean;
 }) {
-  const animClass = loading ? "logo-loading" : "logo-anim";
+  const animClass = loading ? "logo-loading" : animated ? "logo-anim" : "";
   return (
     <svg
       aria-hidden="true"
