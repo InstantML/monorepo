@@ -83,6 +83,17 @@ aggregates, config fields, metadata fields, duration, or created time.
 Distribution panels group a numeric loaded-run field by categorical config,
 metadata, status, or first tag.
 
+Choose the data shape before logging so each dashboard surface can stay fast
+and readable:
+
+| Data shape | Use for | Dashboard surfaces |
+| --- | --- | --- |
+| Scalar metric | One numeric value per step | Line, bar, dot, value histogram, scatter, and seed/group distribution panels |
+| Numeric config | Settings that explain outcomes | Scatter panels, Compare columns, and Insights parallel coordinates |
+| Categorical config or metadata | Labels and run attributes that explain groups | Distribution grouping, filters, and Compare matrix context |
+| Rich histogram object | A distribution for one run at one step | Run Detail previews and selected-run logged-histogram timelines |
+| Classification eval bundle | Binary classifier evaluation payloads | Run Detail PR/ROC, confusion matrix, per-class metrics, and optional prediction previews |
+
 ## Step
 
 Step is the x-axis coordinate for metric series. Steps must be finite,
@@ -178,6 +189,10 @@ plot scalar metric summary values across the currently selected or loaded runs.
 Saved logged-histogram timeline panels can read one selected run's histogram
 objects by explicit key. Classification evaluation bundles render typed PR/ROC,
 confusion-matrix, per-class, and optional prediction previews.
+
+Keep arrays, tables, media, confusion matrices, and prediction examples as rich
+objects. Scalar metrics should stay finite numeric values so summary panels and
+comparisons do not need to fetch object payloads or full metric histories.
 
 ## Report
 

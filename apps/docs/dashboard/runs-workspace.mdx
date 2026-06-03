@@ -76,7 +76,58 @@ Current visualization panel types:
   Add them by typing the histogram object key; metric rows are only suggestions
   when a scalar metric happens to share the same key.
 
-![Logged histogram timeline panel](/images/product/dashboard-logged-histogram.png)
+## Choose the right graph
+
+Most Runs workspace panels come from scalar metrics logged with
+`run.log_metrics(...)`. Logged histogram timeline panels are the rich-object
+exception: they read selected-run histogram objects logged with
+`run.log_objects(...)`.
+
+| Graph | Log this | Use when |
+| --- | --- | --- |
+| Line | Scalar metric per step, such as `train/loss` | Training dynamics, smoothing, and step/time inspection. |
+| Bar / dot / value histogram | Same scalar metric key across runs | Latest-value comparison: bars rank, dots preserve run identity, histograms show spread. |
+| Scatter | Two numeric summary fields | Tradeoffs such as learning rate vs accuracy, duration vs score, or loss vs F1. |
+| Distribution | Scalar outcome plus group and seed config | Seed variance or ablation stability by variant, method, dataset, model, status, metadata, or tag. |
+| Logged histogram timeline | Histogram object key plus shared bins | One selected run's confidence, activation, reward, latency, or calibration distribution over time. |
+| Parallel coordinates | Numeric config plus metric summaries | HPO/sweep tradeoffs in Insights, not saved Runs workspace panels. |
+
+For chart-friendly runs, keep metric keys stable and namespace them by purpose:
+`train/loss`, `eval/accuracy`, `eval/return_mean`, `optimizer/lr`, or
+`system/gpu_utilization`. Put repeatable experiment settings in `config`, such
+as `seed`, `variant`, `learning_rate`, `batch_size`, `model`, and `dataset`.
+
+```python
+import instantml as ro
+
+score_bins = [index / 32 for index in range(33)]
+
+run = ro.init(
+    project="reward-sweep",
+    config={"variant": variant, "seed": seed, "learning_rate": learning_rate},
+    tags=[variant],
+)
+
+run.log_metrics(
+    {"train/policy_loss": policy_loss, "eval/return_mean": return_mean},
+    step=step,
+)
+run.log_objects(
+    {
+        "eval/score_distribution": ro.Histogram.from_values(
+            eval_scores,
+            bins=score_bins,
+        )
+    },
+    step=step,
+)
+```
+
+Use `run.log_classification_eval(...)` instead of screenshot artifacts for
+binary classification evals. Run Detail renders the typed PR/ROC curves,
+confusion matrix, per-class metrics, and optional prediction rows.
+Keep logging scalar eval metrics such as accuracy, F1, AUC, or loss when you
+also want sorting, scatter, distribution, or comparison columns.
 
 Line panels load selected-run series through bounded chunked requests. Dense
 series render paths on canvas while preserving axes, legends, hover readouts,
@@ -87,11 +138,17 @@ so overlapping runs stay distinguishable.
 Scatter, distribution, bar, value histogram, and dot panels use already loaded
 run summaries, so they do not fetch full metric histories. Their scope is
 selected runs when a selection is active, otherwise the visible loaded run page
-capped by the panel limit. Scatter and distribution fields can come from metric
-summaries, config values, metadata, duration, status, first tag, or created
-time. Scatter and distribution panels are summary-only and do not make metric
-series or rich-object reads. These summary panels do not include lasso
-selection, density overlays, or project-wide all-matching queries.
+capped by the panel limit. Scatter fields must be numeric: metric summaries,
+numeric config or metadata, duration, or created time. Distribution value fields
+are numeric too, while grouping fields can be categorical config, metadata,
+status, or first tag. Scatter and distribution panels are summary-only and do
+not make metric series or rich-object reads. These summary panels do not include
+lasso selection, density overlays, or project-wide all-matching queries.
+
+The fullscreen view below shows a selected-run histogram timeline with shared
+bin edges across frames.
+
+![Fullscreen logged histogram timeline](/images/product/dashboard-logged-histogram.png)
 
 Parallel coordinates remain in **Insights** as an exploratory HPO/sweep view
 over loaded summaries rather than a saved Runs workspace panel.

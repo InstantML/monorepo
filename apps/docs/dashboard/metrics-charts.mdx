@@ -40,6 +40,29 @@ Current chart controls include:
 Unit-bounded metrics such as accuracy, F1, precision, recall, and AUC use a
 normalized `0..1` y-axis. Return, reward, and loss metrics auto-scale.
 
+## Scalar metrics that chart well
+
+Use scalar metrics when each step has one numeric value. These metrics can feed
+line charts, Runs workspace line panels, and loaded-summary panels such as
+bar, value histogram, dot, scatter, and distribution.
+
+| Metric shape | Good graph types | Examples |
+| --- | --- | --- |
+| Smooth or noisy time series | Line charts with optional smoothing | `train/loss`, `eval/return_mean`, `optimizer/lr`, `system/gpu_utilization` |
+| Latest scalar outcome | Bar, dot, value histogram | `eval/accuracy`, `eval/macro_f1`, `eval/return_mean`, `val/loss` |
+| Final, best, or latest scalar outcome grouped by variant | Distribution | `eval/return_mean` grouped by `config.variant` with `config.seed` as replicate metadata |
+| Hyperparameter or runtime tradeoff | Scatter and Insights parallel coordinates | `config.learning_rate` vs `eval/accuracy`, duration vs score, loss vs F1 |
+
+Do not force arrays, tables, confusion matrices, or per-example predictions into
+scalar metrics. Log those as rich objects so the dashboard can fetch them
+through bounded object routes instead of bloating the scalar metric hot path.
+
+For per-sample distributions over time, log histogram rich objects with
+`ro.Histogram.from_values(scores, bins=shared_edges)` under a stable object key.
+For binary classifier evidence, use `run.log_classification_eval(...)` so Run
+Detail can render PR/ROC, confusion matrix, per-class metrics, and prediction
+rows.
+
 ## Line chart readability
 
 Metric charts share the same visual system as Runs workspace line panels:
@@ -77,5 +100,11 @@ explicit point limit instead of asking the table view to load full history.
 
 - Keep metric names stable across runs.
 - Prefer slash namespaces.
+- Use scalar metric keys for numeric values only; use rich objects for arrays,
+  tables, media, histograms, and typed eval bundles.
+- Put numeric fields such as `learning_rate`, `batch_size`, and `seed` in run
+  `config` for scatter and Insights panels. Put categorical fields such as
+  `variant`, `dataset`, and `model` in `config` for distribution grouping and
+  filtering.
 - Log one training-loop dictionary per step instead of many tiny calls.
 - Use consistent step semantics inside a project.

@@ -79,10 +79,11 @@ Checkpoint rows expose download, resume-code, and fork actions. Forking creates
 a linked child run record only; training starts when a user or script attaches
 to that run and logs new data.
 
-![Lineage graph](/images/product/dashboard-lineage-graph.png)
+![Lineage graph showing a forked child run with no direct children yet](/images/product/dashboard-lineage-graph.png)
 
-The Graph tab shows the selected run's direct parent, checkpoint, and child
-context.
+The Graph tab shows the selected run's direct parent, checkpoint, and bounded
+child context. The captured state is a forked child run with no direct children
+yet.
 
 ## Artifacts
 

@@ -31,6 +31,25 @@ parallel-coordinate traces for sweep/HPO tradeoffs, and evaluation metric
 summary cards. These traces are exploratory and summary-only; they are not
 saved Runs workspace panels.
 
+Parallel coordinates work best when the loaded or selected run summaries have
+several numeric config or summary fields with real variation: learning rate,
+batch size, duration, best validation score, return mean, loss, or accuracy.
+Keep seed as replicate metadata instead of a default axis, and use Runs
+workspace distribution panels when the main question is "is this variant stable
+across seeds?"
+
+Log the inputs with ordinary SDK run config and scalar metrics:
+
+```python
+import instantml as ro
+
+run = ro.init(
+    project="sweep",
+    config={"learning_rate": lr, "batch_size": batch_size, "seed": seed},
+)
+run.log_metrics({"eval/accuracy": accuracy, "train/loss": loss}, step=epoch)
+```
+
 ## When to use each surface
 
 | Surface | Use it when |

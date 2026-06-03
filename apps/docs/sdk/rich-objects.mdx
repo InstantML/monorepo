@@ -7,6 +7,23 @@ description: "Log rich objects for table previews, histogram timelines, typed ev
 
 Scalar metrics explain trends. Rich objects explain evidence.
 
+Use scalar metrics for one numeric value per step. Use rich objects when the
+dashboard needs structured evidence:
+
+- `run.log_table_object(...)` for prediction samples, eval rows, and compact
+  per-example diagnostics in Run Detail.
+- `run.log_objects({"key": ro.Histogram.from_values(...)})` for score,
+  confidence, activation, gradient, reward, weight, or latency distributions in
+  Run Detail and selected-run logged-histogram timelines.
+- `run.log_classification_eval(...)` for binary PR/ROC curves, confusion
+  matrix, per-class metrics, and optional prediction rows in Run Detail.
+- `ro.Image`, `ro.Video`, and `ro.Audio` for rollout evidence, generated
+  examples, custom diagnostics, and audio samples.
+
+For Runs workspace summary panels, keep logging scalar metrics with
+`run.log_metrics(...)`. For selected-run histogram timelines, log histogram
+objects under the same key at multiple steps.
+
 ## Tables
 
 Use tables for bounded previewable rows such as predictions, eval samples, or
@@ -34,8 +51,15 @@ Use histograms for distributions such as logits, rewards, gradient norms, or
 latency samples.
 
 ```python
+confidence_bins = [index / 8 for index in range(9)]
+
 run.log_objects(
-    {"eval/confidence": ro.Histogram.from_values([0.91, 0.72, 0.88, 0.43], bins=8)},
+    {
+        "eval/confidence": ro.Histogram.from_values(
+            [0.91, 0.72, 0.88, 0.43],
+            bins=confidence_bins,
+        )
+    },
     step=10,
 )
 ```
@@ -48,6 +72,10 @@ Runs workspace logged-histogram timeline panels can also read a selected run's
 histogram objects by explicit key. When frames share bin edges, the panel shows
 a heatmap over steps; when bins differ, it shows a selected-frame histogram so
 non-comparable frames are not implied to be comparable.
+
+For the cleanest timeline heatmap, keep bin edges stable for a given object
+key. If you need adaptive bins, the panel still works, but it falls back to a
+single selected frame because different bin edges are not directly comparable.
 
 ## Classification evaluations
 
