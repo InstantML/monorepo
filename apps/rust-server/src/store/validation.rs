@@ -633,7 +633,7 @@ fn validate_eval_predictions(value: Option<&Value>, class_names: &[String]) -> A
                 .ok_or_else(|| AppError::validation("prediction score is required"))?,
             "prediction score",
         )?;
-        if !object.get("correct").and_then(Value::as_bool).is_some() {
+        if object.get("correct").and_then(Value::as_bool).is_none() {
             return Err(AppError::validation(
                 "classification eval prediction correct must be boolean",
             ));

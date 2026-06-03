@@ -42,18 +42,20 @@ pub async fn create_user(store: &Store, input: CreateUserRequest) -> AppResult<U
         }
         return Ok(created);
     }
-    let mut data = store.data.lock().await;
-    if let Some(user_id) = data
-        .identities
-        .get(&(provider.clone(), provider_subject.clone()))
-        .copied()
-        .or_else(|| data.users_by_email.get(&email).copied())
     {
-        return data
-            .users
-            .get(&user_id)
-            .cloned()
-            .ok_or_else(|| AppError::not_found("user not found"));
+        let data = store.data.lock().await;
+        if let Some(user_id) = data
+            .identities
+            .get(&(provider.clone(), provider_subject.clone()))
+            .copied()
+            .or_else(|| data.users_by_email.get(&email).copied())
+        {
+            return data
+                .users
+                .get(&user_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("user not found"));
+        }
     }
     let user = UserRow {
         id: Uuid::new_v4(),
@@ -74,6 +76,7 @@ pub async fn create_user(store: &Store, input: CreateUserRequest) -> AppResult<U
     store
         .persist_locked("identity", LOCAL_ORG_ID, &user.id.to_string(), &identity)
         .await?;
+    let mut data = store.data.lock().await;
     data.insert_user(user.clone());
     data.identities
         .insert((identity.provider, identity.provider_subject), user.id);
