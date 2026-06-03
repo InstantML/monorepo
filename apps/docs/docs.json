@@ -99,6 +99,9 @@
             "group": "Data and account",
             "pages": [
               "guides/imports",
+              "guides/wandb-alternative",
+              "guides/instantml-vs-mlflow",
+              "guides/wandb-import-guide",
               "guides/wandb-neptune-imports",
               "guides/export-usage-limits",
               "guides/pricing-limits-billing",
