@@ -424,14 +424,16 @@ pub async fn accept_invitation_for_user(
     if needs_billing_write {
         ensure_billing_write_allowed(store, org_id, "accept an invitation").await?;
     }
+    struct AcceptedInvitationPlan {
+        user: UserRow,
+        org: OrganizationRow,
+        membership: Option<MembershipRow>,
+        invitation: Option<OrgInvitationRow>,
+    }
+
     enum AcceptInvitationPlan {
-        Expired(OrgInvitationRow),
-        Accepted {
-            user: UserRow,
-            org: OrganizationRow,
-            membership: Option<MembershipRow>,
-            invitation: Option<OrgInvitationRow>,
-        },
+        Expired(Box<OrgInvitationRow>),
+        Accepted(Box<AcceptedInvitationPlan>),
     }
 
     let plan: AppResult<AcceptInvitationPlan> = {
@@ -474,7 +476,7 @@ pub async fn accept_invitation_for_user(
         if !already_accepted && invitation.expires_at <= now {
             let mut expired = invitation.clone();
             expired.status = "expired".to_string();
-            Ok(AcceptInvitationPlan::Expired(expired))
+            Ok(AcceptInvitationPlan::Expired(Box::new(expired)))
         } else {
             let existing_membership = data
                 .memberships
@@ -525,17 +527,20 @@ pub async fn accept_invitation_for_user(
             } else {
                 None
             };
-            Ok(AcceptInvitationPlan::Accepted {
-                user,
-                org,
-                membership,
-                invitation: accepted_invitation,
-            })
+            Ok(AcceptInvitationPlan::Accepted(Box::new(
+                AcceptedInvitationPlan {
+                    user,
+                    org,
+                    membership,
+                    invitation: accepted_invitation,
+                },
+            )))
         }
     };
 
     match plan? {
         AcceptInvitationPlan::Expired(expired) => {
+            let expired = *expired;
             store
                 .persist_locked(
                     "org_invitation",
@@ -552,12 +557,13 @@ pub async fn accept_invitation_for_user(
                 "invitation expired",
             ))
         }
-        AcceptInvitationPlan::Accepted {
-            user,
-            org,
-            membership,
-            invitation,
-        } => {
+        AcceptInvitationPlan::Accepted(accepted) => {
+            let AcceptedInvitationPlan {
+                user,
+                org,
+                membership,
+                invitation,
+            } = *accepted;
             if let Some(membership) = &membership {
                 store
                     .persist_locked(
