@@ -8,9 +8,8 @@
 // overrides the intro to instant on repeat visits or when
 // prefers-reduced-motion is set.
 //
-// Set `loading` to swap the one-time intro for a continuous "chase"
-// pulse on the diagonal Bolt dots — used by AppLoadingScreen so the mark
-// itself becomes the spinner.
+// Set `loading` to swap the one-time intro for a restrained continuous sync
+// state on the diagonal Bolt dots, used by AppLoadingScreen.
 //
 // This file is the legacy import path used by auth-flow.tsx and other
 // pre-brand-refresh callers. The newer landing-side component lives at

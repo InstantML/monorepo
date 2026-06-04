@@ -212,147 +212,287 @@ p {
   min-height: 100vh;
 }
 
-/* ─── App loading screen ────────────────────────────────────────────────
- *
- * Full-bleed Ink backdrop, soft aurora wash behind the card, faint
- * dot-grid texture. The logo mark itself is the spinner — its diagonal
- * Bolt dots chase continuously via .logo-loading (see landing-system.css),
- * wrapped in a breathing glow ring.
- */
+/* ─── App loading screen ──────────────────────────────────────────────── */
 .app-loading-screen {
   position: relative;
   display: grid;
   min-height: 100vh;
   place-items: center;
   background:
-    radial-gradient(ellipse 60% 45% at 50% 38%, rgba(31, 184, 119, 0.18), transparent 70%),
-    radial-gradient(ellipse 80% 60% at 50% 110%, rgba(31, 184, 119, 0.07), transparent 70%),
-    var(--bg, #0d0f15);
-  color: var(--text, #f7f8fa);
-  padding: 32px;
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    var(--bg, #ffffff);
+  background-size: 44px 44px;
+  color: var(--text, #0f172a);
+  padding: 24px;
   overflow: hidden;
-  isolation: isolate;
 }
 
-/* Slowly drifting aurora — large soft blobs that sweep behind the card. */
-.app-loading-aurora {
-  position: absolute;
-  inset: -20%;
-  z-index: -2;
+:root[data-theme="dark"] .app-loading-screen {
   background:
-    radial-gradient(circle at 30% 30%, rgba(31, 184, 119, 0.22), transparent 40%),
-    radial-gradient(circle at 70% 60%, rgba(82, 137, 255, 0.14), transparent 45%),
-    radial-gradient(circle at 50% 90%, rgba(31, 184, 119, 0.12), transparent 50%);
-  filter: blur(40px);
-  opacity: 0.85;
-  animation: app-loading-aurora-drift 18s ease-in-out infinite alternate;
-  pointer-events: none;
+    linear-gradient(rgba(248, 250, 252, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(248, 250, 252, 0.025) 1px, transparent 1px),
+    var(--bg, #0e1116);
 }
 
-/* Faint dot grid that grounds the composition. */
-.app-loading-grid {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 28px 28px;
-  background-position: center;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 0%, transparent 80%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 0%, transparent 80%);
-  pointer-events: none;
-}
-
-.app-loading-card {
+.app-loading-shell {
   display: grid;
-  justify-items: center;
-  gap: 32px;
-  width: min(420px, 100%);
-  text-align: center;
-  animation: app-loading-card-in 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  gap: 18px;
+  width: min(560px, 100%);
+  padding: 24px;
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #ffffff) 96%, transparent);
+  box-shadow: 0 20px 54px rgba(15, 23, 42, 0.12);
+  animation: app-loading-shell-in 420ms ease-out both;
 }
 
-/* Mark sits inside a soft circular halo that breathes in sync with the
- * diagonal chase. The mark itself is positioned on top via z-index. */
+:root[data-theme="dark"] .app-loading-shell {
+  border-color: rgba(248, 250, 252, 0.08);
+  background: #11161d;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
+}
+
+.app-loading-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .app-loading-mark {
   position: relative;
   display: grid;
-  width: 144px;
-  height: 144px;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
   place-items: center;
-  color: var(--text, #f7f8fa);
-}
-
-.app-loading-mark-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at center, rgba(31, 184, 119, 0.22) 0%, transparent 65%),
-    conic-gradient(
-      from 0deg,
-      rgba(31, 184, 119, 0.45),
-      rgba(31, 184, 119, 0.05),
-      rgba(31, 184, 119, 0.45)
-    );
-  filter: blur(14px);
-  opacity: 0.7;
-  animation: app-loading-ring-spin-breath 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  pointer-events: none;
-}
-
-.app-loading-mark::before {
-  /* Crisp inner ring on top of the halo. */
-  position: absolute;
-  inset: 18px;
-  content: "";
-  border: 1px solid rgba(31, 184, 119, 0.32);
-  border-radius: 50%;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)),
-    rgba(13, 15, 21, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 20px 54px rgba(0, 0, 0, 0.4);
+  color: var(--text, #0f172a);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 8px;
+  background: var(--surface-soft, #f8fafc);
 }
 
 .app-loading-mark .instantml-mark-svg {
-  position: relative;
-  z-index: 1;
-  width: 72px;
-  height: 72px;
+  width: 28px;
+  height: 28px;
+}
+
+:root[data-theme="dark"] .app-loading-mark {
+  border-color: rgba(248, 250, 252, 0.09);
+  background: #171d27;
 }
 
 .app-loading-text {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
 }
 
-.app-loading-card h1 {
-  color: var(--text, #f7f8fa);
-  font-size: 22px;
-  font-weight: 780;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
+.app-loading-shell h1 {
+  color: var(--text, #0f172a);
+  font-size: 16px;
+  font-weight: 720;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
-.app-loading-card p {
-  color: var(--muted, #9aa3b2);
-  font-size: 13.5px;
-  font-weight: 580;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.app-loading-shell p {
+  color: var(--muted, #475569);
+  font-size: 13px;
+  font-weight: 520;
+  letter-spacing: 0;
   /* React's key prop on the <p> remounts it whenever the detail string
    * changes, so this entrance animation plays on every transition
-   * ("Loading workspace" → "Loading runs" → "Starting data warehouse"). */
+   * between loading details. */
   animation: app-loading-detail-in 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-@keyframes app-loading-card-in {
+.app-loading-track {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-2, #f1f5f9);
+}
+
+.app-loading-track span {
+  position: absolute;
+  inset-block: 0;
+  width: 42%;
+  min-width: 120px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent, #1fb877), var(--blue, #5d89dd), transparent);
+  animation: app-loading-track-sweep 1.55s ease-in-out infinite;
+}
+
+.app-loading-preview {
+  overflow: hidden;
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+:root[data-theme="dark"] .app-loading-preview {
+  border-color: rgba(248, 250, 252, 0.08);
+  background: #0f141b;
+}
+
+.app-loading-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line, #e2e8f0);
+}
+
+.app-loading-preview-toolbar span,
+.app-loading-preview-line,
+.app-loading-preview-row small,
+.app-loading-chart-skeleton span {
+  display: block;
+  border-radius: var(--radius-sm, 4px);
+  background: linear-gradient(90deg, var(--surface-2, #f1f5f9), var(--surface-3, #e8eef5), var(--surface-2, #f1f5f9));
+  background-size: 220% 100%;
+  animation: app-loading-skeleton 1.7s ease-in-out infinite;
+}
+
+:root[data-theme="dark"] .app-loading-preview-toolbar span,
+:root[data-theme="dark"] .app-loading-preview-line,
+:root[data-theme="dark"] .app-loading-preview-row small,
+:root[data-theme="dark"] .app-loading-chart-skeleton span {
+  background: linear-gradient(90deg, #151d2a, #1b2534, #151d2a);
+  background-size: 220% 100%;
+}
+
+.app-loading-preview-toolbar span {
+  width: 64px;
+  height: 14px;
+}
+
+.app-loading-preview-toolbar span:first-child {
+  width: 96px;
+}
+
+.app-loading-preview-toolbar span:last-child {
+  width: 42px;
+  margin-left: auto;
+}
+
+.app-loading-preview-body {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.45fr) minmax(0, 1fr);
+  min-height: 190px;
+}
+
+.app-loading-preview-rail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  border-right: 1px solid var(--line, #e2e8f0);
+}
+
+.app-loading-preview-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.app-loading-preview-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #1fb877);
+  opacity: 0.6;
+}
+
+.app-loading-preview-line {
+  height: 9px;
+}
+
+.app-loading-preview-line.is-wide {
+  width: 92%;
+}
+
+.app-loading-preview-line.is-medium {
+  width: 74%;
+}
+
+.app-loading-preview-line.is-short {
+  width: 58%;
+}
+
+.app-loading-preview-row small {
+  width: 28px;
+  height: 8px;
+}
+
+.app-loading-preview-chart {
+  position: relative;
+  min-width: 0;
+  padding: 18px;
+}
+
+.app-loading-chart-grid {
+  position: absolute;
+  inset: 18px;
+  border-left: 1px solid var(--line, #e2e8f0);
+  border-bottom: 1px solid var(--line, #e2e8f0);
+  background:
+    linear-gradient(var(--line-soft, #eef2f7) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft, #eef2f7) 1px, transparent 1px);
+  background-size: 100% 33%, 25% 100%;
+  opacity: 0.9;
+}
+
+:root[data-theme="dark"] .app-loading-chart-grid {
+  border-color: rgba(248, 250, 252, 0.09);
+  background:
+    linear-gradient(rgba(248, 250, 252, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(248, 250, 252, 0.045) 1px, transparent 1px);
+  background-size: 100% 33%, 25% 100%;
+}
+
+.app-loading-chart-skeleton {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  min-height: 132px;
+  padding: 18px 20px 16px 28px;
+}
+
+.app-loading-chart-skeleton span {
+  height: 10px;
+}
+
+.app-loading-chart-skeleton .is-wide {
+  width: 82%;
+}
+
+.app-loading-chart-skeleton .is-medium {
+  width: 68%;
+}
+
+.app-loading-chart-skeleton .is-short {
+  width: 44%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #1fb877) 38%, var(--surface-2, #f1f5f9)), color-mix(in srgb, var(--blue, #5d89dd) 32%, var(--surface-3, #e8eef5)), color-mix(in srgb, var(--accent, #1fb877) 38%, var(--surface-2, #f1f5f9)));
+  background-size: 220% 100%;
+  animation-delay: 110ms;
+}
+
+:root[data-theme="dark"] .app-loading-chart-skeleton .is-short {
+  background: linear-gradient(90deg, rgba(31, 184, 119, 0.22), rgba(93, 137, 221, 0.22), rgba(31, 184, 119, 0.22));
+  background-size: 220% 100%;
+}
+
+@keyframes app-loading-shell-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -371,40 +511,70 @@ p {
   }
 }
 
-@keyframes app-loading-ring-spin-breath {
+@keyframes app-loading-track-sweep {
   0% {
-    opacity: 0.55;
-    transform: rotate(0deg) scale(0.94);
+    transform: translateX(-115%);
   }
-  50% {
-    opacity: 0.95;
-    transform: rotate(180deg) scale(1.06);
-  }
+  52%,
   100% {
-    opacity: 0.55;
-    transform: rotate(360deg) scale(0.94);
+    transform: translateX(260%);
   }
 }
 
-@keyframes app-loading-aurora-drift {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
+@keyframes app-loading-skeleton {
+  0%,
   100% {
-    transform: translate3d(2%, -2%, 0) scale(1.08);
+    background-position: 140% 0;
+  }
+  50% {
+    background-position: -40% 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-loading-shell {
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .app-loading-preview-body {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .app-loading-preview-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--line, #e2e8f0);
+  }
+
+  .app-loading-preview-row:nth-child(n + 4) {
+    display: none;
+  }
+
+  .app-loading-chart-skeleton {
+    min-height: 112px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-loading-card,
-  .app-loading-aurora,
-  .app-loading-mark-ring,
-  .app-loading-card p {
+  .app-loading-shell,
+  .app-loading-shell p,
+  .app-loading-track span,
+  .app-loading-preview-toolbar span,
+  .app-loading-preview-line,
+  .app-loading-preview-row small,
+  .app-loading-chart-skeleton span {
     animation: none !important;
   }
-  .app-loading-card,
-  .app-loading-card p {
+  .app-loading-shell,
+  .app-loading-shell p {
     opacity: 1 !important;
     transform: none !important;
   }
+
+  .app-loading-track span {
+    transform: none !important;
+    width: 100%;
+  }
+
 }

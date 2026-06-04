@@ -89,14 +89,14 @@ helpers; compare helpers (`CompareMatrix`, `CompareRunRows`, etc.) →
 
 | Cluster | State variables | Hook |
 | --- | --- | --- |
-| **Auth/session** | `dashboardAuthorized`, `dashboardAuthMessage`, `sessionPayload` | inline in shell (3 vars, not worth a hook) |
+| **Auth/session** | `dashboardAuthorized`, `dashboardSessionChecked`, `dashboardAuthMessage`, `sessionPayload` | inline in shell (4 vars, not worth a hook) |
 | **Filter** | `project`, `status`, `queryInput`, `query`, `sortBy`, `metricKey`, `metricFilter`, `columnMetricFilter`, `groupBy`, `xMode`, `smoothing`, `groupAverage` | `state/use-dashboard-state.ts` |
 | **Pagination** | `pageSize`, `pageOffset`, `pageCursorStack`, `dashboardLoading`, `pageNavigationPending` | `state/use-dashboard-state.ts` |
 | **Run data** | `projects`, `summary`, `overview`, `selectedRunIds`, `selectedRunDetails`, `primaryRunId`, `series`, `panelSeries`, `artifacts`, `loggedObjects`, `objectRowsById`, `runMetadataVersion` | `state/use-dashboard-state.ts` |
 | **Compare** | `diffOnly`, `referenceRunId`, `compareLayout`, `compareRowSort`, `compareRunSort`, `compareSortMetricKey`, `compareTableMetrics`, `compareSearch`, `compareConfigSortKey`, `compareEditRunId`, `compareArtifactsByRun`, `sideBySide` | `state/use-dashboard-state.ts` |
 | **Workspace layout** | `workspaceView`, `workspaceReady`, `panelSearch`, `addPanelSectionId`, `editingPanelRef`, `fullscreenPanelRef`, `workspaceSeries`, `workspaceUndoStack`, `workspaceRedoStack`, `runsRailCollapsed`, `runWorkspaceTab` | `state/use-workspace-layout.ts` |
 | **Saved views** | `savedViews`, `savedViewKey`, `viewName` | `state/use-saved-views.ts` |
-| **Ephemeral UI** | `columnsOpen`, `pinnedMetrics`, `navPinned`, `navAutoOpen`, `mobileNavOpen`, `theme`, `themeReady`, `hover`, `hoverMetricKey`, `chartZoomRange`, `primaryChartZoomRange`, `pinnedChartZoomRanges`, `shortcutHelpOpen`, `quickSearchOpen`, `quickSearchInput`, `quickSearchActiveIndex`, `message`, `loadingDetail`, `initialLoadDone` | inline in shell (wiring state; too interwoven with effects to extract cleanly without risk) |
+| **Ephemeral UI** | `columnsOpen`, `pinnedMetrics`, `navPinned`, `navAutoOpen`, `mobileNavOpen`, `theme`, `themeReady`, `hover`, `hoverMetricKey`, `chartZoomRange`, `primaryChartZoomRange`, `pinnedChartZoomRanges`, `shortcutHelpOpen`, `quickSearchOpen`, `quickSearchInput`, `quickSearchActiveIndex`, `message`, `initialLoadDone` | inline in shell (wiring state; too interwoven with effects to extract cleanly without risk) |
 | **Admin** | `usagePayload`, `seats`, `apiKeys`, `inviteEmail`, `inviteRole`, `apiKeyName`, `newApiKey`, `adminBusy`, `selectAllMatchingBusy` | inline in shell |
 
 **Decision:** For Phase 1 (this PR), state extraction is scoped to what can be

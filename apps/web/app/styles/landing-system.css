@@ -577,30 +577,28 @@
 /* ─── Continuous loading variant ─────────────────────────────────────────
  *
  * Applied via .logo-loading on the wrapping <svg> (see InstantMlMark with
- * loading={true}). The four diagonal Bolt dots chase in sequence; the
- * twelve currentColor dots breathe softly in the background. The mark
- * itself is the spinner — no extra UI needed.
+ * loading={true}). The diagonal Bolt dots step through a restrained sync
+ * state while the supporting dots stay quiet.
  */
 @keyframes logo-loading-chase {
   0%,
   100% {
-    opacity: 0.35;
-    transform: scale(0.92);
-    filter: drop-shadow(0 0 0 transparent);
+    opacity: 0.42;
+    transform: scale(0.94);
   }
-  50% {
+  44%,
+  64% {
     opacity: 1;
-    transform: scale(1.18);
-    filter: drop-shadow(0 0 12px rgba(31, 184, 119, 0.9));
+    transform: scale(1);
   }
 }
 @keyframes logo-loading-breath {
   0%,
   100% {
-    opacity: 0.45;
+    opacity: 0.5;
   }
   50% {
-    opacity: 0.85;
+    opacity: 0.72;
   }
 }
 
@@ -609,22 +607,22 @@
   transform-box: fill-box;
 }
 .logo-loading .logo-dot-diagonal {
-  animation: logo-loading-chase 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite both;
+  animation: logo-loading-chase 1.8s ease-in-out infinite both;
 }
 .logo-loading .logo-dot-diagonal.logo-dot-d0 {
   animation-delay: 0ms;
 }
 .logo-loading .logo-dot-diagonal.logo-dot-d1 {
-  animation-delay: 200ms;
+  animation-delay: 150ms;
 }
 .logo-loading .logo-dot-diagonal.logo-dot-d2 {
-  animation-delay: 400ms;
+  animation-delay: 300ms;
 }
 .logo-loading .logo-dot-diagonal.logo-dot-d3 {
-  animation-delay: 600ms;
+  animation-delay: 450ms;
 }
 .logo-loading .logo-dot:not(.logo-dot-diagonal) {
-  animation: logo-loading-breath 2.4s ease-in-out infinite both;
+  animation: logo-loading-breath 2.8s ease-in-out infinite both;
 }
 .logo-loading .logo-dot:not(.logo-dot-diagonal).logo-dot-r0 {
   animation-delay: 0ms;

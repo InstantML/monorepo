@@ -51,6 +51,18 @@ test("runs workspace exposes a visible select-all-on-page control with a count",
   assert.match(workspaceSrc, /Select all \$\{visibleRunIds\.length\} on this page/);
 });
 
+test("initial dashboard data load renders shell with Runs skeletons", () => {
+  const shellSrc = read("app/dashboard/dashboard-shell.tsx");
+  assert.match(shellSrc, /dashboardSessionChecked/);
+  assert.match(shellSrc, /if \(!dashboardSessionChecked\) return <AppLoadingScreen detail="Checking session" \/>/);
+  assert.doesNotMatch(shellSrc, /if \(!initialLoadDone\) return <AppLoadingScreen/);
+
+  const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
+  assert.match(workspaceSrc, /const initialRunsLoading = !initialLoadDone && workspaceRuns\.length === 0/);
+  assert.match(workspaceSrc, /<RunsRailSkeleton \/>/);
+  assert.match(workspaceSrc, /<WorkspaceCanvasSkeleton \/>/);
+});
+
 test("runs workspace lets you jump to a specific page", () => {
   const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
   assert.match(workspaceSrc, /function RunPageJumper/);
