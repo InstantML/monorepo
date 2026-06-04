@@ -124,7 +124,7 @@ test("LandingPage top navigation links to docs", () => {
 
 test("LandingPage migration copy matches implemented importer and shadow paths", () => {
   const src = fs.readFileSync(path.join(componentsDir, "LandingPage.tsx"), "utf8");
-  assert.match(src, /W&amp;B \/ MLflow \/ Neptune import paths/);
+  assert.match(src, /W&amp;B, MLflow, Neptune imports/);
   assert.match(src, /tools\/import-wandb-json\.mjs/);
   assert.match(src, /tools\/import-mlflow-json\.mjs/);
   assert.match(src, /tools\/import-neptune-json\.mjs/);
