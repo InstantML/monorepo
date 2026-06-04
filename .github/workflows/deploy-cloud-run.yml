@@ -307,15 +307,11 @@ jobs:
           INSTANTML_CLOUD_SQL_CONNECTION: ${{ steps.inputs.outputs.cloud_sql_connection }}
           INSTANTML_CONTROL_DATABASE_URL_SECRET: ${{ steps.inputs.outputs.control_database_url_secret }}
 
-          # Auth + signup gating (Clerk hosted, allowlist by email).
+          # Auth (Clerk hosted).
           # AUTH_MODE differs between local dev (`local`) and prod
           # (`api-key`); keep it set explicitly here.
-          # SIGNUP_ALLOWED_EMAILS lives in a repo Variable so the pilot
-          # list isn't checked into source. Edit via the Actions UI or
-          # `gh variable set INSTANTML_SIGNUP_ALLOWED_EMAILS`.
           INSTANTML_AUTH_MODE: "api-key"
           INSTANTML_MANAGED_CLERK_ENABLED: "true"
-          INSTANTML_SIGNUP_ALLOWED_EMAILS: ${{ vars.INSTANTML_SIGNUP_ALLOWED_EMAILS }}
           CLERK_JWT_ISSUER: ${{ steps.inputs.outputs.clerk_jwt_issuer }}
 
           # Server runtime config. BIND_ADDR and LOG_FORMAT differ

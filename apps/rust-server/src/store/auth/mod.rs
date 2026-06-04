@@ -18,4 +18,4 @@ pub use sessions::*;
 pub use users::*;
 
 // Re-export helpers that are pub(crate) — consumed outside the store module.
-pub use helpers::{derive_workspace_slug, slug_to_name, SignupAllowlist};
+pub use helpers::{derive_workspace_slug, slug_to_name};

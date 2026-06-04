@@ -173,7 +173,7 @@ period and now drive Free/non-billable blocking plus paid Stripe overage reports
 Before public self-serve paid launch:
 
 - Require payment verification and an explicit operator review before enabling plan-sized dedicated capacity or legacy provider-backed `cloud-service` provisioning.
-- Keep hosted signup allowlists until public spend gates are implemented.
+- Keep billing, plan-limit, and infrastructure spend alerts active while hosted signup is public.
 - Reconcile `GET /api/usage` with object storage, ClickHouse table bytes, and GCP VM/disk costs before billing storage.
 - Add spend, disk, backup, and capacity alerts for the self-hosted GCP ClickHouse deployment.
 - Validate Pro and Premium COGS on at least three real workloads before publishing stronger margin claims.

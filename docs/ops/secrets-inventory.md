@@ -83,8 +83,6 @@ Cloud Run env (set inline in the service spec, not in Secret Manager).
 | `INSTANTML_MANAGED_CLERK_ENABLED` | `true` (hosted) | Toggle Clerk path. |
 | `INSTANTML_ALLOWED_FRONTEND_ORIGINS` | `127.0.0.1:3000,localhost:3000` | CORS allow-list. |
 | `INSTANTML_FRONTEND_BASE_URL` | hosted URL | Used for redirect/canonical links. |
-| `INSTANTML_SIGNUP_ALLOWED_EMAILS` | unset | Hosted signup allow-list (single email). |
-| `INSTANTML_SIGNUP_ALLOWED_DOMAINS` | unset | Hosted signup allow-list (domain). |
 | `INSTANTML_MAX_BODY_BYTES` | server default | Body size cap. |
 | `INSTANTML_MAX_UPLOAD_BODY_BYTES` | server default | Upload body size cap. |
 | `INSTANTML_REQUEST_TIMEOUT_SECONDS` | server default | Per-request timeout. |

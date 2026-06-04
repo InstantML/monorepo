@@ -14,7 +14,7 @@ The hosted API connects to the existing live ClickHouse Cloud User Data service 
 
 ClickHouse Cloud access should be restricted to a static Cloud Run egress IP where possible. The deployment creates a regional VPC/subnet, static external address, Cloud Router, and Cloud NAT, then deploys Cloud Run with Direct VPC egress for all outbound traffic so ClickHouse Cloud can allowlist the static NAT address instead of opening the service or Cloud API key to the internet.
 
-This first hosted release is internal-only. Public signup must be restricted by explicit email/domain allowlists so a public Cloud Run URL cannot create arbitrary paid ClickHouse Cloud warehouses. Tenant passwords may still be stored in User Data only under the accepted early-hosted secret-storage guard; that remains a blocker for public launch, not a permanent production posture.
+This hosted release uses public signup for verified Clerk accounts. The Rust API no longer supports a hosted signup allowlist; access control after signup is handled through Clerk email verification, memberships, plan limits, billing state, and infrastructure spend guardrails. Tenant passwords may still be stored in User Data only under the accepted early-hosted secret-storage guard; that remains a blocker for stronger production posture, not a permanent production posture.
 
 ## Goals
 
@@ -25,7 +25,7 @@ This first hosted release is internal-only. Public signup must be restricted by 
 - Give Cloud Run a static outbound IP for ClickHouse Cloud allowlisting.
 - Keep the local frontend workflow simple: after deploy, start Next with `npm run web:dev`.
 - Add a repeatable deployment script for future releases.
-- Restrict hosted signups and hosted artifact byte uploads until their durable production controls exist.
+- Keep hosted artifact byte uploads disabled until durable object-storage controls exist.
 
 ## Non-Goals
 
@@ -94,14 +94,11 @@ Cloud Run public ingress is acceptable only with these app-level controls enable
 - `INSTANTML_DEV_AUTH_ENABLED=false`
 - `INSTANTML_MANAGED_CLERK_ENABLED=true` only when `CLERK_SECRET_KEY` is present
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` or `CLERK_PUBLISHABLE_KEY` from the same Clerk application as `CLERK_SECRET_KEY`; the deploy helper derives `CLERK_JWT_ISSUER` from it and rejects mismatches
-- `INSTANTML_SIGNUP_ALLOWED_EMAILS` or `INSTANTML_SIGNUP_ALLOWED_DOMAINS` set for hosted signup
 - `INSTANTML_ARTIFACT_UPLOADS_ENABLED=false` until object storage lands
 
 ### Hosted Signup Guardrails
 
-The Rust API rejects Clerk signup requests when signup allowlists are configured and the verified Clerk email is outside the allowed exact emails or domains. Sign-in for already-created memberships remains allowed. The deploy helper defaults `INSTANTML_SIGNUP_ALLOWED_EMAILS` to the active `gcloud` account when the operator has not set a broader allowlist.
-
-Before public signup, a separate design must add at least invite/domain policy, budget alerts, provisioning quotas, abuse/rate limiting, and a durable tenant-secret design.
+The Rust API accepts hosted signup from verified Clerk accounts. Existing-user sign-in and invited-member activation continue to use the same membership checks as the rest of the auth flow. Public signup depends on billing, plan-limit, rate-limit, and infrastructure guardrails rather than a per-email allowlist.
 
 ### Secret Manager
 
@@ -133,7 +130,6 @@ Non-secret Cloud Run environment variables:
 - `INSTANTML_MANAGED_CLERK_ENABLED=true` when `CLERK_SECRET_KEY` is present
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS` from local/operator config
 - `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST=<static-egress-ip>/32` when static egress is configured
-- `INSTANTML_SIGNUP_ALLOWED_EMAILS=<operator email>` by default unless explicitly overridden
 - `INSTANTML_ARTIFACT_UPLOADS_ENABLED=false`
 
 ### Build Context Safety
@@ -250,7 +246,7 @@ Deferred complexity:
 - Cloud Run cold starts: service may take longer while establishing Direct VPC egress and checking ClickHouse.
 - Container-local artifacts are ephemeral: hosted byte uploads stay disabled until object storage lands.
 - Multi-instance override: two API instances can serve stale operational state or duplicate writes; keep one active instance and do not use this helper as a shared multi-instance release path.
-- Public signup abuse: signup allowlists are required for this internal slice; public-launch signup needs quotas, budget alerts, and abuse controls.
+- Public signup abuse: public signup relies on billing, plan-limit, rate-limit, and infrastructure guardrails.
 
 ## Testing Plan
 
@@ -264,7 +260,7 @@ Deferred complexity:
 - Verify the Cloud Run deployment still has a one-active-instance guard and no unexpected active traffic split/tag serving path.
 - Verify `dev_auth_enabled=false`.
 - Verify the deploy helper writes `apps/web/.env.local` so `npm run web:dev` points at the hosted API without a local Rust server.
-- Verify `INSTANTML_SIGNUP_ALLOWED_EMAILS` or `INSTANTML_SIGNUP_ALLOWED_DOMAINS` is set.
+- Verify hosted signup works for a verified Clerk account and still requires Clerk email verification.
 - Verify hosted artifact byte upload returns a clear forbidden response until object storage lands.
 - Verify ClickHouse Cloud service and API-key access lists include the static egress IP and do not contain `0.0.0.0/0` unless an explicit temporary override was used.
 - Run a narrow hosted API smoke with `INSTANTML_CONTRACT_BASE_URL=<cloud-run-url>` and `INSTANTML_CONTRACT_BOOTSTRAP_TOKEN` when a bootstrap token is configured.
@@ -292,8 +288,8 @@ Fresh reviewer 1:
 
 - Finding: Cloud-service tenant provisioning plus stored tenant passwords crosses from first hosted loop into early production risk.
 - Risk: Public traffic could create paid services and store tenant credentials in User Data without the future secret-manager design.
-- Recommended edit: Mark the deployment internal-only, require signup allowlists, and document the stored-password guard as a public-launch blocker.
-- Decision: Accepted; signup allowlist and internal-only language were added.
+- Recommended edit: Mark the original deployment as internal-only, add a then-current private-pilot signup gate, and document the stored-password guard as a public-launch blocker.
+- Decision: Accepted at the time; the 2026-06-04 follow-up later removed the private-pilot signup gate.
 
 Fresh reviewer 2:
 
@@ -301,6 +297,20 @@ Fresh reviewer 2:
 - Risk: `.env` or generated state could be uploaded, open ClickHouse access could persist, and a public Cloud Run URL could create warehouses.
 - Recommended edit: Require `.dockerignore` preflight, postdeploy assertions, static egress allowlisting, and explicit signup/cost controls.
 - Decision: Accepted; build-context, allowlist, artifact, and postdeploy validation requirements were added.
+
+2026-06-04 amendment:
+
+- Finding: The deploy helper's active-`gcloud` fallback made public signup hard to operate because an empty allowlist in GitHub Actions or local env could be silently converted back into a single-operator pilot list.
+- Risk: Operators could believe signup was public while the next deploy re-restricted first-time workspace creation, or they could need a full deploy/config rollout for routine signup policy changes.
+- Recommended edit: Preserve the then-current Rust API semantics: empty signup gate config means public signup; non-empty config means restricted signup.
+- Decision: Accepted for the narrow deploy-default change. A database-backed runtime signup policy remains the better future control plane if frequent allowlist edits return.
+
+2026-06-04 follow-up:
+
+- Finding: Keeping a disabled private-pilot signup allowlist path created dead configuration and misleading operator choices after the product decision moved to public signup.
+- Risk: Future deploys or docs could imply an access-control boundary that no longer exists or has no operational owner.
+- Recommended edit: Remove hosted signup allowlist env vars, Rust config, HTTP/store checks, deploy wiring, and docs. Keep Clerk email verification, membership checks, rate limits, plan limits, billing gates, and infrastructure spend guardrails.
+- Decision: Accepted; hosted signup is public for verified Clerk accounts.
 
 ## Coverage Exceptions
 
@@ -312,4 +322,4 @@ Fresh reviewer 2:
 
 ## Decision
 
-Accepted for the internal single-instance first slice after review revisions. Public launch remains blocked on tenant secret storage, object storage, signup abuse controls, budget/quota controls, and the multi-instance operational-state gates documented in `2026-05-16-multi-instance-control-data-plane.md`.
+Accepted for the single-instance hosted slice after review revisions. As of the 2026-06-04 follow-up, hosted signup is public for verified Clerk accounts and the signup allowlist path has been removed. Stronger production posture still depends on tenant secret storage, object storage, signup abuse controls, budget/quota controls, and the multi-instance operational-state gates documented in `2026-05-16-multi-instance-control-data-plane.md`.
