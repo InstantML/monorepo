@@ -22,7 +22,7 @@ use super::super::AppState;
 use super::helpers::{
     clear_session_cookie, header_value, json_with_session_cookie, read_json,
     reject_demo_session_mutation, request_rate_key, session_context, session_cookie,
-    validate_clerk_signup_allowed, validate_mutation_origin, validate_mutation_origin_required,
+    validate_mutation_origin, validate_mutation_origin_required,
 };
 
 #[utoipa::path(
@@ -128,19 +128,9 @@ pub async fn auth_clerk(
         )
         .await?;
     }
-    validate_clerk_signup_allowed(&state.config, &principal.email, &input)?;
-    let signup_allowlist = store::SignupAllowlist {
-        allowed_emails: state.config.signup_allowed_emails.clone(),
-        allowed_domains: state.config.signup_allowed_domains.clone(),
-    };
-    let created = store::create_clerk_session(
-        &state.store,
-        principal,
-        input,
-        Some(&state.config.billing),
-        signup_allowlist,
-    )
-    .await?;
+    let created =
+        store::create_clerk_session(&state.store, principal, input, Some(&state.config.billing))
+            .await?;
     let mut response_body = serde_json::to_value(&created.payload)
         .map_err(|_| AppError::internal("failed to serialize auth payload"))?;
     if let Some(obj) = response_body.as_object_mut() {

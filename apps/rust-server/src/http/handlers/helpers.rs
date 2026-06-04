@@ -12,7 +12,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    domain::{AuthContext, AuthSessionPayload, ClerkAuthRequest, RequestContext, SessionContext},
+    domain::{AuthContext, AuthSessionPayload, RequestContext, SessionContext},
     errors::{AppError, AppResult},
     store,
 };
@@ -468,55 +468,6 @@ pub fn validate_json_body(headers: &HeaderMap, bytes: &Bytes, max_bytes: usize) 
         ));
     }
     Ok(())
-}
-
-pub fn validate_clerk_signup_allowed(
-    config: &crate::config::AppConfig,
-    email: &str,
-    input: &ClerkAuthRequest,
-) -> AppResult<()> {
-    if !is_clerk_signup_request(input) {
-        return Ok(());
-    }
-    if config.signup_allowed_emails.is_empty() && config.signup_allowed_domains.is_empty() {
-        return Ok(());
-    }
-    let normalized = email.trim().to_ascii_lowercase();
-    if config
-        .signup_allowed_emails
-        .iter()
-        .any(|allowed| allowed == &normalized)
-    {
-        return Ok(());
-    }
-    let domain = normalized.split_once('@').map(|(_, domain)| domain);
-    if let Some(domain) = domain {
-        if config
-            .signup_allowed_domains
-            .iter()
-            .any(|allowed| allowed == domain)
-        {
-            return Ok(());
-        }
-    }
-    Err(AppError::forbidden(
-        "hosted signup is restricted to invited accounts",
-    ))
-}
-
-pub fn is_clerk_signup_request(input: &ClerkAuthRequest) -> bool {
-    if input
-        .accept_invite_token
-        .as_deref()
-        .is_some_and(|token| !token.trim().is_empty())
-    {
-        return false;
-    }
-    input.mode.as_deref() == Some("signup")
-        || input
-            .org_name
-            .as_deref()
-            .is_some_and(|name| !name.trim().is_empty())
 }
 
 pub fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {

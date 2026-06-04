@@ -39,8 +39,6 @@ pub async fn create_dev_google_session(
             strict_signin: false,
             auto_derive_display_name: input.display_name,
             auto_derive_email: input.email,
-            // Local dev never enforces the hosted signup allowlist.
-            signup_allowlist: SignupAllowlist::default(),
         },
         billing_config,
     )
@@ -52,7 +50,6 @@ pub async fn create_clerk_session(
     principal: ManagedAuthPrincipal,
     input: ClerkAuthRequest,
     billing_config: Option<&crate::config::BillingConfig>,
-    signup_allowlist: SignupAllowlist,
 ) -> AppResult<CreatedAuthSession> {
     if !principal.email_verified {
         return Err(AppError::unauthorized("Clerk email is not verified"));
@@ -93,11 +90,6 @@ pub async fn create_clerk_session(
             // Provide Clerk profile fields for auto-derivation fallback.
             auto_derive_display_name: principal.display_name,
             auto_derive_email: principal.email,
-            // The hosted signup allowlist is enforced at the moment we decide
-            // to create a new org (not only for explicit signup-mode requests),
-            // so the security boundary holds for the new signin auto-provision
-            // path too.
-            signup_allowlist,
         },
         billing_config,
     )
@@ -306,13 +298,6 @@ pub(super) async fn create_verified_provider_session(
             }
         }
     }
-    // From this point on we will create a new org for the user. Enforce the
-    // hosted signup allowlist consistently whether the request arrived as
-    // mode="signup" (explicit) or fell through from mode="signin" (the new
-    // auto-provision path). The HTTP-layer pre-check still short-circuits
-    // explicit-signup requests, so this is a defense-in-depth guard for the
-    // implicit path.
-    input.signup_allowlist.check(&email)?;
     let (org_name, org_slug, auto_derived) = if let Some(name) = input.org_name {
         let slug = slugify(&name);
         if data.orgs_by_slug.contains_key(&slug) {
@@ -858,50 +843,6 @@ mod tests {
     }
 
     #[test]
-    fn fresh_clerk_signin_on_signup_allowlist_passes() {
-        // Scenario 2: brand-new Clerk user, mode != "signup", and the email
-        // IS on the signup allowlist. The allowlist check must pass so the
-        // auto-create path proceeds.
-        let allowlist = SignupAllowlist {
-            allowed_emails: vec!["tony@example.com".to_string()],
-            allowed_domains: Vec::new(),
-        };
-        assert!(allowlist.check("tony@example.com").is_ok());
-
-        // Domain-based allowlist must also pass.
-        let allowlist = SignupAllowlist {
-            allowed_emails: Vec::new(),
-            allowed_domains: vec!["instantml.ai".to_string()],
-        };
-        assert!(allowlist.check("anyone@instantml.ai").is_ok());
-
-        // Case insensitivity: allowlist comparison normalizes the incoming
-        // email but expects allowlist entries already lowercase.
-        assert!(allowlist.check("MIXED@instantml.ai").is_ok());
-    }
-
-    #[test]
-    fn fresh_clerk_signin_not_on_signup_allowlist_still_403s() {
-        // Scenario 3: brand-new Clerk user, mode != "signup", email NOT on
-        // the allowlist. The auto-create branch is reachable, but the
-        // allowlist check defends the security boundary and must reject.
-        let allowlist = SignupAllowlist {
-            allowed_emails: vec!["founder@example.com".to_string()],
-            allowed_domains: vec!["instantml.ai".to_string()],
-        };
-        let error = allowlist.check("stranger@example.org").unwrap_err();
-        assert_eq!(error.status(), axum::http::StatusCode::FORBIDDEN);
-
-        // A nominally-similar domain must NOT match (substring guard).
-        assert!(allowlist.check("user@notinstantml.ai").is_err());
-
-        // An empty allowlist (the local-dev / unconfigured case) must not
-        // block anyone.
-        let empty = SignupAllowlist::default();
-        assert!(empty.check("anyone@example.com").is_ok());
-    }
-
-    #[test]
     fn fresh_clerk_signin_with_pending_invite_uses_invite_path() {
         // Scenario 4: brand-new Clerk user with a pre-reserved seat (a
         // membership in "invited" status) must auto-attach to that org via
@@ -1067,7 +1008,6 @@ mod tests {
                 strict_signin: false,
                 auto_derive_display_name: Some("Owner Example".to_string()),
                 auto_derive_email: "owner@example.com".to_string(),
-                signup_allowlist: SignupAllowlist::default(),
             },
             None,
         )
