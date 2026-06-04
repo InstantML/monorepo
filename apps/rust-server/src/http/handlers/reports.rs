@@ -52,7 +52,7 @@ pub async fn create_report(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
+    let ctx = context(&state, &headers, true).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let input = read_json::<CreateReportRequest>(&headers, bytes, state.config.max_body_bytes)?;
     let row = store::create_report(&state.store, &ctx, input).await?;
@@ -79,7 +79,7 @@ pub async fn list_reports(
     headers: HeaderMap,
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
+    let ctx = context(&state, &headers, true).await?;
     Ok(Json(store::list_reports(&state.store, &ctx, &query).await?))
 }
 
@@ -104,9 +104,10 @@ pub async fn get_report(
     Path(report_id): Path<String>,
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
+    let token = share_token(&query);
+    let ctx = context(&state, &headers, token.is_none()).await?;
     let report_id = parse_uuid(&report_id, "report not found")?;
-    let row = store::get_report(&state.store, &ctx, report_id, share_token(&query)).await?;
+    let row = store::get_report(&state.store, &ctx, report_id, token).await?;
     Ok(Json(json!({ "report": row })))
 }
 
@@ -131,7 +132,7 @@ pub async fn update_report(
     Path(report_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
+    let ctx = context(&state, &headers, true).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let report_id = parse_uuid(&report_id, "report not found")?;
     let input = read_json::<UpdateReportRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -157,7 +158,7 @@ pub async fn delete_report(
     headers: HeaderMap,
     Path(report_id): Path<String>,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
+    let ctx = context(&state, &headers, true).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let report_id = parse_uuid(&report_id, "report not found")?;
     let row = store::delete_report(&state.store, &ctx, report_id).await?;
@@ -182,7 +183,7 @@ pub async fn rotate_report_share_token(
     headers: HeaderMap,
     Path(report_id): Path<String>,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
+    let ctx = context(&state, &headers, true).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let report_id = parse_uuid(&report_id, "report not found")?;
     let row = store::rotate_share_token(&state.store, &ctx, report_id).await?;
@@ -222,7 +223,7 @@ pub async fn list_org_panels(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, false).await?;
+    let ctx = context(&state, &headers, true).await?;
     Ok(Json(store::list_org_panels(&state.store, &ctx).await?))
 }
 
@@ -247,10 +248,10 @@ pub async fn export_report_markdown(
     Path(report_id): Path<String>,
     Query(query): Query<HashMap<String, String>>,
 ) -> AppResult<Response> {
-    let ctx = context(&state, &headers, false).await?;
+    let token = share_token(&query);
+    let ctx = context(&state, &headers, token.is_none()).await?;
     let report_id = parse_uuid(&report_id, "report not found")?;
-    let markdown =
-        store::export_report_markdown(&state.store, &ctx, report_id, share_token(&query)).await?;
+    let markdown = store::export_report_markdown(&state.store, &ctx, report_id, token).await?;
     let mut response = markdown.into_response();
     response.headers_mut().insert(
         header::CONTENT_TYPE,
