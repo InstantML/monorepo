@@ -1075,9 +1075,6 @@
   }
 }
 .landing-hero-content { max-width: 760px; }
-.landing-hero-kicker {
-  margin-bottom: 18px;
-}
 .landing-hero-badge {
   display: inline-flex;
   align-items: center;

@@ -370,8 +370,6 @@ export function LandingPage() {
       <div className="landing-hero-wrap">
         <Section className="landing-hero-section">
           <div className="landing-hero-content">
-            <p className="hero-rise-1 mono-label landing-hero-kicker">InstantML</p>
-
             <h1 className="hero-rise-2 landing-h1">
               Experiment tracking that keeps up with training.
             </h1>
