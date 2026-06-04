@@ -336,7 +336,7 @@ try {
     await route.continue();
   });
   await page.goto(`${webBaseUrl}/dashboard/runs`, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".app-loading-screen", { timeout: 5000 });
+  await page.waitForSelector(".app-loading-screen, .workspace-run-loading", { timeout: 5000 });
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
   await page.unroute("**/api/runs/summary**");
   assert.equal(objectUrls.length, 0, "initial dashboard entry should not fetch rich objects");

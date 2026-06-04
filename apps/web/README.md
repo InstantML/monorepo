@@ -47,7 +47,7 @@ Current navigation, workspace, and comparison controls:
 - Unauthenticated visitors land on `/`, can sign in or sign up through Clerk in hosted mode, or through the explicitly labeled local dev Google-style flow in local mode. Signup chooses Free, Pro, or Premium, chooses either InstantML-provisioned storage or Premium BYOC ClickHouse, can reserve included teammate seats by email, creates a copy-once SDK API key, and then enters `/dashboard/runs`. BYOC onboarding displays copy-ready self-hosted GCP ClickHouse setup SQL, the configured InstantML data-plane egress CIDRs to allowlist in the customer GCP firewall/load balancer, and an endpoint/database/user/password validation form before SDK key creation is enabled. The shared demo action signs in as `hello@instantml.ai`, reuses the Premium-tier `InstantML Demo` org/service, skips SDK-key reveal, and is enforced read-only server-side so demo visitors browse sample data instead of pushing data. In hosted ClickHouse mode, auth writes users/orgs/sessions/API keys and tenant-route plan metadata to the User Data control table while dashboard reads resolve the org's tenant data plane server-side.
 - Collapsible left rail that stays narrow by default, expands on hover/focus, stays pinned during desktop page scroll, and can be pinned open.
 - Light/dark mode toggle with a persisted local preference. Dark mode uses neutral dark surfaces with explicit accent states; primary button styling is opt-in via `.primary-button` instead of a broad global button selector.
-- Refresh/loading experience: the root layout applies the saved theme before paint and the app shows a branded loading shell during the first dashboard API load instead of flashing an empty white page.
+- Refresh/loading experience: the root layout applies the saved theme before paint. Direct dashboard entry keeps a brief branded shell only while the browser session is checked; once authorized, the dashboard chrome renders immediately and the Runs rail/workspace show skeleton rows and panels while the first run summary and overview requests load.
 - Desktop `Runs` workspace with a top filter rectangle, left run selector, searchable panel canvas, collapsible sections, add-panel drawer, edit drawer, and fullscreen panel inspection.
 - Metrics, Run Detail, and Compare now share the analysis-suite layout: compact header stats, responsive toolbars, chart-first metric inspection, a Run Detail metric picker/dossier, and row-first comparison evidence that visually matches the Runs workspace.
 - Distributed is a rank-aware per-run dashboard backed by `GET /api/runs/:id/rank-metrics/summary`; it renders reduce mean/weighted mean/min/max/range/stddev/p50/p95, rank coverage, heatmap cells, and outlier rows only when the tab is active.
@@ -279,9 +279,11 @@ absolute origin so they can be pasted into chat or email.
 
 When the hosted API returns `code: "warehouse_unavailable"` with HTTP `503`, the
 dashboard treats the API as reachable and shows a "Starting data warehouse"
-loading state while retrying. This is the expected user-facing state when an
-org's tenant ClickHouse warehouse is waking after idle; User Data/control
-failures should remain separate operational alerts.
+status while retrying in the rendered dashboard shell. Initial Runs content
+stays in its skeleton state during this retry instead of blocking the whole
+page. This is the expected user-facing state when an org's tenant ClickHouse
+warehouse is waking after idle; User Data/control failures should remain
+separate operational alerts.
 
 The Playwright smoke uses the production-style build/start path.
 
