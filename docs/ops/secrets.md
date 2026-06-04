@@ -119,9 +119,9 @@ The categorical list. If your local `.env` or any `.env.example` row
 contains any of these in cleartext, fix it before committing:
 
 - Clerk: `CLERK_SECRET_KEY` (any `sk_live_*` or `sk_test_*`).
-- ClickHouse: `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`, the cloud key
-  pair `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID` /
+- ClickHouse: the cloud key pair `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID` /
   `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`.
+- Postgres: `DATABASE_URL`.
 - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
 - Cloudflare / R2: `CLOUDFLARE_R2_API_KEY`, `CLOUDFLARE_API_TOKEN`,
   `CLOUDFLARE_R2_SECRET_ACCESS_KEY`.
@@ -166,8 +166,9 @@ The scanner trips on:
 - `sk_live_...` and `sk_test_...` (Clerk and Stripe live/test secret keys).
 - `whsec_...` (Stripe webhook signing secrets).
 - `instantml_[A-Za-z0-9_]{30,}` (InstantML-issued API keys).
-- A `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD=` line that is followed by
-  more than 4 non-placeholder characters.
+- A known password-shaped env assignment such as `DATABASE_URL=` or
+  `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET=` that is followed by more than 4
+  non-placeholder characters.
 - Any `re_live_...` Resend key.
 
 False positives can be silenced with a `# allow-secret-pattern: <reason>`

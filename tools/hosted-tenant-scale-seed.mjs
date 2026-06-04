@@ -33,10 +33,10 @@ const metricKeys = envList("INSTANTML_HOSTED_SCALE_METRIC_KEYS", [
 ]);
 const dataApiBase = trimSlash(process.env.INSTANTML_DATA_API_BASE || process.env.INSTANTML_API_BASE || "");
 const apiKey = process.env.INSTANTML_API_KEY || "";
-const userDataUrl = clickhouseUrlFromEnv(
-  "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT",
-  "CLICKHOUSE_INSTANTML_USER_DATA_USERNAME",
-  "CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD",
+const tenantBaseUrl = clickhouseUrlFromEnv(
+  "INSTANTML_TENANT_CLICKHOUSE_URL",
+  "CLICKHOUSE_USERNAME",
+  "CLICKHOUSE_PASSWORD",
   process.env.CLICKHOUSE_URL,
 );
 
@@ -47,7 +47,7 @@ if (!metricKeys.some((key) => key.startsWith("system/"))) {
   throw new Error("Metric keys must include at least one system/* metric.");
 }
 
-const routeRecord = await latestReadyTenantRoute();
+const routeRecord = tenantRouteFromOrgId();
 const tenantUrl = tenantUrlFromRoute(routeRecord.route);
 const orgId = routeRecord.org_id;
 const seedTable = `_instantml_scale_seed_${Date.now()}`;
@@ -294,24 +294,23 @@ async function verifySeed() {
   };
 }
 
-async function latestReadyTenantRoute() {
-  const requestedOrgId = process.env.INSTANTML_HOSTED_SCALE_ORG_ID || "";
-  const orgFilter = requestedOrgId ? `AND org_id = toUUID(${sqlString(requestedOrgId)})` : "";
-  const rows = await queryJsonRows(
-    `SELECT org_id, payload
-     FROM instantml_user_data
-     WHERE kind = 'tenant_route'
-       ${orgFilter}
-       AND JSONExtractString(payload, 'status') = 'ready'
-     ORDER BY created_at DESC, event_id DESC
-     LIMIT 1
-     FORMAT JSONEachRow`,
-    userDataUrl,
-  );
-  if (!rows.length) throw new Error("No ready tenant route found in User Data.");
+function tenantRouteFromOrgId() {
+  const orgId = process.env.INSTANTML_HOSTED_SCALE_ORG_ID || "";
+  if (!orgId) throw new Error("INSTANTML_HOSTED_SCALE_ORG_ID is required after the Postgres control-plane cutover.");
+  const base = new URL(tenantBaseUrl);
+  const endpoint = new URL(process.env.INSTANTML_HOSTED_SCALE_CLICKHOUSE_ENDPOINT_OVERRIDE || tenantBaseUrl);
+  endpoint.username = "";
+  endpoint.password = "";
+  endpoint.pathname = "/";
   return {
-    org_id: rows[0].org_id,
-    route: JSON.parse(rows[0].payload),
+    org_id: orgId,
+    route: {
+      endpoint: endpoint.toString(),
+      database:
+        process.env.INSTANTML_HOSTED_SCALE_TENANT_DATABASE || `instantml_org_${orgId.replaceAll("-", "")}`,
+      username: base.username || "default",
+      password_ciphertext: base.password,
+    },
   };
 }
 
@@ -333,8 +332,7 @@ function tenantBasePassword(route) {
   if (route.password_secret_ref !== "config:tenant_base_url_password") {
     throw new Error("Tenant route does not include a directly resolvable password.");
   }
-  const tenantBase = process.env.INSTANTML_TENANT_CLICKHOUSE_URL || userDataUrl;
-  return new URL(tenantBase).password;
+  return new URL(tenantBaseUrl).password;
 }
 
 function opRecord(kind, entityId, payload, createdAt) {

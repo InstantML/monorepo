@@ -648,7 +648,6 @@ mod tests {
                 "TEST_CLICKHOUSE_URL",
             )
             .unwrap(),
-            control_store: None,
             control_db: None,
             hosted_clickhouse: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
@@ -678,11 +677,8 @@ mod tests {
                 "TEST_CLICKHOUSE_URL",
             )
             .unwrap(),
-            control_store: None,
             control_db: None,
             hosted_clickhouse: Some(crate::config::HostedClickHouseConfig {
-                user_data_url: "http://default:@127.0.0.1:8123/instantml_user_data_test"
-                    .to_string(),
                 tenant_base_url: "http://default:@127.0.0.1:9/instantml_tenant_route_failure"
                     .to_string(),
                 provisioner: crate::config::ClickHouseProvisioner::Database,

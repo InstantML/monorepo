@@ -1,8 +1,8 @@
 //! Postgres control-plane storage.
 //!
 //! System of record for users, orgs, memberships, sessions, API keys,
-//! invitations, billing, and tenant routes. Replaces the ClickHouse
-//! append-only event log (`control_store.rs`) and its in-memory projection:
+//! invitations, billing, and tenant routes. Replaces the former ClickHouse
+//! append-only control log and its in-memory projection:
 //! uniqueness, atomicity, and read-after-write are enforced by Postgres.
 //!
 //! Tenant-owned run data and metrics remain in ClickHouse.
@@ -27,8 +27,7 @@ impl ControlDb {
     /// Connect to the control-plane Postgres using `DATABASE_URL`.
     ///
     /// Returns `Ok(None)` when no URL is configured so single-binary local mode
-    /// and the legacy ClickHouse control path keep working unchanged during the
-    /// migration.
+    /// can keep storing local operational records in ClickHouse.
     pub async fn connect(database_url: Option<&str>) -> AppResult<Option<Self>> {
         let Some(url) = database_url else {
             return Ok(None);

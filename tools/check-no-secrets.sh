@@ -43,7 +43,7 @@ _patterns=(
 # Password line: KEY=<more than 4 chars that are not obviously a placeholder>.
 # We treat empty, `<...>`, `placeholder`, `changeme`, and similar as safe.
 _password_keys=(
-  'CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD'
+  'DATABASE_URL'
   'CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET'
   'CLERK_SECRET_KEY'
   'STRIPE_SECRET_KEY'

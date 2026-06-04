@@ -207,9 +207,8 @@ command has timed out.
 Staging defaults to `instantml-staging-control`,
 `instantml-staging-data-us-central1-a`, router resources prefixed
 `instantml-staging-public-api`, and domain `staging.api.instantml.ai`. Staging
-uses separate Secret Manager names and rewrites the User Data ClickHouse
-database path to `instantml_user_data_staging` unless
-`INSTANTML_STAGING_USER_DATA_ENDPOINT` is provided.
+uses separate Secret Manager names and binds a staging Cloud SQL control
+database.
 
 Default local frontend development should use the staging router instead of
 direct Cloud Run service URLs:
@@ -258,8 +257,6 @@ verify the public URL and write it into local frontend env.
 | `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` | Required DNS host for router HTTPS certificate |
 | `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE` | Optional managed SSL certificate resource name |
 | `INSTANTML_CLOUD_RUN_SECRET_PREFIX` | Secret Manager prefix for non-prod deploys |
-| `INSTANTML_STAGING_USER_DATA_DATABASE` | Staging User Data ClickHouse database path; default `instantml_user_data_staging` |
-| `INSTANTML_STAGING_USER_DATA_ENDPOINT` | Full staging User Data endpoint override |
 | `INSTANTML_PUBLIC_API_BASE` | Public LB/router URL for frontend env |
 | `INSTANTML_CLOUD_RUN_STATIC_EGRESS` | Set `0` to skip NAT/static egress setup |
 | `INSTANTML_CLOUD_RUN_VPC_EGRESS` | `all-traffic` or `private-ranges-only`; default `all-traffic` for static egress |

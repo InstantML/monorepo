@@ -342,7 +342,6 @@ mod tests {
                 "TEST_CLICKHOUSE_URL",
             )
             .unwrap(),
-            control_store: None,
             control_db: None,
             hosted_clickhouse: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {

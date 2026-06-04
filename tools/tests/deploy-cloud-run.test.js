@@ -309,9 +309,9 @@ test("deploy helper has isolated staging defaults", () => {
   assert.match(source, /normalizeDeploymentEnv/);
   assert.match(source, /instantml-staging/);
   assert.match(source, /staging\.api\.instantml\.ai/);
-  assert.match(source, /INSTANTML_STAGING_USER_DATA_DATABASE/);
+  assert.match(source, /DATABASE_URL/);
   assert.match(source, /function scopedSecret/);
-  assert.match(source, /instantml_user_data_staging/);
+  assert.doesNotMatch(source, /instantml_user_data_staging/);
   assert.match(pkg.scripts["deploy:cloud-run:staging"], /--environment=staging --public-router/);
 });
 

@@ -198,7 +198,6 @@ impl ServicePlaneRole {
 
 #[derive(Clone, Debug)]
 pub struct HostedClickHouseConfig {
-    pub user_data_url: String,
     pub tenant_base_url: String,
     pub provisioner: ClickHouseProvisioner,
     pub allow_stored_tenant_passwords: bool,
@@ -477,18 +476,12 @@ fn hosted_clickhouse_config(
             ))
         }
     };
-    let user_data_url = clickhouse_url_from_env(
-        "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT",
-        "CLICKHOUSE_INSTANTML_USER_DATA_USERNAME",
-        "CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD",
-        default_clickhouse_url,
-    );
     let tenant_base_url = env::var("INSTANTML_TENANT_CLICKHOUSE_URL").unwrap_or_else(|_| {
         clickhouse_url_from_env(
             "CLICKHOUSE_INSTANTML_TENANT_ENDPOINT",
             "CLICKHOUSE_INSTANTML_TENANT_USERNAME",
             "CLICKHOUSE_INSTANTML_TENANT_PASSWORD",
-            &user_data_url,
+            default_clickhouse_url,
         )
     });
     let allow_stored_tenant_passwords =
@@ -533,7 +526,6 @@ fn hosted_clickhouse_config(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     Ok(Some(HostedClickHouseConfig {
-        user_data_url,
         tenant_base_url,
         provisioner,
         allow_stored_tenant_passwords,

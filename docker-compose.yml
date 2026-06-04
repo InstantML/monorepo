@@ -68,7 +68,6 @@ services:
       - instantml-artifacts:/data/artifacts
     environment:
       CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
-      CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: http://instantml:instantml@clickhouse:8123/instantml_user_data
       INSTANTML_TENANT_CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
       DATABASE_URL: postgres://instantml:instantml@postgres:5432/control
       INSTANTML_BIND_ADDR: 0.0.0.0:8000
@@ -96,7 +95,6 @@ services:
       - instantml-artifacts:/data/artifacts
     environment:
       CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
-      CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: http://instantml:instantml@clickhouse:8123/instantml_user_data
       INSTANTML_TENANT_CLICKHOUSE_URL: http://instantml:instantml@clickhouse:8123/instantml
       DATABASE_URL: postgres://instantml:instantml@postgres:5432/control
       INSTANTML_BIND_ADDR: 0.0.0.0:8000

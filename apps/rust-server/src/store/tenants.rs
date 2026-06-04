@@ -96,10 +96,6 @@ impl Store {
         self.hosted_clickhouse.is_some()
     }
 
-    pub(super) fn is_control_record_kind(&self, kind: &str) -> bool {
-        self.hosted_clickhouse_enabled() && is_control_kind(kind)
-    }
-
     pub async fn ensure_tenant_loaded(&self, org_id: Uuid) -> AppResult<()> {
         if !self.hosted_clickhouse_enabled() {
             return Ok(());
@@ -2088,11 +2084,8 @@ mod tests {
                 "TEST_CLICKHOUSE_URL",
             )
             .unwrap(),
-            control_store: None,
             control_db: None,
             hosted_clickhouse: Some(HostedClickHouseConfig {
-                user_data_url: "http://default:@127.0.0.1:8123/instantml_user_data_test"
-                    .to_string(),
                 tenant_base_url: "http://default:@127.0.0.1:8123/instantml_tenant_base_test"
                     .to_string(),
                 provisioner: ClickHouseProvisioner::Database,

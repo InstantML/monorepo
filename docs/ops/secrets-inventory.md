@@ -28,9 +28,7 @@ service-describe commands at the bottom of this page.
 | --- | --- | --- | --- |
 | `CLERK_SECRET_KEY` | `instantml-clerk-secret-key` | `instantml-control` | quarterly + on personnel change |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `instantml-clerk-publishable-key` | (build-time for `apps/web`; deploy-time validator) | rotate together with `CLERK_SECRET_KEY` |
-| `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT` | `instantml-clickhouse-user-data-endpoint` | `instantml-control`, `instantml-data-us-central1-a` | on-incident only (URL, not a credential) |
-| `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME` | `instantml-clickhouse-user-data-username` | `instantml-control`, `instantml-data-us-central1-a` | on-incident only |
-| `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD` | `instantml-clickhouse-user-data-password` | `instantml-control`, `instantml-data-us-central1-a` | quarterly; **immediate on incident or personnel change** |
+| `DATABASE_URL` | `instantml-control-database-url` | `instantml-control`, `instantml-data-us-central1-a` | quarterly; **immediate on incident or personnel change** |
 | `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID` | `instantml-clickhouse-cloud-key-id` | `instantml-control`, `instantml-data-us-central1-a` | quarterly |
 | `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET` | `instantml-clickhouse-cloud-key-secret` | `instantml-control`, `instantml-data-us-central1-a` | quarterly + on personnel change |
 | `INSTANTML_BOOTSTRAP_TOKEN` | `instantml-bootstrap-token` | `instantml-control` (admin bootstrap endpoint) | rotate on use; long-lived disabled |
