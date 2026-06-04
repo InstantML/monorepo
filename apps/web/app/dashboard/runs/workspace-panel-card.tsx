@@ -715,6 +715,7 @@ export function WorkspacePanelCard({
   onPointerMoveStart,
   onRemove,
   onResize,
+  onSmoothingChange,
   panel,
   panelSearchActive = false,
   section,
@@ -734,6 +735,7 @@ export function WorkspacePanelCard({
   onPointerMoveStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   onRemove?: () => void;
   onResize?: (layout: WorkspacePanelLayout) => void;
+  onSmoothingChange?: (smoothing: number) => void;
   panel: WorkspacePanel;
   panelSearchActive?: boolean;
   section: WorkspaceSection;
@@ -1004,10 +1006,10 @@ export function WorkspacePanelCard({
           </small>
         </div>
         <div className="panel-card-actions">
-          {onEdit ? <button className="icon-button" type="button" aria-label={`Edit ${panel.title}`} onClick={onEdit}><Pencil size={15} /></button> : null}
-          {onDuplicate ? <button className="icon-button" type="button" aria-label={`Duplicate ${panel.title}`} onClick={onDuplicate}><CopyPlus size={15} /></button> : null}
-          {onFullscreen ? <button className="icon-button" type="button" aria-label={`Fullscreen ${panel.title}`} onClick={onFullscreen}><Maximize2 size={15} /></button> : null}
-          {onRemove ? <button className="icon-button" type="button" aria-label={`Remove ${panel.title}`} onClick={onRemove}><Trash2 size={15} /></button> : null}
+          {onEdit ? <button className="icon-button" type="button" aria-label={`Edit ${panel.title}`} title="Edit panel" onClick={onEdit}><Pencil size={15} /></button> : null}
+          {onDuplicate ? <button className="icon-button" type="button" aria-label={`Duplicate ${panel.title}`} title="Duplicate panel" onClick={onDuplicate}><CopyPlus size={15} /></button> : null}
+          {onFullscreen ? <button className="icon-button" type="button" aria-label={`Fullscreen ${panel.title}`} title="Open fullscreen" onClick={onFullscreen}><Maximize2 size={15} /></button> : null}
+          {onRemove ? <button className="icon-button" type="button" aria-label={`Remove ${panel.title}`} title="Remove panel" onClick={onRemove}><Trash2 size={15} /></button> : null}
         </div>
       </div>
       <div className="workspace-panel-meta">
@@ -1065,6 +1067,8 @@ export function WorkspacePanelCard({
             onZoomRangeChange={setPanelZoomRange}
             padding={panelChartPadding}
             rangeSeries={rangeSeries}
+            smoothing={settings.smoothing}
+            onSmoothingChange={onSmoothingChange}
             width={panelChartWidth}
             xMode={settings.xMode}
             zoomRange={panelZoomRange}
@@ -1142,6 +1146,7 @@ export function WorkspaceSectionView({
   onPanelPointerMoveStart,
   onRemovePanel,
   onResizePanel,
+  onPanelSmoothing,
   onToggleSection,
   panelSearchActive,
   section,
@@ -1161,6 +1166,7 @@ export function WorkspaceSectionView({
   onPanelPointerMoveStart: (event: ReactPointerEvent<HTMLElement>, sectionId: string, panelId: string) => void;
   onRemovePanel: (sectionId: string, panelId: string) => void;
   onResizePanel: (sectionId: string, panelId: string, layout: WorkspacePanelLayout) => void;
+  onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
   onToggleSection: (sectionId: string) => void;
   panelSearchActive: boolean;
   section: WorkspaceSection;
@@ -1198,6 +1204,7 @@ export function WorkspaceSectionView({
                 onPointerMoveStart={(event) => onPanelPointerMoveStart(event, section.id, panel.id)}
                 onRemove={() => onRemovePanel(section.id, panel.id)}
                 onResize={(layout) => onResizePanel(section.id, panel.id, layout)}
+                onSmoothingChange={(smoothing) => onPanelSmoothing(section.id, panel.id, smoothing)}
                 panel={panel}
                 panelSearchActive={panelSearchActive}
                 section={section}

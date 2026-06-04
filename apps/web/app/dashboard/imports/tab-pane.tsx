@@ -1,6 +1,6 @@
 "use client";
 
-import { Clipboard, Download, FileArchive, GitBranch, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
+import { Check, Clipboard, Download, FileArchive, GitBranch, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { components } from "../../../src/types/api.generated";
@@ -18,6 +18,12 @@ type Props = {
   api: ApiLike;
   project: string;
 };
+
+// The dry-run workflow stepper. Choosing a source and generating the bundle
+// happen up front (a source is always selected here), so the live actionable
+// stage is the dry run; commit follows once a job is ready below.
+const IMPORT_STEPS = ["Choose source", "Generate bundle", "Dry run", "Commit import"];
+const IMPORT_ACTIVE_STEP = 2;
 
 const sources = [
   { id: "wandb", label: "Weights & Biases", status: "CLI ready", icon: GitBranch, capabilities: ["Runs", "Metrics", "Artifacts", "Config", "Tags"] },
@@ -149,11 +155,19 @@ export function ImportsTabPane({ api, project }: Props) {
           </aside>
 
           <section className="imports-workflow" aria-label="Import dry-run workflow">
-            <ol className="imports-steps">
-              <li className="done">Choose source</li>
-              <li className="done">Generate bundle</li>
-              <li className="active">Dry run</li>
-              <li>Commit import</li>
+            <ol className="imports-steps" aria-label="Import workflow">
+              {IMPORT_STEPS.map((label, index) => {
+                const state = index < IMPORT_ACTIVE_STEP ? "is-done" : index === IMPORT_ACTIVE_STEP ? "is-current" : "";
+                return (
+                  <li className={`imports-step ${state}`.trim()} key={label} aria-current={state === "is-current" ? "step" : undefined}>
+                    <span className="imports-step-marker" aria-hidden="true">
+                      {index < IMPORT_ACTIVE_STEP ? <Check size={13} /> : index + 1}
+                    </span>
+                    <span className="imports-step-label">{label}</span>
+                    {state ? <span className="visually-hidden">{state === "is-done" ? " (completed)" : " (current step)"}</span> : null}
+                  </li>
+                );
+              })}
             </ol>
             <div className="imports-panel">
               <div className="imports-panel-head">

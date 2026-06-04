@@ -117,25 +117,82 @@
 
 .imports-steps {
   align-items: center;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  gap: 0;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 2px 0;
 }
 
-.imports-steps li {
-  border-bottom: 2px solid var(--line);
+.imports-step {
+  align-items: center;
   color: var(--muted);
-  padding: 8px 0;
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.imports-steps li.done,
-.imports-steps li.active {
+/* Connector line between consecutive steps; it fills the gap and turns accent
+   once the preceding step is complete. */
+.imports-step:not(:last-child)::after {
+  background: var(--line);
+  border-radius: 2px;
+  content: "";
+  flex: 1 1 auto;
+  height: 2px;
+  margin: 0 12px;
+  min-width: 18px;
+}
+
+.imports-step:not(:last-child) {
+  flex: 1 1 auto;
+}
+
+.imports-step-marker {
+  align-items: center;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  flex: 0 0 22px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.imports-step-label {
+  white-space: nowrap;
+}
+
+.imports-step.is-done {
+  color: var(--text);
+}
+
+.imports-step.is-done .imports-step-marker {
+  background: var(--accent);
   border-color: var(--accent);
+  color: #fff;
+}
+
+.imports-step.is-done:not(:last-child)::after {
+  background: var(--accent);
+}
+
+.imports-step.is-current {
   color: var(--text);
   font-weight: 650;
+}
+
+.imports-step.is-current .imports-step-marker {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
 }
 
 .imports-panel,
@@ -307,8 +364,10 @@
     text-align: left;
   }
 
-  .imports-steps {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Tight screens: collapse to a dot stepper, keeping only the current step's
+     label so the four markers and connectors still fit on one row. */
+  .imports-step:not(.is-current) .imports-step-label {
+    display: none;
   }
 
   .imports-command {

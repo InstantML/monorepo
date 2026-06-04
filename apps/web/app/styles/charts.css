@@ -690,7 +690,12 @@ small {
   z-index: 4;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  /* Stay within the card and wrap rather than collide with the legend/title
+   * when the smoothing pill joins the csv/svg buttons on a narrow grid panel. */
+  flex-wrap: wrap;
+  max-width: calc(100% - 24px);
 }
 
 @media (max-width: 900px) {
@@ -717,6 +722,58 @@ small {
 .chart-export-button[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.chart-smoothing-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 9px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink, #344251);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+  cursor: pointer;
+}
+
+.chart-smoothing-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  user-select: none;
+}
+
+.chart-smoothing-slider {
+  width: 72px;
+  height: 4px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .chart-smoothing-label {
+    display: none;
+  }
+
+  .chart-smoothing-slider {
+    width: 56px;
+  }
+}
+
+/* Grid panel toolbars are tight (csv + svg + slider); drop the word and keep the
+   slider. The fullscreen panel has room, so the "Smooth" label stays there. */
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-smoothing-label {
+  display: none;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-smoothing-slider {
+  width: 60px;
 }
 
 .chart-export-helper {
@@ -929,7 +986,9 @@ small {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.45;
-  opacity: 0.92;
+  /* Opacity scales down with series count (set per-chart in MetricChart) so a
+   * dense run set reads as a translucent band rather than an opaque slab. */
+  opacity: var(--series-stroke-opacity, 0.92);
 }
 
 .series.line-style-1 {
@@ -945,12 +1004,14 @@ small {
 }
 
 .series.series-muted {
-  opacity: 0.28;
+  opacity: var(--series-muted-opacity, 0.28);
 }
 
+/* The hovered run pops above the band: full opacity, a touch heavier, and drawn
+ * last (React renders the active overlay after the band) so it reads clearly. */
 .series.series-active {
   opacity: 1;
-  stroke-width: 1.9;
+  stroke-width: 2.1;
 }
 
 .series-point {
