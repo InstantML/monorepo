@@ -219,6 +219,13 @@ export function ImportsTabPane({ api, project }: Props) {
       <section className="imports-jobs" aria-label="Recent import jobs">
         <h2>Recent import jobs</h2>
         {jobsError ? <p className="imports-message imports-message--error" role="alert">{jobsError}</p> : null}
+        {!jobsLoading && jobsLoaded && jobs.length === 0 && !jobsError ? (
+          <div className="imports-jobs-empty">
+            <FileArchive size={22} aria-hidden="true" />
+            <p>No import jobs yet</p>
+            <span>Run a dry-run command above to create your first import job — it will appear here.</span>
+          </div>
+        ) : (
         <div className="imports-table-scroll">
           <table>
             <thead>
@@ -269,6 +276,7 @@ export function ImportsTabPane({ api, project }: Props) {
             </tbody>
           </table>
         </div>
+        )}
         {jobs.some((job) => job.warnings?.length) ? (
           <div className="imports-warnings" aria-label="Import warnings">
             {jobs.flatMap((job) => (job.warnings ?? []).slice(0, 3).map((warning) => (

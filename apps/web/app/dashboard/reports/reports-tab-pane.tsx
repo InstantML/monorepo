@@ -606,17 +606,19 @@ function ReportsListPane({
             </h2>
             <p>Experiment writeups, live panels, and shareable readouts.</p>
           </div>
-          <div className="report-home__actions">
-            <button
-              type="button"
-              className="report-pane__icon-button"
-              onClick={() => onCreate()}
-              disabled={busy || !canEditReports}
-              title={canEditReports ? "New report" : "Report editing requires workspace write access"}
-            >
-              <Plus size={14} aria-hidden="true" /> New report
-            </button>
-          </div>
+          {summaries.length > 0 ? (
+            <div className="report-home__actions">
+              <button
+                type="button"
+                className="report-pane__icon-button"
+                onClick={() => onCreate()}
+                disabled={busy || !canEditReports}
+                title={canEditReports ? "New report" : "Report editing requires workspace write access"}
+              >
+                <Plus size={14} aria-hidden="true" /> New report
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="report-home__body">
           {busy && summaries.length === 0 ? (

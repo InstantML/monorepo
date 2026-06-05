@@ -1508,7 +1508,10 @@ button.compare-row-head.active {
 
 /* metric cells */
 .cmp-metric .cmp-metric-val{font-family:var(--font-mono);font-size:13.5px;font-weight:600;color:var(--text)}
-.cmp-metric.primary .cmp-metric-val{color:var(--accent-strong)}
+/* Emphasize the focus-metric value by weight, not color — a green value reads as
+ * "good" even on rows that are worse than the reference. Direction is carried by
+ * the delta chip below. */
+.cmp-metric.primary .cmp-metric-val{color:var(--text);font-weight:720}
 .cmp-metric-sub{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:11px;color:var(--faint)}
 .cmp-delta{font-family:var(--font-mono);font-weight:600}
 .cmp-delta.up{color:var(--green)}

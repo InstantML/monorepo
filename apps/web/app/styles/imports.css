@@ -270,6 +270,34 @@
   font-size: 12px;
 }
 
+.imports-jobs-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 30px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.imports-jobs-empty svg {
+  color: var(--faint, var(--muted));
+  opacity: 0.7;
+}
+
+.imports-jobs-empty p {
+  margin: 0;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.imports-jobs-empty span {
+  max-width: 360px;
+  font-size: 12.5px;
+}
+
 .imports-table-scroll {
   max-width: 100%;
   min-width: 0;

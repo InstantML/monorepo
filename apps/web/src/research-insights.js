@@ -51,6 +51,10 @@ export function numericFieldRows(runs, metricKey) {
   for (const run of runs) {
     const flattened = flattenNumericObject(run.config ?? {}, "config");
     for (const [key, value] of Object.entries(run.latest_metrics ?? {})) {
+      // The focus metric is added once below as its goal-aware "best"; skip its
+      // near-identical "latest" so it doesn't render as a duplicate axis/field
+      // with the same shortened label.
+      if (key === metricKey) continue;
       if (isFiniteNumber(value)) flattened[`metric.latest.${key}`] = Number(value);
     }
     const best = metricGoalValue(run, metricKey);

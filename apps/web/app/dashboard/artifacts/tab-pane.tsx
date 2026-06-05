@@ -488,7 +488,7 @@ export function ArtifactsTabPane({
       <div className="artifact-workspace">
         <section className="panel artifact-catalog-panel">
           <div className="panel-head">
-            <h2><Package size={15} /> Collections <span>({collectionCountLabel})</span></h2>
+            <h2><Package size={15} /> Collections {collectionTotal || collections.length ? <span>({collectionCountLabel})</span> : null}</h2>
             <div className="panel-controls artifact-catalog-controls">
               <label className="control search-control">
                 <Search size={14} />
@@ -499,7 +499,7 @@ export function ArtifactsTabPane({
                   {artifactTypeOptions.map((value) => <option key={value || "all"} value={value}>{value || "all types"}</option>)}
                 </select>
               </label>
-              <button className="copy-button" disabled={!collectionHasMore || collectionLoadingMore} type="button" onClick={loadMoreCollections}><ListPlus size={13} /> More</button>
+              {collectionHasMore ? <button className="copy-button" disabled={collectionLoadingMore} type="button" onClick={loadMoreCollections}><ListPlus size={13} /> More</button> : null}
             </div>
           </div>
           <div className="panel-body artifact-collection-list">
