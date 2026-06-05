@@ -68,9 +68,9 @@ pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
 #[cfg(test)]
 mod tests {
-    use super::helpers::{request_rate_key, require_session_scope, validate_clerk_signup_allowed};
+    use super::helpers::{request_rate_key, require_session_scope};
     use super::platform::openapi_path_available_for_plane;
-    use crate::domain::{ClerkAuthRequest, SessionContext};
+    use crate::domain::SessionContext;
     use axum::http::{HeaderMap, HeaderValue};
     use serde_json::Value;
     use uuid::Uuid;
@@ -349,58 +349,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn clerk_signup_allowlist_only_applies_to_signup() {
-        let mut config = test_config();
-        config.signup_allowed_emails = vec!["founder@example.com".to_string()];
-        config.signup_allowed_domains = vec!["instantml.ai".to_string()];
-        let signup = ClerkAuthRequest {
-            token: None,
-            mode: Some("signup".to_string()),
-            account_type: None,
-            org_name: Some("Acme".to_string()),
-            plan_tier: None,
-            storage_choice: None,
-            seat_emails: None,
-            accept_invite_org_id: None,
-            accept_invite_token: None,
-        };
-        assert!(validate_clerk_signup_allowed(&config, "founder@example.com", &signup).is_ok());
-        assert!(validate_clerk_signup_allowed(&config, "teammate@instantml.ai", &signup).is_ok());
-        assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signup).is_err());
-
-        let signin = ClerkAuthRequest {
-            token: None,
-            mode: Some("signin".to_string()),
-            account_type: None,
-            org_name: None,
-            plan_tier: None,
-            storage_choice: None,
-            seat_emails: None,
-            accept_invite_org_id: None,
-            accept_invite_token: None,
-        };
-        assert!(validate_clerk_signup_allowed(&config, "stranger@example.org", &signin).is_ok());
-
-        let invite_accept_signup = ClerkAuthRequest {
-            token: None,
-            mode: Some("signup".to_string()),
-            account_type: None,
-            org_name: Some("Acme".to_string()),
-            plan_tier: None,
-            storage_choice: None,
-            seat_emails: None,
-            accept_invite_org_id: None,
-            accept_invite_token: Some("instantml_invite_test".to_string()),
-        };
-        assert!(validate_clerk_signup_allowed(
-            &config,
-            "invited@example.org",
-            &invite_accept_signup
-        )
-        .is_ok());
-    }
-
     fn test_config() -> crate::config::AppConfig {
         crate::config::AppConfig {
             clickhouse_url: "http://default:@127.0.0.1:8123/instantml".to_string(),
@@ -417,8 +365,6 @@ mod tests {
             clerk_api_base: "https://api.clerk.com".to_string(),
             clerk_jwt_issuer: None,
             clerk_session_max_token_age: std::time::Duration::from_secs(600),
-            signup_allowed_emails: Vec::new(),
-            signup_allowed_domains: Vec::new(),
             artifact_backend: crate::config::ArtifactBackend::Local,
             r2_artifacts: None,
             artifact_uploads_enabled: true,

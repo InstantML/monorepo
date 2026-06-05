@@ -60,7 +60,6 @@ Environment:
   INSTANTML_STAGING_USER_DATA_DATABASE  User Data database path for staging. Default: instantml_user_data_staging.
   INSTANTML_STAGING_USER_DATA_ENDPOINT  Full staging User Data endpoint override.
   INSTANTML_PUBLIC_API_BASE            Optional public LB/router URL written to local frontend env.
-  INSTANTML_SIGNUP_ALLOWED_EMAILS      Comma-separated hosted signup allowlist.
   INSTANTML_ALLOWED_FRONTEND_ORIGINS   Comma-separated browser origins allowed for session mutations.
   INSTANTML_ARTIFACT_BACKEND            local or r2. Defaults to r2 when Cloudflare R2 credentials are present.
   CLOUDFLARE_ACCOUNT_ID                 Cloudflare account id for R2 buckets.
@@ -174,7 +173,7 @@ validateInviteEmailConfig();
 await validateClerkDeploymentConfig();
 
 preflightBuildContext();
-ensureGcloudAuth();
+ensureGcloudAuth(activeAccount);
 enableServices();
 ensureArtifactRepository();
 const serviceAccountEmail = ensureServiceAccount();
@@ -191,7 +190,7 @@ if (enableControlPostgres) {
     "--role", "roles/secretmanager.secretAccessor",
   ], { quietOutput: true });
 }
-const baseEnvVars = buildRuntimeEnv(staticEgressIp, activeAccount);
+const baseEnvVars = buildRuntimeEnv(staticEgressIp);
 if (staticEgressIp && (updateClickHouseServiceAllowlist || updateClickHouseKeyAllowlist)) {
   await updateClickHouseAccessLists(staticEgressIp);
 }
@@ -685,9 +684,8 @@ function preflightBuildContext() {
   }
 }
 
-function ensureGcloudAuth() {
-  const auth = capture(["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).trim();
-  if (!auth) fail("No active gcloud account. Run `gcloud auth login` first.");
+function ensureGcloudAuth(auth) {
+  if (!auth || auth === "(unset)") fail("No active gcloud account. Run `gcloud auth login` first.");
   console.log(`Using gcloud account ${auth} in project ${project}.`);
 }
 
@@ -925,13 +923,12 @@ function userDataEndpointForDeployment(raw) {
   }
 }
 
-function buildRuntimeEnv(staticEgressIp, activeAccount) {
+function buildRuntimeEnv(staticEgressIp) {
   const publicStaticEgressIp = staticEgressIp && vpcEgress === "all-traffic" ? staticEgressIp : "";
   const origins = value("INSTANTML_ALLOWED_FRONTEND_ORIGINS")
     || "http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai";
   const emailProvider = emailProviderForDeployment();
   const frontendBaseUrl = value("INSTANTML_FRONTEND_BASE_URL");
-  const allowedEmails = value("INSTANTML_SIGNUP_ALLOWED_EMAILS") || activeAccount;
   const managedClerkEnabled = managedClerkEnabledForDeployment();
   const clerkJwtIssuer = managedClerkEnabled ? clerkJwtIssuerForDeployment() : "";
   const clerkApiBase = value("CLERK_API_BASE") ? clerkApiBaseForDeployment() : "https://api.clerk.com";
@@ -960,8 +957,6 @@ function buildRuntimeEnv(staticEgressIp, activeAccount) {
     INSTANTML_EMAIL_PROVIDER: emailProvider,
     INSTANTML_EMAIL_FROM: value("INSTANTML_EMAIL_FROM"),
     INSTANTML_EMAIL_REPLY_TO: value("INSTANTML_EMAIL_REPLY_TO"),
-    INSTANTML_SIGNUP_ALLOWED_EMAILS: allowedEmails,
-    INSTANTML_SIGNUP_ALLOWED_DOMAINS: value("INSTANTML_SIGNUP_ALLOWED_DOMAINS"),
     INSTANTML_ARTIFACT_BACKEND: value("INSTANTML_ARTIFACT_BACKEND") || (r2Configured ? "r2" : "local"),
     INSTANTML_ARTIFACT_UPLOADS_ENABLED: value("INSTANTML_ARTIFACT_UPLOADS_ENABLED") || (r2Configured ? "true" : "false"),
     CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,

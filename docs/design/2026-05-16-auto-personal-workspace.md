@@ -77,11 +77,6 @@ pub struct OnboardingApiKey {
 **`CreatedAuthSession`** gets an `onboarding_api_key: Option<OnboardingApiKey>` field.
 The handler serializes it in the JSON response only when `Some`.
 
-**`validate_clerk_signup_allowed`:** The existing `is_clerk_signup_request` check looks for
-`mode == "signup"` OR non-empty `org_name`. With auto-derive, a request with
-`mode == "signup"` and no `org_name` should still trigger the allowlist check. The function
-already handles this via `mode == "signup"`.
-
 ### Frontend: `auth-flow.tsx`
 
 **Signup form under `managed_clerk_enabled`:** Wrap `<SignupFields>` in a condition: render

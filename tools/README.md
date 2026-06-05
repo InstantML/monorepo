@@ -64,7 +64,6 @@ Important environment variables:
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated browser origins allowed for cookie-authenticated mutations. Default includes local Next and `https://instantml.ai`.
 - `INSTANTML_FRONTEND_BASE_URL`: hosted web app origin used in device-code and organization invite links. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
 - `INSTANTML_EMAIL_FROM`: verified sender used for organization invite email. Required when `RESEND_API_KEY` or `INSTANTML_EMAIL_PROVIDER=resend` is set.
-- `INSTANTML_SIGNUP_ALLOWED_EMAILS` / `INSTANTML_SIGNUP_ALLOWED_DOMAINS`: hosted Clerk signup allowlists. If neither is set, the helper defaults the email allowlist to the active `gcloud` account.
 - `INSTANTML_CLOUD_RUN_STATIC_EGRESS=0`: disables static egress setup. Keep static/private egress enabled for hosted GCP ClickHouse and BYOC/customer GCP ClickHouse endpoints unless there is an explicit networking plan.
 - `INSTANTML_CLOUD_RUN_VPC_EGRESS`: Cloud Run VPC egress mode when static egress is enabled. Default: `all-traffic`; use `private-ranges-only` only when the service does not need the NAT IP for public BYOC/provider allowlists.
 - `INSTANTML_CLOUD_RUN_NAT_LOGGING=1`: enables Cloud NAT logging for newly created NATs. Default is off to avoid paying for idle translation logs.

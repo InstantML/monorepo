@@ -192,6 +192,23 @@ Unsupported W&B surfaces, including sweeps and `mode="offline"`/`"dryrun"`,
 `wandb.log(..., commit=False)`, raise `UnsupportedWandbFeature` instead of
 silently changing logging semantics.
 
+For zero-risk pilots where W&B must stay canonical, alias the W&B-primary
+mirror module instead. The official W&B package still receives `init`, `log`,
+and `finish`; InstantML mirrors scalar metrics best-effort and only warns if
+the mirror path fails.
+
+```python
+import instantml.wandb_mirror as wandb
+
+run = wandb.init(project="cartpole", config={"seed": 13})
+wandb.log({"train/loss": 0.1}, step=1)
+run.finish()
+```
+
+Pass `instantml_project=...`, `instantml_api_key=...`, or
+`instantml_base_url=...` to `wandb.init(...)` when the InstantML mirror needs
+settings that differ from W&B.
+
 Framework adapters are available from the top-level package and lazily subclass
 installed framework base classes when present:
 

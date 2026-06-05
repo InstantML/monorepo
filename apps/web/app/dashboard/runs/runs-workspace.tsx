@@ -114,6 +114,7 @@ export function RunsWorkspace({
   onToggleSection,
   hasNextPage,
   hasPreviousPage,
+  initialLoadDone,
   onGoToPage,
   onNextPage,
   onPageSize,
@@ -165,6 +166,7 @@ export function RunsWorkspace({
   onToggleSection: (sectionId: string) => void;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
+  initialLoadDone: boolean;
   onGoToPage: (page: number) => void;
   onNextPage: () => void;
   onPageSize: (size: number) => void;
@@ -290,6 +292,7 @@ export function RunsWorkspace({
   const matchingOverflow = summaryTotal > visibleRunIds.length;
   const showSelectAllMatching = matchingOverflow;
   const selectAllMatchingTarget = Math.min(summaryTotal, BULK_SELECT_MATCHING_LIMIT);
+  const initialRunsLoading = !initialLoadDone && workspaceRuns.length === 0;
   return (
     <div className={`runs-workspace ${showAddPanelDrawer ? "drawer-open" : ""} ${runRailCollapsed ? "run-rail-collapsed" : ""}`}>
       <aside className="workspace-run-rail">
@@ -299,12 +302,12 @@ export function RunsWorkspace({
               aria-checked={railSelectionState === "all" ? "true" : railSelectionState === "some" ? "mixed" : "false"}
               aria-label={railSelectionLabel}
               checked={railSelectionState === "all"}
-              disabled={visibleRunIds.length === 0}
+              disabled={visibleRunIds.length === 0 || initialRunsLoading}
               onChange={onSelectAllVisible}
               ref={(node) => { if (node) node.indeterminate = railSelectionState === "some"; }}
               type="checkbox"
             />
-            <h2>Runs <span>({summaryTotal})</span></h2>
+            <h2>Runs {initialRunsLoading ? <span>loading</span> : <span>({summaryTotal})</span>}</h2>
           </label>
           <div className="workspace-rail-actions">
             <button className="icon-button" type="button" aria-label="Refresh runs" title="Refresh runs" onClick={onRefresh}><RefreshCw size={15} /></button>
@@ -320,7 +323,7 @@ export function RunsWorkspace({
             </button>
           </div>
         </div>
-        {visibleRunIds.length ? (
+        {visibleRunIds.length && !initialRunsLoading ? (
           <div className="workspace-rail-page-select">
             <button
               aria-pressed={railSelectionState === "all"}
@@ -339,7 +342,7 @@ export function RunsWorkspace({
             ) : null}
           </div>
         ) : null}
-        {showSelectAllMatching ? (
+        {showSelectAllMatching && !initialRunsLoading ? (
           <div className="workspace-rail-select-banner" role="status" aria-live="polite">
             <span>{selectedRunIds.length} of {summaryTotal} selected.</span>
             {selectAllMatchingDisabled ? (
@@ -361,7 +364,9 @@ export function RunsWorkspace({
           </div>
         ) : null}
         <div className="workspace-run-list">
-          {workspaceRuns.length ? workspaceRuns.map((run, index) => {
+          {initialRunsLoading ? (
+            <RunsRailSkeleton />
+          ) : workspaceRuns.length ? workspaceRuns.map((run, index) => {
             const selected = selectedRunIds.includes(run.id);
             const compareLabel = selected ? `Deselect ${run.name}` : `Select ${run.name}`;
             const note = runNoteText(run);
@@ -421,7 +426,7 @@ export function RunsWorkspace({
         <div className="workspace-run-footer">
           <CustomSelect
             className="table-footer-select"
-            disabled={paginationBusy}
+            disabled={paginationBusy || initialRunsLoading}
             id="workspace-rows-per-page"
             label="Rows"
             menuPlacement="top"
@@ -431,17 +436,17 @@ export function RunsWorkspace({
             options={[10, 25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
             value={String(pageSize)}
           />
-          <strong>{`${pageStart}-${pageEnd} of ${summaryTotal}`}</strong>
+          <strong>{initialRunsLoading ? "Loading runs" : `${pageStart}-${pageEnd} of ${summaryTotal}`}</strong>
           <div className="workspace-run-pager">
-            <button className="icon-button framed" disabled={paginationBusy || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page" title="Previous page"><ChevronDown className="rotate-90" size={15} /></button>
+            <button className="icon-button framed" disabled={paginationBusy || initialRunsLoading || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page" title="Previous page"><ChevronDown className="rotate-90" size={15} /></button>
             <RunPageJumper
-              disabled={paginationBusy || summaryTotal === 0}
+              disabled={paginationBusy || initialRunsLoading || summaryTotal === 0}
               onGoToPage={onGoToPage}
               pageSize={pageSize}
               pageStart={pageStart}
               summaryTotal={summaryTotal}
             />
-            <button className="icon-button framed" disabled={paginationBusy || !hasNextPage} onClick={onNextPage} type="button" aria-label="Next page" title="Next page"><ChevronDown className="rotate-neg-90" size={15} /></button>
+            <button className="icon-button framed" disabled={paginationBusy || initialRunsLoading || !hasNextPage} onClick={onNextPage} type="button" aria-label="Next page" title="Next page"><ChevronDown className="rotate-neg-90" size={15} /></button>
           </div>
         </div>
       </aside>
@@ -466,7 +471,7 @@ export function RunsWorkspace({
         </div>
 
         <div className="workspace-sections">
-          {view.sections.map((section) => {
+          {initialRunsLoading ? <WorkspaceCanvasSkeleton /> : view.sections.map((section) => {
             const visiblePanels = section.panels.filter((panel) => panelMatchesSearch(section, panel, panelSearch)).slice(0, 12);
             return (
               <WorkspaceSectionView
@@ -588,6 +593,52 @@ export function RunsWorkspace({
           </aside>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function RunsRailSkeleton() {
+  return (
+    <div className="workspace-run-loading" role="status" aria-label="Loading runs">
+      {Array.from({ length: 7 }, (_, index) => (
+        <div className="workspace-run-skeleton-row" key={index}>
+          <span className="workspace-run-skeleton-check" />
+          <span className="workspace-run-skeleton-body">
+            <span className="workspace-skeleton-line is-title" />
+            <span className="workspace-skeleton-line is-meta" />
+            <span className="workspace-run-skeleton-tags">
+              <span className="workspace-skeleton-line is-tag" />
+              <span className="workspace-skeleton-line is-tag is-short" />
+            </span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WorkspaceCanvasSkeleton() {
+  return (
+    <div className="workspace-loading-skeleton" role="status" aria-label="Loading run workspace">
+      <div className="workspace-loading-section-head">
+        <span className="workspace-skeleton-line is-heading" />
+        <span className="workspace-skeleton-line is-count" />
+      </div>
+      <div className="workspace-loading-panel-grid">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div className="workspace-loading-panel" key={index}>
+            <div className="workspace-loading-panel-head">
+              <span className="workspace-skeleton-line is-panel-title" />
+              <span className="workspace-skeleton-line is-panel-meta" />
+            </div>
+            <div className="workspace-loading-panel-body">
+              <span className="workspace-skeleton-line is-wide" />
+              <span className="workspace-skeleton-line is-medium" />
+              <span className="workspace-skeleton-line is-short" />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

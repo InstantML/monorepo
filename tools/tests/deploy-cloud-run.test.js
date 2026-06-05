@@ -256,6 +256,16 @@ test("deploy helper defaults hosted ClickHouse provisioning to database mode", (
   assert.doesNotMatch(source, /INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service"/);
 });
 
+test("deploy helper does not configure a hosted signup allowlist", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+  const workflow = fs.readFileSync(path.join(repo, ".github", "workflows", "deploy-cloud-run.yml"), "utf8");
+
+  assert.doesNotMatch(source, /INSTANTML_SIGNUP_ALLOWED_EMAILS/);
+  assert.doesNotMatch(source, /INSTANTML_SIGNUP_ALLOWED_DOMAINS/);
+  assert.doesNotMatch(workflow, /INSTANTML_SIGNUP_ALLOWED_EMAILS/);
+  assert.doesNotMatch(workflow, /INSTANTML_SIGNUP_ALLOWED_DOMAINS/);
+});
+
 test("deploy helper keeps BYOC egress independent of legacy ClickHouse Cloud allowlists", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
   const lines = source.split("\n");

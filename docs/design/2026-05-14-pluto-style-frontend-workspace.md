@@ -110,6 +110,13 @@ Files/evidence tab:
 Frontend:
 
 - Keep `/dashboard/:tab` route compatibility and existing top-level tabs.
+- Keep the full-page dashboard loader scoped to browser session verification
+  only. After `/api/auth/session` authorizes the user, render the dashboard
+  chrome immediately and let the Runs rail/workspace show skeleton rows and
+  panels while projects, preferences, `/api/runs/summary`, and `/api/overview`
+  finish loading. A waking tenant warehouse should keep those in-page skeletons
+  and topbar/status copy active while retrying instead of blocking the entire
+  route.
 - Do not add top-level route IDs for `logs`, `files`, `system`, or `graph` in this first slice.
 - Add local `RunWorkspaceTabId = "summary" | "data" | "logs" | "files" | "system" | "graph"` state inside `/dashboard/detail`.
 - Keep direct links simple in this PR: `/dashboard/detail` opens the last selected run and defaults to Summary. Route-addressable run subtabs can follow once the component split stabilizes.

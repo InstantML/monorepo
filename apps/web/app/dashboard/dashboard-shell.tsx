@@ -550,6 +550,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
   const activeTabRef = useRef(activeTab);
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
+  const [dashboardSessionChecked, setDashboardSessionChecked] = useState(false);
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
   const [sessionPayload, setSessionPayload] = useState<DashboardSessionPayload | null>(null);
   const [projectPreferenceReady, setProjectPreferenceReady] = useState(false);
@@ -614,7 +615,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [hover, setHover] = useState<HoverPoint>(null);
   const [hoverMetricKey, setHoverMetricKey] = useState(metricKey);
   const [message, setMessage] = useState("Loading runs...");
-  const [loadingDetail, setLoadingDetail] = useState("Loading workspace");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedViewOption[]>([]);
   const [savedViewKey, setSavedViewKey] = useState("");
@@ -1226,10 +1226,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     dashboardRequestRef.current = requestId;
     if (!silent) {
       setDashboardLoading(true);
-      setLoadingDetail("Loading runs");
       if (shouldSurfaceRunLoadMessage(activeTabRef.current)) setMessage("Loading runs...");
     }
-    let keepLoadingScreen = false;
+    let keepInitialRunsLoading = false;
     try {
       const params = currentPageCursor
         ? { project, status, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
@@ -1293,8 +1292,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         const detail = error instanceof Error ? error.message : "Unable to load runs.";
         if (!silent && shouldSurfaceRunLoadMessage(activeTabRef.current)) setMessage(detail);
         if (isWarehouseStartingError(error) && !options.signal?.aborted) {
-          setLoadingDetail("Starting data warehouse");
-          keepLoadingScreen = shouldSurfaceRunLoadMessage(activeTabRef.current) && !initialLoadDone;
+          keepInitialRunsLoading = shouldSurfaceRunLoadMessage(activeTabRef.current) && !initialLoadDone;
           warehouseRetryTimerRef.current = window.setTimeout(() => {
             warehouseRetryTimerRef.current = null;
             if (!options.signal?.aborted) void loadDashboard();
@@ -1303,10 +1301,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
     } finally {
       if (requestId === dashboardRequestRef.current) {
-        if (!silent) setDashboardLoading(keepLoadingScreen);
+        if (!silent) setDashboardLoading(keepInitialRunsLoading);
         pageNavigationPendingRef.current = false;
         setPageNavigationPending(false);
-        if (!keepLoadingScreen && !options.signal?.aborted) setInitialLoadDone(true);
+        if (!keepInitialRunsLoading && !options.signal?.aborted) setInitialLoadDone(true);
       }
     }
   }, [api, currentPageCursor, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
@@ -1325,6 +1323,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           }
           setSessionPayload(session as DashboardSessionPayload);
           setDashboardAuthorized(true);
+          setDashboardSessionChecked(true);
           return;
         }
         const next = sanitizeNextPath(window.location.pathname || "/dashboard/runs");
@@ -1337,6 +1336,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           return;
         }
         setDashboardAuthMessage(error instanceof Error ? error.message : "Unable to check your session.");
+        setDashboardSessionChecked(true);
         setInitialLoadDone(true);
       }
     }
@@ -3543,7 +3543,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
   const ActiveIcon = activeTabIcon;
 
-  if (!initialLoadDone) return <AppLoadingScreen detail={loadingDetail} />;
+  if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
     return (
       <main className="auth-page" aria-busy="false">

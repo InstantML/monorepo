@@ -354,6 +354,7 @@ export function RunsTabPane({
         selectAllMatchingDisabled={selectAllMatchingDisabled}
         hasNextPage={hasNextPage}
         hasPreviousPage={hasPreviousPage}
+        initialLoadDone={initialLoadDone}
         onGoToPage={onGoToPage}
         onNextPage={onNextPage}
         onPageSize={onPageSize}
