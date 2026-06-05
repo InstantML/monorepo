@@ -1025,7 +1025,7 @@ small {
  * signal, with the raw series kept faintly visible ("slightly opaque") behind
  * it for context. */
 .series.series-raw {
-  opacity: 0.22;
+  opacity: 0.14;
   stroke-width: 1;
 }
 
@@ -1040,7 +1040,7 @@ small {
 
 .series.series-smooth {
   opacity: 1;
-  stroke-width: 1.5;
+  stroke-width: 1.9;
 }
 
 .series.series-smooth.series-muted {
@@ -1131,7 +1131,10 @@ small {
  * Value | Name column rule, and value-coloured rows ranked at the hovered x. */
 .chart-tooltip {
   position: absolute;
-  z-index: 3;
+  /* Above the export/smoothing controls (z-index 4) so the readout is never
+   * occluded by them. The tooltip is pointer-events:none, so the controls
+   * underneath stay clickable. */
+  z-index: 6;
   display: grid;
   gap: 2px;
   min-width: 248px;

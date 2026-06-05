@@ -297,7 +297,13 @@ function valueDomain(points, metricKey = "") {
     if (value > maxY) maxY = value;
   }
   if (!Number.isFinite(minY) || !Number.isFinite(maxY)) return { minY: 0, maxY: 1 };
-  if (usesUnitDomain(metricKey, minY, maxY)) return { minY: 0, maxY: 1 };
+  if (usesUnitDomain(metricKey, minY, maxY)) {
+    // Bounded metrics (accuracy/rate/…) keep a 0 baseline, but the top fits the
+    // data plus a little headroom instead of always pinning to 1 — otherwise a
+    // curve that tops out at 0.7 wastes the upper third of the plot.
+    const top = Math.min(1, maxY * 1.08);
+    return { minY: 0, maxY: top > 0 ? top : 1 };
+  }
   return padDomain(minY, maxY);
 }
 
