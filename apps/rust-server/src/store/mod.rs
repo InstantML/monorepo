@@ -373,9 +373,7 @@ impl Store {
     /// (new org, new api key, revoked api key, etc.) made by the control plane.
     /// No-op when no control database is configured (single-binary local mode).
     pub fn spawn_control_refresh_task(&self) -> Option<JoinHandle<()>> {
-        if self.control_db.is_none() {
-            return None;
-        }
+        self.control_db.as_ref()?;
         let store = self.clone();
         let handle = tokio::spawn(async move {
             // Stagger the first tick so we don't double up with the startup
