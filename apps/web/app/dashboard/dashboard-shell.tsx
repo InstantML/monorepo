@@ -3219,6 +3219,22 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }), "Panel size saved. Undo available.");
   }
 
+  function setWorkspacePanelSmoothing(sectionId: string, panelId: string, smoothing: number) {
+    const next = Math.max(0, Math.min(90, Math.round(Number(smoothing) / 10) * 10));
+    if (!Number.isFinite(next)) return;
+    commitWorkspace((current) => ({
+      ...current,
+      sections: current.sections.map((section) => section.id === sectionId
+        ? {
+          ...section,
+          panels: section.panels.map((panel) => panel.id === panelId
+            ? { ...panel, settings: { ...(panel.settings ?? {}), smoothing: next } }
+            : panel),
+        }
+        : section),
+    }), next ? `Smoothing set to ${next}. Undo available.` : "Smoothing cleared. Undo available.");
+  }
+
   function updateEditingPanel(patch: {
     title?: string;
     type?: WorkspacePanelType;
@@ -3664,6 +3680,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onRemovePanel={removeWorkspacePanel}
               onResetWorkspace={resetWorkspaceLayout}
               onResizePanel={resizeWorkspacePanel}
+              onPanelSmoothing={setWorkspacePanelSmoothing}
               onRunRailCollapsed={(collapsed) => {
                 setRunsRailCollapsed(collapsed);
                 setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");

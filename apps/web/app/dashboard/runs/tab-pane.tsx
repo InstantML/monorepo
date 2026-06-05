@@ -1,4 +1,7 @@
+"use client";
+
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
 import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
@@ -68,6 +71,7 @@ type Props = {
   onRemovePanel: (sectionId: string, panelId: string) => void;
   onResetWorkspace: () => void;
   onResizePanel: (sectionId: string, panelId: string, layout: WorkspacePanelLayout) => void;
+  onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
   onRunRailCollapsed: (collapsed: boolean) => void;
   onSelectAllMatching: () => void;
   onSelectAllVisible: () => void;
@@ -166,6 +170,7 @@ export function RunsTabPane({
   onRemovePanel,
   onResetWorkspace,
   onResizePanel,
+  onPanelSmoothing,
   onRunRailCollapsed,
   onSelectAllMatching,
   onSelectAllVisible,
@@ -207,6 +212,52 @@ export function RunsTabPane({
 }: Props) {
   const showEmptyCallout = initialLoadDone && !dashboardLoading && summaryTotal === 0 && projects.length === 0 && !project && !query && !status;
   const nonCurrentMemberships = orgMemberships.filter((m) => !m.is_current);
+  // The sticky run rail and panel toolbar sit directly below the sticky filter
+  // bar, offset by --runs-filter-sticky-height. That filter wraps to different
+  // heights depending on viewport width and command-bar content, so a hardcoded
+  // reservation leaves a transparent gap the charts scroll through (or overlaps
+  // them). Measure the real height and publish it so the offset stays flush.
+  const filterRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const filter = filterRef.current;
+    if (!filter || typeof ResizeObserver === "undefined") return undefined;
+    // Scope the measured height to the tab pane (whose stylesheet owns the
+    // fallback). Bail rather than fall back to :root — leaking the runs filter
+    // height there would offset every other tab that reads the var.
+    const scope = filter.closest(".tab-pane") as HTMLElement | null;
+    if (!scope) return undefined;
+    // The mobile layout (<=900px, matching mobile.css) pins the filter at the
+    // topbar and forces the offset to 0; an inline measurement would clobber
+    // that and reintroduce the dead gap. Clear our override and stand down.
+    const mobile = window.matchMedia("(max-width: 900px)");
+    let frame = 0;
+    const syncFilterHeight = () => {
+      if (mobile.matches) {
+        scope.style.removeProperty("--runs-filter-sticky-height");
+        return;
+      }
+      const height = filter.getBoundingClientRect().height;
+      if (height && Number.isFinite(height)) {
+        scope.style.setProperty("--runs-filter-sticky-height", `${Math.ceil(height)}px`);
+      }
+    };
+    const queueSync = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(syncFilterHeight);
+    };
+    const observer = new ResizeObserver(queueSync);
+    observer.observe(filter);
+    queueSync();
+    window.addEventListener("resize", queueSync);
+    mobile.addEventListener("change", queueSync);
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", queueSync);
+      mobile.removeEventListener("change", queueSync);
+      scope.style.removeProperty("--runs-filter-sticky-height");
+    };
+  }, []);
   const fullscreenPanelSubtitle = fullscreenPanelContext
     ? fullscreenPanelContext.panel.type === "scatter" && fullscreenPanelContext.panel.xField && fullscreenPanelContext.panel.yField
       ? `${fieldLabel(fullscreenPanelContext.panel.xField)} x ${fieldLabel(fullscreenPanelContext.panel.yField)}`
@@ -249,7 +300,7 @@ export function RunsTabPane({
           <EmptyWorkspaceSnippet orgName={orgName} />
         </>
       ) : null}
-      <div className="runs-workspace-filter">
+      <div className="runs-workspace-filter" ref={filterRef}>
         <RunsCommandbar
           columnsOpen={columnsOpen}
           exportSelectedBusy={exportSelectedBusy}
@@ -291,6 +342,7 @@ export function RunsTabPane({
         onRemovePanel={onRemovePanel}
         onResetWorkspace={onResetWorkspace}
         onResizePanel={onResizePanel}
+        onPanelSmoothing={onPanelSmoothing}
         onRunRailCollapsed={onRunRailCollapsed}
         onSelectAllMatching={onSelectAllMatching}
         onSelectAllVisible={onSelectAllVisible}
@@ -393,6 +445,7 @@ export function RunsTabPane({
             </div>
             <WorkspacePanelCard
               className="fullscreen-panel-card"
+              onSmoothingChange={(smoothing) => onPanelSmoothing(fullscreenPanelContext.section.id, fullscreenPanelContext.panel.id, smoothing)}
               panel={fullscreenPanelContext.panel}
               section={fullscreenPanelContext.section}
               selectedRunIds={selectedRunIds}

@@ -2,7 +2,7 @@
 
 import { FileText, ImageDown, RefreshCw } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, svgPointFromClient } from "../../../src/charts.js";
 import { chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
@@ -209,9 +209,11 @@ export function MetricChart({
   onPointHover,
   onLeave,
   onZoomRangeChange,
+  onSmoothingChange,
   padding = chartPadding,
   rangeSeries,
   showRange = true,
+  smoothing,
   width = chartWidth,
   xMode,
   zoomRange = null,
@@ -228,15 +230,30 @@ export function MetricChart({
   onPointHover: (point: HoverPoint) => void;
   onLeave: () => void;
   onZoomRangeChange?: (range: ChartZoomRange) => void;
+  onSmoothingChange?: (smoothing: number) => void;
   padding?: number;
   rangeSeries?: any[];
   showRange?: boolean;
+  smoothing?: number;
   width?: number;
   xMode: string;
   zoomRange?: ChartZoomRange;
 }) {
   const denseChart = shouldUseDenseChart(normalizedSeries);
   const useLineStyles = normalizedSeries.length > 12;
+  // With many overlapping SVG lines, full opacity merges them into an opaque
+  // slab. wandb/neptune render large run sets as a translucent density band and
+  // isolate one line on hover — so fade each line as the count grows, and dim
+  // the non-hovered lines harder when the band is busy. Pure CSS vars, so the
+  // canvas/SVG render path and its speed are untouched.
+  const seriesCount = normalizedSeries.length;
+  const seriesStrokeOpacity = seriesCount > 60 ? 0.5 : seriesCount > 24 ? 0.68 : seriesCount > 8 ? 0.85 : 0.92;
+  const seriesMutedOpacity = seriesCount > 24 ? 0.16 : 0.28;
+  const chartFrameStyle = {
+    aspectRatio: `${width} / ${height}`,
+    "--series-stroke-opacity": seriesStrokeOpacity,
+    "--series-muted-opacity": seriesMutedOpacity,
+  } as CSSProperties;
   const styleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
   const visibleHover = hover;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -310,6 +327,21 @@ export function MetricChart({
   const exportFileBase = safeExportFilename(exportFilenameBase ?? metricKey, "metric-chart");
   const chartInstanceId = useId();
   const exportHelpId = `${chartInstanceId}-chart-export-help`;
+  const smoothingControlId = `${chartInstanceId}-chart-smoothing`;
+  const showSmoothing = typeof onSmoothingChange === "function";
+  const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
+  const showActions = Boolean(exportFilenameBase) || showSmoothing;
+  // Dragging the slider gives live thumb feedback via local draft state but only
+  // commits (persists + pushes one undo entry) on release, so a single gesture
+  // doesn't flood the undo stack and toast log with intermediate steps.
+  const [smoothingDraft, setSmoothingDraft] = useState<number | null>(null);
+  useEffect(() => {
+    if (smoothingDraft !== null && smoothingDraft === smoothingValue) setSmoothingDraft(null);
+  }, [smoothingDraft, smoothingValue]);
+  const displaySmoothing = smoothingDraft ?? smoothingValue;
+  function commitSmoothing() {
+    if (smoothingDraft !== null && smoothingDraft !== smoothingValue) onSmoothingChange?.(smoothingDraft);
+  }
 
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     return <div className="chart-area" onMouseLeave={onLeave}><div className="empty">{emptyMessage}</div></div>;
@@ -355,11 +387,33 @@ export function MetricChart({
 
   return (
     <div
-      className={`chart-area${exportFilenameBase ? " chart-area-exportable" : ""}`}
+      className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
       onMouseLeave={onLeave}
     >
-      {exportFilenameBase ? (
-        <div className="chart-export-actions" aria-label="Chart export actions">
+      {showActions ? (
+        <div className="chart-export-actions" aria-label="Chart actions">
+          {showSmoothing ? (
+            <label className="chart-smoothing-control" htmlFor={smoothingControlId} title={`Line smoothing: ${displaySmoothing ? displaySmoothing : "off"}`}>
+              <span className="chart-smoothing-label">Smooth</span>
+              <input
+                aria-label={`Line smoothing for ${metricKey}`}
+                aria-valuetext={displaySmoothing ? String(displaySmoothing) : "off"}
+                className="chart-smoothing-slider"
+                id={smoothingControlId}
+                max={90}
+                min={0}
+                onBlur={commitSmoothing}
+                onChange={(event) => setSmoothingDraft(Number(event.target.value))}
+                onKeyUp={commitSmoothing}
+                onPointerUp={commitSmoothing}
+                step={10}
+                type="range"
+                value={displaySmoothing}
+              />
+            </label>
+          ) : null}
+          {exportFilenameBase ? (
+          <>
           <button
             aria-label={`Download ${metricKey} plotted data CSV`}
             aria-describedby={exportBlockedReason ? exportHelpId : undefined}
@@ -383,6 +437,8 @@ export function MetricChart({
             <ImageDown size={14} />
           </button>
           {exportBlockedReason ? <span className="chart-export-helper" id={exportHelpId}>{exportBlockedReason}</span> : null}
+          </>
+          ) : null}
         </div>
       ) : null}
       <div className="chart-legend">
@@ -401,7 +457,7 @@ export function MetricChart({
           </span>
         ) : null}
       </div>
-      <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={{ aspectRatio: `${width} / ${height}` }} onMouseLeave={onLeave}>
+      <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={chartFrameStyle} onMouseLeave={onLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (

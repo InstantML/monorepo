@@ -104,6 +104,7 @@ export function RunsWorkspace({
   onRemovePanel,
   onResetWorkspace,
   onResizePanel,
+  onPanelSmoothing,
   onRunRailCollapsed,
   onSetAddPanelSection,
   onTableColumns,
@@ -155,6 +156,7 @@ export function RunsWorkspace({
   onRemovePanel: (sectionId: string, panelId: string) => void;
   onResetWorkspace: () => void;
   onResizePanel: (sectionId: string, panelId: string, layout: import("../../dashboard-types").WorkspacePanelLayout) => void;
+  onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
   onRunRailCollapsed: (collapsed: boolean) => void;
   onSelectAllMatching: () => void;
   onSelectAllVisible: () => void;
@@ -308,7 +310,7 @@ export function RunsWorkspace({
             <h2>Runs {initialRunsLoading ? <span>loading</span> : <span>({summaryTotal})</span>}</h2>
           </label>
           <div className="workspace-rail-actions">
-            <button className="icon-button" type="button" aria-label="Refresh runs" onClick={onRefresh}><RefreshCw size={15} /></button>
+            <button className="icon-button" type="button" aria-label="Refresh runs" title="Refresh runs" onClick={onRefresh}><RefreshCw size={15} /></button>
             <button
               aria-label={runRailCollapsed ? "Restore runs selector" : "Collapse runs selector"}
               aria-pressed={runRailCollapsed}
@@ -436,7 +438,7 @@ export function RunsWorkspace({
           />
           <strong>{initialRunsLoading ? "Loading runs" : `${pageStart}-${pageEnd} of ${summaryTotal}`}</strong>
           <div className="workspace-run-pager">
-            <button className="icon-button framed" disabled={paginationBusy || initialRunsLoading || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page"><ChevronDown className="rotate-90" size={15} /></button>
+            <button className="icon-button framed" disabled={paginationBusy || initialRunsLoading || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page" title="Previous page"><ChevronDown className="rotate-90" size={15} /></button>
             <RunPageJumper
               disabled={paginationBusy || initialRunsLoading || summaryTotal === 0}
               onGoToPage={onGoToPage}
@@ -444,7 +446,7 @@ export function RunsWorkspace({
               pageStart={pageStart}
               summaryTotal={summaryTotal}
             />
-            <button className="icon-button framed" disabled={paginationBusy || initialRunsLoading || !hasNextPage} onClick={onNextPage} type="button" aria-label="Next page"><ChevronDown className="rotate-neg-90" size={15} /></button>
+            <button className="icon-button framed" disabled={paginationBusy || initialRunsLoading || !hasNextPage} onClick={onNextPage} type="button" aria-label="Next page" title="Next page"><ChevronDown className="rotate-neg-90" size={15} /></button>
           </div>
         </div>
       </aside>
@@ -483,6 +485,7 @@ export function RunsWorkspace({
                 onPanelPointerMoveStart={handlePanelPointerMoveStart}
                 onRemovePanel={onRemovePanel}
                 onResizePanel={onResizePanel}
+                onPanelSmoothing={onPanelSmoothing}
                 onToggleSection={onToggleSection}
                 panelSearchActive={Boolean(panelSearch.trim())}
                 section={section}
