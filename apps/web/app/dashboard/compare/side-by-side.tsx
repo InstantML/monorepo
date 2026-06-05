@@ -540,7 +540,7 @@ function CompareRunTable({
                         ) : (
                           <>
                             {delta ? <span className={`cmp-delta ${delta.tone}`} title={delta.title}>{delta.text}</span> : null}
-                            {typeof latest === "number" && Number.isFinite(latest) ? <span className="cmp-latest">latest {formatMetricValue(latest)}</span> : null}
+                            {typeof latest === "number" && Number.isFinite(latest) && (best === null || formatMetricValue(latest) !== formatMetricValue(best)) ? <span className="cmp-latest">latest {formatMetricValue(latest)}</span> : null}
                           </>
                         )}
                       </span>

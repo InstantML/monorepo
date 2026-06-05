@@ -1817,6 +1817,27 @@ textarea:focus {
   width: 100%;
 }
 
+/* Billing actions are a row of buttons, not a labeled input grid — lay them out
+ * as a wrapping button cluster with the destructive Cancel pushed to the end. */
+.admin-form-row.billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.billing-actions .billing-cancel {
+  margin-left: auto;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 34%, transparent);
+}
+
+.billing-actions .billing-cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .usage-meter {
   height: 6px;
   overflow: hidden;

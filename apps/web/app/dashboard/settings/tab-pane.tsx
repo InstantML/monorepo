@@ -268,12 +268,12 @@ export function SettingsTabPane({
               </div>
             ) : null}
             {canManageOrg ? (
-              <div className="admin-form-row">
-                <button className="ghost" disabled={!canOpenBillingPortal} onClick={onOpenBillingPortal} title={portalTitle} type="button"><CreditCard size={14} /> Open portal</button>
-                <button className="ghost" disabled={planButtonDisabled("pro")} onClick={() => onChangeBillingPlan("pro")} title={planButtonTitle("pro")} type="button">{planButtonLabel("pro")}</button>
-                <button className="ghost" disabled={planButtonDisabled("premium")} onClick={() => onChangeBillingPlan("premium")} title={planButtonTitle("premium")} type="button">{planButtonLabel("premium")}</button>
-                <button className="ghost" disabled={planButtonDisabled("free")} onClick={() => onChangeBillingPlan("free")} title={planButtonTitle("free")} type="button">{planButtonLabel("free")}</button>
-                <button className="ghost" disabled={!canCancelBilling} onClick={onCancelBilling} title={cancelTitle} type="button">Cancel subscription</button>
+              <div className="admin-form-row billing-actions">
+                <button className="secondary compact-button" disabled={!canOpenBillingPortal} onClick={onOpenBillingPortal} title={portalTitle} type="button"><CreditCard size={14} /> Open portal</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("pro")} onClick={() => onChangeBillingPlan("pro")} title={planButtonTitle("pro")} type="button">{planButtonLabel("pro")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("premium")} onClick={() => onChangeBillingPlan("premium")} title={planButtonTitle("premium")} type="button">{planButtonLabel("premium")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("free")} onClick={() => onChangeBillingPlan("free")} title={planButtonTitle("free")} type="button">{planButtonLabel("free")}</button>
+                <button className="ghost compact-button billing-cancel" disabled={!canCancelBilling} onClick={onCancelBilling} title={cancelTitle} type="button">Cancel subscription</button>
               </div>
             ) : null}
           </div>

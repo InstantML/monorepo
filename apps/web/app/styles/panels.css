@@ -487,20 +487,28 @@
   grid-column: 1 / -1;
 }
 
+/* Collapsed to nothing until a panel is actually being dragged — otherwise it
+ * reads as a permanent empty/broken panel and eats vertical space. */
 .workspace-unsectioned-drop-zone {
   display: grid;
-  min-height: 46px;
-  margin: 0 14px 16px;
+  min-height: 0;
+  height: 0;
+  margin: 0 14px;
+  padding: 0;
   place-items: center;
-  border: 1px dashed var(--line);
+  overflow: hidden;
+  border: 1px dashed transparent;
   border-radius: var(--control-radius);
   color: var(--muted);
   font-size: 12px;
-  opacity: 0.62;
-  transition: border-color 120ms ease, background 120ms ease, color 120ms ease, opacity 120ms ease;
+  opacity: 0;
+  transition: height 140ms ease, margin 140ms ease, opacity 140ms ease, border-color 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 .workspace-unsectioned-drop-zone.active {
+  min-height: 46px;
+  height: auto;
+  margin: 0 14px 16px;
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);
