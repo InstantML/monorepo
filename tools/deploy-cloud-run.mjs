@@ -45,7 +45,7 @@ Environment:
   INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1  Permit control scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_DATA_SESSION_AFFINITY  Enable Cloud Run session affinity for data as an optimization, not correctness.
   INSTANTML_CLOUD_SQL_CONNECTION       Cloud SQL connection name (project:region:instance). Default: <project>:<region>:instantml-control.
-  INSTANTML_CONTROL_DATABASE_URL_SECRET  Secret Manager secret holding the control DATABASE_URL. Default: instantml-control-database-url.
+  INSTANTML_CONTROL_DATABASE_URL_SECRET  Secret Manager secret holding the control DATABASE_URL. Default: instantml-control-database-url, scoped by INSTANTML_CLOUD_RUN_SECRET_PREFIX.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER    Create/update a global HTTPS Application Load Balancer for split deploys.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN  HTTPS DNS name for the public router. Defaults to staging.api.instantml.ai in staging.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_NAME  Public router resource name prefix. Default: instantml-public-api.
@@ -149,7 +149,7 @@ const allowUnsafeControlMultiInstance = boolValue("INSTANTML_CLOUD_RUN_UNSAFE_CO
 const cloudSqlConnection =
   value("INSTANTML_CLOUD_SQL_CONNECTION") || `${project}:${region}:instantml-control`;
 const controlDatabaseUrlSecret =
-  value("INSTANTML_CONTROL_DATABASE_URL_SECRET") || "instantml-control-database-url";
+  value("INSTANTML_CONTROL_DATABASE_URL_SECRET") || scopedSecret("instantml-control-database-url");
 
 if (fromSecretManager) {
   hydrateEnvFromSecretManager();

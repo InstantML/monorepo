@@ -237,7 +237,7 @@ jobs:
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://staging.instantml.ai"
               clerk_jwt_issuer="https://modern-mustang-72.clerk.accounts.dev"
               cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
-              control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
+              control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-staging-control-database-url}"
               ;;
             *)
               frontend_base_url="https://instantml.ai"

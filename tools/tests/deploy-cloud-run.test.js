@@ -304,6 +304,7 @@ test("deploy helper keeps public router control paths and backend timeout comple
 
 test("deploy helper has isolated staging defaults", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+  const workflow = fs.readFileSync(path.join(repo, ".github", "workflows", "deploy-cloud-run.yml"), "utf8");
   const pkg = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8"));
 
   assert.match(source, /normalizeDeploymentEnv/);
@@ -311,6 +312,8 @@ test("deploy helper has isolated staging defaults", () => {
   assert.match(source, /staging\.api\.instantml\.ai/);
   assert.match(source, /DATABASE_URL/);
   assert.match(source, /function scopedSecret/);
+  assert.match(source, /scopedSecret\("instantml-control-database-url"\)/);
+  assert.match(workflow, /instantml-staging-control-database-url/);
   assert.doesNotMatch(source, /instantml_user_data_staging/);
   assert.match(pkg.scripts["deploy:cloud-run:staging"], /--environment=staging --public-router/);
 });
