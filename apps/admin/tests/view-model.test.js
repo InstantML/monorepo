@@ -5,6 +5,15 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  DEFAULT_ADMIN_ALLOWED_EMAILS,
+  adminAllowedEmailLabel,
+  canLoadClerkForRequest,
+  hostnameFromRequest,
+  isAdminEmailAllowed,
+  isInstantMlHost,
+  parseAdminAllowedEmails,
+} from "../src/admin-auth.mjs";
+import {
   clampPercent,
   formatBytes,
   formatRelativeTime,
@@ -46,6 +55,49 @@ test("status helpers keep risk and storage language consistent", () => {
     }),
     "instantml-hosted / storage ready / route ready",
   );
+});
+
+test("admin allowlist defaults to the temporary InstantML operator email", () => {
+  assert.deepEqual(DEFAULT_ADMIN_ALLOWED_EMAILS, ["instantml.ai@gmail.com"]);
+  assert.deepEqual(parseAdminAllowedEmails(undefined), ["instantml.ai@gmail.com"]);
+  assert.deepEqual(parseAdminAllowedEmails(" instantml.ai@gmail.com,INSTANTML.AI@gmail.com "), [
+    "instantml.ai@gmail.com",
+  ]);
+  assert.equal(isAdminEmailAllowed("INSTANTML.AI@gmail.com", ["instantml.ai@gmail.com"]), true);
+  assert.equal(isAdminEmailAllowed("support@instantml.ai", ["instantml.ai@gmail.com"]), false);
+  assert.equal(adminAllowedEmailLabel(["instantml.ai@gmail.com"]), "instantml.ai@gmail.com");
+  assert.equal(adminAllowedEmailLabel(["a@example.com", "b@example.com"]), "2 configured emails");
+});
+
+test("admin Clerk loading blocks production keys on local HTTP", () => {
+  assert.equal(hostnameFromRequest("admin.instantml.ai:3001"), "admin.instantml.ai");
+  assert.equal(isInstantMlHost("admin.instantml.ai"), true);
+  assert.equal(isInstantMlHost("localhost"), false);
+  assert.equal(canLoadClerkForRequest("pk_test_example", "localhost:3001", "http"), true);
+  assert.equal(canLoadClerkForRequest("pk_live_example", "localhost:3001", "http"), false);
+  assert.equal(canLoadClerkForRequest("pk_live_example", "admin.instantml.ai", "http"), false);
+  assert.equal(canLoadClerkForRequest("pk_live_example", "admin.instantml.ai", "https"), true);
+});
+
+test("admin page requires Clerk allowlist before fetching overview", () => {
+  const source = fs.readFileSync(path.join(adminRoot, "app", "page.tsx"), "utf8");
+  assert.match(source, /currentUser/);
+  assert.match(source, /isAdminEmailAllowed/);
+  assert.match(source, /CLERK_SECRET_KEY/);
+  assert.match(source, /if \(!canLoadClerkForRequest/);
+  assert.match(source, /https:\/\/admin\.instantml\.ai/);
+  assert(source.indexOf("isAdminEmailAllowed") < source.indexOf("fetchAdminOverview"));
+  assert(source.indexOf("if (!canLoadClerkForRequest") < source.indexOf("viewer = await loadAdminViewer"));
+  assert(source.includes("instantml.ai@gmail.com") === false);
+});
+
+test("admin CSP allows the production Clerk custom domain", () => {
+  const source = fs.readFileSync(path.join(adminRoot, "next.config.mjs"), "utf8");
+  assert.match(source, /https:\/\/clerk\.instantml\.ai/);
+  assert.match(source, /script-src/);
+  assert.match(source, /frame-src/);
+  assert.match(source, /connect-src/);
+  assert.match(source, /worker-src 'self' blob:/);
 });
 
 test("admin API fetch carries request-id instrumentation without logging secrets", () => {
