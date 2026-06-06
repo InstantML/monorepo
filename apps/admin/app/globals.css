@@ -72,12 +72,31 @@ a {
   display: grid;
   width: 38px;
   height: 38px;
+  flex: 0 0 auto;
   place-items: center;
-  border-radius: 8px;
-  background: #10251f;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 800;
+  color: #10251f;
+  font-size: 0;
+}
+
+.rail-brand .brand-mark {
+  width: 34px;
+  height: 34px;
+}
+
+.brand-lockup .brand-mark {
+  width: 42px;
+  height: 42px;
+}
+
+.brand-mark svg {
+  display: block;
+  width: 28px;
+  height: 28px;
+}
+
+.brand-lockup .brand-mark svg {
+  width: 30px;
+  height: 30px;
 }
 
 .rail-brand strong,
@@ -205,6 +224,13 @@ a {
   border: 1px solid #bfe8dd;
   background: var(--accent-soft);
   color: #064f46;
+  max-width: 260px;
+}
+
+.operator-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meta-row {
@@ -559,6 +585,39 @@ dd {
   margin: 0;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.access-panel {
+  position: relative;
+}
+
+.access-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid #bfe8dd;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: #064f46;
+}
+
+.access-actions {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+}
+
+.primary-action {
+  min-height: 38px;
+  border: 1px solid #076a5d;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+  padding: 0 14px;
 }
 
 .setup-list {

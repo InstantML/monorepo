@@ -66,6 +66,10 @@ Every component directory and meaningful subdirectory should include a README. W
 Current backend ownership:
 
 - Use `apps/rust-server` for current product API, hosted-backend, and UI-serving API work.
+- Use `apps/admin` for the hidden internal operator console only. It is not
+  linked from the public/product web app, requires Clerk sign-in from the admin
+  email allowlist, and uses a server-side bootstrap token for the Rust admin
+  overview endpoint.
 - Use `apps/docs` for public docs source and generated public OpenAPI
   reference; `apps/web` renders it at `/docs`.
 - Keep `apps/server` as a deprecated Node compatibility oracle and JSON migration source. Use `npm run dev:api:node` or `npm run test:contract:node` only when comparing legacy route behavior.

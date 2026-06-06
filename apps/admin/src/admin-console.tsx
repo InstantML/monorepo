@@ -30,6 +30,7 @@ import {
   storageLine,
   toneForStatus,
 } from "./view-model.mjs";
+import { LogoMark } from "./logo-mark";
 
 type Section = "overview" | "users" | "orgs" | "storage" | "apiKeys" | "risk";
 
@@ -38,6 +39,10 @@ type AdminConsoleProps = {
   environment: string;
   apiBase: string;
   query: string;
+  viewer: {
+    email: string;
+    name: string | null;
+  };
 };
 
 const navItems: Array<{ id: Section; label: string; icon: typeof Activity }> = [
@@ -49,7 +54,7 @@ const navItems: Array<{ id: Section; label: string; icon: typeof Activity }> = [
   { id: "risk", label: "Risk", icon: AlertTriangle },
 ];
 
-export function AdminConsole({ overview, environment, apiBase, query }: AdminConsoleProps) {
+export function AdminConsole({ overview, environment, apiBase, query, viewer }: AdminConsoleProps) {
   const [section, setSection] = useState<Section>("overview");
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(
     overview.organizations[0]?.id ?? null,
@@ -66,7 +71,9 @@ export function AdminConsole({ overview, environment, apiBase, query }: AdminCon
     <main className="admin-shell">
       <aside className="side-rail" aria-label="Admin navigation">
         <div className="rail-brand">
-          <span className="brand-mark">IM</span>
+          <span className="brand-mark">
+            <LogoMark />
+          </span>
           <div>
             <strong>InstantML</strong>
             <span>Admin</span>
@@ -107,7 +114,7 @@ export function AdminConsole({ overview, environment, apiBase, query }: AdminCon
           </a>
           <div className="operator-pill">
             <ShieldCheck size={16} aria-hidden="true" />
-            <span>Read-only</span>
+            <span>{viewer.name ?? viewer.email}</span>
           </div>
         </header>
 
@@ -115,6 +122,7 @@ export function AdminConsole({ overview, environment, apiBase, query }: AdminCon
           <span>API {apiBase}</span>
           <span>Generated {formatDate(overview.generated_at)}</span>
           <span>{overview.data_counts_available ? "Data counts live" : "Control plane only"}</span>
+          <span>Read-only operator {viewer.email}</span>
         </div>
 
         <KpiStrip overview={overview} />

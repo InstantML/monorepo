@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: Accepted for narrow first slice
+Status: Accepted for narrow first slice; amended 2026-06-04 for a single-email Clerk gate
 
 Owner: Codex
 
@@ -23,6 +23,8 @@ does not mutate users, keys, billing, or storage routes.
 ## Goals
 
 - Build a separate Next app for internal admin/operator workflows.
+- Restrict the admin app viewer to the configured internal operator email, with
+  the current default allowlist containing only `instantml.ai@gmail.com`.
 - Return a real backend overview from Rust instead of hard-coded demo data.
 - Keep the endpoint read-only and protected by the existing bootstrap token.
 - Show safe user, organization, storage, billing, API-key, and risk summaries.
@@ -32,8 +34,7 @@ does not mutate users, keys, billing, or storage routes.
 
 ## Non-Goals
 
-- No admin sign-in product flow or role model beyond the existing bootstrap
-  token.
+- No general admin role model beyond the current single-email allowlist.
 - No create, revoke, rotate, resend, billing, or storage mutation controls.
 - No fan-out across every tenant data plane in hosted split mode.
 - No new database table or durable admin-specific state.
@@ -43,12 +44,13 @@ does not mutate users, keys, billing, or storage routes.
 
 InstantML operator:
 
-1. Opens the admin app with a configured bootstrap token.
-2. Searches for a user email, organization name, API-key prefix, or storage
+1. Opens the unlinked admin app URL.
+2. Signs in with Clerk as the allowlisted operator email.
+3. Searches for a user email, organization name, API-key prefix, or storage
    issue.
-3. Selects an organization and checks plan, owner, seats, storage state,
+4. Selects an organization and checks plan, owner, seats, storage state,
    tenant-route status, API-key counts, billing state, and risk reasons.
-4. Reviews users, storage incidents, API-key risks, and billing/storage
+5. Reviews users, storage incidents, API-key risks, and billing/storage
    warnings before taking action in existing operational tools.
 
 Support engineer:
@@ -88,15 +90,27 @@ warehouse inventory service if cross-cell live counts become necessary.
 Add `apps/admin` as a separate Next App Router application. It uses server-side
 fetching only:
 
+- The admin app layout uses Clerk only for the human viewer identity. The page
+  renders the dashboard only when the signed-in primary email is verified and
+  matches the configured allowlist.
+- `INSTANTML_ADMIN_ALLOWED_EMAILS` may provide a comma-separated allowlist, but
+  the default allowlist is exactly `instantml.ai@gmail.com` for the first
+  hosted/internal slice.
 - `INSTANTML_ADMIN_API_BASE` or `INSTANTML_API_BASE` points to the Rust API.
 - `INSTANTML_ADMIN_BOOTSTRAP_TOKEN` or `INSTANTML_BOOTSTRAP_TOKEN` is sent only
   by the Next server when fetching the overview.
 - The browser receives the overview data but never receives the bootstrap token.
+- Production Clerk keys are usable only on HTTPS hosts under the configured
+  production domain. The admin app therefore renders setup guidance instead of
+  a sign-in button when a `pk_live_` key is used on plain localhost.
+- The app remains separate from `apps/web`; the public landing page and product
+  navigation do not link to it.
 
 The app renders an internal console with:
 
 - Left rail: Overview, Users, Orgs, Storage, API Keys, Risk.
-- Top bar: environment, search, last refreshed, read-only operator state.
+- Top bar: environment, search, last refreshed, read-only operator state, and
+  the signed-in operator email.
 - KPI strip: users, orgs, active keys, storage issues, risk queue.
 - Organization table and user activity table.
 - Selected-org detail panel with plan, owner, seats, storage, API keys, usage,
@@ -118,6 +132,8 @@ Backend:
 Frontend:
 
 - Add `apps/admin` as a separate Next app using root dependencies.
+- Add a Clerk-backed viewer gate in `apps/admin` and keep the dashboard hidden
+  from unsigned or non-allowlisted users.
 - Add app-specific components, CSS, view-model helpers, and focused tests.
 - Import generated API response types rather than duplicating the backend
   contract by hand.
@@ -165,6 +181,8 @@ Storage route summaries must omit:
 Auth:
 
 - `X-InstantML-Bootstrap-Token` required.
+- The admin Next app additionally requires a Clerk-authenticated viewer whose
+  primary verified email is on the admin allowlist before it calls this endpoint.
 
 Query:
 
@@ -259,7 +277,9 @@ Deferred complexity:
 - Rust unit tests for admin overview projection, query filtering, risk
   generation, and secret redaction.
 - OpenAPI path tests for `/api/admin/overview` on control/combined planes only.
-- Next/admin tests for view-model helpers and static wiring.
+- Next/admin tests for view-model helpers, admin allowlist helpers, and static
+  wiring that verifies the page checks Clerk/allowlist access before fetching
+  admin data.
 - `npm run codegen:api`
 - `npm run verify:api-types`
 - `npm run test:node`
@@ -285,6 +305,8 @@ Coverage exception:
 - Update `apps/README.md`.
 - Update root `README.md` repository structure and command list.
 - Update `docs/design/README.md` implemented design sequence.
+- Document the temporary `INSTANTML_ADMIN_ALLOWED_EMAILS` allowlist, Clerk
+  environment requirements, and the absence of public web navigation.
 
 ## Alternatives Considered
 
@@ -321,6 +343,21 @@ Fresh reviewer 2:
 - Recommended edit: Return only safe route status, provisioner, database,
   service id, capacity profile, endpoint host, and a generic error marker.
 - Decision: Accepted.
+
+2026-06-04 access-control amendment:
+
+- Finding: The original first slice protected only the Rust admin API with a
+  bootstrap token. That kept secrets off the browser, but it did not prove which
+  human opened the admin app if the app URL itself was reachable.
+- Risk: A publicly reachable admin Next app with a configured server-side
+  bootstrap token could disclose operator overview data to any viewer.
+- Recommended edit: Add a Clerk-authenticated viewer gate before
+  `fetchAdminOverview`, default the allowlist to `instantml.ai@gmail.com`, keep
+  the app unlinked from `apps/web`, render explicit setup guidance when
+  production Clerk keys are used on non-HTTPS local hosts, and keep the Rust
+  bootstrap-token check.
+- Decision: Accepted as a narrow amendment. A durable admin role model,
+  admin-view audit ledger, and edge access control remain separate follow-ups.
 
 ## Decision
 
