@@ -409,19 +409,19 @@ export function LandingPage() {
       <Section className="landing-stats-section">
         <div className="landing-stats-grid">
           <StatCard
-            k="Newest page p95"
-            v="236 ms"
-            hint="50k-run hosted benchmark."
+            k="Large run history"
+            v="50k runs"
+            hint="Newest-page reads are 236 ms p95."
           />
           <StatCard
-            k="Metric-best sort p95"
-            v="307 ms"
-            hint="Maintained summaries."
+            k="Best-run sorting"
+            v="<1 sec"
+            hint="Sort by metric best from maintained summaries."
           />
           <StatCard
-            k="Chart read p95"
-            v="224 ms"
-            hint="Bounded 1,000-point read."
+            k="Fast chart opens"
+            v="<1 sec"
+            hint="1,000 chart points read in 224 ms p95."
           />
         </div>
       </Section>
@@ -492,8 +492,8 @@ export function LandingPage() {
               <BentoEyebrow icon={<IconBolt />} label="Benchmarked reads" />
               <h3 className="landing-bento-h3">Fast reads on large projects.</h3>
               <p className="landing-bento-body">
-                Hosted p95s on the current 50k-run benchmark: 236 ms newest
-                page, 307 ms metric-best sort, 224 ms chart read.
+                Current hosted benchmarks keep a 50k-run project sub-second for
+                newest pages, best-metric sorting, and 1,000-point chart reads.
               </p>
             </div>
             <div className="landing-bento-dial-wrap">
