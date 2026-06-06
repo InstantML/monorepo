@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 
 import { LandingPage } from "../components/landing/LandingPage";
 
-const LANDING_TITLE = "InstantML — Training observability that keeps up with your loop";
+const LANDING_TITLE = "InstantML — Experiment tracking that keeps up with training";
 const LANDING_DESCRIPTION =
-  "Training observability with fast run comparison, predictable pricing, and clearer control over experiment data for lean ML teams.";
+  "Log runs, compare metrics, inspect artifacts, and export experiment data without waiting on the dashboard.";
 
 export const metadata: Metadata = {
   title: {
