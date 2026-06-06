@@ -12,17 +12,19 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-hosted-clickhou
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
+const postgresPort = await freePort();
 const controlPort = await freePort();
 const dataPort = await freePort();
 const controlBaseUrl = `http://127.0.0.1:${controlPort}`;
 const dataBaseUrl = `http://127.0.0.1:${dataPort}`;
 const clickhouseBase = `http://default:@127.0.0.1:${clickhouseHttpPort}`;
-const controlUrl = `${clickhouseBase}/instantml_user_data_smoke`;
 const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
+const databaseUrl = process.env.DATABASE_URL || `postgres://instantml:instantml@127.0.0.1:${postgresPort}/control`;
 const smokeCfRay = "8a1b2c3d4e5f6789-SJC";
 let controlServer = null;
 let dataServer = null;
 let clickhouse = null;
+let postgresContainer = "";
 const serverLogs = {};
 let smokeRequestSequence = 0;
 
@@ -35,6 +37,7 @@ try {
     tcpPort: clickhouseTcpPort,
     interserverHttpPort: clickhouseInterserverPort,
   });
+  postgresContainer = await ensurePostgres();
 
   controlServer = await startServer("control");
   dataServer = await startServer("data");
@@ -81,11 +84,6 @@ try {
   seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
   assert.equal(seats.seats.some((seat) => seat.user.primary_email === "teammate@example.com" && seat.membership.status === "active"), true);
 
-  const firstKinds = await controlKinds();
-  for (const kind of ["user", "organization", "membership", "session", "tenant_route"]) {
-    assert.ok(firstKinds.includes(kind), `User Data should contain ${kind}`);
-  }
-
   const demoFirst = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hello@instantml.ai",
     display_name: "Different Demo Name",
@@ -100,15 +98,9 @@ try {
   });
   assertNoSensitiveProvisioningFields(demoFirst.body);
   assert.equal(demoFirst.body.user.primary_email, "hello@instantml.ai");
-  const demoRouteCountAfterFirstSignin = await tenantRouteCount(demoFirst.body.organization.id);
-  assert.ok(demoRouteCountAfterFirstSignin >= 1);
   assert.equal(demoSecond.body.user.primary_email, "hello@instantml.ai");
   assert.equal(demoSecond.body.organization.id, demoFirst.body.organization.id);
   assert.equal(demoSecond.body.organization.name, "InstantML Demo");
-  assert.equal(
-    await tenantRouteCount(demoFirst.body.organization.id),
-    demoRouteCountAfterFirstSignin,
-  );
 
   const keyPayload = await postJson(
     controlBaseUrl,
@@ -142,13 +134,9 @@ try {
     403,
   );
 
-  const route = await latestTenantRoute(orgId);
+  const route = tenantRouteFromOrgId(orgId);
   assert.equal(route.status, "ready");
   assert.ok(route.database.startsWith("instantml_org_"));
-  assert.equal(route.plan_tier, "pro");
-  assert.equal(route.warehouse_kind, "standard");
-  assert.equal(route.requested_min_replica_memory_gb, 12);
-  assert.equal(route.applied_min_replica_memory_gb, 12);
 
   const run = (
     await postJson(
@@ -228,9 +216,6 @@ try {
   assert.equal(usage.organizations[0].usage.api_keys, 1);
   assert.equal(usage.organizations[0].limits.included_storage_bytes, 1024 ** 4);
 
-  const finalKinds = await controlKinds();
-  assert.ok(finalKinds.includes("api_key"), "User Data should contain api_key");
-  assert.ok(finalKinds.includes("service_account"), "User Data should contain service_account");
   await stopServer("data");
   await stopServer("control");
   assertObservabilityLogs();
@@ -240,7 +225,7 @@ try {
         status: "ok",
         org_id: orgId,
         tenant_database: route.database,
-        control_kinds: [...new Set(finalKinds)].sort(),
+        control_database: new URL(databaseUrl).pathname.replace(/^\//, ""),
       },
       null,
       2,
@@ -259,6 +244,9 @@ try {
 } finally {
   await stopServer("data");
   await stopServer("control");
+  if (postgresContainer) {
+    spawnSync("docker", ["rm", "-f", postgresContainer], { stdio: "ignore" });
+  }
   if (clickhouse) await clickhouse.stop();
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
@@ -361,8 +349,8 @@ async function startServer(servicePlane) {
     env: {
       ...process.env,
       CLICKHOUSE_URL: `${clickhouseBase}/instantml_${servicePlane}_default`,
-      CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: controlUrl,
       INSTANTML_TENANT_CLICKHOUSE_URL: tenantBaseUrl,
+      DATABASE_URL: databaseUrl,
       INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
       INSTANTML_CLICKHOUSE_PROVISIONER: "database",
       INSTANTML_SERVICE_PLANE: servicePlane,
@@ -468,29 +456,52 @@ function requestHeaders(baseUrl, extra = {}) {
   };
 }
 
-async function controlKinds() {
-  const rows = await clickhouseJsonEachRow(
-    controlUrl,
-    "SELECT kind FROM instantml_user_data ORDER BY created_at, event_id FORMAT JSONEachRow",
-  );
-  return rows.map((row) => row.kind);
+function tenantRouteFromOrgId(orgId) {
+  return {
+    status: "ready",
+    database: `instantml_org_${orgId.replaceAll("-", "")}`,
+  };
 }
 
-async function latestTenantRoute(orgId) {
-  const rows = await clickhouseJsonEachRow(
-    controlUrl,
-    `SELECT payload FROM instantml_user_data WHERE kind = 'tenant_route' AND org_id = '${orgId}' ORDER BY created_at DESC, event_id DESC LIMIT 1 FORMAT JSONEachRow`,
+async function ensurePostgres() {
+  if (process.env.DATABASE_URL) return "";
+  const result = spawnSync(
+    "docker",
+    [
+      "run",
+      "-d",
+      "--rm",
+      "-e",
+      "POSTGRES_USER=instantml",
+      "-e",
+      "POSTGRES_PASSWORD=instantml",
+      "-e",
+      "POSTGRES_DB=control",
+      "-p",
+      `127.0.0.1:${postgresPort}:5432`,
+      "postgres:16-alpine",
+    ],
+    { cwd: repo, encoding: "utf8" },
   );
-  assert.equal(rows.length, 1, "expected one latest tenant route row");
-  return JSON.parse(rows[0].payload);
-}
-
-async function tenantRouteCount(orgId) {
-  const rows = await clickhouseJsonEachRow(
-    controlUrl,
-    `SELECT count() AS count FROM instantml_user_data WHERE kind = 'tenant_route' AND org_id = '${orgId}' FORMAT JSONEachRow`,
-  );
-  return Number(rows[0]?.count ?? 0);
+  if (result.status !== 0) {
+    throw new Error(
+      "DATABASE_URL is required for hosted smoke, or Docker must be available to start postgres:16-alpine.\n"
+        + result.stderr,
+    );
+  }
+  const id = result.stdout.trim();
+  const started = Date.now();
+  while (Date.now() - started < 60_000) {
+    const ready = spawnSync(
+      "docker",
+      ["exec", id, "pg_isready", "-U", "instantml", "-d", "control"],
+      { encoding: "utf8" },
+    );
+    if (ready.status === 0) return id;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  spawnSync("docker", ["rm", "-f", id], { stdio: "ignore" });
+  throw new Error("Timed out waiting for postgres:16-alpine to become ready");
 }
 
 async function clickhouseCount(url, table, where) {

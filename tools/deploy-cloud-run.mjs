@@ -44,9 +44,8 @@ Environment:
   INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1  Permit data scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1  Permit control scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_DATA_SESSION_AFFINITY  Enable Cloud Run session affinity for data as an optimization, not correctness.
-  INSTANTML_ENABLE_CONTROL_POSTGRES=1  CUTOVER ONLY: mount Cloud SQL + inject DATABASE_URL so the control plane uses Postgres. Default off (dark). Flip only AFTER backfill-control.
-  INSTANTML_CLOUD_SQL_CONNECTION       Cloud SQL connection name (project:region:instance). Required when enabling control Postgres.
-  INSTANTML_CONTROL_DATABASE_URL_SECRET  Secret Manager secret holding the control DATABASE_URL. Default: instantml-control-database-url.
+  INSTANTML_CLOUD_SQL_CONNECTION       Cloud SQL connection name (project:region:instance). Default: <project>:<region>:instantml-control.
+  INSTANTML_CONTROL_DATABASE_URL_SECRET  Secret Manager secret holding the control DATABASE_URL. Default: instantml-control-database-url, scoped by INSTANTML_CLOUD_RUN_SECRET_PREFIX.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER    Create/update a global HTTPS Application Load Balancer for split deploys.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN  HTTPS DNS name for the public router. Defaults to staging.api.instantml.ai in staging.
   INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_NAME  Public router resource name prefix. Default: instantml-public-api.
@@ -57,8 +56,6 @@ Environment:
   INSTANTML_CLOUD_RUN_PROJECT_IAM_PROVISIONING
                                       Project-level IAM setup mode: grant or skip. Defaults to skip
                                       for CI/Secret Manager deploys and grant for local operator deploys.
-  INSTANTML_STAGING_USER_DATA_DATABASE  User Data database path for staging. Default: instantml_user_data_staging.
-  INSTANTML_STAGING_USER_DATA_ENDPOINT  Full staging User Data endpoint override.
   INSTANTML_PUBLIC_API_BASE            Optional public LB/router URL written to local frontend env.
   INSTANTML_ALLOWED_FRONTEND_ORIGINS   Comma-separated browser origins allowed for session mutations.
   INSTANTML_ARTIFACT_BACKEND            local or r2. Defaults to r2 when Cloudflare R2 credentials are present.
@@ -146,21 +143,13 @@ const secretNamePrefix = value("INSTANTML_CLOUD_RUN_SECRET_PREFIX")
 const allowUnsafeDataMultiWriter = boolValue("INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER", false);
 const allowUnsafeControlMultiInstance = boolValue("INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE", false);
 
-// Control-plane Postgres cutover wiring. OFF by default so every normal deploy
-// stays "dark" (DATABASE_URL unset → legacy ClickHouse control path). Setting
-// INSTANTML_ENABLE_CONTROL_POSTGRES=1 is the cutover switch: it mounts the Cloud
-// SQL socket and injects DATABASE_URL from Secret Manager. Only flip it AFTER
-// `backfill-control` has populated Postgres — an empty DB at boot logs everyone out.
-const cloudSqlConnection = value("INSTANTML_CLOUD_SQL_CONNECTION") || "";
+// Control-plane Postgres is the normal system of record after the cutover. Both
+// control and data services receive DATABASE_URL and mount the Cloud SQL socket
+// because the data plane authenticates requests against control state.
+const cloudSqlConnection =
+  value("INSTANTML_CLOUD_SQL_CONNECTION") || `${project}:${region}:instantml-control`;
 const controlDatabaseUrlSecret =
-  value("INSTANTML_CONTROL_DATABASE_URL_SECRET") || "instantml-control-database-url";
-const enableControlPostgres = boolValue("INSTANTML_ENABLE_CONTROL_POSTGRES", false);
-if (enableControlPostgres && !cloudSqlConnection) {
-  fail(
-    "INSTANTML_ENABLE_CONTROL_POSTGRES=1 requires INSTANTML_CLOUD_SQL_CONNECTION=<project:region:instance> "
-      + "(see `gcloud sql instances describe <name> --format='value(connectionName)'`).",
-  );
-}
+  value("INSTANTML_CONTROL_DATABASE_URL_SECRET") || scopedSecret("instantml-control-database-url");
 
 if (fromSecretManager) {
   hydrateEnvFromSecretManager();
@@ -180,16 +169,13 @@ const serviceAccountEmail = ensureServiceAccount();
 ensureCloudBuildServiceAccount();
 const staticEgressIp = useStaticEgress ? ensureStaticEgress() : "";
 const secretEnv = syncSecrets(serviceAccountEmail);
-// Cutover only: the DATABASE_URL secret is provisioned out-of-band (not by
-// syncSecrets), so grant the runtime service account read access to it here so
-// the injected `DATABASE_URL=<secret>:latest` mapping resolves at boot.
-if (enableControlPostgres) {
-  run([
-    "secrets", "add-iam-policy-binding", controlDatabaseUrlSecret,
-    "--member", `serviceAccount:${serviceAccountEmail}`,
-    "--role", "roles/secretmanager.secretAccessor",
-  ], { quietOutput: true });
-}
+// DATABASE_URL is provisioned out-of-band (not by syncSecrets), so grant the
+// runtime service account read access before injecting it below.
+run([
+  "secrets", "add-iam-policy-binding", controlDatabaseUrlSecret,
+  "--member", `serviceAccount:${serviceAccountEmail}`,
+  "--role", "roles/secretmanager.secretAccessor",
+], { quietOutput: true });
 const baseEnvVars = buildRuntimeEnv(staticEgressIp);
 if (staticEgressIp && (updateClickHouseServiceAllowlist || updateClickHouseKeyAllowlist)) {
   await updateClickHouseAccessLists(staticEgressIp);
@@ -796,9 +782,6 @@ function ensureStaticEgress() {
 
 function deploySecretSpecs() {
   return [
-    ["CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT", "instantml-clickhouse-user-data-endpoint", true],
-    ["CLICKHOUSE_INSTANTML_USER_DATA_USERNAME", "instantml-clickhouse-user-data-username", true],
-    ["CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD", "instantml-clickhouse-user-data-password", true],
     ["CLICKHOUSE_INSTANTML_GENERAL_KEY_ID", "instantml-clickhouse-cloud-key-id", true],
     ["CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET", "instantml-clickhouse-cloud-key-secret", true],
     ["CLERK_SECRET_KEY", "instantml-clerk-secret-key", false],
@@ -902,25 +885,7 @@ function scopedSecret(secretName) {
 }
 
 function secretRuntimeValue(envName) {
-  const raw = value(envName);
-  if (deploymentEnv === "staging" && envName === "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT") {
-    return userDataEndpointForDeployment(raw);
-  }
-  return raw;
-}
-
-function userDataEndpointForDeployment(raw) {
-  const explicit = value("INSTANTML_STAGING_USER_DATA_ENDPOINT");
-  if (explicit) return explicit;
-  if (!raw) return raw;
-  const database = value("INSTANTML_STAGING_USER_DATA_DATABASE") || "instantml_user_data_staging";
-  try {
-    const parsed = new URL(raw);
-    parsed.pathname = `/${database}`;
-    return parsed.toString();
-  } catch {
-    fail("CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT must be a URL so staging can use a separate User Data database.");
-  }
+  return value(envName);
 }
 
 function buildRuntimeEnv(staticEgressIp) {
@@ -1042,12 +1007,7 @@ function secretEnvForTarget(secretEnv, target) {
     output = output.filter((mapping) => !mapping.startsWith("RESEND_API_KEY="));
     output = output.filter((mapping) => !mapping.startsWith("CLERK_SECRET_KEY="));
   }
-  // At cutover, every plane that resolves control-plane reads (auth/billing)
-  // needs DATABASE_URL — control and combined obviously, and the data plane too
-  // since it authenticates SDK requests against control state.
-  if (enableControlPostgres) {
-    output = [...output, `DATABASE_URL=${controlDatabaseUrlSecret}:latest`];
-  }
+  output = [...output, `DATABASE_URL=${controlDatabaseUrlSecret}:latest`];
   return output;
 }
 
@@ -1096,12 +1056,9 @@ function deployService(target, serviceAccountEmail, staticEgressIp, envVars, sec
   if (secretEnv.length) {
     args.push("--set-secrets", secretEnv.join(","));
   }
-  // Mount the Cloud SQL socket at /cloudsql/<connection> so the runtime's
-  // DATABASE_URL (host=/cloudsql/<connection>) can reach Postgres. Gated on the
-  // cutover flag so dark deploys do not attach it.
-  if (enableControlPostgres && cloudSqlConnection) {
-    args.push("--add-cloudsql-instances", cloudSqlConnection);
-  }
+  // Mount the Cloud SQL socket at /cloudsql/<connection> so DATABASE_URL can
+  // reach the Postgres control plane.
+  args.push("--add-cloudsql-instances", cloudSqlConnection);
   if (staticEgressIp) {
     args.push("--network", network, "--subnet", subnet, "--vpc-egress", vpcEgress);
   }
@@ -1795,7 +1752,7 @@ function sleep(ms) {
 }
 
 async function updateClickHouseAccessLists(staticIp) {
-  const endpoint = value("CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT");
+  const endpoint = value("INSTANTML_TENANT_CLICKHOUSE_URL") || value("CLICKHOUSE_URL");
   const keyId = value("CLICKHOUSE_INSTANTML_GENERAL_KEY_ID");
   const keySecret = value("CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET");
   if (!endpoint || !keyId || !keySecret) return;

@@ -32,19 +32,17 @@ Three guardrails apply:
    revision after `gcloud run deploy` and verifies 100% traffic points at that
    revision and image tag. This prevents a deploy from only creating a revision
    while the public route remains pinned to an older one.
-5. Production deploys keep the control plane on the Postgres cutover path by
-   passing `INSTANTML_ENABLE_CONTROL_POSTGRES=1`,
-   `INSTANTML_CLOUD_SQL_CONNECTION`, and
+5. Production deploys keep the control plane on Postgres by passing
+   `INSTANTML_CLOUD_SQL_CONNECTION` and
    `INSTANTML_CONTROL_DATABASE_URL_SECRET` into the helper. Do not remove those
-   values unless the production control records have intentionally moved back
-   off Postgres; dropping `DATABASE_URL` makes existing browser sessions and
-   API keys unreadable to fresh control-plane instances.
+   values; dropping `DATABASE_URL` makes existing browser sessions and API keys
+   unreadable to fresh control-plane instances.
 
-Secrets — `CLERK_SECRET_KEY`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`,
-`CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, the Stripe / R2 / Resend keys,
-and the bootstrap token — are read directly from GCP Secret Manager via
-the helper script’s `--from-secret-manager` flag. They never appear in the
-workflow file, environment variables, or step logs.
+Secrets — `CLERK_SECRET_KEY`, `DATABASE_URL`,
+`CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, the Stripe / R2 / Resend keys, and
+the bootstrap token — are read directly from GCP Secret Manager via the helper
+script’s `--from-secret-manager` flag. They never appear in the workflow file,
+environment variables, or step logs.
 
 ### One-time operator setup
 

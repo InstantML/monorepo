@@ -146,11 +146,11 @@ The first split hosted launch shape is:
 
 Control and data-plane cells stay single-writer by default until the durable multi-writer gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are complete. A Cloud Run `maxScale=1` setting reduces risk but is not a correctness mechanism under automatic scaling; customer-facing single-writer cells should use manual scaling or an app-level write lease before relying on one writer. The deploy helper rejects control/data scaling above one active instance unless the matching unsafe test flag is set for a controlled test.
 
-On startup, the server retries the initial operational/User Data projection rebuild with 1s, 2s, and 4s backoff before exiting non-zero. `/readyz` fails until the projection has loaded, so Cloud Run does not route traffic to an instance that has an empty auth/org/API-key view. Later background refresh failures keep serving the last-known-good projection, log a warning, and expose degraded state through `/readyz` and `/metrics`. Valid data-plane requests stay on the warmed in-memory hot path; an API-key or session auth miss forces one control-record refresh and retries auth so newly created keys/sessions are usable immediately after control-plane writes.
+On startup, hosted servers require `DATABASE_URL` and retry the initial Postgres control-plane projection rebuild with 1s, 2s, and 4s backoff before exiting non-zero. `/readyz` fails until the projection has loaded, so Cloud Run does not route traffic to an instance that has an empty auth/org/API-key view. Later background refresh failures keep serving the last-known-good projection, log a warning, and expose degraded state through `/readyz` and `/metrics`. Valid data-plane requests stay on the warmed in-memory hot path; an API-key or session auth miss forces one control-record refresh and retries auth so newly created keys/sessions are usable immediately after control-plane writes.
 
 Split deploys write local frontend env with direct control/data Cloud Run service URLs by default. When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` are set, the helper creates a managed HTTPS external Application Load Balancer and writes that one public API base. The helper refuses HTTP-only public routing because hosted auth, session cookies, and API keys must not cross a cleartext `http://<ip>` endpoint. The single-service deploy writes the deployed API URL to both the repo-root `.env` and `apps/web/.env.local`, so the local frontend can be started afterward with `npm run web:dev`.
 
-Production public API routing is `api.instantml.ai -> instantml-control/instantml-data-us-central1-a`. Staging routing is `staging.api.instantml.ai -> instantml-staging-control/instantml-staging-data-us-central1-a`. Staging uses scoped Secret Manager names and defaults the User Data ClickHouse database path to `instantml_user_data_staging`, so local staging tests do not write production User Data records. Prod and staging can share the same self-hosted GCP ClickHouse instance, but their User Data databases must remain separate. Staging should not create ClickHouse Cloud tenant services unless an operator deliberately tests the legacy `cloud-service` provisioner.
+Production public API routing is `api.instantml.ai -> instantml-control/instantml-data-us-central1-a`. Staging routing is `staging.api.instantml.ai -> instantml-staging-control/instantml-staging-data-us-central1-a`. Staging uses scoped Secret Manager names and a staging Cloud SQL control database, so local staging tests do not write production control-plane records. Prod and staging can share the same self-hosted GCP ClickHouse instance for tenant data, but their Postgres control databases must remain separate. Staging should not create ClickHouse Cloud tenant services unless an operator deliberately tests the legacy `cloud-service` provisioner.
 
 Usage accounting is isolated at the same boundary. Metric-point usage queries
 bind `org_id` for scalar and rank tables, dedicated database-mode tenants count
@@ -236,12 +236,12 @@ Environment variables:
 - `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`: optional explicit R2 S3 credentials for object PUT/GET/DELETE.
 - `CLOUDFLARE_R2_BUCKET_PREFIX`: prefix for per-org private buckets. Default: `instantml-org`; bucket names are `<prefix>-<org_id.simple>`.
 - `CLOUDFLARE_R2_ENDPOINT`: optional S3-compatible endpoint. Default: `https://<account_id>.r2.cloudflarestorage.com`.
-- `INSTANTML_HOSTED_CLICKHOUSE_ENABLED`: enables User Data control-plane storage and tenant routing. Default: disabled.
-- `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT`, `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME`, `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD`: ClickHouse endpoint and credentials for the `instantml_user_data` control table. Values may live in local `.env`; process env wins when both are set.
-- `INSTANTML_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted GCP ClickHouse so new tenant routes use the self-hosted deployment; falling back to the User Data endpoint is only a local/test convenience.
+- `INSTANTML_HOSTED_CLICKHOUSE_ENABLED`: enables hosted tenant routing and requires `DATABASE_URL` for Postgres control-plane storage. Default: disabled.
+- `DATABASE_URL`: Postgres control-plane connection string. Hosted Cloud Run deploys bind this from Cloud SQL/Secret Manager.
+- `INSTANTML_TENANT_CLICKHOUSE_URL`: base ClickHouse HTTP URL for database-mode tenant provisioning. Set this explicitly for hosted GCP ClickHouse so new tenant routes use the self-hosted deployment.
 - `INSTANTML_CLICKHOUSE_PROVISIONER`: `database` or `cloud-service`. Default server value is `database`; current production/staging hosted deploys should use `database` against the self-hosted GCP ClickHouse deployment. Use `cloud-service` only for the legacy provider-backed path that intentionally creates external paid ClickHouse services.
 - `CLICKHOUSE_CLOUD_ENDPOINT`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID`, `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET`, `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID`, `INSTANTML_CLICKHOUSE_CLOUD_PROVIDER`, `INSTANTML_CLICKHOUSE_CLOUD_REGION`, `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST`, `INSTANTML_CLICKHOUSE_CLOUD_MIN_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_MAX_REPLICA_MEMORY_GB`, `INSTANTML_CLICKHOUSE_CLOUD_NUM_REPLICAS`, `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING`, `INSTANTML_CLICKHOUSE_CLOUD_WAIT_SECONDS`: legacy provider-backed `cloud-service` provisioner settings. `INSTANTML_CLICKHOUSE_CLOUD_ORG_ID` is optional when the API key can discover an organization through `GET /v1/organizations`. `INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST` is required in cloud-service mode and should include the Cloud Run static egress CIDR, currently `136.115.243.188/32`, so every new provider-managed tenant service is created with API-only ClickHouse access. Cloud-service mode is opt-in because it can create external paid services. `INSTANTML_CLICKHOUSE_CLOUD_ALLOW_PLAN_SIZING=false` keeps selected Free/Pro/Premium warehouse sizes as recorded route intent while actual creation stays capped by operator memory/replica defaults.
-- `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: permits storing tenant passwords in User Data. Required for cloud-service mode until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
+- `INSTANTML_ALLOW_USER_DATA_STORED_TENANT_PASSWORDS`: legacy cloud-service escape hatch that permits storing tenant passwords in route metadata until a secret manager is wired; database mode uses the configured tenant-base password reference instead.
 - `INSTANTML_SHARED_CELL_URL`: ClickHouse HTTP connection string for the shared cell used by personal/free orgs. When set, new signups with `account_type=personal` (or no `account_type`) write a `tenant_route` record pointing at this cell and do not create a dedicated tenant database or external provider service. Format: `http://user:pass@host:port/database`. If absent, personal signups fall through to the existing dedicated provisioning path.
 - `INSTANTML_SHARED_CELL_DATABASE`: database name inside the shared cell. Defaults to `instantml_shared`. Only relevant when `INSTANTML_SHARED_CELL_URL` is set.
 - `INSTANTML_BYOC_EGRESS_CIDRS`: comma-separated static egress CIDRs shown to BYOC customers for GCP firewall/load-balancer allowlisting. Configure this explicitly; legacy ClickHouse Cloud allowlist env is not used as a BYOC fallback. Hosted BYOC signup/validation is rejected until this is configured; local private-endpoint smoke tests can bypass it with `INSTANTML_BYOC_ALLOW_PRIVATE_ENDPOINTS=true`.
@@ -344,7 +344,6 @@ Root helper-only environment variables:
 - `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE`: permits control scaling above one instance for controlled tests only.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`, `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: managed HTTPS public router controls.
 - `INSTANTML_CLOUD_RUN_SECRET_PREFIX`: Secret Manager prefix for non-prod deploys. Staging defaults to `instantml-staging-`.
-- `INSTANTML_STAGING_USER_DATA_DATABASE`, `INSTANTML_STAGING_USER_DATA_ENDPOINT`: staging User Data database/path override. Defaults to database `instantml_user_data_staging` on the configured User Data ClickHouse endpoint.
 - `INSTANTML_PUBLIC_API_BASE`: public load balancer/router URL written to local frontend env after a split deploy.
 
 ## HTTP Surface
@@ -372,7 +371,7 @@ The durable route reference lives in `docs/architecture/current-api.md`, and
 the durable control/data-plane schema reference lives in
 `docs/architecture/current-schemas.md`. Keep those documents, this README,
 `src/http/mod.rs`, `src/http/handlers.rs`, `src/domain.rs`,
-`src/control_store.rs`, `src/metric_store.rs`, and `clickhouse/0001_initial.sql`
+`src/control_db.rs`, `src/metric_store.rs`, `migrations/`, and `clickhouse/0001_initial.sql`
 synchronized whenever an endpoint, request body, query parameter, response
 envelope, auth rule, limit, table, record kind, or payload field changes. The
 live service's `GET /openapi.json` returns a compact role-aware route index and
@@ -514,7 +513,7 @@ Coverage exception (multi-writer):
 - `Cargo.toml`: Rust dependencies and binary target.
 - `src/main.rs`: CLI subcommands and server startup.
 - `src/config.rs`: environment config and local defaults.
-- `src/control_store.rs`: User Data ClickHouse control-plane table and replay helpers for hosted mode.
+- `src/control_db.rs`: Postgres control-plane connection and migration runner for hosted mode.
 - `src/http/mod.rs`: HTTP app state, route table, and middleware wiring.
 - `src/http/observability.rs`: structured request logging, header normalization, sanitized error/workflow outcome helpers, and observability unit tests.
 - `src/http/handlers.rs`: route handlers, auth context resolution, request parsing, cookies, and response shapes.

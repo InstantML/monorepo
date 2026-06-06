@@ -56,15 +56,9 @@ ClickHouse:
 
 ## Database Layout
 
-The self-hosted ClickHouse instance stores both control and tenant databases.
-
-Control data:
-
-- Production User Data records live in the production User Data database and
-  table `instantml_user_data`.
-- Staging uses the separate User Data database
-  `instantml_user_data_staging`, also with table `instantml_user_data`.
-- Staging must not write production User Data records.
+The self-hosted ClickHouse instance stores tenant databases. Production and
+staging control-plane records live in separate Cloud SQL Postgres databases;
+staging must not write production control-plane records.
 
 Tenant data:
 
@@ -111,19 +105,16 @@ Hosted Cloud Run services should keep:
 ```text
 INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true
 INSTANTML_CLICKHOUSE_PROVISIONER=database
-CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT=<self-hosted GCP ClickHouse HTTP endpoint>
-CLICKHOUSE_INSTANTML_USER_DATA_USERNAME=<Secret Manager value>
-CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD=<Secret Manager value>
+DATABASE_URL=<Cloud SQL Postgres control-plane URL>
 INSTANTML_TENANT_CLICKHOUSE_URL=<same self-hosted endpoint/base credentials>
 INSTANTML_ARTIFACT_BACKEND=r2
 INSTANTML_ARTIFACT_UPLOADS_ENABLED=true
 CLOUDFLARE_R2_BUCKET_PREFIX=instantml-org
 ```
 
-Staging should use the staging-scoped Secret Manager names and either
-`INSTANTML_STAGING_USER_DATA_DATABASE=instantml_user_data_staging` or an
-explicit staging User Data endpoint. Prod and staging may point at the same
-ClickHouse VM, but their User Data databases must remain separate.
+Staging should use staging-scoped Secret Manager names and a staging Cloud SQL
+database. Prod and staging may point at the same ClickHouse VM for tenant data,
+but their Postgres control databases must remain separate.
 
 ## Cost-Conscious GCP Defaults
 

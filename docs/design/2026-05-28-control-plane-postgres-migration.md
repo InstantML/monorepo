@@ -1,10 +1,11 @@
 # Control plane: ClickHouse event-log → Postgres
 
-- Status: **In progress** — core implemented and shipping dark behind `DATABASE_URL`.
+- Status: **Cut over** — hosted control-plane storage uses Postgres; the legacy
+  ClickHouse control-store/backfill path has been removed.
 - Date: 2026-05-28
 - Scope: `apps/rust-server` control plane only. Metrics/run data stays on ClickHouse.
 
-## Implemented in this PR (dark — gated on `DATABASE_URL`)
+## Implemented before cutover
 
 - Postgres schema (`migrations/0001_init_control_plane.sql`), `ControlDb`
   (`control_db.rs`), `sqlx` dependency, `control_database_url` config, and a
@@ -15,13 +16,22 @@
 - Atomic signup: `create_organization` and `create_current_user_organization`
   commit org + owner membership in one transaction; `create_user` commits
   user + identity atomically.
-- Backfill: `backfill-control` command (`run_control_backfill`) replays the
-  ClickHouse control log into Postgres, reporting (not dropping) collisions.
+- Backfill: `backfill-control` command (`run_control_backfill`) replayed the
+  ClickHouse control log into Postgres during the maintenance window, reporting
+  (not dropping) collisions.
 - 14 Postgres-backed tests (`#[sqlx::test]`); full suite green.
 
-**Not in this PR (deliberate follow-ups):** deleting the in-memory projection
-and porting the 278 in-memory tests to Postgres (the projection is retained as
-the cutover safety net), and Cloud SQL provisioning.
+## Implemented after cutover
+
+- Removed `control_store.rs`, the `backfill-control` CLI command, ClickHouse
+  User Data env/secrets, and ClickHouse control replay/refresh branches.
+- Hosted runtime now requires `DATABASE_URL` when
+  `INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true`.
+- The in-memory `StoreData` read projection remains as the handler-facing cache;
+  it is loaded/refreshed from Postgres rather than from ClickHouse.
+
+**Remaining follow-up:** port the in-memory-heavy tests and selected read paths
+to narrower Postgres-backed helpers if/when that removes real complexity.
 
 ## Summary
 
@@ -231,10 +241,10 @@ through a staged, verifiable cutover.
      evict their MetricStore caches. The refresh task now spawns whenever a
      control backing (Postgres or ClickHouse) is configured. (Combined/single is
      also fine: one instance, write-through keeps its projection fresh.)
-6. **Delete.** Remove `control_store.rs`, the `StoreData` control maps,
-   `apply_control_records`, `refresh_control_records`, the cursor
-   (`record_clock_micros`), the 2s background task, `last_control_refresh*`,
-   and the now-dead reconstruction logic in `billing.rs`/`usage.rs`/`mod.rs`.
+6. **Delete.** Remove `control_store.rs`, the `backfill-control` command, and
+   the ClickHouse User Data replay/refresh branches. Keep the `StoreData`
+   control maps for now as a read projection populated from Postgres; delete or
+   narrow them only after the handler read paths have a smaller replacement.
 
 ## Out of scope / unchanged
 

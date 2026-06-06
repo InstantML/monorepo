@@ -55,7 +55,6 @@ use crate::{
     config::{AppConfig, ByocClickHouseConfig, HostedClickHouseConfig},
     control_db::ControlDb,
     control_repo::{ApiKeyWithHash, NewSession},
-    control_store::{ControlRecordRow, ControlStore},
     domain::{
         is_personal_account_type, plan_tier, validate_account_type, validate_email,
         validate_json_object, validate_limit, validate_membership_role, validate_name,
@@ -167,12 +166,10 @@ const DEMO_STEPS: [i64; 6] = [0, 40, 80, 120, 160, 200];
 #[derive(Clone)]
 pub struct Store {
     metric_store: MetricStore,
-    control_store: Option<ControlStore>,
     /// Postgres control plane. When present, it is the system of record for
-    /// users/orgs/memberships/sessions/keys/billing/tenant routes, replacing the
-    /// in-memory `StoreData` projection. `None` keeps the legacy ClickHouse
-    /// event-log + projection path (single-binary local mode and not-yet-migrated
-    /// tests).
+    /// users/orgs/memberships/sessions/keys/billing/tenant routes. `None` is
+    /// only allowed for non-hosted local mode, which stores its local bootstrap
+    /// records in the primary operational record table.
     control_db: Option<ControlDb>,
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     byoc_clickhouse: ByocClickHouseConfig,
@@ -188,10 +185,9 @@ pub struct Store {
     record_clock_micros: Arc<Mutex<i64>>,
     control_projection_loaded: Arc<Mutex<bool>>,
     last_control_refresh_error: Arc<Mutex<Option<String>>>,
-    /// Coalesces calls to `refresh_control_records`. Reading the entire
-    /// control table on every authenticated request hammered ClickHouse Cloud
-    /// under burst load, causing transient `client error (Connect)` failures.
-    /// We skip the refresh if the last one ran within `CONTROL_REFRESH_MIN_INTERVAL`.
+    /// Coalesces calls to `refresh_control_records` so a burst of explicit
+    /// refreshes does not hammer Postgres while a background refresh is already
+    /// keeping the data plane current.
     last_control_refresh: Arc<Mutex<Option<Instant>>>,
 }
 
@@ -208,17 +204,20 @@ const CONTROL_REFRESH_BACKGROUND_INTERVAL: StdDuration = StdDuration::from_secs(
 impl Store {
     pub async fn connect(
         metric_store: MetricStore,
-        control_store: Option<ControlStore>,
         control_db: Option<ControlDb>,
         hosted_clickhouse: Option<HostedClickHouseConfig>,
         byoc_clickhouse: ByocClickHouseConfig,
     ) -> AppResult<Self> {
+        if hosted_clickhouse.is_some() && control_db.is_none() {
+            return Err(AppError::config(
+                "DATABASE_URL is required when hosted ClickHouse routing is enabled",
+            ));
+        }
         // Build the shared-cell MetricStore when INSTANTML_SHARED_CELL_URL is set.
         let shared_cell_metric_store =
             build_shared_cell_metric_store(hosted_clickhouse.as_ref()).await?;
         let store = Self {
             metric_store,
-            control_store,
             control_db,
             hosted_clickhouse,
             byoc_clickhouse,
@@ -251,8 +250,7 @@ impl Store {
     }
 
     /// The Postgres control plane, when configured. Auth/org/billing store
-    /// methods route through this; `None` falls back to the in-memory
-    /// projection during the migration.
+    /// methods route through this; `None` is local non-hosted mode.
     pub fn control_db(&self) -> Option<&ControlDb> {
         self.control_db.as_ref()
     }
@@ -263,12 +261,6 @@ impl Store {
             // directly. Unlike the event-log replay, startup cost is bounded by
             // the number of live entities, not the lifetime mutation history.
             (self.load_data_from_postgres(control_db).await?, 0)
-        } else if let Some(control_store) = &self.control_store {
-            // First load: no cursor, so this still pulls every control record.
-            let records = control_store.load_records(None).await?;
-            let mut data = StoreData::default();
-            let stats = data.apply_control_records(records)?;
-            (data, stats.latest_record_micros)
         } else {
             let records = self.metric_store.load_operational_records().await?;
             let mut data = StoreData::default();
@@ -374,24 +366,14 @@ impl Store {
     }
 
     /// Spawn a background task that periodically refreshes the in-memory control
-    /// projection from the control-plane table. Returns the join handle so the
+    /// projection from Postgres. Returns the join handle so the
     /// caller (typically `main::serve`) can manage shutdown.
     ///
     /// This is the data plane's mechanism for picking up control mutations
     /// (new org, new api key, revoked api key, etc.) made by the control plane.
-    /// Before Tier 2, every authenticated request on the data plane invoked
-    /// `refresh_control_records` synchronously — moving it off the hot path
-    /// removes a per-request ClickHouse round trip and the burst-load failure
-    /// mode that PR #32 had to mask with a throttle.
-    ///
-    /// No-op when no control store is configured (single-binary local mode).
+    /// No-op when no control database is configured (single-binary local mode).
     pub fn spawn_control_refresh_task(&self) -> Option<JoinHandle<()>> {
-        // Refresh against whichever control backing is configured: Postgres when
-        // present (the data plane re-reads control state from it), else the
-        // legacy ClickHouse control store.
-        if self.control_store.is_none() && self.control_db.is_none() {
-            return None;
-        }
+        self.control_db.as_ref()?;
         let store = self.clone();
         let handle = tokio::spawn(async move {
             // Stagger the first tick so we don't double up with the startup
@@ -431,78 +413,6 @@ impl Store {
         if let Some(control_db) = &self.control_db {
             return self.refresh_from_postgres(control_db, force).await;
         }
-        let Some(control_store) = &self.control_store else {
-            return Ok(());
-        };
-        // Coalesce bursty calls — explicit on-demand refreshes from mutation
-        // handlers (e.g. just after revoking an api key) may overlap with the
-        // background task. Without the throttle a sustained write burst could
-        // issue a full-table SELECT per request and trip ClickHouse Cloud rate
-        // limits. PR #32 introduced this guard; Tier 2 moved the polling off
-        // the request hot path, but the guard is still cheap insurance for
-        // explicit callers.
-        {
-            let mut last = self.last_control_refresh.lock().await;
-            if !force {
-                if let Some(prev) = *last {
-                    if prev.elapsed() < CONTROL_REFRESH_MIN_INTERVAL {
-                        return Ok(());
-                    }
-                }
-            }
-            *last = Some(Instant::now());
-        }
-        // Snapshot the current record clock and only ask for records strictly
-        // newer than it. The clock is microsecond-precision and matches the
-        // ClickHouse `DateTime64(6, 'UTC')` column.
-        //
-        // Concurrent refreshes are bounded by `CONTROL_REFRESH_MIN_INTERVAL`,
-        // so at most one fetch can be in flight per the throttle window.
-        // Either way, the post-fetch `max` against the live clock keeps it
-        // monotonic — replaying records we already applied is idempotent.
-        let since_micros = *self.record_clock_micros.lock().await;
-        let since = if since_micros > 0 {
-            Some(datetime_from_micros(since_micros))
-        } else {
-            None
-        };
-        let records = match control_store.load_records(since).await {
-            Ok(records) => records,
-            Err(error) => {
-                self.mark_control_refresh_failure(error.message()).await;
-                return Err(error);
-            }
-        };
-        if records.is_empty() {
-            self.mark_control_refresh_success().await;
-            return Ok(());
-        }
-        let applied = {
-            let mut data = self.data.lock().await;
-            let previous_routes = data.tenant_routes.clone();
-            data.apply_control_records(records).map(|stats| {
-                let changed_routes = changed_tenant_routes(&previous_routes, &data.tenant_routes);
-                (stats, changed_routes)
-            })
-        };
-        let (stats, changed_tenant_routes) = match applied {
-            Ok(applied) => applied,
-            Err(error) => {
-                self.mark_control_refresh_failure(error.message()).await;
-                return Err(error);
-            }
-        };
-        if !changed_tenant_routes.is_empty() {
-            let mut loaded = self.tenant_loaded.lock().await;
-            let mut stores = self.tenant_metric_stores.lock().await;
-            for org_id in &changed_tenant_routes {
-                loaded.remove(org_id);
-                stores.remove(org_id);
-            }
-        }
-        let mut clock = self.record_clock_micros.lock().await;
-        *clock = (*clock).max(stats.latest_record_micros);
-        self.mark_control_refresh_success().await;
         Ok(())
     }
 
@@ -624,36 +534,8 @@ impl Store {
             }
         }
         #[cfg(test)]
-        if self.control_store.is_none()
-            && self.control_db.is_none()
-            && self.metric_store.database().ends_with("_test")
-        {
+        if self.control_db.is_none() && self.metric_store.database().ends_with("_test") {
             return Ok(());
-        }
-        if self.is_control_record_kind(kind) {
-            if let Some(control_store) = &self.control_store {
-                let scope = control_record_scope(kind);
-                let control = ControlRecordRow {
-                    event_id: Uuid::new_v4(),
-                    scope: scope.to_string(),
-                    kind: row.kind,
-                    org_id: if scope == "global" {
-                        Uuid::nil()
-                    } else {
-                        org_id
-                    },
-                    entity_id: row.entity_id,
-                    payload: row.payload,
-                    created_at: row.created_at,
-                };
-                return control_store.insert_record(&control).await;
-            }
-            // Hosted control records are global/control-plane data. If a test
-            // or legacy hosted configuration lacks a dedicated control store,
-            // keep the legacy primary-store fallback local to `metric_store`
-            // instead of routing through `metric_store_for_persist`, which may
-            // consult tenant routing and try to re-lock StoreData.
-            return self.metric_store.insert_operational_record(&row).await;
         }
         let metric_store = self.metric_store_for_persist(org_id).await?;
         metric_store.insert_operational_record(&row).await
@@ -877,26 +759,6 @@ impl StoreData {
             if let ReplayScope::Tenant(expected_org_id) = scope {
                 validate_tenant_record_for_replay(expected_org_id, &record)?;
             }
-            stats.latest_record_micros = stats
-                .latest_record_micros
-                .max(record.created_at.timestamp_micros());
-            self.apply_record(&record.kind, record.org_id, &record.payload)?;
-        }
-        self.recompute_counters();
-        Ok(stats)
-    }
-
-    fn apply_control_records(
-        &mut self,
-        mut records: Vec<ControlRecordRow>,
-    ) -> AppResult<ReplayStats> {
-        records.sort_by(|left, right| {
-            left.created_at
-                .cmp(&right.created_at)
-                .then_with(|| left.event_id.cmp(&right.event_id))
-        });
-        let mut stats = ReplayStats::default();
-        for record in records {
             stats.latest_record_micros = stats
                 .latest_record_micros
                 .max(record.created_at.timestamp_micros());
@@ -1926,31 +1788,17 @@ pub async fn ready(store: &Store) -> bool {
 }
 
 pub async fn control_ready(store: &Store) -> bool {
-    let backing_ready = match &store.control_store {
-        Some(control_store) => control_store.ready().await,
-        None => true,
-    };
-    // Probe Postgres too: once it is the system of record (control_store may be
-    // unset post-cutover) a Postgres outage must surface as not-ready rather
-    // than being masked by a `None` ClickHouse backing.
     let control_db_ready = match &store.control_db {
         Some(control_db) => control_db.ready().await,
         None => true,
     };
-    backing_ready && control_db_ready && store.control_projection_health().await.loaded
+    control_db_ready && store.control_projection_health().await.loaded
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ControlProjectionHealth {
     pub loaded: bool,
     pub refresh_degraded: bool,
-}
-
-fn control_record_scope(kind: &str) -> &'static str {
-    match kind {
-        "user" | "identity" => "global",
-        _ => "org",
-    }
 }
 
 fn changed_tenant_routes(
@@ -1993,203 +1841,6 @@ async fn build_shared_cell_metric_store(
     Ok(Some(store))
 }
 
-/// One control entity that could not be written to Postgres during backfill —
-/// almost always a uniqueness collision (two orgs sharing a slug, two users a
-/// email) that the old append-only log allowed but the constraints reject, or a
-/// dangling foreign key. Reported rather than fatal so a single bad row does not
-/// abort the whole migration; the operator resolves these before cutover.
-#[derive(Debug, Clone, Serialize)]
-pub struct BackfillIssue {
-    pub kind: String,
-    pub entity_id: String,
-    pub message: String,
-}
-
-#[derive(Debug, Default, Serialize)]
-pub struct BackfillReport {
-    pub written: usize,
-    pub issues: Vec<BackfillIssue>,
-}
-
-impl BackfillReport {
-    fn note(&mut self, kind: &str, entity_id: String, result: AppResult<()>) {
-        match result {
-            Ok(()) => self.written += 1,
-            Err(err) => self.issues.push(BackfillIssue {
-                kind: kind.to_string(),
-                entity_id,
-                message: err.message().to_string(),
-            }),
-        }
-    }
-}
-
-/// Backfill the ClickHouse control log into Postgres. Replays the full log into
-/// a final-state projection (last-writer-wins per entity, keyed by id so
-/// slug/email collisions are preserved rather than collapsed), then upserts each
-/// entity. Idempotent — safe to re-run after resolving reported issues.
-pub async fn run_control_backfill(
-    control_store: &ControlStore,
-    control_db: &ControlDb,
-) -> AppResult<BackfillReport> {
-    let records = control_store.load_records(None).await?;
-    let mut data = StoreData::default();
-    data.apply_control_records(records)?;
-    backfill_data_to_postgres(&data, control_db).await
-}
-
-/// Write a materialized control projection to Postgres in foreign-key dependency
-/// order, collecting per-row failures into the report instead of aborting.
-async fn backfill_data_to_postgres(
-    data: &StoreData,
-    control_db: &ControlDb,
-) -> AppResult<BackfillReport> {
-    let mut report = BackfillReport::default();
-
-    // users → identities (FK user) → orgs (FK created_by user) → memberships →
-    // service accounts → api keys → sessions → the rest.
-    for user in data.users.values() {
-        report.note(
-            "user",
-            user.id.to_string(),
-            control_db.upsert_user(user).await,
-        );
-    }
-    for ((provider, subject), user_id) in &data.identities {
-        report.note(
-            "identity",
-            format!("{provider}:{subject}"),
-            control_db
-                .upsert_identity(provider, subject, *user_id)
-                .await,
-        );
-    }
-    for org in data.organizations.values() {
-        report.note(
-            "organization",
-            org.id.to_string(),
-            control_db.upsert_org(org).await,
-        );
-    }
-    for membership in data.memberships.values() {
-        report.note(
-            "membership",
-            membership.id.to_string(),
-            control_db.upsert_membership(membership).await,
-        );
-    }
-    for account in data.service_accounts.values() {
-        report.note(
-            "service_account",
-            account.id.to_string(),
-            control_db.upsert_service_account(account).await,
-        );
-    }
-    for key in data.api_keys.values() {
-        report.note(
-            "api_key",
-            key.row.id.to_string(),
-            control_db
-                .upsert_api_key(&ApiKeyWithHash {
-                    row: key.row.clone(),
-                    key_hash: key.key_hash.clone(),
-                })
-                .await,
-        );
-    }
-    for session in data.sessions.values() {
-        report.note(
-            "session",
-            session.row.id.to_string(),
-            control_db
-                .upsert_session(&NewSession {
-                    row: session.row.clone(),
-                    token_hash: session.token_hash.clone(),
-                })
-                .await,
-        );
-    }
-    for invitation in data.org_invitations.values() {
-        report.note(
-            "org_invitation",
-            invitation.id.to_string(),
-            control_db.upsert_org_invitation(invitation).await,
-        );
-    }
-    for delivery in data.email_deliveries.values() {
-        report.note(
-            "email_delivery",
-            delivery.id.to_string(),
-            control_db.upsert_email_delivery(delivery).await,
-        );
-    }
-    for pref in data.dashboard_preferences.values() {
-        report.note(
-            "dashboard_preference",
-            format!("{}:{:?}", pref.org_id, pref.user_id),
-            control_db.upsert_dashboard_preference(pref).await,
-        );
-    }
-    for view in data.workspace_views.values() {
-        report.note(
-            "workspace_view",
-            view.id.to_string(),
-            control_db.upsert_workspace_view(view).await,
-        );
-    }
-    for account in data.billing_accounts.values() {
-        report.note(
-            "billing_account",
-            account.org_id.to_string(),
-            control_db.upsert_billing_account(account).await,
-        );
-    }
-    for intent in data.billing_checkout_intents.values() {
-        report.note(
-            "billing_checkout_intent",
-            intent.id.to_string(),
-            control_db.upsert_billing_checkout_intent(intent).await,
-        );
-    }
-    for intent in data.billing_change_intents.values() {
-        report.note(
-            "billing_change_intent",
-            intent.id.to_string(),
-            control_db.upsert_billing_change_intent(intent).await,
-        );
-    }
-    for subscription in data.billing_subscriptions.values() {
-        report.note(
-            "billing_subscription",
-            subscription.stripe_subscription_id.clone(),
-            control_db.upsert_billing_subscription(subscription).await,
-        );
-    }
-    for event in data.billing_events.values() {
-        report.note(
-            "billing_event",
-            event.stripe_event_id.clone(),
-            control_db.upsert_billing_event(event).await,
-        );
-    }
-    for usage_report in data.billing_usage_reports.values() {
-        report.note(
-            "billing_usage_report",
-            usage_report.id.to_string(),
-            control_db.upsert_billing_usage_report(usage_report).await,
-        );
-    }
-    for route in data.tenant_routes.values() {
-        report.note(
-            "tenant_route",
-            route.org_id.to_string(),
-            control_db.upsert_tenant_route(route).await,
-        );
-    }
-
-    Ok(report)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2205,7 +1856,6 @@ mod tests {
                 "TEST_CLICKHOUSE_URL",
             )
             .unwrap(),
-            control_store: None,
             control_db: Some(control_db),
             hosted_clickhouse: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
@@ -2287,49 +1937,6 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
-    }
-
-    fn backfill_org(slug: &str) -> OrganizationRow {
-        OrganizationRow {
-            id: Uuid::new_v4(),
-            slug: slug.to_string(),
-            name: slug.to_string(),
-            plan_tier: "free".to_string(),
-            account_type: "business".to_string(),
-            seat_limit: 5,
-            created_by_user_id: None,
-            created_at: Utc::now(),
-            tenant_routing_tier: "dedicated".to_string(),
-            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
-            storage_state: STORAGE_STATE_READY.to_string(),
-        }
-    }
-
-    #[sqlx::test]
-    async fn backfill_writes_projection_and_reports_slug_collision(pool: sqlx::PgPool) {
-        let control_db = ControlDb::from_pool(pool);
-        let mut data = StoreData::default();
-        data.insert_user(UserRow {
-            id: Uuid::new_v4(),
-            primary_email: "bf@example.com".to_string(),
-            display_name: None,
-            avatar_url: None,
-            created_at: Utc::now(),
-            last_seen_at: None,
-        });
-        // Two distinct orgs sharing a slug — the silent duplication the old
-        // append-only log allowed. The projection keeps both (keyed by id); the
-        // backfill must persist one and report the other, not lose it quietly.
-        data.insert_org(backfill_org("dup"));
-        data.insert_org(backfill_org("dup"));
-
-        let report = backfill_data_to_postgres(&data, &control_db).await.unwrap();
-
-        // user + exactly one org written; the colliding org is reported.
-        assert_eq!(report.written, 2);
-        assert_eq!(report.issues.len(), 1);
-        assert_eq!(report.issues[0].kind, "organization");
-        assert_eq!(control_db.load_orgs().await.unwrap().len(), 1);
     }
 
     #[sqlx::test]
@@ -2450,25 +2057,6 @@ mod tests {
         }
     }
 
-    fn control_replay_row<T: Serialize>(
-        kind: &str,
-        org_id: Uuid,
-        entity_id: impl Into<String>,
-        event_id: Uuid,
-        payload: &T,
-        created_at_micros: i64,
-    ) -> ControlRecordRow {
-        ControlRecordRow {
-            event_id,
-            scope: "org".to_string(),
-            kind: kind.to_string(),
-            org_id,
-            entity_id: entity_id.into(),
-            payload: serde_json::to_string(payload).unwrap(),
-            created_at: datetime_from_micros(created_at_micros),
-        }
-    }
-
     fn replay_project(org_id: Uuid, project_id: Uuid, name: &str) -> ProjectRow {
         ProjectRow {
             id: project_id,
@@ -2497,14 +2085,6 @@ mod tests {
             forked_from_step: None,
             forked_from_artifact_id: None,
         }
-    }
-
-    #[test]
-    fn control_record_scope_keeps_user_identity_global() {
-        assert_eq!(control_record_scope("user"), "global");
-        assert_eq!(control_record_scope("identity"), "global");
-        assert_eq!(control_record_scope("organization"), "org");
-        assert_eq!(control_record_scope("api_key"), "org");
     }
 
     #[test]
@@ -2610,171 +2190,13 @@ mod tests {
 
     #[test]
     fn record_clock_micros_roundtrip_preserves_microsecond_precision() {
-        // The record clock is `i64` microseconds since epoch. ClickHouse's
-        // `DateTime64(6, 'UTC')` column is also microsecond-precision. The
-        // incremental `load_records` path converts the clock into a
-        // `DateTime<Utc>` via `datetime_from_micros` before binding it into
-        // the `WHERE created_at > ?` predicate; if that conversion loses
-        // resolution we'd silently re-fetch records we've already applied
-        // (slow but safe) or, worse, skip records (silent data loss).
-        //
-        // Lock in the round-trip: a clock value computed from a real
-        // `DateTime<Utc>` should produce a `DateTime<Utc>` equal to the
-        // original when converted back.
+        // Tenant operational records still use microsecond timestamps for
+        // deterministic replay ordering.
         let original = DateTime::<Utc>::from_timestamp(1_700_000_000, 123_456_000).unwrap();
         let micros = original.timestamp_micros();
         let restored = datetime_from_micros(micros);
         assert_eq!(restored, original);
         assert_eq!(restored.timestamp_micros(), micros);
-    }
-
-    #[test]
-    fn incremental_refresh_advances_clock_to_latest_record_micros() {
-        // Simulates the per-refresh contract that `refresh_control_records`
-        // depends on: after applying a batch of records, the clock advances
-        // to the max `created_at` observed. A subsequent refresh would then
-        // bind `since = datetime_from_micros(clock)` and only ask ClickHouse
-        // for records strictly greater than that timestamp.
-        let org_id = Uuid::from_u128(1);
-        let mut data = StoreData::default();
-
-        // First batch: full load (clock starts at 0, so `since = None` and
-        // the query runs the legacy full scan).
-        let stats_first = data
-            .apply_control_records(vec![
-                control_replay_row(
-                    "organization",
-                    org_id,
-                    org_id.to_string(),
-                    Uuid::from_u128(1),
-                    &OrganizationRow {
-                        id: org_id,
-                        slug: "org".to_string(),
-                        name: "First".to_string(),
-                        plan_tier: "free".to_string(),
-                        account_type: "business".to_string(),
-                        seat_limit: 1,
-                        created_by_user_id: None,
-                        created_at: epoch(),
-                        tenant_routing_tier: "dedicated".to_string(),
-                        storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
-                        storage_state: STORAGE_STATE_READY.to_string(),
-                    },
-                    100,
-                ),
-                control_replay_row(
-                    "organization",
-                    org_id,
-                    org_id.to_string(),
-                    Uuid::from_u128(2),
-                    &OrganizationRow {
-                        id: org_id,
-                        slug: "org".to_string(),
-                        name: "Second".to_string(),
-                        plan_tier: "free".to_string(),
-                        account_type: "business".to_string(),
-                        seat_limit: 1,
-                        created_by_user_id: None,
-                        created_at: epoch(),
-                        tenant_routing_tier: "dedicated".to_string(),
-                        storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
-                        storage_state: STORAGE_STATE_READY.to_string(),
-                    },
-                    200,
-                ),
-            ])
-            .unwrap();
-        let mut clock: i64 = 0;
-        clock = clock.max(stats_first.latest_record_micros);
-        assert_eq!(clock, 200);
-        assert_eq!(data.organizations[&org_id].name, "Second");
-
-        // Second batch: emulates what the next refresh would see — ClickHouse
-        // returns only records with `created_at > since`, i.e. strictly newer
-        // than the previous clock. Empty results (no churn) must not regress
-        // the clock; new records must advance it.
-        let stats_empty = data.apply_control_records(vec![]).unwrap();
-        assert_eq!(stats_empty.latest_record_micros, 0);
-        clock = clock.max(stats_empty.latest_record_micros);
-        assert_eq!(
-            clock, 200,
-            "empty incremental refresh must not regress clock"
-        );
-
-        let stats_third = data
-            .apply_control_records(vec![control_replay_row(
-                "organization",
-                org_id,
-                org_id.to_string(),
-                Uuid::from_u128(3),
-                &OrganizationRow {
-                    id: org_id,
-                    slug: "org".to_string(),
-                    name: "Third".to_string(),
-                    plan_tier: "free".to_string(),
-                    account_type: "business".to_string(),
-                    seat_limit: 1,
-                    created_by_user_id: None,
-                    created_at: epoch(),
-                    tenant_routing_tier: "dedicated".to_string(),
-                    storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
-                    storage_state: STORAGE_STATE_READY.to_string(),
-                },
-                300,
-            )])
-            .unwrap();
-        clock = clock.max(stats_third.latest_record_micros);
-        assert_eq!(clock, 300);
-        assert_eq!(data.organizations[&org_id].name, "Third");
-    }
-
-    #[test]
-    fn control_replay_uses_event_id_as_equal_timestamp_tiebreaker() {
-        let org_id = Uuid::from_u128(1);
-        let older = OrganizationRow {
-            id: org_id,
-            slug: "org".to_string(),
-            name: "Older".to_string(),
-            plan_tier: "free".to_string(),
-            account_type: "business".to_string(),
-            seat_limit: 1,
-            created_by_user_id: None,
-            created_at: epoch(),
-            tenant_routing_tier: "dedicated".to_string(),
-            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
-            storage_state: STORAGE_STATE_READY.to_string(),
-        };
-        let newer = OrganizationRow {
-            name: "Newer".to_string(),
-            ..older.clone()
-        };
-        let older_event_id = Uuid::from_u128(1);
-        let newer_event_id = Uuid::from_u128(2);
-        let mut data = StoreData::default();
-
-        let stats = data
-            .apply_control_records(vec![
-                control_replay_row(
-                    "organization",
-                    org_id,
-                    org_id.to_string(),
-                    newer_event_id,
-                    &newer,
-                    10,
-                ),
-                control_replay_row(
-                    "organization",
-                    org_id,
-                    org_id.to_string(),
-                    older_event_id,
-                    &older,
-                    10,
-                ),
-            ])
-            .unwrap();
-
-        assert_eq!(data.organizations[&org_id].name, "Newer");
-        assert_eq!(stats.latest_record_micros, 10);
     }
 
     #[test]

@@ -9,7 +9,8 @@ Status: Current implemented schema surface for `apps/rust-server`
 This document is the durable schema reference for the current Rust/ClickHouse
 backend. Keep it synchronized with:
 
-- `apps/rust-server/src/control_store.rs`
+- `apps/rust-server/src/control_db.rs`
+- `apps/rust-server/migrations/`
 - `apps/rust-server/clickhouse/0001_initial.sql`
 - `apps/rust-server/src/domain.rs`
 - `apps/rust-server/src/store/mod.rs`
@@ -27,8 +28,8 @@ InstantML uses two logical storage planes.
 
 ```text
 Control plane:
-  ClickHouse table instantml_user_data
-  -> users, identities, orgs, memberships, sessions, API keys, plan-aware tenant routes
+  Postgres tables in apps/rust-server/migrations/
+  -> users, identities, orgs, memberships, sessions, API keys, invitations, billing, plan-aware tenant routes
 
 Data plane:
   ClickHouse table operational_records
@@ -38,11 +39,11 @@ Data plane:
   -> high-volume scalar metrics, per-rank metrics, console logs, and maintained summaries
 ```
 
-In local/non-hosted mode, `operational_records` may contain both control and
-data record kinds. In hosted mode, control record kinds are written to
-`instantml_user_data`, and tenant product state is written to the org's routed
-tenant ClickHouse database. The current InstantML-owned hosted path uses
-database-mode routing on self-hosted GCP ClickHouse; `cloud-service` remains a
+In local/non-hosted mode, `operational_records` may contain both bootstrap
+control and data record kinds. In hosted mode, control records are written to
+Postgres, and tenant product state is written to the org's routed tenant
+ClickHouse database. The current InstantML-owned hosted path uses database-mode
+routing on self-hosted GCP ClickHouse; `cloud-service` remains a
 legacy/provider-backed route type.
 
 All durable low-volume records are append-only. A newer record for the same
@@ -66,48 +67,30 @@ in ClickHouse until a future compaction design exists.
 
 ## Control Plane
 
-### `instantml_user_data`
+### Postgres Control Tables
 
-Owner: `apps/rust-server/src/control_store.rs`
+Owner: `apps/rust-server/src/control_db.rs` and
+`apps/rust-server/migrations/0001_init_control_plane.sql`.
 
-Purpose: hosted User Data table for account, auth, organization, API-key,
-Stripe billing, and tenant-route state that must be visible to control and data
-services.
+Purpose: hosted account, auth, organization, API-key, invitation, billing, and
+tenant-route state that must be visible to control and data services.
 
-```sql
-CREATE TABLE IF NOT EXISTS instantml_user_data (
-    event_id   UUID,
-    scope      LowCardinality(String),
-    kind       LowCardinality(String),
-    org_id     UUID,
-    entity_id  String,
-    payload    String CODEC(ZSTD(3)),
-    created_at DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD(3))
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(created_at)
-ORDER BY (scope, kind, org_id, entity_id, created_at, event_id)
-SETTINGS index_granularity = 8192;
+Postgres is now the system of record for hosted control-plane state.
+Uniqueness, atomicity, and read-after-write are enforced by relational
+constraints and transactions rather than by replaying a ClickHouse append log.
+The implemented table list is:
+
+```text
+users, identities, organizations, memberships, org_invitations,
+email_deliveries, sessions, service_accounts, api_keys, tenant_routes,
+dashboard_preferences, workspace_views, billing_accounts,
+billing_checkout_intents, billing_change_intents, billing_subscriptions,
+billing_events, billing_usage_reports
 ```
 
-| Column | Type | Meaning |
-| --- | --- | --- |
-| `event_id` | `UUID` | Unique append event id. Used as a deterministic replay tie-breaker with `created_at`. |
-| `scope` | `LowCardinality(String)` | `global` for users and identities, `org` for org-scoped control records. |
-| `kind` | `LowCardinality(String)` | Control record kind listed below. |
-| `org_id` | `UUID` | Owning org for `org` records. `00000000-0000-0000-0000-000000000000` for `global` records. |
-| `entity_id` | `String` | Stable entity identifier, usually a UUID string. |
-| `payload` | `String` | Complete JSON payload for the record kind. |
-| `created_at` | `DateTime64(6, 'UTC')` | Append time. |
-
-Replay order:
-
-```sql
-ORDER BY created_at ASC, event_id ASC
-```
-
-Do not implement incremental control replay with `(created_at, event_id)` as a
-cursor while `event_id` is random. Full replay is the current safe path.
+Keep the migration SQL as the authoritative column/index reference. The Rust
+store keeps a read projection loaded from Postgres so existing route handlers
+can stay on the same in-process lookup path.
 
 ### Control Record Kinds
 
@@ -1193,10 +1176,10 @@ GROUP BY org_id, run_id, key;
 | Mode | Control records | Data records | Metrics/logs |
 | --- | --- | --- | --- |
 | Local/default combined | `operational_records` | `operational_records` | local/default ClickHouse database |
-| Hosted combined | `instantml_user_data` | routed tenant `operational_records` | routed tenant ClickHouse database |
-| Hosted split control | `instantml_user_data` | route/provisioning only, via tenant route creation | tenant schema migration/provisioning only |
-| Hosted split data | full User Data replay before auth | routed tenant `operational_records` | routed tenant ClickHouse database |
-| Hosted BYOC data | User Data `organization` + `tenant_route` records | customer-owned `operational_records` | customer-owned ClickHouse database |
+| Hosted combined | Postgres control tables | routed tenant `operational_records` | routed tenant ClickHouse database |
+| Hosted split control | Postgres control tables | route/provisioning only, via tenant route creation | tenant schema migration/provisioning only |
+| Hosted split data | Postgres control projection before auth | routed tenant `operational_records` | routed tenant ClickHouse database |
+| Hosted BYOC data | Postgres `organizations` + `tenant_routes` records | customer-owned `operational_records` | customer-owned ClickHouse database |
 
 ## Change Checklist
 

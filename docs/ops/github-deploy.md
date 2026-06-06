@@ -176,9 +176,7 @@ enabled version:
 
 | GCP secret id (prod) | Maps to runtime env |
 | --- | --- |
-| `instantml-clickhouse-user-data-endpoint` | `CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT` |
-| `instantml-clickhouse-user-data-username` | `CLICKHOUSE_INSTANTML_USER_DATA_USERNAME` |
-| `instantml-clickhouse-user-data-password` | `CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD` |
+| `instantml-control-database-url` | `DATABASE_URL` |
 | `instantml-clickhouse-cloud-key-id` | `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID` |
 | `instantml-clickhouse-cloud-key-secret` | `CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET` |
 | `instantml-clerk-secret-key` | `CLERK_SECRET_KEY` |

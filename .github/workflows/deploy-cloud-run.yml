@@ -229,7 +229,6 @@ jobs:
               frontend_base_url="https://instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
               clerk_jwt_issuer="https://clerk.instantml.ai"
-              enable_control_postgres="1"
               cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
               control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
               ;;
@@ -237,16 +236,14 @@ jobs:
               frontend_base_url="https://staging.instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://staging.instantml.ai"
               clerk_jwt_issuer="https://modern-mustang-72.clerk.accounts.dev"
-              enable_control_postgres="0"
-              cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-}"
-              control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
+              cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
+              control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-staging-control-database-url}"
               ;;
             *)
               frontend_base_url="https://instantml.ai"
               allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000,https://instantml.ai"
               clerk_jwt_issuer="https://clerk.instantml.ai"
-              enable_control_postgres="0"
-              cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-}"
+              cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
               control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
               ;;
           esac
@@ -256,7 +253,6 @@ jobs:
           echo "frontend_base_url=${frontend_base_url}" >> "${GITHUB_OUTPUT}"
           echo "allowed_frontend_origins=${allowed_frontend_origins}" >> "${GITHUB_OUTPUT}"
           echo "clerk_jwt_issuer=${clerk_jwt_issuer}" >> "${GITHUB_OUTPUT}"
-          echo "enable_control_postgres=${enable_control_postgres}" >> "${GITHUB_OUTPUT}"
           echo "cloud_sql_connection=${cloud_sql_connection}" >> "${GITHUB_OUTPUT}"
           echo "control_database_url_secret=${control_database_url_secret}" >> "${GITHUB_OUTPUT}"
 
@@ -303,7 +299,6 @@ jobs:
           # have already deprovisioned.
           INSTANTML_CLICKHOUSE_PROVISIONER: "database"
           INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true"
-          INSTANTML_ENABLE_CONTROL_POSTGRES: ${{ steps.inputs.outputs.enable_control_postgres }}
           INSTANTML_CLOUD_SQL_CONNECTION: ${{ steps.inputs.outputs.cloud_sql_connection }}
           INSTANTML_CONTROL_DATABASE_URL_SECRET: ${{ steps.inputs.outputs.control_database_url_secret }}
 

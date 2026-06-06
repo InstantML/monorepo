@@ -123,8 +123,8 @@ but they are not yet required repo scripts.
   handler, request, and response contract changes.
 - `src/store/mod.rs` and `src/store/*` for operational replay, auth, tenant,
   run, metric, object, import, and usage behavior.
-- `src/control_store.rs` and `src/metric_store.rs` for ClickHouse schema and
-  query behavior.
+- `src/control_db.rs`, `migrations/`, and `src/metric_store.rs` for Postgres
+  control-plane storage, ClickHouse schema, and query behavior.
 - `apps/rust-server/README.md` for commands, config, testing, and operational
   warnings.
 - `docs/architecture/current-api.md` for public API inputs, parameters,

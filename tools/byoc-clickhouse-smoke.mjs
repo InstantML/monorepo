@@ -12,15 +12,17 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-byoc-clickhouse
 const clickhouseHttpPort = await freePort();
 const clickhouseTcpPort = await freePort();
 const clickhouseInterserverPort = await freePort();
+const postgresPort = await freePort();
 const apiPort = await freePort();
 const baseUrl = `http://127.0.0.1:${apiPort}`;
 const clickhouseBase = `http://default:@127.0.0.1:${clickhouseHttpPort}`;
-const userDataUrl = `${clickhouseBase}/instantml_user_data_byoc`;
 const tenantBaseUrl = `${clickhouseBase}/instantml_tenant_base`;
+const databaseUrl = process.env.DATABASE_URL || `postgres://instantml:instantml@127.0.0.1:${postgresPort}/control`;
 const byocDatabase = `instantml_byoc_${Date.now().toString(36)}`;
 const byocUsername = "instantml_writer_smoke";
 const byocPassword = `smoke_${Date.now().toString(36)}`;
 let clickhouse = null;
+let postgresContainer = "";
 let server = null;
 let sessionCookie = "";
 
@@ -33,6 +35,7 @@ try {
     tcpPort: clickhouseTcpPort,
     interserverHttpPort: clickhouseInterserverPort,
   });
+  postgresContainer = await ensurePostgres();
   await clickhousePost(`${clickhouseBase}/default`, `CREATE DATABASE IF NOT EXISTS ${byocDatabase}`);
   await clickhousePost(
     `${clickhouseBase}/default`,
@@ -50,8 +53,8 @@ try {
     env: {
       ...process.env,
       CLICKHOUSE_URL: `${clickhouseBase}/instantml_byoc_default`,
-      CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT: userDataUrl,
       INSTANTML_TENANT_CLICKHOUSE_URL: tenantBaseUrl,
+      DATABASE_URL: databaseUrl,
       INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
       INSTANTML_CLICKHOUSE_PROVISIONER: "database",
       INSTANTML_BIND_ADDR: `127.0.0.1:${apiPort}`,
@@ -174,6 +177,9 @@ try {
     server.kill();
     await onceClose(server);
   }
+  if (postgresContainer) {
+    spawnSync("docker", ["rm", "-f", postgresContainer], { stdio: "ignore" });
+  }
   if (clickhouse) await clickhouse.stop();
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
@@ -266,6 +272,47 @@ function freePort() {
       server.close(() => resolve(port));
     });
   });
+}
+
+async function ensurePostgres() {
+  if (process.env.DATABASE_URL) return "";
+  const result = spawnSync(
+    "docker",
+    [
+      "run",
+      "-d",
+      "--rm",
+      "-e",
+      "POSTGRES_USER=instantml",
+      "-e",
+      "POSTGRES_PASSWORD=instantml",
+      "-e",
+      "POSTGRES_DB=control",
+      "-p",
+      `127.0.0.1:${postgresPort}:5432`,
+      "postgres:16-alpine",
+    ],
+    { cwd: repo, encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      "DATABASE_URL is required for BYOC smoke, or Docker must be available to start postgres:16-alpine.\n"
+        + result.stderr,
+    );
+  }
+  const id = result.stdout.trim();
+  const started = Date.now();
+  while (Date.now() - started < 60_000) {
+    const ready = spawnSync(
+      "docker",
+      ["exec", id, "pg_isready", "-U", "instantml", "-d", "control"],
+      { encoding: "utf8" },
+    );
+    if (ready.status === 0) return id;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  spawnSync("docker", ["rm", "-f", id], { stdio: "ignore" });
+  throw new Error("Timed out waiting for postgres:16-alpine to become ready");
 }
 
 function onceClose(child) {

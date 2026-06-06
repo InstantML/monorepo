@@ -33,28 +33,32 @@ const metricKey = process.env.INSTANTML_HOSTED_DEMO_METRIC_KEY || "eval/return_m
 const hostedDemoProvisioner = normalizeClickHouseProvisioner(
   process.env.INSTANTML_HOSTED_DEMO_PROVISIONER || process.env.INSTANTML_CLICKHOUSE_PROVISIONER || "database",
 );
-const userDataUrl = clickhouseUrlFromEnv(
-  "CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT",
-  "CLICKHOUSE_INSTANTML_USER_DATA_USERNAME",
-  "CLICKHOUSE_INSTANTML_USER_DATA_PASSWORD",
+const tenantBaseUrl = clickhouseUrlFromEnv(
+  "INSTANTML_TENANT_CLICKHOUSE_URL",
+  "CLICKHOUSE_USERNAME",
+  "CLICKHOUSE_PASSWORD",
   process.env.CLICKHOUSE_URL,
 );
-const cloudLocation = inferCloudLocation(userDataUrl);
+const cloudLocation = inferCloudLocation(tenantBaseUrl);
 const cloudProvider = process.env.INSTANTML_CLICKHOUSE_CLOUD_PROVIDER || cloudLocation.provider;
 const cloudRegion = process.env.INSTANTML_CLICKHOUSE_CLOUD_REGION || cloudLocation.region;
 if (process.env.INSTANTML_HOSTED_DEMO_ALLOW_PROVISION !== "1") {
   throw new Error("hosted demo benchmark can create/use hosted ClickHouse storage; set INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 to continue");
 }
 if (hostedDemoProvisioner === "cloud-service" && !existingApiBase && (!cloudProvider || !cloudRegion)) {
-  throw new Error("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER and INSTANTML_CLICKHOUSE_CLOUD_REGION are required when the User Data endpoint is not a ClickHouse Cloud hostname");
+  throw new Error("INSTANTML_CLICKHOUSE_CLOUD_PROVIDER and INSTANTML_CLICKHOUSE_CLOUD_REGION are required when the tenant endpoint is not a ClickHouse Cloud hostname");
 }
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "instantml-hosted-demo-"));
+const postgresPort = await freePort();
+const databaseUrl = process.env.DATABASE_URL || `postgres://instantml:instantml@127.0.0.1:${postgresPort}/control`;
 
 let server = null;
 let apiBaseUrl = existingApiBase || "";
+let postgresContainer = "";
 
 try {
   if (!apiBaseUrl) {
+    postgresContainer = await ensurePostgres();
     const apiPort = await freePort();
     apiBaseUrl = `http://127.0.0.1:${apiPort}`;
     server = await startServer(apiPort);
@@ -70,7 +74,7 @@ try {
   const orgId = signup.body.organization?.id;
   if (!orgId) throw new Error("demo signup did not return an organization id");
 
-  const route = await latestTenantRoute(orgId);
+  const route = tenantRouteFromOrgId(orgId);
   if (route.status !== "ready") throw new Error(`demo tenant route is ${route.status}: ${route.error || ""}`);
 
   const tenantUrl = tenantUrlFromRoute(route);
@@ -156,6 +160,7 @@ try {
   }
 } finally {
   await stopServer();
+  if (postgresContainer) spawnSync("docker", ["rm", "-f", postgresContainer], { stdio: "ignore" });
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
@@ -166,6 +171,7 @@ async function startServer(port) {
     ...process.env,
     INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
     INSTANTML_CLICKHOUSE_PROVISIONER: hostedDemoProvisioner,
+    DATABASE_URL: databaseUrl,
     INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
     INSTANTML_AUTH_MODE: "local",
     INSTANTML_REQUEST_TIMEOUT_SECONDS: process.env.INSTANTML_REQUEST_TIMEOUT_SECONDS || "900",
@@ -338,14 +344,23 @@ async function seededStatusCounts(tenantUrl, orgId) {
   return counts;
 }
 
-async function latestTenantRoute(orgId) {
-  const text = await clickhousePost(
-    userDataUrl,
-    `SELECT payload FROM instantml_user_data WHERE kind = 'tenant_route' AND org_id = toUUID('${orgId}') ORDER BY created_at DESC, event_id DESC LIMIT 1 FORMAT JSONEachRow`,
-  );
-  const line = text.trim().split("\n").filter(Boolean).at(0);
-  if (!line) throw new Error(`no tenant route found for org ${orgId}`);
-  return JSON.parse(JSON.parse(line).payload);
+function tenantRouteFromOrgId(orgId) {
+  const base = new URL(tenantBaseUrl);
+  const endpointOverride = process.env.INSTANTML_HOSTED_DEMO_TENANT_ENDPOINT || "";
+  const database =
+    process.env.INSTANTML_HOSTED_DEMO_TENANT_DATABASE || `instantml_org_${orgId.replaceAll("-", "")}`;
+  const endpoint = new URL(endpointOverride || tenantBaseUrl);
+  endpoint.username = "";
+  endpoint.password = "";
+  endpoint.pathname = "/";
+  return {
+    status: "ready",
+    provisioner: hostedDemoProvisioner,
+    endpoint: endpoint.toString(),
+    database,
+    username: base.username || "default",
+    password_ciphertext: base.password,
+  };
 }
 
 function tenantUrlFromRoute(route) {
@@ -361,8 +376,7 @@ function tenantBasePassword(route) {
   if (route.password_secret_ref !== "config:tenant_base_url_password") {
     throw new Error("tenant route does not include a resolvable password");
   }
-  const tenantBase = process.env.INSTANTML_TENANT_CLICKHOUSE_URL || userDataUrl;
-  return new URL(tenantBase).password;
+  return new URL(tenantBaseUrl).password;
 }
 
 function benchmarkCases(firstRunId) {
@@ -561,6 +575,47 @@ function freePort() {
       server.close(() => resolve(port));
     });
   });
+}
+
+async function ensurePostgres() {
+  if (process.env.DATABASE_URL) return "";
+  const result = spawnSync(
+    "docker",
+    [
+      "run",
+      "-d",
+      "--rm",
+      "-e",
+      "POSTGRES_USER=instantml",
+      "-e",
+      "POSTGRES_PASSWORD=instantml",
+      "-e",
+      "POSTGRES_DB=control",
+      "-p",
+      `127.0.0.1:${postgresPort}:5432`,
+      "postgres:16-alpine",
+    ],
+    { cwd: repo, encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      "DATABASE_URL is required for hosted demo benchmark temporary API, or Docker must be available to start postgres:16-alpine.\n"
+        + result.stderr,
+    );
+  }
+  const id = result.stdout.trim();
+  const started = Date.now();
+  while (Date.now() - started < 60_000) {
+    const ready = spawnSync(
+      "docker",
+      ["exec", id, "pg_isready", "-U", "instantml", "-d", "control"],
+      { encoding: "utf8" },
+    );
+    if (ready.status === 0) return id;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  spawnSync("docker", ["rm", "-f", id], { stdio: "ignore" });
+  throw new Error("Timed out waiting for postgres:16-alpine to become ready");
 }
 
 async function waitForHttp(url, child, logPath) {
