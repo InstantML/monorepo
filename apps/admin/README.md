@@ -75,13 +75,21 @@ npm run test
 ## Vercel Deployment
 
 Create a separate Vercel project for the same repository and set Root Directory
-to `apps/admin`. Use:
+to `apps/admin`. The app-local `vercel.json` in this directory pins the Vercel
+settings, so the dashboard may show these fields as read-only repo-managed
+values:
 
 ```text
 Install Command: npm install
 Build Command: npm run build
+Development Command: npm run dev
 Output Directory: .next
 ```
+
+If the admin Vercel project still shows the root web build command
+`cd apps/web && ...`, redeploy from a commit that includes
+`apps/admin/vercel.json` and confirm the project's Root Directory is
+`apps/admin`.
 
 Configure production environment variables on that Vercel project:
 
@@ -149,6 +157,7 @@ complex route state.
 - `app/access-panel.tsx`: Clerk sign-in and deny/setup states for the hidden
   admin URL.
 - `proxy.ts`: Clerk request proxy required for server-side admin viewer checks.
+- `vercel.json`: app-local Vercel settings for the separate admin project.
 - `src/admin-auth.mjs`: temporary admin email allowlist helpers.
 - `src/admin-data.ts`: server-only overview fetch using the bootstrap token.
 - `src/admin-console.tsx`: interactive client console for tabs, selected orgs,
