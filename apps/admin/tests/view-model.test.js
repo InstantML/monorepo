@@ -100,6 +100,13 @@ test("admin CSP allows the production Clerk custom domain", () => {
   assert.match(source, /worker-src 'self' blob:/);
 });
 
+test("admin Clerk proxy serves Frontend API requests on the custom domain", () => {
+  const source = fs.readFileSync(path.join(adminRoot, "proxy.ts"), "utf8");
+  assert.match(source, /frontendApiProxy/);
+  assert.match(source, /enabled:\s*true/);
+  assert.match(source, /\/__clerk\/\(\.\*\)/);
+});
+
 test("admin API fetch carries request-id instrumentation without logging secrets", () => {
   const source = fs.readFileSync(path.join(adminRoot, "src", "admin-data.ts"), "utf8");
 
