@@ -2,7 +2,7 @@
 
 import { Star } from "lucide-react";
 
-import { bestMetric, durationLabel, formatNumber, statusTone } from "../../../src/state.js";
+import { bestMetric, displayStatusForRun, durationLabel, formatNumber, statusTone } from "../../../src/state.js";
 import { formatRunTime, runConfigSummary, runNoteText, shortMetricName } from "../../dashboard-models";
 import type { RunSummary, TableColumns } from "../../dashboard-types";
 
@@ -57,6 +57,7 @@ export function RunsTable({
             const selected = selectedRunIds.includes(run.id);
             const inspected = run.id === primaryRunId;
             const note = runNoteText(run);
+            const displayStatus = displayStatusForRun(run);
             return (
               <tr key={run.id} className={`${selected ? "selected" : ""} ${inspected ? "inspected" : ""}`}>
                 <td className="col-select">
@@ -77,7 +78,7 @@ export function RunsTable({
                     <small>{run.project} · {runConfigSummary(run)}</small>
                   </div>
                 </td>
-                {columns.status ? <td className="col-status"><span className={`pill ${statusTone(run.status)}`}>{run.status}</span></td> : null}
+                {columns.status ? <td className="col-status"><span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span></td> : null}
                 {columns.tags ? <td className="col-tags"><Chips values={run.tags} /></td> : null}
                 {columns.notes ? <td className="col-notes"><span className="note-preview" title={note}>{note || "-"}</span></td> : null}
                 {columns.started ? <td className="col-started">{formatRunTime(run.started_at ?? run.created_at)}</td> : null}

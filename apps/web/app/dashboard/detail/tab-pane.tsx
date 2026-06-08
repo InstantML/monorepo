@@ -11,6 +11,7 @@ type ApiLike = {
 
 type Props = {
   api: ApiLike;
+  canControlRuns: boolean;
   dataControls: ReactNode;
   hover: HoverPoint;
   loggedObjects: LoggedObject[];
@@ -20,6 +21,7 @@ type Props = {
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onForkCheckpoint?: (artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) => Promise<void>;
+  onRequestStop: (runIds: string[]) => void;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   primaryDomain: any;
@@ -38,6 +40,7 @@ type Props = {
 
 export function DetailTabPane({
   api,
+  canControlRuns,
   dataControls,
   hover,
   loggedObjects,
@@ -47,6 +50,7 @@ export function DetailTabPane({
   onChartPointHover,
   onChartZoomRangeChange,
   onForkCheckpoint,
+  onRequestStop,
   onRunMetadataSave,
   onWorkspaceTabChange,
   primaryDomain,
@@ -74,6 +78,7 @@ export function DetailTabPane({
         chartNormalizedSeries={primaryNormalizedSeries}
         chartRangeSeries={primaryRangeSeries}
         chartZoomRange={primaryChartZoomRange}
+        canControlRuns={canControlRuns}
         dataControls={dataControls}
         elementId="run-detail"
         hover={hover}
@@ -85,6 +90,7 @@ export function DetailTabPane({
         onChartPointHover={onChartPointHover}
         onChartZoomRangeChange={onChartZoomRangeChange}
         onForkCheckpoint={onForkCheckpoint}
+        onRequestStop={onRequestStop}
         onRunMetadataSave={onRunMetadataSave}
         onWorkspaceTabChange={onWorkspaceTabChange}
         run={run}

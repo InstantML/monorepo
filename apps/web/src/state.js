@@ -238,8 +238,20 @@ export function durationLabel(run) {
   return `${Math.max(1, Math.round(ms / 1000))}s`;
 }
 
+export function displayStatusForRun(run) {
+  return run?.run_control?.display_status || run?.status || "";
+}
+
+export function canRequestStop(run, canControl = true) {
+  if (!canControl || !run || run.status !== "running") return false;
+  const state = run.run_control?.stop_state || "none";
+  return state !== "requested" && state !== "acknowledged";
+}
+
 export function statusTone(status) {
   if (status === "finished") return "good";
   if (status === "failed") return "bad";
+  if (status === "stopped") return "warning";
+  if (status === "stopping") return "warning";
   return "live";
 }

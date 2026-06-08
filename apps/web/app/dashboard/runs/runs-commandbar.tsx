@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, Download, RefreshCw, Search } from "lucide-react";
+import { Columns3, Download, RefreshCw, Search, Square } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef } from "react";
 
@@ -28,6 +28,7 @@ export function RunsCommandbar({
   onPinnedMetricFilter,
   onPinnedMetric,
   onRefresh,
+  onRequestSelectedStop,
   onTableColumns,
   pinnedMetricFilter,
   pinnedMetricFilterValid,
@@ -36,6 +37,8 @@ export function RunsCommandbar({
   selectedRunCount,
   selectedRunExportDisabled,
   selectedRunExportTitle,
+  selectedStopCandidateCount,
+  selectedStopDisabledReason,
   tableColumns,
 }: {
   columnsOpen: boolean;
@@ -48,6 +51,7 @@ export function RunsCommandbar({
   onPinnedMetricFilter: (value: string) => void;
   onPinnedMetric: (metric: string) => void;
   onRefresh: () => void;
+  onRequestSelectedStop?: () => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   pinnedMetricFilter: string;
   pinnedMetricFilterValid: boolean;
@@ -56,6 +60,8 @@ export function RunsCommandbar({
   selectedRunCount: number;
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
+  selectedStopCandidateCount?: number;
+  selectedStopDisabledReason?: string;
   tableColumns: TableColumns;
 }) {
   const columnsMenuRef = useRef<HTMLDivElement>(null);
@@ -131,6 +137,18 @@ export function RunsCommandbar({
           </div>
         ) : null}
       </div>
+      {onRequestSelectedStop ? (
+        <button
+          aria-label={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason ?? "No selected running runs can be stopped"}
+          className="secondary compact-button stop-selected-runs-button"
+          disabled={!selectedStopCandidateCount}
+          onClick={onRequestSelectedStop}
+          title={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason ?? "Select running runs that are not already stopping."}
+          type="button"
+        >
+          <Square size={14} /> Stop{selectedStopCandidateCount ? ` ${selectedStopCandidateCount}` : ""}
+        </button>
+      ) : null}
       <button
         aria-label={selectedRunCount ? `Export ${selectedRunCount} selected runs as CSV` : "Export selected runs as CSV"}
         aria-disabled={selectedRunExportDisabled || undefined}

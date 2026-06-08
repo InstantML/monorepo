@@ -6,7 +6,7 @@ import signal
 import pytest
 
 import instantml.client as client_module
-from instantml.client import Run, _LocalStore
+from instantml.client import InstantMLStopRequested, Run, StopRequest, _LocalStore
 
 
 class _RecordingClient:
@@ -23,6 +23,28 @@ class _RecordingClient:
     def _request(self, method, path, body=None):
         self.requests.append((method, path, body))
         return {"run": {"id": "run-1"}}
+
+
+class _StopClient(_RecordingClient):
+    def __init__(self, requested=True):
+        super().__init__()
+        self.requested = requested
+
+    def _request(self, method, path, body=None):
+        self.requests.append((method, path, body))
+        if path.endswith("/stop-signal"):
+            return {
+                "run_id": "run-1",
+                "run_status": "running",
+                "terminal": False,
+                "stop_requested": self.requested,
+                "stop_request": {
+                    "stop_request_id": "stop-1",
+                    "requested_at": "2026-06-08T20:15:00Z",
+                    "acknowledged_at": None,
+                },
+            }
+        return {"run_id": "run-1", "run_control": {"stop_state": body.get("state") if body else "none"}}
 
 
 # --- Async hot path: validation warns-and-drops instead of raising ---------
@@ -69,6 +91,49 @@ def test_finish_is_idempotent():
     run.finish("failed")
     patches = [request for request in client.requests if request[0] == "PATCH"]
     assert patches == [("PATCH", "/runs/run-1", {"status": "finished"})]
+
+
+def test_raise_if_stop_requested_acknowledges_before_raising(monkeypatch):
+    client = _RecordingClient()
+    stop_client = _StopClient()
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    with pytest.raises(InstantMLStopRequested) as exc_info:
+        run.raise_if_stop_requested()
+
+    assert exc_info.value.stop_request_id == "stop-1"
+    assert stop_client.requests[-1] == (
+        "POST",
+        "/api/runs/run-1/stop-ack",
+        {"stop_request_id": "stop-1", "state": "acknowledged"},
+    )
+    run.finish("failed")
+
+
+def test_finish_stopped_completes_stop_and_legacy_failed(monkeypatch):
+    client = _RecordingClient()
+    stop_client = _StopClient()
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    run.finish_stopped(message="safe checkpoint")
+
+    assert ("POST", "/api/runs/run-1/stop-ack", {"stop_request_id": "stop-1", "state": "completed", "message": "safe checkpoint"}) in stop_client.requests
+    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in client.requests
+
+
+def test_lifecycle_finishes_stopped_after_stop_request(monkeypatch):
+    client = _RecordingClient()
+    stop_client = _StopClient()
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+    run._stop_request = StopRequest("run-1", "stop-1")
+
+    run._finish_from_lifecycle("finished")
+
+    assert ("POST", "/api/runs/run-1/stop-ack", {"stop_request_id": "stop-1", "state": "completed"}) in stop_client.requests
+    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in client.requests
 
 
 # --- atexit / signal lifecycle flushing ------------------------------------

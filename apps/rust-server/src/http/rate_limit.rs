@@ -285,6 +285,9 @@ fn is_import_route(method: &Method, path: &str) -> bool {
 
 fn is_monthly_quota_exempt_route(method: &Method, path: &str) -> bool {
     (*method == Method::GET && matches!(path, "/api/usage" | "/api/usage/export"))
+        || (*method == Method::GET
+            && path.starts_with("/api/runs/")
+            && path.ends_with("/stop-signal"))
         || is_storage_setup_route(method, path)
 }
 

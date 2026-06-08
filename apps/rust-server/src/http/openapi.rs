@@ -64,8 +64,9 @@ use crate::domain::{
     PublicArtifactManifestEntryRow, PublicArtifactRow, PublicArtifactVersionRow,
     PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
     RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
-    RenewArtifactUploadRequest, ReportRow, ReportSummary, ReserveSeatRequest, RunRow,
-    SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SetArtifactAliasRequest,
+    RenewArtifactUploadRequest, ReportRow, ReportSummary, ReserveSeatRequest, RunControlRow,
+    RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+    SetArtifactAliasRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
     SwitchOrganizationRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
     UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
     VersionedArtifactManifestEntryInput, VersionedArtifactManifestInput, WorkspaceViewRow,
@@ -151,6 +152,59 @@ pub struct RunSummaryRow {
     pub metric_aggregates: BTreeMap<String, RunMetricAggregate>,
     pub metric_keys: Vec<String>,
     pub artifact_counts: BTreeMap<String, i64>,
+    pub run_control: RunControlSummary,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunControlSummary {
+    pub stop_state: String,
+    pub display_status: String,
+    pub stop_request_id: Option<Uuid>,
+    pub stop_requested: bool,
+    pub reason: Option<String>,
+    pub actor: Option<String>,
+    pub stop_requested_at: Option<DateTime<Utc>>,
+    pub stop_acknowledged_at: Option<DateTime<Utc>>,
+    pub stop_completed_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunStopEnvelope {
+    pub run_id: Uuid,
+    pub ok: Option<bool>,
+    pub run_control: RunControlSummary,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunStopResult {
+    pub run_id: Uuid,
+    pub ok: bool,
+    pub run_control: Option<RunControlSummary>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunStopBulkEnvelope {
+    pub results: Vec<RunStopResult>,
+    pub limit: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct StopSignalRequestSummary {
+    pub stop_request_id: Option<Uuid>,
+    pub requested_at: Option<DateTime<Utc>>,
+    pub acknowledged_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct StopSignalEnvelope {
+    pub run_id: Uuid,
+    pub run_status: String,
+    pub terminal: bool,
+    pub stop_requested: bool,
+    pub poll_after_seconds: i64,
+    pub stop_request: Option<StopSignalRequestSummary>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -814,6 +868,10 @@ impl Modify for SecurityAddon {
         crate::http::handlers::runs::get_run_lineage,
         crate::http::handlers::runs::fork_run,
         crate::http::handlers::runs::update_run,
+        crate::http::handlers::runs::stop_run,
+        crate::http::handlers::runs::stop_runs,
+        crate::http::handlers::runs::stop_signal,
+        crate::http::handlers::runs::stop_ack,
         crate::http::handlers::runs::log_metrics,
         crate::http::handlers::runs::get_metrics,
         crate::http::handlers::runs::log_rank_metrics,
@@ -880,6 +938,13 @@ impl Modify for SecurityAddon {
         ProjectsEnvelope,
         RunEnvelope,
         RunsEnvelope,
+        RunControlRow,
+        RunControlSummary,
+        RunStopEnvelope,
+        RunStopResult,
+        RunStopBulkEnvelope,
+        StopSignalRequestSummary,
+        StopSignalEnvelope,
         RunMetricAggregate,
         RunSummaryRow,
         RunForkContext,
@@ -1062,6 +1127,9 @@ impl Modify for SecurityAddon {
         SeatRow,
         SeatUserRow,
         ServiceAccountRow,
+        StopAckRequest,
+        StopRunRequest,
+        StopRunsRequest,
         SwitchOrganizationRequest,
         UpdateDashboardPreferencesRequest,
         UpdateReportRequest,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { Activity } from "lucide-react";
+import { Activity, Square, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -14,7 +14,7 @@ import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normaliz
 import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
-import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
@@ -83,6 +83,9 @@ type GeneratedSeatRow = components["schemas"]["SeatRow"];
 type GeneratedApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 type GeneratedInvitationRow = components["schemas"]["PublicInvitationRow"];
 type GeneratedOrgMembershipSummary = components["schemas"]["OrganizationMembershipSummary"];
+type GeneratedRunControlSummary = components["schemas"]["RunControlSummary"];
+type GeneratedRunStopBulkEnvelope = components["schemas"]["RunStopBulkEnvelope"];
+type GeneratedRunStopEnvelope = components["schemas"]["RunStopEnvelope"];
 
 type ThemeMode = "light" | "dark";
 type ChartZoomRange = { min: number; max: number } | null;
@@ -106,6 +109,13 @@ type SavedViewOption = {
   source: "control" | "local" | "system";
   value: string;
 };
+type StopDialogState = {
+  idempotencyKey: string;
+  reason: string;
+  runIds: string[];
+  skippedRunCount: number;
+  source: "single" | "bulk";
+} | null;
 type DashboardSessionPayload = {
   authenticated?: boolean;
   organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string; storage_state?: string };
@@ -116,6 +126,8 @@ type DashboardSessionPayload = {
 
 const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
+const DISPLAY_STATUS_VALUES = new Set(["running", "stopping", "stopped", "finished", "failed"]);
+const MAX_STOP_DIALOG_RUNS = 100;
 // Sourced from the generated OpenAPI spec; `list_org_memberships` returns
 // an `OrgMembershipsEnvelope { memberships: OrganizationMembershipSummary[] }`.
 // Rust struct `domain::OrganizationMembershipSummary`.
@@ -321,12 +333,14 @@ function richerRunSummary(primary: RunSummary | null | undefined, fallback: RunS
   const latestMetrics = mergeFreshRecord(primary.latest_metrics, fallback.latest_metrics);
   const metricAggregates = mergeFreshRecord(primary.metric_aggregates, fallback.metric_aggregates);
   const artifactCounts = primary.artifact_counts ?? fallback.artifact_counts;
+  const runControl = primary.run_control ?? fallback.run_control;
   if (
     config === primary.config &&
     metadata === primary.metadata &&
     latestMetrics === primary.latest_metrics &&
     metricAggregates === primary.metric_aggregates &&
-    artifactCounts === primary.artifact_counts
+    artifactCounts === primary.artifact_counts &&
+    runControl === primary.run_control
   ) return primary;
   return {
     ...fallback,
@@ -336,7 +350,32 @@ function richerRunSummary(primary: RunSummary | null | undefined, fallback: RunS
     latest_metrics: latestMetrics,
     metric_aggregates: metricAggregates,
     artifact_counts: artifactCounts,
+    run_control: runControl,
   };
+}
+
+function mergeRunControl(run: RunSummary, control: GeneratedRunControlSummary): RunSummary {
+  return { ...run, run_control: control };
+}
+
+function normalizeDisplayStatus(value: string | null | undefined) {
+  const status = (value ?? "").trim().toLowerCase();
+  return DISPLAY_STATUS_VALUES.has(status) ? status : "";
+}
+
+function runHasPendingStop(run: RunSummary | null | undefined) {
+  const state = run?.run_control?.stop_state;
+  return state === "requested" || state === "acknowledged";
+}
+
+function adjustOverviewForDisplayStatus(overview: Overview, before: string, after: string): Overview {
+  if (before === after) return overview;
+  const next = { ...overview };
+  if (before === "stopping") next.stopping_runs = Math.max(0, Number(next.stopping_runs ?? 0) - 1);
+  if (after === "stopping") next.stopping_runs = Number(next.stopping_runs ?? 0) + 1;
+  if (before === "stopped") next.stopped_runs = Math.max(0, Number(next.stopped_runs ?? 0) - 1);
+  if (after === "stopped") next.stopped_runs = Number(next.stopped_runs ?? 0) + 1;
+  return next;
 }
 
 function sanitizeWorkspaceFieldPatch(value: string | undefined) {
@@ -567,6 +606,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       : (new URLSearchParams(window.location.search).get("project") ?? "")
   );
   const [status, setStatus] = useState("");
+  const [displayStatus, setDisplayStatus] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [searchError, setSearchError] = useState<RunSearchError | null>(null);
@@ -599,6 +639,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [summary, setSummary] = useState<Summary>({ runs: [], metric_keys: [], total: 0 });
   const [overview, setOverview] = useState<Overview>({ total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 });
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([]);
+  const [bulkStopSelectionArmed, setBulkStopSelectionArmed] = useState(false);
   const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
   const [primaryRunId, setPrimaryRunId] = useState("");
@@ -641,6 +682,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
   const [quickSearchInput, setQuickSearchInput] = useState("");
   const [quickSearchActiveIndex, setQuickSearchActiveIndex] = useState(0);
+  const [stopDialog, setStopDialog] = useState<StopDialogState>(null);
+  const [stopSubmitting, setStopSubmitting] = useState(false);
+  const [stopError, setStopError] = useState("");
   const [workspaceUndoStack, setWorkspaceUndoStack] = useState<WorkspaceView[]>([]);
   const [workspaceRedoStack, setWorkspaceRedoStack] = useState<WorkspaceView[]>([]);
   const [chartZoomRange, setChartZoomRange] = useState<ChartZoomRange>(null);
@@ -718,7 +762,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return metricSeriesRuns;
   }, [activeTab, metricSeriesRuns, primaryRun?.id]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
-  const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
+  const dashboardSelectionFilterKey = [project, status, displayStatus, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
     hasSeriesRef.current = series.length > 0;
     hasPanelSeriesRef.current = Object.keys(panelSeries).length > 0;
@@ -861,7 +905,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const checkpointRows = useMemo(() => buildCheckpointRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
-  const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
+  const apiRows = useMemo(() => buildApiRows(metricKey, project, displayStatus || status), [displayStatus, metricKey, project, status]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
   const localSavedViewScope = useMemo(
     () => storageScopeId([activeOrgId, sessionPayload?.user?.primary_email ?? ""].filter(Boolean).join(":")),
@@ -880,6 +924,21 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const sharedDemoSession = isSharedDemoSession(sessionPayload);
   const canManageOrg = roleCanManageOrg(activeMembershipRole) && !sharedDemoSession;
   const canWriteWorkspace = canWriteRuns && !sharedDemoSession;
+  const canControlRuns = canWriteWorkspace;
+  const selectedStopCandidateTotal = useMemo(
+    () => selectedRuns.filter((run) => canRequestStop(run, canControlRuns)).length,
+    [canControlRuns, selectedRuns],
+  );
+  const selectedStopCandidateCount = bulkStopSelectionArmed
+    ? Math.min(MAX_STOP_DIALOG_RUNS, selectedStopCandidateTotal)
+    : 0;
+  const selectedStopDisabledReason = !canControlRuns
+    ? "Your role can view runs but cannot stop them."
+    : !bulkStopSelectionArmed
+      ? "Select runs explicitly to enable bulk Stop."
+      : selectedRunIds.length
+        ? "Selected runs are not running or are already stopping."
+        : "Select running runs that are not already stopping.";
   const canEditReports = canWriteWorkspace;
   const activeMembershipSummary = useMemo(
     () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
@@ -938,6 +997,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const changeProject = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
+    setBulkStopSelectionArmed(false);
     setProject(value);
     // Push the project change onto history so the browser back/forward
     // gestures can restore the prior selection.
@@ -964,7 +1024,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const changeStatus = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
-    setStatus(value);
+    setBulkStopSelectionArmed(false);
+    setStatus("");
+    setDisplayStatus(normalizeDisplayStatus(value));
   }, [resetRunPagination]);
   const changeRunQueryInput = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
@@ -988,6 +1050,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setProjectPreferenceReady(false);
     setProject("");
     setSelectedRunIds([]);
+    setBulkStopSelectionArmed(false);
     setSelectedRunDetails({});
     setPrimaryRunId("");
     setReferenceRunId("");
@@ -1086,6 +1149,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     () => setFullscreenPanelRef(null),
     "button[aria-label='Close fullscreen panel']",
   );
+  const stopDialogRef = useFocusTrap<HTMLDivElement>(
+    Boolean(stopDialog),
+    closeStopDialog,
+    "#stop-reason",
+    "button[aria-label='Refresh runs']",
+  );
   const quickSearchItems = useMemo<QuickSearchItem[]>(() => {
     const items: QuickSearchItem[] = [
       ...tabs.map((tab) => ({
@@ -1109,7 +1178,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         id: `run:${run.id}`,
         group: "Run",
         label: run.name,
-        description: `${run.project} · ${run.status} · ${(run.tags ?? []).join(" ")} · ${run.metadata?.notes ?? ""}`,
+        description: `${run.project} · ${displayStatusForRun(run)} · ${(run.tags ?? []).join(" ")} · ${run.metadata?.notes ?? ""}`,
         onSelect: () => {
           setPrimaryRunId(run.id);
           selectTab("detail");
@@ -1231,8 +1300,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let keepInitialRunsLoading = false;
     try {
       const params = currentPageCursor
-        ? { project, status, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
-        : { project, status, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
+        ? { project, status, display_status: displayStatus, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
+        : { project, status, display_status: displayStatus, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
       let summaryPayload: Summary;
       try {
@@ -1252,7 +1321,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
       if (requestId !== dashboardRequestRef.current) return;
       const overviewResult = await retryTransientRequest(
-        () => api.get(`/api/overview${queryString({ project, status, q: query, metric_key: metricKey })}`, requestOptions),
+        () => api.get(`/api/overview${queryString({ project, status, display_status: displayStatus, q: query, metric_key: metricKey })}`, requestOptions),
         retryOptions,
       ).then(
         (value) => ({ status: "fulfilled" as const, value }),
@@ -1307,7 +1376,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         if (!keepInitialRunsLoading && !options.signal?.aborted) setInitialLoadDone(true);
       }
     }
-  }, [api, currentPageCursor, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
+  }, [api, currentPageCursor, displayStatus, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1548,7 +1617,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setSelectedRunIds([]);
     setPrimaryRunId("");
     setReferenceRunId("");
-  }, [project, query, status]);
+  }, [displayStatus, project, query, status]);
 
   useEffect(() => {
     summaryTotalRef.current = summary.total;
@@ -1753,7 +1822,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const keepIds = [...new Set([...selectedRunIds, primaryRunId, referenceRunId].filter(Boolean))];
     const pageDetails = Object.fromEntries(sortedRuns.filter((run) => keepIds.includes(run.id)).map((run) => [run.id, run]));
     const missingIds = keepIds
-      .filter((id) => !selectedRunDetails[id] && !pageDetails[id])
+      .filter((id) => (!selectedRunDetails[id] && !pageDetails[id]) || (runHasPendingStop(selectedRunDetails[id]) && !pageDetails[id]))
       .slice(0, COMPARE_RUN_LIMIT);
     if (!missingIds.length) {
       setSelectedRunDetails((current) => pruneRunDetails(current, pageDetails, {}, keepIds));
@@ -2599,7 +2668,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const payload = {
       project,
       activeTab,
-      status,
+      status: "",
+      displayStatus,
       query: queryInput,
       sortBy,
       metricKey,
@@ -2693,11 +2763,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     const viewProject = savedViewString(view.project);
     const viewMetricKey = savedViewString(view.metricKey) || DEFAULT_METRIC_KEY;
+    const nextDisplayStatus = normalizeDisplayStatus(savedViewString(view.displayStatus) || savedViewString(view.status));
     setProject(viewProject);
     const nextActiveTab = typeof view.activeTab === "string" && isTabId(view.activeTab) && view.activeTab !== "detail"
       ? view.activeTab as TabId
       : null;
-    setStatus(savedViewString(view.status));
+    setStatus("");
+    setDisplayStatus(nextDisplayStatus);
+    setBulkStopSelectionArmed(false);
     setSearchError(null);
     setQueryInput(savedViewString(view.query));
     setQuery(savedViewString(view.query));
@@ -2783,6 +2856,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [selectAllMatchingBusy, setSelectAllMatchingBusy] = useState(false);
 
   function toggleRun(runId: string, options?: { shift?: boolean }) {
+    setBulkStopSelectionArmed(true);
     if (options?.shift && selectionAnchorRunIdRef.current && selectionAnchorRunIdRef.current !== runId) {
       const orderedIds = sortedRuns.map((run) => run.id);
       setSelectedRunIds((current) => rangeSelect(current, orderedIds, selectionAnchorRunIdRef.current, runId));
@@ -2794,6 +2868,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function selectAllVisibleRuns() {
+    setBulkStopSelectionArmed(true);
     const visibleIds = sortedRuns.map((run) => run.id);
     const state = visibleSelectionState(selectedRunIds, visibleIds);
     if (state === "all") {
@@ -2801,6 +2876,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const hasCrossPageSelection = selectedRunIds.some((id) => !visibleSet.has(id));
       if (hasCrossPageSelection) {
         setSelectedRunIds([]);
+        setBulkStopSelectionArmed(false);
         selectionAnchorRunIdRef.current = "";
       } else {
         setSelectedRunIds((current) => deselectVisible(current, visibleIds));
@@ -2846,6 +2922,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         const params = cursor ? {
           project,
           status,
+          display_status: displayStatus,
           q: query,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           cursor,
@@ -2855,6 +2932,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         } : {
           project,
           status,
+          display_status: displayStatus,
           q: query,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           offset,
@@ -2896,6 +2974,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return next;
       });
       setSelectedRunIds(ids);
+      setBulkStopSelectionArmed(ids.length > 0);
       if (ids.length) selectionAnchorRunIdRef.current = ids[0];
       setMessage(`${ids.length} runs selected (filter matched ${total || ids.length}).`);
     } catch (error) {
@@ -2937,6 +3016,166 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage(error instanceof Error ? error.message : "Unable to export selected runs.");
     } finally {
       setExportSelectedBusy(false);
+    }
+  }
+
+  function runSummaryForId(runId: string) {
+    return selectedRunDetails[runId]
+      ?? sortedRuns.find((run) => run.id === runId)
+      ?? runDirectoryRef.current.get(runId)
+      ?? null;
+  }
+
+  function stopCandidatesForIds(runIds: string[]) {
+    const seen = new Set<string>();
+    const runs: RunSummary[] = [];
+    let eligibleRunCount = 0;
+    for (const runId of runIds) {
+      if (seen.has(runId)) continue;
+      seen.add(runId);
+      const run = runSummaryForId(runId);
+      if (!run || !canRequestStop(run, canControlRuns)) continue;
+      eligibleRunCount += 1;
+      if (runs.length < MAX_STOP_DIALOG_RUNS) runs.push(run);
+    }
+    return {
+      runs,
+      skippedRunCount: Math.max(0, eligibleRunCount - runs.length),
+    };
+  }
+
+  function nextStopIdempotencyKey(source: "single" | "bulk") {
+    const entropy = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return `instantml-stop:${source}:${entropy}`;
+  }
+
+  function openStopDialogForRuns(runIds: string[], source: "single" | "bulk" = "single") {
+    if (!canControlRuns) {
+      setMessage("Read only workspaces can view runs but cannot stop them.");
+      return;
+    }
+    if (source === "bulk" && !bulkStopSelectionArmed) {
+      setMessage("Select runs explicitly before requesting a bulk stop.");
+      return;
+    }
+    const { runs: candidates, skippedRunCount } = stopCandidatesForIds(runIds);
+    if (!candidates.length) {
+      setMessage(source === "bulk" ? "No selected running runs can be stopped." : "This run cannot be stopped.");
+      return;
+    }
+    const dialogSource = candidates.length > 1 ? "bulk" : source;
+    setStopError("");
+    setStopDialog({
+      idempotencyKey: nextStopIdempotencyKey(dialogSource),
+      reason: "",
+      runIds: candidates.map((run) => run.id),
+      skippedRunCount,
+      source: dialogSource,
+    });
+  }
+
+  function closeStopDialog() {
+    if (stopSubmitting) return;
+    setStopDialog(null);
+    setStopError("");
+  }
+
+  function setStopDialogReason(reason: string) {
+    setStopDialog((current) => current ? { ...current, reason } : current);
+  }
+
+  function patchRunControls(controlsByRunId: Map<string, GeneratedRunControlSummary>) {
+    if (!controlsByRunId.size) return;
+    const displayTransitions: Array<[string, string]> = [];
+    for (const [runId, control] of controlsByRunId) {
+      const cached = runDirectoryRef.current.get(runId);
+      const existing = runSummaryForId(runId);
+      if (existing) {
+        const before = displayStatusForRun(existing);
+        const after = displayStatusForRun(mergeRunControl(existing, control));
+        if (before !== after) displayTransitions.push([before, after]);
+      }
+      if (cached) runDirectoryRef.current.set(runId, mergeRunControl(cached, control));
+    }
+    if (displayTransitions.length) {
+      setOverview((current) => displayTransitions.reduce(
+        (next, [before, after]) => adjustOverviewForDisplayStatus(next, before, after),
+        current,
+      ));
+    }
+    setSummary((current) => ({
+      ...current,
+      runs: current.runs.map((run) => {
+        const control = controlsByRunId.get(run.id);
+        return control ? mergeRunControl(run, control) : run;
+      }),
+    }));
+    setSelectedRunDetails((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [runId, control] of controlsByRunId) {
+        if (!next[runId]) continue;
+        next[runId] = mergeRunControl(next[runId], control);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+    setSideBySide((current: any) => current ? {
+      ...current,
+      runs: (current.runs ?? []).map((run: RunSummary) => {
+        const control = controlsByRunId.get(run.id);
+        return control ? mergeRunControl(run, control) : run;
+      }),
+    } : current);
+  }
+
+  function collectStopControls(payload: GeneratedRunStopEnvelope | GeneratedRunStopBulkEnvelope) {
+    const controls = new Map<string, GeneratedRunControlSummary>();
+    const failures: string[] = [];
+    if ("results" in payload) {
+      for (const result of payload.results ?? []) {
+        if (result.run_control) controls.set(result.run_id, result.run_control);
+        if (!result.ok) failures.push(result.error || `Unable to stop ${result.run_id}.`);
+      }
+    } else if (payload.run_control) {
+      controls.set(payload.run_id, payload.run_control);
+    }
+    return { controls, failures };
+  }
+
+  async function submitStopDialog() {
+    if (!stopDialog || stopSubmitting) return;
+    const runIds = stopDialog.runIds.slice(0, MAX_STOP_DIALOG_RUNS);
+    if (!runIds.length) {
+      setStopError("No eligible runs remain.");
+      return;
+    }
+    setStopSubmitting(true);
+    setStopError("");
+    try {
+      const reason = stopDialog.reason.trim();
+      const headers = { "Idempotency-Key": stopDialog.idempotencyKey };
+      const payload = runIds.length === 1
+        ? await api.post(`/api/runs/${runIds[0]}/stop`, { reason: reason || null }, { headers }) as GeneratedRunStopEnvelope
+        : await api.post("/api/runs/stop", { run_ids: runIds, reason: reason || null }, { headers }) as GeneratedRunStopBulkEnvelope;
+      const { controls, failures } = collectStopControls(payload);
+      if (!controls.size && failures.length) throw new Error(failures[0]);
+      patchRunControls(controls);
+      setStopDialog(null);
+      setStopError("");
+      const okCount = controls.size;
+      setMessage(failures.length
+        ? `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. ${failures.length} could not be updated.`
+        : `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. Waiting for SDK acknowledgement.`);
+      void loadDashboard({ silent: true });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to request stop.";
+      setStopError(detail);
+      setMessage(detail);
+    } finally {
+      setStopSubmitting(false);
     }
   }
 
@@ -3018,6 +3257,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   function clearFilters() {
     setProject("");
     setStatus("");
+    setDisplayStatus("");
+    setBulkStopSelectionArmed(false);
     setQueryInput("");
     setQuery("");
     setSearchError(null);
@@ -3540,6 +3781,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return () => window.removeEventListener("keydown", handleGlobalKey);
   }, []);
 
+  const stopDialogRuns = stopDialog
+    ? stopDialog.runIds.map((runId) => runSummaryForId(runId)).filter(Boolean) as RunSummary[]
+    : [];
+  const stopDialogTitle = stopDialogRuns.length === 1
+    ? `Stop ${stopDialogRuns[0]?.name ?? "run"}`
+    : `Stop ${stopDialogRuns.length} runs`;
+
   const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
   const ActiveIcon = activeTabIcon;
 
@@ -3600,7 +3848,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         savedViewKey={savedViewKey}
         savedViews={savedViews}
         sortBy={sortBy}
-        status={status}
+        status={displayStatus || status}
         storageUsagePercent={storagePercent}
         tone={currentMessageTone}
         usageAvailable={usageAvailable}
@@ -3609,6 +3857,58 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         workspaceName={sessionPayload?.organization?.name ?? ""}
         workspaceId={activeOrgId}
       />
+
+      {stopDialog ? (
+        <div className="workspace-modal checkpoint-fork-modal" role="dialog" aria-modal="true" aria-labelledby="stop-dialog-title">
+          <div className="workspace-modal-card checkpoint-fork-card" ref={stopDialogRef} tabIndex={-1}>
+            <div className="drawer-head">
+              <div>
+                <span className="analysis-eyebrow eyebrow--accent">Cooperative stop</span>
+                <h2 id="stop-dialog-title">{stopDialogTitle}</h2>
+              </div>
+              <button aria-label="Close stop dialog" className="icon-button framed" disabled={stopSubmitting} onClick={closeStopDialog} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="checkpoint-fork-body">
+              <p className="checkpoint-fork-notice">InstantML records a stop request and waits for the SDK to acknowledge it at the next poll.</p>
+              <div className="checkpoint-fork-grid stop-request-grid">
+                <div><span>Eligible runs</span><strong>{stopDialogRuns.length}</strong></div>
+                <div><span>Mode</span><strong>{stopDialog.source === "bulk" ? "bulk" : "single"}</strong></div>
+                {stopDialog.skippedRunCount > 0 ? <div><span>Skipped</span><strong>{stopDialog.skippedRunCount}</strong></div> : null}
+              </div>
+              {stopDialog.skippedRunCount > 0 ? (
+                <p className="checkpoint-fork-notice">Only the first {MAX_STOP_DIALOG_RUNS} eligible selected runs are included. {stopDialog.skippedRunCount} more will be left untouched.</p>
+              ) : null}
+              <div className="stop-request-list" aria-label="Runs to stop">
+                {stopDialogRuns.slice(0, 6).map((run) => (
+                  <span key={run.id} title={run.name}>{run.name}</span>
+                ))}
+                {stopDialogRuns.length > 6 ? <em>+{stopDialogRuns.length - 6} more</em> : null}
+              </div>
+              <label className="checkpoint-fork-field">
+                <span>Reason</span>
+                <textarea
+                  aria-label="Stop reason"
+                  id="stop-reason"
+                  maxLength={500}
+                  onChange={(event) => setStopDialogReason(event.target.value)}
+                  placeholder="Optional note for the run history"
+                  rows={3}
+                  value={stopDialog.reason}
+                />
+              </label>
+              {stopError ? <div className="checkpoint-fork-error" role="alert">{stopError}</div> : null}
+            </div>
+            <div className="checkpoint-fork-actions">
+              <button className="secondary" disabled={stopSubmitting} onClick={closeStopDialog} type="button">Cancel</button>
+              <button className="primary" disabled={stopSubmitting || !stopDialogRuns.length} onClick={submitStopDialog} type="button">
+                <Square size={14} /> {stopSubmitting ? "Requesting..." : "Send stop request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isMobile && mobileNavOpen ? (
         <div
@@ -3637,6 +3937,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               addPanelSectionId={addPanelSectionId}
               allMetricOptions={allMetricOptions}
               availableWorkspaceMetrics={availableWorkspaceMetrics}
+              canControlRuns={canControlRuns}
               columnMetricFilter={columnMetricFilter}
               columnMetricFilterValid={columnMetricFilterValid}
               columnMetricOptionsForControls={columnMetricOptionsForControls}
@@ -3678,6 +3979,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onPreviousPage={goToPreviousRunPage}
               onRefresh={loadDashboard}
               onRemovePanel={removeWorkspacePanel}
+              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
               onResetWorkspace={resetWorkspaceLayout}
               onResizePanel={resizeWorkspacePanel}
               onPanelSmoothing={setWorkspacePanelSmoothing}
@@ -3712,8 +4014,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               selectedRunIds={selectedRunIds}
               selectedRunExportDisabled={selectedRunExportDisabled}
               selectedRunExportTitle={selectedRunExportTitle}
+              selectedStopCandidateCount={selectedStopCandidateCount}
+              selectedStopDisabledReason={selectedStopDisabledReason}
               sortedRuns={sortedRuns}
-              status={status}
+              status={displayStatus || status}
               summaryTotal={summary.total}
               tableColumns={tableColumns}
               workspaceHistogramTimelines={workspaceHistogramTimelines}
@@ -3784,6 +4088,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "detail" ? (
             <DetailTabPane
               api={api}
+              canControlRuns={canControlRuns}
               dataControls={
                 <>
                   <CustomSelect
@@ -3810,6 +4115,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
+              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primaryDomain={primaryDomain}

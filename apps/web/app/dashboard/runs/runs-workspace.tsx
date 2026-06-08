@@ -1,12 +1,12 @@
 "use client";
 
-import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, X } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels.js";
-import { BULK_SELECT_MATCHING_LIMIT, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, canRequestStop, displayStatusForRun, statusTone, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
 import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runNoteText, runRailTooltip, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
@@ -88,6 +88,7 @@ function panelMatchesSearch(section: { name: string }, panel: { title: string; m
 export function RunsWorkspace({
   addPanelSectionId,
   availableMetricKeys,
+  canControlRuns,
   onAddPanel,
   onAddSection,
   onClearFilters,
@@ -102,6 +103,7 @@ export function RunsWorkspace({
   onPanelSearch,
   onRefresh,
   onRemovePanel,
+  onRequestStop,
   onResetWorkspace,
   onResizePanel,
   onPanelSmoothing,
@@ -140,6 +142,7 @@ export function RunsWorkspace({
 }: {
   addPanelSectionId: string;
   availableMetricKeys: string[];
+  canControlRuns: boolean;
   onAddPanel: (sectionId: string, metricKey: string, type: WorkspacePanelType) => void;
   onAddSection: () => void;
   onClearFilters: () => void;
@@ -154,6 +157,7 @@ export function RunsWorkspace({
   onPanelSearch: (value: string) => void;
   onRefresh: () => void;
   onRemovePanel: (sectionId: string, panelId: string) => void;
+  onRequestStop: (runIds: string[]) => void;
   onResetWorkspace: () => void;
   onResizePanel: (sectionId: string, panelId: string, layout: import("../../dashboard-types").WorkspacePanelLayout) => void;
   onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
@@ -373,9 +377,11 @@ export function RunsWorkspace({
             const visibleTags = visibleTagsForSearch(run.tags, runSearch, 3);
             const hiddenTags = run.tags.filter((tag) => !visibleTags.includes(tag));
             const uploadHealth = uploadHealthForRun(run);
+            const displayStatus = displayStatusForRun(run);
             const configSummary = runConfigSummary(run);
             const compactConfigSummary = compactRailConfigSummary(run);
             const runColor = chartColor(stableChartIndex(run.id || run.name, index));
+            const canStop = canRequestStop(run, canControlRuns);
             return (
               <div
                 className={`workspace-run-row ${selected ? "selected" : ""}`}
@@ -405,6 +411,7 @@ export function RunsWorkspace({
                     {uploadHealth.state !== "unknown" ? (
                       <span className={`upload-health-chip ${uploadHealth.tone}`}>{uploadHealth.label}</span>
                     ) : null}
+                    <span className={`pill workspace-run-status ${statusTone(displayStatus)}`}>{displayStatus}</span>
                     <span className="workspace-run-tags" aria-label={`${run.name} tags`}>
                       {visibleTags.map((tag) => <b key={tag} title={tag}>{tag}</b>)}
                       {hiddenTags.length ? <em title={hiddenTags.join(", ")}>+{hiddenTags.length}</em> : null}
@@ -413,6 +420,21 @@ export function RunsWorkspace({
                   </span>
                   <span className="workspace-run-open-hint" aria-hidden="true">Open <ChevronRight size={12} /></span>
                 </button>
+                {canStop ? (
+                  <button
+                    aria-label={`Review stop request for ${run.name}`}
+                    className="workspace-run-stop"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onRequestStop([run.id]);
+                    }}
+                    title="Review stop request"
+                    type="button"
+                  >
+                    <Square size={13} />
+                  </button>
+                ) : null}
               </div>
             );
           }) : (

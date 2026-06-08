@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, GitFork, Server, Star, Tag, X } from "lucide-react";
+import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, GitFork, Server, Square, Star, Tag, X } from "lucide-react";
 
 import { buildCheckpointResumeCode, checkpointStep, defaultForkRunName } from "../../../src/checkpoints.js";
-import { durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
+import { canRequestStop, displayStatusForRun, durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
@@ -247,15 +247,30 @@ function artifactCountForRun(run: RunSummary, loadedCount: number) {
   return counted || loadedCount;
 }
 
+function stopControlRows(run: RunSummary) {
+  const control = run.run_control;
+  if (!control?.stop_requested) return [];
+  return [
+    ["State", compactValue(control.display_status ?? control.stop_state ?? "-")],
+    ["Reason", compactValue(control.reason ?? "-")],
+    ["Actor", compactValue(control.actor ?? "-")],
+    ["Requested", control.stop_requested_at ? formatRunTime(control.stop_requested_at) : "-"],
+    ["Acknowledged", control.stop_acknowledged_at ? formatRunTime(control.stop_acknowledged_at) : "-"],
+    ["Completed", control.stop_completed_at ? formatRunTime(control.stop_completed_at) : "-"],
+  ];
+}
+
 export function RunDetail({
   activeMetricKey,
   artifacts = [],
+  canControlRuns = false,
   elementId,
   hover,
   loggedObjects = [],
   metricRows,
   objectRowsById = {},
   onForkCheckpoint,
+  onRequestStop,
   onRunMetadataSave,
   run,
   selectedCount,
@@ -265,6 +280,7 @@ export function RunDetail({
 }: {
   activeMetricKey: string;
   artifacts?: Artifact[];
+  canControlRuns?: boolean;
   elementId: string;
   hover: HoverPoint;
   loggedObjects?: LoggedObject[];
@@ -272,6 +288,7 @@ export function RunDetail({
   objectRowsById?: Record<number, LoggedObjectRow[]>;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onForkCheckpoint?: (artifact: Artifact, options: ForkCheckpointOptions) => Promise<void>;
+  onRequestStop?: (runIds: string[]) => void;
   run: RunSummary | null;
   selectedCount: number;
   selectedRuns?: RunSummary[];
@@ -279,6 +296,8 @@ export function RunDetail({
   workspaceSummary?: boolean;
   }) {
   if (!run) return <div className="empty">No run selected.</div>;
+  const displayStatus = displayStatusForRun(run);
+  const canStop = canRequestStop(run, canControlRuns) && Boolean(onRequestStop);
   const chartRuns = selectedRuns?.length ? selectedRuns : [run];
   const commit = metadataScalar(run.metadata, "git_commit")
     ?? metadataScalar(run.metadata, "commit")
@@ -306,6 +325,7 @@ export function RunDetail({
   const artifactCount = artifactCountForRun(run, artifacts.length);
   const activeMetric = run.metric_aggregates?.[activeMetricKey];
   const activeBest = metricGoal(activeMetricKey) === "minimize" ? activeMetric?.min : activeMetric?.max;
+  const stopRows = stopControlRows(run);
   const configRows = [
     ["Algorithm", compactValue(run.config.algo ?? run.config.model ?? run.config.policy ?? "-")],
     ["Dataset/env", compactValue(run.config.dataset ?? run.config.dataset_name ?? run.config.env ?? "-")],
@@ -324,7 +344,12 @@ export function RunDetail({
             <p>{run.project} · {durationLabel(run)} · {selectedCount ? `${selectedCount} runs selected for charts` : "not in comparison set"}</p>
           </div>
           <div className="run-detail-badges">
-            <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
+            <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
+            {canStop ? (
+              <button className="secondary compact-button run-stop-button" onClick={() => onRequestStop?.([run.id])} type="button">
+                <Square size={14} /> Stop
+              </button>
+            ) : null}
             {run.tags?.slice(0, 3).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
             {(run.tags?.length ?? 0) > 3 ? <span className="chip">+{(run.tags?.length ?? 0) - 3}</span> : null}
           </div>
@@ -357,7 +382,7 @@ export function RunDetail({
         <MetricCard label="Artifacts" value={formatNumber(artifactCount, 0)} tone={artifactCount ? "good" : "neutral"} />
       </div>
       {hover ? <div className="detail-row highlight"><span>Hovered point</span><strong>{hover.runName} / step {hover.point.step} / {formatNumber(hover.point.value, 4)}</strong></div> : null}
-      {run.status === "failed" ? (
+      {run.status === "failed" && displayStatus !== "stopped" ? (
         <section className="failure-card">
           <strong>Failed run triage</strong>
           <div><span>Last metric step</span><b>{lastMetricStep(run)}</b></div>
@@ -402,6 +427,12 @@ export function RunDetail({
             <h3><Activity size={15} /> Timeline</h3>
             <RunTimeline rows={timelineRows} />
           </section>
+          {stopRows.length ? (
+            <section className="detail-section">
+              <h3><Square size={15} /> Stop History</h3>
+              <InfoRows rows={stopRows} />
+            </section>
+          ) : null}
           <section className="detail-section">
             <h3><Server size={15} /> Source</h3>
             {sourceRows.map(([label, value]) => <div className="detail-row" key={label}><span>{label}</span><strong>{value}</strong></div>)}

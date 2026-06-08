@@ -1505,6 +1505,7 @@ button.compare-row-head.active {
 .pill.cmp-status.good{background:var(--surface-3);color:var(--text-2);border-color:var(--line-strong)}
 .pill.cmp-status.live{background:rgba(125,161,232,0.16);color:var(--blue);border-color:rgba(125,161,232,0.4)}
 .pill.cmp-status.bad{background:var(--danger-soft);color:var(--coral);border-color:rgba(248,113,113,0.38)}
+.pill.cmp-status.warning{background:#fff8e8;color:#9a4a00;border-color:#f4d6a1}
 
 /* metric cells */
 .cmp-metric .cmp-metric-val{font-family:var(--font-mono);font-size:13.5px;font-weight:600;color:var(--text)}

@@ -4,7 +4,7 @@
 
 .runs-commandbar {
   display: grid;
-  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) auto auto auto auto;
   gap: 8px;
   align-items: end;
   min-height: 34px;
@@ -421,7 +421,7 @@
 
 .workspace-run-row {
   display: grid;
-  grid-template-columns: 25px minmax(0, 1fr);
+  grid-template-columns: 25px minmax(0, 1fr) auto;
   align-items: start;
   justify-content: stretch;
   gap: 8px;
@@ -504,6 +504,26 @@
 
 .workspace-run-row.selected .workspace-eye span {
   background: radial-gradient(circle at center, var(--blue) 0 34%, #fff 38% 55%, var(--blue) 59% 100%);
+}
+
+.workspace-run-stop {
+  display: inline-grid;
+  align-self: center;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.workspace-run-stop:hover,
+.workspace-run-stop:focus-visible {
+  border-color: rgba(217, 119, 6, 0.28);
+  background: #fff7ed;
+  color: #b45309;
 }
 
 .workspace-run-main {

@@ -30,6 +30,9 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Optionally keep a local SQLite audit store for attempted SDK events.
 - Optionally sample psutil/NVML system metrics during a run.
 - Optionally wrap stdout/stderr and expose lightweight Torch, Hugging Face Trainer, Lightning, and Keras adapters.
+- Poll cooperative dashboard stop requests when training code calls
+  `should_stop()`, `stop_request()`, or `raise_if_stop_requested()`, then
+  acknowledge and finish stopped runs without blocking metric logging.
 - Provide local adoption tools: W&B-compatible logging, W&B/Neptune/MLflow transformed JSON import, TensorBoard scalar sync, and Import v2 chunk upload to the Rust API.
 - Capture source metadata for reproducibility with privacy-safe defaults and explicit opt-in knobs for command, paths, branch, host/process identifiers, and git diff summaries.
 - Fork an existing Rust-backed run from a checkpoint and attach logging to that created child run.
@@ -88,6 +91,16 @@ artifact.add_file("checkpoints/policy.pt", name="checkpoint.pt")
 logged = run.log_versioned_artifact(artifact, step=1000, aliases=["best"])
 run.flush()
 run.finish()
+
+try:
+    for step in range(1000):
+        train_step()
+        run.log({"train/loss": loss}, step=step)
+        run.raise_if_stop_requested()
+except ro.InstantMLStopRequested:
+    cleanup_checkpoint()
+    run.finish_stopped("Stopped from the dashboard")
+    raise
 
 api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 checkpoint_path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
@@ -212,6 +225,34 @@ npm run test:hosted-clickhouse
 ```
 
 That smoke creates an API key through the onboarding route, passes it to `instantml.init(...)`, logs metrics through the Python SDK, and verifies the dashboard summary route can read the tenant data after an API restart.
+
+## Cooperative stop requests
+
+Dashboard stop is cooperative. InstantML records a stop request, and the SDK
+only observes it when user code calls `run.stop_request()`, `run.should_stop()`,
+or `run.raise_if_stop_requested()`. The SDK uses a short foreground timeout and
+does not run a background polling thread by default, so stop checks should be
+placed at safe interruption points in the training loop.
+
+```python
+run = ro.init(project="cartpole", stop_check_interval_seconds=5)
+
+for step in range(total_steps):
+    train_step()
+    run.log({"train/reward": reward}, step=step)
+    if run.should_stop():
+        save_final_checkpoint()
+        run.finish_stopped("operator requested stop")
+        break
+else:
+    run.finish()
+```
+
+`raise_if_stop_requested()` sends an acknowledgement before raising
+`InstantMLStopRequested`. A `with ro.init(...) as run:` block that exits through
+that exception calls `finish_stopped()` automatically. Older servers that do not
+implement the stop endpoints are treated as "stop unsupported" and continue
+normal training.
 
 Run summary, artifact download, versioned artifact, and fork helpers use the
 raw `Api` helper:

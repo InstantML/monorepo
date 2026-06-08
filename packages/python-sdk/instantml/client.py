@@ -156,6 +156,7 @@ class Client:
         async_init: bool = True,
         shadow_wandb: Any = False,
         queue_dir: str | None = None,
+        stop_check_interval_seconds: float = 10.0,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
@@ -199,6 +200,7 @@ class Client:
                 upload_mode=upload_mode,
                 spool_dir=spool_dir,
                 queue_dir=queue_dir,
+                stop_check_interval_seconds=stop_check_interval_seconds,
                 _local_store=_LocalStore(local_store_dir, response["run"]["id"]) if local_store else None,
                 shadow=shadow,
             )
@@ -215,6 +217,7 @@ class Client:
             upload_mode=upload_mode,
             spool_dir=spool_dir,
             queue_dir=queue_dir,
+            stop_check_interval_seconds=stop_check_interval_seconds,
             shadow=shadow,
         )
 
@@ -261,6 +264,7 @@ class Client:
         capture_console: bool = False,
         queue_dir: str | None = None,
         validate: bool = True,
+        stop_check_interval_seconds: float = 10.0,
     ) -> "Run":
         """Return a Run handle for an existing server-side run."""
 
@@ -283,6 +287,7 @@ class Client:
             upload_mode=upload_mode,
             spool_dir=spool_dir,
             queue_dir=queue_dir,
+            stop_check_interval_seconds=stop_check_interval_seconds,
             _local_store=_LocalStore(local_store_dir, run_id) if local_store else None,
         )
         if system_metrics:
@@ -338,6 +343,26 @@ class Client:
         return decoded
 
 
+@dataclass(frozen=True)
+class StopRequest:
+    run_id: str
+    stop_request_id: str
+    requested_at: str | None = None
+    acknowledged_at: str | None = None
+
+
+class InstantMLStopRequested(InstantMLError):
+    """Raised when a cooperative dashboard stop request is observed."""
+
+    def __init__(self, request: StopRequest):
+        super().__init__(f"stop requested for run {request.run_id}")
+        self.run_id = request.run_id
+        self.stop_request_id = request.stop_request_id
+        self.requested_at = request.requested_at
+        self.acknowledged_at = request.acknowledged_at
+        self.request = request
+
+
 def _rate_limit_retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
     retry_after = exc.headers.get("Retry-After") if exc.headers else None
     if retry_after:
@@ -356,6 +381,11 @@ def _rate_limit_retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
 def _is_retryable_rate_limit(exc: urllib.error.HTTPError) -> bool:
     scope = exc.headers.get("X-InstantML-RateLimit-Scope") if exc.headers else None
     return str(scope or "second").strip().lower() != "monthly"
+
+
+def _stop_signal_unsupported(exc: InstantMLError) -> bool:
+    message = str(exc).lower()
+    return "404" in message or "405" in message or "not found" in message or "method not allowed" in message
 
 
 def _versioned_artifact_idempotency_key(run_id: str, body: dict[str, Any]) -> str:
@@ -1111,6 +1141,7 @@ class Run:
         spool_dir: str | None = None,
         queue_dir: str | None = None,
         media_dir: str | None = None,
+        stop_check_interval_seconds: float = 10.0,
         _local_store: "_LocalStore | None" = None,
         shadow: "ShadowWandb | None" = None,
     ) -> None:
@@ -1122,6 +1153,7 @@ class Run:
         self.spool_dir = spool_dir
         self.queue_dir = queue_dir
         self.media_dir = media_dir
+        self.stop_check_interval_seconds = max(0.0, float(stop_check_interval_seconds))
         self._lock = threading.RLock()
         self._process_spool_run_dir = _process_spool_run_dir(spool_dir, run_id) if upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID else None
         if self._process_spool_run_dir is not None:
@@ -1143,6 +1175,10 @@ class Run:
         self._process_sequence: int = 0
         self._auto_step: int | float = 0
         self._finished = False
+        self._next_stop_check_at = 0.0
+        self._stop_signal_supported = True
+        self._stop_request: StopRequest | None = None
+        self._stop_acknowledged = False
         self._local_store: "_LocalStore | None" = _local_store
         _register_active_run(self)
         self._system_sampler: "_SystemMetricsSampler | None" = None
@@ -1372,10 +1408,104 @@ class Run:
                     process.wait(timeout=1.0)
             self._async_process = None
 
+    def stop_request(self, force: bool = False) -> StopRequest | None:
+        """Return the active cooperative stop request, if the server has one."""
+
+        if self._is_finished():
+            return self._stop_request
+        if not force and not self._stop_poll_due():
+            return self._stop_request
+        if not self._stop_signal_supported and not force:
+            return self._stop_request
+        self._next_stop_check_at = time.monotonic() + self.stop_check_interval_seconds
+        try:
+            payload = self._stop_client()._request(
+                "GET",
+                f"/api/runs/{urllib.parse.quote(self.run_id, safe='')}/stop-signal",
+            )
+        except InstantMLError as exc:
+            if _stop_signal_unsupported(exc):
+                self._stop_signal_supported = False
+            return self._stop_request
+        if not payload.get("stop_requested"):
+            return None
+        raw = payload.get("stop_request")
+        if not isinstance(raw, dict):
+            return None
+        stop_request_id = str(raw.get("stop_request_id") or "")
+        if not stop_request_id:
+            return None
+        request = StopRequest(
+            run_id=str(payload.get("run_id") or self.run_id),
+            stop_request_id=stop_request_id,
+            requested_at=raw.get("requested_at") if isinstance(raw.get("requested_at"), str) else None,
+            acknowledged_at=raw.get("acknowledged_at") if isinstance(raw.get("acknowledged_at"), str) else None,
+        )
+        self._stop_request = request
+        return request
+
+    def should_stop(self, force: bool = False) -> bool:
+        """Return True when a cooperative dashboard stop request is active."""
+
+        return self.stop_request(force=force) is not None
+
+    def raise_if_stop_requested(self) -> None:
+        """Acknowledge and raise when a cooperative dashboard stop is pending."""
+
+        request = self.stop_request(force=True)
+        if request is None:
+            return
+        self._ack_stop_request(request, "acknowledged")
+        raise InstantMLStopRequested(request)
+
+    def finish_stopped(self, message: str | None = None, timeout: float | None = None) -> None:
+        """Finish a run after honoring a cooperative dashboard stop request."""
+
+        request = self._stop_request or self.stop_request(force=True)
+        if request is not None:
+            self._ack_stop_request(request, "completed", message=message)
+        self.finish("failed", timeout=timeout)
+
+    def _stop_poll_due(self) -> bool:
+        if self.stop_check_interval_seconds <= 0:
+            return False
+        return time.monotonic() >= self._next_stop_check_at
+
+    def _stop_client(self) -> Client:
+        return Client(
+            base_url=self.client.base_url,
+            timeout=min(max(getattr(self.client, "timeout", 10.0), 0.1), 0.75),
+            offline_dir=getattr(self.client, "offline_dir", None),
+            api_key=getattr(self.client, "api_key", None),
+        )
+
+    def _ack_stop_request(self, request: StopRequest, state: str, message: str | None = None) -> None:
+        if state == "acknowledged" and self._stop_acknowledged:
+            return
+        body: dict[str, Any] = {"stop_request_id": request.stop_request_id, "state": state}
+        if message is not None:
+            body["message"] = message
+        try:
+            self._stop_client()._request(
+                "POST",
+                f"/api/runs/{urllib.parse.quote(self.run_id, safe='')}/stop-ack",
+                body,
+            )
+            if state == "acknowledged":
+                self._stop_acknowledged = True
+        except InstantMLError:
+            # Stop helpers should not make user shutdown less reliable than a
+            # normal failed finish. The next helper call or finish_stopped() can
+            # retry the acknowledgement.
+            pass
+
     def __enter__(self) -> "Run":
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if isinstance(exc, InstantMLStopRequested):
+            self.finish_stopped()
+            return
         self.finish("failed" if exc_type else "finished")
 
     @_async_hot_path
@@ -2294,7 +2424,10 @@ class Run:
         if self._init_error is not None or self._run_id == _PENDING_RUN_ID:
             return
         try:
-            self.finish(status)
+            if status == "finished" and self._stop_request is not None:
+                self.finish_stopped()
+            else:
+                self.finish(status)
         except Exception:  # noqa: BLE001 - shutdown must stay best-effort
             pass
 

@@ -85,20 +85,20 @@ use crate::{
         PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
         RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
         RankReducerPoint, RenewArtifactUploadRequest, ReportRow, RequestContext,
-        ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-        ServiceAccountRow, SessionContext, SetArtifactAliasRequest, UpdateArtifactRetentionRequest,
-        UpdateDashboardPreferencesRequest, UpdateReportRequest, UpdateRunRequest,
-        UploadArtifactRequest, UserRow, UserSessionRow, VersionedArtifactManifestEntryInput,
-        WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING,
-        BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
-        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
-        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
-        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
-        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
-        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
-        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
-        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
-        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
+        ReserveSeatRequest, RunControlRow, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
+        ServiceAccountRow, SessionContext, SetArtifactAliasRequest, StopAckRequest, StopRunRequest,
+        StopRunsRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
+        UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+        VersionedArtifactManifestEntryInput, WorkspaceViewRow, WorkspaceViewSummary,
+        BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
+        BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT,
+        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
+        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
+        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS,
+        MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE,
+        MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
+        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED,
+        STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -127,7 +127,9 @@ const ALLOWED_SCOPES: &[&str] = &[
     "usage:read",
     "export:read",
     "api_keys:write",
+    "runs:control",
 ];
+const MAX_BULK_STOP_RUNS: usize = 100;
 const SESSION_TTL_DAYS: i64 = 30;
 const MAX_EXPORT_RUNS: usize = 500;
 const MAX_RUN_FILTER_CACHE_ENTRIES: usize = 64;
@@ -541,6 +543,33 @@ impl Store {
         metric_store.insert_operational_record(&row).await
     }
 
+    async fn persist_run_controls_locked(
+        &self,
+        org_id: Uuid,
+        controls: &[RunControlRow],
+    ) -> AppResult<()> {
+        if controls.is_empty() {
+            return Ok(());
+        }
+        let mut rows = Vec::with_capacity(controls.len());
+        for control in controls {
+            rows.push(OperationalRecordRow {
+                kind: "run_control".to_string(),
+                org_id,
+                entity_id: control.run_id.to_string(),
+                payload: serde_json::to_string(control)
+                    .map_err(|_| AppError::internal("operational payload serialization failed"))?,
+                created_at: self.next_record_created_at().await,
+            });
+        }
+        #[cfg(test)]
+        if self.control_db.is_none() && self.metric_store.database().ends_with("_test") {
+            return Ok(());
+        }
+        let metric_store = self.metric_store_for_persist(org_id).await?;
+        metric_store.insert_operational_records(&rows).await
+    }
+
     /// Route a serialized control record to the right typed Postgres upsert.
     /// The payload is the same JSON `persist_locked` would have appended to the
     /// ClickHouse log, so call sites are unchanged — only the destination moves.
@@ -698,6 +727,7 @@ struct StoreData {
     runs_by_parent_created: BTreeMap<(Uuid, Uuid, DateTime<Utc>, Uuid), Uuid>,
     run_count_by_org: HashMap<Uuid, usize>,
     run_count_by_org_project: HashMap<(Uuid, String), usize>,
+    run_controls: BTreeMap<Uuid, RunControlRow>,
     incomplete_import_runs: HashSet<Uuid>,
     run_search_documents: HashMap<Uuid, Arc<RunSearchDocument>>,
     run_filter_cache: HashMap<RunFilterCacheKey, Vec<Uuid>>,
@@ -789,6 +819,7 @@ impl StoreData {
             "project" => self.insert_project(parse_payload(payload)?),
             "project_delete" => self.apply_project_delete(parse_payload(payload)?),
             "run" => self.insert_run(parse_payload(payload)?),
+            "run_control" => self.insert_run_control(parse_payload(payload)?),
             "attribute" => self.insert_attribute(parse_payload(payload)?),
             "artifact" => self.insert_artifact(parse_payload(payload)?),
             "artifact_collection" => self.insert_artifact_collection(parse_payload(payload)?),
@@ -994,6 +1025,11 @@ impl StoreData {
                 .insert(run.id, Arc::new(run_search_document(&run)));
         }
         self.runs.insert(run.id, run);
+        self.clear_run_filter_cache();
+    }
+
+    fn insert_run_control(&mut self, control: RunControlRow) {
+        self.run_controls.insert(control.run_id, control);
         self.clear_run_filter_cache();
     }
 
@@ -1257,6 +1293,7 @@ impl StoreData {
             }
             self.run_search_documents.remove(&run.id);
             self.incomplete_import_runs.remove(&run.id);
+            self.run_controls.remove(&run.id);
             self.clear_run_filter_cache();
         }
     }
@@ -1412,6 +1449,7 @@ struct RunFilterCacheKey {
     auth_project_id: Option<Uuid>,
     project: String,
     status: String,
+    display_status: String,
     q: String,
 }
 
@@ -1425,6 +1463,72 @@ fn run_has_incomplete_import_metadata(run: &RunRow) -> bool {
 
 fn is_visible_run(data: &StoreData, run: &RunRow) -> bool {
     data.incomplete_import_runs.is_empty() || !data.incomplete_import_runs.contains(&run.id)
+}
+
+fn run_control_for<'a>(data: &'a StoreData, run: &RunRow) -> Option<&'a RunControlRow> {
+    data.run_controls
+        .get(&run.id)
+        .filter(|control| control.org_id == run.org_id)
+}
+
+fn run_control_display_status(run: &RunRow, control: Option<&RunControlRow>) -> &'static str {
+    match (
+        run.status.as_str(),
+        control.map(|item| item.stop_state.as_str()),
+    ) {
+        ("running", Some("requested" | "acknowledged")) => "stopping",
+        ("failed", Some("completed")) => "stopped",
+        ("running", _) => "running",
+        ("finished", _) => "finished",
+        ("failed", _) => "failed",
+        _ => "failed",
+    }
+}
+
+fn run_control_summary(run: &RunRow, control: Option<&RunControlRow>) -> Value {
+    let stop_state = control
+        .map(|item| item.stop_state.as_str())
+        .unwrap_or("none");
+    json!({
+        "stop_state": stop_state,
+        "display_status": run_control_display_status(run, control),
+        "stop_request_id": control.and_then(|item| item.stop_request_id),
+        "stop_requested": matches!(stop_state, "requested" | "acknowledged" | "completed"),
+        "reason": control.and_then(|item| item.reason.clone()),
+        "actor": control.and_then(|item| display_stop_actor(item.actor.as_deref())),
+        "stop_requested_at": control.and_then(|item| item.requested_at.clone()),
+        "stop_acknowledged_at": control.and_then(|item| item.acknowledged_at.clone()),
+        "stop_completed_at": control.and_then(|item| item.completed_at.clone()),
+        "updated_at": control.map(|item| item.updated_at.clone()),
+    })
+}
+
+fn display_stop_actor(actor: Option<&str>) -> Option<&'static str> {
+    let actor = actor?;
+    if actor.starts_with("user:") {
+        Some("user")
+    } else if actor.starts_with("api_key:") {
+        Some("api_key")
+    } else if actor == "local" {
+        Some("local")
+    } else {
+        Some("unknown")
+    }
+}
+
+fn run_matches_display_status(
+    data: &StoreData,
+    query: &HashMap<String, String>,
+    run: &RunRow,
+) -> bool {
+    let Some(display_status) = query
+        .get("display_status")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty() && *value != "all")
+    else {
+        return true;
+    };
+    run_control_display_status(run, run_control_for(data, run)) == display_status
 }
 
 fn decrement_count<K>(counts: &mut HashMap<K, usize>, key: &K)
@@ -1662,6 +1766,7 @@ fn payload_org_id(payload: &Value) -> AppResult<Option<Uuid>> {
 fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value) -> AppResult<()> {
     match record.kind.as_str() {
         "project" | "run" | "artifact" => validate_payload_string_id(record, payload, "id"),
+        "run_control" => validate_payload_string_id(record, payload, "run_id"),
         "artifact_collection"
         | "artifact_version"
         | "artifact_edge"
@@ -1846,17 +1951,14 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
-    /// Build a `Store` whose control plane is the given Postgres handle, with
-    /// the rest of the dependencies stubbed. Used by the Postgres-backed
-    /// chokepoint tests.
-    fn store_with_control_db(control_db: ControlDb) -> Store {
+    fn test_store(database: &str, control_db: Option<ControlDb>) -> Store {
         Store {
             metric_store: crate::metric_store::connect_url(
-                "http://default:@127.0.0.1:8123/instantml_pg_chokepoint_test",
+                &format!("http://default:@127.0.0.1:8123/{database}"),
                 "TEST_CLICKHOUSE_URL",
             )
             .unwrap(),
-            control_db: Some(control_db),
+            control_db,
             hosted_clickhouse: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
                 egress_cidrs: Vec::new(),
@@ -1876,6 +1978,17 @@ mod tests {
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Build a `Store` whose control plane is the given Postgres handle, with
+    /// the rest of the dependencies stubbed. Used by the Postgres-backed
+    /// chokepoint tests.
+    fn store_with_control_db(control_db: ControlDb) -> Store {
+        test_store("instantml_pg_chokepoint_test", Some(control_db))
+    }
+
+    fn store_without_control_db() -> Store {
+        test_store("instantml_run_control_test", None)
     }
 
     #[sqlx::test]
@@ -2085,6 +2198,199 @@ mod tests {
             forked_from_step: None,
             forked_from_artifact_id: None,
         }
+    }
+
+    fn replay_run_control(org_id: Uuid, run_id: Uuid, state: &str) -> RunControlRow {
+        RunControlRow {
+            org_id,
+            run_id,
+            stop_request_id: Some(Uuid::from_u128(9_999)),
+            stop_state: state.to_string(),
+            reason: Some("bad sweep".to_string()),
+            actor: Some("user:reviewer".to_string()),
+            requested_at: Some(epoch()),
+            acknowledged_at: (state == "acknowledged" || state == "completed").then_some(epoch()),
+            completed_at: (state == "completed").then_some(epoch()),
+            updated_at: epoch(),
+        }
+    }
+
+    #[test]
+    fn run_control_replay_drives_display_status_without_status_change() {
+        let org_id = Uuid::from_u128(1);
+        let running_id = Uuid::from_u128(10);
+        let failed_id = Uuid::from_u128(11);
+        let mut data = StoreData::default();
+        data.apply_operational_records(
+            vec![
+                replay_row(
+                    "run",
+                    org_id,
+                    running_id.to_string(),
+                    &replay_run(org_id, running_id, "running"),
+                    1,
+                ),
+                replay_row(
+                    "run_control",
+                    org_id,
+                    running_id.to_string(),
+                    &replay_run_control(org_id, running_id, "acknowledged"),
+                    2,
+                ),
+                replay_row(
+                    "run",
+                    org_id,
+                    failed_id.to_string(),
+                    &replay_run(org_id, failed_id, "failed"),
+                    3,
+                ),
+                replay_row(
+                    "run_control",
+                    org_id,
+                    failed_id.to_string(),
+                    &replay_run_control(org_id, failed_id, "completed"),
+                    4,
+                ),
+            ],
+            ReplayScope::All,
+        )
+        .unwrap();
+
+        let running = data.runs.get(&running_id).unwrap();
+        assert_eq!(
+            run_control_display_status(running, run_control_for(&data, running)),
+            "stopping"
+        );
+        let failed = data.runs.get(&failed_id).unwrap();
+        assert_eq!(failed.status, "failed");
+        assert_eq!(
+            run_control_display_status(failed, run_control_for(&data, failed)),
+            "stopped"
+        );
+    }
+
+    #[test]
+    fn display_status_filter_matches_derived_control_state() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let query = HashMap::from([("display_status".to_string(), "stopping".to_string())]);
+        let mut data = StoreData::default();
+        data.insert_run(replay_run(org_id, run_id, "running"));
+        let run = data.runs.get(&run_id).unwrap().clone();
+        data.insert_run_control(replay_run_control(org_id, run_id, "requested"));
+
+        assert!(run_matches_display_status(&data, &query, &run));
+    }
+
+    #[test]
+    fn run_control_summary_redacts_actor_identifiers() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let run = replay_run(org_id, run_id, "running");
+        let mut control = replay_run_control(org_id, run_id, "requested");
+
+        control.actor = Some("user:2c8b6f5c-0f8d-4ce0-8f3c-34bdc2c7f72d".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control))["actor"],
+            json!("user")
+        );
+
+        control.actor = Some("api_key:7f9d7c64-4663-49db-b268-b9da6464da52".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control))["actor"],
+            json!("api_key")
+        );
+
+        control.actor = Some("local".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control))["actor"],
+            json!("local")
+        );
+
+        control.actor = Some("unexpected".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control))["actor"],
+            json!("unknown")
+        );
+    }
+
+    #[tokio::test]
+    async fn completed_stop_ack_is_idempotent_and_preserves_request_audit() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(42);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        let requested = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(requested["run_control"]["actor"], json!("local"));
+        let stop_request_id = Uuid::parse_str(
+            requested["run_control"]["stop_request_id"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+
+        let completed = acknowledge_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopAckRequest {
+                stop_request_id,
+                state: "completed".to_string(),
+                message: Some("sdk cleanup".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(completed["run_control"]["display_status"], json!("stopped"));
+        assert_eq!(completed["run_control"]["reason"], json!("bad sweep"));
+
+        let first_control = {
+            let data = store.data.lock().await;
+            let run = data.runs.get(&run_id).unwrap();
+            assert_eq!(run.status, "failed");
+            data.run_controls.get(&run_id).cloned().unwrap()
+        };
+
+        let retried = acknowledge_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopAckRequest {
+                stop_request_id,
+                state: "completed".to_string(),
+                message: Some("do not overwrite".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(retried["run_control"]["display_status"], json!("stopped"));
+        assert_eq!(retried["run_control"]["reason"], json!("bad sweep"));
+
+        let retry_control = store
+            .data
+            .lock()
+            .await
+            .run_controls
+            .get(&run_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(retry_control.completed_at, first_control.completed_at);
+        assert_eq!(retry_control.updated_at, first_control.updated_at);
+        assert_eq!(retry_control.reason.as_deref(), Some("bad sweep"));
     }
 
     #[test]

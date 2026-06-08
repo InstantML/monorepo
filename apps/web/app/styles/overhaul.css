@@ -2695,7 +2695,7 @@ button.compare-row-head.active {
  * from comparison; the body = open the run. */
 .workspace-run-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr) 32px;
   align-items: stretch;
   gap: 0;
   padding: 0;
@@ -2727,7 +2727,7 @@ button.compare-row-head.active {
   padding: 8px 10px 8px 4px;
   cursor: pointer;
   min-width: 0;
-  border-radius: 0 var(--radius) var(--radius) 0;
+  border-radius: 0;
 }
 .workspace-run-open:hover { background: var(--surface-hover); }
 .workspace-run-open:hover .workspace-run-body strong { color: var(--accent-strong); }
@@ -2771,6 +2771,33 @@ button.compare-row-head.active {
 .upload-health-chip.bad {
   border-color: rgba(219, 57, 57, 0.24);
   color: var(--danger);
+}
+.workspace-run-status {
+  justify-self: start;
+  width: max-content;
+  max-width: 100%;
+}
+.workspace-run-stop {
+  display: inline-grid;
+  place-items: center;
+  align-self: stretch;
+  width: 32px;
+  min-width: 32px;
+  border: 0;
+  border-left: 1px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.workspace-run-stop:hover,
+.workspace-run-stop:focus-visible {
+  border-left-color: var(--line-soft);
+  background: var(--surface-hover);
+  color: #b45309;
+}
+.run-stop-button {
+  white-space: nowrap;
 }
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }

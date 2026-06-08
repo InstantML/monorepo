@@ -694,12 +694,18 @@ export function DashboardTopbar({
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
   const workbarInert = compactFilters && !mobileFiltersOpen;
   const showStatusCounts = !status;
+  const stoppingRuns = Number(overview.stopping_runs ?? 0);
+  const stoppedRuns = Number(overview.stopped_runs ?? 0);
+  const runningRuns = Math.max(0, overview.active_runs - stoppingRuns);
+  const failedRuns = Math.max(0, overview.failed_runs - stoppedRuns);
   const finishedRuns = Math.max(0, overview.total_runs - overview.active_runs - overview.failed_runs);
   const statusOptions: SelectOption[] = [
     { value: "", label: `All${showStatusCounts ? countSuffix(overview.total_runs) : ""}` },
-    { value: "running", label: `Running${showStatusCounts ? countSuffix(overview.active_runs) : ""}` },
+    { value: "running", label: `Running${showStatusCounts ? countSuffix(runningRuns) : ""}` },
+    { value: "stopping", label: `Stopping${showStatusCounts ? countSuffix(stoppingRuns) : ""}` },
+    { value: "stopped", label: `Stopped${showStatusCounts ? countSuffix(stoppedRuns) : ""}` },
     { value: "finished", label: `Finished${showStatusCounts ? countSuffix(finishedRuns) : ""}` },
-    { value: "failed", label: `Failed${showStatusCounts ? countSuffix(overview.failed_runs) : ""}` },
+    { value: "failed", label: `Failed${showStatusCounts ? countSuffix(failedRuns) : ""}` },
   ];
   const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
     ? ` Column ${searchError.position}.`

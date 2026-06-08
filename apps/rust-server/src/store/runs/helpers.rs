@@ -24,6 +24,14 @@ pub(super) fn has_status_filter(query: &HashMap<String, String>) -> bool {
         .unwrap_or(false)
 }
 
+pub(super) fn has_display_status_filter(query: &HashMap<String, String>) -> bool {
+    query
+        .get("display_status")
+        .map(String::as_str)
+        .map(|value| !value.is_empty() && value != "all")
+        .unwrap_or(false)
+}
+
 pub(super) fn metric_keys_from_run_values(run_values: &[Value], limit: usize) -> Vec<String> {
     let mut keys = BTreeSet::new();
     for value in run_values {

@@ -10,8 +10,10 @@ import {
   BULK_SELECT_MATCHING_LIMIT,
   bestMetric,
   capSelectionToMatching,
+  canRequestStop,
   defaultRunSelection,
   deselectVisible,
+  displayStatusForRun,
   durationLabel,
   filterMetricKeys,
   formatNumber,
@@ -534,7 +536,24 @@ test("summary helpers format stable UI values", () => {
   assert.equal(statusTone("finished"), "good");
   assert.equal(statusTone("failed"), "bad");
   assert.equal(statusTone("running"), "live");
+  assert.equal(statusTone("stopping"), "warning");
+  assert.equal(statusTone("stopped"), "warning");
   assert.equal(durationLabel({ started_at: "2026-01-01T00:00:00.000Z", finished_at: "2026-01-01T00:00:02.000Z" }), "2s");
+});
+
+test("run stop helpers derive display status and eligibility", () => {
+  const running = { id: "run-1", status: "running" };
+  const stopping = { id: "run-2", status: "running", run_control: { display_status: "stopping", stop_state: "requested" } };
+  const acknowledged = { id: "run-3", status: "running", run_control: { display_status: "stopping", stop_state: "acknowledged" } };
+  const stopped = { id: "run-4", status: "failed", run_control: { display_status: "stopped", stop_state: "completed" } };
+  assert.equal(displayStatusForRun(running), "running");
+  assert.equal(displayStatusForRun(stopping), "stopping");
+  assert.equal(displayStatusForRun(stopped), "stopped");
+  assert.equal(canRequestStop(running), true);
+  assert.equal(canRequestStop(running, false), false);
+  assert.equal(canRequestStop(stopping), false);
+  assert.equal(canRequestStop(acknowledged), false);
+  assert.equal(canRequestStop(stopped), false);
 });
 
 test("upload health derives compact state from SDK heartbeat metrics", () => {

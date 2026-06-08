@@ -463,6 +463,12 @@ small {
   color: var(--blue);
 }
 
+.pill.warning {
+  border-color: #f4d6a1;
+  background: #fff8e8;
+  color: #9a4a00;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
