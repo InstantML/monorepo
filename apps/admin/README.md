@@ -139,6 +139,10 @@ Admin access is two-layered:
 - The Next server must have `INSTANTML_ADMIN_BOOTSTRAP_TOKEN` or
   `INSTANTML_BOOTSTRAP_TOKEN` so it can call the Rust admin API. This token is
   never sent to client components or browser routes.
+- `proxy.ts` enables Clerk's Frontend API proxy for `__clerk` requests. Keep
+  the `/__clerk/(.*)` matcher when changing middleware so production custom
+  domains can load Clerk browser scripts instead of falling through to a Next
+  404 page.
 
 This is a temporary first slice. Do not expose the app publicly without an
 additional edge gate such as Cloudflare Access or IAP, and do not add broader
