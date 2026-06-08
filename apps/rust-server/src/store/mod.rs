@@ -770,6 +770,12 @@ struct StoreData {
     next_import_id_by_org: HashMap<Uuid, i64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RunControlPrivacy {
+    Public,
+    Private,
+}
+
 impl StoreData {
     fn apply_operational_records(
         &mut self,
@@ -1477,7 +1483,7 @@ fn run_control_display_status(run: &RunRow, control: Option<&RunControlRow>) -> 
         control.map(|item| item.stop_state.as_str()),
     ) {
         ("running", Some("requested" | "acknowledged")) => "stopping",
-        ("failed", Some("completed")) => "stopped",
+        (_, Some("completed")) => "stopped",
         ("running", _) => "running",
         ("finished", _) => "finished",
         ("failed", _) => "failed",
@@ -1485,23 +1491,56 @@ fn run_control_display_status(run: &RunRow, control: Option<&RunControlRow>) -> 
     }
 }
 
-fn run_control_summary(run: &RunRow, control: Option<&RunControlRow>) -> Value {
+fn run_control_summary(
+    run: &RunRow,
+    control: Option<&RunControlRow>,
+    privacy: RunControlPrivacy,
+) -> Value {
     let stop_state = control
         .map(|item| item.stop_state.as_str())
         .unwrap_or("none");
-    json!({
+    let mut summary = json!({
         "stop_state": stop_state,
         "display_status": run_control_display_status(run, control),
         "stop_request_id": control.and_then(|item| item.stop_request_id),
         "stop_requested": matches!(stop_state, "requested" | "acknowledged" | "completed"),
-        "reason": control.and_then(|item| item.reason.clone()),
-        "completion_message": control.and_then(|item| item.completion_message.clone()),
         "actor": control.and_then(|item| display_stop_actor(item.actor.as_deref())),
         "stop_requested_at": control.and_then(|item| item.requested_at.clone()),
         "stop_acknowledged_at": control.and_then(|item| item.acknowledged_at.clone()),
         "stop_completed_at": control.and_then(|item| item.completed_at.clone()),
         "updated_at": control.map(|item| item.updated_at.clone()),
-    })
+    });
+    if privacy == RunControlPrivacy::Private {
+        if let Value::Object(map) = &mut summary {
+            map.insert(
+                "reason".to_string(),
+                control
+                    .and_then(|item| item.reason.clone())
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+            map.insert(
+                "completion_message".to_string(),
+                control
+                    .and_then(|item| item.completion_message.clone())
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+        }
+    }
+    summary
+}
+
+fn can_read_private_run_control(ctx: &RequestContext) -> bool {
+    if let Some(auth) = &ctx.auth {
+        return auth.scopes.iter().any(|scope| scope == "export:read")
+            && auth.scopes.iter().any(|scope| scope == "runs:control");
+    }
+    if let Some(session) = &ctx.session {
+        return !session.demo_read_only
+            && matches!(session.role.as_str(), "owner" | "admin" | "member");
+    }
+    true
 }
 
 fn display_stop_actor(actor: Option<&str>) -> Option<&'static str> {
@@ -2293,27 +2332,44 @@ mod tests {
 
         control.actor = Some("user:2c8b6f5c-0f8d-4ce0-8f3c-34bdc2c7f72d".to_string());
         assert_eq!(
-            run_control_summary(&run, Some(&control))["actor"],
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
             json!("user")
         );
 
         control.actor = Some("api_key:7f9d7c64-4663-49db-b268-b9da6464da52".to_string());
         assert_eq!(
-            run_control_summary(&run, Some(&control))["actor"],
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
             json!("api_key")
         );
 
         control.actor = Some("local".to_string());
         assert_eq!(
-            run_control_summary(&run, Some(&control))["actor"],
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
             json!("local")
         );
 
         control.actor = Some("unexpected".to_string());
         assert_eq!(
-            run_control_summary(&run, Some(&control))["actor"],
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
             json!("unknown")
         );
+    }
+
+    #[test]
+    fn run_control_summary_keeps_reason_private_by_default() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let run = replay_run(org_id, run_id, "running");
+        let mut control = replay_run_control(org_id, run_id, "requested");
+        control.completion_message = Some("checkpoint saved".to_string());
+
+        let public = run_control_summary(&run, Some(&control), RunControlPrivacy::Public);
+        assert!(public.get("reason").is_none());
+        assert!(public.get("completion_message").is_none());
+
+        let private = run_control_summary(&run, Some(&control), RunControlPrivacy::Private);
+        assert_eq!(private["reason"], json!("bad sweep"));
+        assert_eq!(private["completion_message"], json!("checkpoint saved"));
     }
 
     #[tokio::test]
@@ -2444,6 +2500,24 @@ mod tests {
             .cloned()
             .unwrap();
         assert_eq!(control.stop_state, "terminal_without_completion");
+
+        let repaired = acknowledge_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopAckRequest {
+                stop_request_id: control.stop_request_id.unwrap(),
+                state: "completed".to_string(),
+                message: Some("late cleanup".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(repaired["run_control"]["display_status"], json!("stopped"));
+        assert_eq!(
+            store.data.lock().await.runs.get(&run_id).unwrap().status,
+            "finished"
+        );
     }
 
     #[tokio::test]

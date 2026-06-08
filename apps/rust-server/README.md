@@ -22,7 +22,9 @@ This directory contains the primary Rust backend for InstantML. The current stor
   SDK polls a cheap `sdk:ingest` stop-signal endpoint and acknowledges cleanup.
   This does not hard-kill unmanaged training processes; dashboards derive
   `stopping` and `stopped` from run-control metadata while legacy run status
-  stays backwards compatible.
+  stays backwards compatible. Stop reason text is omitted from ordinary
+  list/summary/export-style read surfaces, and the stop-signal endpoint is
+  no-store and excluded from monthly billable API-request rollups.
 - Serve bounded user-owned exports through `GET /api/export`. JSON remains the
   default portable export shape; `format=csv` returns a normalized single CSV
   for selected runs or filtered runs, `run_ids`/`runs` selects exact visible

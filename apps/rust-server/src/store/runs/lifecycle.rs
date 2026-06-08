@@ -191,11 +191,13 @@ pub async fn update_run(
     store
         .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)
         .await?;
-    data.insert_run(run.clone());
-    if let Some(control) = terminal_stop_control {
+    if let Some(control) = terminal_stop_control.as_ref() {
         store
             .persist_locked("run_control", ctx.org_id, &run.id.to_string(), &control)
             .await?;
+    }
+    data.insert_run(run.clone());
+    if let Some(control) = terminal_stop_control {
         data.insert_run_control(control);
     }
     Ok(run)
@@ -206,5 +208,10 @@ pub async fn get_run(store: &Store, ctx: &RequestContext, run_id: Uuid) -> AppRe
         let data = store.data.lock().await;
         fetch_run_in_data(&data, ctx, run_id)?
     };
-    run_summary_value(store, run).await
+    let privacy = if can_read_private_run_control(ctx) {
+        RunControlPrivacy::Private
+    } else {
+        RunControlPrivacy::Public
+    };
+    run_summary_value(store, run, privacy).await
 }

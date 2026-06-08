@@ -161,7 +161,9 @@ pub struct RunControlSummary {
     pub display_status: String,
     pub stop_request_id: Option<Uuid>,
     pub stop_requested: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_message: Option<String>,
     pub actor: Option<String>,
     pub stop_requested_at: Option<DateTime<Utc>>,
@@ -174,6 +176,8 @@ pub struct RunControlSummary {
 pub struct RunStopEnvelope {
     pub run_id: Uuid,
     pub ok: Option<bool>,
+    pub already_requested: Option<bool>,
+    pub already_terminal: Option<bool>,
     pub run_control: RunControlSummary,
 }
 
@@ -181,6 +185,8 @@ pub struct RunStopEnvelope {
 pub struct RunStopResult {
     pub run_id: Uuid,
     pub ok: bool,
+    pub already_requested: Option<bool>,
+    pub already_terminal: Option<bool>,
     pub run_control: Option<RunControlSummary>,
     pub error: Option<String>,
 }

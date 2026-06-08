@@ -14524,6 +14524,18 @@
           "run_control"
         ],
         "properties": {
+          "already_requested": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "already_terminal": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "ok": {
             "type": [
               "boolean",
@@ -14546,6 +14558,18 @@
           "ok"
         ],
         "properties": {
+          "already_requested": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "already_terminal": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "error": {
             "type": [
               "string",

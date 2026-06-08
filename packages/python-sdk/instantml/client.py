@@ -305,6 +305,7 @@ class Client:
         path: str,
         body: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        retry_rate_limits: bool = True,
     ) -> dict[str, Any]:
         url = self.base_url.rstrip("/") + path
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -327,7 +328,12 @@ class Client:
                     payload = response.read().decode("utf-8")
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code == 429 and _is_retryable_rate_limit(exc) and attempt < _RATE_LIMIT_RETRY_ATTEMPTS:
+                if (
+                    retry_rate_limits
+                    and exc.code == 429
+                    and _is_retryable_rate_limit(exc)
+                    and attempt < _RATE_LIMIT_RETRY_ATTEMPTS
+                ):
                     time.sleep(_rate_limit_retry_delay(exc, attempt))
                     continue
                 message = _error_message(exc)
@@ -1417,17 +1423,21 @@ class Run:
             return self._stop_request
         if not self._stop_signal_supported and not force:
             return self._stop_request
-        self._next_stop_check_at = time.monotonic() + self.stop_check_interval_seconds
+        fallback_delay = self.stop_check_interval_seconds
         try:
             payload = self._stop_client()._request(
                 "GET",
                 f"/api/runs/{urllib.parse.quote(self.run_id, safe='')}/stop-signal",
+                retry_rate_limits=False,
             )
         except InstantMLError as exc:
             if _stop_signal_unsupported(exc):
                 self._stop_signal_supported = False
+            self._schedule_next_stop_check(fallback_delay)
             return self._stop_request
+        self._schedule_next_stop_check(self._stop_poll_delay(payload, fallback_delay))
         if not payload.get("stop_requested"):
+            self._stop_request = None
             return None
         raw = payload.get("stop_request")
         if not isinstance(raw, dict):
@@ -1470,6 +1480,19 @@ class Run:
         if self.stop_check_interval_seconds <= 0:
             return False
         return time.monotonic() >= self._next_stop_check_at
+
+    def _schedule_next_stop_check(self, delay_seconds: float) -> None:
+        self._next_stop_check_at = time.monotonic() + max(0.0, delay_seconds)
+
+    def _stop_poll_delay(self, payload: dict[str, Any], fallback_delay: float) -> float:
+        raw = payload.get("poll_after_seconds")
+        try:
+            server_delay = float(raw)
+        except (TypeError, ValueError):
+            server_delay = 0.0
+        if math.isfinite(server_delay) and server_delay > 0:
+            return max(fallback_delay, server_delay)
+        return fallback_delay
 
     def _stop_client(self) -> Client:
         return Client(

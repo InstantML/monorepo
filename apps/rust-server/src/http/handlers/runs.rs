@@ -4,7 +4,8 @@ use std::sync::Arc;
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{header, HeaderMap},
+    response::{IntoResponse, Response},
     Json,
 };
 use serde_json::{json, Value};
@@ -22,7 +23,7 @@ use crate::{
 
 use super::super::{observability, AppState};
 use super::helpers::{
-    context, header_text, parse_uuid, read_json, read_json_with_raw, require_scope,
+    context, header_text, header_value, parse_uuid, read_json, read_json_with_raw, require_scope,
     validate_session_mutation_origin,
 };
 
@@ -374,13 +375,19 @@ pub async fn stop_signal(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Path(run_id): Path<String>,
-) -> AppResult<Json<Value>> {
+) -> AppResult<Response> {
     let ctx = context(&state, &headers, true).await?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
-    Ok(Json(
-        store::run_stop_signal(&state.store, &ctx, run_id).await?,
-    ))
+    let mut response =
+        Json(store::run_stop_signal(&state.store, &ctx, run_id).await?).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, header_value("private, no-store")?);
+    response
+        .headers_mut()
+        .insert(header::PRAGMA, header_value("no-cache")?);
+    Ok(response)
 }
 
 #[utoipa::path(

@@ -3440,12 +3440,16 @@ export interface components {
             results: components["schemas"]["RunStopResult"][];
         };
         RunStopEnvelope: {
+            already_requested?: boolean | null;
+            already_terminal?: boolean | null;
             ok?: boolean | null;
             run_control: components["schemas"]["RunControlSummary"];
             /** Format: uuid */
             run_id: string;
         };
         RunStopResult: {
+            already_requested?: boolean | null;
+            already_terminal?: boolean | null;
             error?: string | null;
             ok: boolean;
             run_control?: null | components["schemas"]["RunControlSummary"];

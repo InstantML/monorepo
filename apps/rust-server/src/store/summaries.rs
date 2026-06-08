@@ -21,12 +21,16 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
     runs.into_iter()
         .map(|run| {
             let control = controls.get(&run.id).and_then(Option::as_ref);
-            summarize_run(run, control, &series, &counts)
+            summarize_run(run, control, RunControlPrivacy::Public, &series, &counts)
         })
         .collect::<AppResult<Vec<_>>>()
 }
 
-pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<Value> {
+pub(super) async fn run_summary_value(
+    store: &Store,
+    run: RunRow,
+    privacy: RunControlPrivacy,
+) -> AppResult<Value> {
     let run_ids = vec![run.id];
     let metric_store = store.metric_store_for_org(run.org_id).await?;
     let series = metric_series_for_runs(&metric_store, run.org_id, &run_ids).await?;
@@ -38,7 +42,7 @@ pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<V
         let data = store.data.lock().await;
         run_control_for(&data, &run).cloned()
     };
-    summarize_run(run, control.as_ref(), &series, &counts)
+    summarize_run(run, control.as_ref(), privacy, &series, &counts)
 }
 
 pub(super) fn selection_run_value(
@@ -61,7 +65,7 @@ pub(super) fn selection_run_value(
         );
         map.insert(
             "run_control".to_string(),
-            run_control_summary(&run, control),
+            run_control_summary(&run, control, RunControlPrivacy::Public),
         );
     }
     Ok(value)
@@ -70,6 +74,7 @@ pub(super) fn selection_run_value(
 pub(super) fn summarize_run(
     run: RunRow,
     control: Option<&RunControlRow>,
+    privacy: RunControlPrivacy,
     series: &[MetricSeriesRow],
     artifact_counts: &HashMap<Uuid, BTreeMap<String, i64>>,
 ) -> AppResult<Value> {
@@ -105,7 +110,7 @@ pub(super) fn summarize_run(
     if let Value::Object(map) = &mut value {
         map.insert(
             "run_control".to_string(),
-            run_control_summary(&run, control),
+            run_control_summary(&run, control, privacy),
         );
         map.insert("latest_metrics".to_string(), Value::Object(latest));
         map.insert("metric_aggregates".to_string(), Value::Object(aggregates));

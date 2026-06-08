@@ -6,7 +6,13 @@ import signal
 import pytest
 
 import instantml.client as client_module
-from instantml.client import InstantMLError, InstantMLStopRequested, Run, StopRequest, _LocalStore
+from instantml.client import (
+    InstantMLError,
+    InstantMLStopRequested,
+    Run,
+    StopRequest,
+    _LocalStore,
+)
 
 
 class _RecordingClient:
@@ -20,8 +26,8 @@ class _RecordingClient:
     def _resolve_api_key(self):
         return None
 
-    def _request(self, method, path, body=None):
-        self.requests.append((method, path, body))
+    def _request(self, method, path, body=None, **kwargs):
+        self.requests.append((method, path, body, kwargs))
         return {"run": {"id": "run-1"}}
 
 
@@ -30,29 +36,40 @@ class _StopClient(_RecordingClient):
         super().__init__()
         self.requested = requested
 
-    def _request(self, method, path, body=None):
-        self.requests.append((method, path, body))
+    def _request(self, method, path, body=None, **kwargs):
+        self.requests.append((method, path, body, kwargs))
         if path.endswith("/stop-signal"):
             return {
                 "run_id": "run-1",
                 "run_status": "running",
                 "terminal": False,
                 "stop_requested": self.requested,
+                "poll_after_seconds": 60,
                 "stop_request": {
                     "stop_request_id": "stop-1",
                     "requested_at": "2026-06-08T20:15:00Z",
                     "acknowledged_at": None,
                 },
             }
-        return {"run_id": "run-1", "run_control": {"stop_state": body.get("state") if body else "none"}}
+        return {
+            "run_id": "run-1",
+            "run_control": {"stop_state": body.get("state") if body else "none"},
+        }
 
 
 class _UnsupportedStopClient(_RecordingClient):
-    def _request(self, method, path, body=None):
-        self.requests.append((method, path, body))
+    def _request(self, method, path, body=None, **kwargs):
+        self.requests.append((method, path, body, kwargs))
         if path.endswith("/stop-signal"):
             raise InstantMLError("GET /api/runs/run-1/stop-signal failed: 404 not found")
-        return {"run_id": "run-1", "run_control": {"stop_state": body.get("state") if body else "none"}}
+        return {
+            "run_id": "run-1",
+            "run_control": {"stop_state": body.get("state") if body else "none"},
+        }
+
+
+def _request_triplet(request):
+    return request[:3]
 
 
 # --- Async hot path: validation warns-and-drops instead of raising ---------
@@ -60,7 +77,12 @@ class _UnsupportedStopClient(_RecordingClient):
 
 def test_async_log_warns_and_drops_invalid_payload(monkeypatch, tmp_path):
     monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
-    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    run = Run(
+        client=_RecordingClient(),
+        run_id="run-1",
+        upload_mode="async",
+        queue_dir=str(tmp_path),
+    )
     try:
         with pytest.warns(RuntimeWarning, match="dropped an invalid payload"):
             run.log({"loss": float("nan")})
@@ -97,7 +119,9 @@ def test_finish_is_idempotent():
     run.finish("finished")
     run.finish("finished")
     run.finish("failed")
-    patches = [request for request in client.requests if request[0] == "PATCH"]
+    patches = [
+        _request_triplet(request) for request in client.requests if request[0] == "PATCH"
+    ]
     assert patches == [("PATCH", "/runs/run-1", {"status": "finished"})]
 
 
@@ -111,7 +135,7 @@ def test_raise_if_stop_requested_acknowledges_before_raising(monkeypatch):
         run.raise_if_stop_requested()
 
     assert exc_info.value.stop_request_id == "stop-1"
-    assert stop_client.requests[-1] == (
+    assert _request_triplet(stop_client.requests[-1]) == (
         "POST",
         "/api/runs/run-1/stop-ack",
         {"stop_request_id": "stop-1", "state": "acknowledged"},
@@ -127,8 +151,14 @@ def test_finish_stopped_completes_stop_and_legacy_failed(monkeypatch):
 
     run.finish_stopped(message="safe checkpoint")
 
-    assert ("POST", "/api/runs/run-1/stop-ack", {"stop_request_id": "stop-1", "state": "completed", "message": "safe checkpoint"}) in stop_client.requests
-    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in client.requests
+    assert (
+        "POST",
+        "/api/runs/run-1/stop-ack",
+        {"stop_request_id": "stop-1", "state": "completed", "message": "safe checkpoint"},
+    ) in [_request_triplet(request) for request in stop_client.requests]
+    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in [
+        _request_triplet(request) for request in client.requests
+    ]
 
 
 def test_lifecycle_finishes_stopped_after_stop_request(monkeypatch):
@@ -140,8 +170,14 @@ def test_lifecycle_finishes_stopped_after_stop_request(monkeypatch):
 
     run._finish_from_lifecycle("finished")
 
-    assert ("POST", "/api/runs/run-1/stop-ack", {"stop_request_id": "stop-1", "state": "completed"}) in stop_client.requests
-    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in client.requests
+    assert (
+        "POST",
+        "/api/runs/run-1/stop-ack",
+        {"stop_request_id": "stop-1", "state": "completed"},
+    ) in [_request_triplet(request) for request in stop_client.requests]
+    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in [
+        _request_triplet(request) for request in client.requests
+    ]
 
 
 def test_top_level_init_forwards_stop_interval(monkeypatch):
@@ -153,7 +189,14 @@ def test_top_level_init_forwards_stop_interval(monkeypatch):
 
     monkeypatch.setattr(client_module.Client, "init", fake_init)
 
-    assert client_module.init(project="p", api_key="instantml_test", stop_check_interval_seconds=0) == "run"
+    assert (
+        client_module.init(
+            project="p",
+            api_key="instantml_test",
+            stop_check_interval_seconds=0,
+        )
+        == "run"
+    )
     assert captured["stop_check_interval_seconds"] == 0
 
 
@@ -167,7 +210,14 @@ def test_top_level_attach_run_forwards_stop_interval(monkeypatch):
 
     monkeypatch.setattr(client_module.Client, "attach_run", fake_attach)
 
-    assert client_module.attach_run("run-1", api_key="instantml_test", stop_check_interval_seconds=2.5) == "run"
+    assert (
+        client_module.attach_run(
+            "run-1",
+            api_key="instantml_test",
+            stop_check_interval_seconds=2.5,
+        )
+        == "run"
+    )
     assert captured["run_id"] == "run-1"
     assert captured["stop_check_interval_seconds"] == 2.5
 
@@ -175,13 +225,45 @@ def test_top_level_attach_run_forwards_stop_interval(monkeypatch):
 def test_raise_if_stop_requested_respects_poll_interval(monkeypatch):
     client = _RecordingClient()
     stop_client = _StopClient(requested=False)
-    run = Run(client=client, run_id="run-1", upload_mode="sync", stop_check_interval_seconds=60)
+    run = Run(
+        client=client,
+        run_id="run-1",
+        upload_mode="sync",
+        stop_check_interval_seconds=60,
+    )
     monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
 
     assert run.should_stop() is False
     run.raise_if_stop_requested()
 
-    stop_signal_requests = [request for request in stop_client.requests if request[1].endswith("/stop-signal")]
+    stop_signal_requests = [
+        request for request in stop_client.requests if request[1].endswith("/stop-signal")
+    ]
+    assert len(stop_signal_requests) == 1
+    assert stop_signal_requests[0][3]["retry_rate_limits"] is False
+    run.finish("failed")
+
+
+def test_stop_poll_uses_server_poll_after_seconds(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: now[0])
+    client = _RecordingClient()
+    stop_client = _StopClient(requested=False)
+    run = Run(
+        client=client,
+        run_id="run-1",
+        upload_mode="sync",
+        stop_check_interval_seconds=0.01,
+    )
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    assert run.should_stop() is False
+    now[0] += 1.0
+    run.raise_if_stop_requested()
+
+    stop_signal_requests = [
+        request for request in stop_client.requests if request[1].endswith("/stop-signal")
+    ]
     assert len(stop_signal_requests) == 1
     run.finish("failed")
 
@@ -189,13 +271,20 @@ def test_raise_if_stop_requested_respects_poll_interval(monkeypatch):
 def test_raise_if_stop_requested_caches_unsupported_old_server(monkeypatch):
     client = _RecordingClient()
     stop_client = _UnsupportedStopClient()
-    run = Run(client=client, run_id="run-1", upload_mode="sync", stop_check_interval_seconds=0.01)
+    run = Run(
+        client=client,
+        run_id="run-1",
+        upload_mode="sync",
+        stop_check_interval_seconds=0.01,
+    )
     monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
 
     run.raise_if_stop_requested()
     run.raise_if_stop_requested()
 
-    stop_signal_requests = [request for request in stop_client.requests if request[1].endswith("/stop-signal")]
+    stop_signal_requests = [
+        request for request in stop_client.requests if request[1].endswith("/stop-signal")
+    ]
     assert len(stop_signal_requests) == 1
     run.finish("failed")
 
@@ -203,7 +292,12 @@ def test_raise_if_stop_requested_caches_unsupported_old_server(monkeypatch):
 def test_stop_check_interval_zero_disables_raise_polling(monkeypatch):
     client = _RecordingClient()
     stop_client = _StopClient()
-    run = Run(client=client, run_id="run-1", upload_mode="sync", stop_check_interval_seconds=0)
+    run = Run(
+        client=client,
+        run_id="run-1",
+        upload_mode="sync",
+        stop_check_interval_seconds=0,
+    )
     monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
 
     run.raise_if_stop_requested()
@@ -220,7 +314,9 @@ def test_atexit_flush_finishes_and_unregisters_active_runs():
     run = Run(client=client, run_id="run-1", upload_mode="sync")
     assert run in client_module._active_runs_snapshot()
     client_module._atexit_flush()
-    patches = [request for request in client.requests if request[0] == "PATCH"]
+    patches = [
+        _request_triplet(request) for request in client.requests if request[0] == "PATCH"
+    ]
     assert patches[-1] == ("PATCH", "/runs/run-1", {"status": "finished"})
     assert run not in client_module._active_runs_snapshot()
 
@@ -232,7 +328,9 @@ def test_finish_from_lifecycle_handles_all_states(monkeypatch):
     run = Run(client=client, run_id="run-1", upload_mode="sync")
     run._finish_from_lifecycle("finished")
     assert run._is_finished()
-    assert ("PATCH", "/runs/run-1", {"status": "finished"}) in client.requests
+    assert ("PATCH", "/runs/run-1", {"status": "finished"}) in [
+        _request_triplet(request) for request in client.requests
+    ]
     run._finish_from_lifecycle("failed")  # no-op, already finished
 
     # Init resolved with an error -> skipped without finishing.

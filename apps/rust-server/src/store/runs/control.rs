@@ -29,7 +29,9 @@ pub async fn request_run_stop(
     Ok(json!({
         "run_id": plan.run.id,
         "ok": true,
-        "run_control": run_control_summary(&plan.run, Some(&plan.control)),
+        "already_requested": plan.already_requested,
+        "already_terminal": plan.already_terminal,
+        "run_control": run_control_summary(&plan.run, Some(&plan.control), RunControlPrivacy::Private),
     }))
 }
 
@@ -69,7 +71,9 @@ pub async fn request_bulk_run_stop(
                 results.push(json!({
                     "run_id": plan.run.id,
                     "ok": true,
-                    "run_control": run_control_summary(&plan.run, Some(&plan.control)),
+                    "already_requested": plan.already_requested,
+                    "already_terminal": plan.already_terminal,
+                    "run_control": run_control_summary(&plan.run, Some(&plan.control), RunControlPrivacy::Private),
                 }));
             }
             Err(error) => results.push(json!({
@@ -103,9 +107,10 @@ pub async fn run_stop_signal(
     let data = store.data.lock().await;
     let run = fetch_run_in_data(&data, ctx, run_id)?;
     let control = run_control_for(&data, &run);
-    let active = control
-        .map(|item| matches!(item.stop_state.as_str(), "requested" | "acknowledged"))
-        .unwrap_or(false);
+    let active = run.status == "running"
+        && control
+            .map(|item| matches!(item.stop_state.as_str(), "requested" | "acknowledged"))
+            .unwrap_or(false);
     Ok(json!({
         "run_id": run.id,
         "run_status": run.status,
@@ -199,7 +204,7 @@ pub async fn acknowledge_run_stop(
     }
     Ok(json!({
         "run_id": run.id,
-        "run_control": run_control_summary(&run, Some(&control)),
+        "run_control": run_control_summary(&run, Some(&control), RunControlPrivacy::Private),
     }))
 }
 
@@ -207,6 +212,8 @@ struct StopRequestPlan {
     run: RunRow,
     control: RunControlRow,
     persist: bool,
+    already_requested: bool,
+    already_terminal: bool,
 }
 
 fn prepare_stop_locked(
@@ -224,6 +231,8 @@ fn prepare_stop_locked(
                 .cloned()
                 .unwrap_or_else(|| inactive_control(run)),
             persist: false,
+            already_requested: false,
+            already_terminal: true,
         };
     }
     if let Some(existing) = data.run_controls.get(&run.id) {
@@ -232,6 +241,8 @@ fn prepare_stop_locked(
                 run: run.clone(),
                 control: existing.clone(),
                 persist: false,
+                already_requested: true,
+                already_terminal: false,
             };
         }
     }
@@ -253,6 +264,8 @@ fn prepare_stop_locked(
         run: run.clone(),
         control,
         persist: true,
+        already_requested: false,
+        already_terminal: false,
     }
 }
 

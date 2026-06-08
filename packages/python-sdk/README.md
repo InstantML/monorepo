@@ -32,7 +32,10 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Optionally wrap stdout/stderr and expose lightweight Torch, Hugging Face Trainer, Lightning, and Keras adapters.
 - Poll cooperative dashboard stop requests when training code calls
   `should_stop()`, `stop_request()`, or `raise_if_stop_requested()`, then
-  acknowledge and finish stopped runs without blocking metric logging.
+  acknowledge and finish stopped runs without blocking metric logging. Stop
+  polling honors the server-provided cadence and uses a short non-retrying
+  foreground request so rate-limit responses do not sleep inside the training
+  loop.
 - Provide local adoption tools: W&B-compatible logging, W&B/Neptune/MLflow transformed JSON import, TensorBoard scalar sync, and Import v2 chunk upload to the Rust API.
 - Capture source metadata for reproducibility with privacy-safe defaults and explicit opt-in knobs for command, paths, branch, host/process identifiers, and git diff summaries.
 - Fork an existing Rust-backed run from a checkpoint and attach logging to that created child run.
