@@ -1423,6 +1423,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace-view-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspace_view_data"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace-views": {
         parameters: {
             query?: never;
@@ -1439,6 +1455,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace-views/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["import_workspace_view"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace-views/{view_id}": {
         parameters: {
             query?: never;
@@ -1448,6 +1480,22 @@ export interface paths {
         };
         get: operations["get_workspace_view"];
         put: operations["update_workspace_view"];
+        post?: never;
+        delete: operations["delete_workspace_view"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace-views/{view_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_workspace_view"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2737,6 +2785,17 @@ export interface components {
             code?: string | null;
             message?: string | null;
         };
+        ImportWorkspaceViewRequest: {
+            conflict_strategy?: string | null;
+            dry_run?: boolean;
+            /** Format: uuid */
+            existing_view_id?: string | null;
+            /** Format: date-time */
+            expected_updated_at?: string | null;
+            exported_view: components["schemas"]["WorkspaceViewExportEnvelope"];
+            name?: string | null;
+            project?: string | null;
+        };
         ImportsEnvelope: {
             imports: components["schemas"]["ImportJobRow"][];
         };
@@ -3503,8 +3562,101 @@ export interface components {
         VersionedArtifactManifestInput: {
             entries: components["schemas"]["VersionedArtifactManifestEntryInput"][];
         };
+        WorkspaceViewData: {
+            /** Format: date-time */
+            generated_at: string;
+            limits: components["schemas"]["WorkspaceViewDataLimits"];
+            metric_keys: string[];
+            metric_series: components["schemas"]["WorkspaceViewMetricSeries"][];
+            panels: components["schemas"]["WorkspaceViewDataPanelResult"][];
+            run_ids: string[];
+            runs: unknown[];
+            /** Format: int32 */
+            schema_version: number;
+            warnings: string[];
+        };
+        WorkspaceViewDataLimits: {
+            /** Format: int64 */
+            max_points_per_series: number;
+            max_response_bytes: number;
+            max_total_points: number;
+            panels: number;
+            /** Format: int64 */
+            points_per_series: number;
+            run_ids: number;
+            total_points: number;
+        };
+        WorkspaceViewDataOptions: {
+            max_panels?: number | null;
+            /** Format: int64 */
+            metric_point_limit?: number | null;
+        };
+        WorkspaceViewDataPanelResult: {
+            data_kind: string;
+            id: string;
+            metric_key: string;
+            section_id: string;
+            section_name: string;
+            series_key?: string | null;
+            summary_values: unknown[];
+            title: string;
+            type: string;
+            warnings: string[];
+        };
+        WorkspaceViewDataRequest: {
+            options?: null | components["schemas"]["WorkspaceViewDataOptions"];
+            run_ids: string[];
+            view: {
+                [key: string]: unknown;
+            } | null;
+        };
+        WorkspaceViewDataResponse: {
+            view_data: components["schemas"]["WorkspaceViewData"];
+        };
+        WorkspaceViewDeleteResponse: {
+            deleted: boolean;
+            /** Format: date-time */
+            deleted_at: string;
+            /** Format: uuid */
+            view_id: string;
+        };
         WorkspaceViewEnvelope: {
             workspace_view: components["schemas"]["WorkspaceViewRow"];
+        };
+        WorkspaceViewExportEnvelope: {
+            /** Format: date-time */
+            exported_at: string;
+            integrity: components["schemas"]["WorkspaceViewExportIntegrity"];
+            kind: string;
+            /** Format: int32 */
+            schema_version: number;
+            source: components["schemas"]["WorkspaceViewExportSource"];
+            view: components["schemas"]["WorkspaceViewExportedView"];
+        };
+        WorkspaceViewExportIntegrity: {
+            payload_sha256: string;
+        };
+        WorkspaceViewExportSource: {
+            format: string;
+            product: string;
+        };
+        WorkspaceViewExportedView: {
+            name: string;
+            payload: Record<string, never>;
+            project?: string | null;
+        };
+        WorkspaceViewImportResponse: {
+            action: string;
+            dry_run: boolean;
+            name: string;
+            payload_bytes: number;
+            project?: string | null;
+            warnings: string[];
+            workspace_view?: null | components["schemas"]["WorkspaceViewRow"];
+        };
+        WorkspaceViewMetricSeries: {
+            metric_key: string;
+            series: unknown[];
         };
         WorkspaceViewRow: {
             /** Format: date-time */
@@ -7860,6 +8012,66 @@ export interface operations {
             };
         };
     };
+    workspace_view_data: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceViewDataRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded data projection for a portable workspace view and explicit runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewDataResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing export scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Selected run is missing or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     list_workspace_views: {
         parameters: {
             query?: {
@@ -7927,6 +8139,57 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    import_workspace_view: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportWorkspaceViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry-run preview or imported workspace view */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewImportResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view update conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8009,6 +8272,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_workspace_view: {
+        parameters: {
+            query: {
+                /** @description Last observed updated_at timestamp for optimistic delete */
+                expected_updated_at: string;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace view UUID */
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted workspace view marker */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewDeleteResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view update conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    export_workspace_view: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace view UUID */
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portable workspace view JSON */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewExportEnvelope"];
                 };
             };
             /** @description Authentication required */

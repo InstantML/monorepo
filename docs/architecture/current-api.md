@@ -500,6 +500,104 @@ Body accepts any subset of `name`, `project`, and `payload`. When `payload` is
 present it must satisfy the same object and size limits as create. Output:
 `{ "workspace_view": WorkspaceViewRow }`.
 
+### `GET /api/workspace-views/:view_id/export`
+
+Auth: browser session with org membership, or local compatibility access.
+
+Returns a portable attachment JSON envelope:
+
+```json
+{
+  "kind": "instantml.workspace_view",
+  "schema_version": 1,
+  "exported_at": "2026-06-08T00:00:00Z",
+  "source": { "product": "instantml", "format": "workspace_view" },
+  "view": {
+    "name": "Daily comparison",
+    "project": "hosted-scale-data",
+    "payload": {}
+  },
+  "integrity": { "payload_sha256": "hex" }
+}
+```
+
+The envelope intentionally omits row IDs, org IDs, and owner IDs. The response
+uses `Content-Disposition: attachment`, `Cache-Control: private, no-store`,
+`X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox`, and
+`Cross-Origin-Resource-Policy: same-origin`.
+
+### `POST /api/workspace-views/import`
+
+Auth: owner/admin/member browser session for the current org, except shared
+demo sessions are read-only.
+
+Body:
+
+```json
+{
+  "exported_view": { "kind": "instantml.workspace_view" },
+  "dry_run": true,
+  "conflict_strategy": "create",
+  "existing_view_id": "uuid",
+  "expected_updated_at": "2026-06-08T00:00:00Z",
+  "name": "Optional override",
+  "project": "optional-project"
+}
+```
+
+`conflict_strategy` is `create` or `replace`. Replace requires
+`existing_view_id` and `expected_updated_at`; stale timestamps return `409`.
+Dry-run validates the envelope and sanitizer without writing. Non-dry-run import
+uses the same billing write guard as create/update. Payloads must remain JSON
+objects no larger than 64 KiB, and the wrapper body is capped at 128 KiB.
+
+### `DELETE /api/workspace-views/:view_id`
+
+Auth: owner/admin/member browser session for the current org, except shared
+demo sessions are read-only.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | ---: | --- |
+| `expected_updated_at` | required | Last observed `updated_at` timestamp. Stale values return `409`. |
+
+Soft-deletes the saved view and returns:
+
+```json
+{
+  "deleted": true,
+  "view_id": "uuid",
+  "deleted_at": "2026-06-08T00:00:00Z"
+}
+```
+
+### `POST /api/workspace-view-data`
+
+Auth: browser session with `export:read` permission or bearer API key with
+`export:read`. Project-scoped API keys can only resolve run IDs in their
+project.
+
+Body:
+
+```json
+{
+  "view": { "kind": "instantml.workspace_view" },
+  "run_ids": ["uuid"],
+  "options": {
+    "metric_point_limit": 500,
+    "max_panels": 20
+  }
+}
+```
+
+`view` may be an export envelope, a workspace-view row-like object with
+`payload`, or the saved payload itself. The route returns run summaries plus
+line-panel metric series and latest-value summaries for value panels. Unsupported
+visual panels return warnings and bounded summary data. The first slice caps
+requests at 100 run IDs, 50 panels, 500 points per series, 50,000 total metric
+points, and a 256 KiB request view payload.
+
 ## Bootstrap And Organization Administration
 
 These routes are operator/admin surfaces. In API-key mode, user/org bootstrap

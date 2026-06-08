@@ -376,7 +376,7 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /scopedWorkspaceStorageKey/, "workspace layout storage should be scoped by active org/user/project");
   assert.match(shell, /workspaceStorageKey\(project, localSavedViewScope \? localSavedViewProjectScope : ""\)/, "workspace layouts should not share one project-only key across users");
   assert.match(shell, /legacyWorkspaceStorageKeys\(project, activeOrgId\)/, "authenticated workspace layout loads should migrate old org/project layout keys into the scoped key");
-  assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
+  assert.match(shell, /upsertOption\(\{\s*label: name,[\s\S]*?source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
   assert.equal(/ADVANCED_REDUCERS_VIEW_KEY/.test(shell), false, "advanced reducer preset should be removed with the Advanced tab");
   assert.equal(/selectTab\("advanced"\)/.test(shell), false, "advanced route should not be opened from saved views");
@@ -487,6 +487,9 @@ test("workspace view API normalizes generated and legacy envelopes", () => {
 
   assert.match(generated, /WorkspaceViewEnvelope: \{\s*workspace_view:/, "generated OpenAPI type exposes runtime singular workspace_view envelope");
   assert.match(generated, /WorkspaceViewSummariesEnvelope: \{[\s\S]*next_cursor\?:[\s\S]*workspace_views:/, "generated OpenAPI type exposes runtime workspace_views envelope and cursor");
+  assert.match(generated, /"\/api\/workspace-views\/\{view_id\}\/export"/, "generated OpenAPI type exposes view export route");
+  assert.match(generated, /"\/api\/workspace-views\/import"/, "generated OpenAPI type exposes view import route");
+  assert.match(generated, /"\/api\/workspace-view-data"/, "generated OpenAPI type exposes agent view data route");
   assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewSummary"\]/, "typed wrapper should keep generated summary row linkage");
   assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewRow"\]/, "typed wrapper should keep generated row linkage");
   assert.match(normalizer, /workspace_views/, "normalizer should accept runtime list envelopes");
@@ -498,6 +501,14 @@ test("workspace view API normalizes generated and legacy envelopes", () => {
   assert.deepEqual(workspaceViewFromPayload({ workspace_view: row }), row);
   assert.deepEqual(workspaceViewFromPayload({ view: row }), row);
   assert.equal(workspaceViewFromPayload({ view: { id: "bad", name: "Bad", payload: [] } }), null);
+});
+
+test("workspace view API paths are redacted before telemetry logging", () => {
+  const apiClient = readFileSync(`${root}src/api.js`, "utf8");
+
+  assert.match(apiClient, /workspace-views", ":view_id", "export"/, "view export route should redact dynamic IDs");
+  assert.match(apiClient, /"workspace-views\/import"/, "view import route should be a static known route");
+  assert.match(apiClient, /"workspace-view-data"/, "agent view data route should be a static known route");
 });
 
 test("API key UI does not expose admin controls to read-only members", () => {

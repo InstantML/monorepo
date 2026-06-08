@@ -6475,6 +6475,84 @@
         ]
       }
     },
+    "/api/workspace-view-data": {
+      "post": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "workspace_view_data",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceViewDataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded data projection for a portable workspace view and explicit runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing export scope or project access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Selected run is missing or not visible to the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/workspace-views": {
       "get": {
         "tags": [
@@ -6586,6 +6664,71 @@
           },
           {
             "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/workspace-views/import": {
+      "post": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "import_workspace_view",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportWorkspaceViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run preview or imported workspace view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace view update conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
           }
         ]
       }
@@ -6722,6 +6865,145 @@
           },
           {
             "bearerApiKey": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "delete_workspace_view",
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "path",
+            "description": "Workspace view UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expected_updated_at",
+            "in": "query",
+            "description": "Last observed updated_at timestamp for optimistic delete",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted workspace view marker",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewDeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace view not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace view update conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/workspace-views/{view_id}/export": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "operationId": "export_workspace_view",
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "path",
+            "description": "Workspace view UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Portable workspace view JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewExportEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace view not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "browserSession": []
           }
         ]
       }
@@ -11962,6 +12244,52 @@
           }
         }
       },
+      "ImportWorkspaceViewRequest": {
+        "type": "object",
+        "required": [
+          "exported_view"
+        ],
+        "properties": {
+          "conflict_strategy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "existing_view_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "expected_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "exported_view": {
+            "$ref": "#/components/schemas/WorkspaceViewExportEnvelope"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ImportsEnvelope": {
         "type": "object",
         "required": [
@@ -14645,6 +14973,247 @@
           }
         }
       },
+      "WorkspaceViewData": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "generated_at",
+          "run_ids",
+          "runs",
+          "metric_keys",
+          "metric_series",
+          "panels",
+          "warnings",
+          "limits"
+        ],
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/WorkspaceViewDataLimits"
+          },
+          "metric_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metric_series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceViewMetricSeries"
+            }
+          },
+          "panels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceViewDataPanelResult"
+            }
+          },
+          "run_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "runs": {
+            "type": "array",
+            "items": {}
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WorkspaceViewDataLimits": {
+        "type": "object",
+        "required": [
+          "run_ids",
+          "panels",
+          "points_per_series",
+          "max_points_per_series",
+          "total_points",
+          "max_total_points",
+          "max_response_bytes"
+        ],
+        "properties": {
+          "max_points_per_series": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "max_response_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_total_points": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "panels": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "points_per_series": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "run_ids": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_points": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "WorkspaceViewDataOptions": {
+        "type": "object",
+        "properties": {
+          "max_panels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "metric_point_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "WorkspaceViewDataPanelResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "type",
+          "section_id",
+          "section_name",
+          "metric_key",
+          "data_kind",
+          "summary_values",
+          "warnings"
+        ],
+        "properties": {
+          "data_kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metric_key": {
+            "type": "string"
+          },
+          "section_id": {
+            "type": "string"
+          },
+          "section_name": {
+            "type": "string"
+          },
+          "series_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary_values": {
+            "type": "array",
+            "items": {}
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WorkspaceViewDataRequest": {
+        "type": "object",
+        "required": [
+          "view",
+          "run_ids"
+        ],
+        "properties": {
+          "options": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceViewDataOptions"
+              }
+            ]
+          },
+          "run_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "view": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "WorkspaceViewDataResponse": {
+        "type": "object",
+        "required": [
+          "view_data"
+        ],
+        "properties": {
+          "view_data": {
+            "$ref": "#/components/schemas/WorkspaceViewData"
+          }
+        }
+      },
+      "WorkspaceViewDeleteResponse": {
+        "type": "object",
+        "required": [
+          "deleted",
+          "view_id",
+          "deleted_at"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "view_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "WorkspaceViewEnvelope": {
         "type": "object",
         "required": [
@@ -14653,6 +15222,149 @@
         "properties": {
           "workspace_view": {
             "$ref": "#/components/schemas/WorkspaceViewRow"
+          }
+        }
+      },
+      "WorkspaceViewExportEnvelope": {
+        "type": "object",
+        "required": [
+          "kind",
+          "schema_version",
+          "exported_at",
+          "source",
+          "view",
+          "integrity"
+        ],
+        "properties": {
+          "exported_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/WorkspaceViewExportIntegrity"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WorkspaceViewExportSource"
+          },
+          "view": {
+            "$ref": "#/components/schemas/WorkspaceViewExportedView"
+          }
+        }
+      },
+      "WorkspaceViewExportIntegrity": {
+        "type": "object",
+        "required": [
+          "payload_sha256"
+        ],
+        "properties": {
+          "payload_sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkspaceViewExportSource": {
+        "type": "object",
+        "required": [
+          "product",
+          "format"
+        ],
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkspaceViewExportedView": {
+        "type": "object",
+        "required": [
+          "name",
+          "payload"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WorkspaceViewImportResponse": {
+        "type": "object",
+        "required": [
+          "dry_run",
+          "action",
+          "name",
+          "payload_bytes",
+          "warnings"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "payload_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workspace_view": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceViewRow"
+              }
+            ]
+          }
+        }
+      },
+      "WorkspaceViewMetricSeries": {
+        "type": "object",
+        "required": [
+          "metric_key",
+          "series"
+        ],
+        "properties": {
+          "metric_key": {
+            "type": "string"
+          },
+          "series": {
+            "type": "array",
+            "items": {}
           }
         }
       },

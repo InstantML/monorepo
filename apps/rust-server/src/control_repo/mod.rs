@@ -12,6 +12,7 @@
 //!     run inside one transaction, so a crash can't leave an org with no owner.
 //!   * Read-after-write — reads hit the table, not a process-local projection.
 
+use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -795,6 +796,37 @@ impl ControlDb {
         .await
         .map_err(|err| internal("upsert_workspace_view", err))?;
         Ok(())
+    }
+
+    pub async fn update_workspace_view_if_current(
+        &self,
+        view: &WorkspaceViewRow,
+        expected_updated_at: DateTime<Utc>,
+    ) -> AppResult<bool> {
+        let result = sqlx::query(
+            "UPDATE workspace_views SET \
+               schema_version = $1, name = $2, project = $3, payload = $4, \
+               updated_at = $5, deleted_at = $6 \
+             WHERE id = $7 \
+               AND org_id = $8 \
+               AND owner_user_id IS NOT DISTINCT FROM $9 \
+               AND updated_at = $10 \
+               AND deleted_at IS NULL",
+        )
+        .bind(view.schema_version)
+        .bind(&view.name)
+        .bind(&view.project)
+        .bind(&view.payload)
+        .bind(view.updated_at)
+        .bind(view.deleted_at)
+        .bind(view.id)
+        .bind(view.org_id)
+        .bind(view.owner_user_id)
+        .bind(expected_updated_at)
+        .execute(self.pool())
+        .await
+        .map_err(|err| internal("update_workspace_view_if_current", err))?;
+        Ok(result.rows_affected() == 1)
     }
 
     pub async fn upsert_tenant_route(&self, route: &TenantRouteRecord) -> AppResult<()> {

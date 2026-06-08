@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, CreditCard, Download, LogOut, Menu, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -595,8 +595,13 @@ export function DashboardTopbar({
   onQuery,
   onQuickSearch,
   onRefresh,
+  onExportSavedView,
+  onImportSavedView,
+  onDeleteSavedView,
   onSaveView,
   canSaveView,
+  canExportSavedView,
+  canDeleteSavedView,
   onCheckWorkspaceName,
   onCreateWorkspace,
   onOpenBilling,
@@ -644,8 +649,13 @@ export function DashboardTopbar({
   onQuery: (value: string) => void;
   onQuickSearch: () => void;
   onRefresh: () => void;
+  onExportSavedView: () => void;
+  onImportSavedView: () => void;
+  onDeleteSavedView: () => void;
   onSaveView: () => void;
   canSaveView: boolean;
+  canExportSavedView: boolean;
+  canDeleteSavedView: boolean;
   onCheckWorkspaceName: (name: string) => Promise<WorkspaceNameAvailability>;
   onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
   onOpenBilling: () => void;
@@ -952,6 +962,9 @@ export function DashboardTopbar({
             options={[{ value: "", label: "Unsaved" }, ...savedViews]}
             value={savedViewKey}
           />
+          <button className="icon-button framed view-action-button" disabled={!canExportSavedView} type="button" aria-label="Export saved view" title={canExportSavedView ? "Export saved view" : "Select a shared saved view to export"} onClick={onExportSavedView}><Download size={14} /></button>
+          <button className="icon-button framed view-action-button" disabled={!canSaveView} type="button" aria-label="Import saved view" title={canSaveView ? "Import saved view" : "Read only workspaces cannot import shared views"} onClick={onImportSavedView}><Upload size={14} /></button>
+          <button className="icon-button framed view-action-button danger" disabled={!canDeleteSavedView} type="button" aria-label="Delete saved view" title={canDeleteSavedView ? "Delete saved view" : "Select a shared saved view to delete"} onClick={onDeleteSavedView}><Trash2 size={14} /></button>
           <button className="icon-button framed" type="button" aria-label="Refresh" onClick={onRefresh}><RefreshCw size={14} /></button>
         </div>
       ) : null}

@@ -32,8 +32,9 @@ pub(super) use billing::{
     billing_webhook,
 };
 pub(super) use dashboard::{
-    create_workspace_view, get_dashboard_preferences, get_workspace_view, list_workspace_views,
-    update_dashboard_preferences, update_workspace_view,
+    create_workspace_view, delete_workspace_view, export_workspace_view, get_dashboard_preferences,
+    get_workspace_view, import_workspace_view, list_workspace_views, update_dashboard_preferences,
+    update_workspace_view, workspace_view_data,
 };
 pub(super) use imports::{
     append_import_chunk, cancel_import_job, commit_import_job, create_import_job, get_import_job,

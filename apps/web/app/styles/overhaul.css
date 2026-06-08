@@ -861,6 +861,60 @@ textarea:focus {
   gap: 14px;
   padding: 14px;
 }
+.workspace-view-modal.compact {
+  width: min(460px, calc(100vw - 32px));
+}
+.workspace-view-import-body {
+  gap: 12px;
+}
+.workspace-view-import-text {
+  min-height: 180px;
+  resize: vertical;
+  font: 500 12px/1.5 var(--font-mono);
+}
+.workspace-view-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.workspace-view-preview div,
+.workspace-view-delete-body dl {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  margin: 0;
+}
+.workspace-view-preview span,
+.workspace-view-delete-body dt {
+  color: var(--muted);
+  font: 600 11px/1.2 var(--font-sans);
+}
+.workspace-view-preview strong,
+.workspace-view-delete-body dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 650 12px/1.3 var(--font-sans);
+}
+.workspace-view-preview ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font: 500 12px/1.4 var(--font-sans);
+}
+.workspace-view-delete-body p {
+  margin: 0;
+  color: var(--text);
+  font: 500 13px/1.4 var(--font-sans);
+}
+.danger-action {
+  background: var(--danger);
+  border-color: var(--danger);
+}
 .workspace-segment,
 .workspace-plan-grid {
   display: grid;
@@ -1211,6 +1265,13 @@ textarea:focus {
   color: var(--muted);
 }
 .topbar .icon-button.framed:hover { background: var(--surface-hover); color: var(--text); border-color: var(--line-strong); }
+.topbar .icon-button.framed:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.topbar .icon-button.framed.view-action-button.danger:not(:disabled) {
+  color: var(--danger);
+}
 
 /* Clerk UserButton: line up with the 30px square icon-buttons. */
 .brandbar-user-avatar {
@@ -1286,6 +1347,9 @@ textarea:focus {
 .workbar .status-message.error { color: var(--danger); }
 .workbar #demo-reset,
 .workbar #save-view { height: 32px; border-radius: var(--radius); white-space: nowrap; }
+.workbar .view-action-button {
+  flex: 0 0 30px;
+}
 
 /* ── Run Detail header — tight single row (run-detail.html mock) ────────── */
 .run-workspace-header {
