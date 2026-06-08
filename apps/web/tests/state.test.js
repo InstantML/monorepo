@@ -11,6 +11,7 @@ import {
   bestMetric,
   capSelectionToMatching,
   canRequestStop,
+  dashboardStatusQueryParams,
   defaultRunSelection,
   deselectVisible,
   displayStatusForRun,
@@ -554,6 +555,14 @@ test("run stop helpers derive display status and eligibility", () => {
   assert.equal(canRequestStop(stopping), false);
   assert.equal(canRequestStop(acknowledged), false);
   assert.equal(canRequestStop(stopped), false);
+});
+
+test("dashboard status query params preserve legacy fallback filters", () => {
+  assert.deepEqual(dashboardStatusQueryParams("running"), { status: "running", display_status: "running" });
+  assert.deepEqual(dashboardStatusQueryParams("failed"), { status: "failed", display_status: "failed" });
+  assert.deepEqual(dashboardStatusQueryParams("stopping"), { status: "", display_status: "stopping" });
+  assert.deepEqual(dashboardStatusQueryParams("stopped"), { status: "", display_status: "stopped" });
+  assert.deepEqual(dashboardStatusQueryParams("", "finished"), { status: "finished", display_status: "" });
 });
 
 test("upload health derives compact state from SDK heartbeat metrics", () => {

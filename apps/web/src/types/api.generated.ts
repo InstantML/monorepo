@@ -3336,6 +3336,7 @@ export interface components {
             actor?: string | null;
             /** Format: date-time */
             completed_at?: string | null;
+            completion_message?: string | null;
             /** Format: uuid */
             org_id: string;
             reason?: string | null;
@@ -3351,6 +3352,7 @@ export interface components {
         };
         RunControlSummary: {
             actor?: string | null;
+            completion_message?: string | null;
             display_status: string;
             reason?: string | null;
             /** Format: date-time */

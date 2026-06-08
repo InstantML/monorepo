@@ -67,6 +67,7 @@ export function RunsCommandbar({
   const columnsMenuRef = useRef<HTMLDivElement>(null);
   const columnsTriggerRef = useRef<HTMLButtonElement>(null);
   const exportHelpId = "selected-runs-export-help";
+  const stopHelpId = "selected-runs-stop-help";
 
   useEffect(() => {
     if (!columnsOpen) return;
@@ -138,16 +139,21 @@ export function RunsCommandbar({
         ) : null}
       </div>
       {onRequestSelectedStop ? (
-        <button
-          aria-label={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason ?? "No selected running runs can be stopped"}
-          className="secondary compact-button stop-selected-runs-button"
-          disabled={!selectedStopCandidateCount}
-          onClick={onRequestSelectedStop}
-          title={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason ?? "Select running runs that are not already stopping."}
-          type="button"
-        >
-          <Square size={14} /> Stop{selectedStopCandidateCount ? ` ${selectedStopCandidateCount}` : ""}
-        </button>
+        <>
+          <button
+            aria-describedby={stopHelpId}
+            aria-label={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason ?? "No selected running runs can be stopped"}
+            className="secondary compact-button stop-selected-runs-button"
+            disabled={!selectedStopCandidateCount}
+            onClick={onRequestSelectedStop}
+            title={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason ?? "Select running runs that are not already stopping."}
+            type="button"
+          >
+            <Square size={14} /> Request stop{selectedStopCandidateCount ? ` ${selectedStopCandidateCount}` : ""}
+          </button>
+          {!selectedStopCandidateCount && selectedStopDisabledReason ? <span className="stop-selected-runs-help">{selectedStopDisabledReason}</span> : null}
+          <span className="visually-hidden" id={stopHelpId}>{selectedStopDisabledReason ?? "Select running runs that are not already stopping."}</span>
+        </>
       ) : null}
       <button
         aria-label={selectedRunCount ? `Export ${selectedRunCount} selected runs as CSV` : "Export selected runs as CSV"}

@@ -1452,7 +1452,7 @@ class Run:
     def raise_if_stop_requested(self) -> None:
         """Acknowledge and raise when a cooperative dashboard stop is pending."""
 
-        request = self.stop_request(force=True)
+        request = self.stop_request()
         if request is None:
             return
         self._ack_stop_request(request, "acknowledged")
@@ -2558,6 +2558,7 @@ def init(
     async_init: bool = True,
     shadow_wandb: Any = False,
     queue_dir: str | None = None,
+    stop_check_interval_seconds: float = 10.0,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 
@@ -2590,6 +2591,7 @@ def init(
         capture_console=capture_console,
         async_init=async_init,
         shadow_wandb=shadow_wandb,
+        stop_check_interval_seconds=stop_check_interval_seconds,
     )
 
 
@@ -2609,6 +2611,7 @@ def attach_run(
     capture_console: bool = False,
     queue_dir: str | None = None,
     validate: bool = True,
+    stop_check_interval_seconds: float = 10.0,
 ) -> Run:
     """Attach SDK logging to an existing run, such as a UI-created fork."""
 
@@ -2630,6 +2633,7 @@ def attach_run(
         capture_console=capture_console,
         queue_dir=queue_dir,
         validate=validate,
+        stop_check_interval_seconds=stop_check_interval_seconds,
     )
 
 

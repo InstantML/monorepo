@@ -253,6 +253,7 @@ function stopControlRows(run: RunSummary) {
   return [
     ["State", compactValue(control.display_status ?? control.stop_state ?? "-")],
     ["Reason", compactValue(control.reason ?? "-")],
+    ["Completion note", compactValue(control.completion_message ?? "-")],
     ["Actor", compactValue(control.actor ?? "-")],
     ["Requested", control.stop_requested_at ? formatRunTime(control.stop_requested_at) : "-"],
     ["Acknowledged", control.stop_acknowledged_at ? formatRunTime(control.stop_acknowledged_at) : "-"],
@@ -347,7 +348,7 @@ export function RunDetail({
             <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
             {canStop ? (
               <button className="secondary compact-button run-stop-button" onClick={() => onRequestStop?.([run.id])} type="button">
-                <Square size={14} /> Stop
+                <Square size={14} /> Request stop
               </button>
             ) : null}
             {run.tags?.slice(0, 3).map((tag) => <span className="chip" key={tag}>{tag}</span>)}

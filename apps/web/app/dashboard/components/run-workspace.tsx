@@ -163,7 +163,7 @@ export function RunWorkspace({
           <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
           {canStop ? (
             <button className="secondary compact-button run-stop-button" onClick={() => onRequestStop([run.id])} type="button">
-              <Square size={14} /> Stop
+              <Square size={14} /> Request stop
             </button>
           ) : null}
           <div className="run-workspace-meta">

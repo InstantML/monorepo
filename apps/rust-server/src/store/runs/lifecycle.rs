@@ -149,6 +149,7 @@ pub async fn update_run(
     ensure_billing_write_allowed(store, ctx.org_id, "update a run").await?;
     let mut data = store.data.lock().await;
     let mut run = fetch_run_in_data(&data, ctx, run_id)?;
+    let mut terminal_stop_control = None;
     if input.status.is_none() && input.tags.is_none() && input.notes.is_none() {
         return Err(AppError::validation(
             "at least one of status, tags, or notes is required",
@@ -158,6 +159,16 @@ pub async fn update_run(
         run.status = validate_status(&status)?;
         if matches!(run.status.as_str(), "finished" | "failed") && run.finished_at.is_none() {
             run.finished_at = Some(Utc::now());
+        }
+        if matches!(run.status.as_str(), "finished" | "failed") {
+            if let Some(existing) = data.run_controls.get(&run.id) {
+                if matches!(existing.stop_state.as_str(), "requested" | "acknowledged") {
+                    let mut control = existing.clone();
+                    control.stop_state = "terminal_without_completion".to_string();
+                    control.updated_at = run.finished_at.unwrap_or_else(Utc::now);
+                    terminal_stop_control = Some(control);
+                }
+            }
         }
     }
     if let Some(tags) = input.tags {
@@ -181,6 +192,12 @@ pub async fn update_run(
         .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)
         .await?;
     data.insert_run(run.clone());
+    if let Some(control) = terminal_stop_control {
+        store
+            .persist_locked("run_control", ctx.org_id, &run.id.to_string(), &control)
+            .await?;
+        data.insert_run_control(control);
+    }
     Ok(run)
 }
 

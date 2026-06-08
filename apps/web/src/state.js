@@ -13,6 +13,8 @@ const UPLOAD_HEALTH_FAILED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}failed_even
 const UPLOAD_HEALTH_DROPPED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}dropped_events`;
 const UPLOAD_HEALTH_STALE_SECONDS = 30;
 const UPLOAD_HEALTH_LAG_SECONDS = 5;
+const DISPLAY_STATUS_VALUES = new Set(["running", "stopping", "stopped", "finished", "failed"]);
+const LEGACY_STATUS_VALUES = new Set(["running", "finished", "failed"]);
 
 export function toggleSelection(selected, runId) {
   if (selected.includes(runId)) return selected.filter((id) => id !== runId);
@@ -240,6 +242,19 @@ export function durationLabel(run) {
 
 export function displayStatusForRun(run) {
   return run?.run_control?.display_status || run?.status || "";
+}
+
+export function dashboardStatusQueryParams(displayStatus, legacyStatus = "") {
+  const display = String(displayStatus || "").trim().toLowerCase();
+  const legacy = String(legacyStatus || "").trim().toLowerCase();
+  const normalizedDisplay = DISPLAY_STATUS_VALUES.has(display) ? display : "";
+  if (!normalizedDisplay) {
+    return { status: LEGACY_STATUS_VALUES.has(legacy) ? legacy : "", display_status: "" };
+  }
+  return {
+    status: LEGACY_STATUS_VALUES.has(normalizedDisplay) ? normalizedDisplay : "",
+    display_status: normalizedDisplay,
+  };
 }
 
 export function canRequestStop(run, canControl = true) {

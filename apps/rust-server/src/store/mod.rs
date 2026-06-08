@@ -1495,6 +1495,7 @@ fn run_control_summary(run: &RunRow, control: Option<&RunControlRow>) -> Value {
         "stop_request_id": control.and_then(|item| item.stop_request_id),
         "stop_requested": matches!(stop_state, "requested" | "acknowledged" | "completed"),
         "reason": control.and_then(|item| item.reason.clone()),
+        "completion_message": control.and_then(|item| item.completion_message.clone()),
         "actor": control.and_then(|item| display_stop_actor(item.actor.as_deref())),
         "stop_requested_at": control.and_then(|item| item.requested_at.clone()),
         "stop_acknowledged_at": control.and_then(|item| item.acknowledged_at.clone()),
@@ -2207,6 +2208,7 @@ mod tests {
             stop_request_id: Some(Uuid::from_u128(9_999)),
             stop_state: state.to_string(),
             reason: Some("bad sweep".to_string()),
+            completion_message: None,
             actor: Some("user:reviewer".to_string()),
             requested_at: Some(epoch()),
             acknowledged_at: (state == "acknowledged" || state == "completed").then_some(epoch()),
@@ -2391,6 +2393,93 @@ mod tests {
         assert_eq!(retry_control.completed_at, first_control.completed_at);
         assert_eq!(retry_control.updated_at, first_control.updated_at);
         assert_eq!(retry_control.reason.as_deref(), Some("bad sweep"));
+        assert_eq!(
+            retry_control.completion_message.as_deref(),
+            Some("sdk cleanup")
+        );
+    }
+
+    #[tokio::test]
+    async fn terminal_patch_marks_active_stop_without_completion() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(43);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        update_run(
+            &store,
+            &ctx,
+            run_id,
+            UpdateRunRequest {
+                status: Some("finished".to_string()),
+                tags: None,
+                notes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let signal = run_stop_signal(&store, &ctx, run_id).await.unwrap();
+        assert_eq!(signal["stop_requested"], json!(false));
+        let control = store
+            .data
+            .lock()
+            .await
+            .run_controls
+            .get(&run_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(control.stop_state, "terminal_without_completion");
+    }
+
+    #[tokio::test]
+    async fn bulk_stop_dedupes_duplicate_run_ids() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(44);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        let result = request_bulk_run_stop(
+            &store,
+            &ctx,
+            StopRunsRequest {
+                run_ids: vec![run_id, run_id],
+                reason: Some("bad sweep".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["results"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            store
+                .data
+                .lock()
+                .await
+                .run_controls
+                .get(&run_id)
+                .unwrap()
+                .stop_state,
+            "requested"
+        );
     }
 
     #[test]

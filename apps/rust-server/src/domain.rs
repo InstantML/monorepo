@@ -1132,6 +1132,8 @@ pub struct RunControlRow {
     pub stop_request_id: Option<Uuid>,
     pub stop_state: String,
     pub reason: Option<String>,
+    #[serde(default)]
+    pub completion_message: Option<String>,
     pub actor: Option<String>,
     pub requested_at: Option<DateTime<Utc>>,
     pub acknowledged_at: Option<DateTime<Utc>>,

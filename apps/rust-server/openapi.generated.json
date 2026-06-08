@@ -14134,6 +14134,12 @@
             ],
             "format": "date-time"
           },
+          "completion_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "org_id": {
             "type": "string",
             "format": "uuid"
@@ -14180,6 +14186,12 @@
         ],
         "properties": {
           "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completion_message": {
             "type": [
               "string",
               "null"

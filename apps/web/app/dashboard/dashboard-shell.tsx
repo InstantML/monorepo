@@ -14,7 +14,7 @@ import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normaliz
 import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
-import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
@@ -113,6 +113,7 @@ type StopDialogState = {
   idempotencyKey: string;
   reason: string;
   runIds: string[];
+  ineligibleRunCount: number;
   skippedRunCount: number;
   source: "single" | "bulk";
 } | null;
@@ -1299,9 +1300,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     let keepInitialRunsLoading = false;
     try {
+      const statusParams = dashboardStatusQueryParams(displayStatus, status);
       const params = currentPageCursor
-        ? { project, status, display_status: displayStatus, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
-        : { project, status, display_status: displayStatus, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
+        ? { project, ...statusParams, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
+        : { project, ...statusParams, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
       let summaryPayload: Summary;
       try {
@@ -1321,7 +1323,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
       if (requestId !== dashboardRequestRef.current) return;
       const overviewResult = await retryTransientRequest(
-        () => api.get(`/api/overview${queryString({ project, status, display_status: displayStatus, q: query, metric_key: metricKey })}`, requestOptions),
+        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, metric_key: metricKey })}`, requestOptions),
         retryOptions,
       ).then(
         (value) => ({ status: "fulfilled" as const, value }),
@@ -2919,10 +2921,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           setMessage("Selection cancelled because filters changed.");
           return;
         }
+        const statusParams = dashboardStatusQueryParams(displayStatus, status);
         const params = cursor ? {
           project,
-          status,
-          display_status: displayStatus,
+          ...statusParams,
           q: query,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           cursor,
@@ -2931,8 +2933,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           metric_key: metricKey,
         } : {
           project,
-          status,
-          display_status: displayStatus,
+          ...statusParams,
           q: query,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           offset,
@@ -3030,16 +3031,21 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const seen = new Set<string>();
     const runs: RunSummary[] = [];
     let eligibleRunCount = 0;
+    let ineligibleRunCount = 0;
     for (const runId of runIds) {
       if (seen.has(runId)) continue;
       seen.add(runId);
       const run = runSummaryForId(runId);
-      if (!run || !canRequestStop(run, canControlRuns)) continue;
+      if (!run || !canRequestStop(run, canControlRuns)) {
+        ineligibleRunCount += 1;
+        continue;
+      }
       eligibleRunCount += 1;
       if (runs.length < MAX_STOP_DIALOG_RUNS) runs.push(run);
     }
     return {
       runs,
+      ineligibleRunCount,
       skippedRunCount: Math.max(0, eligibleRunCount - runs.length),
     };
   }
@@ -3060,7 +3066,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage("Select runs explicitly before requesting a bulk stop.");
       return;
     }
-    const { runs: candidates, skippedRunCount } = stopCandidatesForIds(runIds);
+    const { runs: candidates, ineligibleRunCount, skippedRunCount } = stopCandidatesForIds(runIds);
     if (!candidates.length) {
       setMessage(source === "bulk" ? "No selected running runs can be stopped." : "This run cannot be stopped.");
       return;
@@ -3069,6 +3075,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setStopError("");
     setStopDialog({
       idempotencyKey: nextStopIdempotencyKey(dialogSource),
+      ineligibleRunCount,
       reason: "",
       runIds: candidates.map((run) => run.id),
       skippedRunCount,
@@ -3107,9 +3114,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     setSummary((current) => ({
       ...current,
-      runs: current.runs.map((run) => {
+      runs: current.runs.flatMap((run) => {
         const control = controlsByRunId.get(run.id);
-        return control ? mergeRunControl(run, control) : run;
+        if (!control) return [run];
+        const nextRun = mergeRunControl(run, control);
+        return displayStatus && displayStatusForRun(nextRun) !== displayStatus ? [] : [nextRun];
       }),
     }));
     setSelectedRunDetails((current) => {
@@ -3136,11 +3145,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const failures: string[] = [];
     if ("results" in payload) {
       for (const result of payload.results ?? []) {
-        if (result.run_control) controls.set(result.run_id, result.run_control);
+        if (result.run_control?.stop_requested) controls.set(result.run_id, result.run_control);
+        else if (result.ok) failures.push(`Run ${result.run_id} is no longer running.`);
         if (!result.ok) failures.push(result.error || `Unable to stop ${result.run_id}.`);
       }
-    } else if (payload.run_control) {
+    } else if (payload.run_control?.stop_requested) {
       controls.set(payload.run_id, payload.run_control);
+    } else {
+      failures.push("This run is no longer running.");
     }
     return { controls, failures };
   }
@@ -3785,8 +3797,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     ? stopDialog.runIds.map((runId) => runSummaryForId(runId)).filter(Boolean) as RunSummary[]
     : [];
   const stopDialogTitle = stopDialogRuns.length === 1
-    ? `Stop ${stopDialogRuns[0]?.name ?? "run"}`
-    : `Stop ${stopDialogRuns.length} runs`;
+    ? `Request stop for ${stopDialogRuns[0]?.name ?? "run"}`
+    : `Request stop for ${stopDialogRuns.length} runs`;
 
   const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
   const ActiveIcon = activeTabIcon;
@@ -3875,8 +3887,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               <div className="checkpoint-fork-grid stop-request-grid">
                 <div><span>Eligible runs</span><strong>{stopDialogRuns.length}</strong></div>
                 <div><span>Mode</span><strong>{stopDialog.source === "bulk" ? "bulk" : "single"}</strong></div>
+                {stopDialog.ineligibleRunCount > 0 ? <div><span>Ineligible</span><strong>{stopDialog.ineligibleRunCount}</strong></div> : null}
                 {stopDialog.skippedRunCount > 0 ? <div><span>Skipped</span><strong>{stopDialog.skippedRunCount}</strong></div> : null}
               </div>
+              {stopDialog.ineligibleRunCount > 0 ? (
+                <p className="checkpoint-fork-notice">{stopDialog.ineligibleRunCount} selected {stopDialog.ineligibleRunCount === 1 ? "run is" : "runs are"} already stopped, stopping, terminal, unavailable, or read only.</p>
+              ) : null}
               {stopDialog.skippedRunCount > 0 ? (
                 <p className="checkpoint-fork-notice">Only the first {MAX_STOP_DIALOG_RUNS} eligible selected runs are included. {stopDialog.skippedRunCount} more will be left untouched.</p>
               ) : null}

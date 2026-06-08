@@ -162,6 +162,7 @@ pub struct RunControlSummary {
     pub stop_request_id: Option<Uuid>,
     pub stop_requested: bool,
     pub reason: Option<String>,
+    pub completion_message: Option<String>,
     pub actor: Option<String>,
     pub stop_requested_at: Option<DateTime<Utc>>,
     pub stop_acknowledged_at: Option<DateTime<Utc>>,

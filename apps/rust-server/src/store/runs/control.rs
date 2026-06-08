@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+
+use axum::http::StatusCode;
+
 use super::*;
 
 pub async fn request_run_stop(
@@ -47,9 +51,15 @@ pub async fn request_bulk_run_stop(
     }
     let reason = validate_stop_reason(input.reason.as_deref())?;
     let mut data = store.data.lock().await;
-    let mut results = Vec::with_capacity(input.run_ids.len());
+    let mut seen = HashSet::new();
+    let run_ids: Vec<Uuid> = input
+        .run_ids
+        .into_iter()
+        .filter(|run_id| seen.insert(*run_id))
+        .collect();
+    let mut results = Vec::with_capacity(run_ids.len());
     let mut controls_to_persist = Vec::new();
-    for run_id in input.run_ids {
+    for run_id in run_ids {
         match fetch_run_in_data(&data, ctx, run_id) {
             Ok(run) => {
                 let plan = prepare_stop_locked(&data, ctx, &run, reason.clone());
@@ -65,7 +75,11 @@ pub async fn request_bulk_run_stop(
             Err(error) => results.push(json!({
                 "run_id": run_id,
                 "ok": false,
-                "error": error.message(),
+                "error": if matches!(error.status(), StatusCode::NOT_FOUND | StatusCode::FORBIDDEN) {
+                    "not_found_or_unauthorized"
+                } else {
+                    error.message()
+                },
             })),
         }
     }
@@ -112,7 +126,7 @@ pub async fn acknowledge_run_stop(
     run_id: Uuid,
     input: StopAckRequest,
 ) -> AppResult<Value> {
-    let _message = validate_stop_reason(input.message.as_deref())?;
+    let message = validate_stop_reason(input.message.as_deref())?;
     let mut data = store.data.lock().await;
     let mut run = fetch_run_in_data(&data, ctx, run_id)?;
     let mut control = data
@@ -146,6 +160,10 @@ pub async fn acknowledge_run_stop(
             }
             if control.completed_at.is_none() {
                 control.completed_at = Some(now);
+                control_changed = true;
+            }
+            if control.completion_message.is_none() && message.is_some() {
+                control.completion_message = message;
                 control_changed = true;
             }
             if control.stop_state != "completed" {
@@ -224,6 +242,7 @@ fn prepare_stop_locked(
         stop_request_id: Some(Uuid::new_v4()),
         stop_state: "requested".to_string(),
         reason,
+        completion_message: None,
         actor: Some(stop_actor(ctx)),
         requested_at: Some(now),
         acknowledged_at: None,
@@ -244,6 +263,7 @@ fn inactive_control(run: &RunRow) -> RunControlRow {
         stop_request_id: None,
         stop_state: "none".to_string(),
         reason: None,
+        completion_message: None,
         actor: None,
         requested_at: None,
         acknowledged_at: None,

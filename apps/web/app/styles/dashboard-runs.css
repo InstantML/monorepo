@@ -53,7 +53,8 @@
   opacity: 0.55;
 }
 
-.export-selected-runs-help {
+.export-selected-runs-help,
+.stop-selected-runs-help {
   display: none;
   color: var(--muted);
   font-size: 11px;
