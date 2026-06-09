@@ -115,7 +115,7 @@
 .export-selected-runs-help {
   display: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
   line-height: 1.35;
 }
@@ -220,9 +220,9 @@
   height: min(720px, calc(100vh - var(--topbar-height) - var(--runs-filter-sticky-height) - 12px));
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--line);
   border-radius: var(--radius) 0 0 var(--radius);
   background: #fbfcfd;
+  box-shadow: inset -1px 0 0 var(--line);
   overflow-anchor: none;
 }
 
@@ -535,7 +535,7 @@
   border: 1px solid var(--line-soft);
   border-radius: 4px;
   color: var(--accent-strong);
-  font-size: 10px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 760;
   line-height: 1.1;
@@ -671,7 +671,7 @@
 
 .workspace-run-main small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.25;
 }
 

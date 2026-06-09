@@ -17,7 +17,7 @@
 
 .fullscreen-panel-card .axis-label,
 .fullscreen-panel-card .tick-label {
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .fullscreen-panel-card .chart-range-row {
@@ -53,7 +53,7 @@
 
 .analysis-eyebrow {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -99,7 +99,7 @@
 
 .analysis-stat span {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -283,7 +283,7 @@ th {
   z-index: 1;
   background: var(--surface);
   color: #687584;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
 }
 
@@ -421,7 +421,7 @@ tr.selected.inspected {
   max-width: 100%;
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -430,7 +430,7 @@ tr.selected.inspected {
 .subtle,
 small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .pill {
@@ -440,7 +440,7 @@ small {
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
   padding: 1px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 720;
   text-transform: capitalize;
 }
@@ -477,7 +477,7 @@ small {
   border-radius: var(--tight-radius);
   background: #ffffff;
   color: #495766;
-  font-size: 11px;
+  font-size: 12px;
   padding: 2px 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -578,7 +578,7 @@ small {
 .smoothing-control span,
 .toggle-control span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -739,7 +739,7 @@ small {
 }
 
 .chart-smoothing-label {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -783,7 +783,7 @@ small {
   background: rgba(255, 248, 235, 0.96);
   color: #7a4d12;
   box-shadow: 0 6px 18px rgba(23, 33, 43, 0.08);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.35;
   padding: 5px 7px;
@@ -860,7 +860,7 @@ small {
   border-radius: var(--tight-radius);
   background: transparent;
   color: var(--ink, #344251);
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 6px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1163,7 +1163,7 @@ small {
   padding: 3px 0 4px;
   margin-bottom: 2px;
   border-bottom: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -1219,7 +1219,7 @@ small {
   padding-top: 6px;
   border-top: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.01em;
 }
@@ -1295,7 +1295,7 @@ small {
   background: var(--surface);
   color: var(--muted);
   padding: 0 10px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
@@ -1324,7 +1324,7 @@ small {
   grid-column: 1 / -1;
   max-width: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
   text-align: left;
 }
@@ -1373,7 +1373,7 @@ small {
 
 .compare-metric-strip > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -1520,7 +1520,7 @@ small {
 
 .compare-summary small {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -1537,7 +1537,7 @@ small {
 .compare-summary span,
 .compare-summary li {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -1624,7 +1624,7 @@ small {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1682,13 +1682,13 @@ small {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
 .subsection-title {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -1726,8 +1726,7 @@ small {
 .failure-card {
   display: grid;
   gap: 8px;
-  border: 1px solid #f2b9b4;
-  border-left: 3px solid var(--coral);
+  border: 1px solid color-mix(in srgb, var(--coral) 34%, var(--line));
   border-radius: var(--control-radius);
   background: #fff6f5;
   padding: 10px;

@@ -3,18 +3,25 @@ import "./auth.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk, JetBrains_Mono, Instrument_Serif } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk, Instrument_Serif } from "next/font/google";
 
-const sans = Space_Grotesk({
+const display = Space_Grotesk({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-sans-next",
   display: "swap",
 });
 
-const mono = JetBrains_Mono({
+const ui = IBM_Plex_Sans({
   subsets: ["latin"],
-  weight: ["500", "700"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ui-next",
+  display: "swap",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-mono-next",
   display: "swap",
 });
@@ -69,7 +76,7 @@ const SITE_TAGLINE =
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "InstantML — Training observability that keeps up with your loop",
+    default: "InstantML: Training observability that keeps up with your loop",
     template: "%s · InstantML",
   },
   description: SITE_TAGLINE,
@@ -97,13 +104,13 @@ export const metadata: Metadata = {
     type: "website",
     url: SITE_URL,
     siteName: "InstantML",
-    title: "InstantML — Training observability that keeps up with your loop",
+    title: "InstantML: Training observability that keeps up with your loop",
     description: SITE_TAGLINE,
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "InstantML — Training observability that keeps up with your loop",
+    title: "InstantML: Training observability that keeps up with your loop",
     description: SITE_TAGLINE,
   },
   robots: {
@@ -152,7 +159,7 @@ const softwareApplicationJsonLd = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${display.variable} ${ui.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
         <script dangerouslySetInnerHTML={{ __html: logoIntroFlag }} />

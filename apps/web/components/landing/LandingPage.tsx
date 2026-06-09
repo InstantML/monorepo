@@ -121,38 +121,38 @@ function ArchitectureDiagram() {
       >
         <rect x="20" y="30" width="320" height="200" rx="10" stroke="#2A2E3D" strokeWidth="1" strokeDasharray="4 4" fill="none" />
         <rect x="32" y="20" width="170" height="20" rx="4" fill="#08080A" />
-        <text x="40" y="34" fontFamily="Geist Mono, monospace" fontSize="10" fill="#1FB877" letterSpacing="0.15em">YOUR TRAINING JOB</text>
+        <text x="40" y="34" fontFamily="var(--font-mono)" fontSize="12" fill="#1FB877" letterSpacing="0.1em">YOUR TRAINING JOB</text>
         <rect x="60" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="120" y="125" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="13" fontWeight="500" fill="#F8FAFC">Trainer</text>
-        <text x="120" y="146" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="10" fill="#64748B">PyTorch · JAX · TRL</text>
+        <text x="120" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">Trainer</text>
+        <text x="120" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">PyTorch · JAX · TRL</text>
         <line x1="180" y1="130" x2="240" y2="130" stroke="#2A2E3D" strokeWidth="1" />
         <rect x="220" y="92" width="100" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="270" y="121" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="13" fontWeight="500" fill="#F8FAFC">SDK</text>
-        <text x="270" y="140" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">buffered · async</text>
-        <text x="270" y="154" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">offline spool</text>
+        <text x="270" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">SDK</text>
+        <text x="270" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">buffered</text>
+        <text x="270" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">offline spool</text>
         <line x1="340" y1="130" x2="410" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
         <polygon points="408,125 420,130 408,135" fill="#1FB877" />
         <rect x="420" y="76" width="180" height="108" rx="10" fill="#0D0F15" stroke="#1FB877" strokeWidth="1.4" className="pulse-node" />
-        <text x="510" y="106" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="14" fontWeight="600" fill="#F8FAFC">InstantML API</text>
+        <text x="510" y="106" textAnchor="middle" fontFamily="var(--font-display)" fontSize="14" fontWeight="600" fill="#F8FAFC">InstantML API</text>
         <line x1="440" y1="118" x2="580" y2="118" stroke="#1F1F26" strokeWidth="1" />
-        <text x="510" y="138" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="10" fill="#94A3B8">Rust · ClickHouse</text>
-        <text x="510" y="156" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">typed attributes · summaries</text>
-        <text x="510" y="172" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">indexed run search</text>
+        <text x="510" y="138" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#94A3B8">Rust · ClickHouse</text>
+        <text x="510" y="156" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">typed summaries</text>
+        <text x="510" y="172" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">indexed search</text>
         <line x1="600" y1="130" x2="670" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
         <polygon points="668,125 680,130 668,135" fill="#1FB877" />
         <rect x="680" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="740" y="121" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="13" fontWeight="500" fill="#F8FAFC">Dashboard</text>
-        <text x="740" y="140" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">runs · compare</text>
-        <text x="740" y="154" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">charts · artifacts</text>
+        <text x="740" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">Dashboard</text>
+        <text x="740" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">runs · compare</text>
+        <text x="740" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">charts · artifacts</text>
         <line x1="800" y1="130" x2="855" y2="130" stroke="#2A2E3D" strokeWidth="1" />
         <rect x="820" y="92" width="80" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" strokeDasharray="3 3" />
-        <text x="860" y="125" textAnchor="middle" fontFamily="Geist, sans-serif" fontSize="12" fontWeight="500" fill="#F8FAFC">Artifacts</text>
-        <text x="860" y="146" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#64748B">S3 / R2</text>
-        <text x="120" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">GPU NODES</text>
-        <text x="270" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">PYTHON SDK</text>
-        <text x="510" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#1FB877" letterSpacing="0.1em">HOT PATH</text>
-        <text x="740" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">NEXT/REACT</text>
-        <text x="860" y="208" textAnchor="middle" fontFamily="Geist Mono, monospace" fontSize="9" fill="#475569" letterSpacing="0.1em">OBJECT STORE</text>
+        <text x="860" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="12" fontWeight="500" fill="#F8FAFC">Artifacts</text>
+        <text x="860" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">S3 / R2</text>
+        <text x="120" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">GPU NODES</text>
+        <text x="270" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">PYTHON SDK</text>
+        <text x="510" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#1FB877" letterSpacing="0.06em">HOT PATH</text>
+        <text x="740" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">NEXT/REACT</text>
+        <text x="860" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">OBJECT STORE</text>
       </svg>
     </div>
   );
@@ -298,6 +298,66 @@ function StatCard({ k, v, hint }: { k: string; v: string; hint: string }) {
   );
 }
 
+function HeroProductPreview() {
+  const runs = [
+    ["r_8f21", "hosted-scale-cp", "188.95", "running"],
+    ["r_77ac", "hosted-scale-ci", "198.82", "finished"],
+    ["r_3c18", "sweep-baseline", "186.76", "finished"],
+    ["r_52de", "eval-regression", "199.49", "running"],
+  ];
+
+  return (
+    <div className="landing-product-preview" aria-label="InstantML dashboard preview">
+      <div className="landing-product-preview__rail">
+        <div className="landing-product-preview__rail-head">
+          <span>Runs</span>
+          <strong>100 selected</strong>
+        </div>
+        {runs.map(([id, name, value, status], index) => (
+          <div className={`landing-product-preview__run ${index === 1 ? "is-selected" : ""}`} key={id}>
+            <span className={`landing-product-preview__status is-${status}`} />
+            <div>
+              <strong>{name}</strong>
+              <small>{id} · {value}</small>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="landing-product-preview__main">
+        <div className="landing-product-preview__toolbar">
+          <div>
+            <span className="landing-product-preview__eyebrow">Line · eval/return_mean</span>
+            <strong>Return Mean</strong>
+          </div>
+          <div className="landing-product-preview__chips">
+            <span>Grouped</span>
+            <span>Full fidelity</span>
+            <span>Step 124</span>
+          </div>
+        </div>
+        <svg className="landing-product-preview__chart" viewBox="0 0 620 250" role="img" aria-label="Return mean curves">
+          <g className="landing-product-preview__grid">
+            {[44, 88, 132, 176, 220].map((y) => <line key={y} x1="36" x2="600" y1={y} y2={y} />)}
+            {[124, 236, 348, 460, 572].map((x) => <line key={x} x1={x} x2={x} y1="28" y2="224" />)}
+          </g>
+          <path className="landing-product-preview__line is-blue" d="M42 212 C72 170 102 142 138 124 C190 98 254 84 320 72 C390 60 470 53 596 46" />
+          <path className="landing-product-preview__line is-green" d="M42 216 C82 164 120 136 162 116 C226 86 300 70 380 60 C462 49 520 43 596 38" />
+          <path className="landing-product-preview__line is-amber" d="M42 218 C74 176 112 154 156 138 C228 112 306 94 392 82 C474 72 532 65 596 58" />
+          <path className="landing-product-preview__line is-coral" d="M42 220 C86 182 122 164 176 148 C254 124 324 110 414 98 C500 87 552 80 596 74" />
+          <circle cx="518" cy="43" r="4" className="landing-product-preview__point is-green" />
+          <circle cx="518" cy="66" r="4" className="landing-product-preview__point is-amber" />
+          <g className="landing-product-preview__axis">
+            <text x="36" y="242">0</text>
+            <text x="592" y="242">20k</text>
+            <text x="6" y="222">140</text>
+            <text x="6" y="48">200</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 function BentoEyebrow({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <div className="landing-bento-eyebrow">
@@ -312,9 +372,9 @@ function MatrixCell({ label, status, tone }: { label: string; status: string; to
     tone === "ok" ? "var(--accent)" : tone === "progress" ? "var(--warm)" : "var(--dim)";
   const dotShadow =
     tone === "ok"
-      ? "0 0 8px rgba(31,184,119,0.6)"
+      ? "0 0 0 1px rgba(31,184,119,0.18)"
       : tone === "progress"
-        ? "0 0 8px rgba(224,176,122,0.6)"
+        ? "0 0 0 1px rgba(224,176,122,0.18)"
         : "none";
   return (
     <div className="bento-cell landing-matrix-cell">
@@ -401,6 +461,10 @@ export function LandingPage() {
                 Hosted + Premium BYOC
               </span>
             </div>
+
+            <div className="hero-rise-4">
+              <HeroProductPreview />
+            </div>
           </div>
         </Section>
       </div>
@@ -429,7 +493,6 @@ export function LandingPage() {
       {/* How it works */}
       <Section id="how" className="landing-section-py">
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">How it works</p>
           <h2 className="landing-h2">
             Install the SDK.{" "}
             <span className="font-serif-italic landing-h2-muted">Log the run.</span>
@@ -463,7 +526,6 @@ export function LandingPage() {
       {/* Capabilities */}
       <Section className="landing-section-py" id="capabilities">
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">Capabilities</p>
           <h2 className="landing-h2">
             The parts teams use{" "}
             <span className="font-serif-italic landing-h2-muted">every day.</span>
@@ -549,7 +611,6 @@ export function LandingPage() {
       <Section className="landing-section-py" id="developers">
         <div className="landing-dev-header">
           <div>
-            <p className="mono-label landing-mono-label">For developers</p>
             <h2 className="landing-h2">
               Three calls{" "}
               <span className="font-serif-italic landing-h2-muted">cover the loop.</span>
@@ -578,7 +639,6 @@ export function LandingPage() {
       {/* What ships today */}
       <Section className="landing-section-py" id="pricing">
         <div className="landing-section-intro">
-          <p className="mono-label landing-mono-label">What ships today</p>
           <h2 className="landing-h2">
             Shipping now.
           </h2>
@@ -617,9 +677,6 @@ export function LandingPage() {
           <div className="bg-grid landing-bg-overlay landing-cta-card__grid" />
           <div className="landing-cta-card__glow" />
           <div className="landing-cta-card__body">
-            <div className="landing-cta-card__logo">
-              <LogoMark size={28} color="var(--accent)" />
-            </div>
             <h2 className="landing-cta-h2">
               Bring one project.
             </h2>

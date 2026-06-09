@@ -440,7 +440,6 @@ export function PricingPage() {
 
       <PageSection className="landing-section-py pricing-header-section">
         <div className="landing-section-intro pricing-header-intro">
-          <p className="mono-label landing-mono-label">Pricing</p>
           <h1 className="landing-h2 pricing-h1">
             Predictable training observability pricing.{" "}
             <span className="font-serif-italic landing-h2-muted">
@@ -549,9 +548,6 @@ export function PricingPage() {
           <div className="bg-grid landing-bg-overlay landing-cta-card__grid" />
           <div className="landing-cta-card__glow" />
           <div className="landing-cta-card__body">
-            <div className="landing-cta-card__logo">
-              <LogoMark size={28} color="var(--accent)" />
-            </div>
             <h2 className="landing-cta-h2">
               Start with a real plan limit.{" "}
               <span className="font-serif-italic landing-h2-muted">

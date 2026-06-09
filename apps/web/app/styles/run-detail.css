@@ -45,7 +45,7 @@
 .metadata-read p,
 .form-error {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -223,7 +223,7 @@
 .workspace-summary-selection strong {
   margin-left: auto;
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -285,7 +285,7 @@
 .metric-summary-head {
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -337,7 +337,7 @@
   border-radius: var(--tight-radius);
   background: var(--surface-muted);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 760;
   padding: 4px 8px;
@@ -361,7 +361,7 @@ pre {
   background: #fbfcfd;
   color: #223142;
   padding: 10px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -392,12 +392,12 @@ pre {
 }
 
 .inspector .detail-row .pill {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .inspector pre {
   background: #fbfcfd;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .inspector .artifact-mini {
@@ -455,7 +455,7 @@ pre {
 
 .artifact-actions span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .artifact-card strong,
@@ -513,7 +513,7 @@ pre {
 
 .checkpoint-main small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .checkpoint-actions {
@@ -566,7 +566,7 @@ pre {
 .checkpoint-fork-grid span,
 .checkpoint-fork-field span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .checkpoint-fork-grid strong {
@@ -642,7 +642,7 @@ pre {
 .lineage-node span,
 .lineage-children-head span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .lineage-node strong {
@@ -765,7 +765,7 @@ pre {
   overflow: hidden;
   background: #fbfcfd;
   color: #4b5967;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
@@ -789,7 +789,7 @@ pre {
 
 .compare-head small {
   color: var(--accent-strong);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -821,7 +821,7 @@ pre {
 .compare-more,
 .compare-empty {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -840,7 +840,7 @@ pre {
 
 .compare-attribute small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -877,7 +877,7 @@ pre {
 .compare-cell small {
   flex: 0 0 auto;
   color: #5b6875;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
