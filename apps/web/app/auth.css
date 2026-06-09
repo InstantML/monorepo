@@ -83,14 +83,14 @@
   transition:background .14s,border-color .14s,color .14s,transform .1s;white-space:nowrap}
 .iml-btn:hover{background:var(--surface-hover);border-color:var(--line-strong)}
 .iml-btn:active{transform:translateY(1px)}
-.iml-btn:disabled{opacity:.6;cursor:not-allowed}
+.iml-btn:disabled{opacity:.68;cursor:not-allowed}
 .iml-btn--ghost{background:transparent;border-color:transparent;color:var(--muted)}
 .iml-btn--ghost:hover{background:var(--surface-hover);color:var(--text)}
 .iml-btn--outline{background:transparent;border-color:var(--line-strong);color:var(--text-2)}
 .iml-btn--outline:hover{background:var(--surface-hover);color:var(--text)}
 .iml-btn--primary{background:var(--accent);border-color:var(--accent);color:#051d12}
 .iml-btn--primary:hover:not(:disabled){background:var(--accent-strong);border-color:var(--accent-strong)}
-.iml-btn--primary:disabled{background:var(--accent);border-color:var(--accent);opacity:.62}
+.iml-btn--primary:disabled{background:#18704d;border-color:#18704d;color:#f2fff8;opacity:1}
 .iml-btn--lg{min-height:44px;padding:11px 18px;font-size:14px}
 .iml-btn--block{width:100%}
 .iml-btn .iml-arrow{transition:transform .16s}
@@ -108,7 +108,7 @@
 .iml-spin{width:13px;height:13px;border-radius:50%;flex:0 0 auto;
   border:2px solid rgba(31,184,119,.25);border-top-color:var(--accent);
   animation:iml-spin .7s linear infinite}
-.iml-spin.on-fill{border-color:rgba(5,29,18,.3);border-top-color:#051d12}
+.iml-spin.on-fill{border-color:color-mix(in srgb,currentColor 34%,transparent);border-top-color:currentColor}
 @keyframes iml-spin{to{transform:rotate(360deg)}}
 
 /* ── card ───────────────────────────────────────────────────────────────── */

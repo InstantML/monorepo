@@ -709,6 +709,8 @@ export function DashboardTopbar({
   const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
     ? ` Column ${searchError.position}.`
     : "";
+  const searchErrorText = searchError ? `${searchError.message}${searchErrorPositionSuffix}` : "";
+  const searchErrorHelp = "Try tag:baseline status:finished, name:\"long context\", or -tag:debug.";
   const activeFilters = [
     project ? { key: "project", label: `Project: ${project}`, onClear: () => onProject("") } : null,
     status ? { key: "status", label: `Status: ${status}`, onClear: () => onStatus("") } : null,
@@ -948,9 +950,10 @@ export function DashboardTopbar({
                 id="run-search-error"
                 role="status"
                 aria-live="polite"
-                title={searchError.message}
+                title={`${searchErrorText} ${searchErrorHelp}`}
               >
-                {searchError.message}{searchErrorPositionSuffix}
+                <strong>{searchErrorText}</strong>
+                <em>{searchErrorHelp}</em>
               </span>
             ) : null}
           </div>
@@ -997,10 +1000,11 @@ export function DashboardTopbar({
             {searchError ? (
               <span
                 className={`active-filter-error ${searchErrorStale ? "stale" : ""}`}
-                role="status"
-                title={`${searchError.message}${searchErrorPositionSuffix} Example: tag:baseline status:finished`}
+                aria-hidden="true"
+                title={`${searchErrorText} ${searchErrorHelp}`}
               >
-                Fix search: {searchError.message}{searchErrorPositionSuffix}
+                <span>Fix search: {searchErrorText}</span>
+                <em>Try tag:baseline status:finished</em>
               </span>
             ) : null}
           </div>

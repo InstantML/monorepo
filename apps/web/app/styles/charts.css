@@ -137,6 +137,140 @@
   display: contents;
 }
 
+.chart-analysis-toolbar {
+  container-type: inline-size;
+  display: block;
+}
+
+.chart-analysis-toolbar .metrics-chart-controls {
+  display: grid;
+  grid-template-columns:
+    minmax(128px, 0.95fr)
+    minmax(180px, 1.35fr)
+    minmax(72px, 0.5fr)
+    minmax(128px, 0.95fr)
+    minmax(128px, 0.95fr)
+    minmax(128px, 0.95fr)
+    minmax(150px, 1fr)
+    minmax(54px, 0.36fr);
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.metrics-chart-controls .control,
+.metrics-chart-controls .custom-select-control,
+.metrics-chart-controls .pin-button {
+  min-width: 0;
+  width: 100%;
+}
+
+.metrics-chart-controls .control input:not([type="checkbox"]):not([type="range"]),
+.metrics-chart-controls .control select,
+.metrics-chart-controls .select-trigger {
+  width: 100%;
+}
+
+.metrics-chart-controls .pin-button {
+  justify-content: center;
+  min-height: 32px;
+}
+
+.metrics-smoothing-control {
+  gap: 6px;
+}
+
+.metrics-smoothing-control > span,
+.metrics-average-control > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics-smoothing-control input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.metrics-average-control {
+  align-items: center;
+}
+
+.metrics-average-control input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 7px auto 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-soft);
+  cursor: pointer;
+}
+
+.metrics-average-control input[type="checkbox"]::before {
+  width: 9px;
+  height: 9px;
+  background: var(--accent-strong);
+  clip-path: polygon(14% 44%, 0 61%, 41% 100%, 100% 18%, 83% 0, 38% 67%);
+  content: "";
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+.metrics-average-control input[type="checkbox"]:checked {
+  border-color: var(--accent-strong);
+  background: var(--surface-selected);
+}
+
+.metrics-average-control input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+@media (max-width: 1320px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container (max-width: 1120px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 760px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 520px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
 .detail-toolbar {
   grid-template-columns: repeat(2, minmax(170px, 220px));
   justify-content: start;
@@ -1007,11 +1141,27 @@ small {
   opacity: var(--series-muted-opacity, 0.28);
 }
 
+.metric-chart-frame.is-hovering-series .metric-chart-canvas {
+  opacity: var(--series-hover-canvas-opacity, 0.48);
+}
+
 /* The hovered run pops above the band: full opacity, a touch heavier, and drawn
  * last (React renders the active overlay after the band) so it reads clearly. */
 .series.series-active {
   opacity: 1;
-  stroke-width: 2.1;
+  stroke-width: 2.65;
+}
+
+.series-focus-halo {
+  opacity: 0.34;
+  pointer-events: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 6;
+}
+
+.series-focus-overlay {
+  pointer-events: none;
 }
 
 .series-point {
@@ -1653,8 +1803,8 @@ small {
 }
 
 .metric-pin.active {
-  border-color: #c7d9f7;
-  background: #f4f8ff;
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--line));
+  background: color-mix(in srgb, var(--surface) 88%, var(--blue));
   color: var(--blue);
 }
 

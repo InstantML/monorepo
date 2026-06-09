@@ -342,6 +342,13 @@
     border-bottom: 1px solid var(--line-soft);
     padding: 0 0 8px;
   }
+  .tab-group-label {
+    display: block !important;
+    padding: 7px 12px 4px;
+    color: var(--faint);
+    font: 700 10px/1 var(--font-mono);
+    text-transform: uppercase;
+  }
   .tab-group:last-child { border-bottom: 0; }
   .tab-button {
     width: 100%;
@@ -475,6 +482,9 @@
     max-height: none;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+  .runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary {
+    display: none;
   }
   .workspace-run-list {
     max-height: 320px;

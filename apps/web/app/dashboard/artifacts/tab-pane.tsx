@@ -492,7 +492,7 @@ export function ArtifactsTabPane({
             <div className="panel-controls artifact-catalog-controls">
               <label className="control search-control">
                 <Search size={14} />
-                <input aria-label="Search artifact collections" value={collectionQuery} onChange={(event) => setCollectionQuery(event.target.value)} />
+                <input aria-label="Search artifact collections" placeholder="Search collections" value={collectionQuery} onChange={(event) => setCollectionQuery(event.target.value)} />
               </label>
               <label className="control">
                 <select aria-label="Filter artifact type" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>

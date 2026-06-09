@@ -554,15 +554,52 @@ button.compare-row-head.active {
 }
 
 .artifact-catalog-controls {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(128px, max-content) auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: end;
   width: min(100%, 560px);
 }
 
 .artifact-catalog-controls .control {
+  flex: 0 1 132px;
   min-width: 0;
+}
+
+.artifact-catalog-controls .search-control {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 180px;
+  gap: 7px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface-soft);
+  padding: 0 8px;
+  color: var(--faint);
+}
+
+.artifact-catalog-controls .search-control input {
+  min-height: 0;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.artifact-catalog-controls .search-control input,
+.artifact-catalog-controls select {
+  width: 100%;
+}
+
+.artifact-catalog-controls .search-control:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.artifact-catalog-controls .copy-button {
+  flex: 0 0 auto;
 }
 
 .artifact-catalog-panel .panel-head,
@@ -805,7 +842,7 @@ button.compare-row-head.active {
   }
 
   .artifact-catalog-controls {
-    grid-template-columns: minmax(0, 1fr) minmax(118px, auto) auto;
+    align-items: stretch;
   }
 
   .metrics-chart-surface {
@@ -1194,6 +1231,12 @@ button.compare-row-head.active {
 
   .artifact-catalog-controls {
     align-items: stretch;
+  }
+
+  .artifact-catalog-controls .control,
+  .artifact-catalog-controls .search-control,
+  .artifact-catalog-controls .copy-button {
+    flex-basis: 100%;
   }
 
   .artifact-catalog-controls .copy-button {

@@ -1586,14 +1586,26 @@ textarea:focus {
   z-index: 49;
   inset-block-start: calc(100% + 6px);
   inset-inline-start: 0;
+  display: grid;
+  gap: 3px;
   max-width: min(420px, calc(100vw - 32px));
-  padding: 5px 7px;
+  padding: 7px 9px;
   border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
   box-shadow: var(--shadow-sm);
   color: var(--danger);
-  font: 650 11px/1.25 var(--font-sans);
+  font: 650 11.5px/1.25 var(--font-sans);
+}
+.workbar-search-error strong,
+.workbar-search-error em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workbar-search-error em {
+  color: var(--muted);
+  font: 600 11px/1.3 var(--font-sans);
+  font-style: normal;
 }
 :root[data-theme="dark"] .workbar-search-error {
   background: color-mix(in srgb, var(--surface) 92%, var(--bg));
@@ -1617,18 +1629,21 @@ textarea:focus {
 .active-filter-strip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  flex: 0 1 420px;
-  min-width: 160px;
-  height: 32px;
+  gap: 6px;
+  flex: 1 1 500px;
+  min-width: 220px;
+  min-height: 32px;
   overflow: hidden;
-  padding: 0 2px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
   color: var(--muted);
 }
 .active-filter-title {
   flex: 0 0 auto;
-  color: var(--faint);
-  font: 650 10.5px/1 var(--font-mono);
+  color: var(--muted);
+  font: 750 10.5px/1 var(--font-mono);
   text-transform: uppercase;
 }
 .active-filter-chip,
@@ -1672,13 +1687,23 @@ textarea:focus {
   color: var(--accent);
 }
 .active-filter-error {
-  max-width: 210px;
+  max-width: 320px;
   padding: 0 8px;
   border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
   background: var(--danger-soft);
   color: var(--danger);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.active-filter-error span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-filter-error em {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-style: normal;
 }
 .active-filter-error.stale {
   border-color: var(--line);
@@ -2441,6 +2466,22 @@ button.compare-row-head.active {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
+/* dashboard.css owns the base nav-label behavior. This later layer repeats the
+ * state selectors because overhaul.css is currently the winning chrome layer. */
+.tab-group-label {
+  display: none;
+  padding: 3px 9px 4px;
+  color: var(--faint);
+  font: 700 10px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+.shell.nav-pinned .tab-group-label,
+.shell:not(.nav-pinned).nav-auto-open .tab-group-label {
+  display: block;
+}
+.shell:not(.nav-pinned):not(.nav-auto-open) .tab-group-label {
+  display: none;
+}
 /* WebKit / Blink — subtle thumb that matches the dark dashboard chrome,
  * brightens on hover. Track stays invisible so the rail stays clean. */
 .tab-scroll::-webkit-scrollbar {
@@ -2875,7 +2916,7 @@ button.compare-row-head.active {
 .workspace-run-open .legend-dot { margin-top: 4px; }
 .workspace-run-body { display: grid; gap: 2px; min-width: 0; }
 .workspace-run-body strong {
-  font: 600 12.5px/1.2 var(--font-mono);
+  font: 650 13px/1.2 var(--font-mono);
   letter-spacing: -0.01em;
   color: var(--text);
   overflow: hidden;
@@ -2884,8 +2925,8 @@ button.compare-row-head.active {
   transition: color 0.1s ease;
 }
 .workspace-run-body small {
-  font: 500 11px/1.25 var(--font-mono);
-  color: var(--faint);
+  font: 550 12px/1.3 var(--font-mono);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2926,12 +2967,14 @@ button.compare-row-head.active {
 .workspace-run-note {
   font-size: 12px;
   line-height: 1.35;
-  color: var(--muted);
+  color: var(--text-2);
 }
 .workspace-run-tags b,
 .workspace-run-tags em {
   font-size: 12px;
 }
+/* dashboard-runs.css owns the base collapsed summary. This later layer mirrors
+ * it so the current overhaul rail keeps the same visible collapsed context. */
 .workspace-rail-collapsed-summary {
   display: none;
 }
@@ -2956,7 +2999,7 @@ button.compare-row-head.active {
 .runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary em {
   max-width: 44px;
   overflow: hidden;
-  color: var(--faint);
+  color: var(--text-2);
   font: 600 10px/1.15 var(--font-mono);
   font-style: normal;
   text-overflow: ellipsis;

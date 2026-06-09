@@ -178,7 +178,7 @@ export function RunsCommandbar({
               aria-disabled={selectedRunExportDisabled || undefined}
               aria-describedby={exportHelpId}
               className="secondary compact-button export-selected-runs-button"
-              disabled={exportSelectedBusy}
+              disabled={selectedRunExportDisabled || exportSelectedBusy}
               onClick={() => {
                 setActionsOpen(false);
                 onExportSelectedRuns();

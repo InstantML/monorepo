@@ -540,6 +540,19 @@
   padding-bottom: 10px;
 }
 
+.tab-group-label {
+  display: none;
+  padding: 2px 9px 3px;
+  color: var(--faint);
+  font: 700 10px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+
+.shell.nav-auto-open .tab-group-label,
+.shell.nav-pinned .tab-group-label {
+  display: block;
+}
+
 .tab-group + .tab-group {
   padding-top: 6px;
 }

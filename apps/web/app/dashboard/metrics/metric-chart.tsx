@@ -293,11 +293,13 @@ export function MetricChart({
   // canvas/SVG render path and its speed are untouched.
   const seriesCount = normalizedSeries.length;
   const seriesStrokeOpacity = seriesCount > 60 ? 0.5 : seriesCount > 24 ? 0.68 : seriesCount > 8 ? 0.85 : 0.92;
-  const seriesMutedOpacity = seriesCount > 24 ? 0.16 : 0.28;
+  const seriesMutedOpacity = seriesCount > 60 ? 0.07 : seriesCount > 24 ? 0.1 : seriesCount > 8 ? 0.16 : 0.24;
+  const seriesHoverCanvasOpacity = seriesCount > 60 ? 0.38 : seriesCount > 24 ? 0.48 : 0.58;
   const chartFrameStyle = {
     aspectRatio: `${width} / ${height}`,
     "--series-stroke-opacity": seriesStrokeOpacity,
     "--series-muted-opacity": seriesMutedOpacity,
+    "--series-hover-canvas-opacity": seriesHoverCanvasOpacity,
   } as CSSProperties;
   const styleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
   const visibleHover = hover;
@@ -308,6 +310,7 @@ export function MetricChart({
   const [tooltipPlacement, setTooltipPlacement] = useState<TooltipPlacement | null>(null);
   const hoverIndex = visibleHover ? normalizedSeries.findIndex((item) => item.id === visibleHover.runId) : -1;
   const activeSeries = hoverIndex >= 0 ? normalizedSeries[hoverIndex] : null;
+  const drawFocusOverlay = Boolean(activeSeries && (denseChart || seriesCount > 8));
   useEffect(() => {
     if (!denseChart) return;
     const canvas = canvasRef.current;
@@ -485,7 +488,7 @@ export function MetricChart({
   const hiddenLegendTitle = hiddenLegendSeries.length
     ? `${hiddenLegendSeries.length} additional plotted series${hiddenLegendSample.length ? `: ${hiddenLegendSample.join(", ")}${hiddenLegendSeries.length > hiddenLegendSample.length ? ", ..." : ""}` : ""}`
     : "";
-  const hoverClassFor = (item: any) => visibleHover ? (item.id === visibleHover.runId ? " series-active" : " series-muted") : "";
+  const hoverClassFor = (item: any) => visibleHover ? (item.id === visibleHover.runId ? (drawFocusOverlay ? " series-muted" : " series-active") : " series-muted") : "";
 
   function downloadChartCsv() {
     if (exportBlockedReason) return;
@@ -570,7 +573,7 @@ export function MetricChart({
           </span>
         ) : null}
       </div>
-      <div ref={chartFrameRef} className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={chartFrameStyle} onMouseLeave={onLeave}>
+      <div ref={chartFrameRef} className={`metric-chart-frame${denseChart ? " dense" : ""}${activeSeries ? " is-hovering-series" : ""}`} style={chartFrameStyle} onMouseLeave={onLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
@@ -620,18 +623,26 @@ export function MetricChart({
               </g>
             );
           }) : null}
-          {denseChart && activeSeries ? (() => {
+          {drawFocusOverlay && activeSeries ? (() => {
             const colorIndex = styleIndexes[hoverIndex] ?? chartSeriesColorIndex(activeSeries, hoverIndex);
+            const focusPath = activeSeries.smoothed && activeSeries.smoothPath ? activeSeries.smoothPath : activeSeries.path;
             return (
               <g key={`${activeSeries.id}-active-overlay`}>
+                {focusPath ? (
+                  <polyline
+                    className={`series series-focus-halo ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`}
+                    points={focusPath}
+                    style={{ stroke: chartColor(colorIndex) }}
+                  />
+                ) : null}
                 <polyline
-                  className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}${activeSeries.smoothed ? " series-raw" : ""} series-active`}
+                  className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}${activeSeries.smoothed ? " series-raw" : ""} series-active series-focus-overlay`}
                   points={activeSeries.path}
                   style={{ stroke: chartColor(colorIndex) }}
                 />
                 {activeSeries.smoothed && activeSeries.smoothPath ? (
                   <polyline
-                    className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)} series-smooth series-active`}
+                    className={`series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)} series-smooth series-active series-focus-overlay`}
                     points={activeSeries.smoothPath}
                     style={{ stroke: chartColor(colorIndex) }}
                   />
