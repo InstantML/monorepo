@@ -74,6 +74,10 @@ pub async fn create_project(
 
 pub async fn list_projects(store: &Store, ctx: &RequestContext) -> AppResult<Vec<ProjectRow>> {
     let data = store.data.lock().await;
+    Ok(visible_projects_in_data(&data, ctx))
+}
+
+fn visible_projects_in_data(data: &StoreData, ctx: &RequestContext) -> Vec<ProjectRow> {
     let mut projects = data
         .projects
         .values()
@@ -88,5 +92,74 @@ pub async fn list_projects(store: &Store, ctx: &RequestContext) -> AppResult<Vec
         .cloned()
         .collect::<Vec<_>>();
     projects.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(projects)
+    projects
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project(id: u128, org_id: Uuid, name: &str) -> ProjectRow {
+        ProjectRow {
+            id: Uuid::from_u128(id),
+            org_id,
+            name: name.to_string(),
+            description: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn browser_session_lists_every_project_in_active_workspace() {
+        let org_id = Uuid::from_u128(1);
+        let other_org_id = Uuid::from_u128(2);
+        let mut data = StoreData::default();
+        data.insert_project(project(10, org_id, "beta"));
+        data.insert_project(project(11, org_id, "alpha"));
+        data.insert_project(project(12, other_org_id, "other-org"));
+        let ctx = RequestContext {
+            org_id,
+            auth: None,
+            session: Some(SessionContext {
+                session_id: Uuid::from_u128(20),
+                user_id: Uuid::from_u128(21),
+                role: "viewer".to_string(),
+                demo_read_only: false,
+            }),
+        };
+
+        let names = visible_projects_in_data(&data, &ctx)
+            .into_iter()
+            .map(|project| project.name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn project_scoped_api_key_lists_only_its_project() {
+        let org_id = Uuid::from_u128(1);
+        let project_id = Uuid::from_u128(10);
+        let mut data = StoreData::default();
+        data.insert_project(project(10, org_id, "alpha"));
+        data.insert_project(project(11, org_id, "beta"));
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::from_u128(20),
+                service_account_id: Uuid::from_u128(21),
+                project_id: Some(project_id),
+                scopes: vec!["export:read".to_string()],
+            }),
+            session: None,
+        };
+
+        let names = visible_projects_in_data(&data, &ctx)
+            .into_iter()
+            .map(|project| project.name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["alpha"]);
+    }
 }
