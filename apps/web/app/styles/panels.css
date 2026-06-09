@@ -226,8 +226,12 @@
   order: 2;
 }
 
-.workspace-panel-card:not(.fullscreen-panel-card) .chart-range-row {
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-tooltip-slot {
   order: 3;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-range-row {
+  order: 4;
 }
 
 .workspace-panel-card .chart-area-exportable {
@@ -1015,7 +1019,7 @@ kbd {
 
 .fullscreen-panel-card .chart-area {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 10px;
   min-height: 0;
   align-content: start;
@@ -1032,6 +1036,13 @@ kbd {
   width: var(--fullscreen-chart-width);
   justify-self: center;
   margin-bottom: 0;
+}
+
+.fullscreen-panel-card .chart-tooltip-slot {
+  width: var(--fullscreen-chart-width);
+  max-height: min(220px, 28vh);
+  justify-self: center;
+  overflow: hidden;
 }
 
 .fullscreen-panel-card .metric-chart {

@@ -89,6 +89,10 @@ test("research insights helpers scope runs, extract fields, cluster, and detect 
   const clusters = kMeansClusters(runs, "eval/accuracy", 2);
   assert.equal(clusters.points.length, 3);
   assert(clusters.clusters.length >= 1);
+  assert.deepEqual(clusters.fields, ["config.optimizer.lr", "config.width"]);
+  const projectedClusters = kMeansClusters(runs, "eval/accuracy", 2, 12, ["config.width", "config.optimizer.lr"]);
+  assert.deepEqual(projectedClusters.axes, ["config.width", "config.optimizer.lr"]);
+  assert.deepEqual(projectedClusters.points.map((point) => point.cluster), clusters.points.map((point) => point.cluster));
   const cards = evaluationCards(runs);
   assert.equal(cards.find((card) => card.id === "accuracy").key, "eval/accuracy");
   assert.equal(cards.find((card) => card.id === "f1").count, 3);

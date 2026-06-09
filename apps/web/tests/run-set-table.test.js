@@ -76,14 +76,14 @@ test("Runset default colors intentionally mirror the shared dashboard palette", 
   const typesSrc = read("types.ts");
   const tableSrc = read("run-set-table.tsx");
   assert.deepEqual(CHART_PALETTE.slice(0, 8), [
-    "#2f80ed",
-    "#12a67a",
-    "#d65f74",
-    "#e0a33f",
-    "#7c5cc4",
-    "#3b9ba7",
-    "#8a96a8",
-    "#d97745",
+    "#8a5ccf",
+    "#2e8b57",
+    "#2a7fbd",
+    "#c26300",
+    "#d04a3a",
+    "#168a96",
+    "#c04c98",
+    "#7e8500",
   ]);
   assert.match(typesSrc, /RUN_COLOR_PALETTE:\s*string\[\]\s*=\s*CHART_PALETTE\.slice\(0,\s*8\)/);
   assert.match(tableSrc, /settings\.color\s*\?\?\s*RUN_COLOR_PALETTE\[index\s*%\s*RUN_COLOR_PALETTE\.length\]/);
