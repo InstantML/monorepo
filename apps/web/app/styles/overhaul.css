@@ -1614,6 +1614,136 @@ textarea:focus {
 }
 .workbar-name { flex: 0 1 128px; min-width: 96px; }
 .workbar-name input { width: 100%; }
+.active-filter-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 420px;
+  min-width: 160px;
+  height: 32px;
+  overflow: hidden;
+  padding: 0 2px;
+  color: var(--muted);
+}
+.active-filter-title {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font: 650 10.5px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+.active-filter-chip,
+.active-filter-reset,
+.active-filter-empty,
+.active-filter-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 650 11.5px/1 var(--font-sans);
+  white-space: nowrap;
+}
+.active-filter-chip {
+  max-width: 150px;
+  padding: 0 6px 0 8px;
+}
+.active-filter-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-filter-chip:hover,
+.active-filter-reset:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.active-filter-empty {
+  padding: 0 8px;
+  color: var(--muted);
+}
+.active-filter-reset {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  color: var(--accent);
+}
+.active-filter-error {
+  max-width: 210px;
+  padding: 0 8px;
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-filter-error.stale {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.view-actions-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+.view-actions-trigger {
+  height: 32px;
+  white-space: nowrap;
+}
+.view-actions-popover {
+  position: fixed;
+  inset-block-start: calc(var(--topbar-height) + 2px);
+  inset-inline-end: 16px;
+  z-index: calc(var(--z-pop) + var(--z-chrome));
+  display: grid;
+  gap: 9px;
+  min-width: 260px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 96%, var(--bg));
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--line-soft);
+}
+:root[data-theme="dark"] .view-actions-popover {
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line-soft);
+}
+.view-actions-popover .control,
+.view-actions-popover .custom-select-control {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.view-actions-popover .control > span:first-child:not(.select-trigger),
+.view-actions-popover .custom-select-control > span:first-child:not(.select-trigger) {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  color: var(--muted);
+  font: 650 10.5px/1 var(--font-mono);
+  text-transform: uppercase;
+  white-space: normal;
+}
+.view-actions-popover input,
+.view-actions-popover .select-trigger {
+  width: 100%;
+}
+.view-actions-popover .primary-button,
+.view-actions-popover .secondary {
+  justify-content: center;
+  width: 100%;
+}
+.view-actions-help {
+  color: var(--muted);
+  font: 600 12px/1.35 var(--font-sans);
+}
 
 /* Slim the runs metric/columns strip — secondary, tucked under the stats. */
 .runs-workspace-filter .runs-commandbar {
@@ -1625,7 +1755,6 @@ textarea:focus {
 }
 .runs-commandbar .command-spacer { flex: 1; }
 .runs-commandbar .command-select .select-trigger { height: 32px; }
-
 /* ══════════════════════════════════════════════════════════════════════════
  * Secondary surfaces — every page inlined with the mock flat language
  * (Alerts / Datasets / Artifacts / Checkpoints / Reports / Settings /
@@ -1948,6 +2077,18 @@ textarea:focus {
   text-decoration: none;
 }
 .workspace-rail-select-banner .link-button:hover { text-decoration: underline; }
+.workspace-rail-select-banner.quiet {
+  margin: 6px 12px;
+  padding: 7px 10px;
+  border-color: var(--line-soft);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+.workspace-rail-select-banner.quiet .link-button {
+  color: var(--text-2);
+  font-weight: 600;
+}
 
 /* Rows — no full border box; hover/selected stay dark + accent rail only */
 .workspace-run-row {
@@ -2771,6 +2912,54 @@ button.compare-row-head.active {
 .upload-health-chip.bad {
   border-color: rgba(219, 57, 57, 0.24);
   color: var(--danger);
+}
+.workspace-run-row {
+  min-height: 70px;
+}
+.workspace-run-list {
+  grid-auto-rows: minmax(76px, max-content);
+}
+.workspace-run-body {
+  gap: 3px;
+}
+.workspace-run-body small,
+.workspace-run-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.workspace-run-tags b,
+.workspace-run-tags em {
+  font-size: 11.5px;
+}
+.workspace-rail-collapsed-summary {
+  display: none;
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  text-align: center;
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary strong {
+  color: var(--text);
+  font: 700 13px/1 var(--font-mono);
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary span {
+  writing-mode: vertical-rl;
+  text-transform: uppercase;
+  font: 650 9.5px/1 var(--font-mono);
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary em {
+  max-width: 44px;
+  overflow: hidden;
+  color: var(--faint);
+  font: 600 10px/1.15 var(--font-mono);
+  font-style: normal;
+  text-overflow: ellipsis;
 }
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }

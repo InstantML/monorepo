@@ -350,6 +350,7 @@ export function RunsTabPane({
         onTableColumns={onTableColumns}
         onToggleRun={onToggleRun}
         onToggleSection={onToggleSection}
+        metricKey={metricKey}
         selectAllMatchingBusy={selectAllMatchingBusy}
         selectAllMatchingDisabled={selectAllMatchingDisabled}
         hasNextPage={hasNextPage}

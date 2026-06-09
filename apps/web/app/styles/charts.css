@@ -1138,7 +1138,6 @@ small {
   display: grid;
   gap: 2px;
   min-width: 248px;
-  transform: translate(-50%, -50%);
   border-radius: 12px;
   border: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.1));
   background: var(--chart-tooltip-bg, rgba(255, 255, 255, 0.98));
@@ -1148,14 +1147,6 @@ small {
   font-size: 12px;
   backdrop-filter: blur(6px);
   pointer-events: none;
-}
-
-.chart-tooltip.edge-right {
-  transform: translate(-96%, -50%);
-}
-
-.chart-tooltip.edge-left {
-  transform: translate(0, -50%);
 }
 
 .chart-tooltip-head {

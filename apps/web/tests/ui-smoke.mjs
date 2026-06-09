@@ -721,7 +721,8 @@ try {
   await page.fill("#search", "");
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
-  await page.locator(".runs-commandbar").getByRole("button", { name: "Columns" }).click();
+  await page.locator(".runs-commandbar").getByRole("button", { name: "Runs actions" }).click();
+  await page.locator(".runs-actions-popover").getByRole("button", { name: "Columns" }).click();
   await page.waitForSelector("#columns-popover");
   await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").uncheck();
   assert.equal(await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").isChecked(), false);
@@ -1808,7 +1809,8 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   await page.waitForFunction((name) => document.querySelector(".workspace-run-list")?.textContent?.includes(name), viewerRunName);
   const viewerRunsText = await page.locator("body").innerText();
   assert.match(viewerRunsText, /eval\/viewer_score/);
-  assert.equal(await page.getByRole("button", { name: "Save view" }).isEnabled(), false);
+  await page.getByRole("button", { name: "View actions" }).click();
+  assert.equal(await page.locator(".view-actions-popover").getByRole("button", { name: "Save view" }).isEnabled(), false);
   await pageApiExpectStatus(page, "POST", "/runs", {
     project: "viewer-project",
     name: "viewer-must-not-write",

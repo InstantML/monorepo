@@ -427,7 +427,7 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.equal(/onMouseDown=\{\(event\)[\s\S]{0,240}onClose\(\)/.test(quickSearch), false, "mouse-down must not close before the paired click is swallowed");
 
   const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
-  assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
+  assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow && selectedRunIds\.length > 0;/, "overflowed result sets should defer cross-page bulk selection until row selection starts");
   assert.match(runsWorkspace, /disabled=\{selectAllMatchingBusy \|\| selectAllMatchingDisabled\}/, "select-all matching should honor invalid-search disabled state");
   assert.match(runsWorkspace, /pointerDragCleanupRef/, "pointer drag listeners should be cleaned up on unmount or interrupted drag");
   assert.match(runsWorkspace, /removeEventListener\("pointercancel"/, "pointer drag cleanup should remove cancellation listeners");

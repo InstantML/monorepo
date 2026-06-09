@@ -207,6 +207,48 @@
     max-width: 100%;
     margin-top: 2px;
   }
+  .topbar--workbar.mobile-filters-open .active-filter-strip {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: auto;
+    min-height: 36px;
+    overflow-x: auto;
+    padding: 0;
+    scrollbar-width: thin;
+  }
+  .topbar--workbar.mobile-filters-open .active-filter-chip {
+    max-width: min(70vw, 280px);
+    min-height: 30px;
+  }
+  .topbar--workbar.mobile-filters-open .active-filter-empty,
+  .topbar--workbar.mobile-filters-open .active-filter-error,
+  .topbar--workbar.mobile-filters-open .active-filter-reset {
+    min-height: 30px;
+  }
+  .topbar--workbar.mobile-filters-open .active-filter-error {
+    max-width: min(76vw, 320px);
+  }
+  .topbar--workbar.mobile-filters-open .view-actions-menu {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .topbar--workbar.mobile-filters-open .view-actions-trigger {
+    justify-content: center;
+    width: 100%;
+    min-height: 40px;
+  }
+  .topbar--workbar.mobile-filters-open .view-actions-popover {
+    position: fixed;
+    top: max(64px, env(safe-area-inset-top));
+    right: 12px;
+    left: 12px;
+    min-width: 0;
+    width: auto;
+  }
+  .topbar--workbar.mobile-filters-open .view-actions-popover .custom-select-control.compact,
+  .topbar--workbar.mobile-filters-open .view-actions-popover .control {
+    display: grid;
+  }
   .topbar--workbar.mobile-filters-open .workbar-divider,
   .topbar--workbar.mobile-filters-open .workbar-spacer,
   .topbar--workbar.mobile-filters-open .workbar .system-status,
@@ -371,7 +413,7 @@
     padding: 8px;
   }
   .runs-commandbar .command-select,
-  .runs-commandbar .columns-menu,
+  .runs-commandbar .runs-actions-menu,
   .runs-commandbar > * {
     width: 100%;
   }
@@ -379,7 +421,7 @@
   .runs-commandbar .compact-button,
   .runs-commandbar .icon-button,
   .runs-commandbar .select-trigger,
-  .runs-commandbar .columns-menu .compact-button {
+  .runs-commandbar .runs-actions-menu .compact-button {
     width: 100%;
     min-height: 40px;
   }
@@ -397,6 +439,23 @@
     max-height: 70vh;
     overflow-y: auto;
     z-index: calc(var(--z-pop, 100) - 1);
+  }
+  .runs-actions-popover {
+    position: fixed;
+    top: max(64px, env(safe-area-inset-top));
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    min-width: 0;
+    width: auto;
+    max-height: none;
+    overflow-y: auto;
+  }
+  .runs-actions-popover .column-popover {
+    position: static;
+    inset: auto;
+    max-height: min(42vh, 300px);
+    overflow-y: auto;
   }
 
   /* ── Run workspace stacks vertically; rail becomes a horizontal bar ──── */
@@ -1058,6 +1117,12 @@
     right: 12px;
     bottom: max(12px, env(safe-area-inset-bottom));
     left: 12px;
+  }
+  .runs-actions-popover .column-popover {
+    position: static;
+    inset: auto;
+    max-height: min(42vh, 300px);
+    overflow-y: auto;
   }
 
   /* L9: run-workspace-topline / tabs tighten and scroll horizontally on phones. */

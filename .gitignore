@@ -29,4 +29,5 @@ __pycache__/
 docker-compose.override.yml
 .rlobs
 .claude/
+.github/skills/
 .vercel

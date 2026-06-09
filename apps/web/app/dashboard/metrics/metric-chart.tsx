@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText, ImageDown, RefreshCw } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, svgPointFromClient } from "../../../src/charts.js";
@@ -27,6 +27,51 @@ function sanitizeRange(range: ChartZoomRange | undefined, domain: any): ChartZoo
 }
 
 const TOOLTIP_ROW_LIMIT = 8;
+const TOOLTIP_OFFSET = 12;
+const TOOLTIP_MARGIN = 8;
+
+type TooltipPlacement = { left: number; top: number; side: "left" | "right"; vertical: "above" | "below" };
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function chartTooltipPlacement({
+  anchorX,
+  anchorY,
+  boundsHeight,
+  boundsWidth,
+  tooltipHeight,
+  tooltipWidth,
+}: {
+  anchorX: number;
+  anchorY: number;
+  boundsHeight: number;
+  boundsWidth: number;
+  tooltipHeight: number;
+  tooltipWidth: number;
+}): TooltipPlacement {
+  const width = Math.max(1, tooltipWidth);
+  const height = Math.max(1, tooltipHeight);
+  const maxLeft = Math.max(TOOLTIP_MARGIN, boundsWidth - width - TOOLTIP_MARGIN);
+  const maxTop = Math.max(TOOLTIP_MARGIN, boundsHeight - height - TOOLTIP_MARGIN);
+  const rightLeft = anchorX + TOOLTIP_OFFSET;
+  const leftLeft = anchorX - width - TOOLTIP_OFFSET;
+  const fitsRight = rightLeft + width <= boundsWidth - TOOLTIP_MARGIN;
+  const side = fitsRight || leftLeft < TOOLTIP_MARGIN ? "right" : "left";
+  const aboveTop = anchorY - height - TOOLTIP_OFFSET;
+  const belowTop = anchorY + TOOLTIP_OFFSET;
+  const spaceAbove = anchorY - TOOLTIP_MARGIN - TOOLTIP_OFFSET;
+  const spaceBelow = boundsHeight - anchorY - TOOLTIP_MARGIN - TOOLTIP_OFFSET;
+  const vertical = aboveTop >= TOOLTIP_MARGIN || spaceAbove >= spaceBelow ? "above" : "below";
+
+  return {
+    left: Math.round(clamp(side === "right" ? rightLeft : leftLeft, TOOLTIP_MARGIN, maxLeft)),
+    top: Math.round(clamp(vertical === "above" ? aboveTop : belowTop, TOOLTIP_MARGIN, maxTop)),
+    side,
+    vertical,
+  };
+}
 
 function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
   const rows = normalizedSeries.map((item, index) => {
@@ -257,6 +302,10 @@ export function MetricChart({
   const styleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
   const visibleHover = hover;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const chartAreaRef = useRef<HTMLDivElement | null>(null);
+  const chartFrameRef = useRef<HTMLDivElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const [tooltipPlacement, setTooltipPlacement] = useState<TooltipPlacement | null>(null);
   const hoverIndex = visibleHover ? normalizedSeries.findIndex((item) => item.id === visibleHover.runId) : -1;
   const activeSeries = hoverIndex >= 0 ? normalizedSeries[hoverIndex] : null;
   useEffect(() => {
@@ -342,6 +391,74 @@ export function MetricChart({
   function commitSmoothing() {
     if (smoothingDraft !== null && smoothingDraft !== smoothingValue) onSmoothingChange?.(smoothingDraft);
   }
+  const hoverRows = visibleHover ? tooltipRows(normalizedSeries, styleIndexes, visibleHover.point.xValue, xMode, useLineStyles, visibleHover.runId) : [];
+  const hiddenHoverRows = visibleHover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
+  const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
+  useLayoutEffect(() => {
+    if (!visibleHover) {
+      setTooltipPlacement(null);
+      return;
+    }
+    const chartArea = chartAreaRef.current;
+    const chartFrame = chartFrameRef.current;
+    const tooltip = tooltipRef.current;
+    if (!chartArea || !chartFrame || !tooltip) return;
+
+    let frame = 0;
+    const updatePlacement = () => {
+      frame = 0;
+      const areaRect = chartArea.getBoundingClientRect();
+      const frameRect = chartFrame.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      if (!areaRect.width || !areaRect.height || !frameRect.width || !frameRect.height) return;
+
+      const pointY = visibleHover.point.displayY ?? visibleHover.point.y;
+      const anchorX = frameRect.left - areaRect.left + (visibleHover.point.x / width) * frameRect.width;
+      const anchorY = frameRect.top - areaRect.top + (pointY / height) * frameRect.height;
+      const next = chartTooltipPlacement({
+        anchorX,
+        anchorY,
+        boundsHeight: areaRect.height,
+        boundsWidth: areaRect.width,
+        tooltipHeight: tooltipRect.height,
+        tooltipWidth: tooltipRect.width,
+      });
+
+      setTooltipPlacement((current) => (
+        current
+          && current.left === next.left
+          && current.top === next.top
+          && current.side === next.side
+          && current.vertical === next.vertical
+          ? current
+          : next
+      ));
+    };
+    const schedulePlacement = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updatePlacement);
+    };
+
+    updatePlacement();
+
+    const observers: ResizeObserver[] = [];
+    if (typeof ResizeObserver !== "undefined") {
+      for (const element of [chartArea, chartFrame, tooltip]) {
+        const observer = new ResizeObserver(schedulePlacement);
+        observer.observe(element);
+        observers.push(observer);
+      }
+    }
+    window.addEventListener("resize", schedulePlacement);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedulePlacement);
+      observers.forEach((observer) => observer.disconnect());
+    };
+  }, [height, hiddenHoverRows, hoverRows.length, smoothedHoverRows, visibleHover, width, xMode]);
+  const tooltipStyle: CSSProperties = tooltipPlacement
+    ? { left: `${tooltipPlacement.left}px`, top: `${tooltipPlacement.top}px` }
+    : { left: 0, top: 0, visibility: "hidden" };
 
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     return <div className="chart-area" onMouseLeave={onLeave}><div className="empty">{emptyMessage}</div></div>;
@@ -361,11 +478,6 @@ export function MetricChart({
   const ySpan = (domain.maxY - domain.minY) || 1;
   const xPos = (value: number) => padding + ((value - domain.minX) / xSpan) * (width - padding * 2);
   const yPos = (value: number) => height - padding - ((value - domain.minY) / ySpan) * (height - padding * 2);
-  const hoverRows = visibleHover ? tooltipRows(normalizedSeries, styleIndexes, visibleHover.point.xValue, xMode, useLineStyles, visibleHover.runId) : [];
-  const hiddenHoverRows = visibleHover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
-  const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
-  const hoverEdge = visibleHover ? (visibleHover.point.x < width * 0.3 ? "edge-left" : visibleHover.point.x > width * 0.62 ? "edge-right" : "") : "";
-  const hoverLeft = visibleHover ? (hoverEdge === "edge-left" ? "16px" : `${Math.min(82, Math.max(18, (visibleHover.point.x / width) * 100))}%`) : "0px";
   const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
   const legendSeries = normalizedSeries.slice(0, legendLimit);
   const hiddenLegendSeries = normalizedSeries.slice(legendSeries.length);
@@ -387,6 +499,7 @@ export function MetricChart({
 
   return (
     <div
+      ref={chartAreaRef}
       className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
       onMouseLeave={onLeave}
     >
@@ -457,7 +570,7 @@ export function MetricChart({
           </span>
         ) : null}
       </div>
-      <div className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={chartFrameStyle} onMouseLeave={onLeave}>
+      <div ref={chartFrameRef} className={`metric-chart-frame${denseChart ? " dense" : ""}`} style={chartFrameStyle} onMouseLeave={onLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
@@ -542,9 +655,10 @@ export function MetricChart({
       </div>
       {visibleHover ? (
         <div
-          className={`chart-tooltip ${hoverEdge}`}
+          ref={tooltipRef}
+          className={`chart-tooltip chart-tooltip-pinned ${tooltipPlacement?.side === "left" ? "side-left" : "side-right"} ${tooltipPlacement?.vertical === "below" ? "is-below" : "is-above"}`}
           role="tooltip"
-          style={{ left: hoverLeft, top: `${Math.min(76, Math.max(18, ((visibleHover.point.displayY ?? visibleHover.point.y) / height) * 100))}%` }}
+          style={tooltipStyle}
         >
           <div className="chart-tooltip-head">{xMode === "time" ? formatAxisValue(visibleHover.point.xValue, xMode) : `Step ${formatNumber(visibleHover.point.step, 0)}`}</div>
           <div className="chart-tooltip-cols"><span>{smoothedHoverRows ? "Raw / EMA" : "Value"}</span><span>Name</span></div>
