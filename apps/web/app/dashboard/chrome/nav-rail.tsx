@@ -9,6 +9,12 @@ import { tabToPath } from "../../../src/routes.js";
 import { navGroups } from "../../dashboard-config";
 import type { TabId } from "../../dashboard-types";
 
+const navGroupLabels: Record<(typeof navGroups)[number]["id"], string> = {
+  admin: "Admin",
+  core: "Analyze",
+  workspace: "Workspace",
+};
+
 export function DashboardNav({
   activeTab,
   compactNav = false,
@@ -81,16 +87,19 @@ export function DashboardNav({
       <div className="tab-scroll">
         {navGroups.map((group) => (
           <div className="tab-group" key={group.id}>
+            <span className="tab-group-label">{navGroupLabels[group.id]}</span>
             {group.items.map((tab) => {
               const Icon = tab.icon;
               return (
                 <a
+                  aria-label={tab.label}
                   aria-current={activeTab === tab.id ? "page" : undefined}
                   className={`tab-button ${activeTab === tab.id ? "active" : ""}`}
                   href={tabToPath(tab.id)}
                   key={tab.id}
                   onClick={(event) => handleTabSelect(event, tab.id)}
                   tabIndex={compactTabIndex}
+                  title={tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
                 </a>

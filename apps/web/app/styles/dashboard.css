@@ -105,7 +105,7 @@
   display: grid;
   gap: 3px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -193,7 +193,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 520;
 }
 
@@ -285,7 +285,7 @@
 
 .topbar .control {
   gap: 2px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -328,7 +328,7 @@
   border-radius: var(--control-radius);
   background: #ffffff;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   max-width: 136px;
   overflow: hidden;
@@ -540,6 +540,19 @@
   padding-bottom: 10px;
 }
 
+.tab-group-label {
+  display: none;
+  padding: 2px 9px 3px;
+  color: var(--faint);
+  font: 700 10px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+
+.shell.nav-auto-open .tab-group-label,
+.shell.nav-pinned .tab-group-label {
+  display: block;
+}
+
 .tab-group + .tab-group {
   padding-top: 6px;
 }
@@ -583,7 +596,7 @@
   overflow: hidden;
   opacity: 0;
   white-space: nowrap;
-  transition: max-width 160ms ease, opacity 120ms ease;
+  transition: opacity 120ms ease;
 }
 
 .shell.nav-auto-open .tab-label,

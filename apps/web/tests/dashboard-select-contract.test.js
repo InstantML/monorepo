@@ -73,12 +73,12 @@ test("mobile navigation closes without leaving focus inside the hidden drawer", 
   assert.match(navSrc, /onMobileClose\?\.\(\);\n\s+onSelect\(tabId\);/);
 });
 
-test("selected run export remains reachable when validation has feedback", () => {
+test("selected run export is natively disabled when validation has feedback", () => {
   const commandbarSrc = read("app/dashboard/runs/runs-commandbar.tsx");
 
   assert.match(commandbarSrc, /aria-disabled=\{selectedRunExportDisabled \|\| undefined\}/);
-  assert.match(commandbarSrc, /disabled=\{exportSelectedBusy\}/);
-  assert.doesNotMatch(commandbarSrc, /disabled=\{exportSelectedBusy \|\| selectedRunExportDisabled\}/);
+  assert.match(commandbarSrc, /disabled=\{selectedRunExportDisabled \|\| exportSelectedBusy\}/);
+  assert.match(commandbarSrc, /selectedRunExportDisabled \? <span className="export-selected-runs-help">\{selectedRunExportTitle\}<\/span> : null/);
 });
 
 test("dashboard breadcrumb labels the empty project scope as all projects", () => {

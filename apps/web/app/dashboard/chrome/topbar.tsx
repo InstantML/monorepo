@@ -590,6 +590,7 @@ export function DashboardTopbar({
   message,
   mobileNavOpen,
   onApplySavedView,
+  onClearFilters,
   onMobileMenuToggle,
   onProject,
   onQuery,
@@ -639,6 +640,7 @@ export function DashboardTopbar({
   message: string;
   mobileNavOpen: boolean;
   onApplySavedView: (key: string) => void;
+  onClearFilters: () => void;
   onMobileMenuToggle: () => void;
   onProject: (project: string) => void;
   onQuery: (value: string) => void;
@@ -685,8 +687,11 @@ export function DashboardTopbar({
   const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
   const [compactFilters, setCompactFilters] = useState(false);
   const [searchHelpOpen, setSearchHelpOpen] = useState(false);
+  const [viewActionsOpen, setViewActionsOpen] = useState(false);
   const topbarRef = useRef<HTMLElement>(null);
   const searchHelpRef = useRef<HTMLDivElement>(null);
+  const viewActionsRef = useRef<HTMLDivElement>(null);
+  const viewActionsTriggerRef = useRef<HTMLButtonElement>(null);
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
   const showWorkbar = activeTab !== "detail";
@@ -704,6 +709,17 @@ export function DashboardTopbar({
   const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
     ? ` Column ${searchError.position}.`
     : "";
+  const searchErrorText = searchError ? `${searchError.message}${searchErrorPositionSuffix}` : "";
+  const searchErrorHelp = "Try tag:baseline status:finished, name:\"long context\", or -tag:debug.";
+  const activeFilters = [
+    project ? { key: "project", label: `Project: ${project}`, onClear: () => onProject("") } : null,
+    status ? { key: "status", label: `Status: ${status}`, onClear: () => onStatus("") } : null,
+    query.trim() ? { key: "search", label: `Search: ${query.trim()}`, onClear: () => onQuery("") } : null,
+    sortBy !== "created" ? { key: "sort", label: `Sort: ${sortBy.replace("-", " ")}`, onClear: () => onSortBy("created") } : null,
+  ].filter((item): item is { key: string; label: string; onClear: () => void } => Boolean(item));
+  const filterSummaryLabel = activeFilters.length
+    ? activeFilters.map((filter) => filter.label).join(", ")
+    : "No active run filters";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -755,6 +771,25 @@ export function DashboardTopbar({
       document.removeEventListener("keydown", closeFromEscape);
     };
   }, [searchHelpOpen]);
+
+  useEffect(() => {
+    if (!viewActionsOpen) return undefined;
+    function closeFromOutside(event: globalThis.PointerEvent) {
+      if (!viewActionsRef.current?.contains(event.target as Node)) setViewActionsOpen(false);
+    }
+    function closeFromEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setViewActionsOpen(false);
+        viewActionsTriggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", closeFromEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", closeFromEscape);
+    };
+  }, [viewActionsOpen]);
 
   return (
     <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`} ref={topbarRef}>
@@ -915,9 +950,10 @@ export function DashboardTopbar({
                 id="run-search-error"
                 role="status"
                 aria-live="polite"
-                title={searchError.message}
+                title={`${searchErrorText} ${searchErrorHelp}`}
               >
-                {searchError.message}{searchErrorPositionSuffix}
+                <strong>{searchErrorText}</strong>
+                <em>{searchErrorHelp}</em>
               </span>
             ) : null}
           </div>
@@ -936,23 +972,77 @@ export function DashboardTopbar({
             ]}
             value={sortBy}
           />
+          <div className="active-filter-strip" aria-label={filterSummaryLabel}>
+            <span className="visually-hidden" role="status" aria-live="polite">{filterSummaryLabel}</span>
+            <span className="active-filter-title">Filters</span>
+            {activeFilters.length ? (
+              activeFilters.map((filter) => (
+                <button
+                  aria-label={`Clear ${filter.label}`}
+                  className="active-filter-chip"
+                  key={filter.key}
+                  onClick={filter.onClear}
+                  title={`Clear ${filter.label}`}
+                  type="button"
+                >
+                  <span>{filter.label}</span>
+                  <X size={12} aria-hidden="true" />
+                </button>
+              ))
+            ) : (
+              <span className="active-filter-empty">All runs</span>
+            )}
+            {activeFilters.length ? (
+              <button className="active-filter-reset" onClick={onClearFilters} type="button">
+                Reset
+              </button>
+            ) : null}
+            {searchError ? (
+              <span
+                className={`active-filter-error ${searchErrorStale ? "stale" : ""}`}
+                aria-hidden="true"
+                title={`${searchErrorText} ${searchErrorHelp}`}
+              >
+                <span>Fix search: {searchErrorText}</span>
+                <em>Try tag:baseline status:finished</em>
+              </span>
+            ) : null}
+          </div>
           <span className={`status-message ${tone}`} id="status-message" role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} tabIndex={-1} title={message}>{message}</span>
           <div className="workbar-spacer" />
-          <label className="control compact workbar-name">
-            Name
-            <input aria-label="Saved view name" id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
-          </label>
-          <button className="primary-button" disabled={!canSaveView} id="save-view" title={canSaveView ? "Save view" : "Read only workspaces cannot save shared views"} type="button" onClick={onSaveView}><Save size={14} /> Save view</button>
-          <CustomSelect
-            className="compact"
-            id="saved-view-select"
-            label="View"
-            menuAlign="right"
-            onChange={onApplySavedView}
-            options={[{ value: "", label: "Unsaved" }, ...savedViews]}
-            value={savedViewKey}
-          />
-          <button className="icon-button framed" type="button" aria-label="Refresh" onClick={onRefresh}><RefreshCw size={14} /></button>
+          <div className="view-actions-menu" ref={viewActionsRef}>
+            <button
+              aria-controls="view-actions-popover"
+              aria-expanded={viewActionsOpen}
+              aria-haspopup="dialog"
+              className="secondary compact-button view-actions-trigger"
+              onClick={() => setViewActionsOpen((open) => !open)}
+              ref={viewActionsTriggerRef}
+              type="button"
+            >
+              <Save size={14} /> View actions <ChevronDown size={12} aria-hidden="true" />
+            </button>
+            {viewActionsOpen ? (
+              <div className="view-actions-popover" id="view-actions-popover" role="dialog" aria-label="Saved view actions">
+                <label className="control compact view-actions-name">
+                  Name
+                  <input aria-label="Saved view name" id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
+                </label>
+                <button className="primary-button" disabled={!canSaveView} id="save-view" title={canSaveView ? "Save view" : "Read only workspaces cannot save shared views"} type="button" onClick={onSaveView}><Save size={14} /> Save view</button>
+                {!canSaveView ? <span className="view-actions-help">Read-only demo workspaces cannot save shared views.</span> : null}
+                <CustomSelect
+                  className="compact"
+                  id="saved-view-select"
+                  label="View"
+                  menuAlign="right"
+                  onChange={onApplySavedView}
+                  options={[{ value: "", label: "Unsaved" }, ...savedViews]}
+                  value={savedViewKey}
+                />
+                <button className="secondary compact-button" type="button" aria-label="Refresh dashboard data" onClick={() => { setViewActionsOpen(false); onRefresh(); }}><RefreshCw size={14} /> Refresh data</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </header>

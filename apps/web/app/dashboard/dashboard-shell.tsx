@@ -3018,6 +3018,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   function clearFilters() {
     setProject("");
     setStatus("");
+    setSortBy("created");
     setQueryInput("");
     setQuery("");
     setSearchError(null);
@@ -3567,6 +3568,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         message={message}
         mobileNavOpen={mobileNavOpen}
         onApplySavedView={applySavedView}
+        onClearFilters={clearFilters}
         onMobileMenuToggle={() => setMobileNavOpen((open) => !open)}
         onProject={changeProject}
         onQuery={changeRunQueryInput}

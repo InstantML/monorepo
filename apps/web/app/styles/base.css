@@ -19,7 +19,7 @@ body {
   background-size: auto, 48px 48px, 48px 48px, auto;
   background-attachment: fixed;
   color: var(--text);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-ui, var(--font-sans)), system-ui, sans-serif;
   letter-spacing: 0;
 }
 
@@ -64,7 +64,7 @@ code, pre, .mono, .eyebrow {
 .landing-wordmark {
   letter-spacing: var(--tracking-wordmark);
   font-weight: 600;
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-display, var(--font-sans)), system-ui, sans-serif;
   font-size: 18px;
   color: var(--text);
   line-height: 1;

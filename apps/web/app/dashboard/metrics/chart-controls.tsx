@@ -27,7 +27,7 @@ export function ChartControls(props: {
 }) {
   const idPrefix = props.idPrefix ?? "";
   return (
-    <div className="panel-controls">
+    <div className="panel-controls metrics-chart-controls">
       <label className={`control metric-filter-control ${props.metricFilterValid ? "" : "invalid"}`}>
         Metric filter
         <input aria-label="Metric filter" id={`${idPrefix}metric-filter`} type="search" value={props.metricFilter} onChange={(event) => props.onMetricFilter(event.target.value)} placeholder="train/.*" />
@@ -83,12 +83,12 @@ export function ChartControls(props: {
         ]}
         value={props.identifierMode}
       />
-      <label className="control">
-        Smooth {props.smoothing}
+      <label className="control metrics-smoothing-control">
+        <span>Smooth {props.smoothing}</span>
         <input aria-label="Smoothing" id={`${idPrefix}smoothing`} type="range" min="0" max="90" step="10" value={props.smoothing} onChange={(event) => props.onSmoothing(Number(event.target.value))} />
       </label>
-      <label className="control">
-        Avg
+      <label className="control metrics-average-control">
+        <span>Avg</span>
         <input aria-label="Group average" id={`${idPrefix}group-average`} type="checkbox" checked={props.groupAverage} onChange={(event) => props.onGroupAverage(event.target.checked)} />
       </label>
     </div>

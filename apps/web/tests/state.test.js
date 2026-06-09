@@ -637,8 +637,8 @@ test("smoothSeries keeps raw values and attaches a smoothed value", () => {
   assert.deepEqual(smoothed[0].points.map((point) => point.value), [0, 10, 0]);
   // Smoothed values are a damped EMA that stays within the raw envelope.
   const sv = smoothed[0].points.map((point) => point.smoothedValue);
-  assert.equal(sv[0], 0);
-  assert.ok(sv[1] > 0 && sv[1] < 10);
+  assert.deepEqual(sv, [0, 5, 2.5]);
+  assert.deepEqual(smoothSeries(series, 90)[0].points.map((point) => Number(point.smoothedValue.toFixed(12))), [0, 1, 0.9]);
   // factor 0 is a no-op (no smoothed flag).
   assert.equal(smoothSeries(series, 0)[0].smoothed, undefined);
   // Normalized output carries both raw and smoothed paths.

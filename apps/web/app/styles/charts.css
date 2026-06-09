@@ -17,7 +17,7 @@
 
 .fullscreen-panel-card .axis-label,
 .fullscreen-panel-card .tick-label {
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .fullscreen-panel-card .chart-range-row {
@@ -53,7 +53,7 @@
 
 .analysis-eyebrow {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -99,7 +99,7 @@
 
 .analysis-stat span {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -135,6 +135,140 @@
 
 .analysis-toolbar .panel-controls {
   display: contents;
+}
+
+.chart-analysis-toolbar {
+  container-type: inline-size;
+  display: block;
+}
+
+.chart-analysis-toolbar .metrics-chart-controls {
+  display: grid;
+  grid-template-columns:
+    minmax(128px, 0.95fr)
+    minmax(180px, 1.35fr)
+    minmax(72px, 0.5fr)
+    minmax(128px, 0.95fr)
+    minmax(128px, 0.95fr)
+    minmax(128px, 0.95fr)
+    minmax(150px, 1fr)
+    minmax(54px, 0.36fr);
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.metrics-chart-controls .control,
+.metrics-chart-controls .custom-select-control,
+.metrics-chart-controls .pin-button {
+  min-width: 0;
+  width: 100%;
+}
+
+.metrics-chart-controls .control input:not([type="checkbox"]):not([type="range"]),
+.metrics-chart-controls .control select,
+.metrics-chart-controls .select-trigger {
+  width: 100%;
+}
+
+.metrics-chart-controls .pin-button {
+  justify-content: center;
+  min-height: 32px;
+}
+
+.metrics-smoothing-control {
+  gap: 6px;
+}
+
+.metrics-smoothing-control > span,
+.metrics-average-control > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics-smoothing-control input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.metrics-average-control {
+  align-items: center;
+}
+
+.metrics-average-control input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 7px auto 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-soft);
+  cursor: pointer;
+}
+
+.metrics-average-control input[type="checkbox"]::before {
+  width: 9px;
+  height: 9px;
+  background: var(--accent-strong);
+  clip-path: polygon(14% 44%, 0 61%, 41% 100%, 100% 18%, 83% 0, 38% 67%);
+  content: "";
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+.metrics-average-control input[type="checkbox"]:checked {
+  border-color: var(--accent-strong);
+  background: var(--surface-selected);
+}
+
+.metrics-average-control input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+@media (max-width: 1320px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container (max-width: 1120px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 760px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 520px) {
+  .chart-analysis-toolbar .metrics-chart-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .detail-toolbar {
@@ -283,7 +417,7 @@ th {
   z-index: 1;
   background: var(--surface);
   color: #687584;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
 }
 
@@ -421,7 +555,7 @@ tr.selected.inspected {
   max-width: 100%;
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -430,7 +564,7 @@ tr.selected.inspected {
 .subtle,
 small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .pill {
@@ -440,7 +574,7 @@ small {
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
   padding: 1px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 720;
   text-transform: capitalize;
 }
@@ -477,7 +611,7 @@ small {
   border-radius: var(--tight-radius);
   background: #ffffff;
   color: #495766;
-  font-size: 11px;
+  font-size: 12px;
   padding: 2px 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -578,7 +712,7 @@ small {
 .smoothing-control span,
 .toggle-control span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -739,7 +873,7 @@ small {
 }
 
 .chart-smoothing-label {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -783,7 +917,7 @@ small {
   background: rgba(255, 248, 235, 0.96);
   color: #7a4d12;
   box-shadow: 0 6px 18px rgba(23, 33, 43, 0.08);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.35;
   padding: 5px 7px;
@@ -860,7 +994,7 @@ small {
   border-radius: var(--tight-radius);
   background: transparent;
   color: var(--ink, #344251);
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 6px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1007,11 +1141,27 @@ small {
   opacity: var(--series-muted-opacity, 0.28);
 }
 
+.metric-chart-frame.is-hovering-series .metric-chart-canvas {
+  opacity: var(--series-hover-canvas-opacity, 0.48);
+}
+
 /* The hovered run pops above the band: full opacity, a touch heavier, and drawn
  * last (React renders the active overlay after the band) so it reads clearly. */
 .series.series-active {
   opacity: 1;
-  stroke-width: 2.1;
+  stroke-width: 2.65;
+}
+
+.series-focus-halo {
+  opacity: 0.34;
+  pointer-events: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 6;
+}
+
+.series-focus-overlay {
+  pointer-events: none;
 }
 
 .series-point {
@@ -1138,7 +1288,6 @@ small {
   display: grid;
   gap: 2px;
   min-width: 248px;
-  transform: translate(-50%, -50%);
   border-radius: 12px;
   border: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.1));
   background: var(--chart-tooltip-bg, rgba(255, 255, 255, 0.98));
@@ -1148,14 +1297,6 @@ small {
   font-size: 12px;
   backdrop-filter: blur(6px);
   pointer-events: none;
-}
-
-.chart-tooltip.edge-right {
-  transform: translate(-96%, -50%);
-}
-
-.chart-tooltip.edge-left {
-  transform: translate(0, -50%);
 }
 
 .chart-tooltip-head {
@@ -1172,7 +1313,7 @@ small {
   padding: 3px 0 4px;
   margin-bottom: 2px;
   border-bottom: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -1228,7 +1369,7 @@ small {
   padding-top: 6px;
   border-top: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.01em;
 }
@@ -1304,7 +1445,7 @@ small {
   background: var(--surface);
   color: var(--muted);
   padding: 0 10px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
@@ -1333,7 +1474,7 @@ small {
   grid-column: 1 / -1;
   max-width: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
   text-align: left;
 }
@@ -1382,7 +1523,7 @@ small {
 
 .compare-metric-strip > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -1529,7 +1670,7 @@ small {
 
 .compare-summary small {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -1546,7 +1687,7 @@ small {
 .compare-summary span,
 .compare-summary li {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -1633,7 +1774,7 @@ small {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1662,8 +1803,8 @@ small {
 }
 
 .metric-pin.active {
-  border-color: #c7d9f7;
-  background: #f4f8ff;
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--line));
+  background: color-mix(in srgb, var(--surface) 88%, var(--blue));
   color: var(--blue);
 }
 
@@ -1691,13 +1832,13 @@ small {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
 .subsection-title {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -1735,8 +1876,7 @@ small {
 .failure-card {
   display: grid;
   gap: 8px;
-  border: 1px solid #f2b9b4;
-  border-left: 3px solid var(--coral);
+  border: 1px solid color-mix(in srgb, var(--coral) 34%, var(--line));
   border-radius: var(--control-radius);
   background: #fff6f5;
   padding: 10px;
