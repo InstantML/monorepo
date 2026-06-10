@@ -53,6 +53,10 @@ test("workspace chart visual polish preserves geometry and dark-mode marker outl
   assert.match(workspacePanelSrc, /fillFrame=\{!isFullscreenPanel\}/);
   assert.match(metricChartSrc, /preserveAspectRatio=\{fillFrame \? "none" : undefined\}/);
   assert.match(workspacePanelSrc, /preserveAspectRatio: isFullscreenPanel \? "meet" : "none"/);
+  assert.match(chartsCss, /\.metric-chart-frame[\s\S]*?overflow: visible/);
+  assert.match(chartsCss, /\.metric-chart-frame \.metric-chart[\s\S]*?overflow: hidden/);
+  assert.doesNotMatch(metricChartSrc, /className="hover-point"/);
+  assert.doesNotMatch(metricChartSrc, /hover-stack-point/);
   assert.match(panelsCss, /\.panel-resize-handle[\s\S]*?z-index: 12/);
   assert.match(panelsCss, /\.summary-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
   assert.match(panelsCss, /\.scatter-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);

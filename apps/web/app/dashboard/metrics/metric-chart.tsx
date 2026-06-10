@@ -659,23 +659,6 @@ export function MetricChart({
           })() : null}
           {visibleHover ? (
             <>
-              {hoverRows.map((row) => row.point ? (
-                <circle
-                  className={`hover-stack-point${row.active ? " active" : ""}`}
-                  cx={row.point.x}
-                  cy={row.point.displayY ?? row.point.y}
-                  key={`${row.id}-hover-stack-point`}
-                  r={row.active ? 3.2 : 2.4}
-                  style={{ fill: chartColor(row.colorIndex), stroke: "var(--chart-card-bg, var(--surface))" }}
-                />
-              ) : null)}
-              <circle
-                className="hover-point"
-                cx={visibleHover.point.x}
-                cy={visibleHover.point.displayY ?? visibleHover.point.y}
-                r={3.2}
-                style={{ fill: activeSeries ? chartColor(styleIndexes[hoverIndex] ?? chartSeriesColorIndex(activeSeries, hoverIndex)) : "var(--accent)", stroke: "var(--chart-card-bg, var(--surface))" }}
-              />
               <circle className="hover-ring" cx={visibleHover.point.x} cy={visibleHover.point.displayY ?? visibleHover.point.y} r={8} />
             </>
           ) : null}
