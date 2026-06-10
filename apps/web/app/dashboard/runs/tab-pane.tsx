@@ -74,6 +74,7 @@ type Props = {
   onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
   onRunRailCollapsed: (collapsed: boolean) => void;
   onSelectAllMatching: () => void;
+  onClearSelection: () => void;
   onSelectAllVisible: () => void;
   onSetAddPanelSection: (sectionId: string) => void;
   onSwitchOrganization: (orgId: string) => void;
@@ -173,6 +174,7 @@ export function RunsTabPane({
   onPanelSmoothing,
   onRunRailCollapsed,
   onSelectAllMatching,
+  onClearSelection,
   onSelectAllVisible,
   onSetAddPanelSection,
   onSwitchOrganization,
@@ -345,6 +347,7 @@ export function RunsTabPane({
         onPanelSmoothing={onPanelSmoothing}
         onRunRailCollapsed={onRunRailCollapsed}
         onSelectAllMatching={onSelectAllMatching}
+        onClearSelection={onClearSelection}
         onSelectAllVisible={onSelectAllVisible}
         onSetAddPanelSection={onSetAddPanelSection}
         onTableColumns={onTableColumns}

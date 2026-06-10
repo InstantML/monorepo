@@ -173,11 +173,12 @@ export function uploadHealthForRun(run, nowSeconds = Date.now() / 1000) {
   if (ended && queued > 0) {
     // The run ended with rows still on the producer machine — the data shown
     // here is incomplete until the background uploader recovers the spool.
+    const rowsWord = queued === 1 ? "row" : "rows";
     return {
       tone: "bad",
-      label: `incomplete · ${formatNumber(queued, 0)} rows pending`,
+      label: `incomplete · ${formatNumber(queued, 0)} ${rowsWord} pending`,
       state: "incomplete",
-      detail: `${formatNumber(queued, 0)} rows were still queued when this run ended. Run \`instantml-uploader\` on the producer machine to recover them.`,
+      detail: `${formatNumber(queued, 0)} ${rowsWord} ${queued === 1 ? "was" : "were"} still queued when this run ended. Run \`instantml-uploader\` on the producer machine to recover them.`,
     };
   }
   if (stale) {
@@ -194,7 +195,7 @@ export function uploadHealthForRun(run, nowSeconds = Date.now() / 1000) {
   if (queued > 0 || lag > UPLOAD_HEALTH_LAG_SECONDS) {
     return {
       tone: "live",
-      label: queued > 0 ? `syncing · ${formatNumber(queued, 0)} rows` : "syncing",
+      label: queued > 0 ? `syncing · ${formatNumber(queued, 0)} ${queued === 1 ? "row" : "rows"}` : "syncing",
       state: "syncing",
       detail: "Metric rows are still uploading.",
     };

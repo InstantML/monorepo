@@ -227,10 +227,16 @@ export function CompareTabPane({
           </div>
         </div>
         {!compareRuns.length ? (
-          <div className="empty compare-empty-state">
-            <p>No runs selected yet. Add runs with the picker above, or select them from the Runs workspace — the selection is kept in the URL so this view survives reloads and can be shared.</p>
-            <button className="primary-button" onClick={onOpenRunsTab} type="button">Select runs in the Runs tab</button>
-          </div>
+          selectedRunIds.length ? (
+            <div className="empty compare-empty-state">
+              <p>Loading the {selectedRunIds.length} selected runs…</p>
+            </div>
+          ) : (
+            <div className="empty compare-empty-state">
+              <p>No runs selected yet. Add runs with the picker above, or select them from the Runs workspace. Selections are saved to the link, so a compare view can be shared or reopened later.</p>
+              <button className="primary-button" onClick={onOpenRunsTab} type="button">Select runs in the Runs tab</button>
+            </div>
+          )
         ) : (
           <SideBySide
             artifactsByRun={compareArtifactsByRun}

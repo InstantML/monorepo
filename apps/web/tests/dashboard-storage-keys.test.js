@@ -42,7 +42,9 @@ async function importDashboardModelsForTest() {
 
 const REQUIRED = {
   THEME_KEY: "instantml:next:theme",
-  NAV_PINNED_KEY: "instantml:next:nav-pinned",
+  // v2 migration (2026-06): the v1 key was auto-written "false" by the old
+  // unpinned default, so it cannot distinguish an explicit unpin.
+  NAV_PINNED_KEY: "instantml:next:nav-pinned-v2",
   RUNS_RAIL_COLLAPSED_KEY: "instantml:next:runs-rail-collapsed",
   SAVED_VIEW_PREFIX: "instantml:next:local:view:",
   LEGACY_SAVED_VIEW_PREFIX: "instantml:next:view:",

@@ -123,6 +123,7 @@ export function RunsWorkspace({
   onRunRailCollapsed,
   onSetAddPanelSection,
   onTableColumns,
+  onClearSelection,
   onSelectAllMatching,
   onSelectAllVisible,
   onToggleRun,
@@ -174,6 +175,7 @@ export function RunsWorkspace({
   onResizePanel: (sectionId: string, panelId: string, layout: import("../../dashboard-types").WorkspacePanelLayout) => void;
   onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
   onRunRailCollapsed: (collapsed: boolean) => void;
+  onClearSelection: () => void;
   onSelectAllMatching: () => void;
   onSelectAllVisible: () => void;
   onSetAddPanelSection: (sectionId: string) => void;
@@ -371,7 +373,15 @@ export function RunsWorkspace({
                 : `Select all ${visibleRunIds.length} on this page`}
             </button>
             {railSelectionState !== "none" ? (
-              <span className="workspace-rail-page-count">{selectedRunIds.length} selected</span>
+              <span className="workspace-rail-page-count">
+                {selectedRunIds.length} selected
+                {railSelectionState === "some" ? (
+                  <>
+                    {" · "}
+                    <button className="link-button" onClick={onClearSelection} type="button">Clear</button>
+                  </>
+                ) : null}
+              </span>
             ) : null}
           </div>
         ) : null}

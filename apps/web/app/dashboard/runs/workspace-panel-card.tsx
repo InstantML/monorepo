@@ -1195,7 +1195,7 @@ export function WorkspaceSectionView({
     && Object.prototype.hasOwnProperty.call(workspaceSeries, panel.metricKey)
     && !(workspaceSeries[panel.metricKey] ?? []).some((item) => panelRunIdSet.has(item.id) && (item.points?.length ?? 0) > 0);
   const hideEmpties = !panelSearchActive && !showEmptyPanels;
-  const emptyPanelCount = hideEmpties ? visiblePanels.filter(isEmptyAutoPanel).length : 0;
+  const emptyPanelCount = panelSearchActive ? 0 : visiblePanels.filter(isEmptyAutoPanel).length;
   const shownPanels = hideEmpties ? visiblePanels.filter((panel) => !isEmptyAutoPanel(panel)) : visiblePanels;
   return (
     <section className={`workspace-section ${section.collapsed ? "collapsed" : ""}`} data-section-id={section.id}>
@@ -1203,13 +1203,15 @@ export function WorkspaceSectionView({
         <button className="section-title-button" type="button" onClick={() => onToggleSection(section.id)}>
           <ChevronDown size={15} /> <strong>{section.name}</strong> <span>{section.panels.length}</span>
         </button>
-        {emptyPanelCount > 0 || showEmptyPanels ? (
+        {emptyPanelCount > 0 ? (
           <button
             className="section-empty-toggle"
             onClick={() => setShowEmptyPanels((current) => !current)}
             type="button"
           >
-            {showEmptyPanels ? "Hide panels without data" : `${emptyPanelCount} hidden · no data for current runs`}
+            {showEmptyPanels
+              ? "Hide panels without data"
+              : `${emptyPanelCount} hidden · no data for current runs`}
           </button>
         ) : null}
       </div>

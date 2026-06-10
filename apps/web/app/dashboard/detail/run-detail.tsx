@@ -426,7 +426,7 @@ export function RunDetail({
                     <button
                       aria-label={`Copy ${label.toLowerCase()}`}
                       className="detail-copy"
-                      onClick={() => void navigator.clipboard?.writeText(copy)}
+                      onClick={() => { navigator.clipboard?.writeText(copy).catch(() => { /* value stays selectable */ }); }}
                       type="button"
                     >
                       <Copy size={12} />

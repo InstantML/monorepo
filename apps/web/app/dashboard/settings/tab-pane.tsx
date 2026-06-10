@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Copy, CreditCard, ExternalLink, Gauge, RefreshCw, Settings, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
@@ -33,6 +33,8 @@ const RETRY_PLAN_LABELS = {
 
 // Hosted beta list prices; shown in the in-app confirmation step before any
 // redirect to Stripe checkout.
+const PLAN_RANK: Record<"free" | "pro" | "premium", number> = { free: 0, pro: 1, premium: 2 };
+
 const PLAN_CONFIRM_SUMMARY: Record<"free" | "pro" | "premium", { price: string; note: string }> = {
   free: { price: "$0", note: "The downgrade applies at the next billing boundary; nothing is charged." },
   pro: { price: "$199/month", note: "Nothing is charged yet — you'll review the full price and confirm payment on Stripe's secure checkout." },
@@ -169,6 +171,11 @@ export function SettingsTabPane({
 }: Props) {
   // Plan changes confirm in-app before any Stripe redirect.
   const [pendingPlan, setPendingPlan] = useState<"free" | "pro" | "premium" | null>(null);
+  // Drop a stale confirm if the plan changes underneath it (another admin
+  // completed an upgrade, or checkout returned).
+  useEffect(() => {
+    setPendingPlan(null);
+  }, [orgPlanTier, billingStatus?.access_state]);
   const adminOnlyValue = "Available to admins";
   const usageUnavailableValue = "Unavailable";
   const billingState = canManageOrg ? billingStatus?.access_state ?? "free_active" : adminOnlyValue;
@@ -292,8 +299,8 @@ export function SettingsTabPane({
             {canManageOrg && pendingPlan ? (
               <div className="billing-confirm" role="region" aria-label="Confirm plan change">
                 <strong>
-                  {pendingPlan === "free"
-                    ? `Downgrade to ${planDisplayName(pendingPlan)}`
+                  {PLAN_RANK[pendingPlan] < (PLAN_RANK[orgPlanTier as "free" | "pro" | "premium"] ?? 0)
+                    ? `Downgrade to ${planDisplayName(pendingPlan)}${pendingPlan === "free" ? "" : ` · ${PLAN_CONFIRM_SUMMARY[pendingPlan].price}`}`
                     : `Change plan to ${planDisplayName(pendingPlan)} · ${PLAN_CONFIRM_SUMMARY[pendingPlan].price}`}
                 </strong>
                 <p>{PLAN_CONFIRM_SUMMARY[pendingPlan].note}</p>

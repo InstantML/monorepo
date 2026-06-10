@@ -537,6 +537,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const selectionUrlSyncRef = useRef(
     typeof window !== "undefined" && runSelectionFromSearch(window.location.search).length > 0,
   );
+  // One-shot guard: a popstate-restored ?runs= selection must survive the
+  // project/filter clear effect that fires in the same render batch.
+  const applyingUrlSelectionRef = useRef(false);
   const runDirectoryRef = useRef<Map<string, RunSummary>>(new Map());
   // Signatures of the last series fetch per chart group. When only the live
   // refresh tick changes (signature unchanged), we refetch in place without
@@ -1566,6 +1569,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       applyingSavedViewRef.current = false;
       return;
     }
+    if (applyingUrlSelectionRef.current) {
+      applyingUrlSelectionRef.current = false;
+      return;
+    }
+    // Programmatic project fills (preference load on mount) must not wipe a
+    // URL-seeded or explicitly made selection — only user-driven filter
+    // changes reset the selection.
+    if (!userTouchedDashboardFiltersRef.current && selectionUrlSyncRef.current) return;
     setSelectedRunIds([]);
     setPrimaryRunId("");
     setReferenceRunId("");
@@ -1602,11 +1613,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       // the previously-selected project.
       const projectParam = new URLSearchParams(window.location.search).get("project") ?? "";
       setProject(projectParam);
-      // Restore an explicit run selection carried by the history entry.
+      // Restore an explicit run selection carried by the history entry. The
+      // one-shot ref stops the project/filter clear effect from wiping the
+      // restored selection in the same render batch.
       const urlRunIds = runSelectionFromSearch(window.location.search);
       if (urlRunIds.length) {
         defaultSelectionInitializedRef.current = true;
         selectionUrlSyncRef.current = true;
+        applyingUrlSelectionRef.current = true;
         setSelectedRunIds(urlRunIds);
       }
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
@@ -1821,6 +1835,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const invalidIds = new Set(results.filter((result) => result.notFound).map((result) => result.id));
       const keepValidatedIds = keepIds.filter((id) => !invalidIds.has(id));
       setSelectedRunIds((current) => {
+        // Identity-stable when nothing pruned: a new array here re-triggers
+        // this effect and can fetch-loop while detail requests are failing.
+        if (invalidIds.size === 0) return current;
         const retained = current.filter((id) => !invalidIds.has(id));
         if (retained.length) return retained;
         if (current.length) return [];
@@ -3056,6 +3073,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }));
     }
     setSelectedRunDetails((current) => ({ ...current, [child.id]: child }));
+    // Forking is an explicit selection change; keep the URL in sync with it.
+    selectionUrlSyncRef.current = true;
+    defaultSelectionInitializedRef.current = true;
     setSelectedRunIds((current) => [child.id, ...current.filter((id) => id !== child.id)].slice(0, MAX_SELECTED_RUNS));
     preserveRunWorkspaceTabOnceRef.current = true;
     setPrimaryRunId(child.id);
@@ -3736,6 +3756,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");
               }}
               onSelectAllMatching={selectAllMatchingRuns}
+              onClearSelection={() => {
+                selectionUrlSyncRef.current = true;
+                selectionAnchorRunIdRef.current = "";
+                setSelectedRunIds([]);
+              }}
               onSelectAllVisible={selectAllVisibleRuns}
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
