@@ -335,17 +335,7 @@ export function MetricChart({
   const showSmoothing = typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
   const showActions = Boolean(exportFilenameBase) || showSmoothing;
-  // Dragging the slider gives live thumb feedback via local draft state but only
-  // commits (persists + pushes one undo entry) on release, so a single gesture
-  // doesn't flood the undo stack and toast log with intermediate steps.
-  const [smoothingDraft, setSmoothingDraft] = useState<number | null>(null);
-  useEffect(() => {
-    if (smoothingDraft !== null && smoothingDraft === smoothingValue) setSmoothingDraft(null);
-  }, [smoothingDraft, smoothingValue]);
-  const displaySmoothing = smoothingDraft ?? smoothingValue;
-  function commitSmoothing() {
-    if (smoothingDraft !== null && smoothingDraft !== smoothingValue) onSmoothingChange?.(smoothingDraft);
-  }
+  const displaySmoothing = smoothingValue;
   const hoverRows = visibleHover ? tooltipRows(normalizedSeries, styleIndexes, visibleHover.point.xValue, xMode, useLineStyles, visibleHover.runId) : [];
   const hiddenHoverRows = visibleHover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
@@ -404,10 +394,8 @@ export function MetricChart({
                 id={smoothingControlId}
                 max={90}
                 min={0}
-                onBlur={commitSmoothing}
-                onChange={(event) => setSmoothingDraft(Number(event.target.value))}
-                onKeyUp={commitSmoothing}
-                onPointerUp={commitSmoothing}
+                onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+                onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
                 step={10}
                 type="range"
                 value={displaySmoothing}
