@@ -66,6 +66,7 @@ npm run rust:test
 npm run rust:verify
 npm run rust:migrate
 npm run rust:serve
+npm --silent run rust:capacity-plan -- --allow-unknown-limit
 npm run deploy:cloud-run
 npm run deploy:cloud-run:single
 npm run deploy:cloud-run:multi
@@ -79,9 +80,21 @@ cargo run --manifest-path apps/rust-server/Cargo.toml -- serve
 cargo run --manifest-path apps/rust-server/Cargo.toml -- all
 cargo run --manifest-path apps/rust-server/Cargo.toml -- migrate
 cargo run --manifest-path apps/rust-server/Cargo.toml -- worker
+cargo run --quiet --manifest-path apps/rust-server/Cargo.toml -- capacity-plan
 ```
 
 `worker` prunes expired idempotency keys and expired/revoked browser sessions from the single-process index, then writes immutable `usage_daily` snapshots for each organization. With the ClickHouse-only first slice, cleanup compacts live memory only; durable operational-log compaction is deferred to the hosted storage follow-up.
+
+`capacity-plan` is a no-network Phase 0 scaling preflight. It computes the
+projected Cloud SQL Postgres control-plane connection budget from
+`CONTROL_DB_MAX_CONNECTIONS`, active revision/instance counts, deploy overlap,
+operator-job reservations, migration-job reservations, and the configured
+`INSTANTML_CLOUD_SQL_CONNECTION_LIMIT`. Production preflights require
+`INSTANTML_CLOUD_SQL_CONNECTION_LIMIT` and exit nonzero when it is missing or
+when the configured limit would be exceeded. Use `npm --silent` or the direct
+`cargo run --quiet` form for clean JSON stdout; pass `--allow-unknown-limit`
+only for local exploratory output. See `docs/ops/backend-phase-0-capacity.md`
+for the full runbook.
 
 ## Import v2 Migration Jobs
 
@@ -209,6 +222,17 @@ Environment variables:
 - `INSTANTML_BIND_ADDR`: API bind address. Default: `127.0.0.1:8001`.
 - `INSTANTML_SERVICE_PLANE`: `combined`, `control`, or `data`. Default: `combined`. `control` and `data` require `INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true`.
 - `INSTANTML_CELL_ID`: optional operator label for a data-plane cell. The deploy helper sets it for split data services.
+- `CONTROL_DB_MAX_CONNECTIONS`: Postgres control-plane sqlx pool size per
+  Rust process. Default: `10`. Invalid or zero values fail startup so runtime
+  behavior matches the Phase 0 capacity preflight. Include this value before
+  adding cells or raising instance counts.
+- `INSTANTML_CAPACITY_ACTIVE_REVISIONS`, `INSTANTML_CAPACITY_ACTIVE_INSTANCES`,
+  `INSTANTML_CAPACITY_DEPLOY_OVERLAP_CONNECTIONS`,
+  `INSTANTML_CAPACITY_OPERATOR_JOB_CONNECTIONS`,
+  `INSTANTML_CAPACITY_MIGRATION_JOB_CONNECTIONS`,
+  `INSTANTML_CLOUD_SQL_CONNECTION_LIMIT`, and
+  `INSTANTML_CAPACITY_RESERVED_HEADROOM_PERCENT`: inputs for the
+  `capacity-plan` command. They do not affect server runtime behavior.
 - `INSTANTML_AUTH_MODE`: `local` or `api-key`. Default: `local`.
 - `INSTANTML_BOOTSTRAP_TOKEN`: required for bootstrap routes when `INSTANTML_AUTH_MODE=api-key`.
 - `INSTANTML_ARTIFACT_BACKEND`: artifact byte backend, `local` or `r2`. Default: `local`.
