@@ -1338,12 +1338,26 @@ small {
 }
 
 .chart-tooltip-slot {
-  display: block;
-  margin-top: 10px;
+  display: none;
 }
 
 .chart-tooltip-slot .chart-tooltip {
   box-sizing: border-box;
+}
+
+.chart-tooltip-slot.is-active {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  z-index: 7;
+  display: block;
+  width: min(420px, calc(100% - 80px));
+  margin: 0;
+}
+
+.chart-tooltip-slot.is-active .chart-tooltip {
+  max-height: min(300px, calc(100vh - 180px));
+  overflow: hidden;
 }
 
 .chart-tooltip-placeholder {
