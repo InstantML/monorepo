@@ -40,7 +40,7 @@ async function launchChromium() {
   }
 }
 
-function chartMarkup({ legendCount = 10, rowSpan = 3 } = {}) {
+function chartMarkup({ legendCount = 10, rowSpan = 6 } = {}) {
   const legend = Array.from({ length: legendCount }, (_, index) => `
     <span class="legend-chip"><i class="legend-line"></i> run-${index}</span>
   `).join("");
@@ -96,7 +96,7 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
             body { margin: 0; padding: 24px; background: var(--bg); }
           </style>
         </head>
-        <body>${chartMarkup({ legendCount: 10, rowSpan: 3 })}</body>
+        <body>${chartMarkup({ legendCount: 10, rowSpan: 6 })}</body>
       </html>
     `);
 
@@ -140,7 +140,7 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
     assert.ok(layout.legendColumns >= 4, `wide workspace legends should compact into more than two columns, got ${layout.legendColumns}`);
     assert.ok(layout.legend.height <= 56, `workspace legend should not starve the chart, got ${layout.legend.height}`);
     assert.ok(layout.legendScrollHeight <= 56, `wide 10-run legends should fit without hidden overflow, got ${layout.legendScrollHeight}`);
-    assert.ok(layout.frame.height >= 80, `chart frame should remain usable in a compact 10-run panel, got ${layout.frame.height}`);
+    assert.ok(layout.frame.height >= 260, `chart frame should remain W&B-like in a compact 10-run panel, got ${layout.frame.height}`);
     assert.ok(layout.lowerDeadSpace <= 18, `chart area should not leave a dead bottom gutter, got ${layout.lowerDeadSpace}`);
   } finally {
     await page.close().catch(() => {});
