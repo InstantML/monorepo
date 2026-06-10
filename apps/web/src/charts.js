@@ -119,9 +119,15 @@ export function nearestPoint(normalizedSeries, x, y, maxDistance = 18) {
   return nearest;
 }
 
-export function svgPointFromClient(rect, clientX, clientY, width, height) {
+export function svgPointFromClient(rect, clientX, clientY, width, height, options = {}) {
   const rectWidth = Math.max(1, Number(rect?.width ?? 0));
   const rectHeight = Math.max(1, Number(rect?.height ?? 0));
+  if (options.preserveAspectRatio === "none") {
+    return {
+      x: ((clientX - Number(rect?.left ?? 0)) / rectWidth) * width,
+      y: ((clientY - Number(rect?.top ?? 0)) / rectHeight) * height,
+    };
+  }
   const scale = Math.min(rectWidth / width, rectHeight / height);
   const renderedWidth = width * scale;
   const renderedHeight = height * scale;

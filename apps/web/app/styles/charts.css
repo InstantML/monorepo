@@ -1336,6 +1336,12 @@ small {
   pointer-events: none;
 }
 
+.chart-tooltip-pinned {
+  max-width: min(420px, calc(100% - 16px));
+  max-height: min(300px, calc(100% - 16px));
+  overflow: hidden;
+}
+
 .chart-tooltip-slot {
   display: none;
 }

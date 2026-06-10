@@ -874,7 +874,9 @@ export function WorkspacePanelCard({
   }, []);
   function handlePanelChartMove(event: MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, panelChartWidth, panelChartHeight);
+    const point = svgPointFromClient(rect, event.clientX, event.clientY, panelChartWidth, panelChartHeight, {
+      preserveAspectRatio: isFullscreenPanel ? "meet" : "none",
+    });
     pendingHoverRef.current = { x: point.x, y: point.y };
     if (hoverFrameRef.current !== null) return;
     hoverFrameRef.current = window.requestAnimationFrame(() => {

@@ -51,7 +51,8 @@ test("workspace chart visual polish preserves geometry and dark-mode marker outl
   assert.match(metricChartSrc, /fillFrame = false/);
   assert.match(metricChartSrc, /\.\.\.\(fillFrame \? \{\} : \{ aspectRatio:/);
   assert.match(workspacePanelSrc, /fillFrame=\{!isFullscreenPanel\}/);
-  assert.match(metricChartSrc, /preserveAspectRatio="none"/);
+  assert.match(metricChartSrc, /preserveAspectRatio=\{fillFrame \? "none" : undefined\}/);
+  assert.match(workspacePanelSrc, /preserveAspectRatio: isFullscreenPanel \? "meet" : "none"/);
   assert.match(panelsCss, /\.panel-resize-handle[\s\S]*?z-index: 12/);
   assert.match(panelsCss, /\.summary-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
   assert.match(panelsCss, /\.scatter-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
