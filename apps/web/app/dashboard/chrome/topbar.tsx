@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 
@@ -721,7 +721,7 @@ export function DashboardTopbar({
     ? activeFilters.map((filter) => filter.label).join(", ")
     : "No active run filters";
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia("(max-width: 900px)");
     let frame = 0;
