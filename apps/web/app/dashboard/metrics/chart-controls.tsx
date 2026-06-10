@@ -85,7 +85,17 @@ export function ChartControls(props: {
       />
       <label className="control metrics-smoothing-control">
         <span>Smooth {props.smoothing}</span>
-        <input aria-label="Smoothing" id={`${idPrefix}smoothing`} type="range" min="0" max="90" step="10" value={props.smoothing} onChange={(event) => props.onSmoothing(Number(event.target.value))} />
+        <input
+          aria-label="Smoothing"
+          id={`${idPrefix}smoothing`}
+          max="90"
+          min="0"
+          onChange={(event) => props.onSmoothing(Number(event.currentTarget.value))}
+          onInput={(event) => props.onSmoothing(Number(event.currentTarget.value))}
+          step="10"
+          type="range"
+          value={props.smoothing}
+        />
       </label>
       <label className="control metrics-average-control">
         <span>Avg</span>

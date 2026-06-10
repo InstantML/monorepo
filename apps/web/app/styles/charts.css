@@ -968,8 +968,24 @@ small {
 
 .metric-panel .chart-legend,
 .metric-panel .chart-range,
-.metric-panel .chart-range-row {
+.metric-panel .chart-range-row,
+.metric-panel .chart-tooltip-slot:not(.is-active) {
   display: none;
+}
+
+.metric-panel .chart-tooltip-slot.is-active {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 48px;
+  z-index: 7;
+  display: block;
+  margin: 0;
+}
+
+.metric-panel .chart-tooltip-slot.is-active .chart-tooltip {
+  max-height: min(176px, calc(100% - 16px));
+  overflow: hidden;
 }
 
 .metric-panel .metric-chart {
@@ -1050,7 +1066,7 @@ small {
 .metric-chart-frame {
   position: relative;
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
   aspect-ratio: 560 / 360;
 }
 
@@ -1060,6 +1076,7 @@ small {
   width: 100%;
   height: 100%;
   aspect-ratio: auto;
+  overflow: hidden;
 }
 
 .metric-chart-canvas {
@@ -1068,10 +1085,9 @@ small {
   z-index: 1;
   width: 100%;
   height: 100%;
-  /* Letterbox like the overlay SVG's viewBox (xMidYMid meet) so the
-   * canvas-drawn lines stay pixel-aligned with the axes even if the frame
-   * box ratio drifts from the chart's intrinsic ratio. */
-  object-fit: contain;
+  /* Stretch like the overlay SVG's preserveAspectRatio="none" mapping so
+   * dense canvas lines stay pixel-aligned with axes in resized panels. */
+  object-fit: fill;
   pointer-events: none;
 }
 
@@ -1088,30 +1104,34 @@ small {
 /* Faint, hairline gridlines — the reference charts let the data carry the eye
  * rather than a heavy grid. */
 .grid-line {
-  opacity: 0.42;
+  opacity: 0.3;
   shape-rendering: crispEdges;
 }
 
 .grid-line.vertical {
-  opacity: 0.24;
+  opacity: 0.18;
 }
 
 /* Drop the heavy axis spine to a barely-there hairline, wandb/neptune style. */
 .axis {
   stroke: var(--chart-axis);
-  opacity: 0.45;
+  opacity: 0.34;
 }
 
 .axis-label {
   fill: var(--muted);
-  font-size: 10.5px;
-  font-weight: 650;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.axis-label-x {
+  opacity: 0.82;
 }
 
 .tick-label {
   fill: var(--chart-tick, var(--muted));
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 10.5px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1119,7 +1139,7 @@ small {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.45;
+  stroke-width: 1.25;
   /* Opacity scales down with series count (set per-chart in MetricChart) so a
    * dense run set reads as a translucent band rather than an opaque slab. */
   opacity: var(--series-stroke-opacity, 0.92);
@@ -1149,15 +1169,15 @@ small {
  * last (React renders the active overlay after the band) so it reads clearly. */
 .series.series-active {
   opacity: 1;
-  stroke-width: 2.65;
+  stroke-width: 2.35;
 }
 
 .series-focus-halo {
-  opacity: 0.34;
+  opacity: 0.26;
   pointer-events: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 6;
+  stroke-width: 5;
 }
 
 .series-focus-overlay {
@@ -1219,6 +1239,16 @@ small {
   stroke-width: 1.5;
 }
 
+.hover-stack-point {
+  stroke-width: 1.25;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.hover-stack-point.active {
+  opacity: 1;
+}
+
 .hover-ring {
   fill: none;
   stroke: var(--chart-tick, #94a3b8);
@@ -1234,47 +1264,47 @@ small {
 
 .series-0,
 .point-0 {
-  stroke: #2f80ed;
+  stroke: #8a5ccf;
 }
 
 .point-0 {
-  fill: #2f80ed;
+  fill: #8a5ccf;
 }
 
 .series-1,
 .point-1 {
-  stroke: #12a67a;
+  stroke: #2e8b57;
 }
 
 .point-1 {
-  fill: #12a67a;
+  fill: #2e8b57;
 }
 
 .series-2,
 .point-2 {
-  stroke: #d65f74;
+  stroke: #2a7fbd;
 }
 
 .point-2 {
-  fill: #d65f74;
+  fill: #2a7fbd;
 }
 
 .series-3,
 .point-3 {
-  stroke: #e0a33f;
+  stroke: #c26300;
 }
 
 .point-3 {
-  fill: #e0a33f;
+  fill: #c26300;
 }
 
 .series-4,
 .point-4 {
-  stroke: #7c5cc4;
+  stroke: #d04a3a;
 }
 
 .point-4 {
-  fill: #7c5cc4;
+  fill: #d04a3a;
 }
 
 /* Light, wandb/neptune-style readout: a clean card with a step header, a
@@ -1297,6 +1327,47 @@ small {
   font-size: 12px;
   backdrop-filter: blur(6px);
   pointer-events: none;
+}
+
+.chart-tooltip-docked {
+  position: static;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.chart-tooltip-pinned {
+  max-width: min(420px, calc(100% - 16px));
+  max-height: min(300px, calc(100% - 16px));
+  overflow: hidden;
+}
+
+.chart-tooltip-slot {
+  display: none;
+}
+
+.chart-tooltip-slot .chart-tooltip {
+  box-sizing: border-box;
+}
+
+.chart-tooltip-slot.is-active {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  z-index: 7;
+  display: block;
+  width: min(420px, calc(100% - 80px));
+  margin: 0;
+}
+
+.chart-tooltip-slot.is-active .chart-tooltip {
+  max-height: min(300px, calc(100vh - 180px));
+  overflow: hidden;
+}
+
+.chart-tooltip-placeholder {
+  visibility: hidden;
 }
 
 .chart-tooltip-head {
@@ -1374,9 +1445,18 @@ small {
   letter-spacing: 0.01em;
 }
 
+.chart-tooltip-more-placeholder {
+  visibility: hidden;
+}
+
 .workspace-panel-card .chart-tooltip {
   min-width: min(260px, calc(100% - 24px));
   max-width: calc(100% - 24px);
+}
+
+.workspace-panel-card .chart-tooltip-docked {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chart-range-row {

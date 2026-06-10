@@ -16,6 +16,7 @@ import type {
   RunTimelineRow,
   TableColumns,
   WorkspacePanel,
+  WorkspacePanelLayout,
   WorkspacePanelSettings,
   WorkspacePanelType,
   WorkspaceSection,
@@ -38,6 +39,8 @@ export const COMPARE_RUN_LIMIT = 50;
 export const COMPARE_ARTIFACT_LIMIT = 12;
 export const WORKSPACE_SCHEMA_VERSION = 2;
 export const DEFAULT_METRIC_KEY = "eval/return_mean";
+export const MIN_WORKSPACE_PANEL_ROWS = 3;
+export const MIN_LINE_WORKSPACE_PANEL_ROWS = 6;
 export { WORKSPACE_VIEW_PREFIX };
 const AUTOMATIC_WORKSPACE_PANEL_LIMIT = 6;
 const PREFERRED_AUTOMATIC_METRICS = [
@@ -249,7 +252,7 @@ export function workspacePanelForMetric(metricKey: string, type: WorkspacePanelT
     type: safeType,
     title: safeType === "line" ? metricTitleText : `${metricTitleText} ${workspacePanelTypeLabel(safeType)}`,
     metricKey,
-    layout: defaultWorkspacePanelLayout,
+    layout: sanitizePanelLayout(defaultWorkspacePanelLayout, safeType),
   };
 }
 
@@ -340,7 +343,7 @@ function sanitizeWorkspacePanel(panel: unknown, index: number) {
     type,
     title: typeof panel.title === "string" && panel.title.trim() ? panel.title.slice(0, 80) : metricTitle(panel.metricKey),
     metricKey: panel.metricKey.slice(0, 256),
-    layout: sanitizePanelLayout(panel.layout),
+    layout: sanitizePanelLayout(panel.layout, type),
     settings: sanitizePanelSettings(panel.settings),
   };
   if (type === "scatter") {
@@ -377,11 +380,17 @@ function sanitizeWorkspacePanel(panel: unknown, index: number) {
   return base;
 }
 
-export function sanitizePanelLayout(layout: unknown) {
-  if (!isPlainObject(layout)) return defaultWorkspacePanelLayout;
+export function sanitizePanelLayout(layout: unknown, type: WorkspacePanelType = "line"): WorkspacePanelLayout {
+  const minRows = type === "line" ? MIN_LINE_WORKSPACE_PANEL_ROWS : MIN_WORKSPACE_PANEL_ROWS;
+  if (!isPlainObject(layout)) {
+    return {
+      ...defaultWorkspacePanelLayout,
+      h: Math.max(minRows, defaultWorkspacePanelLayout.h),
+    };
+  }
   return {
     w: Math.round(boundedNumber(layout.w, 3, 12) ?? defaultWorkspacePanelLayout.w),
-    h: Math.round(boundedNumber(layout.h, 3, 10) ?? defaultWorkspacePanelLayout.h),
+    h: Math.round(boundedNumber(layout.h, minRows, 10) ?? Math.max(minRows, defaultWorkspacePanelLayout.h)),
   };
 }
 

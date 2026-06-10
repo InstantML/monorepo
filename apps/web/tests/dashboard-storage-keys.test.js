@@ -154,6 +154,7 @@ test("workspace sanitizer round-trips scatter panels and keeps non-scatter migra
           type: "line",
           title: "Loss",
           metricKey: "train/loss",
+          layout: { w: 12, h: 3 },
           xField: "run:duration_seconds",
           yField,
         },
@@ -209,6 +210,7 @@ test("workspace sanitizer round-trips scatter panels and keeps non-scatter migra
   assert.equal(line.type, "line");
   assert.equal(line.xField, undefined);
   assert.equal(line.yField, undefined);
+  assert.deepEqual(line.layout, { w: 12, h: models.MIN_LINE_WORKSPACE_PANEL_ROWS }, "saved short line charts should migrate to a usable minimum height");
 });
 
 test("workspace sanitizer round-trips second-slice research panels", async () => {
@@ -307,12 +309,19 @@ test("workspace sanitizer preserves legacy v1 panel payloads without scatter fie
     ],
   );
   assert.deepEqual(models.workspaceMetricKeys(sanitized), ["custom/value", "train/loss"]);
+  assert.equal(sanitized.sections[0].panels[0].layout.h, models.MIN_LINE_WORKSPACE_PANEL_ROWS);
+  assert.equal(sanitized.sections[0].panels[1].layout.h, 4);
+  assert.equal(sanitized.sections[0].panels[4].layout.h, models.MIN_LINE_WORKSPACE_PANEL_ROWS);
 });
 
 test("workspace scatter panel creation emits parser-safe default field ids", async () => {
   const models = await importDashboardModelsForTest();
+  const line = models.workspacePanelForMetric("eval/return_mean", "line");
+  assert.equal(line.layout.h, models.MIN_LINE_WORKSPACE_PANEL_ROWS);
+
   const normalScatter = models.workspacePanelForMetric("eval/return_mean", "scatter");
   assert.equal(normalScatter.type, "scatter");
+  assert.equal(normalScatter.layout.h, 4);
   assert.equal(parseFieldId(normalScatter.xField)?.source, "run");
   assert.equal(parseFieldId(normalScatter.yField)?.source, "metric");
 

@@ -418,7 +418,18 @@ textarea:focus {
 
 /* --topbar-height is owned by DashboardTopbar (48px brand-only / 92px with
    workbar) via an inline style on <html>, and .topbar height tracks it in the
-   authoritative chrome block below. No fixed/media overrides here. */
+   authoritative chrome block below. These selectors provide the same values
+   before hydration so the sticky nav rail does not jump after first paint. */
+@media (min-width: 901px) {
+  :root:has(.topbar--workbar:not(.desktop-filters-collapsed)) {
+    --topbar-height: 92px;
+  }
+
+  :root:has(.topbar--brandonly),
+  :root:has(.topbar.desktop-filters-collapsed) {
+    --topbar-height: 48px;
+  }
+}
 
 /* Run Detail title is a run identifier — render it mono, not sans display. */
 .run-detail-title h2 {
@@ -2451,11 +2462,15 @@ button.compare-row-head.active {
 /* Auto-open expands the .tabs element itself to 212px so its opaque
  * background covers tab labels without leaking page content through gaps
  * between buttons. */
-.shell:not(.nav-pinned).nav-auto-open .tabs {
+.shell:not(.nav-pinned).nav-auto-open .tabs,
+.shell:not(.nav-pinned) .tabs:hover,
+.shell:not(.nav-pinned) .tabs:focus-within {
   width: 212px;
   box-shadow: 22px 0 46px -12px rgba(0, 0, 0, 0.55);
 }
-:root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs {
+:root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs,
+:root[data-theme="light"] .shell:not(.nav-pinned) .tabs:hover,
+:root[data-theme="light"] .shell:not(.nav-pinned) .tabs:focus-within {
   box-shadow: 22px 0 46px -12px rgba(15, 23, 42, 0.18);
 }
 
@@ -2476,7 +2491,9 @@ button.compare-row-head.active {
   text-transform: uppercase;
 }
 .shell.nav-pinned .tab-group-label,
-.shell:not(.nav-pinned).nav-auto-open .tab-group-label {
+.shell:not(.nav-pinned).nav-auto-open .tab-group-label,
+.shell:not(.nav-pinned) .tabs:hover .tab-group-label,
+.shell:not(.nav-pinned) .tabs:focus-within .tab-group-label {
   display: block;
 }
 .shell:not(.nav-pinned):not(.nav-auto-open) .tab-group-label {
@@ -2521,12 +2538,16 @@ button.compare-row-head.active {
   max-width: 0;
   opacity: 0;
 }
-.shell:not(.nav-pinned).nav-auto-open .tab-button {
+.shell:not(.nav-pinned).nav-auto-open .tab-button,
+.shell:not(.nav-pinned) .tabs:hover .tab-button,
+.shell:not(.nav-pinned) .tabs:focus-within .tab-button {
   justify-content: flex-start;
   gap: 8px;
   padding: 8px 9px;
 }
-.shell:not(.nav-pinned).nav-auto-open .tab-label {
+.shell:not(.nav-pinned).nav-auto-open .tab-label,
+.shell:not(.nav-pinned) .tabs:hover .tab-label,
+.shell:not(.nav-pinned) .tabs:focus-within .tab-label {
   max-width: 120px;
   opacity: 1;
 }

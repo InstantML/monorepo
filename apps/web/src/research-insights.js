@@ -74,7 +74,7 @@ export function numericFieldRows(runs, metricKey) {
   };
 }
 
-export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
+export function kMeansClusters(runs, metricKey, k = 3, iterations = 12, displayAxes = []) {
   const { fields, rows } = numericFieldRows(runs, metricKey);
   // Cluster on configuration features only. Seed-like fields are run identifiers
   // (index noise), and metric fields would leak the outcome into the feature
@@ -88,7 +88,7 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
     .map((row) => ({ run: row.run, vector: selectedFields.map((field) => row.values[field]) }))
     .filter((row) => row.vector.every(isFiniteNumber));
   if (vectors.length < 3 || selectedFields.length < 2) {
-    return { clusters: [], fields: selectedFields, axes: selectedFields.slice(0, 2), points: [] };
+    return { clusters: [], fields: selectedFields, axes: selectedFields.slice(0, 2), points: [], plotted: 0, clustered: 0 };
   }
   const normalized = normalizeVectors(vectors.map((row) => row.vector));
   const clusterCount = Math.min(k, vectors.length);
@@ -121,8 +121,12 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
   const axisOrder = selectedFields
     .map((field, index) => ({ index, distinct: distinctCount(field) }))
     .sort((a, b) => b.distinct - a.distinct);
-  const xDim = axisOrder[0]?.index ?? 0;
-  const yDim = (axisOrder[1]?.index ?? 1) === xDim ? Math.min(1, selectedFields.length - 1) : (axisOrder[1]?.index ?? 1);
+  const requestedX = selectedFields.indexOf(displayAxes[0]);
+  const requestedY = selectedFields.indexOf(displayAxes[1]);
+  const xDim = requestedX >= 0 ? requestedX : axisOrder[0]?.index ?? 0;
+  const yDim = requestedY >= 0 && requestedY !== xDim
+    ? requestedY
+    : (axisOrder.find((axis) => axis.index !== xDim)?.index ?? Math.min(1, selectedFields.length - 1));
   const points = vectors.map((item, index) => ({
     id: item.run.id,
     name: item.run.name,
@@ -130,7 +134,7 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
     x: normalized[index][xDim],
     y: normalized[index][yDim],
   }));
-  return { clusters, fields: selectedFields, axes: [selectedFields[xDim], selectedFields[yDim]], points };
+  return { clusters, fields: selectedFields, axes: [selectedFields[xDim], selectedFields[yDim]], points, plotted: points.length, clustered: vectors.length };
 }
 
 export function evaluationCards(runs) {

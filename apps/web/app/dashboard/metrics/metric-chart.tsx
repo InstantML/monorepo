@@ -5,7 +5,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, svgPointFromClient } from "../../../src/charts.js";
-import { chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
+import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
@@ -73,6 +73,22 @@ function chartTooltipPlacement({
   };
 }
 
+function renderedSvgPoint(point: { x: number; y: number }, frameRect: DOMRect, width: number, height: number, fillFrame: boolean) {
+  if (fillFrame) {
+    return {
+      x: (point.x / width) * frameRect.width,
+      y: (point.y / height) * frameRect.height,
+    };
+  }
+  const scale = Math.min(frameRect.width / width, frameRect.height / height);
+  const renderedWidth = width * scale;
+  const renderedHeight = height * scale;
+  return {
+    x: (frameRect.width - renderedWidth) / 2 + point.x * scale,
+    y: (frameRect.height - renderedHeight) / 2 + point.y * scale,
+  };
+}
+
 function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
   const rows = normalizedSeries.map((item, index) => {
     const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
@@ -90,6 +106,7 @@ function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: nu
       smoothedValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : null,
       rankValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : nearest?.value ?? null,
       label: xMode === "time" ? formatAxisValue(nearest?.xValue, xMode) : `Step ${formatNumber(nearest?.step, 0)}`,
+      point: nearest,
       colorIndex,
       lineStyleClass: chartLineStyleClass(useLineStyles ? colorIndex : 0),
     };
@@ -134,7 +151,7 @@ function MiniRange({
   const activeMinX = activeRange ? miniX(activeRange.min) : 0;
   const activeMaxX = activeRange ? miniX(activeRange.max) : 0;
   const rangeStyleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
-  const useLineStyles = normalizedSeries.length > 12;
+  const useLineStyles = normalizedSeries.length > CHART_PALETTE.length;
 
   function valueFromClient(target: SVGSVGElement, clientX: number, clientY: number) {
     const rect = target.getBoundingClientRect();
@@ -245,6 +262,7 @@ export function MetricChart({
   domain,
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
   exportFilenameBase,
+  fillFrame = false,
   fullDomain,
   height = chartHeight,
   hover,
@@ -266,6 +284,7 @@ export function MetricChart({
   domain: any;
   emptyMessage?: string;
   exportFilenameBase?: string;
+  fillFrame?: boolean;
   fullDomain?: any;
   height?: number;
   hover: HoverPoint;
@@ -285,7 +304,7 @@ export function MetricChart({
   zoomRange?: ChartZoomRange;
 }) {
   const denseChart = shouldUseDenseChart(normalizedSeries);
-  const useLineStyles = normalizedSeries.length > 12;
+  const useLineStyles = normalizedSeries.length > CHART_PALETTE.length;
   // With many overlapping SVG lines, full opacity merges them into an opaque
   // slab. wandb/neptune render large run sets as a translucent density band and
   // isolate one line on hover — so fade each line as the count grows, and dim
@@ -296,7 +315,7 @@ export function MetricChart({
   const seriesMutedOpacity = seriesCount > 60 ? 0.07 : seriesCount > 24 ? 0.1 : seriesCount > 8 ? 0.16 : 0.24;
   const seriesHoverCanvasOpacity = seriesCount > 60 ? 0.38 : seriesCount > 24 ? 0.48 : 0.58;
   const chartFrameStyle = {
-    aspectRatio: `${width} / ${height}`,
+    ...(fillFrame ? {} : { aspectRatio: `${width} / ${height}` }),
     "--series-stroke-opacity": seriesStrokeOpacity,
     "--series-muted-opacity": seriesMutedOpacity,
     "--series-hover-canvas-opacity": seriesHoverCanvasOpacity,
@@ -383,17 +402,7 @@ export function MetricChart({
   const showSmoothing = typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
   const showActions = Boolean(exportFilenameBase) || showSmoothing;
-  // Dragging the slider gives live thumb feedback via local draft state but only
-  // commits (persists + pushes one undo entry) on release, so a single gesture
-  // doesn't flood the undo stack and toast log with intermediate steps.
-  const [smoothingDraft, setSmoothingDraft] = useState<number | null>(null);
-  useEffect(() => {
-    if (smoothingDraft !== null && smoothingDraft === smoothingValue) setSmoothingDraft(null);
-  }, [smoothingDraft, smoothingValue]);
-  const displaySmoothing = smoothingDraft ?? smoothingValue;
-  function commitSmoothing() {
-    if (smoothingDraft !== null && smoothingDraft !== smoothingValue) onSmoothingChange?.(smoothingDraft);
-  }
+  const displaySmoothing = smoothingValue;
   const hoverRows = visibleHover ? tooltipRows(normalizedSeries, styleIndexes, visibleHover.point.xValue, xMode, useLineStyles, visibleHover.runId) : [];
   const hiddenHoverRows = visibleHover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
@@ -416,8 +425,9 @@ export function MetricChart({
       if (!areaRect.width || !areaRect.height || !frameRect.width || !frameRect.height) return;
 
       const pointY = visibleHover.point.displayY ?? visibleHover.point.y;
-      const anchorX = frameRect.left - areaRect.left + (visibleHover.point.x / width) * frameRect.width;
-      const anchorY = frameRect.top - areaRect.top + (pointY / height) * frameRect.height;
+      const renderedPoint = renderedSvgPoint({ x: visibleHover.point.x, y: pointY }, frameRect, width, height, fillFrame);
+      const anchorX = frameRect.left - areaRect.left + renderedPoint.x;
+      const anchorY = frameRect.top - areaRect.top + renderedPoint.y;
       const next = chartTooltipPlacement({
         anchorX,
         anchorY,
@@ -458,7 +468,7 @@ export function MetricChart({
       window.removeEventListener("resize", schedulePlacement);
       observers.forEach((observer) => observer.disconnect());
     };
-  }, [height, hiddenHoverRows, hoverRows.length, smoothedHoverRows, visibleHover, width, xMode]);
+  }, [fillFrame, height, hiddenHoverRows, hoverRows.length, smoothedHoverRows, visibleHover, width, xMode]);
   const tooltipStyle: CSSProperties = tooltipPlacement
     ? { left: `${tooltipPlacement.left}px`, top: `${tooltipPlacement.top}px` }
     : { left: 0, top: 0, visibility: "hidden" };
@@ -518,10 +528,8 @@ export function MetricChart({
                 id={smoothingControlId}
                 max={90}
                 min={0}
-                onBlur={commitSmoothing}
-                onChange={(event) => setSmoothingDraft(Number(event.target.value))}
-                onKeyUp={commitSmoothing}
-                onPointerUp={commitSmoothing}
+                onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+                onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
                 step={10}
                 type="range"
                 value={displaySmoothing}
@@ -575,7 +583,7 @@ export function MetricChart({
       </div>
       <div ref={chartFrameRef} className={`metric-chart-frame${denseChart ? " dense" : ""}${activeSeries ? " is-hovering-series" : ""}`} style={chartFrameStyle} onMouseLeave={onLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
-        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
+        <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} preserveAspectRatio={fillFrame ? "none" : undefined} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={onMove} onMouseLeave={onLeave}>
           {yTicks.map((tick) => (
             <g key={`y-${tick}`}>
               <line className="grid-line" x1={padding} x2={width - padding} y1={yPos(tick)} y2={yPos(tick)} />
@@ -590,8 +598,7 @@ export function MetricChart({
           ))}
           <line className="axis" x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} />
           <line className="axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
-          <text className="axis-label" x={width / 2} y={height - 5} textAnchor="middle">{xMode === "time" ? "Logged time" : "Training step"}</text>
-          <text className="axis-label" x={10} y={height / 2} textAnchor="middle" transform={`rotate(-90 10 ${height / 2})`}>{metricTitle(metricKey)}</text>
+          <text className="axis-label axis-label-x" x={width - padding} y={height - 8} textAnchor="end">{xMode === "time" ? "Time" : "Step"}</text>
           {visibleHover ? <line className="hover-guide" x1={visibleHover.point.x} x2={visibleHover.point.x} y1={padding} y2={height - padding} /> : null}
           {!denseChart ? normalizedSeries.map((item, index) => {
             const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
@@ -652,13 +659,6 @@ export function MetricChart({
           })() : null}
           {visibleHover ? (
             <>
-              <circle
-                className="hover-point"
-                cx={visibleHover.point.x}
-                cy={visibleHover.point.displayY ?? visibleHover.point.y}
-                r={3.2}
-                style={{ fill: activeSeries ? chartColor(styleIndexes[hoverIndex] ?? chartSeriesColorIndex(activeSeries, hoverIndex)) : "var(--accent)", stroke: "var(--chart-card-bg, var(--surface))" }}
-              />
               <circle className="hover-ring" cx={visibleHover.point.x} cy={visibleHover.point.displayY ?? visibleHover.point.y} r={8} />
             </>
           ) : null}
@@ -686,7 +686,9 @@ export function MetricChart({
               <span className="chart-tooltip-name"><i className={`legend-line ${row.lineStyleClass}`} style={{ backgroundColor: chartColor(row.colorIndex), color: chartColor(row.colorIndex) }} /> {row.name}</span>
             </span>
           ))}
-          {hiddenHoverRows ? <div className="chart-tooltip-more">Showing {hoverRows.length} of {normalizedSeries.length}</div> : null}
+          <div className={`chart-tooltip-more${hiddenHoverRows ? "" : " chart-tooltip-more-placeholder"}`}>
+            Showing {hoverRows.length} of {normalizedSeries.length}
+          </div>
         </div>
       ) : null}
       {showRange ? (

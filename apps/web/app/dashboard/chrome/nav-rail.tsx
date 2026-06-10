@@ -99,7 +99,6 @@ export function DashboardNav({
                   key={tab.id}
                   onClick={(event) => handleTabSelect(event, tab.id)}
                   tabIndex={compactTabIndex}
-                  title={tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
                 </a>
@@ -115,7 +114,6 @@ export function DashboardNav({
           className={`tab-button nav-pin-button ${pinned ? "active" : ""}`}
           onClick={() => handlePinnedChange(!pinned)}
           tabIndex={compactTabIndex}
-          title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
           type="button"
         >
           {pinned ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}

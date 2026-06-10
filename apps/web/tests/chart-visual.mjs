@@ -111,10 +111,8 @@ function renderChart(series, { metricKey, smoothing = 0, identifierField = "name
 
   let tooltip = "";
   if (hoverPoints.length) {
-    const top = (hoverPoints[0].p.displayY ?? hoverPoints[0].p.y) / H * 100;
-    const left = Math.min(82, Math.max(18, hoverPoints[0].p.x / W * 100));
     const ranked = [...hoverPoints].sort((a, b) => ((b.p.smoothedValue ?? b.p.value) ?? -Infinity) - ((a.p.smoothedValue ?? a.p.value) ?? -Infinity)).slice(0, 8);
-    tooltip = '<div class="chart-tooltip" style="left:'+left+'%;top:'+top+'%">'
+    tooltip = '<div class="chart-tooltip-slot is-active"><div class="chart-tooltip chart-tooltip-docked">'
       + '<div class="chart-tooltip-head">Step ' + hoverPoints[0].p.step + '</div>'
       + '<div class="chart-tooltip-cols"><span>Raw / EMA</span><span>Name</span></div>'
       + ranked.map(({item,colorIndex,p}) => {
@@ -124,8 +122,15 @@ function renderChart(series, { metricKey, smoothing = 0, identifierField = "name
           return '<span class="chart-tooltip-row"><b style="color:'+stroke+'">'+sm+'</b>'
             + '<span class="chart-tooltip-name"><i class="legend-line '+chartLineStyleClass(useLineStyles ? colorIndex : 0)+'" style="background-color:'+stroke+';color:'+stroke+'"></i> '+escapeHtml(id)+'</span></span>';
         }).join("")
-      + (hoverPoints.length > ranked.length ? '<div class="chart-tooltip-more">Showing '+ranked.length+' of '+hoverPoints.length+'</div>' : '')
-      + '</div>';
+      + '<div class="chart-tooltip-more'+(hoverPoints.length > ranked.length ? '' : ' chart-tooltip-more-placeholder')+'">Showing '+ranked.length+' of '+hoverPoints.length+'</div>'
+      + '</div></div>';
+  } else {
+    tooltip = '<div class="chart-tooltip-slot"><div class="chart-tooltip chart-tooltip-docked chart-tooltip-placeholder">'
+      + '<div class="chart-tooltip-head">Step</div>'
+      + '<div class="chart-tooltip-cols"><span>Value</span><span>Name</span></div>'
+      + Array.from({ length: 8 }, () => '<span class="chart-tooltip-row"><b>0.0000</b><span class="chart-tooltip-name"><i class="legend-line"></i> run-name-placeholder</span></span>').join("")
+      + '<div class="chart-tooltip-more">Showing 8 of 100</div>'
+      + '</div></div>';
   }
 
   const legendItems = normalized.length <= 12 ? normalized : normalized.slice(0, 8);
@@ -134,7 +139,7 @@ function renderChart(series, { metricKey, smoothing = 0, identifierField = "name
     const stroke = chartColor(colorIndex);
     return '<span class="legend-chip"><i class="legend-line '+chartLineStyleClass(useLineStyles ? colorIndex : 0)+'" style="background-color:'+stroke+';color:'+stroke+'"></i>'+escapeHtml(item[identifierField] ?? item.name)+'</span>';
   }).join("") + (normalized.length > legendItems.length ? '<span class="legend-chip legend-overflow">+'+(normalized.length - legendItems.length)+' more plotted</span>' : '') + '</div>';
-  return '<div class="chart-area">'+legend+svg+tooltip+'</div>';
+  return '<div class="chart-area">'+legend+'<div class="metric-chart-frame">'+svg+'</div>'+tooltip+'</div>';
 }
 
 // ---- seeded scenario data ----

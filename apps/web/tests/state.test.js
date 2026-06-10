@@ -89,6 +89,10 @@ test("research insights helpers scope runs, extract fields, cluster, and detect 
   const clusters = kMeansClusters(runs, "eval/accuracy", 2);
   assert.equal(clusters.points.length, 3);
   assert(clusters.clusters.length >= 1);
+  assert.deepEqual(clusters.fields, ["config.optimizer.lr", "config.width"]);
+  const projectedClusters = kMeansClusters(runs, "eval/accuracy", 2, 12, ["config.width", "config.optimizer.lr"]);
+  assert.deepEqual(projectedClusters.axes, ["config.width", "config.optimizer.lr"]);
+  assert.deepEqual(projectedClusters.points.map((point) => point.cluster), clusters.points.map((point) => point.cluster));
   const cards = evaluationCards(runs);
   assert.equal(cards.find((card) => card.id === "accuracy").key, "eval/accuracy");
   assert.equal(cards.find((card) => card.id === "f1").count, 3);
@@ -597,6 +601,7 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.notEqual(segmentHover.point.step, 5);
   assert.equal(nearestPoint(normalized, 999, 999), null);
   assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 560, height: 360 }, 290, 200, 560, 640), { x: 280, y: 320 });
+  assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 1120, height: 360 }, 570, 200, 560, 360, { preserveAspectRatio: "none" }), { x: 280, y: 180 });
   assert.deepEqual(chartDomain([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/accuracy"), { minX: 0, maxX: 1, minY: 0, maxY: 1 });
   assert.deepEqual(chartDomain([{ id: "loss", name: "loss", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/loss"), { minX: 0, maxX: 1, minY: 0.52, maxY: 1 });
   assert.match(normalizeSeries([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.5 }, { step: 1, value: 1 }] }], 100, 80, 28, "step", "train/accuracy")[0].path, /40\.00/);
