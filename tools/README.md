@@ -81,6 +81,18 @@ Important environment variables:
 
 Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, provision public Cloud Run or load-balancer URLs, and create Cloudflare R2 buckets when artifact uploads are enabled. The default deployment is the split `control` plus `data` shape; prod stays warm with one manual instance per service, while staging uses automatic min `0` max `1` to reduce idle cost without allowing multiple writers. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Hosted artifact byte uploads use Cloudflare R2 when configured; the helper mounts Cloudflare env/secrets only on non-control services, and any Cloudflare token Client IP filter must include every Cloud Run static egress IP that can run artifact uploads. See `docs/architecture/self-hosted-gcp-clickhouse.md` for the current self-hosted GCP ClickHouse operating model.
 
+Before adding data cells or raising instance counts, run the Phase 0 capacity
+preflight and record its JSON output in the operator ticket:
+
+```bash
+INSTANTML_CLOUD_SQL_CONNECTION_LIMIT=<cloud-sql-tier-limit> npm --silent run rust:capacity-plan
+```
+
+The runbook in `docs/ops/backend-phase-0-capacity.md` explains the active
+revision, per-revision instance, deploy-overlap, operator-job, migration-job,
+and headroom inputs. This preflight is intentionally separate from `deploy-cloud-run.mjs` so
+operators can run it without mutating cloud resources.
+
 Hosted Rust origin logs are Cloud Run stdout/stderr JSON logs. They include
 request completion events with redacted route-template paths, `request_id`,
 `trace_id`, `service_plane`, `route_plane`, and `plane_tag`; sanitized handled
