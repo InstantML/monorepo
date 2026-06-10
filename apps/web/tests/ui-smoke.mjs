@@ -983,6 +983,8 @@ try {
       handle: handleBox,
       handleHitClass: hit?.className ?? "",
       handleZIndex: getComputedStyle(handle).zIndex,
+      legendColumns: getComputedStyle(legend).gridTemplateColumns.split(" ").filter(Boolean).length,
+      legendHeight: legendBox.height,
       lowerDeadSpace: chartAreaBox.bottom - Math.max(frameBox.bottom, legendBox.bottom),
       panel: rect(card),
       rows: getComputedStyle(grid).gridAutoRows,
@@ -993,7 +995,9 @@ try {
   assert.equal(startingGeometry.frameAspect, "auto");
   assert.match(String(startingGeometry.handleHitClass), /panel-resize-handle/, "resize handle should be the topmost hit target at its center");
   assert.equal(startingGeometry.handleZIndex, "12");
-  assert.ok(startingGeometry.frame.height >= 48, `workspace chart frame should stay usable, got ${startingGeometry.frame.height}`);
+  assert.ok(startingGeometry.legendColumns >= 3, `workspace legend should compact across the panel, got ${startingGeometry.legendColumns} columns`);
+  assert.ok(startingGeometry.legendHeight <= 60, `workspace legend should not starve the chart, got ${startingGeometry.legendHeight}`);
+  assert.ok(startingGeometry.frame.height >= 80, `workspace chart frame should stay usable, got ${startingGeometry.frame.height}`);
   assert.ok(startingGeometry.lowerDeadSpace <= 24, `workspace chart should not leave a large bottom gutter, got ${startingGeometry.lowerDeadSpace}`);
   const resizeBox = await firstWorkspacePanel.locator(".panel-resize-handle").boundingBox();
   assert.ok(resizeBox, "expected workspace panel resize handle");

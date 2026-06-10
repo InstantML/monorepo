@@ -224,12 +224,18 @@
 .workspace-panel-card:not(.fullscreen-panel-card) .alt-panel-chart svg {
   order: 1;
   height: 100%;
-  min-height: 0;
+  min-height: 80px;
   aspect-ratio: auto;
 }
 
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-legend {
   order: 2;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  max-height: 52px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-width: thin;
 }
 
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-tooltip-slot {

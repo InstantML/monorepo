@@ -40,8 +40,8 @@ async function launchChromium() {
   }
 }
 
-function chartMarkup({ rowSpan = 4 } = {}) {
-  const legend = Array.from({ length: 8 }, (_, index) => `
+function chartMarkup({ legendCount = 10, rowSpan = 3 } = {}) {
+  const legend = Array.from({ length: legendCount }, (_, index) => `
     <span class="legend-chip"><i class="legend-line"></i> run-${index}</span>
   `).join("");
 
@@ -50,14 +50,14 @@ function chartMarkup({ rowSpan = 4 } = {}) {
       <article
         class="workspace-panel-card"
         data-panel-height="${rowSpan}"
-        data-panel-width="6"
-        style="--panel-grid-span: 6; --panel-row-span: ${rowSpan}; --panel-chart-min-height: ${rowSpan * 54}px;"
+        data-panel-width="12"
+        style="--panel-grid-span: 12; --panel-row-span: ${rowSpan}; --panel-chart-min-height: ${rowSpan * 54}px;"
       >
         <div class="workspace-panel-head">
           <div><h3>Return Mean</h3></div>
         </div>
         <div class="workspace-panel-meta">
-          <span>Step</span><span>Ungrouped</span><span>Full fidelity</span>
+          <span>Step</span><span>Ungrouped</span><span>Full fidelity</span><span>${legendCount} current page</span>
         </div>
         <div class="chart-area chart-area-exportable">
           <div class="chart-export-actions">
@@ -96,7 +96,7 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
             body { margin: 0; padding: 24px; background: var(--bg); }
           </style>
         </head>
-        <body>${chartMarkup({ rowSpan: 4 })}</body>
+        <body>${chartMarkup({ legendCount: 10, rowSpan: 3 })}</body>
       </html>
     `);
 
@@ -126,6 +126,8 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
         frameAspect: getComputedStyle(frame).aspectRatio,
         hitClass: hit?.className ?? "",
         handleZIndex: getComputedStyle(handle).zIndex,
+        legendColumns: getComputedStyle(legend).gridTemplateColumns.split(" ").filter(Boolean).length,
+        legendScrollHeight: legend.scrollHeight,
         lowerDeadSpace: rect(chartArea).bottom - Math.max(rect(frame).bottom, rect(legend).bottom),
       };
     });
@@ -135,7 +137,10 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
     assert.equal(layout.frameAspect, "auto");
     assert.match(layout.hitClass, /panel-resize-handle/);
     assert.equal(layout.handleZIndex, "12");
-    assert.ok(layout.frame.height >= 48, `chart frame should remain usable, got ${layout.frame.height}`);
+    assert.ok(layout.legendColumns >= 4, `wide workspace legends should compact into more than two columns, got ${layout.legendColumns}`);
+    assert.ok(layout.legend.height <= 56, `workspace legend should not starve the chart, got ${layout.legend.height}`);
+    assert.ok(layout.legendScrollHeight <= 56, `wide 10-run legends should fit without hidden overflow, got ${layout.legendScrollHeight}`);
+    assert.ok(layout.frame.height >= 80, `chart frame should remain usable in a compact 10-run panel, got ${layout.frame.height}`);
     assert.ok(layout.lowerDeadSpace <= 18, `chart area should not leave a dead bottom gutter, got ${layout.lowerDeadSpace}`);
   } finally {
     await page.close().catch(() => {});
