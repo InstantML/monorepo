@@ -14,6 +14,28 @@ const UPLOAD_HEALTH_DROPPED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}dropped_ev
 const UPLOAD_HEALTH_STALE_SECONDS = 30;
 const UPLOAD_HEALTH_LAG_SECONDS = 5;
 
+// The URL carries at most this many explicit run ids (Compare's own cap).
+// Larger selections stay client-side; the first 50 remain shareable.
+export const RUN_SELECTION_URL_LIMIT = 50;
+
+export function runSelectionFromSearch(search) {
+  try {
+    const raw = new URLSearchParams(search ?? "").get("runs") ?? "";
+    if (!raw) return [];
+    const ids = raw
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => /^[0-9a-fA-F-]{8,64}$/.test(id));
+    return [...new Set(ids)].slice(0, RUN_SELECTION_URL_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+export function runSelectionSearchParam(selectedIds) {
+  return (Array.isArray(selectedIds) ? selectedIds : []).slice(0, RUN_SELECTION_URL_LIMIT).join(",");
+}
+
 export function toggleSelection(selected, runId) {
   if (selected.includes(runId)) return selected.filter((id) => id !== runId);
   return [...selected, runId].slice(-MAX_SELECTED_RUNS);
@@ -133,18 +155,52 @@ export function filterMetricKeys(keys, pattern) {
 export function uploadHealthForRun(run, nowSeconds = Date.now() / 1000) {
   const metrics = run?.latest_metrics ?? {};
   const heartbeat = numericMetric(metrics[UPLOAD_HEALTH_HEARTBEAT_KEY]);
-  if (heartbeat === null) return { tone: "neutral", label: "upload unknown", state: "unknown" };
+  if (heartbeat === null) return { tone: "neutral", label: "upload unknown", state: "unknown", detail: "" };
   const failed = numericMetric(metrics[UPLOAD_HEALTH_FAILED_KEY]) ?? 0;
   const dropped = numericMetric(metrics[UPLOAD_HEALTH_DROPPED_KEY]) ?? 0;
   const queued = numericMetric(metrics[UPLOAD_HEALTH_QUEUED_KEY]) ?? 0;
   const lag = numericMetric(metrics[UPLOAD_HEALTH_LAG_KEY]) ?? 0;
   const stale = nowSeconds - heartbeat > UPLOAD_HEALTH_STALE_SECONDS;
-  if (failed > 0 || dropped > 0) return { tone: "bad", label: "upload errors", state: "errors" };
-  if (stale) return { tone: "neutral", label: "upload stale", state: "stale" };
-  if (queued > 0 || lag > UPLOAD_HEALTH_LAG_SECONDS) {
-    return { tone: "live", label: queued > 0 ? `syncing ${formatNumber(queued, 0)}` : "syncing", state: "syncing" };
+  const ended = run?.status === "finished" || run?.status === "failed";
+  if (failed > 0 || dropped > 0) {
+    return {
+      tone: "bad",
+      label: "sync error",
+      state: "errors",
+      detail: `${formatNumber(failed + dropped, 0)} rows failed or were dropped during upload.`,
+    };
   }
-  return { tone: "good", label: "synced", state: "synced" };
+  if (ended && queued > 0) {
+    // The run ended with rows still on the producer machine — the data shown
+    // here is incomplete until the background uploader recovers the spool.
+    const rowsWord = queued === 1 ? "row" : "rows";
+    return {
+      tone: "bad",
+      label: `incomplete · ${formatNumber(queued, 0)} ${rowsWord} pending`,
+      state: "incomplete",
+      detail: `${formatNumber(queued, 0)} ${rowsWord} ${queued === 1 ? "was" : "were"} still queued when this run ended. Run \`instantml-uploader\` on the producer machine to recover them.`,
+    };
+  }
+  if (stale) {
+    // An old heartbeat is expected once a run has ended; only flag it while
+    // the run is still active.
+    if (ended) return { tone: "good", label: "synced", state: "synced", detail: "" };
+    return {
+      tone: "neutral",
+      label: "sync stalled",
+      state: "stale",
+      detail: "No upload heartbeat from the SDK in the last 30 seconds.",
+    };
+  }
+  if (queued > 0 || lag > UPLOAD_HEALTH_LAG_SECONDS) {
+    return {
+      tone: "live",
+      label: queued > 0 ? `syncing · ${formatNumber(queued, 0)} ${queued === 1 ? "row" : "rows"}` : "syncing",
+      state: "syncing",
+      detail: "Metric rows are still uploading.",
+    };
+  }
+  return { tone: "good", label: "synced", state: "synced", detail: "" };
 }
 
 export function bestMetric(run, key = "eval/return_mean") {

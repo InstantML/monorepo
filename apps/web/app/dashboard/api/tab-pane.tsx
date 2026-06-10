@@ -65,7 +65,7 @@ export function ApiTabPane({
           <div className="panel-body admin-stack">
             {canManageOrg ? (
               <div className="admin-form-row">
-                <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} value={apiKeyName} />
+                <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} placeholder="Dashboard SDK key" value={apiKeyName} />
                 <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
               </div>
             ) : (

@@ -28,8 +28,27 @@
 }
 
 .workspace-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-height: 54px;
   padding: 10px 14px;
+}
+
+/* Disclosure for automatic panels hidden because no current run logged the
+ * metric. Quiet by default; readable on hover. */
+.section-empty-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.section-empty-toggle:hover {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 .section-title-button {

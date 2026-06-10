@@ -2461,16 +2461,15 @@ button.compare-row-head.active {
 
 /* Auto-open expands the .tabs element itself to 212px so its opaque
  * background covers tab labels without leaking page content through gaps
- * between buttons. */
+ * between buttons. Keyboard focus only — hover never expands the rail, so
+ * icon clicks always navigate on the first click. */
 .shell:not(.nav-pinned).nav-auto-open .tabs,
-.shell:not(.nav-pinned) .tabs:hover,
-.shell:not(.nav-pinned) .tabs:focus-within {
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) {
   width: 212px;
   box-shadow: 22px 0 46px -12px rgba(0, 0, 0, 0.55);
 }
 :root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs,
-:root[data-theme="light"] .shell:not(.nav-pinned) .tabs:hover,
-:root[data-theme="light"] .shell:not(.nav-pinned) .tabs:focus-within {
+:root[data-theme="light"] .shell:not(.nav-pinned) .tabs:has(:focus-visible) {
   box-shadow: 22px 0 46px -12px rgba(15, 23, 42, 0.18);
 }
 
@@ -2492,8 +2491,7 @@ button.compare-row-head.active {
 }
 .shell.nav-pinned .tab-group-label,
 .shell:not(.nav-pinned).nav-auto-open .tab-group-label,
-.shell:not(.nav-pinned) .tabs:hover .tab-group-label,
-.shell:not(.nav-pinned) .tabs:focus-within .tab-group-label {
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-group-label {
   display: block;
 }
 .shell:not(.nav-pinned):not(.nav-auto-open) .tab-group-label {
@@ -2539,15 +2537,13 @@ button.compare-row-head.active {
   opacity: 0;
 }
 .shell:not(.nav-pinned).nav-auto-open .tab-button,
-.shell:not(.nav-pinned) .tabs:hover .tab-button,
-.shell:not(.nav-pinned) .tabs:focus-within .tab-button {
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-button {
   justify-content: flex-start;
   gap: 8px;
   padding: 8px 9px;
 }
 .shell:not(.nav-pinned).nav-auto-open .tab-label,
-.shell:not(.nav-pinned) .tabs:hover .tab-label,
-.shell:not(.nav-pinned) .tabs:focus-within .tab-label {
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-label {
   max-width: 120px;
   opacity: 1;
 }
