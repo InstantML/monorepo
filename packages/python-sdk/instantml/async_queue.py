@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import routing
 from .errors import InstantMLError
 
 
@@ -48,6 +49,8 @@ _TERMINAL_CODES = {
     "unauthorized",
     "forbidden",
 }
+_ASYNC_ROUTE_CACHE: dict[str, routing.RouteInfo] = {}
+_ASYNC_ROUTE_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -884,10 +887,76 @@ def _send_request(
     body: dict[str, Any],
     idempotency_key: str | None = None,
 ) -> DeliveryResult:
+    if api_key and routing.should_direct_route(method, path):
+        route = routing.resolve_route(
+            _ASYNC_ROUTE_CACHE,
+            _ASYNC_ROUTE_LOCK,
+            base_url=base_url,
+            api_key=api_key,
+            timeout=timeout,
+        )
+        if route is not None:
+            result = _send_request_once(
+                base_url=route.data_api_base,
+                api_key=api_key,
+                timeout=timeout,
+                method=method,
+                path=path,
+                body=body,
+                idempotency_key=idempotency_key,
+                route=route,
+            )
+            if not routing.should_refresh_route(result.code, result.status):
+                return result
+            routing.clear_route(_ASYNC_ROUTE_CACHE, _ASYNC_ROUTE_LOCK, base_url=base_url, api_key=api_key)
+            refreshed = routing.resolve_route(
+                _ASYNC_ROUTE_CACHE,
+                _ASYNC_ROUTE_LOCK,
+                base_url=base_url,
+                api_key=api_key,
+                timeout=timeout,
+                force=True,
+            )
+            if refreshed is None:
+                return result
+            return _send_request_once(
+                base_url=refreshed.data_api_base,
+                api_key=api_key,
+                timeout=timeout,
+                method=method,
+                path=path,
+                body=body,
+                idempotency_key=idempotency_key,
+                route=refreshed,
+            )
+    return _send_request_once(
+        base_url=base_url,
+        api_key=api_key,
+        timeout=timeout,
+        method=method,
+        path=path,
+        body=body,
+        idempotency_key=idempotency_key,
+        route=None,
+    )
+
+
+def _send_request_once(
+    *,
+    base_url: str,
+    api_key: str | None,
+    timeout: float,
+    method: str,
+    path: str,
+    body: dict[str, Any],
+    idempotency_key: str | None,
+    route: routing.RouteInfo | None,
+) -> DeliveryResult:
     url = base_url.rstrip("/") + path
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    headers.update(routing.route_headers(route))
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
     request = urllib.request.Request(

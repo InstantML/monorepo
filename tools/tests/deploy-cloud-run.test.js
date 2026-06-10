@@ -20,6 +20,14 @@ test("deploy helper rejects unsafe data replicas before cloud mutation", () => {
   ]);
 });
 
+test("deploy helper rejects unsafe data cell ids before cloud mutation", () => {
+  const result = runDeploy(["--topology=split", "--data-cell=us-central1_a"]);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Data cell id us-central1_a must use lowercase letters/);
+  assert.deepEqual(result.gcloudCalls, ["config get-value project"]);
+});
+
 test("deploy helper rejects unsafe control scaling before cloud mutation", () => {
   const result = runDeploy(["--topology=split"], {
     INSTANTML_CLOUD_RUN_CONTROL_SCALING: "auto",
@@ -54,6 +62,19 @@ test("deploy helper rejects cleartext hosted public API bases", () => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /INSTANTML_PUBLIC_API_BASE must use https/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper rejects loopback hosted public API bases", () => {
+  const result = runDeploy(["--topology=split"], {
+    INSTANTML_PUBLIC_API_BASE: "http://127.0.0.1:8000",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /must not use loopback/);
   assert.deepEqual(result.gcloudCalls, [
     "config get-value project",
     "--quiet --project instantml-test-project config get-value account",
@@ -259,10 +280,19 @@ test("deploy helper defaults hosted ClickHouse provisioning to database mode", (
 test("deploy helper passes the current data cell into the runtime env", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
-  assert.match(source, /const dataCellId = value\("INSTANTML_CLOUD_RUN_DATA_CELL"\)/);
+  assert.match(source, /const dataCellIds = resolveDataCellIds\(\)/);
+  assert.match(source, /function resolveDataCellIds/);
+  assert.match(source, /INSTANTML_CLOUD_RUN_DATA_CELLS/);
+  assert.match(source, /function dataServiceForCell/);
   assert.match(source, /INSTANTML_DEPLOY_ENV: deploymentEnv/);
   assert.match(source, /INSTANTML_DEFAULT_DATA_CELL_ID: dataCellId/);
   assert.match(source, /envVars\.INSTANTML_CELL_ID = target\.cellId/);
+  assert.match(source, /INSTANTML_DATA_CELL_PUBLIC_API_BASE/);
+  assert.match(source, /INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX/);
+  assert.match(
+    source,
+    /if \(publicRouterEnabled\) \{\s+output\.INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX = publicRouterDomain\(\);/s,
+  );
 });
 
 test("deploy helper does not configure a hosted signup allowlist", () => {
@@ -295,6 +325,7 @@ test("deploy helper keeps public router control paths and backend timeout comple
     "/api/invitations/*",
     "/api/billing/*",
     "/api/dashboard/preferences",
+    "/api/routing/current",
     "/api/users/*",
     "/api/orgs/*",
     "/api/workspace-views/*",
@@ -311,6 +342,26 @@ test("deploy helper keeps public router control paths and backend timeout comple
   assert.match(source, /--timeout", backendServiceTimeout\(\)/);
   assert.match(source, /Timeout sec is not supported for a backend service with Serverless network endpoint groups/);
   assert.match(source, /function resetPreAttachTimeoutForServerlessBackend/);
+});
+
+test("deploy helper wires public router cell hosts for direct SDK routing", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /function dataCellPublicHost/);
+  assert.match(source, /cell-\$\{slug\(cellId\)\}\.\$\{domain\}/);
+  assert.match(source, /publicApiBaseForDataCell/);
+  assert.match(source, /if \(publicRouterEnabled\) return "";/);
+  assert.match(source, /async function publishPublicRouterDataCellBases/);
+  assert.match(source, /publicRouter\?\.status !== "active"/);
+  assert.match(source, /deployments = await publishPublicRouterDataCellBases\(publicRouter, deployments\)/);
+  assert.match(source, /publicRouterDnsStatusForDomains/);
+  assert.match(source, /verifyPublicRouterCellHosts/);
+  assert.match(source, /certificateDomains = \[domain, \.\.\.names\.dataCells\.map/);
+  assert.match(source, /ensureManagedSslCertificate\(names\.certificate, certificateDomains\)/);
+  assert.match(source, /data_backends/);
+  assert.match(source, /cell_hosts/);
+  assert.match(source, /pathMatcher: \$\{cell\.matcher\}/);
+  assert.match(source, /host: \$\{cell\.host\}/);
 });
 
 test("deploy helper has isolated staging defaults", () => {

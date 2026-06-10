@@ -1119,6 +1119,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/routing/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["current_route"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/side-by-side": {
         parameters: {
             query?: never;
@@ -3334,6 +3350,16 @@ export interface components {
         ReserveSeatRequest: {
             email?: string | null;
             role?: string | null;
+        };
+        RouteDiscoveryResponse: {
+            cell_id: string;
+            data_api_base: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            org_id: string;
+            /** Format: int64 */
+            route_version: number;
         };
         RunEnvelope: {
             run: components["schemas"]["RunRow"];
@@ -6723,6 +6749,62 @@ export interface operations {
             };
             /** @description Report not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    current_route: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current data-cell route for the caller's organization */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteDiscoveryResponse"];
+                };
+            };
+            /** @description API key required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API key lacks a data-plane scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Route discovery unavailable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assigned data cell is not write-ready */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

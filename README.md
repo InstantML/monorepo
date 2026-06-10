@@ -297,7 +297,7 @@ Deploy the default split control/data Cloud Run topology:
 npm run deploy:cloud-run
 ```
 
-`npm run deploy:cloud-run` now creates a control service and a data service from the same Rust image. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router and write one local API base after DNS/certificate activation. Prod control/data services default to manual one-instance scaling, while staging defaults to automatic min `0` max `1`; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads use Cloudflare R2 when `INSTANTML_ARTIFACT_BACKEND=r2` and Cloudflare credentials are configured.
+`npm run deploy:cloud-run` now creates a control service and one or more data-cell services from the same Rust image. Use `INSTANTML_CLOUD_RUN_DATA_CELLS=us-central1-a,us-central1-b` or repeated `--data-cell=<id>` flags to deploy additional single-writer cells. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN=<api-domain>` to create the managed HTTPS public router, per-cell `cell-<cell>.<domain>` hostnames for SDK direct writes, and one local API base after DNS/certificate activation. Prod control/data services default to manual one-instance scaling, while staging defaults to automatic min `0` max `1`; scaling above one instance is blocked unless an explicit unsafe test flag is set. Hosted artifact byte uploads use Cloudflare R2 when `INSTANTML_ARTIFACT_BACKEND=r2` and Cloudflare credentials are configured.
 
 Hosted Rust logs should run with `INSTANTML_LOG_FORMAT=json`,
 `RUST_LOG=instantml_rust_server=info,tower_http=info`, and

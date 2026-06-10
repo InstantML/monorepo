@@ -231,7 +231,7 @@ page = api.runs(
 
 `Api.download_artifact(artifact_id, output_path)` downloads stored raw artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.artifact(ref, type=..., project=...)` resolves a versioned artifact ref such as `policy-checkpoints:latest`, `policy-checkpoints:best`, or `policy-checkpoints:v0` and returns a `LoggedArtifact`; `LoggedArtifact.download(output_dir=...)` downloads stored manifest entries while keeping paths inside the requested root, `promote(alias="best", reason="...")` moves a custom alias, and `delete(delete_aliases=False, reason="...")` soft-deletes the version with the API's required confirmation fields. `Run.use_artifact(...)` records an input lineage edge from a resolved version to the run. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
 
-Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. Do not add server-specific SDK branches unless a design doc changes the public API. Hosted Rust routes may eventually add explicit org context, but bearer API keys remain the first SDK auth path.
+Backend compatibility note: the SDK talks to the Rust/ClickHouse server by default, and it keeps compatibility with the deprecated Node server through the same REST contract. For hosted Rust deployments, authenticated mutating SDK writes first try `GET /api/routing/current` with the bearer API key and, when a ready data-cell route is returned, send run creation, metric/log/attribute/object/artifact/import writes directly to that cell with `X-InstantML-Route-Version`. Route discovery failures, missing endpoints, and older servers fall back to the configured `base_url`; stale-route errors such as `tenant_route_changed` and `wrong_cell` refresh the route once and do not fall back to the apex write path. Browser/session reads and raw artifact byte downloads continue to use the configured API base. Do not add server-specific SDK branches unless a design doc changes the public API.
 
 Source capture defaults intentionally favor reproducibility without broad local
 environment leakage. `source_tracking=True` records entrypoint basename, git
@@ -269,7 +269,12 @@ Async metric/log mode is the default for `init()` and `Client.init()`. It is
 inspired by Neptune-style local-first logging: scalar metrics, rank metrics,
 console logs, and final run status are validated, snapshotted into a small
 process-local producer buffer, group-committed to a per-run SQLite WAL queue,
-and drained by a separate uploader process. The default producer flushes at 64
+and drained by a separate uploader process. The async uploader uses the same
+hosted route discovery cache as synchronous writes, so queued events can follow
+a moved tenant route without blocking the training loop. Discovery is
+best-effort for backward compatibility: if the control endpoint is absent or
+temporarily unavailable, queued writes use the configured API base and keep the
+existing retry semantics. The default producer flushes at 64
 events, 64 KiB of serialized payloads, or 20 ms since the oldest buffered event.
 Delivery, network, and API errors on those queued hot paths are reflected in
 `Run.upload_status()` and dashboard upload-health metrics instead of raising

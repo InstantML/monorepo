@@ -22,7 +22,7 @@ use crate::{
 
 use super::super::AppState;
 use super::helpers::{
-    context, header_value, parse_uuid, read_json, validate_session_mutation_origin,
+    context, header_value, parse_uuid, read_json, validate_session_mutation_origin, write_context,
 };
 
 /// Optional magic-link share token query parameter — used by anonymous
@@ -52,7 +52,7 @@ pub async fn create_report(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let input = read_json::<CreateReportRequest>(&headers, bytes, state.config.max_body_bytes)?;
     let row = store::create_report(&state.store, &ctx, input).await?;
@@ -132,7 +132,7 @@ pub async fn update_report(
     Path(report_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let report_id = parse_uuid(&report_id, "report not found")?;
     let input = read_json::<UpdateReportRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -158,7 +158,7 @@ pub async fn delete_report(
     headers: HeaderMap,
     Path(report_id): Path<String>,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let report_id = parse_uuid(&report_id, "report not found")?;
     let row = store::delete_report(&state.store, &ctx, report_id).await?;
@@ -183,7 +183,7 @@ pub async fn rotate_report_share_token(
     headers: HeaderMap,
     Path(report_id): Path<String>,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     let report_id = parse_uuid(&report_id, "report not found")?;
     let row = store::rotate_share_token(&state.store, &ctx, report_id).await?;

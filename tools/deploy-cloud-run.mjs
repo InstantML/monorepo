@@ -13,7 +13,7 @@ if (cli.help) {
   npm run deploy:cloud-run:single
   npm run deploy:cloud-run:multi
   npm run deploy:cloud-run:staging
-  node tools/deploy-cloud-run.mjs --topology=single|split [--environment=prod|staging] [--public-router] [--data-instances=N] [--from-secret-manager]
+  node tools/deploy-cloud-run.mjs --topology=single|split [--environment=prod|staging] [--public-router] [--data-cell=ID] [--data-instances=N] [--from-secret-manager]
 
 Environment:
   GCP_PROJECT                         Google Cloud project id.
@@ -32,6 +32,10 @@ Environment:
   INSTANTML_CLOUD_RUN_SERVICE_PREFIX   Split service name prefix. Default: instantml.
   INSTANTML_CLOUD_RUN_CONTROL_SERVICE  Split control service name. Default: instantml-control.
   INSTANTML_CLOUD_RUN_DATA_SERVICE     Split data service name. Default: instantml-data-<region>-a.
+                                       Only used for a single data cell; multi-cell
+                                       deploys use <prefix>-data-<cell-slug>.
+  INSTANTML_CLOUD_RUN_DATA_CELL        Single data-cell id. Default: <region>-a.
+  INSTANTML_CLOUD_RUN_DATA_CELLS       Comma-separated data-cell ids for multi-cell deploys.
   INSTANTML_CLOUD_RUN_CONTROL_SCALING  auto or manual. Default: manual in prod, auto in staging.
   INSTANTML_CLOUD_RUN_DATA_SCALING     auto or manual. Default: manual in prod, auto in staging.
   INSTANTML_CLOUD_RUN_CONTROL_INSTANCES Manual control instances. Default: 1.
@@ -110,8 +114,8 @@ const service = value("INSTANTML_CLOUD_RUN_SERVICE") || "instantml-rust-api";
 const defaultServicePrefix = deploymentEnv === "staging" ? "instantml-staging" : "instantml";
 const servicePrefix = value("INSTANTML_CLOUD_RUN_SERVICE_PREFIX") || defaultServicePrefix;
 const controlService = value("INSTANTML_CLOUD_RUN_CONTROL_SERVICE") || `${servicePrefix}-control`;
-const dataCellId = value("INSTANTML_CLOUD_RUN_DATA_CELL") || `${region}-a`;
-const dataService = value("INSTANTML_CLOUD_RUN_DATA_SERVICE") || `${servicePrefix}-data-${slug(dataCellId)}`;
+const dataCellIds = resolveDataCellIds();
+const dataCellId = dataCellIds[0];
 const repository = value("INSTANTML_ARTIFACT_REPOSITORY") || "instantml";
 const network = value("INSTANTML_CLOUD_RUN_NETWORK") || "instantml-cloud-run";
 const subnet = value("INSTANTML_CLOUD_RUN_SUBNET") || `instantml-cloud-run-${region}`;
@@ -182,24 +186,12 @@ if (staticEgressIp && (updateClickHouseServiceAllowlist || updateClickHouseKeyAl
 }
 printDeployDurationNotice();
 buildImage();
-const deployments = [];
+let deployments = [];
 for (const target of deploymentPlan) {
-  const envVars = {
-    ...baseEnvVars,
-    INSTANTML_SERVICE_PLANE: target.servicePlane,
-  };
-  if (target.cellId) envVars.INSTANTML_CELL_ID = target.cellId;
-  const url = deployService(
-    target,
-    serviceAccountEmail,
-    staticEgressIp,
-    runtimeEnvForTarget(envVars, target),
-    secretEnvForTarget(secretEnv, target),
-  );
-  await verifyService(url, target);
-  deployments.push({ ...target, url });
+  deployments.push(await deployRuntimeTarget(target));
 }
 const publicRouter = publicRouterEnabled ? await ensurePublicRouter(deployments) : null;
+deployments = await publishPublicRouterDataCellBases(publicRouter, deployments);
 const explicitPublicApiBase = publicRouterEnabled
   ? ""
   : normalizedPublicApiBase(value("INSTANTML_PUBLIC_API_BASE"));
@@ -242,11 +234,12 @@ console.log(JSON.stringify({
   static_egress_ip: staticEgressIp || null,
   vpc_egress: staticEgressIp ? vpcEgress : null,
   nat_logging_enabled: useStaticEgress ? enableNatLogging : false,
-  deployments: deployments.map(({ service, servicePlane, scaling, url, cellId }) => ({
+  deployments: deployments.map(({ service, servicePlane, scaling, url, cellId, publicApiBase }) => ({
     service,
     service_plane: servicePlane,
     scaling,
     cell_id: cellId || null,
+    public_api_base: publicApiBase || null,
     url,
   })),
   public_router: publicRouter,
@@ -263,14 +256,18 @@ function parseArgs(args) {
     environment: "",
     publicRouter: undefined,
     dataInstances: "",
+    dataCells: [],
     fromSecretManager: undefined,
   };
-  for (const arg of args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
     if (arg === "--help" || arg === "-h") output.help = true;
     if (arg.startsWith("--topology=")) output.topology = arg.slice("--topology=".length);
     if (arg.startsWith("--environment=")) output.environment = arg.slice("--environment=".length);
     if (arg === "--public-router") output.publicRouter = true;
     if (arg === "--no-public-router") output.publicRouter = false;
+    if (arg === "--data-cell") output.dataCells.push(args[++index] || "");
+    if (arg.startsWith("--data-cell=")) output.dataCells.push(arg.slice("--data-cell=".length));
     if (arg.startsWith("--data-instances=")) output.dataInstances = arg.slice("--data-instances=".length);
     if (arg === "--from-secret-manager") output.fromSecretManager = true;
     if (arg === "--no-from-secret-manager") output.fromSecretManager = false;
@@ -511,6 +508,42 @@ function normalizeTopology(raw) {
   fail("INSTANTML_CLOUD_RUN_TOPOLOGY must be single or split.");
 }
 
+function resolveDataCellIds() {
+  const configured = cli.dataCells.length
+    ? cli.dataCells
+    : (value("INSTANTML_CLOUD_RUN_DATA_CELLS")
+        ? value("INSTANTML_CLOUD_RUN_DATA_CELLS").split(",")
+        : [value("INSTANTML_CLOUD_RUN_DATA_CELL") || `${region}-a`]);
+  const cells = configured.map(normalizeDataCellId).filter(Boolean);
+  if (!cells.length) fail("At least one data cell is required.");
+  const seen = new Set();
+  const seenSlugs = new Map();
+  for (const cell of cells) {
+    if (seen.has(cell)) fail(`Duplicate data cell id ${cell}.`);
+    seen.add(cell);
+    const cellSlug = slug(cell);
+    const existing = seenSlugs.get(cellSlug);
+    if (existing) fail(`Data cell ids ${existing} and ${cell} collide after slug normalization.`);
+    seenSlugs.set(cellSlug, cell);
+  }
+  return cells;
+}
+
+function normalizeDataCellId(raw) {
+  const cell = raw.trim().toLowerCase();
+  if (!cell) return "";
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(cell) || cell.endsWith("-")) {
+    fail(`Data cell id ${raw} must use lowercase letters, numbers, and hyphens.`);
+  }
+  return cell;
+}
+
+function dataServiceForCell(cellId) {
+  const explicitSingleCellService = value("INSTANTML_CLOUD_RUN_DATA_SERVICE");
+  if (dataCellIds.length === 1 && explicitSingleCellService) return explicitSingleCellService;
+  return `${servicePrefix}-data-${slug(cellId)}`;
+}
+
 function deploymentTargets() {
   const stagingScaleToZero = deploymentEnv === "staging";
   if (topology === "single") {
@@ -526,16 +559,33 @@ function deploymentTargets() {
       servicePlane: "control",
       scaling: scalingFor("INSTANTML_CLOUD_RUN_CONTROL", stagingScaleToZero ? "auto" : "manual", "1"),
     },
-    {
-      service: dataService,
+    ...dataCellIds.map((cellId) => ({
+      service: dataServiceForCell(cellId),
       servicePlane: "data",
-      cellId: dataCellId,
+      cellId,
+      publicApiBase: publicApiBaseForDataCell(cellId),
+      publicApiBaseAllowedSuffix: publicApiBaseAllowedSuffixForDataCell(),
       scaling: scalingFor("INSTANTML_CLOUD_RUN_DATA", stagingScaleToZero ? "auto" : "manual", "1", { manualInstances: cli.dataInstances || "1" }),
-    },
+    })),
   ].map((target) => ({
     ...target,
     sessionAffinity: sessionAffinityFor(target),
   }));
+}
+
+function publicApiBaseForDataCell(cellId) {
+  if (publicRouterEnabled) return "";
+  if (dataCellIds.length === 1) return normalizedPublicApiBase(value("INSTANTML_DATA_CELL_PUBLIC_API_BASE"));
+  return "";
+}
+
+function publicApiBaseAllowedSuffixForDataCell() {
+  if (publicRouterEnabled) return "";
+  return value("INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX");
+}
+
+function dataCellPublicHost(cellId, domain) {
+  return `cell-${slug(cellId)}.${domain}`;
 }
 
 function sessionAffinityFor(target) {
@@ -582,8 +632,11 @@ function normalizedPublicApiBase(raw) {
     fail("INSTANTML_PUBLIC_API_BASE must be an http(s) URL.");
   }
   const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
-  if (!loopback && url.protocol !== "https:") {
-    fail("INSTANTML_PUBLIC_API_BASE must use https for non-loopback hosted APIs.");
+  if (loopback) {
+    fail("INSTANTML_PUBLIC_API_BASE must not use loopback for hosted APIs.");
+  }
+  if (url.protocol !== "https:") {
+    fail("INSTANTML_PUBLIC_API_BASE must use https for hosted APIs.");
   }
   return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
 }
@@ -974,6 +1027,9 @@ function cloudflareR2AccountId() {
 
 function runtimeEnvForTarget(envVars, target) {
   const output = { ...envVars };
+  if (publicRouterEnabled) {
+    output.INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX = publicRouterDomain();
+  }
   if (target.servicePlane === "control") {
     for (const key of [
       "INSTANTML_ARTIFACT_BACKEND",
@@ -987,6 +1043,12 @@ function runtimeEnvForTarget(envVars, target) {
   }
   if (target.servicePlane === "data") {
     output.INSTANTML_MANAGED_CLERK_ENABLED = "false";
+    if (target.publicApiBase) {
+      output.INSTANTML_DATA_CELL_PUBLIC_API_BASE = target.publicApiBase;
+    }
+    if (target.publicApiBaseAllowedSuffix) {
+      output.INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX = target.publicApiBaseAllowedSuffix;
+    }
     for (const key of [
       "INSTANTML_EMAIL_PROVIDER",
       "INSTANTML_EMAIL_FROM",
@@ -998,6 +1060,43 @@ function runtimeEnvForTarget(envVars, target) {
     }
   }
   return output;
+}
+
+async function deployRuntimeTarget(target) {
+  const envVars = {
+    ...baseEnvVars,
+    INSTANTML_SERVICE_PLANE: target.servicePlane,
+  };
+  if (target.cellId) envVars.INSTANTML_CELL_ID = target.cellId;
+  const url = deployService(
+    target,
+    serviceAccountEmail,
+    staticEgressIp,
+    runtimeEnvForTarget(envVars, target),
+    secretEnvForTarget(secretEnv, target),
+  );
+  await verifyService(url, target);
+  return { ...target, url };
+}
+
+async function publishPublicRouterDataCellBases(publicRouter, deployments) {
+  if (!publicRouterEnabled || publicRouter?.status !== "active") {
+    return deployments;
+  }
+  const updated = [];
+  for (const target of deployments) {
+    if (target.servicePlane !== "data") {
+      updated.push(target);
+      continue;
+    }
+    const host = publicRouter.cell_hosts?.[target.cellId] || dataCellPublicHost(target.cellId, publicRouterDomain());
+    updated.push(await deployRuntimeTarget({
+      ...target,
+      publicApiBase: `https://${host}`,
+      publicApiBaseAllowedSuffix: publicRouterDomain(),
+    }));
+  }
+  return updated;
 }
 
 function secretEnvForTarget(secretEnv, target) {
@@ -1251,34 +1350,38 @@ async function verifyService(url, target) {
 
 async function ensurePublicRouter(deployments) {
   const control = deployments.find((target) => target.servicePlane === "control");
-  const data = deployments.find((target) => target.servicePlane === "data");
-  if (!control || !data) fail("Public router requires split control and data deployments.");
+  const dataDeployments = deployments.filter((target) => target.servicePlane === "data");
+  if (!control || !dataDeployments.length) fail("Public router requires split control and data deployments.");
   const domain = publicRouterDomain();
 
-  const names = publicRouterResourceNames();
+  const names = publicRouterResourceNames(dataDeployments, domain);
   ensureGlobalAddress(names.address);
   const ip = capture(["compute", "addresses", "describe", names.address, "--global", "--format=value(address)"]).trim();
   if (!ip) fail("Public router address exists but has no IP.");
   rejectCleartextRouterResources(ip);
   ensureServerlessNeg(names.controlNeg, control.service);
-  ensureServerlessNeg(names.dataNeg, data.service);
   ensureBackendService(names.controlBackend, names.controlNeg);
-  ensureBackendService(names.dataBackend, names.dataNeg);
-  ensureUrlMap(names);
-  ensureManagedSslCertificate(names.certificate, domain);
+  for (const cell of names.dataCells) {
+    ensureServerlessNeg(cell.neg, cell.service);
+    ensureBackendService(cell.backend, cell.neg);
+  }
+  ensureUrlMap(names, domain);
+  const certificateDomains = [domain, ...names.dataCells.map((cell) => cell.host)];
+  ensureManagedSslCertificate(names.certificate, certificateDomains);
   ensureTargetHttpsProxy(names.proxy, names.urlMap, names.certificate);
   ensureForwardingRule(names.forwardingRule, names.proxy, names.address);
 
   const url = `https://${domain}`;
-  const dnsStatus = await publicRouterDnsStatus(domain, ip);
+  const dnsStatus = await publicRouterDnsStatusForDomains(certificateDomains, ip);
   if (!dnsStatus.ok) {
     return pendingPublicRouter(names, domain, ip, "pending-dns", dnsStatus.message);
   }
-  const certificateStatus = managedSslCertificateStatus(names.certificate, domain);
+  const certificateStatus = managedSslCertificateStatus(names.certificate, certificateDomains);
   if (!certificateStatus.active) {
     return pendingPublicRouter(names, domain, ip, "pending-certificate", certificateStatus.message);
   }
   await verifyPublicRouter(url);
+  await verifyPublicRouterCellHosts(names.dataCells);
   return {
     type: "global-external-application-load-balancer",
     status: "active",
@@ -1290,6 +1393,8 @@ async function ensurePublicRouter(deployments) {
     certificate: names.certificate,
     control_backend: names.controlBackend,
     data_backend: names.dataBackend,
+    data_backends: Object.fromEntries(names.dataCells.map((cell) => [cell.cellId, cell.backend])),
+    cell_hosts: Object.fromEntries(names.dataCells.map((cell) => [cell.cellId, cell.host])),
     ip,
     url,
   };
@@ -1309,19 +1414,33 @@ function pendingPublicRouter(names, domain, ip, status, message) {
     certificate: names.certificate,
     control_backend: names.controlBackend,
     data_backend: names.dataBackend,
+    data_backends: Object.fromEntries(names.dataCells.map((cell) => [cell.cellId, cell.backend])),
+    cell_hosts: Object.fromEntries(names.dataCells.map((cell) => [cell.cellId, cell.host])),
     ip,
     url: null,
     message,
   };
 }
 
-function publicRouterResourceNames() {
+function publicRouterResourceNames(dataDeployments, domain) {
+  const dataCells = dataDeployments.map((target, index) => {
+    const cellSlug = slug(target.cellId);
+    return {
+      cellId: target.cellId,
+      service: target.service,
+      host: dataCellPublicHost(target.cellId, domain),
+      matcher: `data-${cellSlug}`,
+      neg: index === 0 ? `${publicRouterName}-data-${slug(region)}` : `${publicRouterName}-data-${cellSlug}-${slug(region)}`,
+      backend: index === 0 ? `${publicRouterName}-data` : `${publicRouterName}-data-${cellSlug}`,
+    };
+  });
   return {
     address: `${publicRouterName}-ip`,
     controlNeg: `${publicRouterName}-control-${slug(region)}`,
-    dataNeg: `${publicRouterName}-data-${slug(region)}`,
     controlBackend: `${publicRouterName}-control`,
-    dataBackend: `${publicRouterName}-data`,
+    dataNeg: dataCells[0]?.neg,
+    dataBackend: dataCells[0]?.backend,
+    dataCells,
     urlMap: publicRouterName,
     certificate: value("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE") || `${publicRouterName}-cert`,
     proxy: `${publicRouterName}-https`,
@@ -1479,10 +1598,10 @@ function removeBackendServiceGroup(backendService, groupLink) {
   ]);
 }
 
-function ensureUrlMap(names) {
+function ensureUrlMap(names, domain) {
   const file = path.join(os.tmpdir(), `instantml-url-map-${process.pid}-${Date.now()}.yaml`);
   try {
-    fs.writeFileSync(file, publicRouterUrlMapYaml(names));
+    fs.writeFileSync(file, publicRouterUrlMapYaml(names, domain));
     if (!quiet(["compute", "url-maps", "describe", names.urlMap, "--global"])) {
       run(["compute", "url-maps", "create", names.urlMap, "--default-service", names.dataBackend, "--global"]);
     }
@@ -1492,20 +1611,78 @@ function ensureUrlMap(names) {
   }
 }
 
-function publicRouterUrlMapYaml(names) {
+function publicRouterUrlMapYaml(names, domain) {
   const controlBackend = globalBackendSelfLink(names.controlBackend);
   const dataBackend = globalBackendSelfLink(names.dataBackend);
+  const cellHostRules = names.dataCells
+    .map((cell) => `- hosts:
+  - ${cell.host}
+  pathMatcher: ${cell.matcher}`)
+    .join("\n");
+  const cellPathMatchers = names.dataCells
+    .map((cell) => `- name: ${cell.matcher}
+  defaultService: ${globalBackendSelfLink(cell.backend)}
+  pathRules:
+${publicRouterControlPathRules(controlBackend)}`)
+    .join("\n");
+  const cellHostTests = names.dataCells
+    .map((cell) => `- description: ${cell.cellId} cell host uses its data backend
+  host: ${cell.host}
+  path: /runs
+  service: ${globalBackendSelfLink(cell.backend)}`)
+    .join("\n");
   return `name: ${names.urlMap}
 defaultService: ${dataBackend}
 hostRules:
 - hosts:
-  - '*'
+  - ${domain}
   pathMatcher: instantml-api
+${cellHostRules}
 pathMatchers:
 - name: instantml-api
   defaultService: ${dataBackend}
   pathRules:
-  - paths:
+${publicRouterControlPathRules(controlBackend)}
+${cellPathMatchers}
+tests:
+- description: Auth routes use control plane
+  host: ${domain}
+  path: /api/auth/config
+  service: ${controlBackend}
+- description: Billing routes use control plane
+  host: ${domain}
+  path: /api/billing/status
+  service: ${controlBackend}
+- description: Admin routes use control plane
+  host: ${domain}
+  path: /api/admin/data-cells
+  service: ${controlBackend}
+- description: Dashboard preference routes use control plane
+  host: ${domain}
+  path: /api/dashboard/preferences
+  service: ${controlBackend}
+- description: Workspace view routes use control plane
+  host: ${domain}
+  path: /api/workspace-views
+  service: ${controlBackend}
+- description: Report routes use control plane
+  host: ${domain}
+  path: /api/reports
+  service: ${controlBackend}
+- description: Report subpaths use control plane
+  host: ${domain}
+  path: /api/reports/panels
+  service: ${controlBackend}
+- description: Apex data routes use default data plane
+  host: ${domain}
+  path: /runs
+  service: ${dataBackend}
+${cellHostTests}
+`;
+}
+
+function publicRouterControlPathRules(controlBackend) {
+  return `  - paths:
     - /api/auth
     - /api/auth/*
     - /api/admin
@@ -1515,6 +1692,7 @@ pathMatchers:
     - /api/billing
     - /api/billing/*
     - /api/dashboard/preferences
+    - /api/routing/current
     - /api/users
     - /api/users/*
     - /api/orgs
@@ -1524,68 +1702,38 @@ pathMatchers:
     - /api/reports
     - /api/reports/*
     service: ${controlBackend}
-tests:
-- description: Auth routes use control plane
-  host: instantml.local
-  path: /api/auth/config
-  service: ${controlBackend}
-- description: Billing routes use control plane
-  host: instantml.local
-  path: /api/billing/status
-  service: ${controlBackend}
-- description: Admin routes use control plane
-  host: instantml.local
-  path: /api/admin/data-cells
-  service: ${controlBackend}
-- description: Dashboard preference routes use control plane
-  host: instantml.local
-  path: /api/dashboard/preferences
-  service: ${controlBackend}
-- description: Workspace view routes use control plane
-  host: instantml.local
-  path: /api/workspace-views
-  service: ${controlBackend}
-- description: Report routes use control plane
-  host: instantml.local
-  path: /api/reports
-  service: ${controlBackend}
-- description: Report subpaths use control plane
-  host: instantml.local
-  path: /api/reports/panels
-  service: ${controlBackend}
-- description: Data routes use data plane
-  host: instantml.local
-  path: /runs
-  service: ${dataBackend}
 `;
 }
 
-function ensureManagedSslCertificate(certificateName, domain) {
+function ensureManagedSslCertificate(certificateName, domains) {
+  const expectedDomains = Array.isArray(domains) ? domains : [domains];
   const existing = capture(["compute", "ssl-certificates", "describe", certificateName, "--global", "--format=json"]);
   if (existing) {
     const cert = JSON.parse(existing);
-    const domains = cert?.managed?.domains || [];
-    if (!domains.includes(domain)) {
-      fail(`SSL certificate ${certificateName} exists for ${domains.join(",") || "no domains"}; expected ${domain}.`);
+    const existingDomains = cert?.managed?.domains || [];
+    const missing = expectedDomains.filter((domain) => !existingDomains.includes(domain));
+    if (missing.length) {
+      fail(`SSL certificate ${certificateName} exists for ${existingDomains.join(",") || "no domains"}; expected ${expectedDomains.join(",")}.`);
     }
     return;
   }
   run([
     "compute", "ssl-certificates", "create", certificateName,
-    "--domains", domain,
+    "--domains", expectedDomains.join(","),
     "--global",
   ]);
 }
 
-function managedSslCertificateStatus(certificateName, domain) {
+function managedSslCertificateStatus(certificateName, domains) {
+  const expectedDomains = Array.isArray(domains) ? domains : [domains];
   const existing = capture(["compute", "ssl-certificates", "describe", certificateName, "--global", "--format=json"]);
   if (!existing) return { active: false, message: `managed SSL certificate ${certificateName} does not exist` };
   const cert = JSON.parse(existing);
   const status = cert?.managed?.status || "UNKNOWN";
-  const domainStatus = cert?.managed?.domainStatus?.[domain] || "UNKNOWN";
+  const domainStatuses = expectedDomains.map((domain) => `${domain}=${cert?.managed?.domainStatus?.[domain] || "UNKNOWN"}`);
   return {
-    active: status === "ACTIVE" && domainStatus === "ACTIVE",
-    message: `managed SSL certificate ${certificateName} status=${status}, ${domain}=${domainStatus}`,
+    active: status === "ACTIVE" && domainStatuses.every((entry) => entry.endsWith("=ACTIVE")),
+    message: `managed SSL certificate ${certificateName} status=${status}, ${domainStatuses.join(", ")}`,
   };
 }
 
@@ -1683,6 +1831,22 @@ async function publicRouterDnsStatus(domain, ip) {
   return { ok: true, message: `${domain} resolves to ${ip}` };
 }
 
+async function publicRouterDnsStatusForDomains(domains, ip) {
+  const results = [];
+  for (const domain of domains) {
+    const status = await publicRouterDnsStatus(domain, ip);
+    results.push({ domain, ...status });
+  }
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length) {
+    return {
+      ok: false,
+      message: failed.map((result) => result.message).join(" "),
+    };
+  }
+  return { ok: true, message: results.map((result) => result.message).join("; ") };
+}
+
 async function verifyPublicRouter(url) {
   const checks = [
     {
@@ -1729,6 +1893,36 @@ async function verifyPublicRouter(url) {
       await sleep(5000);
     }
     if (lastError) fail(`Public router ${check.label} verification failed: ${lastError}`);
+  }
+}
+
+async function verifyPublicRouterCellHosts(cells) {
+  for (const cell of cells) {
+    let lastError = "";
+    for (let attempt = 1; attempt <= 36; attempt += 1) {
+      try {
+        const response = await fetch(`https://${cell.host}/openapi.json`);
+        const text = await response.text();
+        let servicePlane = "";
+        try {
+          servicePlane = JSON.parse(text)["x-instantml-service-plane"];
+        } catch {
+          servicePlane = "";
+        }
+        if (response.ok && servicePlane === "data") {
+          console.log(`public router ${cell.host}/openapi.json ok`);
+          lastError = "";
+          break;
+        }
+        lastError = `${cell.host}/openapi.json returned ${response.status}: ${text.slice(0, 300)}`;
+      } catch (error) {
+        lastError = `${cell.host}/openapi.json failed: ${error.message}`;
+      }
+      await sleep(5000);
+    }
+    if (lastError) {
+      fail(`Public router cell host verification failed: ${lastError}`);
+    }
   }
 }
 

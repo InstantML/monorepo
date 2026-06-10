@@ -64,10 +64,11 @@ use crate::domain::{
     PublicArtifactManifestEntryRow, PublicArtifactRow, PublicArtifactVersionRow,
     PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
     RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
-    RenewArtifactUploadRequest, ReportRow, ReportSummary, ReserveSeatRequest, RunRow,
-    SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SetArtifactAliasRequest,
-    SwitchOrganizationRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
-    UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+    RenewArtifactUploadRequest, ReportRow, ReportSummary, ReserveSeatRequest,
+    RouteDiscoveryResponse, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
+    ServiceAccountRow, SetArtifactAliasRequest, SwitchOrganizationRequest,
+    UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest, UpdateReportRequest,
+    UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
     VersionedArtifactManifestEntryInput, VersionedArtifactManifestInput, WorkspaceViewRow,
     WorkspaceViewSummary,
 };
@@ -782,6 +783,8 @@ impl Modify for SecurityAddon {
         // admin
         crate::http::handlers::admin::admin_overview,
         crate::http::handlers::admin::admin_data_cells,
+        // routing
+        crate::http::handlers::routing::current_route,
         // orgs / users
         crate::http::handlers::orgs::create_user,
         crate::http::handlers::orgs::list_users,
@@ -914,6 +917,7 @@ impl Modify for SecurityAddon {
         ReportSummariesEnvelope,
         PanelInventoryEnvelope,
         PanelInventoryEntry,
+        RouteDiscoveryResponse,
         AttributesEnvelope,
         ObjectEnvelope,
         ArtifactEnvelope,

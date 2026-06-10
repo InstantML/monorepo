@@ -19,6 +19,13 @@ use crate::{
 
 use super::super::{AppState, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_SECS};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TenantRouteAccess {
+    None,
+    Read,
+    Write,
+}
+
 pub fn require_bootstrap(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
     if !state.config.auth_mode.requires_api_key() {
         return Ok(());
@@ -123,6 +130,27 @@ pub async fn context(
     headers: &HeaderMap,
     tenant_route: bool,
 ) -> AppResult<RequestContext> {
+    context_with_tenant_route_access(
+        state,
+        headers,
+        if tenant_route {
+            TenantRouteAccess::Read
+        } else {
+            TenantRouteAccess::None
+        },
+    )
+    .await
+}
+
+pub async fn write_context(state: &AppState, headers: &HeaderMap) -> AppResult<RequestContext> {
+    context_with_tenant_route_access(state, headers, TenantRouteAccess::Write).await
+}
+
+async fn context_with_tenant_route_access(
+    state: &AppState,
+    headers: &HeaderMap,
+    tenant_route: TenantRouteAccess,
+) -> AppResult<RequestContext> {
     // Tier 2: valid data-plane requests no longer refresh control state on
     // every request. A background task (spawned in `serve()` for the data
     // plane) keeps the in-memory projection fresh out-of-band. On auth miss
@@ -143,7 +171,9 @@ pub async fn context(
         }
         None => {
             let Some(token) = session_cookie(headers) else {
-                if state.config.auth_mode.requires_api_key() && tenant_route {
+                if state.config.auth_mode.requires_api_key()
+                    && tenant_route != TenantRouteAccess::None
+                {
                     return Err(AppError::unauthorized("missing bearer token"));
                 }
                 return Ok(RequestContext::local());
@@ -161,7 +191,29 @@ pub async fn context(
             }
         }
     };
-    if tenant_route {
+    if tenant_route != TenantRouteAccess::None {
+        state
+            .store
+            .validate_current_data_cell_route(
+                &ctx,
+                store::DataCellRouteRequest {
+                    route_version: header_text(headers, "x-instantml-route-version")
+                        .map(|raw| {
+                            raw.trim().parse::<i64>().map_err(|_| {
+                                AppError::with_code(
+                                    axum::http::StatusCode::CONFLICT,
+                                    "tenant_route_changed",
+                                    "route version header is invalid",
+                                )
+                            })
+                        })
+                        .transpose()?,
+                    host: header_text(headers, "host").map(str::to_string),
+                    api_key_authenticated: ctx.auth.is_some(),
+                    write: tenant_route == TenantRouteAccess::Write,
+                },
+            )
+            .await?;
         state.store.ensure_tenant_loaded(ctx.org_id).await?;
     }
     Ok(ctx)

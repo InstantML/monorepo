@@ -12,7 +12,9 @@ use serde_json::Value;
 use crate::{errors::AppResult, store};
 
 use super::super::{observability, AppState};
-use super::helpers::{context, read_json_value, require_scope, validate_session_mutation_origin};
+use super::helpers::{
+    context, read_json_value, require_scope, validate_session_mutation_origin, write_context,
+};
 
 #[utoipa::path(
     get,
@@ -271,7 +273,7 @@ async fn import_mutation_context(
     state: &Arc<AppState>,
     headers: &HeaderMap,
 ) -> AppResult<crate::domain::RequestContext> {
-    let ctx = context(state, headers, true).await?;
+    let ctx = write_context(state, headers).await?;
     validate_session_mutation_origin(state, headers, &ctx)?;
     require_scope(&ctx, "imports:write", state)?;
     Ok(ctx)

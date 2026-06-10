@@ -71,7 +71,8 @@ in ClickHouse until a future compaction design exists.
 
 Owner: `apps/rust-server/src/control_db.rs` and
 `apps/rust-server/migrations/0001_init_control_plane.sql` plus the additive
-`0002_data_cells.sql` scaling migration.
+`0002_data_cells.sql` and `0003_data_cell_writer_leases.sql` scaling
+migrations.
 
 Purpose: hosted account, auth, organization, API-key, invitation, billing, and
 tenant-route state that must be visible to control and data services.
@@ -84,7 +85,7 @@ The implemented table list is:
 ```text
 users, identities, organizations, memberships, org_invitations,
 email_deliveries, sessions, service_accounts, api_keys, data_cells,
-tenant_routes, tenant_route_events, dashboard_preferences, workspace_views, billing_accounts,
+data_cell_writer_leases, tenant_routes, tenant_route_events, dashboard_preferences, workspace_views, billing_accounts,
 billing_checkout_intents, billing_change_intents, billing_subscriptions,
 billing_events, billing_usage_reports
 ```

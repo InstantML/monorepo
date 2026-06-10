@@ -17,6 +17,7 @@ import pytest
 import instantml as ro
 import instantml.async_queue as async_queue
 import instantml.client as client_module
+import instantml.routing as routing
 import instantml.serialization as serialization_module
 import instantml.source as source_module
 import instantml.uploader as uploader
@@ -3049,7 +3050,12 @@ def test_async_uploader_emits_final_health_when_queue_becomes_idle(monkeypatch, 
 
 
 def test_async_queue_http_helpers(monkeypatch):
+    async_queue._ASYNC_ROUTE_CACHE.clear()
+
     class FakeResponse:
+        def __init__(self, payload=b"ok"):
+            self._payload = payload
+
         def __enter__(self):
             return self
 
@@ -3057,10 +3063,20 @@ def test_async_queue_http_helpers(monkeypatch):
             return None
 
         def read(self):
-            return b"ok"
+            return self._payload
 
     opened = []
-    monkeypatch.setattr(async_queue.urllib.request, "urlopen", lambda request, timeout: opened.append((request, timeout)) or FakeResponse())
+
+    def fake_urlopen(request, timeout):
+        opened.append((request, timeout))
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            return FakeResponse(
+                b'{"org_id":"org-1","cell_id":"cell-a","route_version":9,'
+                b'"data_api_base":"http://cell.test","expires_at":"2099-01-01T00:00:00Z"}'
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr(async_queue.urllib.request, "urlopen", fake_urlopen)
     assert async_queue._send_request(
         base_url="http://example.test/",
         api_key="secret",
@@ -3070,7 +3086,12 @@ def test_async_queue_http_helpers(monkeypatch):
         body={"metrics": {"reward": 1}},
         idempotency_key="event-1",
     ).ok
-    assert opened[0][0].get_header("Idempotency-key") == "event-1"
+    assert [request.full_url for request, _timeout in opened] == [
+        "http://example.test/api/routing/current",
+        "http://cell.test/runs/run-1/metrics",
+    ]
+    assert opened[1][0].get_header("Idempotency-key") == "event-1"
+    assert opened[1][0].get_header("X-instantml-route-version") == "9"
 
     error = urllib.error.HTTPError(
         "http://example.test",
@@ -3117,6 +3138,134 @@ def test_async_queue_http_helpers(monkeypatch):
     monkeypatch.setattr(async_queue.os, "kill", lambda pid, sig: (_ for _ in ()).throw(PermissionError()))
     assert async_queue._pid_is_running(123)
     assert "T" in async_queue._utc_timestamp()
+
+
+def test_async_queue_refreshes_stale_direct_route(monkeypatch):
+    async_queue._ASYNC_ROUTE_CACHE.clear()
+    opened = []
+    discoveries = {"count": 0}
+
+    class FakeResponse:
+        def __init__(self, payload=b"ok"):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return self._payload
+
+    def route_payload(cell: str, version: int) -> bytes:
+        return json.dumps(
+            {
+                "org_id": "org-1",
+                "cell_id": cell,
+                "route_version": version,
+                "data_api_base": f"http://{cell}.test",
+                "expires_at": "2099-01-01T00:00:00Z",
+            }
+        ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        opened.append(request)
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            discoveries["count"] += 1
+            return FakeResponse(route_payload("cell-a" if discoveries["count"] == 1 else "cell-b", 20 + discoveries["count"]))
+        if request.full_url == "http://cell-a.test/runs/run-1/logs":
+            raise urllib.error.HTTPError(
+                request.full_url,
+                409,
+                "wrong cell",
+                {},
+                BytesIO(b'{"error":"wrong cell","code":"wrong_cell"}'),
+            )
+        if request.full_url == "http://example.test/runs/run-1/logs":
+            raise AssertionError("async stale routes must not fall back to apex writes")
+        return FakeResponse()
+
+    monkeypatch.setattr(async_queue.urllib.request, "urlopen", fake_urlopen)
+
+    result = async_queue._send_request(
+        "http://example.test",
+        "secret",
+        1,
+        "POST",
+        "/runs/run-1/logs",
+        {"lines": []},
+        idempotency_key="log-1",
+    )
+
+    assert result.ok
+    assert [request.full_url for request in opened] == [
+        "http://example.test/api/routing/current",
+        "http://cell-a.test/runs/run-1/logs",
+        "http://example.test/api/routing/current",
+        "http://cell-b.test/runs/run-1/logs",
+    ]
+    assert opened[-1].get_header("X-instantml-route-version") == "22"
+    assert opened[-1].get_header("Idempotency-key") == "log-1"
+
+
+def test_async_queue_returns_stale_route_error_when_refresh_unavailable(monkeypatch):
+    async_queue._ASYNC_ROUTE_CACHE.clear()
+    opened = []
+    discovery_count = {"count": 0}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return (
+                b'{"org_id":"org-1","cell_id":"cell-a","route_version":5,'
+                b'"data_api_base":"http://cell-a.test","expires_at":"2099-01-01T00:00:00Z"}'
+            )
+
+    def fake_urlopen(request, timeout):
+        opened.append(request.full_url)
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            discovery_count["count"] += 1
+            if discovery_count["count"] == 1:
+                return FakeResponse()
+            raise urllib.error.HTTPError(
+                request.full_url,
+                503,
+                "unavailable",
+                {},
+                BytesIO(b'{"error":"writer unavailable","code":"cell_writer_unavailable"}'),
+            )
+        raise urllib.error.HTTPError(
+            request.full_url,
+            409,
+            "stale",
+            {},
+            BytesIO(b'{"error":"tenant route changed","code":"tenant_route_changed"}'),
+        )
+
+    monkeypatch.setattr(async_queue.urllib.request, "urlopen", fake_urlopen)
+
+    result = async_queue._send_request(
+        "http://example.test",
+        "secret",
+        1,
+        "POST",
+        "/runs/run-1/metrics",
+        {"metrics": {"reward": 1}},
+    )
+
+    assert result.retryable
+    assert result.code == "tenant_route_changed"
+    assert opened == [
+        "http://example.test/api/routing/current",
+        "http://cell-a.test/runs/run-1/metrics",
+        "http://example.test/api/routing/current",
+    ]
 
 
 def test_async_health_heartbeat_payload(monkeypatch, tmp_path):
@@ -3911,6 +4060,405 @@ def test_client_sends_api_key_and_idempotency_headers(monkeypatch):
         idempotency_key="event-1",
     ) == {"ok": True}
     assert captured == {"authorization": "Bearer secret", "idempotency": "event-1", "timeout": 3}
+
+
+def test_client_discovers_direct_route_and_reuses_cached_cell(monkeypatch):
+    opened = []
+
+    class FakeResponse:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return self._payload
+
+    route_payload = json.dumps(
+        {
+            "org_id": "org-1",
+            "cell_id": "cell-a",
+            "route_version": 12,
+            "data_api_base": "https://cell-a.example.test/",
+            "expires_at": "2099-01-01T00:00:00Z",
+        }
+    ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        opened.append((request, timeout))
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            return FakeResponse(route_payload)
+        return FakeResponse(b'{"ok": true}')
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = Client(base_url="https://api.example.test/", timeout=3, api_key="secret")
+
+    assert client._request("POST", "/runs", {"project": "demo"}, idempotency_key="create-run") == {"ok": True}
+    assert client._request("PATCH", "/runs/run-1", {"status": "finished"}, idempotency_key="finish-run") == {"ok": True}
+
+    assert [request.full_url for request, _timeout in opened] == [
+        "https://api.example.test/api/routing/current",
+        "https://cell-a.example.test/runs",
+        "https://cell-a.example.test/runs/run-1",
+    ]
+    assert opened[0][0].get_header("Authorization") == "Bearer secret"
+    assert opened[1][0].get_header("X-instantml-route-version") == "12"
+    assert opened[1][0].get_header("Idempotency-key") == "create-run"
+    assert opened[2][0].get_header("X-instantml-route-version") == "12"
+
+
+def test_client_falls_back_to_configured_base_when_discovery_is_unavailable(monkeypatch):
+    opened = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, timeout):
+        opened.append(request)
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            raise urllib.error.HTTPError(
+                request.full_url,
+                404,
+                "missing",
+                {},
+                BytesIO(b'{"error":"not found","code":"not_found"}'),
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    assert Client(base_url="http://example.test", api_key="secret")._request("POST", "/runs", {"project": "demo"}) == {"ok": True}
+
+    assert [request.full_url for request in opened] == [
+        "http://example.test/api/routing/current",
+        "http://example.test/runs",
+    ]
+    assert opened[1].get_header("X-instantml-route-version") is None
+
+
+def test_client_refreshes_stale_route_without_apex_fallback(monkeypatch):
+    opened = []
+    discoveries = {"count": 0}
+
+    class FakeResponse:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return self._payload
+
+    def route_payload(cell: str, version: int) -> bytes:
+        return json.dumps(
+            {
+                "org_id": "org-1",
+                "cell_id": cell,
+                "route_version": version,
+                "data_api_base": f"https://{cell}.example.test",
+                "expires_at": "2099-01-01T00:00:00Z",
+            }
+        ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        opened.append(request)
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            discoveries["count"] += 1
+            return FakeResponse(route_payload("cell-a" if discoveries["count"] == 1 else "cell-b", 10 + discoveries["count"]))
+        if request.full_url == "https://cell-a.example.test/runs/run-1/metrics":
+            raise urllib.error.HTTPError(
+                request.full_url,
+                409,
+                "stale route",
+                {},
+                BytesIO(b'{"error":"tenant route changed","code":"tenant_route_changed"}'),
+            )
+        if request.full_url == "http://example.test/runs/run-1/metrics":
+            raise AssertionError("stale direct routes must not fall back to the apex write path")
+        return FakeResponse(b'{"ok": true}')
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    assert Client(base_url="http://example.test", api_key="secret")._request(
+        "POST",
+        "/runs/run-1/metrics",
+        {"metrics": {"reward": 1}},
+        idempotency_key="event-1",
+    ) == {"ok": True}
+
+    assert [request.full_url for request in opened] == [
+        "http://example.test/api/routing/current",
+        "https://cell-a.example.test/runs/run-1/metrics",
+        "http://example.test/api/routing/current",
+        "https://cell-b.example.test/runs/run-1/metrics",
+    ]
+    assert opened[-1].get_header("X-instantml-route-version") == "12"
+    assert opened[-1].get_header("Idempotency-key") == "event-1"
+
+
+def test_client_direct_route_errors_do_not_fallback_to_apex(monkeypatch):
+    opened = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return (
+                b'{"org_id":"org-1","cell_id":"cell-a","route_version":4,'
+                b'"data_api_base":"https://cell-a.example.test","expires_at":"2099-01-01T00:00:00Z"}'
+            )
+
+    def fake_urlopen(request, timeout):
+        opened.append(request.full_url)
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            return FakeResponse()
+        if request.full_url == "http://example.test/runs/run-1/metrics":
+            raise AssertionError("direct route errors must not fall back to apex writes")
+        raise urllib.error.HTTPError(
+            request.full_url,
+            500,
+            "server error",
+            {},
+            BytesIO(b'{"error":"boom","code":"server_error"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    with pytest.raises(InstantMLError, match="boom"):
+        Client(base_url="http://example.test", api_key="secret")._request(
+            "POST",
+            "/runs/run-1/metrics",
+            {"metrics": {"reward": 1}},
+        )
+
+    assert opened == [
+        "http://example.test/api/routing/current",
+        "https://cell-a.example.test/runs/run-1/metrics",
+    ]
+
+
+def test_client_stale_route_raises_when_refresh_is_unavailable(monkeypatch):
+    opened = []
+    discoveries = {"count": 0}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return (
+                b'{"org_id":"org-1","cell_id":"cell-a","route_version":6,'
+                b'"data_api_base":"https://cell-a.example.test","expires_at":"2099-01-01T00:00:00Z"}'
+            )
+
+    def fake_urlopen(request, timeout):
+        opened.append(request.full_url)
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            discoveries["count"] += 1
+            if discoveries["count"] == 1:
+                return FakeResponse()
+            raise urllib.error.HTTPError(
+                request.full_url,
+                503,
+                "unavailable",
+                {},
+                BytesIO(b'{"error":"writer unavailable","code":"cell_writer_unavailable"}'),
+            )
+        raise urllib.error.HTTPError(
+            request.full_url,
+            409,
+            "stale",
+            {},
+            BytesIO(b'{"error":"tenant route changed","code":"tenant_route_changed"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    with pytest.raises(InstantMLError, match="tenant route changed"):
+        Client(base_url="http://example.test", api_key="secret")._request(
+            "POST",
+            "/runs/run-1/metrics",
+            {"metrics": {"reward": 1}},
+        )
+
+    assert opened == [
+        "http://example.test/api/routing/current",
+        "https://cell-a.example.test/runs/run-1/metrics",
+        "http://example.test/api/routing/current",
+    ]
+
+
+def test_client_stale_route_surfaces_retry_failure(monkeypatch):
+    opened = []
+    discoveries = {"count": 0}
+
+    class FakeResponse:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return self._payload
+
+    def route_payload(cell: str) -> bytes:
+        return json.dumps(
+            {
+                "org_id": "org-1",
+                "cell_id": cell,
+                "route_version": 30 + discoveries["count"],
+                "data_api_base": f"https://{cell}.example.test",
+                "expires_at": "2099-01-01T00:00:00Z",
+            }
+        ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        opened.append(request.full_url)
+        if request.full_url.endswith(routing.ROUTE_DISCOVERY_PATH):
+            discoveries["count"] += 1
+            return FakeResponse(route_payload("cell-a" if discoveries["count"] == 1 else "cell-b"))
+        if request.full_url.startswith("https://cell-a."):
+            raise urllib.error.HTTPError(
+                request.full_url,
+                409,
+                "stale",
+                {},
+                BytesIO(b'{"error":"tenant route changed","code":"tenant_route_changed"}'),
+            )
+        raise urllib.error.HTTPError(
+            request.full_url,
+            500,
+            "server error",
+            {},
+            BytesIO(b'{"error":"retry failed","code":"server_error"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    with pytest.raises(InstantMLError, match="retry failed"):
+        Client(base_url="http://example.test", api_key="secret")._request(
+            "POST",
+            "/runs/run-1/metrics",
+            {"metrics": {"reward": 1}},
+        )
+
+    assert opened == [
+        "http://example.test/api/routing/current",
+        "https://cell-a.example.test/runs/run-1/metrics",
+        "http://example.test/api/routing/current",
+        "https://cell-b.example.test/runs/run-1/metrics",
+    ]
+
+
+def test_route_discovery_handles_bad_payloads_and_network_errors(monkeypatch):
+    cache: dict[str, routing.RouteInfo] = {}
+    lock = threading.RLock()
+
+    class FakeResponse:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return self._payload
+
+    def resolve() -> routing.RouteInfo | None:
+        return routing.resolve_route(
+            cache,
+            lock,
+            base_url="http://example.test",
+            api_key="secret",
+            timeout=1,
+            force=True,
+        )
+
+    assert not routing.should_direct_route("GET", "/runs")
+    assert not routing.should_direct_route("POST", "/api/routing/current")
+    assert routing.should_refresh_route(status=401)
+    assert routing.should_refresh_route(status=403)
+    assert routing.should_refresh_route(status=404)
+    assert not routing.should_refresh_route(status=409)
+    assert routing.should_refresh_route(status=409, code="tenant_route_changed")
+    assert routing.should_refresh_route(code="wrong_cell")
+    assert not routing.should_refresh_route(status=500)
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: FakeResponse(b"{"))
+    assert resolve() is None
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: FakeResponse(b"[]"))
+    assert resolve() is None
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda request, timeout: FakeResponse(
+            b'{"data_api_base":"http://cell.test","route_version":"nope","expires_at":"not-a-date"}'
+        ),
+    )
+    assert resolve() is None
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda request, timeout: FakeResponse(
+            b'{"data_api_base":"http://cell.test","route_version":0,"expires_at":"2099-01-01T00:00:00Z"}'
+        ),
+    )
+    assert resolve() is None
+
+    class BrokenBody:
+        def read(self):
+            raise OSError("closed")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda request, timeout: (_ for _ in ()).throw(
+            urllib.error.HTTPError(request.full_url, 404, "missing", {}, BrokenBody())
+        ),
+    )
+    assert resolve() is None
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: (_ for _ in ()).throw(urllib.error.URLError("offline")))
+    assert resolve() is None
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda request, timeout: FakeResponse(
+            b'{"data_api_base":"http://cell.test/","route_version":3,"expires_at":"2099-01-01T00:00:00"}'
+        ),
+    )
+    route = resolve()
+    assert route == routing.resolve_route(cache, lock, base_url="http://example.test", api_key="secret", timeout=1)
+    assert route is not None
+    assert route.data_api_base == "http://cell.test"
+    routing.clear_route(cache, lock, base_url="http://example.test", api_key="secret")
+    assert cache == {}
 
 
 def test_api_fork_run_returns_child_and_sends_idempotency(monkeypatch):

@@ -46,7 +46,7 @@ pub(super) fn is_control_kind(kind: &str) -> bool {
             | TENANT_ROUTE_KIND
     )
 }
-const TENANT_ROUTE_READY: &str = "ready";
+pub(super) const TENANT_ROUTE_READY: &str = "ready";
 const TENANT_ROUTE_PROVISIONING: &str = "provisioning";
 const TENANT_ROUTE_FAILED: &str = "failed";
 const CUSTOMER_CLICKHOUSE_PROVISIONER: &str = "customer-clickhouse";
@@ -546,7 +546,7 @@ impl Store {
 
     fn current_cell_placement(&self) -> Option<TenantRoutePlacement> {
         self.cell_routing
-            .current_data_cell_id
+            .default_data_cell_id
             .as_ref()
             .map(|cell_id| TenantRoutePlacement {
                 environment: self.cell_routing.environment.clone(),
@@ -2146,7 +2146,12 @@ mod tests {
             },
             cell_routing: CellRoutingConfig {
                 environment: "test".to_string(),
+                default_data_cell_id: None,
                 current_data_cell_id: None,
+                register_current_data_cell: false,
+                current_data_cell_public_api_base: None,
+                public_api_base_allowed_suffix: None,
+                writer_lease: None,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
@@ -2165,6 +2170,8 @@ mod tests {
             control_projection_loaded: Arc::new(Mutex::new(false)),
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
+            current_writer_lease: Arc::new(Mutex::new(None)),
+            current_writer_lease_deadline: Arc::new(Mutex::new(None)),
         }
     }
 

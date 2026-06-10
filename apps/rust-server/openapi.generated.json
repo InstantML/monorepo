@@ -4617,6 +4617,71 @@
         ]
       }
     },
+    "/api/routing/current": {
+      "get": {
+        "tags": [
+          "routing"
+        ],
+        "operationId": "current_route",
+        "responses": {
+          "200": {
+            "description": "Current data-cell route for the caller's organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteDiscoveryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API key required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "API key lacks a data-plane scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Route discovery unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Assigned data cell is not write-ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
     "/api/runs/side-by-side": {
       "get": {
         "tags": [
@@ -13989,6 +14054,36 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "RouteDiscoveryResponse": {
+        "type": "object",
+        "required": [
+          "org_id",
+          "cell_id",
+          "route_version",
+          "data_api_base",
+          "expires_at"
+        ],
+        "properties": {
+          "cell_id": {
+            "type": "string"
+          },
+          "data_api_base": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "route_version": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

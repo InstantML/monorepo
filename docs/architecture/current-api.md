@@ -75,11 +75,14 @@ When `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and
 `INSTANTML_API_BASE`, `INSTANTML_CONTROL_API_BASE`, and
 `INSTANTML_DATA_API_BASE` to the same `https://<api-domain>` value.
 
-The current public client contract is one stable API base URL. This
-multi-instance first slice does not expose public data-plane cell URLs and does
-not redirect SDK or browser requests to a cell. Any future direct-to-cell or
-redirect behavior must preserve bearer auth, session/cookie rules,
-`Idempotency-Key`, request bodies, and project-scoped/demo authorization.
+The public browser contract remains one stable API base URL. Hosted SDK clients
+with API keys can call `GET /api/routing/current` on that base to discover the
+current data-cell write endpoint, then send mutating training/import/artifact
+requests to the returned cell URL with `X-InstantML-Route-Version`. Browser
+direct-to-cell routing, dashboard reads for non-default cells, and route-aware
+apex proxying remain later phases. Any future redirect behavior must preserve
+bearer auth, session/cookie rules, `Idempotency-Key`, request bodies, and
+project-scoped/demo authorization.
 
 For local split-service verification, the Rust binary also supports
 `INSTANTML_SERVICE_PLANE=control` and `INSTANTML_SERVICE_PLANE=data`. The

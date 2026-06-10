@@ -28,7 +28,7 @@ use crate::{
 use super::super::{observability, AppState};
 use super::helpers::{
     context, header_text, header_value, parse_uuid, read_json, read_json_with_raw, require_scope,
-    validate_session_mutation_origin,
+    validate_session_mutation_origin, write_context,
 };
 
 #[utoipa::path(
@@ -54,7 +54,7 @@ pub async fn create_artifact(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
@@ -86,7 +86,7 @@ pub async fn upload_artifact(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     if !state.config.artifact_uploads_enabled {
@@ -448,7 +448,7 @@ pub async fn initiate_artifact_upload(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     if !state.config.artifact_uploads_enabled {
@@ -484,7 +484,7 @@ pub async fn renew_artifact_upload(
     Path(upload_session_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     let upload_session_id = parse_uuid(&upload_session_id, "artifact upload session not found")?;
@@ -511,7 +511,7 @@ pub async fn complete_artifact_upload(
     Path(upload_session_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     let upload_session_id = parse_uuid(&upload_session_id, "artifact upload session not found")?;
@@ -550,7 +550,7 @@ pub async fn abort_artifact_upload(
     Path(upload_session_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:write", &state)?;
     let upload_session_id = parse_uuid(&upload_session_id, "artifact upload session not found")?;
@@ -576,7 +576,7 @@ pub async fn set_artifact_alias(
     Path((collection_id, alias)): Path<(String, String)>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:manage", &state)?;
     let collection_id = parse_uuid(&collection_id, "artifact collection not found")?;
@@ -600,7 +600,7 @@ pub async fn delete_artifact_alias(
     Path((collection_id, alias)): Path<(String, String)>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:manage", &state)?;
     let collection_id = parse_uuid(&collection_id, "artifact collection not found")?;
@@ -629,7 +629,7 @@ pub async fn update_artifact_retention(
     Path(version_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:manage", &state)?;
     let version_id = parse_uuid(&version_id, "artifact version not found")?;
@@ -655,7 +655,7 @@ pub async fn delete_artifact_version(
     Path(version_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "artifacts:manage", &state)?;
     let version_id = parse_uuid(&version_id, "artifact version not found")?;
@@ -681,7 +681,7 @@ pub async fn create_artifact_input_edge(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     if require_scope(&ctx, "sdk:ingest", &state).is_err() {
         require_scope(&ctx, "artifacts:write", &state)?;

@@ -38,10 +38,10 @@ use handlers::{
     create_artifact, create_artifact_input_edge, create_attributes, create_current_user_org,
     create_customer_clickhouse_connection, create_import_job, create_invitation, create_object,
     create_org, create_project, create_report, create_run, create_user, create_workspace_view,
-    customer_clickhouse_connection_status, delete_artifact_alias, delete_artifact_version,
-    delete_report, device_code_confirm, device_code_poll, device_code_start,
-    disable_service_account, download_artifact, download_artifact_entry, export_data,
-    export_report_markdown, fork_run, get_artifact_collection, get_artifact_version,
+    current_route, customer_clickhouse_connection_status, delete_artifact_alias,
+    delete_artifact_version, delete_report, device_code_confirm, device_code_poll,
+    device_code_start, disable_service_account, download_artifact, download_artifact_entry,
+    export_data, export_report_markdown, fork_run, get_artifact_collection, get_artifact_version,
     get_dashboard_preferences, get_import_job, get_metrics, get_report, get_report_by_share_token,
     get_run, get_run_lineage, get_workspace_view, health, import_mlflow, import_neptune,
     import_wandb, initiate_artifact_upload, list_api_keys, list_artifact_collection_versions,
@@ -155,6 +155,7 @@ fn control_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/admin/overview", get(admin_overview))
         .route("/api/admin/data-cells", get(admin_data_cells))
+        .route("/api/routing/current", get(current_route))
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))

@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::{errors::AppResult, store};
 
 use super::super::AppState;
-use super::helpers::{context, header_value, require_scope};
+use super::helpers::{context, header_value, require_scope, write_context};
 
 #[utoipa::path(
     get,
@@ -280,7 +280,7 @@ pub async fn reset_demo(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     Ok(Json(store::reset_demo(&state.store, &ctx).await?))
 }

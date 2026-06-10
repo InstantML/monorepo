@@ -2,8 +2,8 @@
 
 Date: 2026-06-10
 
-Status: Phase 0 preflight/runbook slice accepted and implemented; later phases
-remain draft
+Status: Phase 0 preflight/runbook, Phase 1 cell registry, and Phase 2/3
+route-discovery slices accepted and implemented
 
 Owner: Codex
 
@@ -11,6 +11,14 @@ Implementation note, 2026-06-10: the first Phase 0 slice is implemented as an
 operator runbook plus a Rust `capacity-plan` preflight for Cloud SQL connection
 budgeting. It does not change public APIs, schemas, service scaling, routing,
 or cell placement.
+
+Implementation note, 2026-06-10: the Phase 2/3 slice is implemented with a
+Postgres-backed data-cell writer lease, API-key-only `GET /api/routing/current`,
+data-cell route/version enforcement, Python SDK and async-uploader route
+discovery with stale-route refresh, and Cloud Run deploy-helper support for
+multiple single-writer data cells plus `cell-<cell>.<domain>` public hostnames.
+Browser/session direct-to-cell routing and shared-cell multi-writer admission
+remain deferred.
 
 ## Summary
 
@@ -51,19 +59,43 @@ The accepted Phase 0 implementation in this change is limited to:
 - Phase 0 hardening: ClickHouse backups/restore drill, Cloud SQL connection
   budget, cell-scoped dashboards, and current-cell capacity limits.
 
-Later implementation slices should be reviewed separately and may include:
+Phase 1 is now implemented as:
 
 - Postgres `data_cells`, route placement fields, and route audit events.
-- Admin/operator visibility for cell inventory, cell health, assigned orgs, and
-  route status.
-- A Postgres-backed per-cell writer lease/fencing token used by data-plane
-  mutations.
-- A manifest or repeatable deploy command that can create one internal second
-  data cell, with no public placement until the writer lease and health checks
-  pass.
+- Bootstrap-protected admin/operator visibility for cell inventory, health,
+  assigned orgs, and route status.
+- Conservative current-cell assignment with transactional route-version
+  updates.
+- Cloud Run env wiring for `INSTANTML_DEPLOY_ENV`,
+  `INSTANTML_DEFAULT_DATA_CELL_ID`, and per-data-service `INSTANTML_CELL_ID`.
 
-Public route discovery, SDK cell caching, browser cell auth, org migration, and
-multi-writer data cells are explicitly later slices.
+The proposed Phase 2/3 implementation slice for this change is:
+
+- The Phase 1A writer-lease prerequisite, limited to single-writer data-cell
+  readiness and write fencing.
+- A manifest or repeatable deploy command that can create one internal second
+  data cell and reconcile its HTTPS router host/backend.
+- Public control-plane route discovery for API-key callers:
+  `GET /api/routing/current`.
+- Data-cell public API base registration through
+  `INSTANTML_DATA_CELL_PUBLIC_API_BASE`, surfaced only when a cell has a safe
+  HTTPS public base.
+- SDK route discovery and cache for authenticated training writes, including
+  run/project creation, run updates/finish, scalar/rank metric batches, console
+  logs, typed attributes, rich objects, artifact metadata, and versioned
+  artifact upload-session mutations. Direct requests include
+  `X-InstantML-Route-Version`.
+- Async uploader route discovery so default async metric/log traffic follows
+  the same route-version and idempotency behavior as sync logging.
+- Data-cell wrong-cell and stale-route rejection for tenant-route requests that
+  hit a service with `INSTANTML_CELL_ID`.
+
+This slice intentionally does not implement browser direct-to-cell routing,
+org migration/rebalancing, multi-writer data cells, or a route-aware apex
+compatibility proxy. Browser sessions stay on the existing app/API origin.
+Legacy SDKs stay compatible for orgs assigned to the default compatibility data
+cell; operators must not place legacy-dependent orgs on non-default cells until
+the route-aware proxy or a required SDK version gate exists.
 
 ## Current Architecture Findings
 
@@ -381,6 +413,28 @@ each cell, not just Cloud Run:
 Adding Phase 2 cells helps new placements only. It does not relieve an
 overloaded existing org or cell until Phase 5 migration/rebalancing exists.
 
+Accepted first implementation details:
+
+- `--data-cell=<cell_id>` is repeatable. `INSTANTML_CLOUD_RUN_DATA_CELLS` may
+  also contain a comma-separated cell list. The existing
+  `INSTANTML_CLOUD_RUN_DATA_CELL` and `INSTANTML_CLOUD_RUN_DATA_SERVICE`
+  variables remain the single-cell compatibility path.
+- Per-cell service names default to
+  `<service-prefix>-data-<slug(cell_id)>`. Operators may later grow this into a
+  richer JSON manifest, but the repeatable flag keeps the first slice small.
+- The public router keeps the apex API host as the compatibility route and adds
+  host rules for `cell-<slug(cell_id)>.<router-domain>` to each data backend.
+  Control paths remain routed to the control backend from both the apex host
+  and wildcard host rule.
+- The deploy helper writes each data service's
+  `INSTANTML_DATA_CELL_PUBLIC_API_BASE` to the cell host only after the public
+  router is active. Without the public router, operators may set
+  `INSTANTML_DATA_CELL_PUBLIC_API_BASE` explicitly for a single cell; otherwise
+  route discovery omits direct routing and clients stay on the configured base.
+- The existing single-writer scaling guard remains in place for every data-cell
+  target. This is not the final writer fence; it keeps Phase 2 deploys from
+  accidentally increasing writers while Phase 1A remains outstanding.
+
 ### Phase 3: Public Routing And Client Discovery
 
 Google's HTTPS load balancer can route by host/path, but it cannot inspect an
@@ -409,6 +463,31 @@ Control-plane route discovery returns:
 }
 ```
 
+Route discovery response rules:
+
+- The endpoint is control-plane only and requires API-key authentication. Browser
+  sessions do not receive a direct cell route in this slice.
+- API keys must have at least one data-plane scope that can use the route
+  (`sdk:ingest`, `artifacts:write`, `imports:write`, or `export:read`).
+- It returns `409` with `code: "route_discovery_unavailable"` when the caller's
+  org has no ready tenant route, no assigned managed cell, or the assigned cell
+  has no safe `public_api_base`.
+- It returns `503` with `code: "cell_writer_unavailable"` when the assigned
+  cell has no unexpired writer lease. Discovery should not hand out a public
+  mutation route that cannot currently fence writes.
+- It never returns ClickHouse endpoints, usernames, password references, or
+  internal service URLs.
+- Cache TTL starts at five minutes. The response includes the authoritative
+  `route_version`; clients must treat it as an opaque freshness token.
+- `public_api_base` safety means: HTTPS only for non-loopback hosts, no userinfo,
+  query, fragment, or non-root path, no private/internal hostnames, host under
+  the configured owned router domain suffix, and a registered data-cell row in
+  the same deploy environment. Local loopback bases may be used only in local
+  development tests.
+- Public cell hostnames and cell IDs must be opaque deployment labels. Do not
+  encode customer names or sensitive tier/compliance details in externally
+  visible hostnames.
+
 SDK behavior:
 
 - On first use of an API key, call a control-plane route discovery endpoint.
@@ -419,6 +498,24 @@ SDK behavior:
   route-discovery expiry.
 - Preserve the existing `api_base` override for local, staging, and BYOC
   testing.
+- First SDK implementation routes the full authenticated write dependency chain
+  once discovery succeeds: project/run creation, run updates/finish, scalar
+  metric batches, rank metric batches, console logs, typed attributes, rich
+  objects, raw artifact metadata/upload writes, and versioned artifact
+  upload-session mutations. Reads keep using the configured base until browser
+  and query traffic are explicitly moved.
+- If route discovery is unavailable or a direct cell request returns
+  `wrong_cell`/`tenant_route_changed`, the SDK clears the cached route.
+  Discovery-unavailable before any direct attempt falls back to the configured
+  base for compatibility. After a `wrong_cell` or `tenant_route_changed`
+  response, the SDK may retry only after successful rediscovery and only against
+  the newly discovered authoritative cell. It must not retry the stale mutation
+  through the apex compatibility base.
+- The async uploader resolves and caches routes in the uploader process, sends
+  the same route-version header, and retries a `wrong_cell` or
+  `tenant_route_changed` result once after rediscovery with the original
+  idempotency key. It must treat repeated stale-route results as retryable but
+  bounded by the existing queue backoff.
 
 Data-cell behavior:
 
@@ -433,6 +530,16 @@ Data-cell behavior:
   new cell.
 - Reject writes when the route is `draining`, `write_blocked`, `cutover`, or
   otherwise not write-ready.
+- The first implementation enforces cell ownership and ready status for every
+  authenticated tenant-route request that reaches a process with
+  `INSTANTML_CELL_ID`, regardless of whether the route-version header is
+  present. The header adds stale-version detection. Missing route-version
+  headers are allowed only for the apex compatibility host and only when the org
+  is assigned to that same cell; missing headers on a configured cell public
+  host fail closed.
+- Public cell hosts require API-key auth in this slice. Cookie/session auth on
+  cell public hosts returns `401` until the browser token/CORS/CSRF design is
+  accepted.
 
 Direct-to-cell SDK traffic is blocked on an explicit auth contract. The simple
 first contract should use direct/read-through Postgres API-key validation from
@@ -936,12 +1043,152 @@ Fresh reviewer 3: product/platform and economics
   transactional placement, migration states, customer impact policy,
   compatibility details, and the near-term scale-up alternative.
 
+Fresh reviewer 4: Phase 2/3 correctness and failure modes
+
+- Finding: Public SDK direct writes were proposed before the writer fence
+  existed; run creation stayed on the configured base while later writes moved
+  to a cell; stale-route enforcement was header-gated; async uploader routing
+  was underspecified; direct-to-cell auth needed a fail-closed contract; and the
+  first slice was too broad.
+- Risk: A deploy overlap could accept writes from two revisions, the SDK could
+  split run creation and metrics across cells, legacy/no-header traffic could
+  bypass cell ownership, async queues could loop against stale routes, and data
+  cells could rely on stale auth projections without a documented boundary.
+- Recommended edit: Make the writer lease a prerequisite, route the full SDK
+  write dependency chain together, verify cell ownership for all hosted
+  data-cell tenant requests, specify async rediscovery/idempotency behavior,
+  define API-key-only discovery, and split artifact/session/browser follow-ups
+  if they cannot meet the same guarantees.
+- Decision: Accepted. This Phase 2/3 slice now includes the writer lease,
+  full SDK write-chain direct routing, server-side route ownership checks,
+  async uploader route discovery, and API-key-only discovery. Browser direct
+  routing and route-aware apex proxying remain separate follow-ups.
+
+Fresh reviewer 5: Phase 2/3 security and auth boundaries
+
+- Finding: Missing route-version headers could bypass wrong-cell checks; SDK
+  fallback to the apex base could undo stale-route protection; browser/session
+  callers were mixed into a direct-cell slice; `public_api_base` safety was not
+  defined; and externally visible cell IDs could leak placement details.
+- Risk: Valid API keys could write to the wrong cell, route-refresh protection
+  could be bypassed through fallback, bearer tokens could be sent to a bad
+  public base, and cell hostnames could expose customer/tier information.
+- Recommended edit: Enforce `(org_id, cell_id, status)` on every public data
+  cell request, retry stale-route failures only after rediscovery, make
+  discovery API-key-only, reject session auth on cell hosts, strictly validate
+  public bases, and keep public cell labels opaque.
+- Decision: Accepted. The implementation now treats the route-version header as
+  a freshness token rather than the ownership gate, makes discovery API-key
+  scoped, forbids apex fallback after stale-route responses, validates public
+  bases before discovery returns them, and documents opaque public labels.
+
+Fresh reviewer 6: Phase 2/3 implementation correctness, performance, security,
+and cleanliness
+
+- Finding: Direct cell requests could bypass stale-route checks by arriving on
+  an alternate data-cell host without `X-InstantML-Route-Version`; health
+  heartbeats could accidentally fabricate fresh backup attestations; and read
+  handlers were coupled to the writer lease even though they do not perform
+  side effects.
+- Risk: Stale API-key traffic could continue writing through a non-authoritative
+  host, cells without fresh backups could look placement-ready, and a healthy
+  read-only cell could return unnecessary write-fence failures for dashboards or
+  exports.
+- Recommended edit: Require route-version headers for API-key traffic on any
+  configured public data-cell host, keep backup freshness owned by the
+  backup/operator path, and split read route validation from mutating writer
+  admission.
+- Decision: Accepted. The implementation now validates route ownership for read
+  and write requests, requires the writer lease only for mutating handlers, and
+  leaves `last_backup_at` untouched by process heartbeats.
+
+Fresh reviewer 7: Phase 2/3 implementation data freshness and deploy hygiene
+
+- Finding: Write admission relied on process-local route projection after
+  discovery had been made public; route discovery could return cells that were
+  not open or recently healthy; stale-route refresh was too narrow in the SDK;
+  and deploy-helper cell ids were not constrained for public hostnames.
+- Risk: A recently migrated org could still write through a stale data process,
+  discovery could advertise an unhealthy cell, SDK retries could get stuck on
+  auth or not-found route drift, and unsafe cell labels could produce bad or
+  confusing host rules.
+- Recommended edit: Read the authoritative control route and cell row before
+  every mutating data-cell request, require open/recently healthy cells for
+  discovery and route validation, refresh SDK routes on `401`, `403`, `404`,
+  and `409` refresh signals, and validate cell ids before producing hostnames.
+- Decision: Accepted. The final slice refreshes route ownership from Postgres
+  on write admission, checks cell status and health before returning or
+  accepting a route, broadens the SDK refresh signals, and restricts deploy
+  cell ids to lowercase Cloud Run/DNS-safe labels.
+
+Fresh reviewer 8: Final Phase 2/3 diff validation
+
+- Finding: `INSTANTML_DEFAULT_DATA_CELL_ID` was being treated as the current
+  data-cell identity for control processes; the public-router suffix was only
+  injected into data services even though route discovery runs on control; route
+  discovery forced a full control projection reload; and local writer-lease
+  admission could be measured from after the SQL round trip instead of before
+  the Postgres lease was acquired.
+- Risk: Control-hosted routes could reject orgs assigned away from the default
+  cell, hosted route discovery could fail closed for valid cell hosts, route
+  discovery traffic could become an accidental Postgres full-scan path, and a
+  slow lease refresh could allow local writes past the real Postgres lease TTL.
+- Recommended edit: Split default placement from explicit process cell
+  identity, inject `INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX` into
+  control and data targets, use point reads for route/cell/lease discovery, and
+  derive the local lease deadline from a monotonic timestamp captured before
+  the database call.
+- Decision: Accepted. The implementation now keeps default placement separate
+  from `INSTANTML_CELL_ID`, uses narrow Postgres reads for
+  `/api/routing/current`, gives control the public-router suffix, and bounds the
+  local writer-lease deadline conservatively.
+
+Fresh reviewer 9: Final security and SDK behavior validation
+
+- Finding: Loopback public cell bases were accepted outside local/test
+  environments, a plain HTTP `409` could trigger SDK rediscovery/replay even
+  without a route-change code, and the OpenAPI operation referenced an undefined
+  bearer scheme.
+- Risk: Hosted clients could send bearer keys to their own localhost after a bad
+  deploy configuration, non-routing application conflicts could be replayed once
+  unnecessarily, and generated OpenAPI consumers would see an invalid security
+  scheme.
+- Recommended edit: Allow loopback public cell bases only for local/test/dev,
+  narrow `409` refreshes to `tenant_route_changed`/`wrong_cell`, and use the
+  existing `bearerApiKey` security scheme.
+- Decision: Accepted. Rust route discovery and the Cloud Run deploy helper now
+  reject hosted loopback public bases, SDK rediscovery no longer triggers on an
+  unqualified `409`, and `/api/routing/current` references `bearerApiKey`.
+
+Fresh reviewer 10: Final compatibility and deploy-readiness validation
+
+- Finding: Explicit data-cell validation rejected BYOC and legacy tenant routes
+  whose `cell_id` is intentionally `NULL`; public-router deploys could publish
+  `INSTANTML_DATA_CELL_PUBLIC_API_BASE` before DNS and certificates were active;
+  and long-running mutations still prove the writer lease only at admission.
+- Risk: Customer-owned ClickHouse orgs and pre-cell compatibility routes could
+  fail on split data services, SDKs could cache a not-yet-routable cell host
+  during first router provisioning, and very long requests can still outlive the
+  short local lease-admission proof.
+- Recommended edit: Preserve `NULL cell_id` compatibility on the apex/default
+  path while rejecting direct cell routing for unassigned routes, publish direct
+  cell bases only after router activation, and keep long-running mutation
+  fencing as a documented follow-up.
+- Decision: Accepted for the blocking compatibility and deploy-readiness
+  issues. The implementation now allows unassigned BYOC/legacy routes through
+  compatibility paths, rejects invented direct cell routes for them, and
+  updates data services with public cell bases only after the router is active.
+  Request-long writer fencing remains a later hardening item for import and
+  other long-running mutation workflows.
+
 ## Coverage Exceptions
 
-None for the Phase 0 preflight/runbook slice.
+None for the Phase 0 preflight/runbook slice or the Phase 2/3 route-discovery
+slice.
 
 ## Decision
 
-Phase 0 Cloud SQL capacity preflight and operator runbook are accepted and
-implemented. Later phases remain draft until their review notes are resolved
-and a narrow implementation slice is accepted.
+Phase 0 Cloud SQL capacity preflight and operator runbook, Phase 1 cell
+registry, and the Phase 2/3 route-discovery slice are accepted and implemented.
+Phase 4 and later phases remain draft until their review notes are resolved and
+a narrow implementation slice is accepted.

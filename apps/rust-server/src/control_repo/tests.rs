@@ -298,7 +298,129 @@ async fn data_cell_heartbeat_registers_missing_cell_and_preserves_operator_field
     assert_eq!(refreshed.max_orgs, Some(5));
     assert_eq!(refreshed.notes.as_deref(), Some("operator metadata"));
     assert_eq!(refreshed.last_health_at, heartbeat.last_health_at);
-    assert_eq!(refreshed.last_backup_at, heartbeat.last_backup_at);
+    assert_eq!(refreshed.last_backup_at, operator_row.last_backup_at);
+}
+
+#[sqlx::test]
+async fn data_cell_heartbeat_fills_missing_public_api_base(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut seeded = data_cell("free-us-central1-a", None);
+    seeded.service_name = "operator-owned".to_string();
+    seeded.public_api_base = None;
+    seeded.internal_api_base = None;
+    db.upsert_data_cell(&seeded).await.unwrap();
+
+    let mut heartbeat = data_cell("free-us-central1-a", None);
+    heartbeat.service_name = "heartbeat-service".to_string();
+    heartbeat.public_api_base =
+        Some("https://cell-free-us-central1-a.api.example.test".to_string());
+    heartbeat.internal_api_base =
+        Some("https://cell-free-us-central1-a.internal.example.test".to_string());
+
+    let refreshed = db.heartbeat_data_cell(&heartbeat).await.unwrap();
+
+    assert_eq!(refreshed.service_name, "operator-owned");
+    assert_eq!(refreshed.public_api_base, heartbeat.public_api_base);
+    assert_eq!(refreshed.internal_api_base, heartbeat.internal_api_base);
+}
+
+#[sqlx::test]
+async fn data_cell_writer_lease_acquires_renews_and_loads(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(10)))
+        .await
+        .unwrap();
+
+    let first = db
+        .acquire_data_cell_writer_lease(
+            "free-us-central1-a",
+            "instance-1",
+            "instantml-data-free-us-central1-a",
+            "revision-1",
+            ChronoDuration::seconds(30),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.fence_token, 1);
+    assert_eq!(first.holder_instance_id, "instance-1");
+    assert!(first.expires_at > Utc::now());
+
+    let renewed = db
+        .renew_data_cell_writer_lease(
+            "free-us-central1-a",
+            "instance-1",
+            ChronoDuration::seconds(30),
+        )
+        .await
+        .unwrap();
+    assert_eq!(renewed.fence_token, first.fence_token);
+    assert_eq!(renewed.holder_instance_id, "instance-1");
+    assert!(renewed.expires_at >= first.expires_at);
+
+    let loaded = db.load_data_cell_writer_leases().await.unwrap();
+    assert_eq!(loaded, vec![renewed.clone()]);
+    let active = db
+        .load_active_data_cell_writer_lease("free-us-central1-a")
+        .await
+        .unwrap();
+    assert_eq!(active, Some(renewed));
+}
+
+#[sqlx::test]
+async fn data_cell_writer_lease_rejects_competing_live_holder_and_allows_expired_takeover(
+    pool: PgPool,
+) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(10)))
+        .await
+        .unwrap();
+    db.acquire_data_cell_writer_lease(
+        "free-us-central1-a",
+        "instance-1",
+        "instantml-data-free-us-central1-a",
+        "revision-1",
+        ChronoDuration::seconds(30),
+    )
+    .await
+    .unwrap();
+
+    let err = db
+        .acquire_data_cell_writer_lease(
+            "free-us-central1-a",
+            "instance-2",
+            "instantml-data-free-us-central1-a",
+            "revision-2",
+            ChronoDuration::seconds(30),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), Some("cell_writer_unavailable"));
+
+    sqlx::query(
+        "UPDATE data_cell_writer_leases SET expires_at = now() - interval '1 second' WHERE cell_id = $1",
+    )
+    .bind("free-us-central1-a")
+    .execute(db.pool())
+    .await
+    .unwrap();
+    let active = db
+        .load_active_data_cell_writer_lease("free-us-central1-a")
+        .await
+        .unwrap();
+    assert_eq!(active, None);
+
+    let taken = db
+        .acquire_data_cell_writer_lease(
+            "free-us-central1-a",
+            "instance-2",
+            "instantml-data-free-us-central1-a",
+            "revision-2",
+            ChronoDuration::seconds(30),
+        )
+        .await
+        .unwrap();
+    assert_eq!(taken.fence_token, 2);
+    assert_eq!(taken.holder_instance_id, "instance-2");
 }
 
 #[sqlx::test]

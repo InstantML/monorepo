@@ -22,7 +22,7 @@ use crate::{
 use super::super::{observability, AppState};
 use super::helpers::{
     context, header_text, parse_uuid, read_json, read_json_with_raw, require_scope,
-    validate_session_mutation_origin,
+    validate_session_mutation_origin, write_context,
 };
 
 #[utoipa::path(
@@ -42,7 +42,7 @@ pub async fn create_project(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateProjectRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -95,7 +95,7 @@ pub async fn create_run(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let input = read_json::<CreateRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -218,7 +218,7 @@ pub async fn fork_run(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "export:read", &state)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
@@ -275,7 +275,7 @@ pub async fn update_run(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
@@ -314,7 +314,7 @@ pub async fn log_metrics(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
@@ -361,7 +361,7 @@ pub async fn log_rank_metrics(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
@@ -487,7 +487,7 @@ pub async fn log_console_logs(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
@@ -658,7 +658,7 @@ pub async fn create_attributes(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
@@ -726,7 +726,7 @@ pub async fn create_object(
     Path(run_id): Path<String>,
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
-    let ctx = context(&state, &headers, true).await?;
+    let ctx = write_context(&state, &headers).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;

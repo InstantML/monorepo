@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    net::{IpAddr, Ipv6Addr},
     sync::Arc,
     time::{Duration as StdDuration, Instant},
 };
@@ -76,7 +77,7 @@ use crate::{
         CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest,
         CreateProjectRequest, CreateReportRequest, CreateRunForkRequest, CreateRunRequest,
         CreateUserRequest, CreatedAuthSession, CurrentUserOrganizationCreateResponse,
-        DashboardPreferenceRow, DataCellRow, DeleteArtifactAliasRequest,
+        DashboardPreferenceRow, DataCellRow, DataCellWriterLeaseRow, DeleteArtifactAliasRequest,
         DeleteArtifactVersionRequest, DevGoogleAuthRequest, EmailDeliveryRow,
         InitialInvitationCreateResult, InitialOrganizationInvitation,
         InitiateArtifactUploadRequest, InvitationPreviewPayload, InvitationTokenRequest,
@@ -85,20 +86,21 @@ use crate::{
         OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow,
         PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
         RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
-        RenewArtifactUploadRequest, ReportRow, RequestContext, ReserveSeatRequest, RunRow,
-        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
-        SetArtifactAliasRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
-        UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
-        VersionedArtifactManifestEntryInput, WorkspaceViewRow, WorkspaceViewSummary,
-        BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
-        BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT,
-        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
-        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
-        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS,
-        MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE,
-        MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
-        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED,
-        STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
+        RenewArtifactUploadRequest, ReportRow, RequestContext, ReserveSeatRequest,
+        RouteDiscoveryResponse, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
+        ServiceAccountRow, SessionContext, SetArtifactAliasRequest, UpdateArtifactRetentionRequest,
+        UpdateDashboardPreferencesRequest, UpdateReportRequest, UpdateRunRequest,
+        UploadArtifactRequest, UserRow, UserSessionRow, VersionedArtifactManifestEntryInput,
+        WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING,
+        BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
+        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
+        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
+        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
+        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
+        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
+        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
+        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
+        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -190,6 +192,8 @@ pub struct Store {
     /// refreshes does not hammer Postgres while a background refresh is already
     /// keeping the data plane current.
     last_control_refresh: Arc<Mutex<Option<Instant>>>,
+    current_writer_lease: Arc<Mutex<Option<DataCellWriterLeaseRow>>>,
+    current_writer_lease_deadline: Arc<Mutex<Option<Instant>>>,
 }
 
 const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
@@ -201,6 +205,15 @@ const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
 /// removal). If this becomes a load problem, the right fix is push-based
 /// invalidation (Tier 3), not a longer interval.
 const CONTROL_REFRESH_BACKGROUND_INTERVAL: StdDuration = StdDuration::from_secs(2);
+const ROUTE_DISCOVERY_TTL: ChronoDuration = ChronoDuration::minutes(5);
+
+#[derive(Clone, Debug, Default)]
+pub struct DataCellRouteRequest {
+    pub route_version: Option<i64>,
+    pub host: Option<String>,
+    pub api_key_authenticated: bool,
+    pub write: bool,
+}
 
 impl Store {
     pub async fn connect(
@@ -235,11 +248,14 @@ impl Store {
             control_projection_loaded: Arc::new(Mutex::new(false)),
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
+            current_writer_lease: Arc::new(Mutex::new(None)),
+            current_writer_lease_deadline: Arc::new(Mutex::new(None)),
         };
         if let Some(control_db) = &store.control_db {
             store
                 .refresh_current_data_cell_registration(control_db)
                 .await?;
+            store.refresh_current_writer_lease(control_db).await?;
         }
         store.rebuild().await?;
         if !store.hosted_clickhouse_enabled() {
@@ -349,6 +365,9 @@ impl Store {
         for cell in control_db.load_data_cells().await? {
             data.insert_data_cell(cell);
         }
+        for lease in control_db.load_data_cell_writer_leases().await? {
+            data.insert_data_cell_writer_lease(lease);
+        }
         for route in control_db.load_tenant_routes().await? {
             data.insert_tenant_route(route);
         }
@@ -373,6 +392,342 @@ impl Store {
         ControlProjectionHealth {
             loaded: *self.control_projection_loaded.lock().await,
             refresh_degraded: self.last_control_refresh_error.lock().await.is_some(),
+        }
+    }
+
+    pub async fn current_route_discovery(
+        &self,
+        ctx: &RequestContext,
+    ) -> AppResult<RouteDiscoveryResponse> {
+        let auth = ctx
+            .auth
+            .as_ref()
+            .ok_or_else(|| AppError::unauthorized("API key required for route discovery"))?;
+        if !auth.scopes.iter().any(|scope| {
+            matches!(
+                scope.as_str(),
+                "sdk:ingest" | "artifacts:write" | "imports:write" | "export:read"
+            )
+        }) {
+            return Err(AppError::forbidden(
+                "api key does not have a data-plane scope",
+            ));
+        }
+        let now = Utc::now();
+        if let Some(control_db) = &self.control_db {
+            let route = control_db
+                .get_tenant_route(ctx.org_id)
+                .await?
+                .ok_or_else(route_discovery_unavailable)?;
+            if route.status != tenants::TENANT_ROUTE_READY {
+                return Err(route_discovery_unavailable());
+            }
+            let cell_id = route
+                .cell_id
+                .as_ref()
+                .ok_or_else(route_discovery_unavailable)?;
+            let cell = control_db
+                .get_data_cell(cell_id)
+                .await?
+                .ok_or_else(route_discovery_unavailable)?;
+            if !data_cell_accepts_route_traffic(&cell, &self.cell_routing, now) {
+                return Err(route_discovery_unavailable());
+            }
+            let data_api_base = safe_public_api_base(&cell, &self.cell_routing)
+                .ok_or_else(route_discovery_unavailable)?;
+            let lease = control_db
+                .load_active_data_cell_writer_lease(cell_id)
+                .await?;
+            let Some(lease) = lease else {
+                return Err(AppError::with_code(
+                    http::StatusCode::SERVICE_UNAVAILABLE,
+                    "cell_writer_unavailable",
+                    "data cell writer lease is not available",
+                ));
+            };
+            let route_version = route.route_version;
+            let cell_id = cell_id.clone();
+            {
+                let mut data = self.data.lock().await;
+                data.insert_tenant_route(route);
+                data.insert_data_cell(cell);
+                data.insert_data_cell_writer_lease(lease);
+            }
+            return Ok(RouteDiscoveryResponse {
+                org_id: ctx.org_id,
+                cell_id,
+                route_version,
+                data_api_base,
+                expires_at: now + ROUTE_DISCOVERY_TTL,
+            });
+        }
+        let (cell_id, route_version, data_api_base, projection_lease_ready) = {
+            let data = self.data.lock().await;
+            let route = data
+                .tenant_routes
+                .get(&ctx.org_id)
+                .ok_or_else(route_discovery_unavailable)?;
+            if route.status != tenants::TENANT_ROUTE_READY {
+                return Err(route_discovery_unavailable());
+            }
+            let cell_id = route
+                .cell_id
+                .as_ref()
+                .ok_or_else(route_discovery_unavailable)?;
+            let cell = data
+                .data_cells
+                .get(cell_id)
+                .ok_or_else(route_discovery_unavailable)?;
+            if !data_cell_accepts_route_traffic(cell, &self.cell_routing, now) {
+                return Err(route_discovery_unavailable());
+            }
+            let data_api_base = safe_public_api_base(cell, &self.cell_routing)
+                .ok_or_else(route_discovery_unavailable)?;
+            let projection_lease_ready = data
+                .data_cell_writer_leases
+                .get(cell_id)
+                .is_some_and(|lease| lease.expires_at > now);
+            (
+                cell_id.clone(),
+                route.route_version,
+                data_api_base,
+                projection_lease_ready,
+            )
+        };
+        let lease_ready = if let Some(control_db) = &self.control_db {
+            control_db
+                .load_active_data_cell_writer_lease(&cell_id)
+                .await?
+                .is_some()
+        } else {
+            projection_lease_ready
+        };
+        if !lease_ready {
+            return Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "cell_writer_unavailable",
+                "data cell writer lease is not available",
+            ));
+        }
+        Ok(RouteDiscoveryResponse {
+            org_id: ctx.org_id,
+            cell_id,
+            route_version,
+            data_api_base,
+            expires_at: now + ROUTE_DISCOVERY_TTL,
+        })
+    }
+
+    pub async fn validate_current_data_cell_route(
+        &self,
+        ctx: &RequestContext,
+        request: DataCellRouteRequest,
+    ) -> AppResult<()> {
+        let Some(current_cell_id) = self.cell_routing.current_data_cell_id.as_deref() else {
+            return Ok(());
+        };
+        if !self.hosted_clickhouse_enabled() {
+            return Ok(());
+        }
+        let is_public_cell_host = self.request_targets_current_public_cell(request.host.as_deref());
+        if is_public_cell_host && !request.api_key_authenticated {
+            return Err(AppError::unauthorized(
+                "API key required for public data-cell requests",
+            ));
+        }
+        let requires_route_version = request.write
+            && request.api_key_authenticated
+            && self
+                .cell_routing
+                .current_data_cell_public_api_base
+                .is_some()
+            && !self.request_targets_public_router_apex(request.host.as_deref());
+        if request.write {
+            if let Some((route, cell)) = self
+                .authoritative_current_data_cell_route(ctx.org_id)
+                .await?
+            {
+                self.validate_data_cell_route_record(
+                    current_cell_id,
+                    &route,
+                    cell.as_ref(),
+                    request.route_version,
+                    requires_route_version,
+                )?;
+                let mut data = self.data.lock().await;
+                data.insert_tenant_route(route);
+                if let Some(cell) = cell {
+                    data.insert_data_cell(cell);
+                }
+            } else {
+                let data = self.data.lock().await;
+                let route = data.tenant_routes.get(&ctx.org_id).ok_or_else(|| {
+                    AppError::warehouse_unavailable("tenant route is not provisioned")
+                })?;
+                let cell = route
+                    .cell_id
+                    .as_ref()
+                    .and_then(|cell_id| data.data_cells.get(cell_id));
+                self.validate_data_cell_route_record(
+                    current_cell_id,
+                    route,
+                    cell,
+                    request.route_version,
+                    requires_route_version,
+                )?;
+            }
+        } else {
+            let data = self.data.lock().await;
+            let route = data.tenant_routes.get(&ctx.org_id).ok_or_else(|| {
+                AppError::warehouse_unavailable("tenant route is not provisioned")
+            })?;
+            let cell = route
+                .cell_id
+                .as_ref()
+                .and_then(|cell_id| data.data_cells.get(cell_id));
+            self.validate_data_cell_route_record(
+                current_cell_id,
+                route,
+                cell,
+                request.route_version,
+                is_public_cell_host,
+            )?;
+        }
+        if request.write {
+            self.ensure_current_writer_lease_ready().await?;
+        }
+        Ok(())
+    }
+
+    fn request_targets_current_public_cell(&self, host: Option<&str>) -> bool {
+        let Some(host) = host.and_then(normalized_host_header) else {
+            return false;
+        };
+        let Some(base) = self.cell_routing.current_data_cell_public_api_base.as_ref() else {
+            return false;
+        };
+        public_base_host(base).is_some_and(|public_host| public_host == host)
+    }
+
+    fn request_targets_public_router_apex(&self, host: Option<&str>) -> bool {
+        let Some(host) = host.and_then(normalized_host_header) else {
+            return false;
+        };
+        self.cell_routing
+            .public_api_base_allowed_suffix
+            .as_deref()
+            .is_some_and(|apex| host == apex)
+    }
+
+    async fn authoritative_current_data_cell_route(
+        &self,
+        org_id: Uuid,
+    ) -> AppResult<Option<(TenantRouteRecord, Option<DataCellRow>)>> {
+        let Some(control_db) = &self.control_db else {
+            return Ok(None);
+        };
+        let route = control_db
+            .get_tenant_route(org_id)
+            .await?
+            .ok_or_else(|| AppError::warehouse_unavailable("tenant route is not provisioned"))?;
+        let cell = match route.cell_id.as_deref() {
+            Some(cell_id) => control_db.get_data_cell(cell_id).await?,
+            None => None,
+        };
+        Ok(Some((route, cell)))
+    }
+
+    fn validate_data_cell_route_record(
+        &self,
+        current_cell_id: &str,
+        route: &TenantRouteRecord,
+        cell: Option<&DataCellRow>,
+        route_version: Option<i64>,
+        require_route_version: bool,
+    ) -> AppResult<()> {
+        if route.status != tenants::TENANT_ROUTE_READY {
+            return Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "tenant_route_not_ready",
+                "tenant route is not ready for this data cell",
+            ));
+        }
+        match route.cell_id.as_deref() {
+            Some(cell_id) if cell_id == current_cell_id => {}
+            Some(_) => {
+                return Err(AppError::with_code(
+                    http::StatusCode::CONFLICT,
+                    "wrong_cell",
+                    "organization is assigned to a different data cell",
+                ));
+            }
+            None => {
+                if require_route_version {
+                    return Err(tenant_route_changed(
+                        "tenant route is not assigned to a direct data-cell route",
+                    ));
+                }
+                if let Some(route_version) = route_version {
+                    if route_version != route.route_version {
+                        return Err(tenant_route_changed(
+                            "tenant route changed; refresh route discovery",
+                        ));
+                    }
+                }
+                return Ok(());
+            }
+        }
+        let cell = cell.ok_or_else(|| {
+            AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "data_cell_unavailable",
+                "data cell is not available",
+            )
+        })?;
+        if !data_cell_accepts_route_traffic(cell, &self.cell_routing, Utc::now()) {
+            return Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "data_cell_unavailable",
+                "data cell is not available",
+            ));
+        }
+        if require_route_version && route_version.is_none() {
+            return Err(tenant_route_changed(
+                "route version header is required for data-cell writes",
+            ));
+        }
+        if let Some(route_version) = route_version {
+            if route_version != route.route_version {
+                return Err(tenant_route_changed(
+                    "tenant route changed; refresh route discovery",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn ensure_current_writer_lease_ready(&self) -> AppResult<()> {
+        let Some(config) = self.cell_routing.writer_lease.as_ref() else {
+            return Ok(());
+        };
+        let Some(cell_id) = self.cell_routing.current_data_cell_id.as_deref() else {
+            return Ok(());
+        };
+        let lease = self.current_writer_lease.lock().await.clone();
+        let deadline = *self.current_writer_lease_deadline.lock().await;
+        match (lease, deadline) {
+            (Some(lease), Some(deadline))
+                if lease.cell_id == cell_id
+                    && lease.holder_instance_id == config.holder_instance_id
+                    && deadline > Instant::now() =>
+            {
+                Ok(())
+            }
+            _ => Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "cell_writer_unavailable",
+                "data cell writer lease is not available",
+            )),
         }
     }
 
@@ -449,6 +804,7 @@ impl Store {
         }
         self.refresh_current_data_cell_registration(control_db)
             .await?;
+        self.refresh_current_writer_lease(control_db).await?;
         let fresh = match self.load_data_from_postgres(control_db).await {
             Ok(data) => data,
             Err(error) => {
@@ -478,12 +834,71 @@ impl Store {
         &self,
         control_db: &ControlDb,
     ) -> AppResult<Option<DataCellRow>> {
+        if !self.cell_routing.register_current_data_cell {
+            return Ok(None);
+        }
         let Some(cell) = self.current_data_cell_heartbeat_row(Utc::now()) else {
             return Ok(None);
         };
         let stored = control_db.heartbeat_data_cell(&cell).await?;
         self.data.lock().await.insert_data_cell(stored.clone());
         Ok(Some(stored))
+    }
+
+    async fn refresh_current_writer_lease(&self, control_db: &ControlDb) -> AppResult<()> {
+        let Some(cell_id) = self.cell_routing.current_data_cell_id.as_deref() else {
+            return Ok(());
+        };
+        let Some(config) = self.cell_routing.writer_lease.as_ref() else {
+            return Ok(());
+        };
+        let ttl = ChronoDuration::from_std(config.ttl)
+            .map_err(|_| AppError::config("writer lease TTL is too large"))?;
+        let should_renew = {
+            let lease = self.current_writer_lease.lock().await;
+            let deadline = self.current_writer_lease_deadline.lock().await;
+            matches!(
+                (lease.as_ref(), deadline.as_ref()),
+                (Some(existing), Some(deadline))
+                    if existing.cell_id == cell_id
+                        && existing.holder_instance_id == config.holder_instance_id
+                        && *deadline > Instant::now()
+            )
+        };
+        let acquire = || {
+            control_db.acquire_data_cell_writer_lease(
+                cell_id,
+                &config.holder_instance_id,
+                &config.service_name,
+                &config.revision,
+                ttl,
+            )
+        };
+        let db_attempt_started_at = Instant::now();
+        let lease = if should_renew {
+            match control_db
+                .renew_data_cell_writer_lease(cell_id, &config.holder_instance_id, ttl)
+                .await
+            {
+                Ok(lease) => lease,
+                Err(error) if error.safe_code() == "cell_writer_unavailable" => {
+                    *self.current_writer_lease.lock().await = None;
+                    *self.current_writer_lease_deadline.lock().await = None;
+                    acquire().await?
+                }
+                Err(error) => return Err(error),
+            }
+        } else {
+            acquire().await?
+        };
+        self.data
+            .lock()
+            .await
+            .insert_data_cell_writer_lease(lease.clone());
+        *self.current_writer_lease.lock().await = Some(lease);
+        *self.current_writer_lease_deadline.lock().await =
+            Some(db_attempt_started_at + local_writer_lease_valid_for(config.ttl));
+        Ok(())
     }
 
     fn current_data_cell_heartbeat_row(&self, now: DateTime<Utc>) -> Option<DataCellRow> {
@@ -493,8 +908,13 @@ impl Store {
             region: infer_data_cell_region(&cell_id),
             tier: "standard".to_string(),
             status: "open".to_string(),
-            service_name: format!("instantml-data-{cell_id}"),
-            public_api_base: None,
+            service_name: self
+                .cell_routing
+                .writer_lease
+                .as_ref()
+                .map(|lease| lease.service_name.clone())
+                .unwrap_or_else(|| format!("instantml-data-{cell_id}")),
+            public_api_base: self.cell_routing.current_data_cell_public_api_base.clone(),
             internal_api_base: None,
             clickhouse_endpoint_secret_ref: None,
             clickhouse_username_secret_ref: None,
@@ -507,7 +927,7 @@ impl Store {
             max_disk_usage_pct: None,
             reserved_headroom_pct: None,
             last_health_at: Some(now),
-            last_backup_at: Some(now),
+            last_backup_at: None,
             notes: Some("auto-registered current data cell".to_string()),
             created_at: now,
             updated_at: now,
@@ -780,6 +1200,7 @@ struct StoreData {
     api_request_rollup_flushes: HashMap<String, ApiRequestRollupFlush>,
     api_request_rollup_refreshes: HashMap<String, DateTime<Utc>>,
     data_cells: BTreeMap<String, DataCellRow>,
+    data_cell_writer_leases: BTreeMap<String, DataCellWriterLeaseRow>,
     tenant_routes: BTreeMap<Uuid, TenantRouteRecord>,
     billing_accounts: BTreeMap<Uuid, BillingAccountProjection>,
     billing_checkout_intents: BTreeMap<Uuid, BillingCheckoutIntent>,
@@ -917,6 +1338,7 @@ impl StoreData {
         self.api_keys = fresh.api_keys;
         self.api_keys_by_hash = fresh.api_keys_by_hash;
         self.data_cells = fresh.data_cells;
+        self.data_cell_writer_leases = fresh.data_cell_writer_leases;
         self.tenant_routes = fresh.tenant_routes;
         self.billing_accounts = fresh.billing_accounts;
         self.billing_checkout_intents = fresh.billing_checkout_intents;
@@ -1252,6 +1674,11 @@ impl StoreData {
 
     fn insert_data_cell(&mut self, cell: DataCellRow) {
         self.data_cells.insert(cell.cell_id.clone(), cell);
+    }
+
+    fn insert_data_cell_writer_lease(&mut self, lease: DataCellWriterLeaseRow) {
+        self.data_cell_writer_leases
+            .insert(lease.cell_id.clone(), lease);
     }
 
     fn insert_billing_account(&mut self, account: BillingAccountProjection) {
@@ -1843,7 +2270,7 @@ pub async fn ready(store: &Store) -> bool {
     if !crate::metric_store::ready(store.metric_store()).await {
         return false;
     }
-    control_ready(store).await
+    control_ready(store).await && store.ensure_current_writer_lease_ready().await.is_ok()
 }
 
 pub async fn control_ready(store: &Store) -> bool {
@@ -1900,6 +2327,128 @@ async fn build_shared_cell_metric_store(
     Ok(Some(store))
 }
 
+fn route_discovery_unavailable() -> AppError {
+    AppError::with_code(
+        http::StatusCode::CONFLICT,
+        "route_discovery_unavailable",
+        "route discovery is not available for this organization",
+    )
+}
+
+fn tenant_route_changed(message: impl Into<String>) -> AppError {
+    AppError::with_code(http::StatusCode::CONFLICT, "tenant_route_changed", message)
+}
+
+const DATA_CELL_ROUTE_HEALTH_MAX_AGE_SECS: i64 = 10 * 60;
+
+fn data_cell_accepts_route_traffic(
+    cell: &DataCellRow,
+    config: &CellRoutingConfig,
+    now: DateTime<Utc>,
+) -> bool {
+    cell.environment == config.environment
+        && cell.status == "open"
+        && cell.last_health_at.is_some_and(|last_health| {
+            now.signed_duration_since(last_health)
+                <= ChronoDuration::seconds(DATA_CELL_ROUTE_HEALTH_MAX_AGE_SECS)
+        })
+}
+
+fn safe_public_api_base(cell: &DataCellRow, config: &CellRoutingConfig) -> Option<String> {
+    if cell.environment != config.environment {
+        return None;
+    }
+    let raw = cell
+        .public_api_base
+        .as_deref()?
+        .trim()
+        .trim_end_matches('/');
+    let url = url::Url::parse(raw).ok()?;
+    if url.username() != "" || url.password().is_some() {
+        return None;
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return None;
+    }
+    if url.path() != "/" && !url.path().is_empty() {
+        return None;
+    }
+    let host = url.host_str()?.to_ascii_lowercase();
+    let loopback = host_is_loopback(&host);
+    if loopback && !environment_allows_loopback_public_base(&config.environment) {
+        return None;
+    }
+    if url.scheme() != "https" && !loopback {
+        return None;
+    }
+    if !loopback {
+        if host_is_private_or_internal(&host) {
+            return None;
+        }
+        let suffix = config.public_api_base_allowed_suffix.as_deref()?;
+        if host != suffix && !host.ends_with(&format!(".{suffix}")) {
+            return None;
+        }
+    }
+    Some(
+        url.origin()
+            .ascii_serialization()
+            .trim_end_matches('/')
+            .to_string(),
+    )
+}
+
+fn environment_allows_loopback_public_base(environment: &str) -> bool {
+    matches!(environment, "local" | "test" | "dev" | "development")
+}
+
+fn public_base_host(base: &str) -> Option<String> {
+    url::Url::parse(base)
+        .ok()
+        .and_then(|url| url.host_str().map(|host| host.to_ascii_lowercase()))
+}
+
+fn normalized_host_header(raw: &str) -> Option<String> {
+    let host = raw.trim().trim_end_matches('.').split(',').next()?.trim();
+    if host.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = host.strip_prefix('[') {
+        return stripped
+            .split(']')
+            .next()
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase());
+    }
+    let without_port = host.rsplit_once(':').map(|(head, _)| head).unwrap_or(host);
+    Some(without_port.to_ascii_lowercase())
+}
+
+fn host_is_loopback(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+        || host.parse::<IpAddr>().is_ok_and(|addr| addr.is_loopback())
+}
+
+fn host_is_private_or_internal(host: &str) -> bool {
+    if host.ends_with(".local") || host.ends_with(".internal") {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(addr)) => addr.is_private() || addr.is_link_local(),
+        Ok(IpAddr::V6(addr)) => ipv6_is_unique_local_or_link_local(addr),
+        Err(_) => false,
+    }
+}
+
+fn ipv6_is_unique_local_or_link_local(addr: Ipv6Addr) -> bool {
+    let first_segment = addr.segments()[0];
+    (first_segment & 0xfe00) == 0xfc00 || (first_segment & 0xffc0) == 0xfe80
+}
+
+fn local_writer_lease_valid_for(ttl: StdDuration) -> StdDuration {
+    ttl.checked_sub(StdDuration::from_secs(1)).unwrap_or(ttl)
+}
+
 fn infer_data_cell_region(cell_id: &str) -> String {
     let labels = cell_id.split('-').collect::<Vec<_>>();
     if labels.len() >= 3 && labels.last().is_some_and(|zone| zone.len() == 1) {
@@ -1933,7 +2482,12 @@ mod tests {
             },
             cell_routing: crate::config::CellRoutingConfig {
                 environment: "test".to_string(),
+                default_data_cell_id: None,
                 current_data_cell_id: None,
+                register_current_data_cell: false,
+                current_data_cell_public_api_base: None,
+                public_api_base_allowed_suffix: None,
+                writer_lease: None,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
@@ -1946,6 +2500,214 @@ mod tests {
             control_projection_loaded: Arc::new(Mutex::new(false)),
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
+            current_writer_lease: Arc::new(Mutex::new(None)),
+            current_writer_lease_deadline: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn hosted_routing_store(
+        data: StoreData,
+        current_cell_id: Option<&str>,
+        public_base: Option<&str>,
+        writer_lease: bool,
+    ) -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_routing_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_db: None,
+            hosted_clickhouse: Some(crate::config::HostedClickHouseConfig {
+                tenant_base_url: "http://default:@127.0.0.1:8123/instantml_routing_test"
+                    .to_string(),
+                provisioner: crate::config::ClickHouseProvisioner::Database,
+                allow_stored_tenant_passwords: false,
+                cloud: None,
+                shared_cell_url: None,
+            }),
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            cell_routing: crate::config::CellRoutingConfig {
+                environment: "test".to_string(),
+                default_data_cell_id: current_cell_id.map(str::to_string),
+                current_data_cell_id: current_cell_id.map(str::to_string),
+                register_current_data_cell: current_cell_id.is_some(),
+                current_data_cell_public_api_base: public_base.map(str::to_string),
+                public_api_base_allowed_suffix: Some("api.example.com".to_string()),
+                writer_lease: writer_lease.then(|| crate::config::DataCellWriterLeaseConfig {
+                    holder_instance_id: "holder-1".to_string(),
+                    service_name: "instantml-data-cell-a".to_string(),
+                    revision: "revision-1".to_string(),
+                    ttl: StdDuration::from_secs(30),
+                }),
+            },
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
+            data: Arc::new(Mutex::new(data)),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(true)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+            current_writer_lease: Arc::new(Mutex::new(None)),
+            current_writer_lease_deadline: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn routing_data(
+        org_id: Uuid,
+        route_cell_id: &str,
+        route_version: i64,
+        public_base: &str,
+    ) -> StoreData {
+        let now = Utc::now();
+        let mut data = StoreData::default();
+        data.insert_data_cell(DataCellRow {
+            cell_id: route_cell_id.to_string(),
+            environment: "test".to_string(),
+            region: "us-central1".to_string(),
+            tier: "standard".to_string(),
+            status: "open".to_string(),
+            service_name: format!("instantml-data-{route_cell_id}"),
+            public_api_base: Some(public_base.to_string()),
+            internal_api_base: None,
+            clickhouse_endpoint_secret_ref: None,
+            clickhouse_username_secret_ref: None,
+            clickhouse_password_secret_ref: None,
+            clickhouse_database_mode: Some("per-org-database".to_string()),
+            max_orgs: None,
+            max_metric_points_monthly: None,
+            max_api_requests_monthly: None,
+            max_retained_bytes: None,
+            max_disk_usage_pct: None,
+            reserved_headroom_pct: None,
+            last_health_at: Some(now),
+            last_backup_at: Some(now),
+            notes: None,
+            created_at: now,
+            updated_at: now,
+        });
+        data.insert_tenant_route(TenantRouteRecord {
+            org_id,
+            status: "ready".to_string(),
+            provisioner: "database".to_string(),
+            cell_id: Some(route_cell_id.to_string()),
+            route_version,
+            placement_reason: Some("test".to_string()),
+            assigned_at: Some(now),
+            plan_tier: Some("pro".to_string()),
+            warehouse_kind: Some("standard".to_string()),
+            requested_min_replica_memory_gb: None,
+            requested_max_replica_memory_gb: None,
+            requested_num_replicas: None,
+            applied_min_replica_memory_gb: None,
+            applied_max_replica_memory_gb: None,
+            applied_num_replicas: None,
+            endpoint: "http://default:@127.0.0.1:8123/instantml_routing_test".to_string(),
+            database: "instantml_routing_test".to_string(),
+            username: "default".to_string(),
+            password_secret_ref: None,
+            password_ciphertext: None,
+            schema_version: None,
+            service_id: None,
+            created_at: now,
+            updated_at: now,
+            error: None,
+        });
+        data.insert_data_cell_writer_lease(DataCellWriterLeaseRow {
+            cell_id: route_cell_id.to_string(),
+            fence_token: 1,
+            holder_instance_id: "holder-1".to_string(),
+            service_name: format!("instantml-data-{route_cell_id}"),
+            revision: "revision-1".to_string(),
+            acquired_at: now,
+            heartbeat_at: now,
+            expires_at: now + ChronoDuration::minutes(1),
+        });
+        data
+    }
+
+    fn control_data_cell(cell_id: &str, public_base: &str) -> DataCellRow {
+        let now = Utc::now();
+        DataCellRow {
+            cell_id: cell_id.to_string(),
+            environment: "test".to_string(),
+            region: "us-central1".to_string(),
+            tier: "standard".to_string(),
+            status: "open".to_string(),
+            service_name: format!("instantml-data-{cell_id}"),
+            public_api_base: Some(public_base.to_string()),
+            internal_api_base: None,
+            clickhouse_endpoint_secret_ref: None,
+            clickhouse_username_secret_ref: None,
+            clickhouse_password_secret_ref: None,
+            clickhouse_database_mode: Some("per-org-database".to_string()),
+            max_orgs: None,
+            max_metric_points_monthly: None,
+            max_api_requests_monthly: None,
+            max_retained_bytes: None,
+            max_disk_usage_pct: None,
+            reserved_headroom_pct: None,
+            last_health_at: Some(now),
+            last_backup_at: Some(now),
+            notes: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn control_tenant_route(org_id: Uuid, cell_id: &str, route_version: i64) -> TenantRouteRecord {
+        let now = Utc::now();
+        TenantRouteRecord {
+            org_id,
+            status: tenants::TENANT_ROUTE_READY.to_string(),
+            provisioner: "database".to_string(),
+            cell_id: Some(cell_id.to_string()),
+            route_version,
+            placement_reason: Some("test".to_string()),
+            assigned_at: Some(now),
+            plan_tier: Some("pro".to_string()),
+            warehouse_kind: Some("standard".to_string()),
+            requested_min_replica_memory_gb: None,
+            requested_max_replica_memory_gb: None,
+            requested_num_replicas: None,
+            applied_min_replica_memory_gb: None,
+            applied_max_replica_memory_gb: None,
+            applied_num_replicas: None,
+            endpoint: "http://default:@127.0.0.1:8123/instantml_route_discovery_test".to_string(),
+            database: "instantml_route_discovery_test".to_string(),
+            username: "default".to_string(),
+            password_secret_ref: None,
+            password_ciphertext: None,
+            schema_version: None,
+            service_id: None,
+            created_at: now,
+            updated_at: now,
+            error: None,
+        }
+    }
+
+    fn control_org(org_id: Uuid, slug: &str) -> OrganizationRow {
+        OrganizationRow {
+            id: org_id,
+            slug: slug.to_string(),
+            name: slug.to_string(),
+            plan_tier: "pro".to_string(),
+            account_type: "business".to_string(),
+            seat_limit: 5,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
         }
     }
 
@@ -2011,6 +2773,213 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn route_discovery_uses_control_db_point_reads_and_checks_active_writer_lease(
+        pool: sqlx::PgPool,
+    ) {
+        let control_db = ControlDb::from_pool(pool);
+        let org_id = Uuid::new_v4();
+        control_db
+            .upsert_org(&control_org(org_id, "route-refresh"))
+            .await
+            .unwrap();
+        control_db
+            .upsert_data_cell(&control_data_cell(
+                "cell-a",
+                "https://cell-a.api.example.test",
+            ))
+            .await
+            .unwrap();
+        control_db
+            .upsert_tenant_route_with_placement(
+                &control_tenant_route(org_id, "cell-a", 11),
+                Some(&TenantRoutePlacement {
+                    environment: "test".to_string(),
+                    cell_id: "cell-a".to_string(),
+                    actor: "test".to_string(),
+                    reason: "route_discovery_refresh".to_string(),
+                }),
+            )
+            .await
+            .unwrap();
+        control_db
+            .acquire_data_cell_writer_lease(
+                "cell-a",
+                "holder-1",
+                "instantml-data-cell-a",
+                "revision-1",
+                ChronoDuration::seconds(30),
+            )
+            .await
+            .unwrap();
+
+        let mut store = store_with_control_db(control_db.clone());
+        store.cell_routing.public_api_base_allowed_suffix = Some("api.example.test".to_string());
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        let route = store.current_route_discovery(&ctx).await.unwrap();
+
+        assert_eq!(route.org_id, org_id);
+        assert_eq!(route.cell_id, "cell-a");
+        assert_eq!(route.route_version, 11);
+        assert_eq!(route.data_api_base, "https://cell-a.api.example.test");
+        assert!(store.last_control_refresh.lock().await.is_none());
+        assert!(store.data.lock().await.tenant_routes.contains_key(&org_id));
+    }
+
+    #[sqlx::test]
+    async fn writer_lease_refresh_reacquires_after_local_deadline_expires(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        control_db
+            .upsert_data_cell(&control_data_cell(
+                "cell-a",
+                "https://cell-a.api.example.test",
+            ))
+            .await
+            .unwrap();
+        let mut store = store_with_control_db(control_db.clone());
+        store.cell_routing = crate::config::CellRoutingConfig {
+            environment: "test".to_string(),
+            default_data_cell_id: Some("cell-a".to_string()),
+            current_data_cell_id: Some("cell-a".to_string()),
+            register_current_data_cell: false,
+            current_data_cell_public_api_base: Some("https://cell-a.api.example.test".to_string()),
+            public_api_base_allowed_suffix: Some("api.example.test".to_string()),
+            writer_lease: Some(crate::config::DataCellWriterLeaseConfig {
+                holder_instance_id: "holder-1".to_string(),
+                service_name: "instantml-data-cell-a".to_string(),
+                revision: "revision-1".to_string(),
+                ttl: StdDuration::from_secs(30),
+            }),
+        };
+
+        let refresh_started_at = Instant::now();
+        store
+            .refresh_current_writer_lease(&control_db)
+            .await
+            .unwrap();
+        let first = store.current_writer_lease.lock().await.clone().unwrap();
+        assert!(
+            store.current_writer_lease_deadline.lock().await.unwrap()
+                <= refresh_started_at + StdDuration::from_secs(30)
+        );
+        *store.current_writer_lease_deadline.lock().await =
+            Some(Instant::now() - StdDuration::from_millis(1));
+
+        store
+            .refresh_current_writer_lease(&control_db)
+            .await
+            .unwrap();
+        let second = store.current_writer_lease.lock().await.clone().unwrap();
+
+        assert_eq!(second.holder_instance_id, "holder-1");
+        assert!(second.fence_token > first.fence_token);
+        store.ensure_current_writer_lease_ready().await.unwrap();
+    }
+
+    #[sqlx::test]
+    async fn data_cell_write_validation_uses_authoritative_control_route(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let org_id = Uuid::new_v4();
+        control_db
+            .upsert_org(&control_org(org_id, "authoritative-route"))
+            .await
+            .unwrap();
+        control_db
+            .upsert_data_cell(&control_data_cell(
+                "cell-b",
+                "https://cell-b.api.example.test",
+            ))
+            .await
+            .unwrap();
+        control_db
+            .upsert_tenant_route_with_placement(
+                &control_tenant_route(org_id, "cell-b", 22),
+                Some(&TenantRoutePlacement {
+                    environment: "test".to_string(),
+                    cell_id: "cell-b".to_string(),
+                    actor: "test".to_string(),
+                    reason: "authoritative_route".to_string(),
+                }),
+            )
+            .await
+            .unwrap();
+
+        let mut store = store_with_control_db(control_db);
+        store.hosted_clickhouse = Some(crate::config::HostedClickHouseConfig {
+            tenant_base_url: "http://default:@127.0.0.1:8123/instantml_route_authority_test"
+                .to_string(),
+            provisioner: crate::config::ClickHouseProvisioner::Database,
+            allow_stored_tenant_passwords: false,
+            cloud: None,
+            shared_cell_url: None,
+        });
+        store.cell_routing = crate::config::CellRoutingConfig {
+            environment: "test".to_string(),
+            default_data_cell_id: Some("cell-a".to_string()),
+            current_data_cell_id: Some("cell-a".to_string()),
+            register_current_data_cell: false,
+            current_data_cell_public_api_base: Some("https://cell-a.api.example.test".to_string()),
+            public_api_base_allowed_suffix: Some("api.example.test".to_string()),
+            writer_lease: Some(crate::config::DataCellWriterLeaseConfig {
+                holder_instance_id: "holder-1".to_string(),
+                service_name: "instantml-data-cell-a".to_string(),
+                revision: "revision-1".to_string(),
+                ttl: StdDuration::from_secs(30),
+            }),
+        };
+        *store.data.lock().await =
+            routing_data(org_id, "cell-a", 21, "https://cell-a.api.example.test");
+        *store.current_writer_lease.lock().await = Some(DataCellWriterLeaseRow {
+            cell_id: "cell-a".to_string(),
+            fence_token: 1,
+            holder_instance_id: "holder-1".to_string(),
+            service_name: "instantml-data-cell-a".to_string(),
+            revision: "revision-1".to_string(),
+            acquired_at: Utc::now(),
+            heartbeat_at: Utc::now(),
+            expires_at: Utc::now() + ChronoDuration::minutes(1),
+        });
+        *store.current_writer_lease_deadline.lock().await =
+            Some(Instant::now() + StdDuration::from_secs(30));
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        let error = store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    route_version: Some(21),
+                    host: Some("cell-a.api.example.test".to_string()),
+                    api_key_authenticated: true,
+                    write: true,
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code(), Some("wrong_cell"));
+    }
+
+    #[sqlx::test]
     async fn create_user_persists_and_is_idempotent_via_postgres(pool: sqlx::PgPool) {
         let store = store_with_control_db(ControlDb::from_pool(pool));
         let request = || CreateUserRequest {
@@ -2072,6 +3041,7 @@ mod tests {
     async fn current_data_cell_registration_heartbeats_postgres(pool: sqlx::PgPool) {
         let mut store = store_with_control_db(ControlDb::from_pool(pool));
         store.cell_routing.current_data_cell_id = Some("free-us-central1-a".to_string());
+        store.cell_routing.register_current_data_cell = true;
         let control_db = store.control_db().unwrap();
 
         let stored = store
@@ -2084,7 +3054,7 @@ mod tests {
         assert_eq!(stored.region, "us-central1");
         assert_eq!(stored.status, "open");
         assert!(stored.last_health_at.is_some());
-        assert!(stored.last_backup_at.is_some());
+        assert!(stored.last_backup_at.is_none());
 
         assert!(store
             .data
@@ -2095,11 +3065,406 @@ mod tests {
         assert_eq!(control_db.load_data_cells().await.unwrap(), vec![stored]);
     }
 
+    #[tokio::test]
+    async fn route_discovery_returns_safe_public_cell_with_live_writer_lease() {
+        let org_id = Uuid::new_v4();
+        let store = hosted_routing_store(
+            routing_data(org_id, "cell-a", 7, "https://cell-a.api.example.com/"),
+            None,
+            None,
+            false,
+        );
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        let route = store.current_route_discovery(&ctx).await.unwrap();
+
+        assert_eq!(route.org_id, org_id);
+        assert_eq!(route.cell_id, "cell-a");
+        assert_eq!(route.route_version, 7);
+        assert_eq!(route.data_api_base, "https://cell-a.api.example.com");
+        assert!(route.expires_at > Utc::now());
+    }
+
+    #[tokio::test]
+    async fn route_discovery_rejects_sessions_unsafe_bases_and_missing_leases() {
+        let org_id = Uuid::new_v4();
+        let session_ctx = RequestContext {
+            org_id,
+            auth: None,
+            session: Some(SessionContext {
+                session_id: Uuid::new_v4(),
+                user_id: Uuid::new_v4(),
+                role: "member".to_string(),
+                demo_read_only: false,
+            }),
+        };
+        let unsafe_store = hosted_routing_store(
+            routing_data(org_id, "cell-a", 1, "http://cell-a.api.example.com"),
+            None,
+            None,
+            false,
+        );
+        assert_eq!(
+            unsafe_store
+                .current_route_discovery(&session_ctx)
+                .await
+                .unwrap_err()
+                .status(),
+            http::StatusCode::UNAUTHORIZED
+        );
+
+        let auth_ctx = RequestContext {
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+            ..session_ctx
+        };
+        assert_eq!(
+            unsafe_store
+                .current_route_discovery(&auth_ctx)
+                .await
+                .unwrap_err()
+                .code(),
+            Some("route_discovery_unavailable")
+        );
+
+        let mut missing_lease_data =
+            routing_data(org_id, "cell-a", 1, "https://cell-a.api.example.com");
+        missing_lease_data.data_cell_writer_leases.clear();
+        let missing_lease_store = hosted_routing_store(missing_lease_data, None, None, false);
+        assert_eq!(
+            missing_lease_store
+                .current_route_discovery(&auth_ctx)
+                .await
+                .unwrap_err()
+                .code(),
+            Some("cell_writer_unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn current_data_cell_route_validation_enforces_public_host_route_version_and_lease() {
+        let org_id = Uuid::new_v4();
+        let store = hosted_routing_store(
+            routing_data(org_id, "cell-a", 3, "https://cell-a.api.example.com"),
+            Some("cell-a"),
+            Some("https://cell-a.api.example.com"),
+            true,
+        );
+        *store.current_writer_lease.lock().await = Some(DataCellWriterLeaseRow {
+            cell_id: "cell-a".to_string(),
+            fence_token: 1,
+            holder_instance_id: "holder-1".to_string(),
+            service_name: "instantml-data-cell-a".to_string(),
+            revision: "revision-1".to_string(),
+            acquired_at: Utc::now(),
+            heartbeat_at: Utc::now(),
+            expires_at: Utc::now() + ChronoDuration::minutes(1),
+        });
+        *store.current_writer_lease_deadline.lock().await =
+            Some(Instant::now() + StdDuration::from_secs(30));
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    route_version: Some(3),
+                    host: Some("cell-a.api.example.com".to_string()),
+                    api_key_authenticated: true,
+                    write: true,
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    route_version: None,
+                    host: Some("api.example.com".to_string()),
+                    api_key_authenticated: true,
+                    write: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .validate_current_data_cell_route(
+                    &ctx,
+                    DataCellRouteRequest {
+                        route_version: None,
+                        host: Some("instantml-data-cell-a-abc.a.run.app".to_string()),
+                        api_key_authenticated: true,
+                        write: true,
+                    },
+                )
+                .await
+                .unwrap_err()
+                .code(),
+            Some("tenant_route_changed")
+        );
+
+        assert_eq!(
+            store
+                .validate_current_data_cell_route(
+                    &ctx,
+                    DataCellRouteRequest {
+                        route_version: None,
+                        host: Some("cell-a.api.example.com".to_string()),
+                        api_key_authenticated: true,
+                        write: true,
+                    },
+                )
+                .await
+                .unwrap_err()
+                .code(),
+            Some("tenant_route_changed")
+        );
+        assert_eq!(
+            store
+                .validate_current_data_cell_route(
+                    &ctx,
+                    DataCellRouteRequest {
+                        route_version: Some(2),
+                        host: Some("cell-a.api.example.com".to_string()),
+                        api_key_authenticated: true,
+                        write: true,
+                    },
+                )
+                .await
+                .unwrap_err()
+                .code(),
+            Some("tenant_route_changed")
+        );
+        assert_eq!(
+            store
+                .validate_current_data_cell_route(
+                    &ctx,
+                    DataCellRouteRequest {
+                        route_version: Some(3),
+                        host: Some("cell-a.api.example.com".to_string()),
+                        api_key_authenticated: false,
+                        write: true,
+                    },
+                )
+                .await
+                .unwrap_err()
+                .status(),
+            http::StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn default_placement_cell_does_not_make_control_plane_validate_as_data_cell() {
+        let org_id = Uuid::new_v4();
+        let mut store = hosted_routing_store(
+            routing_data(org_id, "cell-b", 1, "https://cell-b.api.example.com"),
+            None,
+            None,
+            false,
+        );
+        store.cell_routing.default_data_cell_id = Some("cell-a".to_string());
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    route_version: None,
+                    host: Some("api.example.com".to_string()),
+                    api_key_authenticated: true,
+                    write: true,
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn current_data_cell_route_validation_preserves_unassigned_route_compatibility() {
+        let org_id = Uuid::new_v4();
+        let mut data = routing_data(org_id, "cell-a", 5, "https://cell-a.api.example.com");
+        data.tenant_routes.get_mut(&org_id).unwrap().cell_id = None;
+        let store = hosted_routing_store(
+            data,
+            Some("cell-a"),
+            Some("https://cell-a.api.example.com"),
+            true,
+        );
+        *store.current_writer_lease.lock().await = Some(DataCellWriterLeaseRow {
+            cell_id: "cell-a".to_string(),
+            fence_token: 1,
+            holder_instance_id: "holder-1".to_string(),
+            service_name: "instantml-data-cell-a".to_string(),
+            revision: "revision-1".to_string(),
+            acquired_at: Utc::now(),
+            heartbeat_at: Utc::now(),
+            expires_at: Utc::now() + ChronoDuration::minutes(1),
+        });
+        *store.current_writer_lease_deadline.lock().await =
+            Some(Instant::now() + StdDuration::from_secs(30));
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    route_version: None,
+                    host: Some("api.example.com".to_string()),
+                    api_key_authenticated: true,
+                    write: true,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store
+                .validate_current_data_cell_route(
+                    &ctx,
+                    DataCellRouteRequest {
+                        route_version: None,
+                        host: Some("cell-a.api.example.com".to_string()),
+                        api_key_authenticated: true,
+                        write: true,
+                    },
+                )
+                .await
+                .unwrap_err()
+                .code(),
+            Some("tenant_route_changed")
+        );
+    }
+
+    #[tokio::test]
+    async fn current_data_cell_route_validation_rejects_wrong_cell_and_missing_lease() {
+        let org_id = Uuid::new_v4();
+        let wrong_cell = hosted_routing_store(
+            routing_data(org_id, "cell-b", 1, "https://cell-b.api.example.com"),
+            Some("cell-a"),
+            Some("https://cell-a.api.example.com"),
+            false,
+        );
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+        assert_eq!(
+            wrong_cell
+                .validate_current_data_cell_route(&ctx, DataCellRouteRequest::default())
+                .await
+                .unwrap_err()
+                .code(),
+            Some("wrong_cell")
+        );
+
+        let missing_lease = hosted_routing_store(
+            routing_data(org_id, "cell-a", 1, "https://cell-a.api.example.com"),
+            Some("cell-a"),
+            Some("https://cell-a.api.example.com"),
+            true,
+        );
+        assert_eq!(
+            missing_lease
+                .validate_current_data_cell_route(
+                    &ctx,
+                    DataCellRouteRequest {
+                        route_version: Some(1),
+                        host: Some("cell-a.api.example.com".to_string()),
+                        api_key_authenticated: true,
+                        write: true,
+                    },
+                )
+                .await
+                .unwrap_err()
+                .code(),
+            Some("cell_writer_unavailable")
+        );
+    }
+
     #[test]
     fn infer_data_cell_region_handles_zone_suffixed_labels() {
         assert_eq!(infer_data_cell_region("us-central1-a"), "us-central1");
         assert_eq!(infer_data_cell_region("free-us-central1-a"), "us-central1");
         assert_eq!(infer_data_cell_region("custom-cell"), "unknown");
+    }
+
+    #[test]
+    fn safe_public_api_base_allows_loopback_only_for_local_environments() {
+        let mut cell = control_data_cell("cell-a", "http://127.0.0.1:8000");
+        cell.environment = "local".to_string();
+        let mut config = crate::config::CellRoutingConfig {
+            environment: "local".to_string(),
+            default_data_cell_id: None,
+            current_data_cell_id: None,
+            register_current_data_cell: false,
+            current_data_cell_public_api_base: None,
+            public_api_base_allowed_suffix: None,
+            writer_lease: None,
+        };
+
+        assert_eq!(
+            safe_public_api_base(&cell, &config).as_deref(),
+            Some("http://127.0.0.1:8000")
+        );
+
+        cell.environment = "prod".to_string();
+        config.environment = "prod".to_string();
+        assert!(safe_public_api_base(&cell, &config).is_none());
     }
 
     #[sqlx::test]

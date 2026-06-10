@@ -10,6 +10,7 @@ pub mod metrics;
 pub mod orgs;
 pub mod platform;
 pub mod reports;
+pub mod routing;
 pub mod runs;
 pub mod usage;
 
@@ -58,6 +59,7 @@ pub(super) use reports::{
     create_report, delete_report, export_report_markdown, get_report, get_report_by_share_token,
     list_org_panels, list_reports, rotate_report_share_token, update_report,
 };
+pub(super) use routing::current_route;
 pub(super) use runs::{
     create_attributes, create_object, create_project, create_run, fork_run, get_metrics, get_run,
     get_run_lineage, list_attributes, list_console_logs, list_object_rows, list_objects,
@@ -170,6 +172,14 @@ mod tests {
             ServicePlaneRole::Data
         ));
         assert!(openapi_path_available_for_plane(
+            "/api/routing/current",
+            ServicePlaneRole::Control
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/routing/current",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
             "/runs",
             ServicePlaneRole::Data
         ));
@@ -222,6 +232,7 @@ mod tests {
             "/api/invitations/accept",
             "/api/admin/overview",
             "/api/admin/data-cells",
+            "/api/routing/current",
             // billing
             "/api/billing/status",
             "/api/billing/checkout",
@@ -384,7 +395,12 @@ mod tests {
             hosted_clickhouse: None,
             cell_routing: crate::config::CellRoutingConfig {
                 environment: "test".to_string(),
+                default_data_cell_id: None,
                 current_data_cell_id: None,
+                register_current_data_cell: false,
+                current_data_cell_public_api_base: None,
+                public_api_base_allowed_suffix: None,
+                writer_lease: None,
             },
             control_database_url: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {

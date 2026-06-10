@@ -1,4 +1,4 @@
-use std::{env, fs, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{env, fs, net::SocketAddr, path::PathBuf, process, time::Duration};
 
 use crate::errors::{AppError, AppResult};
 
@@ -212,7 +212,20 @@ pub struct HostedClickHouseConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CellRoutingConfig {
     pub environment: String,
+    pub default_data_cell_id: Option<String>,
     pub current_data_cell_id: Option<String>,
+    pub register_current_data_cell: bool,
+    pub current_data_cell_public_api_base: Option<String>,
+    pub public_api_base_allowed_suffix: Option<String>,
+    pub writer_lease: Option<DataCellWriterLeaseConfig>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DataCellWriterLeaseConfig {
+    pub holder_instance_id: String,
+    pub service_name: String,
+    pub revision: String,
+    pub ttl: Duration,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -421,15 +434,129 @@ fn cell_routing_config() -> AppResult<CellRoutingConfig> {
         .or_else(|_| env::var("INSTANTML_ENVIRONMENT"))
         .unwrap_or_else(|_| "local".to_string());
     let environment = normalize_cell_label("INSTANTML_DEPLOY_ENV", &environment)?;
-    let current_data_cell_id = env::var("INSTANTML_CELL_ID")
-        .or_else(|_| env::var("INSTANTML_DEFAULT_DATA_CELL_ID"))
+    let explicit_data_cell_id = env::var("INSTANTML_CELL_ID")
         .ok()
         .map(|value| normalize_cell_label("INSTANTML_CELL_ID", &value))
         .transpose()?;
+    let default_data_cell_id = env::var("INSTANTML_DEFAULT_DATA_CELL_ID")
+        .ok()
+        .map(|value| normalize_cell_label("INSTANTML_DEFAULT_DATA_CELL_ID", &value))
+        .transpose()?;
+    let current_data_cell_id = explicit_data_cell_id.clone();
+    let current_data_cell_public_api_base =
+        env_optional_origin("INSTANTML_DATA_CELL_PUBLIC_API_BASE")?;
+    let public_api_base_allowed_suffix =
+        env::var("INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX")
+            .or_else(|_| env::var("INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN"))
+            .or_else(|_| env::var("INSTANTML_PUBLIC_API_DOMAIN"))
+            .ok()
+            .map(|value| {
+                normalize_dns_suffix("INSTANTML_DATA_CELL_PUBLIC_API_BASE_ALLOWED_SUFFIX", &value)
+            })
+            .transpose()?;
+    let writer_lease_requested = env_bool_optional("INSTANTML_DATA_CELL_WRITER_LEASE_ENABLED")?
+        .unwrap_or_else(|| explicit_data_cell_id.is_some());
+    let writer_lease = if writer_lease_requested {
+        let service_name = env::var("K_SERVICE")
+            .or_else(|_| env::var("INSTANTML_CLOUD_RUN_SERVICE_NAME"))
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                explicit_data_cell_id
+                    .as_ref()
+                    .map(|cell| format!("instantml-data-{cell}"))
+            })
+            .ok_or_else(|| {
+                AppError::config(
+                    "INSTANTML_DATA_CELL_WRITER_LEASE_ENABLED requires INSTANTML_CELL_ID",
+                )
+            })?;
+        let revision = env::var("K_REVISION")
+            .or_else(|_| env::var("INSTANTML_CLOUD_RUN_REVISION"))
+            .unwrap_or_else(|_| "local".to_string());
+        let holder_instance_id = env::var("INSTANTML_INSTANCE_ID")
+            .or_else(|_| env::var("HOSTNAME"))
+            .unwrap_or_else(|_| format!("local-{}", process::id()));
+        Some(DataCellWriterLeaseConfig {
+            holder_instance_id: normalize_runtime_label(
+                "INSTANTML_INSTANCE_ID",
+                &holder_instance_id,
+            )?,
+            service_name: normalize_runtime_label("K_SERVICE", &service_name)?,
+            revision: normalize_runtime_label("K_REVISION", &revision)?,
+            ttl: Duration::from_secs(env_u64("INSTANTML_DATA_CELL_WRITER_LEASE_TTL_SECONDS", 30)?),
+        })
+    } else {
+        None
+    };
     Ok(CellRoutingConfig {
         environment,
+        default_data_cell_id,
         current_data_cell_id,
+        register_current_data_cell: explicit_data_cell_id.is_some(),
+        current_data_cell_public_api_base,
+        public_api_base_allowed_suffix,
+        writer_lease,
     })
+}
+
+fn env_optional_origin(key: &'static str) -> AppResult<Option<String>> {
+    env::var(key)
+        .ok()
+        .map(|value| normalize_origin(key, &value))
+        .transpose()
+}
+
+fn normalize_origin(key: &'static str, raw: &str) -> AppResult<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err(AppError::config(format!("{key} must not be empty")));
+    }
+    let url = url::Url::parse(trimmed)
+        .map_err(|err| AppError::config(format!("{key} must be a valid URL: {err}")))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::config(format!("{key} must be an http(s) origin")));
+    }
+    if url.username() != "" || url.password().is_some() {
+        return Err(AppError::config(format!("{key} must not include userinfo")));
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(AppError::config(format!(
+            "{key} must not include query or fragment"
+        )));
+    }
+    if url.path() != "/" && !url.path().is_empty() {
+        return Err(AppError::config(format!("{key} must not include a path")));
+    }
+    let origin = url
+        .origin()
+        .ascii_serialization()
+        .trim_end_matches('/')
+        .to_string();
+    Ok(origin)
+}
+
+fn normalize_dns_suffix(key: &'static str, raw: &str) -> AppResult<String> {
+    let trimmed = raw.trim().trim_start_matches('.').to_ascii_lowercase();
+    if trimmed.is_empty()
+        || trimmed.contains("://")
+        || trimmed.contains('/')
+        || trimmed.contains(':')
+        || !trimmed.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
+        })
+    {
+        return Err(AppError::config(format!("{key} must be a DNS suffix")));
+    }
+    Ok(trimmed)
+}
+
+fn normalize_runtime_label(key: &'static str, raw: &str) -> AppResult<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > 256 || trimmed.bytes().any(|byte| byte < 0x20) {
+        return Err(AppError::config(format!("{key} must be a non-empty label")));
+    }
+    Ok(trimmed.to_string())
 }
 
 fn normalize_cell_label(key: &'static str, raw: &str) -> AppResult<String> {
@@ -949,6 +1076,9 @@ fn env_origin_list(key: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static CELL_ROUTING_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn hosted_clickhouse_is_disabled_by_default() {
@@ -1034,19 +1164,48 @@ mod tests {
 
     #[test]
     fn cell_routing_prefers_per_service_cell_id_over_default() {
+        let _guard = CELL_ROUTING_ENV_LOCK.lock().unwrap();
         std::env::set_var("INSTANTML_DEPLOY_ENV", "Prod");
         std::env::set_var("INSTANTML_DEFAULT_DATA_CELL_ID", "us-central1-a");
         std::env::set_var("INSTANTML_CELL_ID", "us-central1-b");
+        std::env::remove_var("INSTANTML_DATA_CELL_WRITER_LEASE_ENABLED");
 
         let config = cell_routing_config().unwrap();
         assert_eq!(config.environment, "prod");
         assert_eq!(
+            config.default_data_cell_id.as_deref(),
+            Some("us-central1-a")
+        );
+        assert_eq!(
             config.current_data_cell_id.as_deref(),
             Some("us-central1-b")
         );
+        assert!(config.register_current_data_cell);
+        assert!(config.writer_lease.is_some());
 
         std::env::remove_var("INSTANTML_DEPLOY_ENV");
         std::env::remove_var("INSTANTML_DEFAULT_DATA_CELL_ID");
         std::env::remove_var("INSTANTML_CELL_ID");
+        std::env::remove_var("INSTANTML_DATA_CELL_WRITER_LEASE_ENABLED");
+    }
+
+    #[test]
+    fn default_data_cell_does_not_register_control_plane_as_data_cell() {
+        let _guard = CELL_ROUTING_ENV_LOCK.lock().unwrap();
+        std::env::set_var("INSTANTML_DEFAULT_DATA_CELL_ID", "us-central1-a");
+        std::env::remove_var("INSTANTML_CELL_ID");
+        std::env::remove_var("INSTANTML_DATA_CELL_WRITER_LEASE_ENABLED");
+
+        let config = cell_routing_config().unwrap();
+
+        assert_eq!(
+            config.default_data_cell_id.as_deref(),
+            Some("us-central1-a")
+        );
+        assert_eq!(config.current_data_cell_id.as_deref(), None);
+        assert!(!config.register_current_data_cell);
+        assert!(config.writer_lease.is_none());
+
+        std::env::remove_var("INSTANTML_DEFAULT_DATA_CELL_ID");
     }
 }

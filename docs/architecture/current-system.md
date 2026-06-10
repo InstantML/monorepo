@@ -110,14 +110,14 @@ Data plane -> self-hosted GCP ClickHouse org operational layer + ClickHouse metr
 Rust API -> Cloudflare R2 private per-org buckets
 ```
 
-For the hosted path, do not add a central hot-path application proxy for all SDK/browser/metric/artifact traffic. Use a global control-plane responsibility for auth, org lookup, account state, and tenant routes, then route to data-plane cells. The Rust binary can be started as `INSTANTML_SERVICE_PLANE=combined`, `control`, or `data`; the deploy helper can launch either the combined service or split control/data Cloud Run services. Start with dedicated single-active-instance customer cells when isolation is needed, and start shared multi-instance cells only after the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are closed. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
+For the hosted path, do not add a central hot-path application proxy for all SDK/browser/metric/artifact traffic. Use a global control-plane responsibility for auth, org lookup, account state, and tenant routes, then route to data-plane cells. The Rust binary can be started as `INSTANTML_SERVICE_PLANE=combined`, `control`, or `data`; the deploy helper can launch either the combined service or split control/data Cloud Run services. API-key SDK clients can discover the current ready data cell through `GET /api/routing/current` and direct mutating writes to that cell with `X-InstantML-Route-Version`; browser/session direct-to-cell routing remains deferred. Start with dedicated single-active-instance customer cells when isolation is needed, and start shared multi-instance cells only after the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are closed. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
 
 The control-plane Postgres schema now includes an operator-seeded `data_cells`
-registry, tenant-route placement metadata, route versions, and route audit
-events. New hosted routes can be annotated with the configured current cell
-when that registry row is open, healthy, recently backed up, and under
-capacity. Public SDK/browser route discovery and shared-cell multi-writer
-admission remain future gates.
+registry, tenant-route placement metadata, route versions, route audit events,
+and data-cell writer leases. New hosted routes can be annotated with the
+configured current cell when that registry row is open, healthy, recently
+backed up, and under capacity. Public SDK route discovery is live for API-key
+writes; shared-cell multi-writer admission remains a future gate.
 
 Internal hosted first slice:
 
@@ -149,13 +149,16 @@ Split Cloud Run launch wiring:
 Public HTTPS API URL / managed load balancer
   -> Cloud Run instantml-control, INSTANTML_SERVICE_PLANE=control
   -> Cloud Run instantml-data-<region>-a, INSTANTML_SERVICE_PLANE=data
+SDK mutating writes
+  -> GET /api/routing/current on api.instantml.ai
+  -> HTTPS cell-<cell>.api.instantml.ai with X-InstantML-Route-Version
 
 Both services -> Google Cloud VPC/private ClickHouse endpoint
 Both services -> ClickHouse User Data control table
 Data service  -> routed tenant ClickHouse database
 ```
 
-The default deploy command is now `npm run deploy:cloud-run`, which launches the production split control/data topology. `npm run deploy:cloud-run:multi` is the explicit split alias, `npm run deploy:cloud-run:single` is the legacy combined-service path, and `npm run deploy:cloud-run:staging` deploys isolated staging Cloud Run services behind `staging.api.instantml.ai`. Combined, control, and data targets default to manual scaling with one active instance until their multi-process freshness and uniqueness gates are complete. Managed Clerk deploys require a frontend publishable key from the same Clerk application as the backend secret; the helper derives `CLERK_JWT_ISSUER`, validates the secret against Clerk domain metadata, and Cloud Run exposes the issuer through `/api/auth/config` for frontend mismatch checks. Cloud Run startup probes use HTTP `/readyz`, which only passes after ClickHouse is reachable and the process-local control projection has loaded. Data-plane API-key/session auth misses force one control-record refresh and retry so fresh control-plane writes become visible without querying User Data on every successful hot-path request. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` to create the managed HTTPS public router; HTTP-only public IP routing is rejected.
+The default deploy command is now `npm run deploy:cloud-run`, which launches the production split control/data topology. `npm run deploy:cloud-run:multi` is the explicit split alias, `npm run deploy:cloud-run:single` is the legacy combined-service path, and `npm run deploy:cloud-run:staging` deploys isolated staging Cloud Run services behind `staging.api.instantml.ai`. Operators can set `INSTANTML_CLOUD_RUN_DATA_CELLS` or repeated `--data-cell=<id>` flags to deploy multiple single-writer data-cell services from the same image. Combined, control, and data targets default to manual scaling with one active instance until their multi-process freshness and uniqueness gates are complete. Managed Clerk deploys require a frontend publishable key from the same Clerk application as the backend secret; the helper derives `CLERK_JWT_ISSUER`, validates the secret against Clerk domain metadata, and Cloud Run exposes the issuer through `/api/auth/config` for frontend mismatch checks. Cloud Run startup probes use HTTP `/readyz`, which only passes after ClickHouse is reachable, the process-local control projection has loaded, and explicit data cells hold their writer lease. Data-plane API-key/session auth misses force one control-record refresh and retry so fresh control-plane writes become visible without querying User Data on every successful hot-path request. Set `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN` to create the managed HTTPS public router; HTTP-only public IP routing is rejected. The router keeps the apex API host for compatibility and adds `cell-<cell-slug>.<domain>` hostnames for SDK direct writes.
 
 Hosted observability has two log sources:
 
@@ -207,7 +210,7 @@ The ClickHouse schema under `apps/rust-server/clickhouse/0001_initial.sql` owns:
 ## Operational Commands
 
 - `npm run dev:api`: starts or reuses local ClickHouse, applies the ClickHouse schema, then serves the Rust API.
-- `npm run deploy:cloud-run`: builds one Rust image and deploys production split control/data Cloud Run services with role-specific environment. Control and data remain manual single-instance by default; use this as launch wiring, not as permission to run shared cells with multiple active writers. With `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and a router domain, it can also create the managed HTTPS public router.
+- `npm run deploy:cloud-run`: builds one Rust image and deploys production split control/data Cloud Run services with role-specific environment. Control and data remain manual single-instance by default; use this as launch wiring, not as permission to run shared cells with multiple active writers. With `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1` and a router domain, it can also create the managed HTTPS public router and per-cell SDK hostnames.
 - `npm run deploy:cloud-run:staging`: deploys `instantml-staging-control` and `instantml-staging-data-us-central1-a`, creates/reconciles the `staging.api.instantml.ai` HTTPS router, uses staging-scoped Secret Manager names, and binds a staging Cloud SQL control database.
 - `npm run deploy:cloud-run:single`: deploys the Rust API to the internal manual single-instance combined Cloud Run service, syncs secrets, configures VPC/static egress, and writes the hosted API URL to local frontend env files. The active hosted storage path is self-hosted GCP ClickHouse; legacy ClickHouse Cloud allowlist updates are only relevant when the optional provider-backed path is explicitly configured.
 - `npm run test:contract`, `npm run test:rust:sdk`, and `npm run test:ui`: run through `tools/rust-service-smoke.mjs`, which creates disposable ClickHouse state, starts Rust, runs the smoke, and cleans up.

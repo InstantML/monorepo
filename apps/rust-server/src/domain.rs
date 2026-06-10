@@ -823,6 +823,27 @@ pub struct TenantRouteEventRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DataCellWriterLeaseRow {
+    pub cell_id: String,
+    pub fence_token: i64,
+    pub holder_instance_id: String,
+    pub service_name: String,
+    pub revision: String,
+    pub acquired_at: DateTime<Utc>,
+    pub heartbeat_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct RouteDiscoveryResponse {
+    pub org_id: Uuid,
+    pub cell_id: String,
+    pub route_version: i64,
+    pub data_api_base: String,
+    pub expires_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct AdminDataCellsResponse {
     pub schema_version: i32,

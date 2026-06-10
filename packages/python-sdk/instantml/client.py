@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from . import routing
 from .async_queue import (
     AsyncQueueRepository,
     DEFAULT_PRODUCER_BATCH_BYTES,
@@ -83,7 +84,7 @@ from .serialization import (
     _validate_optional_json_object,
 )
 from .credentials import _check_credentials_or_raise, _resolve_api_key as _resolve_api_key_from_env
-from .http import _error_message, _offline_path, _spool_event
+from .http import _error_details, _error_message, _offline_path, _spool_event
 from .shadow import ShadowWandb, build_shadow as _build_shadow_wandb
 from .source import (
     SourceTracking,
@@ -128,12 +129,23 @@ def _default_base_url() -> str:
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
 
 
+class _RequestFailure(Exception):
+    def __init__(self, message: str, code: str | None, status: int | None, cause: BaseException) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.status = status
+        self.cause = cause
+
+
 @dataclass(frozen=True)
 class Client:
     base_url: str = field(default_factory=_default_base_url)
     timeout: float = 10.0
     offline_dir: str | None = None
     api_key: str | None = None
+    _route_cache: dict[str, routing.RouteInfo] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _route_lock: Any = field(default_factory=threading.RLock, init=False, repr=False, compare=False)
 
     def init(
         self,
@@ -301,12 +313,82 @@ class Client:
         body: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        url = self.base_url.rstrip("/") + path
+        api_key = self._resolve_api_key()
+        if api_key and routing.should_direct_route(method, path):
+            route = routing.resolve_route(
+                self._route_cache,
+                self._route_lock,
+                base_url=self.base_url,
+                api_key=api_key,
+                timeout=self.timeout,
+            )
+            if route is not None:
+                try:
+                    return self._request_once(
+                        method,
+                        path,
+                        body,
+                        idempotency_key=idempotency_key,
+                        api_key=api_key,
+                        base_url=route.data_api_base,
+                        route=route,
+                    )
+                except _RequestFailure as failure:
+                    if routing.should_refresh_route(failure.code, failure.status):
+                        routing.clear_route(self._route_cache, self._route_lock, base_url=self.base_url, api_key=api_key)
+                        refreshed = routing.resolve_route(
+                            self._route_cache,
+                            self._route_lock,
+                            base_url=self.base_url,
+                            api_key=api_key,
+                            timeout=self.timeout,
+                            force=True,
+                        )
+                        if refreshed is not None:
+                            try:
+                                return self._request_once(
+                                    method,
+                                    path,
+                                    body,
+                                    idempotency_key=idempotency_key,
+                                    api_key=api_key,
+                                    base_url=refreshed.data_api_base,
+                                    route=refreshed,
+                                )
+                            except _RequestFailure as retry_failure:
+                                _raise_request_failure(method, path, retry_failure)
+                        _raise_request_failure(method, path, failure)
+                    _raise_request_failure(method, path, failure)
+        try:
+            return self._request_once(
+                method,
+                path,
+                body,
+                idempotency_key=idempotency_key,
+                api_key=api_key,
+                base_url=self.base_url,
+                route=None,
+            )
+        except _RequestFailure as failure:
+            _raise_request_failure(method, path, failure)
+
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None,
+        *,
+        idempotency_key: str | None,
+        api_key: str | None,
+        base_url: str,
+        route: routing.RouteInfo | None,
+    ) -> dict[str, Any]:
+        url = base_url.rstrip("/") + path
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        api_key = self._resolve_api_key()
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        headers.update(routing.route_headers(route))
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
         payload = ""
@@ -325,8 +407,8 @@ class Client:
                 if exc.code == 429 and _is_retryable_rate_limit(exc) and attempt < _RATE_LIMIT_RETRY_ATTEMPTS:
                     time.sleep(_rate_limit_retry_delay(exc, attempt))
                     continue
-                message = _error_message(exc)
-                raise InstantMLError(f"{method} {path} failed: {message}") from exc
+                message, code = _error_details(exc)
+                raise _RequestFailure(message, code, int(exc.code), exc) from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise InstantMLError(f"{method} {path} failed: {exc}") from exc
         try:
@@ -336,6 +418,10 @@ class Client:
         if not isinstance(decoded, dict):
             raise InstantMLError("server returned a non-object JSON payload")
         return decoded
+
+
+def _raise_request_failure(method: str, path: str, failure: _RequestFailure) -> None:
+    raise InstantMLError(f"{method} {path} failed: {failure.message}") from failure.cause
 
 
 def _rate_limit_retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
