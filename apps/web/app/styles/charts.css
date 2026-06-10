@@ -969,8 +969,23 @@ small {
 .metric-panel .chart-legend,
 .metric-panel .chart-range,
 .metric-panel .chart-range-row,
-.metric-panel .chart-tooltip-slot {
+.metric-panel .chart-tooltip-slot:not(.is-active) {
   display: none;
+}
+
+.metric-panel .chart-tooltip-slot.is-active {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 48px;
+  z-index: 7;
+  display: block;
+  margin: 0;
+}
+
+.metric-panel .chart-tooltip-slot.is-active .chart-tooltip {
+  max-height: min(176px, calc(100% - 16px));
+  overflow: hidden;
 }
 
 .metric-panel .metric-chart {

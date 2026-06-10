@@ -476,7 +476,7 @@ export function MetricChart({
           ))}
           <line className="axis" x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} />
           <line className="axis" x1={padding} x2={padding} y1={padding} y2={height - padding} />
-          <text className="axis-label axis-label-x" x={width - padding} y={height - padding - 8} textAnchor="end">{xMode === "time" ? "Time" : "Step"}</text>
+          <text className="axis-label axis-label-x" x={width - padding} y={height - 8} textAnchor="end">{xMode === "time" ? "Time" : "Step"}</text>
           {visibleHover ? <line className="hover-guide" x1={visibleHover.point.x} x2={visibleHover.point.x} y1={padding} y2={height - padding} /> : null}
           {!denseChart ? normalizedSeries.map((item, index) => {
             const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
