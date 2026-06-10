@@ -72,9 +72,11 @@ export function DashboardNav({
       className={`tabs ${pinned ? "pinned" : ""}`}
       aria-hidden={hiddenCompactNav ? true : undefined}
       aria-label="Dashboard sections"
-      onMouseEnter={() => onAutoOpenChange(true)}
-      onMouseLeave={() => onAutoOpenChange(false)}
-      onFocus={() => onAutoOpenChange(true)}
+      onFocus={(event) => {
+        // Expand for keyboard focus only. Mouse clicks also focus the anchors,
+        // and expanding mid-click shifts the target before mouseup lands.
+        if (event.target instanceof HTMLElement && event.target.matches(":focus-visible")) onAutoOpenChange(true);
+      }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onAutoOpenChange(false); }}
       ref={navRef}
     >
@@ -99,6 +101,7 @@ export function DashboardNav({
                   key={tab.id}
                   onClick={(event) => handleTabSelect(event, tab.id)}
                   tabIndex={compactTabIndex}
+                  title={pinned ? undefined : tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
                 </a>

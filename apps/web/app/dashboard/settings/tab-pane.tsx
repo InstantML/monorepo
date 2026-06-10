@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { AlertTriangle, Copy, CreditCard, ExternalLink, Gauge, RefreshCw, Settings, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
@@ -26,6 +29,14 @@ type BillingStatus = {
 const RETRY_PLAN_LABELS = {
   pro: "Retry Pro",
   premium: "Retry Premium",
+};
+
+// Hosted beta list prices; shown in the in-app confirmation step before any
+// redirect to Stripe checkout.
+const PLAN_CONFIRM_SUMMARY: Record<"free" | "pro" | "premium", { price: string; note: string }> = {
+  free: { price: "$0", note: "The downgrade applies at the next billing boundary; nothing is charged." },
+  pro: { price: "$199/month", note: "Nothing is charged yet — you'll review the full price and confirm payment on Stripe's secure checkout." },
+  premium: { price: "$699/month", note: "Nothing is charged yet — you'll review the full price and confirm payment on Stripe's secure checkout." },
 };
 
 function formatInviteDate(value: string) {
@@ -156,6 +167,8 @@ export function SettingsTabPane({
   xMode,
   billingStatus,
 }: Props) {
+  // Plan changes confirm in-app before any Stripe redirect.
+  const [pendingPlan, setPendingPlan] = useState<"free" | "pro" | "premium" | null>(null);
   const adminOnlyValue = "Available to admins";
   const usageUnavailableValue = "Unavailable";
   const billingState = canManageOrg ? billingStatus?.access_state ?? "free_active" : adminOnlyValue;
@@ -270,10 +283,35 @@ export function SettingsTabPane({
             {canManageOrg ? (
               <div className="admin-form-row billing-actions">
                 <button className="secondary compact-button" disabled={!canOpenBillingPortal} onClick={onOpenBillingPortal} title={portalTitle} type="button"><CreditCard size={14} /> Open portal</button>
-                <button className="secondary compact-button" disabled={planButtonDisabled("pro")} onClick={() => onChangeBillingPlan("pro")} title={planButtonTitle("pro")} type="button">{planButtonLabel("pro")}</button>
-                <button className="secondary compact-button" disabled={planButtonDisabled("premium")} onClick={() => onChangeBillingPlan("premium")} title={planButtonTitle("premium")} type="button">{planButtonLabel("premium")}</button>
-                <button className="secondary compact-button" disabled={planButtonDisabled("free")} onClick={() => onChangeBillingPlan("free")} title={planButtonTitle("free")} type="button">{planButtonLabel("free")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("pro")} onClick={() => setPendingPlan("pro")} title={planButtonTitle("pro")} type="button">{planButtonLabel("pro")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("premium")} onClick={() => setPendingPlan("premium")} title={planButtonTitle("premium")} type="button">{planButtonLabel("premium")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("free")} onClick={() => setPendingPlan("free")} title={planButtonTitle("free")} type="button">{planButtonLabel("free")}</button>
                 <button className="ghost compact-button billing-cancel" disabled={!canCancelBilling} onClick={onCancelBilling} title={cancelTitle} type="button">Cancel subscription</button>
+              </div>
+            ) : null}
+            {canManageOrg && pendingPlan ? (
+              <div className="billing-confirm" role="region" aria-label="Confirm plan change">
+                <strong>
+                  {pendingPlan === "free"
+                    ? `Downgrade to ${planDisplayName(pendingPlan)}`
+                    : `Change plan to ${planDisplayName(pendingPlan)} · ${PLAN_CONFIRM_SUMMARY[pendingPlan].price}`}
+                </strong>
+                <p>{PLAN_CONFIRM_SUMMARY[pendingPlan].note}</p>
+                <div className="admin-form-row">
+                  <button
+                    className="primary-button compact-button"
+                    disabled={adminBusy}
+                    onClick={() => {
+                      const plan = pendingPlan;
+                      setPendingPlan(null);
+                      onChangeBillingPlan(plan);
+                    }}
+                    type="button"
+                  >
+                    {pendingPlan === "free" ? "Confirm downgrade" : "Continue to Stripe checkout"}
+                  </button>
+                  <button className="ghost compact-button" disabled={adminBusy} onClick={() => setPendingPlan(null)} type="button">Keep current plan</button>
+                </div>
               </div>
             ) : null}
           </div>

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Run Detail redesign</title>
+<style>
+  :root{
+    --ink:#0E1116; --bolt:#1FB877; --deep:#0A4D33;
+    --bg:#0b0e13; --surface:#11151c; --surface-2:#171c25; --surface-3:#1d2330;
+    --line:#222936; --line-soft:#1a202b;
+    --text:#e8edf4; --text-2:#aeb9c8; --muted:#7e8b9d; --faint:#5e6b7d;
+    --accent:#1FB877; --accent-soft:rgba(31,184,119,.12); --accent-line:rgba(31,184,119,.32);
+    --amber:#d9a23a; --coral:#e0635c; --blue:#5d89dd;
+    --radius:6px; --radius-lg:10px; font-size:14px;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--text);font:400 1rem/1.45 "Inter",system-ui,sans-serif}
+  .mono{font-family:ui-monospace,monospace}
+  .page{max-width:1180px;margin:0 auto;padding:20px 24px}
+  .crumb{color:var(--muted);font-size:.88rem;margin-bottom:10px}
+  .crumb a{color:var(--text-2);text-decoration:none}
+  .head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .head h1{font-size:1.3rem;font-weight:650;font-family:ui-monospace,monospace}
+  .st{display:inline-flex;align-items:center;gap:6px;font-size:.85rem;color:var(--text-2)}
+  .st .d{width:8px;height:8px;border-radius:50%;background:var(--bolt)}
+  .tag{font-size:.76rem;background:var(--surface-3);border-radius:4px;padding:2px 8px;color:var(--text-2)}
+  .head .spacer{flex:1}
+  .btn{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);color:var(--text-2);padding:6px 11px;font-size:.88rem;cursor:pointer}
+  .btn.primary{background:var(--bolt);border-color:var(--bolt);color:#06281a;font-weight:600}
+  .tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:14px 0 0;font-size:.93rem}
+  .tabs a{color:var(--muted);text-decoration:none;padding:8px 2px;border-bottom:2px solid transparent}
+  .tabs a.on{color:var(--text);border-color:var(--bolt);font-weight:600}
+
+  /* Upload-health is a banner state, not a metric row */
+  .banner{display:flex;gap:10px;align-items:center;background:rgba(217,162,58,.08);border:1px solid rgba(217,162,58,.4);border-radius:var(--radius-lg);padding:10px 14px;margin:16px 0;font-size:.9rem}
+  .banner b{color:#f3cf8a}
+  .banner .mono{color:var(--text-2)}
+  .banner .spacer{flex:1}
+
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;margin-top:16px}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px;min-width:0}
+  .card h2{font-size:.95rem;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .card h2 .n{color:var(--faint);font-weight:400;font-size:.8rem}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .stat{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:var(--radius);padding:10px 12px}
+  .stat .l{font-size:.7rem;letter-spacing:.08em;color:var(--faint)}
+  .stat .v{font-size:1.15rem;font-weight:650;font-family:ui-monospace,monospace;margin-top:2px}
+  .stat .s{font-size:.74rem;color:var(--muted)}
+
+  table{width:100%;border-collapse:collapse;font-size:.88rem}
+  th{text-align:left;font-weight:500;color:var(--muted);font-size:.76rem;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:7px 8px;border-bottom:1px solid var(--line-soft)}
+  .num{font-family:ui-monospace,monospace;text-align:right}
+  th.num{text-align:right}
+
+  /* Metadata list: wraps, middle-truncates, always copyable. Never overflows. */
+  .kv{display:flex;flex-direction:column;gap:2px}
+  .kvrow{display:grid;grid-template-columns:96px minmax(0,1fr) 26px;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--radius)}
+  .kvrow:hover{background:var(--surface-2)}
+  .kvrow .k{color:var(--muted);font-size:.82rem}
+  .kvrow .v{font-family:ui-monospace,monospace;font-size:.84rem;overflow-wrap:anywhere;color:var(--text-2)}
+  .kvrow .v.trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .copy{border:none;background:none;color:var(--faint);cursor:pointer;font-size:.85rem;opacity:0;transition:opacity .12s}
+  .kvrow:hover .copy{opacity:1}
+  .kvempty{padding:12px;border:1px dashed var(--line);border-radius:var(--radius);color:var(--muted);font-size:.84rem}
+  .kvempty code{display:block;background:var(--surface-2);border-radius:4px;padding:8px 10px;margin-top:8px;font-size:.8rem;color:#bdebd6;overflow-x:auto}
+
+  .chart{height:110px;position:relative;margin-top:4px}
+  .chart svg{position:absolute;inset:0;width:100%;height:100%}
+  .syslabel{font-size:.76rem;color:var(--faint);font-family:ui-monospace,monospace}
+  .timeline{display:flex;flex-direction:column;gap:0}
+  .tl{display:grid;grid-template-columns:14px 1fr auto;gap:10px;padding:7px 0;align-items:baseline}
+  .tl .d{width:8px;height:8px;border-radius:50%;background:var(--blue);align-self:center}
+  .tl .d.ok{background:var(--bolt)}
+  .tl .t{font-size:.8rem;color:var(--muted);font-family:ui-monospace,monospace;white-space:nowrap}
+  .note{margin-top:16px;padding:10px 12px;border:1px dashed var(--line);border-radius:var(--radius-lg);color:var(--muted);font-size:.83rem;max-width:78ch}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="crumb"><a href="#">iris-classification</a> / <a href="#">Runs</a> / rank-insights-03</div>
+  <div class="head">
+    <h1>rank-insights-03</h1>
+    <span class="st"><span class="d"></span>Finished · 71s</span>
+    <span class="tag">rank-demo</span><span class="tag">wide</span>
+    <span class="spacer"></span>
+    <button class="btn">Fork from checkpoint</button>
+    <button class="btn">Resume code</button>
+    <button class="btn primary">Open in Compare</button>
+  </div>
+  <div class="tabs">
+    <a class="on" href="#">Summary</a><a href="#">Data</a><a href="#">Logs</a><a href="#">Files</a><a href="#">System</a><a href="#">Graph</a>
+  </div>
+
+  <!-- Honest data state: surfaced as a banner with an action, not a unix-timestamp metric row -->
+  <div class="banner">
+    ⚠ <span><b>Metrics incomplete.</b> 480 rank-metric rows from this run are still on the producer machine (upload timed out at finish).</span>
+    <span class="spacer"></span>
+    <span class="mono">instantml-uploader --recover</span>
+    <button class="btn">Copy</button>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <div class="card">
+        <div class="stats">
+          <!-- LATEST/BEST track the run's own objective, never a cross-project default -->
+          <div class="stat"><div class="l">OBJECTIVE</div><div class="v">eval/accuracy</div><div class="s">run objective · goal ↑</div></div>
+          <div class="stat"><div class="l">BEST</div><div class="v">0.858</div><div class="s">step 59</div></div>
+          <div class="stat"><div class="l">LATEST</div><div class="v">0.858</div><div class="s">step 59</div></div>
+          <div class="stat"><div class="l">METRICS · ARTIFACTS</div><div class="v">13 · 0</div><div class="s">logged keys · files</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Metric summary <span class="n">user metrics only — system/* live in the System tab</span></h2>
+        <table>
+          <thead><tr><th>Metric</th><th class="num">Latest</th><th class="num">Best</th><th class="num">Mean</th><th class="num">Step</th></tr></thead>
+          <tbody>
+            <tr><td>eval/accuracy</td><td class="num">0.858</td><td class="num">0.858</td><td class="num">0.689</td><td class="num">59</td></tr>
+            <tr><td>eval/auc</td><td class="num">0.903</td><td class="num">0.903</td><td class="num">0.734</td><td class="num">59</td></tr>
+            <tr><td>eval/f1</td><td class="num">0.823</td><td class="num">0.823</td><td class="num">0.654</td><td class="num">59</td></tr>
+            <tr><td>train/loss</td><td class="num">0.412</td><td class="num">0.412</td><td class="num">0.731</td><td class="num">59</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>System <span class="n">sampled every 10s by the SDK</span></h2>
+        <div class="syslabel">gpu/utilization · gpu/memory · cpu</div>
+        <div class="chart">
+          <svg viewBox="0 0 560 110" preserveAspectRatio="none">
+            <line x1="0" y1="95" x2="560" y2="95" stroke="#222936"/>
+            <path d="M0,60 C40,30 80,42 120,35 C200,22 260,40 340,30 C420,22 500,34 560,28" fill="none" stroke="#1FB877" stroke-width="1.5"/>
+            <path d="M0,80 C60,70 120,72 180,66 C260,60 340,62 420,58 C480,55 530,56 560,54" fill="none" stroke="#5d89dd" stroke-width="1.5"/>
+            <path d="M0,88 C80,84 160,86 240,82 C320,80 420,82 560,78" fill="none" stroke="#d9a23a" stroke-width="1.5"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <h2>Source</h2>
+        <div class="kv">
+          <div class="kvrow"><span class="k">Commit</span><span class="v trunc" title="ab39abca58e1136e166158c9437eab046bd0134f">ab39abca…bd0134f</span><button class="copy" title="Copy full value">⧉</button></div>
+          <div class="kvrow"><span class="k">Dirty</span><span class="v">no</span><span></span></div>
+          <div class="kvrow"><span class="k">Python</span><span class="v">3.12.4</span><button class="copy">⧉</button></div>
+          <div class="kvrow"><span class="k">Platform</span><span class="v">macOS-15.6.1-arm64-arm-64bit</span><button class="copy">⧉</button></div>
+          <div class="kvrow"><span class="k">Host</span><span class="v">not logged</span><span></span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Reproducibility</h2>
+        <!-- One teaching empty state instead of five empty labeled rows -->
+        <div class="kvempty">
+          Nothing logged yet. Record algorithm, dataset, and seed with:
+          <code>run = instantml.init(metadata={"algorithm": "...", "dataset": "...", "seed": 17})</code>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Timeline</h2>
+        <div class="timeline">
+          <div class="tl"><span class="d"></span><span>Created</span><span class="t">Jun 10, 07:44:05</span></div>
+          <div class="tl"><span class="d"></span><span>Started · rank-insights-research</span><span class="t">Jun 10, 07:44:06</span></div>
+          <div class="tl"><span class="d ok"></span><span>Best eval/accuracy · step 59</span><span class="t">Jun 10, 07:45:12</span></div>
+          <div class="tl"><span class="d ok"></span><span>Finished · 71s</span><span class="t">Jun 10, 07:45:17</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    Changes from today’s Run Detail: (1) metadata values wrap or middle-truncate inside the column with copy-on-hover — nothing clips at the viewport edge; (2) LATEST/BEST use the run’s own objective instead of the workspace default metric (no more “-”); (3) upload health is a banner with a recovery action, not a 1,781,077,552-second metric row; (4) system/* series are charts on the System tab and excluded from the metric summary; (5) Reproducibility teaches the SDK call when empty; (6) timeline timestamps never truncate.
+  </div>
+</div>
+</body>
+</html>

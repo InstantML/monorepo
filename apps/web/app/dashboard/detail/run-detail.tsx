@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, GitFork, Server, Star, Tag, X } from "lucide-react";
 
 import { buildCheckpointResumeCode, checkpointStep, defaultForkRunName } from "../../../src/checkpoints.js";
-import { durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
+import { durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone, uploadHealthForRun } from "../../../src/state.js";
 import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
@@ -280,6 +280,7 @@ export function RunDetail({
   }) {
   if (!run) return <div className="empty">No run selected.</div>;
   const chartRuns = selectedRuns?.length ? selectedRuns : [run];
+  const uploadHealth = uploadHealthForRun(run);
   const commit = metadataScalar(run.metadata, "git_commit")
     ?? metadataScalar(run.metadata, "commit")
     ?? nestedMetadataScalar(run.metadata, ["_rlobs", "source", "git", "commit"]);
@@ -289,18 +290,24 @@ export function RunDetail({
   const entrypoint = nestedMetadataScalar(run.metadata, ["_rlobs", "source", "entrypoint"]);
   const dirtyLabel = gitDirty === true ? "yes" : gitDirty === false ? "no" : gitDirtyUnknown === true ? "unknown" : "-";
   const gitLabel = gitAvailable === false ? "unavailable" : gitAvailable === true || commit ? "available" : "-";
-  const sourceRows = [
-    ["Start time", formatRunTime(run.started_at ?? run.created_at)],
-    ["End time", run.finished_at ? formatRunTime(run.finished_at) : "-"],
-    ["Duration", durationLabel(run)],
-    ["Entry point", compactValue(entrypoint ?? "-")],
-    ["Git", compactValue(gitLabel)],
-    ["Host", compactValue(run.metadata.hostname ?? run.metadata.host ?? "-")],
-    ["PID", compactValue(run.metadata.pid ?? "-")],
-    ["Commit", compactValue(commit ?? "-")],
-    ["Dirty", compactValue(dirtyLabel)],
-    ["Python", compactValue(metadataScalar(run.metadata, "python") ?? "-")],
-    ["Platform", compactValue(metadataScalar(run.metadata, "platform") ?? "-")],
+  const hostValue = run.metadata.hostname ?? run.metadata.host;
+  const pythonValue = metadataScalar(run.metadata, "python");
+  const platformValue = metadataScalar(run.metadata, "platform");
+  const copyable = (value: unknown) => (value === null || value === undefined ? undefined : String(value));
+  // `copy` carries the full untruncated value: it becomes the hover title and
+  // a one-click copy so long hashes/paths never need to render fully.
+  const sourceRows: Array<{ label: string; value: string; copy?: string }> = [
+    { label: "Start time", value: formatRunTime(run.started_at ?? run.created_at) },
+    { label: "End time", value: run.finished_at ? formatRunTime(run.finished_at) : "-" },
+    { label: "Duration", value: durationLabel(run) },
+    { label: "Entry point", value: compactValue(entrypoint ?? "-"), copy: copyable(entrypoint) },
+    { label: "Git", value: compactValue(gitLabel) },
+    { label: "Host", value: compactValue(hostValue ?? "-"), copy: copyable(hostValue) },
+    { label: "PID", value: compactValue(run.metadata.pid ?? "-") },
+    { label: "Commit", value: compactValue(commit ?? "-"), copy: copyable(commit) },
+    { label: "Dirty", value: compactValue(dirtyLabel) },
+    { label: "Python", value: compactValue(pythonValue ?? "-"), copy: copyable(pythonValue) },
+    { label: "Platform", value: compactValue(platformValue ?? "-"), copy: copyable(platformValue) },
   ];
   const artifactRows = artifacts.slice(0, 4);
   const artifactCount = artifactCountForRun(run, artifacts.length);
@@ -331,6 +338,12 @@ export function RunDetail({
         </header>
       ) : null}
       <RunMetadataEditor compact onSave={onRunMetadataSave} run={run} title="Run tags and notes" />
+      {uploadHealth.state === "incomplete" || uploadHealth.state === "errors" || uploadHealth.state === "stale" ? (
+        <div className={`run-data-banner ${uploadHealth.tone}`} role="status">
+          <strong>{uploadHealth.state === "stale" ? "Upload stalled." : "Metrics may be incomplete."}</strong>
+          <span>{uploadHealth.detail}</span>
+        </div>
+      ) : null}
       {!workspaceSummary ? (
         <section className="detail-section chart-selection-section">
           <h3><Activity size={15} /> Chart selection</h3>
@@ -404,7 +417,24 @@ export function RunDetail({
           </section>
           <section className="detail-section">
             <h3><Server size={15} /> Source</h3>
-            {sourceRows.map(([label, value]) => <div className="detail-row" key={label}><span>{label}</span><strong>{value}</strong></div>)}
+            {sourceRows.map(({ label, value, copy }) => (
+              <div className="detail-row" key={label}>
+                <span>{label}</span>
+                <strong className="detail-value" title={copy}>
+                  {value}
+                  {copy && copy !== "-" ? (
+                    <button
+                      aria-label={`Copy ${label.toLowerCase()}`}
+                      className="detail-copy"
+                      onClick={() => void navigator.clipboard?.writeText(copy)}
+                      type="button"
+                    >
+                      <Copy size={12} />
+                    </button>
+                  ) : null}
+                </strong>
+              </div>
+            ))}
           </section>
           <section className="detail-section">
             <h3><Star size={15} /> Reproducibility</h3>

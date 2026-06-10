@@ -14,7 +14,7 @@ import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normaliz
 import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
-import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
@@ -526,7 +526,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const projectPreferenceLoadedRef = useRef(false);
   const previousOrgIdRef = useRef("");
   const userTouchedDashboardFiltersRef = useRef(false);
-  const defaultSelectionInitializedRef = useRef(false);
+  // True once a default page selection has been applied OR the URL supplied an
+  // explicit ?runs= selection (which must never be replaced by the default).
+  const defaultSelectionInitializedRef = useRef(
+    typeof window !== "undefined" && runSelectionFromSearch(window.location.search).length > 0,
+  );
+  // URL sync starts enabled only for deep links; it switches on permanently the
+  // first time the user changes the selection themselves, so default
+  // auto-selections never spray run ids into the address bar.
+  const selectionUrlSyncRef = useRef(
+    typeof window !== "undefined" && runSelectionFromSearch(window.location.search).length > 0,
+  );
   const runDirectoryRef = useRef<Map<string, RunSummary>>(new Map());
   // Signatures of the last series fetch per chart group. When only the live
   // refresh tick changes (signature unchanged), we refetch in place without
@@ -598,7 +608,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [projects, setProjects] = useState<string[]>([]);
   const [summary, setSummary] = useState<Summary>({ runs: [], metric_keys: [], total: 0 });
   const [overview, setOverview] = useState<Overview>({ total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 });
-  const [selectedRunIds, setSelectedRunIds] = useState<string[]>([]);
+  // Seed selection from ?runs=… so compare links survive reloads and can be
+  // shared. The default auto-select skips when the URL provided a selection.
+  const [selectedRunIds, setSelectedRunIds] = useState<string[]>(() =>
+    typeof window === "undefined" ? [] : runSelectionFromSearch(window.location.search));
   const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
   const [primaryRunId, setPrimaryRunId] = useState("");
@@ -622,7 +635,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [tableColumns, setTableColumns] = useState<TableColumns>(defaultTableColumns);
   const [pinnedMetrics, setPinnedMetrics] = useState<string[]>([]);
-  const [navPinned, setNavPinned] = useState(false);
+  // Pinned (labeled) nav is the default; collapsing to icons is an explicit choice.
+  const [navPinned, setNavPinned] = useState(true);
   const [navAutoOpen, setNavAutoOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -654,7 +668,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
-  const [apiKeyName, setApiKeyName] = useState("Dashboard SDK key");
+  // Empty by default; the input shows a placeholder and create falls back to
+  // "Dashboard SDK key" so typed names never append to prefilled text.
+  const [apiKeyName, setApiKeyName] = useState("");
   const [newApiKey, setNewApiKey] = useState("");
   const [apiAdminMessage, setApiAdminMessage] = useState("");
   const [apiAdminTone, setApiAdminTone] = useState<"status" | "error">("status");
@@ -982,7 +998,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [resetRunPagination]);
   useEffect(() => {
     if (previousOrgIdRef.current === activeOrgId) return;
+    // First session load is not an org switch: keep the ?project= deep link
+    // seeded into state instead of wiping it (the wipe let a stale persisted
+    // preference win over the URL).
+    const isInitialSession = previousOrgIdRef.current === "";
     previousOrgIdRef.current = activeOrgId;
+    if (isInitialSession) return;
     projectPreferenceLoadedRef.current = false;
     userTouchedDashboardFiltersRef.current = false;
     setProjectPreferenceReady(false);
@@ -1581,6 +1602,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       // the previously-selected project.
       const projectParam = new URLSearchParams(window.location.search).get("project") ?? "";
       setProject(projectParam);
+      // Restore an explicit run selection carried by the history entry.
+      const urlRunIds = runSelectionFromSearch(window.location.search);
+      if (urlRunIds.length) {
+        defaultSelectionInitializedRef.current = true;
+        selectionUrlSyncRef.current = true;
+        setSelectedRunIds(urlRunIds);
+      }
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
       const summaryTotal = summaryTotalRef.current;
       setMessage(nextTab === "runs" && summaryTotal ? runsPageMessage(summaryTotal, 0, 0) : `Opened ${label}.`);
@@ -1642,7 +1670,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     setSavedViews(localSavedViewOptions(localSavedViewProjectScope));
-    setNavPinned(localStorage.getItem(NAV_PINNED_KEY) === "true");
+    // Default to the pinned (labeled) rail; only an explicit unpin collapses it.
+    setNavPinned(localStorage.getItem(NAV_PINNED_KEY) !== "false");
     setRunsRailCollapsed(localStorage.getItem(RUNS_RAIL_COLLAPSED_KEY) === "true");
     const storedTheme = localStorage.getItem(THEME_KEY);
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
@@ -1720,6 +1749,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     localStorage.setItem(NAV_PINNED_KEY, String(navPinned));
   }, [navPinned]);
+
+  // Mirror explicit run selections into ?runs=… (replaceState, capped) so the
+  // current compare/chart context survives reloads and can be shared.
+  useEffect(() => {
+    if (typeof window === "undefined" || !selectionUrlSyncRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const encoded = runSelectionSearchParam(selectedRunIds);
+    if ((params.get("runs") ?? "") === encoded) return;
+    if (encoded) params.set("runs", encoded);
+    else params.delete("runs");
+    const qs = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }, [selectedRunIds]);
 
   useEffect(() => {
     localStorage.setItem(RUNS_RAIL_COLLAPSED_KEY, String(runsRailCollapsed));
@@ -2717,6 +2759,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setCompareTableMetrics(savedViewStringArray(view.compareTableMetrics, Math.max(0, MAX_COMPARE_TABLE_METRICS - 1)));
     setCompareSearch(savedViewString(view.compareSearch));
     setCompareConfigSortKey(savedViewString(view.compareConfigSortKey));
+    // Saved views restore an explicit selection; reflect it in the URL too.
+    selectionUrlSyncRef.current = true;
+    defaultSelectionInitializedRef.current = true;
     setSelectedRunIds(savedViewStringArray(view.selectedRunIds, MAX_SELECTED_RUNS));
     setSelectedRunDetails({});
     setPrimaryRunId(savedViewString(view.primaryRunId));
@@ -2783,6 +2828,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [selectAllMatchingBusy, setSelectAllMatchingBusy] = useState(false);
 
   function toggleRun(runId: string, options?: { shift?: boolean }) {
+    selectionUrlSyncRef.current = true;
     if (options?.shift && selectionAnchorRunIdRef.current && selectionAnchorRunIdRef.current !== runId) {
       const orderedIds = sortedRuns.map((run) => run.id);
       setSelectedRunIds((current) => rangeSelect(current, orderedIds, selectionAnchorRunIdRef.current, runId));
@@ -2794,6 +2840,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function selectAllVisibleRuns() {
+    selectionUrlSyncRef.current = true;
     const visibleIds = sortedRuns.map((run) => run.id);
     const state = visibleSelectionState(selectedRunIds, visibleIds);
     if (state === "all") {
@@ -2813,6 +2860,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function selectAllMatchingRuns() {
     if (selectAllMatchingBusy) return;
+    selectionUrlSyncRef.current = true;
     if (queryInput !== query) {
       resetRunPagination();
       setQuery(queryInput);
@@ -3835,6 +3883,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             <CompareTabPane
               addAllCompareTableMetrics={addAllCompareTableMetrics}
               addCompareTableMetric={addCompareTableMetric}
+              availableRuns={sortedRuns}
+              onAddCompareRun={(runId) => {
+                selectionUrlSyncRef.current = true;
+                defaultSelectionInitializedRef.current = true;
+                setSelectedRunIds((current) => current.includes(runId) ? current : [...current, runId].slice(-MAX_SELECTED_RUNS));
+              }}
+              onOpenRunsTab={() => selectTab("runs")}
               compareAddMetricOptions={compareAddMetricOptions}
               compareArtifactsByRun={compareArtifactsByRun}
               compareConfigKeys={compareConfigKeys}

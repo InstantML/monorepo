@@ -26,6 +26,9 @@ import {
   metricKeysFromSummary,
   preferredMetricKey,
   rangeSelect,
+  RUN_SELECTION_URL_LIMIT,
+  runSelectionFromSearch,
+  runSelectionSearchParam,
   selectAllVisible,
   sortRuns,
   statusTone,
@@ -49,6 +52,20 @@ test("selection is capped and toggled", () => {
   assert.equal(selected.includes("run-0"), false);
   assert.equal(selected.at(-1), `run-${MAX_SELECTED_RUNS}`);
   assert.deepEqual(toggleSelection(selected, "run-4"), selected.filter((id) => id !== "run-4"));
+});
+
+test("run selection round-trips through the ?runs= URL parameter with a cap", () => {
+  assert.deepEqual(runSelectionFromSearch(""), []);
+  assert.deepEqual(runSelectionFromSearch("?runs="), []);
+  const a = "9f0516b7-a1e3-4612-a73c-71592074e636";
+  const b = "477afd28-c350-4307-bbf2-6d6b2049bae5";
+  assert.deepEqual(runSelectionFromSearch(`?runs=${a},${b},${a}`), [a, b]);
+  // Non-id junk (injection attempts, paths) is dropped.
+  assert.deepEqual(runSelectionFromSearch("?runs=<script>,../etc,run id"), []);
+  const many = Array.from({ length: RUN_SELECTION_URL_LIMIT + 10 }, (_, index) => `0000000${String(index).padStart(2, "0")}-0000-0000-0000-000000000000`);
+  assert.equal(runSelectionFromSearch(`?runs=${many.join(",")}`).length, RUN_SELECTION_URL_LIMIT);
+  assert.equal(runSelectionSearchParam(many).split(",").length, RUN_SELECTION_URL_LIMIT);
+  assert.equal(runSelectionSearchParam([a, b]), `${a},${b}`);
 });
 
 test("research insights helpers scope runs, extract fields, cluster, and detect eval metrics", () => {
@@ -543,24 +560,37 @@ test("summary helpers format stable UI values", () => {
 
 test("upload health derives compact state from SDK heartbeat metrics", () => {
   const at = 1_000;
-  assert.deepEqual(uploadHealthForRun({ latest_metrics: {} }, at), { tone: "neutral", label: "upload unknown", state: "unknown" });
-  assert.deepEqual(uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990 } }, at), { tone: "good", label: "synced", state: "synced" });
+  assert.equal(uploadHealthForRun({ latest_metrics: {} }, at).state, "unknown");
+  assert.deepEqual(uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990 } }, at), { tone: "good", label: "synced", state: "synced", detail: "" });
   assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/queued_events": 12 } }, at),
-    { tone: "live", label: "syncing 12", state: "syncing" },
+    uploadHealthForRun({ status: "running", latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/queued_events": 12 } }, at),
+    { tone: "live", label: "syncing · 12 rows", state: "syncing", detail: "Metric rows are still uploading." },
   );
+  assert.equal(
+    uploadHealthForRun({ status: "running", latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/upload_lag_seconds": 9 } }, at).state,
+    "syncing",
+  );
+  // Stale heartbeats only matter while the run is active; ended runs with an
+  // empty queue read as synced instead of warning on every finished run.
+  const stalled = uploadHealthForRun({ status: "running", latest_metrics: { "system/instantml/upload_health_unix_seconds": 900 } }, at);
+  assert.equal(stalled.state, "stale");
+  assert.equal(stalled.label, "sync stalled");
   assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/upload_lag_seconds": 9 } }, at),
-    { tone: "live", label: "syncing", state: "syncing" },
+    uploadHealthForRun({ status: "finished", latest_metrics: { "system/instantml/upload_health_unix_seconds": 900 } }, at),
+    { tone: "good", label: "synced", state: "synced", detail: "" },
   );
-  assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 900 } }, at),
-    { tone: "neutral", label: "upload stale", state: "stale" },
+  // A run that ended with rows still queued is reported as incomplete data.
+  const incomplete = uploadHealthForRun(
+    { status: "finished", latest_metrics: { "system/instantml/upload_health_unix_seconds": 900, "system/instantml/queued_events": 480 } },
+    at,
   );
-  assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/failed_events": 1 } }, at),
-    { tone: "bad", label: "upload errors", state: "errors" },
-  );
+  assert.equal(incomplete.state, "incomplete");
+  assert.equal(incomplete.tone, "bad");
+  assert.equal(incomplete.label, "incomplete · 480 rows pending");
+  assert.match(incomplete.detail, /instantml-uploader/);
+  const errored = uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/failed_events": 1 } }, at);
+  assert.equal(errored.state, "errors");
+  assert.equal(errored.label, "sync error");
 });
 
 test("chart helpers normalize series and summarize last values", () => {

@@ -442,6 +442,41 @@ button.compare-row-head.active {
   white-space: nowrap;
 }
 
+/* In-app plan-change confirmation shown before any Stripe redirect. */
+.billing-confirm {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--control-radius);
+  background: var(--surface-tint);
+  padding: 12px;
+}
+
+.billing-confirm p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Actionable Compare empty state: teaches both selection paths instead of
+ * dead-ending. */
+.compare-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 36px 16px;
+}
+
+.compare-empty-state p {
+  margin: 0;
+  max-width: 52ch;
+  text-align: center;
+}
+
+.compare-empty-state .primary-button {
+  width: auto;
+}
+
 .control.full select,
 .control.full input,
 .control.full .select-trigger {

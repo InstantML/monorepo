@@ -455,8 +455,9 @@ export function RunsWorkspace({
                           {shortMetricName(metricKey)} {compactRailMetricValue(latestMetricValue)}
                         </span>
                       ) : null}
-                      {uploadHealth.state !== "unknown" ? (
-                        <span className={`upload-health-chip ${uploadHealth.tone}`}>{uploadHealth.label}</span>
+                      {/* Exception-only: synced is the unmarked default. */}
+                      {uploadHealth.state !== "unknown" && uploadHealth.state !== "synced" ? (
+                        <span className={`upload-health-chip ${uploadHealth.tone}`} title={uploadHealth.detail || undefined}>{uploadHealth.label}</span>
                       ) : null}
                     </span>
                     <span className="workspace-run-tags" aria-label={`${run.name} tags`}>

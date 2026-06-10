@@ -5,7 +5,64 @@
 
 .detail-row strong,
 .summary-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   text-align: right;
+}
+
+/* Long unbroken values (commit hashes, platform triples) wrap inside the
+ * column instead of pushing the side rail past the viewport. */
+.detail-row .detail-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.detail-copy {
+  flex: none;
+  align-self: center;
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.detail-row:hover .detail-copy,
+.detail-copy:focus-visible {
+  opacity: 1;
+}
+
+.detail-copy:hover {
+  color: var(--text);
+}
+
+/* Honest data-state banner: shown only when a run's upload health indicates
+ * missing or stalled metric rows. */
+.run-data-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  border: 1px solid var(--warm);
+  border-radius: var(--radius);
+  background: var(--warm-soft);
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.run-data-banner.bad {
+  border-color: color-mix(in srgb, var(--coral) 55%, var(--line));
+  background: var(--danger-soft);
+}
+
+.run-data-banner span {
+  color: var(--muted);
 }
 
 .run-metadata-editor {

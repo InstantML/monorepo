@@ -1183,12 +1183,35 @@ export function WorkspaceSectionView({
   workspacePanelRuns: RunSummary[];
   workspaceSeries: Record<string, MetricSeries[]>;
 }) {
+  // In automatic mode, line panels whose metric has loaded but matches no run
+  // in the current scope are hidden behind a disclosure instead of rendering
+  // tall "no data for metric" charts (panel search always shows everything).
+  const [showEmptyPanels, setShowEmptyPanels] = useState(false);
+  const panelRunIdSet = useMemo(() => new Set(workspacePanelRuns.map((run) => run.id)), [workspacePanelRuns]);
+  const isEmptyAutoPanel = (panel: WorkspacePanel) =>
+    view.mode === "automatic"
+    && panel.type === "line"
+    && workspacePanelRuns.length > 0
+    && Object.prototype.hasOwnProperty.call(workspaceSeries, panel.metricKey)
+    && !(workspaceSeries[panel.metricKey] ?? []).some((item) => panelRunIdSet.has(item.id) && (item.points?.length ?? 0) > 0);
+  const hideEmpties = !panelSearchActive && !showEmptyPanels;
+  const emptyPanelCount = hideEmpties ? visiblePanels.filter(isEmptyAutoPanel).length : 0;
+  const shownPanels = hideEmpties ? visiblePanels.filter((panel) => !isEmptyAutoPanel(panel)) : visiblePanels;
   return (
     <section className={`workspace-section ${section.collapsed ? "collapsed" : ""}`} data-section-id={section.id}>
       <div className="workspace-section-head">
         <button className="section-title-button" type="button" onClick={() => onToggleSection(section.id)}>
           <ChevronDown size={15} /> <strong>{section.name}</strong> <span>{section.panels.length}</span>
         </button>
+        {emptyPanelCount > 0 || showEmptyPanels ? (
+          <button
+            className="section-empty-toggle"
+            onClick={() => setShowEmptyPanels((current) => !current)}
+            type="button"
+          >
+            {showEmptyPanels ? "Hide panels without data" : `${emptyPanelCount} hidden · no data for current runs`}
+          </button>
+        ) : null}
       </div>
       {!section.collapsed ? (
         <div
@@ -1196,7 +1219,7 @@ export function WorkspaceSectionView({
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => onPanelDrop(event, section.id, section.panels.length)}
         >
-          {visiblePanels.length ? visiblePanels.map((panel) => {
+          {shownPanels.length ? shownPanels.map((panel) => {
             const panelIndex = Math.max(0, section.panels.findIndex((item) => item.id === panel.id));
             return (
               <WorkspacePanelCard
@@ -1221,7 +1244,9 @@ export function WorkspaceSectionView({
                 workspaceSeries={workspaceSeries}
               />
             );
-          }) : <div className="empty workspace-empty">No panels in this section yet. Drag a panel here or add one from the top toolbar.</div>}
+          }) : emptyPanelCount > 0
+            ? <div className="empty workspace-empty">All {emptyPanelCount} panels in this section have no data for the current runs.</div>
+            : <div className="empty workspace-empty">No panels in this section yet. Drag a panel here or add one from the top toolbar.</div>}
         </div>
       ) : null}
     </section>
