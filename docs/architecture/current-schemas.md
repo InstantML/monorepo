@@ -70,7 +70,8 @@ in ClickHouse until a future compaction design exists.
 ### Postgres Control Tables
 
 Owner: `apps/rust-server/src/control_db.rs` and
-`apps/rust-server/migrations/0001_init_control_plane.sql`.
+`apps/rust-server/migrations/0001_init_control_plane.sql` plus the additive
+`0002_data_cells.sql` scaling migration.
 
 Purpose: hosted account, auth, organization, API-key, invitation, billing, and
 tenant-route state that must be visible to control and data services.
@@ -82,8 +83,8 @@ The implemented table list is:
 
 ```text
 users, identities, organizations, memberships, org_invitations,
-email_deliveries, sessions, service_accounts, api_keys, tenant_routes,
-dashboard_preferences, workspace_views, billing_accounts,
+email_deliveries, sessions, service_accounts, api_keys, data_cells,
+tenant_routes, tenant_route_events, dashboard_preferences, workspace_views, billing_accounts,
 billing_checkout_intents, billing_change_intents, billing_subscriptions,
 billing_events, billing_usage_reports
 ```
@@ -91,6 +92,18 @@ billing_events, billing_usage_reports
 Keep the migration SQL as the authoritative column/index reference. The Rust
 store keeps a read projection loaded from Postgres so existing route handlers
 can stay on the same in-process lookup path.
+
+`data_cells` is the operator/heartbeat-maintained registry for hosted
+data-plane cells. A current-cell Rust process can auto-register a conservative
+row and then refresh health/backup timestamps, while operator edits retain
+status, capacity, service, and secret metadata.
+`tenant_routes` now carries nullable `cell_id`, monotonic `route_version`,
+`placement_reason`, and `assigned_at` fields. Route creation/update goes
+through the control repository transaction that takes a per-org advisory lock,
+checks current-cell status, capacity, health, and backup freshness for managed
+hosted routes, writes the route, and appends a `tenant_route_events` audit row.
+Customer-owned ClickHouse routes keep their BYOC route and are not stamped into
+managed data cells.
 
 ### Control Record Kinds
 

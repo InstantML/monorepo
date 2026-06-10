@@ -53,6 +53,7 @@ Important environment variables:
 - `INSTANTML_CLOUD_RUN_SERVICE`: legacy combined Cloud Run service name. Default: `instantml-rust-api`.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`: split control Cloud Run service name. Default: `instantml-control`.
 - `INSTANTML_CLOUD_RUN_DATA_SERVICE`: split data Cloud Run service name. Default: `instantml-data-<region>-a`.
+- `INSTANTML_CLOUD_RUN_DATA_CELL`: split data-cell label. Default: `<region>-a`; the helper also sets runtime `INSTANTML_DEFAULT_DATA_CELL_ID` from this value so the Rust service can auto-register and heartbeat the current `data_cells` row before stamping new hosted tenant routes.
 - `INSTANTML_CLOUD_RUN_CONTROL_SCALING` / `INSTANTML_CLOUD_RUN_DATA_SCALING`: `manual` or `auto`. Prod defaults to manual one-instance services; staging defaults to auto min `0` max `1`.
 - `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES` / `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES`: auto-scaling bounds for control. Defaults: `0` and `1`.
 - `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES` / `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for data. Defaults: `0` and `1`.

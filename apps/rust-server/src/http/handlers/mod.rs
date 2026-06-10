@@ -13,7 +13,7 @@ pub mod reports;
 pub mod runs;
 pub mod usage;
 
-pub(super) use admin::admin_overview;
+pub(super) use admin::{admin_data_cells, admin_overview};
 pub(super) use artifacts::{
     abort_artifact_upload, artifact_version_lineage, complete_artifact_upload, create_artifact,
     create_artifact_input_edge, delete_artifact_alias, delete_artifact_version, download_artifact,
@@ -162,6 +162,14 @@ mod tests {
             ServicePlaneRole::Data
         ));
         assert!(openapi_path_available_for_plane(
+            "/api/admin/data-cells",
+            ServicePlaneRole::Control
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/admin/data-cells",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
             "/runs",
             ServicePlaneRole::Data
         ));
@@ -213,6 +221,7 @@ mod tests {
             "/api/invitations/preview",
             "/api/invitations/accept",
             "/api/admin/overview",
+            "/api/admin/data-cells",
             // billing
             "/api/billing/status",
             "/api/billing/checkout",
@@ -373,6 +382,10 @@ mod tests {
             slow_request_threshold: std::time::Duration::from_millis(1000),
             log_format: crate::config::LogFormat::Pretty,
             hosted_clickhouse: None,
+            cell_routing: crate::config::CellRoutingConfig {
+                environment: "test".to_string(),
+                current_data_cell_id: None,
+            },
             control_database_url: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
                 egress_cidrs: Vec::new(),
@@ -401,6 +414,7 @@ mod tests {
             "/api/orgs/current-user",
             "/api/orgs/memberships",
             "/api/admin/overview",
+            "/api/admin/data-cells",
             "/api/invitations/preview",
             "/api/invitations/accept",
             "/api/orgs/{org_id}/invitations",

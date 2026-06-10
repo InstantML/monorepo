@@ -645,6 +645,7 @@ fn known_route_template(segments: &[&str]) -> Option<String> {
         ["metrics"] => vec!["metrics"],
         ["openapi.json"] => vec!["openapi.json"],
         ["api", "admin", "overview"] => vec!["api", "admin", "overview"],
+        ["api", "admin", "data-cells"] => vec!["api", "admin", "data-cells"],
         ["api", "auth", "config"] => vec!["api", "auth", "config"],
         ["api", "auth", "dev", "google"] => vec!["api", "auth", "dev", "google"],
         ["api", "auth", "clerk"] => vec!["api", "auth", "clerk"],
@@ -1063,6 +1064,10 @@ mod tests {
         assert_eq!(route_plane_for_path("/api/auth/clerk"), RoutePlane::Control);
         assert_eq!(
             route_plane_for_path("/api/admin/overview"),
+            RoutePlane::Control
+        );
+        assert_eq!(
+            route_plane_for_path("/api/admin/data-cells"),
             RoutePlane::Control
         );
         assert_eq!(

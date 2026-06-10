@@ -907,6 +907,8 @@ function buildRuntimeEnv(staticEgressIp) {
     INSTANTML_AUTH_MODE: "api-key",
     INSTANTML_DEV_AUTH_ENABLED: "false",
     INSTANTML_LOG_FORMAT: "json",
+    INSTANTML_DEPLOY_ENV: deploymentEnv,
+    INSTANTML_DEFAULT_DATA_CELL_ID: dataCellId,
     INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
     INSTANTML_CLICKHOUSE_PROVISIONER: clickhouseProvisioner,
     INSTANTML_BYOC_EGRESS_CIDRS: publicStaticEgressIp
@@ -1506,6 +1508,8 @@ pathMatchers:
   - paths:
     - /api/auth
     - /api/auth/*
+    - /api/admin
+    - /api/admin/*
     - /api/invitations
     - /api/invitations/*
     - /api/billing
@@ -1528,6 +1532,10 @@ tests:
 - description: Billing routes use control plane
   host: instantml.local
   path: /api/billing/status
+  service: ${controlBackend}
+- description: Admin routes use control plane
+  host: instantml.local
+  path: /api/admin/data-cells
   service: ${controlBackend}
 - description: Dashboard preference routes use control plane
   host: instantml.local

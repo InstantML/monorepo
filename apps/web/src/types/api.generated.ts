@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/api/admin/data-cells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_data_cells"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/overview": {
         parameters: {
             query?: never;
@@ -1615,6 +1631,53 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        AdminDataCellRouteCounts: {
+            failed: number;
+            other: number;
+            provisioning: number;
+            ready: number;
+            total: number;
+        };
+        AdminDataCellSummary: {
+            admission_status: string;
+            assigned_orgs: number;
+            cell_id: string;
+            clickhouse_database_mode?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            environment: string;
+            /** Format: date-time */
+            last_backup_at?: string | null;
+            /** Format: date-time */
+            last_health_at?: string | null;
+            /** Format: int64 */
+            max_api_requests_monthly?: number | null;
+            /** Format: int32 */
+            max_disk_usage_pct?: number | null;
+            /** Format: int64 */
+            max_metric_points_monthly?: number | null;
+            /** Format: int32 */
+            max_orgs?: number | null;
+            /** Format: int64 */
+            max_retained_bytes?: number | null;
+            public_api_base?: string | null;
+            region: string;
+            /** Format: int32 */
+            reserved_headroom_pct?: number | null;
+            route_counts: components["schemas"]["AdminDataCellRouteCounts"];
+            service_name: string;
+            status: string;
+            tier: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AdminDataCellsResponse: {
+            data_cells: components["schemas"]["AdminDataCellSummary"][];
+            /** Format: date-time */
+            generated_at: string;
+            /** Format: int32 */
+            schema_version: number;
+        };
         AdminOrgCounts: {
             active_api_keys: number;
             active_members: number;
@@ -1702,9 +1765,13 @@ export interface components {
             applied_min_replica_memory_gb?: number | null;
             /** Format: int32 */
             applied_num_replicas?: number | null;
+            /** Format: date-time */
+            assigned_at?: string | null;
+            cell_id?: string | null;
             database?: string | null;
             endpoint_host?: string | null;
             error?: string | null;
+            placement_reason?: string | null;
             /** Format: int32 */
             requested_max_replica_memory_gb?: number | null;
             /** Format: int32 */
@@ -1714,6 +1781,8 @@ export interface components {
             route_plan_tier?: string | null;
             route_provisioner?: string | null;
             route_status?: string | null;
+            /** Format: int64 */
+            route_version?: number | null;
             /** Format: int32 */
             schema_version?: number | null;
             service_id?: string | null;
@@ -3548,6 +3617,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    admin_data_cells: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator data-cell registry summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDataCellsResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     admin_overview: {
         parameters: {
             query?: {

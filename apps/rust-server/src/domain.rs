@@ -782,6 +782,88 @@ pub struct AdminOverviewResponse {
     pub risks: Vec<AdminRiskItem>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DataCellRow {
+    pub cell_id: String,
+    pub environment: String,
+    pub region: String,
+    pub tier: String,
+    pub status: String,
+    pub service_name: String,
+    pub public_api_base: Option<String>,
+    pub internal_api_base: Option<String>,
+    pub clickhouse_endpoint_secret_ref: Option<String>,
+    pub clickhouse_username_secret_ref: Option<String>,
+    pub clickhouse_password_secret_ref: Option<String>,
+    pub clickhouse_database_mode: Option<String>,
+    pub max_orgs: Option<i32>,
+    pub max_metric_points_monthly: Option<i64>,
+    pub max_api_requests_monthly: Option<i64>,
+    pub max_retained_bytes: Option<i64>,
+    pub max_disk_usage_pct: Option<i32>,
+    pub reserved_headroom_pct: Option<i32>,
+    pub last_health_at: Option<DateTime<Utc>>,
+    pub last_backup_at: Option<DateTime<Utc>>,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TenantRouteEventRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub old_cell_id: Option<String>,
+    pub new_cell_id: Option<String>,
+    pub old_status: Option<String>,
+    pub new_status: String,
+    pub route_version: i64,
+    pub actor: String,
+    pub reason: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminDataCellsResponse {
+    pub schema_version: i32,
+    pub generated_at: DateTime<Utc>,
+    pub data_cells: Vec<AdminDataCellSummary>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, ToSchema)]
+pub struct AdminDataCellRouteCounts {
+    pub total: usize,
+    pub ready: usize,
+    pub provisioning: usize,
+    pub failed: usize,
+    pub other: usize,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminDataCellSummary {
+    pub cell_id: String,
+    pub environment: String,
+    pub region: String,
+    pub tier: String,
+    pub status: String,
+    pub service_name: String,
+    pub public_api_base: Option<String>,
+    pub clickhouse_database_mode: Option<String>,
+    pub max_orgs: Option<i32>,
+    pub max_metric_points_monthly: Option<i64>,
+    pub max_api_requests_monthly: Option<i64>,
+    pub max_retained_bytes: Option<i64>,
+    pub max_disk_usage_pct: Option<i32>,
+    pub reserved_headroom_pct: Option<i32>,
+    pub last_health_at: Option<DateTime<Utc>>,
+    pub last_backup_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub assigned_orgs: usize,
+    pub route_counts: AdminDataCellRouteCounts,
+    pub admission_status: String,
+}
+
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct AdminOverviewQuerySummary {
     pub q: Option<String>,
@@ -866,6 +948,10 @@ pub struct AdminStorageSummary {
     pub storage_choice: String,
     pub storage_state: String,
     pub tenant_routing_tier: String,
+    pub cell_id: Option<String>,
+    pub route_version: Option<i64>,
+    pub placement_reason: Option<String>,
+    pub assigned_at: Option<DateTime<Utc>>,
     pub route_status: Option<String>,
     pub route_provisioner: Option<String>,
     pub route_plan_tier: Option<String>,

@@ -656,6 +656,10 @@ mod tests {
                 allow_private_endpoints: true,
                 credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
             },
+            cell_routing: crate::config::CellRoutingConfig {
+                environment: "test".to_string(),
+                current_data_cell_id: None,
+            },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
@@ -691,6 +695,10 @@ mod tests {
                 egress_set_version: "test".to_string(),
                 allow_private_endpoints: true,
                 credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            cell_routing: crate::config::CellRoutingConfig {
+                environment: "test".to_string(),
+                current_data_cell_id: None,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),

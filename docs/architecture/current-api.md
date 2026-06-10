@@ -96,7 +96,7 @@ There are three credential paths.
 | --- | --- | --- |
 | Browser session | `instantml_session` HttpOnly cookie | Next dashboard after Clerk or local dev sign-in |
 | SDK API key | `Authorization: Bearer instantml_...` | SDK, uploader, import, export, and automation calls |
-| Bootstrap token | `X-InstantML-Bootstrap-Token: ...` | Operator-only user/org/API-key bootstrap routes and read-only admin overview |
+| Bootstrap token | `X-InstantML-Bootstrap-Token: ...` | Operator-only user/org/API-key bootstrap routes and read-only admin routes |
 
 In `INSTANTML_AUTH_MODE=api-key`, tenant product routes require either a bearer
 API key or a valid browser session cookie. Local mode allows unauthenticated
@@ -236,6 +236,27 @@ The response intentionally omits plaintext API keys, API-key hashes, session
 tokens, tenant passwords, password references, signed object URLs, and raw
 provider/storage error text. In hosted split control-plane mode, tenant-owned
 project/run/artifact live counts are not fanned out across every data plane.
+
+### `GET /api/admin/data-cells`
+
+Returns the read-only operator data-cell registry summary: cell status,
+capacity limits, assigned route counts, and admission status. Secret Manager
+references, internal API bases, and operator notes are intentionally omitted.
+
+Auth:
+
+- Requires `X-InstantML-Bootstrap-Token`.
+
+Output:
+
+- `schema_version`
+- `generated_at`
+- `data_cells`, including safe cell metadata, capacity limits,
+  ready/provisioning/failed route counts, assigned org count, and
+  `admission_status`.
+
+`admission_status` mirrors placement gates: `open`, `closed`, `full`,
+`stale_health`, or `stale_backup`.
 
 ## Auth And Session
 

@@ -15,6 +15,10 @@ use url::Url;
 
 pub(super) const TENANT_ROUTE_KIND: &str = "tenant_route";
 
+fn default_route_version() -> i64 {
+    1
+}
+
 /// The set of record kinds that belong to the control plane (as opposed to
 /// tenant-owned run data). Used both to gate ClickHouse control-log writes and
 /// to route writes/rebuild through Postgres. Single source of truth so the two
@@ -62,6 +66,14 @@ pub struct TenantRouteRecord {
     pub org_id: Uuid,
     pub status: String,
     pub provisioner: String,
+    #[serde(default)]
+    pub cell_id: Option<String>,
+    #[serde(default = "default_route_version")]
+    pub route_version: i64,
+    #[serde(default)]
+    pub placement_reason: Option<String>,
+    #[serde(default)]
+    pub assigned_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub plan_tier: Option<String>,
     #[serde(default)]
@@ -295,6 +307,10 @@ impl Store {
                 org_id: org.id,
                 status: TENANT_ROUTE_PROVISIONING.to_string(),
                 provisioner: self.provisioner_name(),
+                cell_id: None,
+                route_version: 1,
+                placement_reason: None,
+                assigned_at: None,
                 plan_tier: None,
                 warehouse_kind: None,
                 requested_min_replica_memory_gb: None,
@@ -316,23 +332,11 @@ impl Store {
             },
             profile,
         );
-        self.persist_locked(
-            TENANT_ROUTE_KIND,
-            org.id,
-            &org.id.to_string(),
-            &provisioning,
-        )
-        .await?;
-        self.data
-            .lock()
-            .await
-            .insert_tenant_route(provisioning.clone());
+        self.persist_tenant_route(provisioning).await?;
 
         match self.provision_tenant_route(org).await {
             Ok(route) => {
-                self.persist_locked(TENANT_ROUTE_KIND, org.id, &org.id.to_string(), &route)
-                    .await?;
-                self.data.lock().await.insert_tenant_route(route.clone());
+                let route = self.persist_tenant_route(route).await?;
                 let metric_store = self.metric_store_from_route(&route).await?;
                 self.tenant_metric_stores
                     .lock()
@@ -358,6 +362,10 @@ impl Store {
                                 org_id: org.id,
                                 status: TENANT_ROUTE_FAILED.to_string(),
                                 provisioner: self.provisioner_name(),
+                                cell_id: None,
+                                route_version: 1,
+                                placement_reason: None,
+                                assigned_at: None,
                                 plan_tier: None,
                                 warehouse_kind: None,
                                 requested_min_replica_memory_gb: None,
@@ -380,9 +388,7 @@ impl Store {
                             profile,
                         )
                     });
-                self.persist_locked(TENANT_ROUTE_KIND, org.id, &org.id.to_string(), &failed)
-                    .await?;
-                self.data.lock().await.insert_tenant_route(failed);
+                self.persist_tenant_route(failed).await?;
                 Err(error)
             }
         }
@@ -425,6 +431,10 @@ impl Store {
             org_id: org.id,
             status: TENANT_ROUTE_READY.to_string(),
             provisioner: SHARED_CELL_PROVISIONER.to_string(),
+            cell_id: None,
+            route_version: 1,
+            placement_reason: None,
+            assigned_at: None,
             plan_tier: Some("free".to_string()),
             warehouse_kind: Some("shared".to_string()),
             requested_min_replica_memory_gb: Some(8),
@@ -444,9 +454,7 @@ impl Store {
             updated_at: now,
             error: None,
         };
-        self.persist_locked(TENANT_ROUTE_KIND, org.id, &org.id.to_string(), &route)
-            .await?;
-        self.data.lock().await.insert_tenant_route(route.clone());
+        let route = self.persist_tenant_route(route).await?;
         Ok(route)
     }
 
@@ -485,6 +493,10 @@ impl Store {
                 org_id: org.id,
                 status: TENANT_ROUTE_READY.to_string(),
                 provisioner: "database".to_string(),
+                cell_id: None,
+                route_version: 1,
+                placement_reason: None,
+                assigned_at: None,
                 plan_tier: None,
                 warehouse_kind: None,
                 requested_min_replica_memory_gb: None,
@@ -508,7 +520,19 @@ impl Store {
         ))
     }
 
-    async fn persist_tenant_route(&self, route: TenantRouteRecord) -> AppResult<()> {
+    async fn persist_tenant_route(&self, route: TenantRouteRecord) -> AppResult<TenantRouteRecord> {
+        if let Some(control_db) = &self.control_db {
+            let placement = self.current_cell_placement();
+            if placement.is_some() {
+                self.refresh_current_data_cell_registration(control_db)
+                    .await?;
+            }
+            let stored = control_db
+                .upsert_tenant_route_with_placement(&route, placement.as_ref())
+                .await?;
+            self.data.lock().await.insert_tenant_route(stored.clone());
+            return Ok(stored);
+        }
         self.persist_locked(
             TENANT_ROUTE_KIND,
             route.org_id,
@@ -516,8 +540,20 @@ impl Store {
             &route,
         )
         .await?;
-        self.data.lock().await.insert_tenant_route(route);
-        Ok(())
+        self.data.lock().await.insert_tenant_route(route.clone());
+        Ok(route)
+    }
+
+    fn current_cell_placement(&self) -> Option<TenantRoutePlacement> {
+        self.cell_routing
+            .current_data_cell_id
+            .as_ref()
+            .map(|cell_id| TenantRoutePlacement {
+                environment: self.cell_routing.environment.clone(),
+                cell_id: cell_id.clone(),
+                actor: "system".to_string(),
+                reason: "current_data_cell".to_string(),
+            })
     }
 
     async fn try_resume_tenant_route(
@@ -540,7 +576,7 @@ impl Store {
         ready.schema_version = Some(METRIC_SCHEMA_VERSION);
         ready.updated_at = Utc::now();
         ready.error = None;
-        self.persist_tenant_route(ready.clone()).await?;
+        let ready = self.persist_tenant_route(ready).await?;
         self.tenant_metric_stores
             .lock()
             .await
@@ -576,6 +612,10 @@ impl Store {
                 org_id: org.id,
                 status: TENANT_ROUTE_PROVISIONING.to_string(),
                 provisioner: "cloud-service".to_string(),
+                cell_id: None,
+                route_version: 1,
+                placement_reason: None,
+                assigned_at: None,
                 plan_tier: None,
                 warehouse_kind: None,
                 requested_min_replica_memory_gb: None,
@@ -657,7 +697,7 @@ impl Store {
         let mut upgraded = route.clone();
         upgraded.schema_version = Some(METRIC_SCHEMA_VERSION);
         upgraded.updated_at = Utc::now();
-        self.persist_tenant_route(upgraded).await
+        self.persist_tenant_route(upgraded).await.map(|_| ())
     }
 
     async fn tenant_password(&self, route: &TenantRouteRecord) -> AppResult<String> {
@@ -799,6 +839,10 @@ impl Store {
             org_id,
             status: TENANT_ROUTE_READY.to_string(),
             provisioner: CUSTOMER_CLICKHOUSE_PROVISIONER.to_string(),
+            cell_id: None,
+            route_version: 1,
+            placement_reason: None,
+            assigned_at: None,
             plan_tier: None,
             warehouse_kind: Some(CUSTOMER_CLICKHOUSE_WAREHOUSE_KIND.to_string()),
             requested_min_replica_memory_gb: None,
@@ -832,10 +876,8 @@ impl Store {
         self.persist_locked("organization", org.id, &org.id.to_string(), &org)
             .await?;
         data.insert_org(org.clone());
-        self.persist_locked(TENANT_ROUTE_KIND, org_id, &org_id.to_string(), &route)
-            .await?;
-        data.insert_tenant_route(route.clone());
         drop(data);
+        let route = self.persist_tenant_route(route).await?;
         self.tenant_metric_stores
             .lock()
             .await
@@ -910,9 +952,7 @@ impl Store {
         route.password_ciphertext = stored_secret.local_ciphertext;
         route.updated_at = Utc::now();
         route.error = None;
-        self.persist_locked(TENANT_ROUTE_KIND, org_id, &org_id.to_string(), &route)
-            .await?;
-        self.data.lock().await.insert_tenant_route(route.clone());
+        let route = self.persist_tenant_route(route).await?;
         self.tenant_metric_stores
             .lock()
             .await
@@ -1259,6 +1299,10 @@ fn local_route(org: &OrganizationRow) -> TenantRouteRecord {
             org_id: org.id,
             status: TENANT_ROUTE_READY.to_string(),
             provisioner: "local".to_string(),
+            cell_id: None,
+            route_version: 1,
+            placement_reason: None,
+            assigned_at: None,
             plan_tier: None,
             warehouse_kind: None,
             requested_min_replica_memory_gb: None,
@@ -2100,6 +2144,10 @@ mod tests {
                 allow_private_endpoints: true,
                 credential_store: ByocCredentialStoreConfig::LocalUserData,
             },
+            cell_routing: CellRoutingConfig {
+                environment: "test".to_string(),
+                current_data_cell_id: None,
+            },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
@@ -2148,6 +2196,10 @@ mod tests {
             org_id,
             status: TENANT_ROUTE_READY.to_string(),
             provisioner: provisioner.to_string(),
+            cell_id: None,
+            route_version: 1,
+            placement_reason: None,
+            assigned_at: None,
             plan_tier: Some("premium".to_string()),
             warehouse_kind: Some("test".to_string()),
             requested_min_replica_memory_gb: None,

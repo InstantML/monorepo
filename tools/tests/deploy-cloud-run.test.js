@@ -256,6 +256,15 @@ test("deploy helper defaults hosted ClickHouse provisioning to database mode", (
   assert.doesNotMatch(source, /INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service"/);
 });
 
+test("deploy helper passes the current data cell into the runtime env", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /const dataCellId = value\("INSTANTML_CLOUD_RUN_DATA_CELL"\)/);
+  assert.match(source, /INSTANTML_DEPLOY_ENV: deploymentEnv/);
+  assert.match(source, /INSTANTML_DEFAULT_DATA_CELL_ID: dataCellId/);
+  assert.match(source, /envVars\.INSTANTML_CELL_ID = target\.cellId/);
+});
+
 test("deploy helper does not configure a hosted signup allowlist", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
   const workflow = fs.readFileSync(path.join(repo, ".github", "workflows", "deploy-cloud-run.yml"), "utf8");
@@ -282,6 +291,7 @@ test("deploy helper keeps public router control paths and backend timeout comple
 
   for (const path of [
     "/api/auth/*",
+    "/api/admin/*",
     "/api/invitations/*",
     "/api/billing/*",
     "/api/dashboard/preferences",
@@ -295,6 +305,7 @@ test("deploy helper keeps public router control paths and backend timeout comple
   }
   assert.match(source, /path: "\/api\/reports"/, "public router smoke should verify the reports collection route");
   assert.match(source, /path: "\/api\/reports\/panels"/, "public router smoke should verify report subroutes");
+  assert.match(source, /path: \/api\/admin\/data-cells/, "public router smoke should verify admin subroutes");
   assert.match(source, /response\.status === 401/, "protected control route smoke checks should accept auth failures, not route misses");
   assert.match(source, /function backendServiceTimeout/);
   assert.match(source, /--timeout", backendServiceTimeout\(\)/);

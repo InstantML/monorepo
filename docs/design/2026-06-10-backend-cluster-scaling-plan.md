@@ -201,6 +201,13 @@ Add a Postgres-backed registry for data cells. This is the first real scaling
 primitive because it gives operators a durable inventory independent of Cloud
 Run service names and ClickHouse connection strings.
 
+Implementation status on June 10, 2026: the accepted Phase 1 slice is the
+registry, tenant-route placement metadata, transactional route-version/audit
+chokepoint, conservative current-cell assignment, Cloud Run env wiring, and
+bootstrap-protected admin visibility. Public route discovery, SDK direct
+cell routing, data-cell writer leases, and multi-writer cells remain later
+phases.
+
 New control-plane entities:
 
 ```text
@@ -626,10 +633,10 @@ unavailable.
 Backend:
 
 - Add Postgres `data_cells` and tenant route placement fields.
-- Add `data_cell_writer_leases` and write-fence checks for data mutations.
 - Add route discovery and route-version checks in a later public-routing slice.
 - Add cell-aware tenant route selection in `apps/rust-server/src/store/tenants.rs`.
 - Add admin/operator reads for cell health and route placement.
+- Add `data_cell_writer_leases` and write-fence checks in Phase 1A.
 - Later: move request-critical control reads to direct Postgres helpers.
 
 Frontend:
@@ -642,16 +649,16 @@ Frontend:
 
 Python SDK:
 
-- Add internal route discovery and data-cell API-base caching.
-- Refresh cached routing on route-version errors or auth failures.
+- Later: add internal route discovery and data-cell API-base caching.
+- Later: refresh cached routing on route-version errors or auth failures.
 - Keep public SDK methods unchanged.
 
 Storage:
 
 - Add `data_cells`.
-- Add `data_cell_writer_leases`.
 - Extend `tenant_routes`.
 - Add `tenant_route_events`.
+- Add `data_cell_writer_leases` in Phase 1A.
 - Add backups/restore runbooks for ClickHouse cells.
 - Add `org_migrations` when Phase 5 starts.
 
@@ -667,7 +674,6 @@ Docs:
 Initial schema changes:
 
 - `data_cells` table in the control-plane Postgres schema.
-- `data_cell_writer_leases` table in the control-plane Postgres schema.
 - `tenant_routes.cell_id`.
 - `tenant_routes.route_version`.
 - `tenant_routes.placement_reason`.
@@ -676,6 +682,8 @@ Initial schema changes:
 
 Possible follow-up schema:
 
+- `data_cell_writer_leases` before any shared cell can run multiple active
+  writers.
 - `org_migrations` for resumable cell moves. This is required before Phase 5,
   not optional for any production migration.
 - `cell_capacity_snapshots` if operator UI needs historical placement trends.
@@ -684,7 +692,20 @@ Possible follow-up schema:
 
 ## API Contracts
 
-First new operator/control endpoint:
+Implemented Phase 1 operator/control endpoint:
+
+```text
+GET /api/admin/data-cells
+```
+
+Authenticated by bootstrap token. Returns safe data-cell metadata, admission
+status, and route counts. It omits internal API bases, Secret Manager
+references, operator notes, and tenant credentials. Current-cell services also
+heartbeat an auto-registered `data_cells` row so configured placement has a
+fresh liveness/backup attestation even before a richer operator write API
+exists.
+
+First future route-discovery endpoint:
 
 ```text
 GET /api/routing/current

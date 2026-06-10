@@ -29,13 +29,13 @@ pub mod openapi;
 pub(crate) mod rate_limit;
 
 use handlers::{
-    abort_artifact_upload, accept_invitation, admin_overview, append_import_chunk,
-    artifact_version_lineage, auth_clerk, auth_config, auth_dev_google, auth_logout, auth_session,
-    auth_switch_organization, billing_add_seat, billing_cancel, billing_change_plan,
-    billing_checkout, billing_checkout_sync, billing_portal, billing_report_storage_overage,
-    billing_report_usage_overage, billing_status, billing_webhook, cancel_import_job,
-    commit_import_job, complete_artifact_upload, create_api_key, create_artifact,
-    create_artifact_input_edge, create_attributes, create_current_user_org,
+    abort_artifact_upload, accept_invitation, admin_data_cells, admin_overview,
+    append_import_chunk, artifact_version_lineage, auth_clerk, auth_config, auth_dev_google,
+    auth_logout, auth_session, auth_switch_organization, billing_add_seat, billing_cancel,
+    billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
+    billing_report_storage_overage, billing_report_usage_overage, billing_status, billing_webhook,
+    cancel_import_job, commit_import_job, complete_artifact_upload, create_api_key,
+    create_artifact, create_artifact_input_edge, create_attributes, create_current_user_org,
     create_customer_clickhouse_connection, create_import_job, create_invitation, create_object,
     create_org, create_project, create_report, create_run, create_user, create_workspace_view,
     customer_clickhouse_connection_status, delete_artifact_alias, delete_artifact_version,
@@ -154,6 +154,7 @@ fn platform_routes() -> Router<Arc<AppState>> {
 fn control_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/admin/overview", get(admin_overview))
+        .route("/api/admin/data-cells", get(admin_data_cells))
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))

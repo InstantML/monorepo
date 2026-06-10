@@ -12,6 +12,7 @@
 //!     run inside one transaction, so a crash can't leave an org with no owner.
 //!   * Read-after-write — reads hit the table, not a process-local projection.
 
+use chrono::{Duration as ChronoDuration, Utc};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -19,9 +20,9 @@ use crate::{
     control_db::ControlDb,
     domain::{
         BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
-        BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow,
+        BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
         EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow, PublicApiKeyRow,
-        ServiceAccountRow, UserRow, UserSessionRow, WorkspaceViewRow,
+        ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow, WorkspaceViewRow,
     },
     errors::{AppError, AppResult},
     store::TenantRouteRecord,
@@ -29,6 +30,9 @@ use crate::{
 
 /// Postgres SQLSTATE for a unique-constraint violation.
 const PG_UNIQUE_VIOLATION: &str = "23505";
+const DATA_CELL_HEALTH_MAX_AGE_SECS: i64 = 10 * 60;
+const DATA_CELL_BACKUP_MAX_AGE_SECS: i64 = 36 * 60 * 60;
+const CUSTOMER_CLICKHOUSE_PROVISIONER: &str = "customer-clickhouse";
 
 fn is_unique_violation(err: &sqlx::Error) -> bool {
     err.as_database_error()
@@ -55,6 +59,14 @@ pub struct NewIdentity {
 pub struct NewSession {
     pub row: UserSessionRow,
     pub token_hash: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TenantRoutePlacement {
+    pub environment: String,
+    pub cell_id: String,
+    pub actor: String,
+    pub reason: String,
 }
 
 impl ControlDb {
@@ -797,54 +809,185 @@ impl ControlDb {
         Ok(())
     }
 
-    pub async fn upsert_tenant_route(&self, route: &TenantRouteRecord) -> AppResult<()> {
-        sqlx::query(
-            "INSERT INTO tenant_routes \
-             (org_id, status, provisioner, plan_tier, warehouse_kind, \
-              requested_min_replica_memory_gb, requested_max_replica_memory_gb, requested_num_replicas, \
-              applied_min_replica_memory_gb, applied_max_replica_memory_gb, applied_num_replicas, \
-              endpoint, database, username, password_secret_ref, password_ciphertext, \
-              schema_version, service_id, created_at, updated_at, error) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) \
-             ON CONFLICT (org_id) DO UPDATE SET \
-               status = EXCLUDED.status, provisioner = EXCLUDED.provisioner, \
-               plan_tier = EXCLUDED.plan_tier, warehouse_kind = EXCLUDED.warehouse_kind, \
-               requested_min_replica_memory_gb = EXCLUDED.requested_min_replica_memory_gb, \
-               requested_max_replica_memory_gb = EXCLUDED.requested_max_replica_memory_gb, \
-               requested_num_replicas = EXCLUDED.requested_num_replicas, \
-               applied_min_replica_memory_gb = EXCLUDED.applied_min_replica_memory_gb, \
-               applied_max_replica_memory_gb = EXCLUDED.applied_max_replica_memory_gb, \
-               applied_num_replicas = EXCLUDED.applied_num_replicas, \
-               endpoint = EXCLUDED.endpoint, database = EXCLUDED.database, username = EXCLUDED.username, \
-               password_secret_ref = EXCLUDED.password_secret_ref, \
-               password_ciphertext = EXCLUDED.password_ciphertext, \
-               schema_version = EXCLUDED.schema_version, service_id = EXCLUDED.service_id, \
-               updated_at = EXCLUDED.updated_at, error = EXCLUDED.error",
+    pub async fn upsert_tenant_route(
+        &self,
+        route: &TenantRouteRecord,
+    ) -> AppResult<TenantRouteRecord> {
+        self.upsert_tenant_route_with_placement(route, None).await
+    }
+
+    pub async fn upsert_tenant_route_with_placement(
+        &self,
+        route: &TenantRouteRecord,
+        placement: Option<&TenantRoutePlacement>,
+    ) -> AppResult<TenantRouteRecord> {
+        let mut tx = self
+            .pool()
+            .begin()
+            .await
+            .map_err(|err| internal("upsert_tenant_route begin", err))?;
+        lock_tenant_route_org(&mut tx, route.org_id).await?;
+        let existing = select_tenant_route_for_update(&mut tx, route.org_id).await?;
+        if placement.is_none() && explicit_cell_assignment_changed(existing.as_ref(), route) {
+            return Err(AppError::validation(
+                "tenant route cell_id changes require placement context",
+            ));
+        }
+        let mut effective = route.clone();
+        let mut applied_placement = false;
+        if let Some(existing) = &existing {
+            effective.cell_id = route.cell_id.clone().or_else(|| existing.cell_id.clone());
+            effective.placement_reason = route
+                .placement_reason
+                .clone()
+                .or_else(|| existing.placement_reason.clone());
+            effective.assigned_at = route.assigned_at.or(existing.assigned_at);
+        }
+        if effective.cell_id.is_none() {
+            if let Some(placement) = placement {
+                if route_is_managed_cell_candidate(&effective) {
+                    ensure_eligible_cell(&mut tx, placement, route.org_id).await?;
+                    effective.cell_id = Some(placement.cell_id.clone());
+                    effective.placement_reason = Some(placement.reason.clone());
+                    effective.assigned_at = Some(Utc::now());
+                    applied_placement = true;
+                }
+            }
+        }
+        let material_change = tenant_route_material_change(existing.as_ref(), &effective);
+        effective.route_version = match existing.as_ref() {
+            None => effective.route_version.max(1),
+            Some(existing) if material_change => existing.route_version.max(1) + 1,
+            Some(existing) => existing.route_version.max(1),
+        };
+        upsert_tenant_route_tx(&mut tx, &effective).await?;
+        if material_change {
+            insert_tenant_route_event_tx(
+                &mut tx,
+                TenantRouteEventRow {
+                    id: Uuid::new_v4(),
+                    org_id: effective.org_id,
+                    old_cell_id: existing.as_ref().and_then(|route| route.cell_id.clone()),
+                    new_cell_id: effective.cell_id.clone(),
+                    old_status: existing.as_ref().map(|route| route.status.clone()),
+                    new_status: effective.status.clone(),
+                    route_version: effective.route_version,
+                    actor: placement
+                        .filter(|_| applied_placement)
+                        .map(|placement| placement.actor.clone())
+                        .unwrap_or_else(|| "system".to_string()),
+                    reason: placement
+                        .filter(|_| applied_placement)
+                        .map(|placement| placement.reason.clone())
+                        .unwrap_or_else(|| "tenant_route_upsert".to_string()),
+                    created_at: Utc::now(),
+                },
+            )
+            .await?;
+        }
+        tx.commit()
+            .await
+            .map_err(|err| internal("upsert_tenant_route commit", err))?;
+        Ok(effective)
+    }
+
+    pub async fn heartbeat_data_cell(&self, cell: &DataCellRow) -> AppResult<DataCellRow> {
+        let row = sqlx::query_as::<_, DataCellRowDb>(
+            "INSERT INTO data_cells \
+             (cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
+              clickhouse_endpoint_secret_ref, clickhouse_username_secret_ref, clickhouse_password_secret_ref, \
+              clickhouse_database_mode, max_orgs, max_metric_points_monthly, max_api_requests_monthly, \
+              max_retained_bytes, max_disk_usage_pct, reserved_headroom_pct, last_health_at, last_backup_at, \
+              notes, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) \
+             ON CONFLICT (cell_id) DO UPDATE SET \
+               last_health_at = EXCLUDED.last_health_at, \
+               last_backup_at = EXCLUDED.last_backup_at, \
+               updated_at = EXCLUDED.updated_at \
+             RETURNING cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
+               clickhouse_endpoint_secret_ref, clickhouse_username_secret_ref, clickhouse_password_secret_ref, \
+               clickhouse_database_mode, max_orgs, max_metric_points_monthly, max_api_requests_monthly, \
+               max_retained_bytes, max_disk_usage_pct, reserved_headroom_pct, last_health_at, last_backup_at, \
+               notes, created_at, updated_at",
         )
-        .bind(route.org_id)
-        .bind(&route.status)
-        .bind(&route.provisioner)
-        .bind(&route.plan_tier)
-        .bind(&route.warehouse_kind)
-        .bind(opt_u32_to_i32(route.requested_min_replica_memory_gb))
-        .bind(opt_u32_to_i32(route.requested_max_replica_memory_gb))
-        .bind(opt_u32_to_i32(route.requested_num_replicas))
-        .bind(opt_u32_to_i32(route.applied_min_replica_memory_gb))
-        .bind(opt_u32_to_i32(route.applied_max_replica_memory_gb))
-        .bind(opt_u32_to_i32(route.applied_num_replicas))
-        .bind(&route.endpoint)
-        .bind(&route.database)
-        .bind(&route.username)
-        .bind(&route.password_secret_ref)
-        .bind(&route.password_ciphertext)
-        .bind(opt_u32_to_i32(route.schema_version))
-        .bind(&route.service_id)
-        .bind(route.created_at)
-        .bind(route.updated_at)
-        .bind(&route.error)
+        .bind(&cell.cell_id)
+        .bind(&cell.environment)
+        .bind(&cell.region)
+        .bind(&cell.tier)
+        .bind(&cell.status)
+        .bind(&cell.service_name)
+        .bind(&cell.public_api_base)
+        .bind(&cell.internal_api_base)
+        .bind(&cell.clickhouse_endpoint_secret_ref)
+        .bind(&cell.clickhouse_username_secret_ref)
+        .bind(&cell.clickhouse_password_secret_ref)
+        .bind(&cell.clickhouse_database_mode)
+        .bind(cell.max_orgs)
+        .bind(cell.max_metric_points_monthly)
+        .bind(cell.max_api_requests_monthly)
+        .bind(cell.max_retained_bytes)
+        .bind(cell.max_disk_usage_pct)
+        .bind(cell.reserved_headroom_pct)
+        .bind(cell.last_health_at)
+        .bind(cell.last_backup_at)
+        .bind(&cell.notes)
+        .bind(cell.created_at)
+        .bind(cell.updated_at)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|err| internal("heartbeat_data_cell", err))?;
+        Ok(row.into())
+    }
+
+    pub async fn upsert_data_cell(&self, cell: &DataCellRow) -> AppResult<()> {
+        sqlx::query(
+            "INSERT INTO data_cells \
+             (cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
+              clickhouse_endpoint_secret_ref, clickhouse_username_secret_ref, clickhouse_password_secret_ref, \
+              clickhouse_database_mode, max_orgs, max_metric_points_monthly, max_api_requests_monthly, \
+              max_retained_bytes, max_disk_usage_pct, reserved_headroom_pct, last_health_at, last_backup_at, \
+              notes, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) \
+             ON CONFLICT (cell_id) DO UPDATE SET \
+               environment = EXCLUDED.environment, region = EXCLUDED.region, tier = EXCLUDED.tier, \
+               status = EXCLUDED.status, service_name = EXCLUDED.service_name, \
+               public_api_base = EXCLUDED.public_api_base, internal_api_base = EXCLUDED.internal_api_base, \
+               clickhouse_endpoint_secret_ref = EXCLUDED.clickhouse_endpoint_secret_ref, \
+               clickhouse_username_secret_ref = EXCLUDED.clickhouse_username_secret_ref, \
+               clickhouse_password_secret_ref = EXCLUDED.clickhouse_password_secret_ref, \
+               clickhouse_database_mode = EXCLUDED.clickhouse_database_mode, \
+               max_orgs = EXCLUDED.max_orgs, max_metric_points_monthly = EXCLUDED.max_metric_points_monthly, \
+               max_api_requests_monthly = EXCLUDED.max_api_requests_monthly, \
+               max_retained_bytes = EXCLUDED.max_retained_bytes, max_disk_usage_pct = EXCLUDED.max_disk_usage_pct, \
+               reserved_headroom_pct = EXCLUDED.reserved_headroom_pct, last_health_at = EXCLUDED.last_health_at, \
+               last_backup_at = EXCLUDED.last_backup_at, notes = EXCLUDED.notes, updated_at = EXCLUDED.updated_at",
+        )
+        .bind(&cell.cell_id)
+        .bind(&cell.environment)
+        .bind(&cell.region)
+        .bind(&cell.tier)
+        .bind(&cell.status)
+        .bind(&cell.service_name)
+        .bind(&cell.public_api_base)
+        .bind(&cell.internal_api_base)
+        .bind(&cell.clickhouse_endpoint_secret_ref)
+        .bind(&cell.clickhouse_username_secret_ref)
+        .bind(&cell.clickhouse_password_secret_ref)
+        .bind(&cell.clickhouse_database_mode)
+        .bind(cell.max_orgs)
+        .bind(cell.max_metric_points_monthly)
+        .bind(cell.max_api_requests_monthly)
+        .bind(cell.max_retained_bytes)
+        .bind(cell.max_disk_usage_pct)
+        .bind(cell.reserved_headroom_pct)
+        .bind(cell.last_health_at)
+        .bind(cell.last_backup_at)
+        .bind(&cell.notes)
+        .bind(cell.created_at)
+        .bind(cell.updated_at)
         .execute(self.pool())
         .await
-        .map_err(|err| internal("upsert_tenant_route", err))?;
+        .map_err(|err| internal("upsert_data_cell", err))?;
         Ok(())
     }
 
@@ -896,7 +1039,8 @@ impl ControlDb {
 
     pub async fn load_tenant_routes(&self) -> AppResult<Vec<TenantRouteRecord>> {
         let rows = sqlx::query_as::<_, TenantRouteRowDb>(
-            "SELECT org_id, status, provisioner, plan_tier, warehouse_kind, \
+            "SELECT org_id, status, provisioner, cell_id, route_version, placement_reason, assigned_at, \
+             plan_tier, warehouse_kind, \
              requested_min_replica_memory_gb, requested_max_replica_memory_gb, requested_num_replicas, \
              applied_min_replica_memory_gb, applied_max_replica_memory_gb, applied_num_replicas, \
              endpoint, database, username, password_secret_ref, password_ciphertext, schema_version, \
@@ -907,6 +1051,251 @@ impl ControlDb {
         .map_err(|err| internal("load_tenant_routes", err))?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
+
+    pub async fn load_data_cells(&self) -> AppResult<Vec<DataCellRow>> {
+        let rows = sqlx::query_as::<_, DataCellRowDb>(
+            "SELECT cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
+             clickhouse_endpoint_secret_ref, clickhouse_username_secret_ref, clickhouse_password_secret_ref, \
+             clickhouse_database_mode, max_orgs, max_metric_points_monthly, max_api_requests_monthly, \
+             max_retained_bytes, max_disk_usage_pct, reserved_headroom_pct, last_health_at, last_backup_at, \
+             notes, created_at, updated_at FROM data_cells ORDER BY environment, tier, cell_id",
+        )
+        .fetch_all(self.pool())
+        .await
+        .map_err(|err| internal("load_data_cells", err))?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn load_tenant_route_events(&self) -> AppResult<Vec<TenantRouteEventRow>> {
+        let rows = sqlx::query_as::<_, TenantRouteEventRowDb>(
+            "SELECT id, org_id, old_cell_id, new_cell_id, old_status, new_status, \
+             route_version, actor, reason, created_at FROM tenant_route_events \
+             ORDER BY created_at, id",
+        )
+        .fetch_all(self.pool())
+        .await
+        .map_err(|err| internal("load_tenant_route_events", err))?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+}
+
+async fn select_tenant_route_for_update(
+    tx: &mut Transaction<'_, Postgres>,
+    org_id: Uuid,
+) -> AppResult<Option<TenantRouteRecord>> {
+    let row = sqlx::query_as::<_, TenantRouteRowDb>(
+        "SELECT org_id, status, provisioner, cell_id, route_version, placement_reason, assigned_at, \
+         plan_tier, warehouse_kind, requested_min_replica_memory_gb, requested_max_replica_memory_gb, \
+         requested_num_replicas, applied_min_replica_memory_gb, applied_max_replica_memory_gb, \
+         applied_num_replicas, endpoint, database, username, password_secret_ref, password_ciphertext, \
+         schema_version, service_id, created_at, updated_at, error \
+         FROM tenant_routes WHERE org_id = $1 FOR UPDATE",
+    )
+    .bind(org_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|err| internal("select_tenant_route_for_update", err))?;
+    Ok(row.map(Into::into))
+}
+
+async fn lock_tenant_route_org(tx: &mut Transaction<'_, Postgres>, org_id: Uuid) -> AppResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+        .bind(org_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .map_err(|err| internal("lock_tenant_route_org", err))?;
+    Ok(())
+}
+
+fn explicit_cell_assignment_changed(
+    existing: Option<&TenantRouteRecord>,
+    route: &TenantRouteRecord,
+) -> bool {
+    let Some(requested_cell) = route.cell_id.as_ref() else {
+        return false;
+    };
+    existing.and_then(|route| route.cell_id.as_ref()) != Some(requested_cell)
+}
+
+async fn ensure_eligible_cell(
+    tx: &mut Transaction<'_, Postgres>,
+    placement: &TenantRoutePlacement,
+    org_id: Uuid,
+) -> AppResult<()> {
+    let Some(cell) = sqlx::query_as::<_, DataCellRowDb>(
+        "SELECT cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
+         clickhouse_endpoint_secret_ref, clickhouse_username_secret_ref, clickhouse_password_secret_ref, \
+         clickhouse_database_mode, max_orgs, max_metric_points_monthly, max_api_requests_monthly, \
+         max_retained_bytes, max_disk_usage_pct, reserved_headroom_pct, last_health_at, last_backup_at, \
+         notes, created_at, updated_at FROM data_cells \
+         WHERE environment = $1 AND cell_id = $2 FOR UPDATE",
+    )
+    .bind(&placement.environment)
+    .bind(&placement.cell_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|err| internal("select_data_cell_for_update", err))?
+    .map(DataCellRow::from) else {
+        return Err(AppError::service_unavailable(format!(
+            "data cell {} is not registered for placement",
+            placement.cell_id
+        )));
+    };
+    if cell.status != "open" {
+        return Err(AppError::service_unavailable(format!(
+            "data cell {} is not open for placement",
+            cell.cell_id
+        )));
+    }
+    let now = Utc::now();
+    if cell.last_health_at.is_none_or(|last_health| {
+        now.signed_duration_since(last_health)
+            > ChronoDuration::seconds(DATA_CELL_HEALTH_MAX_AGE_SECS)
+    }) {
+        return Err(AppError::service_unavailable(format!(
+            "data cell {} has no recent health check",
+            cell.cell_id
+        )));
+    }
+    if cell.last_backup_at.is_none_or(|last_backup| {
+        now.signed_duration_since(last_backup)
+            > ChronoDuration::seconds(DATA_CELL_BACKUP_MAX_AGE_SECS)
+    }) {
+        return Err(AppError::service_unavailable(format!(
+            "data cell {} has no recent backup",
+            cell.cell_id
+        )));
+    }
+    if let Some(max_orgs) = cell.max_orgs {
+        let assigned: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM tenant_routes \
+             WHERE cell_id = $1 AND org_id <> $2 AND status IN ('ready', 'provisioning')",
+        )
+        .bind(&cell.cell_id)
+        .bind(org_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|err| internal("count_data_cell_routes", err))?;
+        if assigned >= i64::from(max_orgs) {
+            return Err(AppError::service_unavailable(format!(
+                "data cell {} has no remaining org capacity",
+                cell.cell_id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn route_is_managed_cell_candidate(route: &TenantRouteRecord) -> bool {
+    matches!(route.status.as_str(), "ready" | "provisioning")
+        && route.provisioner != CUSTOMER_CLICKHOUSE_PROVISIONER
+}
+
+fn tenant_route_material_change(
+    existing: Option<&TenantRouteRecord>,
+    effective: &TenantRouteRecord,
+) -> bool {
+    let Some(existing) = existing else {
+        return true;
+    };
+    existing.status != effective.status
+        || existing.provisioner != effective.provisioner
+        || existing.cell_id != effective.cell_id
+        || existing.endpoint != effective.endpoint
+        || existing.database != effective.database
+        || existing.username != effective.username
+        || existing.password_secret_ref != effective.password_secret_ref
+        || existing.password_ciphertext != effective.password_ciphertext
+        || existing.schema_version != effective.schema_version
+        || existing.service_id != effective.service_id
+        || existing.plan_tier != effective.plan_tier
+        || existing.warehouse_kind != effective.warehouse_kind
+        || existing.placement_reason != effective.placement_reason
+        || existing.assigned_at != effective.assigned_at
+}
+
+async fn upsert_tenant_route_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    route: &TenantRouteRecord,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO tenant_routes \
+         (org_id, status, provisioner, cell_id, route_version, placement_reason, assigned_at, \
+          plan_tier, warehouse_kind, requested_min_replica_memory_gb, requested_max_replica_memory_gb, \
+          requested_num_replicas, applied_min_replica_memory_gb, applied_max_replica_memory_gb, \
+          applied_num_replicas, endpoint, database, username, password_secret_ref, password_ciphertext, \
+          schema_version, service_id, created_at, updated_at, error) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) \
+         ON CONFLICT (org_id) DO UPDATE SET \
+           status = EXCLUDED.status, provisioner = EXCLUDED.provisioner, \
+           cell_id = EXCLUDED.cell_id, route_version = EXCLUDED.route_version, \
+           placement_reason = EXCLUDED.placement_reason, assigned_at = EXCLUDED.assigned_at, \
+           plan_tier = EXCLUDED.plan_tier, warehouse_kind = EXCLUDED.warehouse_kind, \
+           requested_min_replica_memory_gb = EXCLUDED.requested_min_replica_memory_gb, \
+           requested_max_replica_memory_gb = EXCLUDED.requested_max_replica_memory_gb, \
+           requested_num_replicas = EXCLUDED.requested_num_replicas, \
+           applied_min_replica_memory_gb = EXCLUDED.applied_min_replica_memory_gb, \
+           applied_max_replica_memory_gb = EXCLUDED.applied_max_replica_memory_gb, \
+           applied_num_replicas = EXCLUDED.applied_num_replicas, endpoint = EXCLUDED.endpoint, \
+           database = EXCLUDED.database, username = EXCLUDED.username, \
+           password_secret_ref = EXCLUDED.password_secret_ref, password_ciphertext = EXCLUDED.password_ciphertext, \
+           schema_version = EXCLUDED.schema_version, service_id = EXCLUDED.service_id, \
+           updated_at = EXCLUDED.updated_at, error = EXCLUDED.error",
+    )
+    .bind(route.org_id)
+    .bind(&route.status)
+    .bind(&route.provisioner)
+    .bind(&route.cell_id)
+    .bind(route.route_version)
+    .bind(&route.placement_reason)
+    .bind(route.assigned_at)
+    .bind(&route.plan_tier)
+    .bind(&route.warehouse_kind)
+    .bind(opt_u32_to_i32(route.requested_min_replica_memory_gb))
+    .bind(opt_u32_to_i32(route.requested_max_replica_memory_gb))
+    .bind(opt_u32_to_i32(route.requested_num_replicas))
+    .bind(opt_u32_to_i32(route.applied_min_replica_memory_gb))
+    .bind(opt_u32_to_i32(route.applied_max_replica_memory_gb))
+    .bind(opt_u32_to_i32(route.applied_num_replicas))
+    .bind(&route.endpoint)
+    .bind(&route.database)
+    .bind(&route.username)
+    .bind(&route.password_secret_ref)
+    .bind(&route.password_ciphertext)
+    .bind(opt_u32_to_i32(route.schema_version))
+    .bind(&route.service_id)
+    .bind(route.created_at)
+    .bind(route.updated_at)
+    .bind(&route.error)
+    .execute(&mut **tx)
+    .await
+    .map_err(|err| internal("upsert_tenant_route_tx", err))?;
+    Ok(())
+}
+
+async fn insert_tenant_route_event_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    event: TenantRouteEventRow,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO tenant_route_events \
+         (id, org_id, old_cell_id, new_cell_id, old_status, new_status, route_version, actor, reason, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+    )
+    .bind(event.id)
+    .bind(event.org_id)
+    .bind(&event.old_cell_id)
+    .bind(&event.new_cell_id)
+    .bind(&event.old_status)
+    .bind(&event.new_status)
+    .bind(event.route_version)
+    .bind(&event.actor)
+    .bind(&event.reason)
+    .bind(event.created_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(|err| internal("insert_tenant_route_event", err))?;
+    Ok(())
 }
 
 // === Billing ===============================================================

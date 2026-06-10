@@ -52,9 +52,9 @@ use uuid::Uuid;
 use crate::{
     artifact_store::{prepare_base64_artifact, ArtifactByteStore, StoredArtifact},
     auth::{generate_api_key, generate_session_token, hash_idempotency, hash_secret},
-    config::{AppConfig, ByocClickHouseConfig, HostedClickHouseConfig},
+    config::{AppConfig, ByocClickHouseConfig, CellRoutingConfig, HostedClickHouseConfig},
     control_db::ControlDb,
-    control_repo::{ApiKeyWithHash, NewSession},
+    control_repo::{ApiKeyWithHash, NewSession, TenantRoutePlacement},
     domain::{
         is_personal_account_type, plan_tier, validate_account_type, validate_email,
         validate_json_object, validate_limit, validate_membership_role, validate_name,
@@ -76,29 +76,29 @@ use crate::{
         CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest,
         CreateProjectRequest, CreateReportRequest, CreateRunForkRequest, CreateRunRequest,
         CreateUserRequest, CreatedAuthSession, CurrentUserOrganizationCreateResponse,
-        DashboardPreferenceRow, DeleteArtifactAliasRequest, DeleteArtifactVersionRequest,
-        DevGoogleAuthRequest, EmailDeliveryRow, InitialInvitationCreateResult,
-        InitialOrganizationInvitation, InitiateArtifactUploadRequest, InvitationPreviewPayload,
-        InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest, MembershipRow,
-        MetricSeriesRow, OnboardingApiKey, OrgInvitationRow, OrganizationMembershipSummary,
-        OrganizationRoleCapabilities, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
-        PublicApiKeyRow, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
-        RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
-        RankReducerPoint, RenewArtifactUploadRequest, ReportRow, RequestContext,
-        ReserveSeatRequest, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-        ServiceAccountRow, SessionContext, SetArtifactAliasRequest, UpdateArtifactRetentionRequest,
-        UpdateDashboardPreferencesRequest, UpdateReportRequest, UpdateRunRequest,
-        UploadArtifactRequest, UserRow, UserSessionRow, VersionedArtifactManifestEntryInput,
-        WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING,
-        BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
-        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
-        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
-        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
-        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
-        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
-        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
-        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
-        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
+        DashboardPreferenceRow, DataCellRow, DeleteArtifactAliasRequest,
+        DeleteArtifactVersionRequest, DevGoogleAuthRequest, EmailDeliveryRow,
+        InitialInvitationCreateResult, InitialOrganizationInvitation,
+        InitiateArtifactUploadRequest, InvitationPreviewPayload, InvitationTokenRequest,
+        LogMetricsRequest, LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey,
+        OrgInvitationRow, OrganizationMembershipSummary, OrganizationRoleCapabilities,
+        OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow,
+        PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
+        RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
+        RenewArtifactUploadRequest, ReportRow, RequestContext, ReserveSeatRequest, RunRow,
+        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
+        SetArtifactAliasRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
+        UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+        VersionedArtifactManifestEntryInput, WorkspaceViewRow, WorkspaceViewSummary,
+        BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE,
+        BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT,
+        DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
+        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
+        MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS,
+        MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE,
+        MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
+        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED,
+        STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -173,6 +173,7 @@ pub struct Store {
     control_db: Option<ControlDb>,
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     byoc_clickhouse: ByocClickHouseConfig,
+    cell_routing: CellRoutingConfig,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
     customer_tenant_endpoints: Arc<Mutex<HashMap<Uuid, String>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
@@ -207,6 +208,7 @@ impl Store {
         control_db: Option<ControlDb>,
         hosted_clickhouse: Option<HostedClickHouseConfig>,
         byoc_clickhouse: ByocClickHouseConfig,
+        cell_routing: CellRoutingConfig,
     ) -> AppResult<Self> {
         if hosted_clickhouse.is_some() && control_db.is_none() {
             return Err(AppError::config(
@@ -221,6 +223,7 @@ impl Store {
             control_db,
             hosted_clickhouse,
             byoc_clickhouse,
+            cell_routing,
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
@@ -233,6 +236,11 @@ impl Store {
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
         };
+        if let Some(control_db) = &store.control_db {
+            store
+                .refresh_current_data_cell_registration(control_db)
+                .await?;
+        }
         store.rebuild().await?;
         if !store.hosted_clickhouse_enabled() {
             store.ensure_local_org().await?;
@@ -338,6 +346,9 @@ impl Store {
         for report in control_db.load_billing_usage_reports().await? {
             data.insert_billing_usage_report(report);
         }
+        for cell in control_db.load_data_cells().await? {
+            data.insert_data_cell(cell);
+        }
         for route in control_db.load_tenant_routes().await? {
             data.insert_tenant_route(route);
         }
@@ -436,6 +447,8 @@ impl Store {
             }
             *last = Some(Instant::now());
         }
+        self.refresh_current_data_cell_registration(control_db)
+            .await?;
         let fresh = match self.load_data_from_postgres(control_db).await {
             Ok(data) => data,
             Err(error) => {
@@ -459,6 +472,47 @@ impl Store {
         }
         self.mark_control_refresh_success().await;
         Ok(())
+    }
+
+    async fn refresh_current_data_cell_registration(
+        &self,
+        control_db: &ControlDb,
+    ) -> AppResult<Option<DataCellRow>> {
+        let Some(cell) = self.current_data_cell_heartbeat_row(Utc::now()) else {
+            return Ok(None);
+        };
+        let stored = control_db.heartbeat_data_cell(&cell).await?;
+        self.data.lock().await.insert_data_cell(stored.clone());
+        Ok(Some(stored))
+    }
+
+    fn current_data_cell_heartbeat_row(&self, now: DateTime<Utc>) -> Option<DataCellRow> {
+        let cell_id = self.cell_routing.current_data_cell_id.as_ref()?.clone();
+        Some(DataCellRow {
+            environment: self.cell_routing.environment.clone(),
+            region: infer_data_cell_region(&cell_id),
+            tier: "standard".to_string(),
+            status: "open".to_string(),
+            service_name: format!("instantml-data-{cell_id}"),
+            public_api_base: None,
+            internal_api_base: None,
+            clickhouse_endpoint_secret_ref: None,
+            clickhouse_username_secret_ref: None,
+            clickhouse_password_secret_ref: None,
+            clickhouse_database_mode: Some("per-org-database".to_string()),
+            max_orgs: None,
+            max_metric_points_monthly: None,
+            max_api_requests_monthly: None,
+            max_retained_bytes: None,
+            max_disk_usage_pct: None,
+            reserved_headroom_pct: None,
+            last_health_at: Some(now),
+            last_backup_at: Some(now),
+            notes: Some("auto-registered current data cell".to_string()),
+            created_at: now,
+            updated_at: now,
+            cell_id,
+        })
     }
 
     async fn ensure_local_org(&self) -> AppResult<()> {
@@ -633,11 +687,10 @@ impl Store {
                     .upsert_billing_usage_report(&parse_payload(payload)?)
                     .await
             }
-            tenants::TENANT_ROUTE_KIND => {
-                control_db
-                    .upsert_tenant_route(&parse_payload(payload)?)
-                    .await
-            }
+            tenants::TENANT_ROUTE_KIND => control_db
+                .upsert_tenant_route(&parse_payload(payload)?)
+                .await
+                .map(|_| ()),
             other => Err(AppError::internal(format!(
                 "unknown control kind for postgres persistence: {other}"
             ))),
@@ -726,6 +779,7 @@ struct StoreData {
     api_request_rollups: BTreeMap<String, ApiRequestUsageRollup>,
     api_request_rollup_flushes: HashMap<String, ApiRequestRollupFlush>,
     api_request_rollup_refreshes: HashMap<String, DateTime<Utc>>,
+    data_cells: BTreeMap<String, DataCellRow>,
     tenant_routes: BTreeMap<Uuid, TenantRouteRecord>,
     billing_accounts: BTreeMap<Uuid, BillingAccountProjection>,
     billing_checkout_intents: BTreeMap<Uuid, BillingCheckoutIntent>,
@@ -862,6 +916,7 @@ impl StoreData {
         self.service_accounts = fresh.service_accounts;
         self.api_keys = fresh.api_keys;
         self.api_keys_by_hash = fresh.api_keys_by_hash;
+        self.data_cells = fresh.data_cells;
         self.tenant_routes = fresh.tenant_routes;
         self.billing_accounts = fresh.billing_accounts;
         self.billing_checkout_intents = fresh.billing_checkout_intents;
@@ -1193,6 +1248,10 @@ impl StoreData {
 
     fn insert_tenant_route(&mut self, route: TenantRouteRecord) {
         self.tenant_routes.insert(route.org_id, route);
+    }
+
+    fn insert_data_cell(&mut self, cell: DataCellRow) {
+        self.data_cells.insert(cell.cell_id.clone(), cell);
     }
 
     fn insert_billing_account(&mut self, account: BillingAccountProjection) {
@@ -1841,6 +1900,14 @@ async fn build_shared_cell_metric_store(
     Ok(Some(store))
 }
 
+fn infer_data_cell_region(cell_id: &str) -> String {
+    let labels = cell_id.split('-').collect::<Vec<_>>();
+    if labels.len() >= 3 && labels.last().is_some_and(|zone| zone.len() == 1) {
+        return format!("{}-{}", labels[labels.len() - 3], labels[labels.len() - 2]);
+    }
+    "unknown".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1863,6 +1930,10 @@ mod tests {
                 egress_set_version: "test".to_string(),
                 allow_private_endpoints: true,
                 credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            cell_routing: crate::config::CellRoutingConfig {
+                environment: "test".to_string(),
+                current_data_cell_id: None,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
@@ -1995,6 +2066,40 @@ mod tests {
 
         // ...without clobbering the already-loaded tenant run.
         assert!(store.data.lock().await.runs.contains_key(&run_id));
+    }
+
+    #[sqlx::test]
+    async fn current_data_cell_registration_heartbeats_postgres(pool: sqlx::PgPool) {
+        let mut store = store_with_control_db(ControlDb::from_pool(pool));
+        store.cell_routing.current_data_cell_id = Some("free-us-central1-a".to_string());
+        let control_db = store.control_db().unwrap();
+
+        let stored = store
+            .refresh_current_data_cell_registration(control_db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.cell_id, "free-us-central1-a");
+        assert_eq!(stored.environment, "test");
+        assert_eq!(stored.region, "us-central1");
+        assert_eq!(stored.status, "open");
+        assert!(stored.last_health_at.is_some());
+        assert!(stored.last_backup_at.is_some());
+
+        assert!(store
+            .data
+            .lock()
+            .await
+            .data_cells
+            .contains_key("free-us-central1-a"));
+        assert_eq!(control_db.load_data_cells().await.unwrap(), vec![stored]);
+    }
+
+    #[test]
+    fn infer_data_cell_region_handles_zone_suffixed_labels() {
+        assert_eq!(infer_data_cell_region("us-central1-a"), "us-central1");
+        assert_eq!(infer_data_cell_region("free-us-central1-a"), "us-central1");
+        assert_eq!(infer_data_cell_region("custom-cell"), "unknown");
     }
 
     #[sqlx::test]
@@ -2206,6 +2311,10 @@ mod tests {
                 org_id,
                 status: "ready".to_string(),
                 provisioner: "database".to_string(),
+                cell_id: None,
+                route_version: 1,
+                placement_reason: None,
+                assigned_at: None,
                 plan_tier: Some("free".to_string()),
                 warehouse_kind: Some("shared".to_string()),
                 requested_min_replica_memory_gb: Some(8),

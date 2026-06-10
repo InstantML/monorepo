@@ -112,6 +112,13 @@ Rust API -> Cloudflare R2 private per-org buckets
 
 For the hosted path, do not add a central hot-path application proxy for all SDK/browser/metric/artifact traffic. Use a global control-plane responsibility for auth, org lookup, account state, and tenant routes, then route to data-plane cells. The Rust binary can be started as `INSTANTML_SERVICE_PLANE=combined`, `control`, or `data`; the deploy helper can launch either the combined service or split control/data Cloud Run services. Start with dedicated single-active-instance customer cells when isolation is needed, and start shared multi-instance cells only after the read/write gates in `docs/design/2026-05-16-multi-instance-control-data-plane.md` are closed. Dedicated per-customer services/cells make sense for serious customers that need isolation, noisy-neighbor protection, or custom retention.
 
+The control-plane Postgres schema now includes an operator-seeded `data_cells`
+registry, tenant-route placement metadata, route versions, and route audit
+events. New hosted routes can be annotated with the configured current cell
+when that registry row is open, healthy, recently backed up, and under
+capacity. Public SDK/browser route discovery and shared-cell multi-writer
+admission remain future gates.
+
 Internal hosted first slice:
 
 ```text
