@@ -41,6 +41,10 @@ test("workspace chart visual polish preserves geometry and dark-mode marker outl
   assert.match(chartsCss, /\.fullscreen-panel-card \.chart-range-row[\s\S]*?width: var\(--fullscreen-chart-width/);
   assert.match(panelsCss, /\.fullscreen-panel-card \.metric-chart[\s\S]*?width: var\(--fullscreen-chart-width\)[\s\S]*?aspect-ratio: 920 \/ 430/);
   assert.match(panelsCss, /\.fullscreen-panel-card \.alt-panel-chart svg[\s\S]*?width: var\(--fullscreen-chart-width\)[\s\S]*?aspect-ratio: 920 \/ 430/);
+  assert.match(panelsCss, /\.workspace-panel-card \.chart-area[\s\S]*?grid-template-rows: minmax\(0, 1fr\) auto auto/);
+  assert.match(panelsCss, /\.workspace-panel-card:not\(\.fullscreen-panel-card\) \.metric-chart-frame[\s\S]*?height: 100%[\s\S]*?aspect-ratio: auto/);
+  assert.match(chartsCss, /\.metric-chart-canvas[\s\S]*?object-fit: fill/);
+  assert.match(read("app/dashboard/metrics/metric-chart.tsx"), /preserveAspectRatio="none"/);
   assert.match(panelsCss, /\.summary-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
   assert.match(panelsCss, /\.scatter-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
 });

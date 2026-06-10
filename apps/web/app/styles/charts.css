@@ -1084,10 +1084,9 @@ small {
   z-index: 1;
   width: 100%;
   height: 100%;
-  /* Letterbox like the overlay SVG's viewBox (xMidYMid meet) so the
-   * canvas-drawn lines stay pixel-aligned with the axes even if the frame
-   * box ratio drifts from the chart's intrinsic ratio. */
-  object-fit: contain;
+  /* Stretch like the overlay SVG's preserveAspectRatio="none" mapping so
+   * dense canvas lines stay pixel-aligned with axes in resized panels. */
+  object-fit: fill;
   pointer-events: none;
 }
 
