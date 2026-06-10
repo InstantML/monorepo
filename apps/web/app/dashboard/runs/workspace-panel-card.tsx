@@ -1056,6 +1056,7 @@ export function WorkspacePanelCard({
             domain={domain}
             emptyMessage={panelRuns.length ? "No logged series for this metric in the current run set." : undefined}
             exportFilenameBase={`instantml-${panel.metricKey}`}
+            fillFrame={!isFullscreenPanel}
             fullDomain={fullDomain}
             height={panelChartHeight}
             hover={panelHover}

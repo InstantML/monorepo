@@ -201,6 +201,7 @@ export function MetricChart({
   domain,
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
   exportFilenameBase,
+  fillFrame = false,
   fullDomain,
   height = chartHeight,
   hover,
@@ -222,6 +223,7 @@ export function MetricChart({
   domain: any;
   emptyMessage?: string;
   exportFilenameBase?: string;
+  fillFrame?: boolean;
   fullDomain?: any;
   height?: number;
   hover: HoverPoint;
@@ -252,7 +254,7 @@ export function MetricChart({
   const seriesMutedOpacity = seriesCount > 60 ? 0.07 : seriesCount > 24 ? 0.1 : seriesCount > 8 ? 0.16 : 0.24;
   const seriesHoverCanvasOpacity = seriesCount > 60 ? 0.38 : seriesCount > 24 ? 0.48 : 0.58;
   const chartFrameStyle = {
-    aspectRatio: `${width} / ${height}`,
+    ...(fillFrame ? {} : { aspectRatio: `${width} / ${height}` }),
     "--series-stroke-opacity": seriesStrokeOpacity,
     "--series-muted-opacity": seriesMutedOpacity,
     "--series-hover-canvas-opacity": seriesHoverCanvasOpacity,
