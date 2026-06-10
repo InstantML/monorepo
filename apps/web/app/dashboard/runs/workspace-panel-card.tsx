@@ -12,6 +12,8 @@ import {
   chartHeight,
   chartPadding,
   chartWidth,
+  MIN_LINE_WORKSPACE_PANEL_ROWS,
+  MIN_WORKSPACE_PANEL_ROWS,
   metricTitle,
   workspacePanelTypeLabel,
 } from "../../dashboard-models";
@@ -752,7 +754,8 @@ export function WorkspacePanelCard({
   const pendingHoverRef = useRef<{ x: number; y: number } | null>(null);
   const resizeCleanupRef = useRef<() => void>(() => {});
   const settings = useMemo(() => resolveWorkspaceSettings(view, section, panel), [panel, section, view]);
-  const layout = useMemo(() => resizePreview ?? normalizedPanelLayout(panel.layout), [panel.layout, resizePreview]);
+  const layoutMinRows = panel.type === "line" ? MIN_LINE_WORKSPACE_PANEL_ROWS : MIN_WORKSPACE_PANEL_ROWS;
+  const layout = useMemo(() => resizePreview ?? normalizedPanelLayout(panel.layout, panel.type), [panel.layout, panel.type, resizePreview]);
   const isFullscreenPanel = className.split(/\s+/).includes("fullscreen-panel-card");
   const panelChartWidth = isFullscreenPanel ? 920 : chartWidth;
   const panelChartHeight = isFullscreenPanel ? 430 : chartHeight;
@@ -900,7 +903,7 @@ export function WorkspacePanelCard({
     resizeCleanupRef.current();
     const startX = event.clientX;
     const startY = event.clientY;
-    const startLayout = normalizedPanelLayout(panel.layout);
+    const startLayout = normalizedPanelLayout(panel.layout, panel.type);
     const columnUnit = Math.max(1, grid.getBoundingClientRect().width / 12);
     const rowUnit = 78;
     const pointerId = event.pointerId;
@@ -924,14 +927,14 @@ export function WorkspacePanelCard({
     function handlePointerMove(pointerEvent: globalThis.PointerEvent) {
       const next = {
         w: Math.max(3, Math.min(12, Math.round(startLayout.w + (pointerEvent.clientX - startX) / columnUnit))),
-        h: Math.max(3, Math.min(10, Math.round(startLayout.h + (pointerEvent.clientY - startY) / rowUnit))),
+        h: Math.max(layoutMinRows, Math.min(10, Math.round(startLayout.h + (pointerEvent.clientY - startY) / rowUnit))),
       };
       setResizePreview(next);
     }
     function handlePointerUp(pointerEvent: globalThis.PointerEvent) {
       const next = {
         w: Math.max(3, Math.min(12, Math.round(startLayout.w + (pointerEvent.clientX - startX) / columnUnit))),
-        h: Math.max(3, Math.min(10, Math.round(startLayout.h + (pointerEvent.clientY - startY) / rowUnit))),
+        h: Math.max(layoutMinRows, Math.min(10, Math.round(startLayout.h + (pointerEvent.clientY - startY) / rowUnit))),
       };
       setResizePreview(null);
       commitResize(next);

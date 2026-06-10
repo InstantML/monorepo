@@ -3213,7 +3213,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         ? {
           ...section,
           panels: section.panels.map((panel) => panel.id === panelId
-            ? { ...panel, layout: sanitizePanelLayout(layout) }
+            ? { ...panel, layout: sanitizePanelLayout(layout, panel.type) }
             : panel),
         }
         : section),
