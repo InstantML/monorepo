@@ -379,10 +379,12 @@ try {
     const tabs = document.querySelector(".tabs");
     return {
       focusWithin: tabs?.matches(":focus-within") ?? false,
+      nativeTitleCount: document.querySelectorAll("nav.tabs [title]").length,
       width: tabs?.getBoundingClientRect().width ?? 0,
     };
   });
   assert.equal(collapsedNav.focusWithin, false);
+  assert.equal(collapsedNav.nativeTitleCount, 0, "sidebar nav should use stable custom labels instead of native title tooltips");
   assert.ok(collapsedNav.width < 80, `sidebar should collapse after mouse tab select, got ${collapsedNav.width}`);
 
   await page.evaluate(() => {
@@ -950,92 +952,87 @@ try {
   await page.evaluate(() => window.scrollTo(0, 0));
 
   const firstWorkspacePanel = page.locator(".workspace-panel-card").first();
+  await firstWorkspacePanel.scrollIntoViewIfNeeded();
   const startingLayout = await firstWorkspacePanel.evaluate((node) => ({
     h: Number(node.dataset.panelHeight),
     w: Number(node.dataset.panelWidth),
   }));
+  const startingGeometry = await firstWorkspacePanel.evaluate((card) => {
+    const grid = card.closest(".workspace-panel-grid");
+    const chartArea = card.querySelector(".chart-area");
+    const frame = card.querySelector(".metric-chart-frame");
+    const legend = card.querySelector(".chart-legend");
+    const handle = card.querySelector(".panel-resize-handle");
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return { bottom: box.bottom, height: box.height, left: box.left, right: box.right, top: box.top, width: box.width };
+    };
+    const handleBox = rect(handle);
+    const rowHeight = Number.parseFloat(getComputedStyle(grid).gridAutoRows);
+    const rowGap = Number.parseFloat(getComputedStyle(grid).rowGap);
+    const expectedPanelHeight = Number(card.dataset.panelHeight) * rowHeight + (Number(card.dataset.panelHeight) - 1) * rowGap;
+    const hit = document.elementFromPoint(handleBox.left + handleBox.width / 2, handleBox.top + handleBox.height / 2);
+    const frameBox = rect(frame);
+    const legendBox = rect(legend);
+    const chartAreaBox = rect(chartArea);
+    return {
+      chartArea: chartAreaBox,
+      expectedPanelHeight,
+      frame: frameBox,
+      frameAspect: getComputedStyle(frame).aspectRatio,
+      handle: handleBox,
+      handleHitClass: hit?.className ?? "",
+      handleZIndex: getComputedStyle(handle).zIndex,
+      lowerDeadSpace: chartAreaBox.bottom - Math.max(frameBox.bottom, legendBox.bottom),
+      panel: rect(card),
+      rows: getComputedStyle(grid).gridAutoRows,
+    };
+  });
+  assert.equal(startingGeometry.rows, "78px");
+  assert.ok(Math.abs(startingGeometry.panel.height - startingGeometry.expectedPanelHeight) <= 4, `workspace panel height ${startingGeometry.panel.height} should follow grid span ${startingGeometry.expectedPanelHeight}`);
+  assert.equal(startingGeometry.frameAspect, "auto");
+  assert.match(String(startingGeometry.handleHitClass), /panel-resize-handle/, "resize handle should be the topmost hit target at its center");
+  assert.equal(startingGeometry.handleZIndex, "12");
+  assert.ok(startingGeometry.frame.height >= 48, `workspace chart frame should stay usable, got ${startingGeometry.frame.height}`);
+  assert.ok(startingGeometry.lowerDeadSpace <= 24, `workspace chart should not leave a large bottom gutter, got ${startingGeometry.lowerDeadSpace}`);
   const resizeBox = await firstWorkspacePanel.locator(".panel-resize-handle").boundingBox();
   assert.ok(resizeBox, "expected workspace panel resize handle");
-  await page.evaluate(() => {
-    const handle = document.querySelector(".workspace-panel-card .panel-resize-handle");
-    if (!handle) throw new Error("Missing panel resize handle");
-    const rect = handle.getBoundingClientRect();
-    const startX = rect.left + rect.width / 2;
-    const startY = rect.top + rect.height / 2;
-    const pointerId = 41;
-    handle.dispatchEvent(new PointerEvent("pointerdown", {
-      bubbles: true,
-      buttons: 1,
-      cancelable: true,
-      clientX: startX,
-      clientY: startY,
-      isPrimary: true,
-      pointerId,
-      pointerType: "mouse",
-    }));
-    window.dispatchEvent(new PointerEvent("pointermove", {
-      bubbles: true,
-      buttons: 1,
-      clientX: startX + 260,
-      clientY: startY + 120,
-      isPrimary: true,
-      pointerId,
-      pointerType: "mouse",
-    }));
-    window.dispatchEvent(new PointerEvent("pointerup", {
-      bubbles: true,
-      clientX: startX + 260,
-      clientY: startY + 120,
-      isPrimary: true,
-      pointerId,
-      pointerType: "mouse",
-    }));
-  });
-  const resizedOnce = await page.evaluate((start) => {
-    const card = document.querySelector(".workspace-panel-card");
-    return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
-  }, startingLayout);
-  if (!resizedOnce) {
-    await page.evaluate(() => {
-      const handle = document.querySelector(".workspace-panel-card .panel-resize-handle");
-      if (!handle) throw new Error("Missing panel resize handle after retry");
-      const rect = handle.getBoundingClientRect();
-      const startX = rect.left + rect.width / 2;
-      const startY = rect.top + rect.height / 2;
-      const pointerId = 42;
-      handle.dispatchEvent(new PointerEvent("pointerdown", {
-        bubbles: true,
-        buttons: 1,
-        cancelable: true,
-        clientX: startX,
-        clientY: startY,
-        isPrimary: true,
-        pointerId,
-        pointerType: "mouse",
-      }));
-      window.dispatchEvent(new PointerEvent("pointermove", {
-        bubbles: true,
-        buttons: 1,
-        clientX: startX + 320,
-        clientY: startY + 180,
-        isPrimary: true,
-        pointerId,
-        pointerType: "mouse",
-      }));
-      window.dispatchEvent(new PointerEvent("pointerup", {
-        bubbles: true,
-        clientX: startX + 320,
-        clientY: startY + 180,
-        isPrimary: true,
-        pointerId,
-        pointerType: "mouse",
-      }));
-    });
-  }
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 180, resizeBox.y + resizeBox.height / 2 + 170, { steps: 8 });
+  await page.mouse.up();
   await page.waitForFunction((start) => {
     const card = document.querySelector(".workspace-panel-card");
     return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
   }, startingLayout);
+  const resizedGeometry = await firstWorkspacePanel.evaluate((card) => {
+    const grid = card.closest(".workspace-panel-grid");
+    const frame = card.querySelector(".metric-chart-frame");
+    const handle = card.querySelector(".panel-resize-handle");
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return { bottom: box.bottom, height: box.height, left: box.left, right: box.right, top: box.top, width: box.width };
+    };
+    const rowHeight = Number.parseFloat(getComputedStyle(grid).gridAutoRows);
+    const rowGap = Number.parseFloat(getComputedStyle(grid).rowGap);
+    const rowSpan = Number(card.dataset.panelHeight);
+    return {
+      expectedPanelHeight: rowSpan * rowHeight + (rowSpan - 1) * rowGap,
+      frame: rect(frame),
+      handle: rect(handle),
+      mode: document.querySelector("#workspace-mode")?.value,
+      panel: rect(card),
+      rowSpan,
+      widthSpan: Number(card.dataset.panelWidth),
+    };
+  });
+  assert.equal(resizedGeometry.mode, "manual");
+  assert.ok(
+    resizedGeometry.rowSpan > startingLayout.h || resizedGeometry.widthSpan > startingLayout.w,
+    `resize should increase width or height from ${JSON.stringify(startingLayout)} to ${JSON.stringify({ h: resizedGeometry.rowSpan, w: resizedGeometry.widthSpan })}`,
+  );
+  assert.ok(Math.abs(resizedGeometry.panel.height - resizedGeometry.expectedPanelHeight) <= 4, `resized panel height ${resizedGeometry.panel.height} should follow grid span ${resizedGeometry.expectedPanelHeight}`);
+  assert.ok(resizedGeometry.frame.height > startingGeometry.frame.height, "chart frame should grow when the panel is resized taller");
   await page.getByRole("button", { name: "Reset layout" }).click();
   await page.waitForFunction(() => document.querySelector("#workspace-mode")?.value === "automatic" && document.querySelectorAll(".workspace-panel-card").length >= 3);
 
@@ -1179,12 +1176,17 @@ try {
   await chooseSelect(page, "#x-mode", "time");
   await page.locator("#smoothing").focus();
   await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector("#smoothing")?.value === "10");
+  await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .series-smooth").length > 0);
   await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector("#smoothing")?.value === "20");
   await page.check("#group-average");
   await page.waitForSelector(".tab-pane.active .series-point", { timeout: 10000 });
   await page.locator(".tab-pane.active .series-point").first().hover({ force: true });
   await page.waitForSelector(".tab-pane.active .readout-card", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active .readout-card").innerText(), /step/);
+  const metricsReadoutText = await page.locator(".tab-pane.active .readout-card").innerText();
+  assert.match(metricsReadoutText, /step/);
+  assert.match(metricsReadoutText, /Smoothed/);
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
