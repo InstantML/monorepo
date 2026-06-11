@@ -3987,6 +3987,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
           {activeTab === "settings" ? (
             <SettingsTabPane
+              accountUser={sessionPayload?.user ?? null}
               activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
               activePlan={activePlan}
               activeUsageWarnings={activeUsageOrg?.warnings ?? []}

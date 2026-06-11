@@ -713,7 +713,9 @@ export function dedupeAlertRows(rows: AlertRow[]): AlertRow[] {
       result.push(...bucket.rows);
       continue;
     }
-    const names = bucket.rows.map((row) => row.title.split(" ")[0]);
+    // Titles are "<run name> has no checkpoints" / "<run name> is missing …";
+    // strip the known suffix so run names containing spaces survive intact.
+    const names = bucket.rows.map((row) => row.title.replace(/ has no checkpoints$| is missing .*$/, ""));
     const sample = names.slice(0, 3).join(", ");
     result.push({
       id: `grouped:${kind}`,

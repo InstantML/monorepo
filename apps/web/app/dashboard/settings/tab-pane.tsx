@@ -67,6 +67,7 @@ function planDisplayName(value?: string) {
 }
 
 type Props = {
+  accountUser: { display_name?: string | null; primary_email?: string | null } | null;
   activeLimitIncludedSeats: number;
   activePlan: string;
   activeUsageWarnings: UsageWarning[];
@@ -119,6 +120,7 @@ type Props = {
 };
 
 export function SettingsTabPane({
+  accountUser,
   activeLimitIncludedSeats,
   activePlan,
   activeUsageWarnings,
@@ -391,6 +393,12 @@ export function SettingsTabPane({
              * itself; echoing it here read as debug output (audit ST1). */}
             <SettingRow label="Organization" value={orgName || "Workspace"} />
             <SettingRow label="Plan tier" value={orgPlanTier || "free"} />
+            {accountUser ? (
+              <>
+                <SettingRow label="Signed in as" value={accountUser.display_name || accountUser.primary_email || "-"} />
+                {accountUser.display_name && accountUser.primary_email ? <SettingRow label="Email" value={accountUser.primary_email} /> : null}
+              </>
+            ) : null}
           </div>
         </section>
         <section className="panel">

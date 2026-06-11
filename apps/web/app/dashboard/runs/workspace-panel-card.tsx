@@ -4,7 +4,7 @@ import { ChevronDown, CopyPlus, GripVertical, Maximize2, Pencil, Trash2 } from "
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
-import { averageGroupedSeries, axisTicks, chartDomain, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../../src/charts.js";
+import { averageGroupedSeries, axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, smoothSeries } from "../../../src/charts.js";
 import { chartColor, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, distributionSummaryForRuns, fieldLabel, histogramBins, indexedAxisTicks, latestMetricValues, parseFieldId, scatterPointsForRuns } from "../../../src/dashboard-panels.js";
 import { MAX_SELECTED_RUNS, groupKeyForRun, formatNumber } from "../../../src/state.js";

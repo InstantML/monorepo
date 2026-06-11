@@ -24,9 +24,22 @@ export function useMeasuredSize(
     };
     update();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(update);
+    // Coalesce resize ticks to one re-measure per frame: consumers re-normalize
+    // series on every size change, which is too expensive to run per
+    // ResizeObserver callback during a drag-resize.
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        update();
+      });
+    });
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref.current]);
   return {
