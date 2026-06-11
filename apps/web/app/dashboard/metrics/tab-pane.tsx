@@ -1,4 +1,3 @@
-import type { MouseEvent } from "react";
 import { X } from "lucide-react";
 
 import { ChartControls } from "./chart-controls";

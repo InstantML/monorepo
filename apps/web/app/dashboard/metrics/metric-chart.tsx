@@ -312,6 +312,30 @@ export function MetricChart({
   const yRangeDetailsRef = useRef<HTMLDetailsElement | null>(null);
   const yAxisOptions = useMemo(() => ({ scale: yScale, range: yRange }), [yRange, yScale]);
 
+  // The y-range popover dismisses like every other dropdown in the app:
+  // click-away closes it, Escape closes it and returns focus to its trigger.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const details = yRangeDetailsRef.current;
+      if (!details?.open) return;
+      if (event.target instanceof Node && details.contains(event.target)) return;
+      details.open = false;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const details = yRangeDetailsRef.current;
+      if (event.key !== "Escape" || !details?.open) return;
+      details.open = false;
+      const summary = details.querySelector("summary");
+      if (summary instanceof HTMLElement) summary.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
   const normalizedSeries: any[] = useMemo(
     () => normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, zoomRange, yAxisOptions),
     [frameHeight, metricKey, pad, series, width, xMode, yAxisOptions, zoomRange],
@@ -346,26 +370,57 @@ export function MetricChart({
   const [tooltipPlacement, setTooltipPlacement] = useState<TooltipPlacement | null>(null);
   // R6 cross-highlight: legend-chip hover and the external rail/table hover
   // isolate a series exactly like an in-plot hover, minus the tooltip (which
-  // needs a real point under the cursor).
+  // needs a real point under the cursor). The highlight resolves only when
+  // that run is actually plotted here — otherwise a rail hover would mute
+  // every series in unrelated panels, and a stale id (series swapped out by a
+  // live poll) would stick.
   const [legendHoverId, setLegendHoverId] = useState<string | null>(null);
-  const activeRunId = hover?.runId ?? legendHoverId ?? highlightRunId ?? null;
-  const hoverIndex = activeRunId ? normalizedSeries.findIndex((item) => item.id === activeRunId) : -1;
+  const requestedRunId = hover?.runId ?? legendHoverId ?? highlightRunId ?? null;
+  const hoverIndex = requestedRunId ? normalizedSeries.findIndex((item) => item.id === requestedRunId) : -1;
+  const activeRunId = hoverIndex >= 0 ? requestedRunId : null;
   const activeSeries = hoverIndex >= 0 ? normalizedSeries[hoverIndex] : null;
   const drawFocusOverlay = Boolean(activeSeries && (denseChart || seriesCount > 8));
 
+  const hoverRef = useRef<HoverPoint>(null);
+  const moveFrameRef = useRef(0);
+  const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
+
   function emitHover(next: HoverPoint) {
+    // Bail when nothing changed — raw mousemove fires far faster than the
+    // hovered point changes, and every emit re-renders the owner too.
+    const current = hoverRef.current;
+    if (!current && !next) return;
+    if (current && next && current.runId === next.runId && current.point === next.point) return;
+    hoverRef.current = next;
     setHover(next);
     onPointHover?.(next);
   }
 
+  // Coalesce hit-testing to one nearestPoint pass per frame; dense charts have
+  // tens of thousands of points and mousemove can fire at 120Hz+.
   function handleMove(event: MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, width, frameHeight);
-    const next = nearestPoint(normalizedSeries, point.x, point.y);
-    emitHover(next ?? null);
+    pendingMoveRef.current = svgPointFromClient(rect, event.clientX, event.clientY, width, frameHeight);
+    if (moveFrameRef.current) return;
+    moveFrameRef.current = window.requestAnimationFrame(() => {
+      moveFrameRef.current = 0;
+      const point = pendingMoveRef.current;
+      if (!point) return;
+      emitHover(nearestPoint(normalizedSeries, point.x, point.y) ?? null);
+    });
   }
 
+  useEffect(() => () => {
+    if (moveFrameRef.current) window.cancelAnimationFrame(moveFrameRef.current);
+  }, []);
+
   function handleLeave() {
+    if (moveFrameRef.current) {
+      window.cancelAnimationFrame(moveFrameRef.current);
+      moveFrameRef.current = 0;
+    }
+    pendingMoveRef.current = null;
+    hoverRef.current = null;
     setHover(null);
     onLeave?.();
   }
@@ -676,8 +731,10 @@ export function MetricChart({
 
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     // Log scale can legitimately blank a chart whose data is all <= 0 — keep
-    // the actions row mounted so the user can flip the axis back.
-    const logHidEverything = yScale === "log" && series?.some((item: any) => item?.points?.length);
+    // the actions row mounted so the user can flip the axis back. Only blame
+    // the log scale when it actually dropped points (an x-zoom can also empty
+    // the window).
+    const logHidEverything = yScale === "log" && normalizedSeries.some((item) => (item.hiddenNonPositive ?? 0) > 0);
     return (
       <div className={`chart-area${showActions ? " chart-area-exportable" : ""}`} onMouseLeave={handleLeave}>
         {actionsRow}
@@ -734,8 +791,11 @@ export function MetricChart({
             <span
               className={`legend-chip${item.id === activeRunId ? " legend-chip-active" : ""}`}
               key={item.id}
+              onBlur={() => setLegendHoverId((current) => (current === item.id ? null : current))}
+              onFocus={() => setLegendHoverId(item.id)}
               onMouseEnter={() => setLegendHoverId(item.id)}
-              onMouseLeave={() => setLegendHoverId(null)}
+              onMouseLeave={() => setLegendHoverId((current) => (current === item.id ? null : current))}
+              tabIndex={0}
               title={item.identifier ?? item.name}
             ><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> {item.identifier ?? item.name}</span>
           );
@@ -746,6 +806,11 @@ export function MetricChart({
             title={hiddenLegendTitle}
           >
             +{hiddenLegendSeries.length} more plotted
+          </span>
+        ) : null}
+        {yScale === "log" && hiddenLogPoints > 0 ? (
+          <span className="legend-chip legend-overflow" title="Log scale plots positive values only; switch back to linear to see these points.">
+            {hiddenLogPoints} {hiddenLogPoints === 1 ? "point" : "points"} ≤ 0 hidden
           </span>
         ) : null}
       </div>

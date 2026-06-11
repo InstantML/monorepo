@@ -62,11 +62,11 @@ export function ArtifactTextPreview({ artifact }: { artifact: Artifact }) {
         state.status === "loading" || state.status === "idle" ? (
           <div className="artifact-text-preview is-loading">Loading preview...</div>
         ) : state.status === "error" ? (
-          <div className="artifact-text-preview is-error">Preview unavailable - download the file instead.</div>
+          <div className="artifact-text-preview is-error">Preview unavailable — download the file instead.</div>
         ) : (
           <>
             <pre className="artifact-text-preview" tabIndex={0}>{state.text || "(empty file)"}</pre>
-            {state.truncated ? <small className="artifact-text-preview-note">Showing the beginning of the file - use Download for the rest.</small> : null}
+            {state.truncated ? <small className="artifact-text-preview-note">Showing the beginning of the file — use Download for the rest.</small> : null}
           </>
         )
       ) : null}

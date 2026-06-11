@@ -204,7 +204,9 @@ pub fn report_summary(row: &ReportRow) -> ReportSummary {
         description: row.description.clone(),
         project_id: row.project_id,
         visibility: row.visibility.clone(),
-        has_share_token: row.share_token.is_some(),
+        // Advertise only tokens that still resolve — an expired link reading
+        // as "shared" would send users to a 404.
+        has_share_token: share_token_active(row, chrono::Utc::now()),
         author_user_id: row.author_user_id,
         created_at: row.created_at,
         updated_at: row.updated_at,

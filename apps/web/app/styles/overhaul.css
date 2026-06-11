@@ -3194,3 +3194,29 @@ button.compare-row-head.active {
   border-radius: var(--radius);
 }
 .workspace-run-select:focus-visible .workspace-eye span { border-color: var(--accent); }
+
+/* 3.4: the breadcrumb project crumb is a button that opens the project
+   selector; inherit the crumb-link look without button chrome. */
+button.crumb-project {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.admin-hint a {
+  color: var(--accent);
+}
+
+.admin-hint code {
+  font-size: 11.5px;
+}

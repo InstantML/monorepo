@@ -933,6 +933,11 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                   </div>
                 ) : null}
 
+                {demoIntent && authReady && !config.dev_auth_enabled ? (
+                  <p className="iml-hint iml-demo-hint" role="status">
+                    The shared demo isn&apos;t available on this deployment yet — create a free workspace instead.
+                  </p>
+                ) : null}
                 {authReady && config.dev_auth_enabled ? (
                   <form className="iml-actions" onSubmit={submitAuth} aria-label="Local development sign in">
                     {managedClerkReady ? <p className="iml-hint" style={{ textAlign: "center" }}>— or use the local development flow —</p> : null}

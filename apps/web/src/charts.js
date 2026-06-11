@@ -139,8 +139,13 @@ export function logAxisTicks(min, max, count = 5) {
   const stride = Math.max(1, Math.ceil(candidates.length / Math.max(2, count)));
   const ticks = [];
   for (let index = 0; index < candidates.length; index += stride) ticks.push(candidates[index]);
+  // End on the top candidate by replacing (not appending) the final stride
+  // tick, so spacing stays even instead of cramming two ticks at the top.
   const last = candidates[candidates.length - 1];
-  if (ticks[ticks.length - 1] !== last) ticks.push(last);
+  if (ticks[ticks.length - 1] !== last) {
+    if (ticks.length > 1) ticks[ticks.length - 1] = last;
+    else ticks.push(last);
+  }
   return ticks;
 }
 
@@ -385,8 +390,9 @@ function valueDomain(points, metricKey = "", yScale = "linear", yRange = null) {
   }
   if (yScale === "log") {
     // Log axes span the positive data exactly; a degenerate single value opens
-    // a symmetric decade window around it.
-    if (minY === maxY) return { minY: minY / 2, maxY: maxY * 2 };
+    // a symmetric window around it (clamped so values near MAX_VALUE don't
+    // overflow the top bound to Infinity).
+    if (minY === maxY) return { minY: minY / 2, maxY: Math.min(maxY * 2, Number.MAX_VALUE) };
     return { minY, maxY };
   }
   if (usesUnitDomain(metricKey, minY, maxY)) {

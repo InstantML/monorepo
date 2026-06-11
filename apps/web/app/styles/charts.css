@@ -824,6 +824,13 @@ small {
    * when the smoothing pill joins the csv/svg buttons on a narrow grid panel. */
   flex-wrap: wrap;
   max-width: calc(100% - 24px);
+  /* When the row wraps over the plot, the container itself must not swallow
+   * chart pointer events — only the actual controls do. */
+  pointer-events: none;
+}
+
+.chart-export-actions > * {
+  pointer-events: auto;
 }
 
 @media (max-width: 900px) {
@@ -842,7 +849,7 @@ small {
   height: 28px;
   border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--ink, #344251);
+  color: var(--text);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
 }
 
@@ -937,7 +944,7 @@ small {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface);
-  color: var(--ink, #344251);
+  color: var(--text);
   font-size: 13px;
 }
 
@@ -962,7 +969,7 @@ small {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--ink, #344251);
+  color: var(--text);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
   cursor: pointer;
 }
@@ -1003,6 +1010,14 @@ small {
 
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-smoothing-slider {
   width: 60px;
+}
+
+/* A manual range widens the Y pill ("Y 1.2e-4–3.4e-1"); cap it in tight grid
+   cards so the toolbar wraps less. The full label remains in the title. */
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-y-range > summary {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chart-export-helper {
@@ -1101,7 +1116,7 @@ small {
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
   background: transparent;
-  color: var(--ink, #344251);
+  color: var(--text);
   font-size: 12px;
   padding: 3px 6px;
   text-overflow: ellipsis;
@@ -1245,6 +1260,9 @@ small {
   /* Opacity scales down with series count (set per-chart in MetricChart) so a
    * dense run set reads as a translucent band rather than an opaque slab. */
   opacity: var(--series-stroke-opacity, 0.92);
+  /* Cross-highlight muting eases instead of hard-flipping, so sweeping the
+   * rail doesn't strobe every panel. */
+  transition: opacity 120ms ease;
 }
 
 .series.line-style-1 {

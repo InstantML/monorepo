@@ -103,11 +103,8 @@ type Props = {
   onXMode: (mode: string) => void;
   orgName: string;
   orgPlanTier: string;
-  project: string;
   reservedSeatCount: number;
   seats: SeatRow[];
-  selectedRunCount: number;
-  status: string;
   storagePercent: number;
   storageUsed: number;
   storageLimit: number;
@@ -156,11 +153,8 @@ export function SettingsTabPane({
   onXMode,
   orgName,
   orgPlanTier,
-  project,
   reservedSeatCount,
   seats,
-  selectedRunCount,
-  status,
   storagePercent,
   storageUsed,
   storageLimit,

@@ -1066,7 +1066,7 @@
   gap: 7px;
   font-weight: 700;
   font-size: 14.5px;
-  color: var(--ink, #1d2733);
+  color: var(--text);
   word-break: break-word;
 }
 
@@ -1079,7 +1079,7 @@
 }
 
 .project-card-stat b {
-  color: var(--ink, #1d2733);
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -1097,7 +1097,7 @@
 }
 
 .project-card-best b {
-  color: var(--ink, #1d2733);
+  color: var(--text);
 }
 
 .project-card-activity {

@@ -834,7 +834,27 @@ export function DashboardTopbar({
           </span>
           <span className="org-switcher-label" aria-label="Workspace">{workspaceName || "Workspace"}</span>
           <nav className="breadcrumb" aria-label="Breadcrumb">
-            <span className="crumb">{project || "All projects"}</span>
+            {showWorkbar ? (
+              <button
+                className="crumb crumb-link crumb-project"
+                onClick={() => {
+                  // 3.4: the breadcrumb project is a live control — it reveals
+                  // the filter bar and opens the (single) project selector.
+                  if (compactFilters) setMobileFiltersOpen(true);
+                  else setDesktopFiltersCollapsed(false);
+                  window.requestAnimationFrame(() => {
+                    const trigger = document.getElementById("project-filter")?.closest(".custom-select-control")?.querySelector(".select-trigger");
+                    if (trigger instanceof HTMLElement) trigger.click();
+                  });
+                }}
+                title="Change project"
+                type="button"
+              >
+                {project || "All projects"}
+              </button>
+            ) : (
+              <span className="crumb">{project || "All projects"}</span>
+            )}
             <span className="sep" aria-hidden="true">/</span>
             {activeTab === "detail" ? (
               <>

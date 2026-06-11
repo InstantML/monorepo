@@ -603,13 +603,23 @@ export async function fetchBoundedText(path, { signal, maxBytes = 16_384 } = {})
     // below still bounds the transfer).
     headers: { Range: `bytes=0-${maxBytes - 1}` },
   });
+  // A range-aware server answers 416 for an empty file (no satisfiable byte).
+  if (response.status === 416) return { text: "", capped: false };
   if (!response.ok && response.status !== 206) {
     throw new ApiError(clientSafeError(response.status, null), { status: response.status });
+  }
+  // When the server honors the Range (206), the body is exactly the slice we
+  // asked for and the reader cap below can't see the truncation. Content-Range
+  // ("bytes 0-16383/100000") carries the real size; without it, assume capped.
+  let rangeCapped = false;
+  if (response.status === 206) {
+    const total = Number(/\/(\d+)\s*$/.exec(response.headers.get("content-range") ?? "")?.[1]);
+    rangeCapped = Number.isFinite(total) ? total > maxBytes : true;
   }
   const reader = response.body?.getReader();
   if (!reader) {
     const text = await response.text();
-    return { text: text.slice(0, maxBytes), capped: text.length > maxBytes };
+    return { text: text.slice(0, maxBytes), capped: rangeCapped || text.length > maxBytes };
   }
   const chunks = [];
   let received = 0;
@@ -621,8 +631,8 @@ export async function fetchBoundedText(path, { signal, maxBytes = 16_384 } = {})
       received += value.length;
     }
   }
-  const capped = received > maxBytes;
-  if (capped) await reader.cancel().catch(() => {});
+  const capped = rangeCapped || received > maxBytes;
+  if (received > maxBytes) await reader.cancel().catch(() => {});
   const merged = new Uint8Array(Math.min(received, maxBytes));
   let offset = 0;
   for (const chunk of chunks) {

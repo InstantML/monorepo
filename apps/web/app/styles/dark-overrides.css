@@ -1262,3 +1262,7 @@
     min-height: 38px;
   }
 }
+
+:root[data-theme="dark"] .chart-y-range-hint {
+  color: #e0b07a;
+}

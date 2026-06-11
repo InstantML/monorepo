@@ -55,3 +55,59 @@ test("AR4: artifact browser mounts the bounded text preview", () => {
   assert.match(preview, /artifactHasStoredBytes\(artifact\)/);
   assert.match(preview, /use Download for the rest/);
 });
+
+// Behavioral coverage for the bounded reader itself (stubbed fetch).
+function readerFromChunks(chunks) {
+  let index = 0;
+  return {
+    read: async () => (index < chunks.length ? { done: false, value: chunks[index++] } : { done: true, value: undefined }),
+    cancel: async () => {},
+  };
+}
+
+function stubResponse({ status = 200, body = new Uint8Array(), contentRange = null, chunkSize = 4096 } = {}) {
+  const chunks = [];
+  for (let i = 0; i < body.length; i += chunkSize) chunks.push(body.slice(i, i + chunkSize));
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name) => (name.toLowerCase() === "content-range" ? contentRange : null) },
+    body: { getReader: () => readerFromChunks(chunks) },
+    text: async () => new TextDecoder().decode(body),
+  };
+}
+
+test("fetchBoundedText detects truncation via Content-Range on 206 responses", async (t) => {
+  const { fetchBoundedText } = await import("../src/api.js");
+  const slice = new TextEncoder().encode("a".repeat(16_384));
+  globalThis.fetch = async () => stubResponse({ status: 206, body: slice, contentRange: "bytes 0-16383/100000" });
+  t.after(() => { delete globalThis.fetch; });
+  const honored = await fetchBoundedText("/api/artifacts/x/download");
+  assert.equal(honored.capped, true, "range-honoring server with a larger file must report capped");
+  assert.equal(honored.text.length, 16_384);
+
+  // Small file served as 206 with a full Content-Range: not capped.
+  const small = new TextEncoder().encode("a,b\n1,2\n");
+  globalThis.fetch = async () => stubResponse({ status: 206, body: small, contentRange: `bytes 0-${small.length - 1}/${small.length}` });
+  const fits = await fetchBoundedText("/api/artifacts/x/download");
+  assert.equal(fits.capped, false);
+  assert.equal(fits.text, "a,b\n1,2\n");
+});
+
+test("fetchBoundedText caps range-ignoring servers via the reader and handles 416 as empty", async (t) => {
+  const { fetchBoundedText } = await import("../src/api.js");
+  const big = new TextEncoder().encode("x".repeat(40_000));
+  globalThis.fetch = async () => stubResponse({ status: 200, body: big });
+  t.after(() => { delete globalThis.fetch; });
+  const capped = await fetchBoundedText("/api/artifacts/x/download", { maxBytes: 16_384 });
+  assert.equal(capped.capped, true);
+  assert.equal(capped.text.length, 16_384);
+  assert.ok(capped.text.startsWith("xxxx"));
+
+  globalThis.fetch = async () => stubResponse({ status: 416 });
+  const empty = await fetchBoundedText("/api/artifacts/x/download");
+  assert.deepEqual(empty, { text: "", capped: false });
+
+  globalThis.fetch = async () => stubResponse({ status: 404 });
+  await assert.rejects(() => fetchBoundedText("/api/artifacts/x/download"));
+});

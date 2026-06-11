@@ -312,13 +312,21 @@ export function RunsTabPane({
       ) : (
       <>
       {/* AL2: the Run health side cards promoted to the workspace header,
-          scoped to the active project/status/search filters like the charts. */}
-      <div className="runs-health-cards" role="group" aria-label="Run health summary">
-        <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
-        <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
-        <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
-        <MetricCard label={`${metricGoalLabel(metricKey)} ${metricTitle(metricKey)}`} value={formatMetricValue(overview.best_eval_return)} tone="good" />
-      </div>
+          scoped to the active project/status/search filters like the charts.
+          Hidden on the brand-new-workspace callout — four zero cards are
+          noise before the first run exists. */}
+      {!showEmptyCallout ? (
+        <div className="runs-health-cards" role="group" aria-label="Run health summary">
+          <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
+          <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
+          <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
+          <MetricCard
+            label={`${metricGoalLabel(metricKey)} ${metricTitle(metricKey)}`}
+            value={formatMetricValue(overview.best_eval_return)}
+            tone={Number.isFinite(Number(overview.best_eval_return)) ? "good" : "neutral"}
+          />
+        </div>
+      ) : null}
       {showEmptyCallout ? (
         <>
           {nonCurrentMemberships.length ? (
@@ -369,6 +377,16 @@ export function RunsTabPane({
           selectedRunExportTitle={selectedRunExportTitle}
           tableColumns={tableColumns}
         />
+        {!project && browseAllRuns && projects.length > 1 ? (
+          <button
+            className="secondary compact-button runs-back-to-projects"
+            onClick={() => setBrowseAllRuns(false)}
+            title="Back to the project cards"
+            type="button"
+          >
+            ← All projects
+          </button>
+        ) : null}
         <div className="runs-view-toggle" role="group" aria-label="Runs view">
           <button
             aria-pressed={runsView === "panels"}

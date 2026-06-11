@@ -130,7 +130,7 @@ export function RunWorkspace({
     return (
       <div className="empty compact-empty run-detail-empty">
         <strong>No run open</strong>
-        <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics.</span>
+        <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics. Checkpoints live here too — open a run to download, resume, or fork from its checkpoints.</span>
         <a className="secondary compact-button" href="/dashboard/runs">Go to Runs</a>
       </div>
     );
