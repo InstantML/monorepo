@@ -226,6 +226,38 @@
   overflow-anchor: none;
 }
 
+/* Panels ⇄ Table view toggle, docked at the right edge of the filter bar. */
+.runs-view-toggle {
+  display: inline-flex;
+  gap: 0;
+  margin-left: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  overflow: hidden;
+}
+
+.runs-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+.runs-view-toggle button.active {
+  background: var(--surface-selected);
+  color: var(--accent-strong);
+}
+
+.runs-table-view {
+  padding: 0 14px 16px;
+}
+
 .workspace-rail-head,
 .workspace-run-footer,
 .workspace-section-head,

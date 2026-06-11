@@ -19,9 +19,16 @@ function useSectionObserver() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Content is visible by default (no-JS and first paint stay readable).
+    // Only sections still below the viewport at mount opt into the fade, and
+    // never when the user prefers reduced motion.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (el.getBoundingClientRect().top < window.innerHeight) return;
+    el.classList.add("section-pre");
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
+          entry.target.classList.remove("section-pre");
           entry.target.classList.add("visible");
           observer.unobserve(entry.target);
         }
@@ -29,7 +36,10 @@ function useSectionObserver() {
       { threshold: 0.12 }
     );
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      el.classList.remove("section-pre");
+    };
   }, []);
   return ref;
 }

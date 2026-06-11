@@ -37,6 +37,40 @@ export function buildEvidenceSections({ artifacts = [], objects = [], search = "
 }
 
 /**
+ * Group raw run artifacts that share a name so the UI can render one row per
+ * name with an expandable history. The entry with the highest numeric step
+ * wins as `latest`; when no entry in a group carries a step the first item in
+ * input order wins (run artifact lists arrive newest-first from the API).
+ *
+ * @param {any[]} artifacts
+ * @returns {Array<{ name: string, latest: any, older: any[], count: number }>}
+ */
+export function groupArtifactsByName(artifacts = []) {
+  const groups = [];
+  const byName = new Map();
+  for (const artifact of artifacts ?? []) {
+    if (!artifact) continue;
+    const name = String(artifact.name ?? "");
+    let entries = byName.get(name);
+    if (!entries) {
+      entries = [];
+      byName.set(name, entries);
+      groups.push({ name, entries });
+    }
+    entries.push(artifact);
+  }
+  return groups.map(({ name, entries }) => {
+    let latest = entries[0];
+    for (const entry of entries) {
+      const latestStep = typeof latest.step === "number" ? latest.step : null;
+      const entryStep = typeof entry.step === "number" ? entry.step : null;
+      if (entryStep !== null && (latestStep === null || entryStep > latestStep)) latest = entry;
+    }
+    return { name, latest, older: entries.filter((entry) => entry !== latest), count: entries.length };
+  });
+}
+
+/**
  * @param {Array<{ items: any[] }>} sections
  */
 export function firstEvidenceItem(sections) {

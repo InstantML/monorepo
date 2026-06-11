@@ -24,7 +24,7 @@ type Props = {
 export function SavedViewsTabPane({ metricKey, overview, reportRows, selectedRunCount, totalRuns }: Props) {
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Saved views" emphasis="on tap" lede={`${reportRows.length} local · ${shortMetricName(metricKey)}`} />
+      <PageHead eyebrow="Workspace" title="Saved views" lede={`${reportRows.length} local · ${shortMetricName(metricKey)}`} />
       <div className="tab-grid two-col">
         <section className="panel">
           <div className="panel-head"><h2><FileBarChart size={15} /> Local Saved Views <span>({reportRows.length})</span></h2></div>

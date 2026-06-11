@@ -55,7 +55,7 @@ export function ApiTabPane({
   const activeKeyCount = visibleApiKeys.filter((key) => !key.revoked_at).length;
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API" emphasis="keys" lede={`${activeKeyCount} active · documented REST routes`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API keys" lede={`${activeKeyCount} active · documented REST routes`} />
       <div className="tab-grid two-col api-tab-grid">
         <section className="panel">
           <div className="panel-head">

@@ -11,13 +11,7 @@
   justify-self: center;
   align-self: start;
   width: var(--fullscreen-chart-width, min(100%, 1120px));
-  height: auto;
-  aspect-ratio: 920 / 430;
-}
-
-.fullscreen-panel-card .axis-label,
-.fullscreen-panel-card .tick-label {
-  font-size: 10.5px;
+  height: min(56vh, 520px);
 }
 
 .fullscreen-panel-card .chart-range-row {
@@ -988,9 +982,6 @@ small {
   overflow: hidden;
 }
 
-.metric-panel .metric-chart {
-  aspect-ratio: 560 / 360;
-}
 
 .chart-legend {
   display: grid;
@@ -1060,14 +1051,16 @@ small {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 560 / 360;
 }
 
+/* The chart renders at its measured CSS-pixel size (viewBox == frame size),
+ * so text and strokes never scale with the container. The frame owns the
+ * height; width always tracks the layout. */
 .metric-chart-frame {
   position: relative;
   width: 100%;
+  height: var(--chart-frame-height, 360px);
   overflow: visible;
-  aspect-ratio: 560 / 360;
 }
 
 .metric-chart-frame .metric-chart {
@@ -1075,7 +1068,6 @@ small {
   z-index: 2;
   width: 100%;
   height: 100%;
-  aspect-ratio: auto;
   overflow: hidden;
 }
 
@@ -1085,9 +1077,6 @@ small {
   z-index: 1;
   width: 100%;
   height: 100%;
-  /* Stretch like the overlay SVG's preserveAspectRatio="none" mapping so
-   * dense canvas lines stay pixel-aligned with axes in resized panels. */
-  object-fit: fill;
   pointer-events: none;
 }
 

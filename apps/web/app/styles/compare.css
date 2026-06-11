@@ -395,7 +395,65 @@ button.compare-row-head.active {
 }
 
 .browser-row {
-  grid-template-columns: 34px minmax(0, 1fr) auto auto minmax(112px, auto) minmax(86px, auto);
+  grid-template-columns: 34px minmax(0, 1fr) auto auto minmax(112px, auto) minmax(96px, auto) minmax(86px, auto);
+}
+
+.browser-row.reference-only {
+  border-style: dashed;
+}
+
+.browser-row.reference-only .browser-icon {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.artifact-name-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.artifact-name-group .browser-row.older-version {
+  margin-left: 22px;
+}
+
+.browser-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.artifact-reference-chip {
+  flex: 0 0 auto;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: help;
+}
+
+.artifact-version-count-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.artifact-version-count-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .browser-row .copy-button {
@@ -555,6 +613,10 @@ button.compare-row-head.active {
   align-items: start;
 }
 
+.artifact-stat-strip {
+  margin-bottom: 12px;
+}
+
 .artifact-catalog-panel {
   position: sticky;
   top: calc(var(--topbar-height) + 12px);
@@ -567,12 +629,12 @@ button.compare-row-head.active {
 }
 
 .artifact-lineage-panel,
-.artifact-totals-panel {
+.artifact-hint-panel {
   min-width: 0;
 }
 
 .artifact-raw-panel {
-  grid-column: 2 / 3;
+  grid-column: 2 / -1;
 }
 
 .artifact-raw-panel > summary {
@@ -584,8 +646,20 @@ button.compare-row-head.active {
   display: none;
 }
 
-.artifact-totals-panel {
-  grid-column: 3 / 4;
+.artifact-hint-panel {
+  grid-column: 2 / -1;
+}
+
+.artifact-note-panel {
+  position: static;
+}
+
+.artifact-inline-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .artifact-catalog-controls {
@@ -825,13 +899,8 @@ button.compare-row-head.active {
     grid-template-columns: minmax(220px, 0.45fr) minmax(0, 1fr);
   }
 
-  .artifact-lineage-panel,
-  .artifact-totals-panel {
+  .artifact-lineage-panel {
     grid-column: 1 / -1;
-  }
-
-  .artifact-raw-panel {
-    grid-column: 2 / 3;
   }
 }
 
@@ -858,7 +927,7 @@ button.compare-row-head.active {
   .artifact-manifest-panel,
   .artifact-lineage-panel,
   .artifact-raw-panel,
-  .artifact-totals-panel {
+  .artifact-hint-panel {
     position: static;
     grid-column: 1 / -1;
   }
@@ -1523,6 +1592,21 @@ button.compare-row-head.active {
 /* table shell — its own bounded scroll region so the column-header row stays
  * sticky on vertical scroll and wheel scrolling stays on the table. */
 .cmp-table-wrap{overflow:auto;max-height:70vh;scrollbar-gutter:stable;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+/* Edge fade signals horizontally clipped columns; it disappears once the
+ * table is scrolled to its right edge (scroll-driven animation, with a
+ * static fallback fade for browsers without scroll timelines). */
+.cmp-table-shell{position:relative;min-width:0}
+.cmp-table-shell::after{
+  content:"";
+  position:absolute;
+  top:0;
+  right:0;
+  bottom:12px;
+  width:36px;
+  border-radius:0 var(--radius) var(--radius) 0;
+  background:linear-gradient(to right, transparent, color-mix(in srgb, var(--surface) 88%, transparent));
+  pointer-events:none;
+}
 .cmp-table{min-width:max-content}
 .cmp-row{display:grid;grid-template-columns:var(--cmp-cols);align-items:stretch}
 .cmp-row + .cmp-row{border-top:1px solid var(--line-soft)}

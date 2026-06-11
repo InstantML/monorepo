@@ -337,6 +337,12 @@
   font: 500 11.5px/1.5 var(--font-mono);
   color: var(--muted);
 }
+.analysis-sublabel {
+  margin: 0 0 10px;
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
 .analysis-readout {
   display: flex;
   flex-wrap: wrap;
@@ -501,7 +507,8 @@
   height: 10px;
   width: 140px;
   border-radius: 3px;
-  background: linear-gradient(90deg, var(--series-2), var(--surface-2), var(--coral));
+  /* Blue/orange diverging ramp — matches the heatmap's colorblind-safe cells. */
+  background: linear-gradient(90deg, var(--blue), var(--surface-2), var(--amber));
   border: 1px solid var(--line);
 }
 
@@ -534,6 +541,13 @@
 .analysis-row strong { font: 600 12.5px/1 var(--font-sans); color: var(--text); }
 .analysis-row .pos { color: var(--coral); }
 .analysis-row .neg { color: var(--series-2); }
+/* Z-scores read by magnitude, not sign — deviation direction is neutral. */
+.analysis-row .z-mag { color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* DS4: reducer/axis selects need room for their longest labels. */
+.analysis-control-row .axis-select {
+  min-width: 230px;
+}
 .group-bar {
   display: block;
   position: relative;
@@ -586,6 +600,21 @@
   white-space: nowrap;
 }
 .eval-mini-card.missing strong { color: var(--dim); }
+.eval-unlogged-toggle {
+  margin-top: 10px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: 500 11px/1 var(--font-mono);
+  cursor: pointer;
+}
+.eval-unlogged-toggle:hover,
+.eval-unlogged-toggle:focus-visible {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
 
 /* ── Scatter / clusters ────────────────────────────────────────────────────── */
 .analysis-scatter circle { fill: var(--series-2); opacity: 0.7; }
@@ -615,8 +644,12 @@
 .cluster-list span i.cluster-3 { background: var(--series-5); }
 
 .parallel-axis { stroke: var(--line-strong); }
-.parallel-line { stroke: var(--accent); stroke-width: 1; opacity: 0.16; }
+.parallel-axis.constant { opacity: 0.35; stroke-dasharray: 3 4; }
+.analysis-tick.constant { fill: var(--dim); }
+.parallel-line { stroke: var(--accent); stroke-width: 1; opacity: 0.16; cursor: pointer; pointer-events: stroke; }
 .parallel-line.highlight { stroke: var(--series-4); stroke-width: 1.6; opacity: 0.7; }
+.parallel-line:hover { opacity: 0.85; }
+.analysis-scatter:not(.clusters) circle { cursor: pointer; }
 
 .analysis-empty-state {
   display: grid;

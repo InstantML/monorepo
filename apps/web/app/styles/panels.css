@@ -240,11 +240,10 @@
 }
 
 .workspace-panel-card:not(.fullscreen-panel-card) .metric-chart-frame,
-.workspace-panel-card:not(.fullscreen-panel-card) .alt-panel-chart svg {
+.workspace-panel-card:not(.fullscreen-panel-card) .alt-panel-chart .alt-chart-frame {
   order: 1;
   height: 100%;
   min-height: 80px;
-  aspect-ratio: auto;
 }
 
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-legend {
@@ -297,10 +296,19 @@
   margin: 7px 0 0;
 }
 
-.alt-panel-chart svg {
+/* The frame is the measured element: the inner SVG renders its viewBox at the
+ * frame's CSS-pixel size, so chart text never stretches with the container. */
+.alt-chart-frame {
+  position: relative;
   width: 100%;
-  aspect-ratio: 560 / 360;
   min-height: 180px;
+  height: var(--chart-frame-height, 320px);
+}
+
+.alt-panel-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .alt-panel-chart .axis-line {
@@ -345,13 +353,12 @@
   gap: 7px;
 }
 
-.histogram-timeline-panel-chart svg {
-  aspect-ratio: 720 / 300;
+.histogram-timeline-panel-chart .alt-chart-frame {
   min-height: 160px;
   max-height: 320px;
 }
 
-.fullscreen-panel-card .histogram-timeline-panel-chart svg {
+.fullscreen-panel-card .histogram-timeline-panel-chart .alt-chart-frame {
   max-height: none;
 }
 
@@ -1078,16 +1085,16 @@ kbd {
   overflow: hidden;
 }
 
+/* Fullscreen charts are width-bound with a fixed pixel height; the SVG
+ * renders at the measured size, so no aspect-ratio lock is needed. */
 .fullscreen-panel-card .metric-chart {
   justify-self: center;
   width: var(--fullscreen-chart-width);
-  height: auto;
-  aspect-ratio: 920 / 430;
+  height: 100%;
 }
 
-.fullscreen-panel-card .alt-panel-chart svg {
+.fullscreen-panel-card .alt-panel-chart .alt-chart-frame {
   justify-self: center;
   width: var(--fullscreen-chart-width);
-  height: auto;
-  aspect-ratio: 920 / 430;
+  height: min(56vh, 520px);
 }

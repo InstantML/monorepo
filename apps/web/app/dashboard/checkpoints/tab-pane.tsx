@@ -14,7 +14,7 @@ type Props = {
 export function CheckpointsTabPane({ checkpointRows, primaryRun }: Props) {
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Checkpoints" emphasis="and lineage" lede={`${checkpointRows.length} tracked · ${primaryRun?.name ?? "no run"}`} />
+      <PageHead eyebrow="Workspace" title="Checkpoints" lede={`${checkpointRows.length} tracked · ${primaryRun?.name ?? "no run"}`} />
       <div className="tab-grid two-col">
         <section className="panel">
           <div className="panel-head"><h2><Box size={15} /> Checkpoint Lineage <span>({formatNumber(checkpointRows.length, 0)})</span></h2></div>

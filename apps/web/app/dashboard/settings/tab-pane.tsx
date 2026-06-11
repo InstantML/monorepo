@@ -235,7 +235,7 @@ export function SettingsTabPane({
         : "Cancel the active paid subscription at period end";
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace settings" lede={`${activePlan} · usage · seats`} />
       <div className="tab-grid settings-grid">
         <section className="panel">
           <div className="panel-head">
@@ -387,12 +387,10 @@ export function SettingsTabPane({
         <section className="panel">
           <div className="panel-head"><h2><Settings size={15} /> Workspace</h2></div>
           <div className="panel-body settings-list">
+            {/* Transient filter/selection state is visible in the filter bar
+             * itself; echoing it here read as debug output (audit ST1). */}
             <SettingRow label="Organization" value={orgName || "Workspace"} />
             <SettingRow label="Plan tier" value={orgPlanTier || "free"} />
-            <SettingRow label="Project filter" value={project || "All projects"} />
-            <SettingRow label="Status filter" value={status || "All statuses"} />
-            <SettingRow label="Selected runs" value={formatNumber(selectedRunCount, 0)} />
-            <SettingRow label="API route mode" value="Same-origin proxy" />
           </div>
         </section>
         <section className="panel">

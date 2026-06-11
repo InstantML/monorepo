@@ -18,11 +18,11 @@ type Props = {
 export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Props) {
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Alerts" emphasis="worth watching" lede={`${alertRows.length} active · run health`} />
+      <PageHead eyebrow="Workspace" title="Run health" lede={`${alertRows.length} findings · derived from loaded runs`} />
       <div className="tab-grid two-col">
         <section className="panel">
           <div className="panel-head">
-            <h2><AlertTriangle size={15} /> Alerts <span>({alertRows.length})</span></h2>
+            <h2><AlertTriangle size={15} /> Findings <span>({alertRows.length})</span></h2>
             <button className="icon-button framed" type="button" aria-label="Refresh alerts" onClick={onRefresh}><RefreshCw size={16} /></button>
           </div>
           <div className="panel-body">

@@ -16,7 +16,7 @@ type Props = {
 export function DatasetsTabPane({ datasetRows, metricKey, projectCount, runsInView }: Props) {
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Datasets" emphasis="in scope" lede={`config-derived · ${datasetRows.length} keys`} />
+      <PageHead eyebrow="Workspace" title="Datasets" lede={`config-derived · ${datasetRows.length} keys`} />
       <div className="tab-grid two-col">
         <section className="panel">
           <div className="panel-head"><h2><Database size={15} /> Config-derived Datasets <span>({datasetRows.length})</span></h2></div>

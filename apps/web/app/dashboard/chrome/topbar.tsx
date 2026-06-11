@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Moon, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Sun, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -411,6 +411,8 @@ function AccountWorkspaceMenu({
   onOpenSettings,
   onSelect,
   onSignOut,
+  onToggleTheme,
+  theme,
 }: {
   accountUser: AccountUser | null;
   busy: boolean;
@@ -423,6 +425,8 @@ function AccountWorkspaceMenu({
   onOpenSettings: () => void;
   onSelect: (orgId: string) => void;
   onSignOut: () => void;
+  onToggleTheme: () => void;
+  theme: "dark" | "light";
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -563,6 +567,9 @@ function AccountWorkspaceMenu({
             {currentCapabilities.manage_billing ? (
               <button type="button" onClick={() => { setOpen(false); onOpenBilling(); }}><CreditCard size={14} /> Manage billing</button>
             ) : null}
+            <button type="button" onClick={onToggleTheme}>
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />} {theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            </button>
             <button type="button" onClick={() => { setOpen(false); onSignOut(); }}><LogOut size={14} /> Sign out</button>
           </div>
         </div>
@@ -607,8 +614,10 @@ export function DashboardTopbar({
   onShortcutHelp,
   onSortBy,
   onStatus,
+  onToggleTheme,
   onViewName,
   orgMemberships,
+  theme,
   orgSwitchBusy,
   orgSwitchError,
   onSwitchOrg,
@@ -657,8 +666,10 @@ export function DashboardTopbar({
   onShortcutHelp: () => void;
   onSortBy: (value: string) => void;
   onStatus: (status: string) => void;
+  onToggleTheme: () => void;
   onViewName: (value: string) => void;
   orgMemberships: OrgMembershipSummary[];
+  theme: "dark" | "light";
   orgSwitchBusy: boolean;
   orgSwitchError: string;
   onSwitchOrg: (orgId: string) => void;
@@ -857,7 +868,7 @@ export function DashboardTopbar({
                   if (compactFilters) setMobileFiltersOpen((open) => !open);
                   else setDesktopFiltersCollapsed((collapsed) => !collapsed);
                 }}
-                title="Filters"
+                title={filtersVisible ? "Hide the filter bar" : "Show the filter bar"}
                 type="button"
               >
                 <SlidersHorizontal size={15} />
@@ -885,6 +896,8 @@ export function DashboardTopbar({
               onOpenSettings={onOpenSettings}
               onSelect={onSwitchOrg}
               onSignOut={onSignOut}
+              onToggleTheme={onToggleTheme}
+              theme={theme}
             />
           </div>
         </div>

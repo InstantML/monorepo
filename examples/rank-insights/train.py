@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import math
 import random
 
@@ -14,6 +15,12 @@ STEPS = 60
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Seed rank-aware research dashboard runs")
+    # Examples must never default to the hosted API: without this flag the SDK
+    # falls back to https://api.instantml.ai and sends INSTANTML_API_KEY there.
+    parser.add_argument("--server", default="http://127.0.0.1:8000", help="Training Observability API URL")
+    args = parser.parse_args()
+
     random.seed(20260523)
     for run_index in range(12):
         config = {
@@ -29,6 +36,7 @@ def main() -> None:
             config=config,
             tags=tags,
             notes="Synthetic rank-aware dashboard seed run.",
+            base_url=args.server,
         )
         try:
             for step in range(STEPS):

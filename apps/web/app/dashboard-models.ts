@@ -690,7 +690,41 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       });
     }
   }
-  return rows.slice(0, 20);
+  return dedupeAlertRows(rows).slice(0, 20);
+}
+
+// Identical per-run warnings (every seed run "has no checkpoints") train users
+// to ignore the page. Collapse same-kind warnings into one grouped row; only
+// failures and active runs stay individual because each is actionable.
+export function dedupeAlertRows(rows: AlertRow[]): AlertRow[] {
+  const collapsibleKinds = new Map<string, { rows: AlertRow[]; title: (count: number) => string }>([
+    ["checkpoint", { rows: [], title: (count) => `${count} runs have no checkpoints` }],
+    ["metric", { rows: [], title: (count) => `${count} runs are missing the selected metric` }],
+  ]);
+  const result: AlertRow[] = [];
+  for (const row of rows) {
+    const kind = row.id.split(":")[1] ?? "";
+    const bucket = collapsibleKinds.get(kind);
+    if (bucket) bucket.rows.push(row);
+    else result.push(row);
+  }
+  for (const [kind, bucket] of collapsibleKinds) {
+    if (bucket.rows.length <= 1) {
+      result.push(...bucket.rows);
+      continue;
+    }
+    const names = bucket.rows.map((row) => row.title.split(" ")[0]);
+    const sample = names.slice(0, 3).join(", ");
+    result.push({
+      id: `grouped:${kind}`,
+      severity: "warning",
+      tone: "live",
+      title: bucket.title(bucket.rows.length),
+      detail: `${sample}${names.length > 3 ? ` and ${names.length - 3} more` : ""}`,
+      label: "warning",
+    });
+  }
+  return result;
 }
 
 export function buildDatasetRows(runs: RunSummary[], metricKey: string): DatasetRow[] {

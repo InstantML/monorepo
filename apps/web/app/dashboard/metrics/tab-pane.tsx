@@ -16,10 +16,6 @@ type ChartZoomRange = { min: number; max: number } | null;
 type PinnedChartPanel = {
   metric: string;
   series: MetricSeries[];
-  normalizedSeries: MetricSeries[];
-  domain: any;
-  fullDomain: any;
-  rangeSeries: MetricSeries[];
   summaries: any[];
   zoomRange: ChartZoomRange;
 };
@@ -28,8 +24,6 @@ type Props = {
   activeMetricCatalogRow: MetricCatalogRow | null;
   chartSummaries: any[];
   chartZoomRange: ChartZoomRange;
-  domain: any;
-  fullDomain: any;
   groupAverage: boolean;
   groupBy: string;
   hover: HoverPoint;
@@ -39,14 +33,11 @@ type Props = {
   metricFilterValid: boolean;
   metricKey: string;
   metricOptionsForControls: string[];
-  normalizedSeries: MetricSeries[];
   onGroupAverage: (checked: boolean) => void;
   onGroupBy: (group: string) => void;
   onMetricFilter: (filter: string) => void;
   onMetricKey: (key: string) => void;
   onChartLeave: () => void;
-  onChartMove: (event: MouseEvent<SVGSVGElement>) => void;
-  onChartMoveFor: (event: MouseEvent<SVGSVGElement>, chartSeries: MetricSeries[], chartMetricKey: string) => void;
   onPinnedMetric: (metric: string) => void;
   onPointHoverChange: (point: HoverPoint, metricKey: string) => void;
   onPinnedChartZoomRangeChange: (metric: string, range: ChartZoomRange) => void;
@@ -57,8 +48,8 @@ type Props = {
   onZoomRangeChange: (range: ChartZoomRange) => void;
   pinnedChartPanels: PinnedChartPanel[];
   pinnedMetrics: string[];
-  rangeSeries: MetricSeries[];
   selectedRuns: RunSummary[];
+  series: MetricSeries[];
   smoothing: number;
   sortedRuns: RunSummary[];
   visibleMetricCatalogRows: MetricCatalogRow[];
@@ -69,8 +60,6 @@ export function MetricsTabPane({
   activeMetricCatalogRow,
   chartSummaries,
   chartZoomRange,
-  domain,
-  fullDomain,
   groupAverage,
   groupBy,
   hover,
@@ -80,14 +69,11 @@ export function MetricsTabPane({
   metricFilterValid,
   metricKey,
   metricOptionsForControls,
-  normalizedSeries,
   onGroupAverage,
   onGroupBy,
   onMetricFilter,
   onMetricKey,
   onChartLeave,
-  onChartMove,
-  onChartMoveFor,
   onPinnedMetric,
   onPointHoverChange,
   onPinnedChartZoomRangeChange,
@@ -98,8 +84,8 @@ export function MetricsTabPane({
   onZoomRangeChange,
   pinnedChartPanels,
   pinnedMetrics,
-  rangeSeries,
   selectedRuns,
+  series,
   smoothing,
   sortedRuns,
   visibleMetricCatalogRows,
@@ -110,7 +96,7 @@ export function MetricsTabPane({
       <header className="analysis-header">
         <div className="analysis-title-block">
           <span className="analysis-eyebrow eyebrow--accent">Metrics</span>
-          <h2>{metricTitle(metricKey)} <span className="serif-em">over time</span></h2>
+          <h2>{metricTitle(metricKey)} over time</h2>
           <p>
             {activeMetricCatalogRow
               ? `${activeMetricCatalogRow.selectedCount}/${activeMetricCatalogRow.runCount} selected runs · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points · ${metricGoalLabel(metricKey)} objective`
@@ -118,9 +104,9 @@ export function MetricsTabPane({
           </p>
         </div>
         <div className="analysis-stat-strip">
-          <div className="analysis-stat"><span>Available</span><strong>{formatNumber(metricCatalogRows.length, 0)}</strong></div>
-          <div className="analysis-stat"><span>Pinned</span><strong>{formatNumber(pinnedMetrics.length, 0)}</strong></div>
-          <div className="analysis-stat"><span>Series</span><strong>{formatNumber(chartSummaries.length, 0)}</strong></div>
+          <div className="analysis-stat"><span>Metrics</span><strong>{formatNumber(metricCatalogRows.length, 0)}</strong></div>
+          <div className="analysis-stat"><span>Pinned charts</span><strong>{formatNumber(pinnedMetrics.length, 0)}</strong></div>
+          <div className="analysis-stat"><span>Runs plotted</span><strong>{formatNumber(chartSummaries.length, 0)}</strong></div>
         </div>
       </header>
       <div className="metrics-grid metrics-workbench">
@@ -154,17 +140,13 @@ export function MetricsTabPane({
             />
           </div>
           <MetricChart
-            domain={domain}
             exportFilenameBase={`instantml-${metricKey}`}
-            fullDomain={fullDomain}
-            hover={hover}
+            height={400}
             metricKey={metricKey}
-            normalizedSeries={normalizedSeries}
-            onMove={onChartMove}
             onPointHover={(point) => onPointHoverChange(point, metricKey)}
             onLeave={onChartLeave}
             onZoomRangeChange={onZoomRangeChange}
-            rangeSeries={rangeSeries}
+            series={series}
             xMode={xMode}
             zoomRange={chartZoomRange}
           />
@@ -177,17 +159,13 @@ export function MetricsTabPane({
                     <button className="icon-button" type="button" aria-label={`Unpin ${panel.metric}`} onClick={() => onPinnedMetric(panel.metric)}><X size={14} /></button>
                   </div>
                   <MetricChart
-                    domain={panel.domain}
                     exportFilenameBase={`instantml-${panel.metric}`}
-                    fullDomain={panel.fullDomain}
-                    hover={hover}
+                    height={300}
                     metricKey={panel.metric}
-                    normalizedSeries={panel.normalizedSeries}
-                    onMove={(event) => onChartMoveFor(event, panel.normalizedSeries, panel.metric)}
                     onPointHover={(point) => onPointHoverChange(point, panel.metric)}
                     onLeave={onChartLeave}
                     onZoomRangeChange={(range) => onPinnedChartZoomRangeChange(panel.metric, range)}
-                    rangeSeries={panel.rangeSeries}
+                    series={panel.series}
                     xMode={xMode}
                     zoomRange={panel.zoomRange}
                   />

@@ -133,6 +133,15 @@ export const viewport: Viewport = {
   themeColor: "#0E1116",
 };
 
+// JSON-LD is embedded with dangerouslySetInnerHTML, so escape `<` (script
+// breakout) and U+2028/U+2029 (invalid in JS string contexts) before inlining.
+function serializeJsonLd(data: unknown): string {
+  return JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
@@ -165,11 +174,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: logoIntroFlag }} />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(organizationJsonLd) }}
         />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(softwareApplicationJsonLd) }}
         />
       </head>
       <body>

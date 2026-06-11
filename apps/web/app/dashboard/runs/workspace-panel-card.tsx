@@ -8,6 +8,7 @@ import { averageGroupedSeries, axisTicks, chartDomain, formatAxisTick, formatAxi
 import { chartColor, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, distributionSummaryForRuns, fieldLabel, histogramBins, indexedAxisTicks, latestMetricValues, parseFieldId, scatterPointsForRuns } from "../../../src/dashboard-panels.js";
 import { MAX_SELECTED_RUNS, groupKeyForRun, formatNumber } from "../../../src/state.js";
+import { useMeasuredSize } from "../ui/use-measured-size";
 import {
   chartHeight,
   chartPadding,
@@ -102,12 +103,12 @@ function readDraggedPanel(event: DragEvent<HTMLElement>): DraggedWorkspacePanel 
 }
 
 function LatestMetricPanelChart({
-  height,
+  height: fallbackHeight,
   metricKey,
   padding,
   type,
   values,
-  width,
+  width: fallbackWidth,
 }: {
   height: number;
   metricKey: string;
@@ -117,6 +118,8 @@ function LatestMetricPanelChart({
   width: number;
 }) {
   const [hover, setHover] = useState<AltChartHover | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const { width, height } = useMeasuredSize(frameRef, fallbackWidth, fallbackHeight);
   const valueStyleIndexes = useMemo(() => chartStyleIndexesForItems(values), [values]);
   if (!values.length) {
     return <div className="chart-area"><div className="empty">No latest values for this metric in the current run set.</div></div>;
@@ -142,6 +145,7 @@ function LatestMetricPanelChart({
   const barWidth = type === "bar" ? Math.max(2, innerWidth / values.length - 3) : 0;
   return (
     <div className="chart-area alt-panel-chart" aria-label={`${workspacePanelTypeLabel(type)} chart for ${metricKey}`} onMouseLeave={() => setHover(null)}>
+      <div className="alt-chart-frame" ref={frameRef}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {yTicks.map((tick: number) => {
           const y = type === "histogram" ? countYFor(tick) : yFor(tick);
@@ -234,6 +238,7 @@ function LatestMetricPanelChart({
         }) : null}
       </svg>
       {hover ? <AltChartTooltip hover={hover} width={width} height={height} /> : null}
+      </div>
       <div className="chart-legend compact-legend">
         <span className="legend-chip">{values.length} latest values</span>
         {type === "histogram" ? <span className="legend-chip">{bins.length} bins</span> : <span className="legend-chip">{metricKey}</span>}
@@ -243,11 +248,11 @@ function LatestMetricPanelChart({
 }
 
 function ScatterPanelChart({
-  height,
+  height: fallbackHeight,
   missingCount,
   points,
   scopeLabel,
-  width,
+  width: fallbackWidth,
   xField,
   yField,
 }: {
@@ -260,6 +265,8 @@ function ScatterPanelChart({
   yField: string;
 }) {
   const [hover, setHover] = useState<AltChartHover | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const { width, height } = useMeasuredSize(frameRef, fallbackWidth, fallbackHeight);
   const pointStyleIndexes = useMemo(() => chartStyleIndexesForItems(points), [points]);
   const xLabel = fieldLabel(xField);
   const yLabel = fieldLabel(yField);
@@ -292,6 +299,7 @@ function ScatterPanelChart({
   const compactPairLabel = `${truncateMiddle(xLabel, 34)} x ${truncateMiddle(yLabel, 34)}`;
   return (
     <div className="chart-area alt-panel-chart scatter-panel-chart" aria-label={title} onMouseLeave={() => setHover(null)}>
+      <div className="alt-chart-frame" ref={frameRef}>
       <svg aria-label={title} viewBox={`0 0 ${width} ${height}`} role="img">
         <title>{title}</title>
         {yTicks.map((tick: number) => {
@@ -341,6 +349,7 @@ function ScatterPanelChart({
         })}
       </svg>
       {hover ? <AltChartTooltip hover={hover} width={width} height={height} /> : null}
+      </div>
       <div className="chart-legend compact-legend">
         <span className="legend-chip">{points.length} plotted / {scopeLabel}</span>
         {missingCount ? <span className="legend-chip">{missingCount} missing fields</span> : null}
@@ -352,12 +361,12 @@ function ScatterPanelChart({
 
 function DistributionPanelChart({
   groupField,
-  height,
+  height: fallbackHeight,
   replicateField,
   scopeLabel,
   summary,
   valueField,
-  width,
+  width: fallbackWidth,
 }: {
   groupField?: string;
   height: number;
@@ -368,6 +377,8 @@ function DistributionPanelChart({
   width: number;
 }) {
   const [hover, setHover] = useState<AltChartHover | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const { width, height } = useMeasuredSize(frameRef, fallbackWidth, fallbackHeight);
   const valueLabel = fieldLabel(valueField);
   const groupLabel = groupField ? categoricalFieldLabel(groupField) : "Ungrouped";
   const replicateLabel = replicateField ? categoricalFieldLabel(replicateField) : "";
@@ -395,6 +406,7 @@ function DistributionPanelChart({
   const groupWidth = Math.max(24, Math.min(72, innerWidth / Math.max(1, groups.length) * 0.5));
   return (
     <div className="chart-area alt-panel-chart distribution-panel-chart" aria-label={`Distribution chart for ${valueLabel}`} onMouseLeave={() => setHover(null)}>
+      <div className="alt-chart-frame" ref={frameRef}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {yTicks.map((tick: number) => {
           const y = yFor(tick);
@@ -468,6 +480,7 @@ function DistributionPanelChart({
         })}
       </svg>
       {hover ? <AltChartTooltip hover={hover} width={width} height={height} /> : null}
+      </div>
       <div className="chart-legend compact-legend">
         <span className="legend-chip">{summary.plotted} plotted / {scopeLabel}</span>
         {summary.missing ? <span className="legend-chip">{summary.missing} missing</span> : null}
@@ -482,10 +495,10 @@ function DistributionPanelChart({
 }
 
 function HistogramTimelinePanelChart({
-  height,
+  height: fallbackHeight,
   objectKey,
   timeline,
-  width,
+  width: fallbackWidth,
 }: {
   height: number;
   objectKey: string;
@@ -495,6 +508,8 @@ function HistogramTimelinePanelChart({
   const frames = timeline?.frames ?? [];
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [hover, setHover] = useState<AltChartHover | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const { width, height } = useMeasuredSize(frameRef, fallbackWidth, fallbackHeight);
   useEffect(() => {
     setSelectedIndex(Math.max(0, frames.length - 1));
     setHover(null);
@@ -593,6 +608,7 @@ function HistogramTimelinePanelChart({
 
   return (
     <div className="chart-area alt-panel-chart histogram-timeline-panel-chart" aria-label={`Logged histogram timeline for ${objectKey}`} onMouseLeave={() => setHover(null)}>
+      <div className="alt-chart-frame" ref={frameRef}>
       {timeline.compatibleBins ? (
         <svg viewBox={`0 0 ${width} ${height}`} role="img">
           <title>{`${objectKey} logged histogram timeline`}</title>
@@ -667,6 +683,7 @@ function HistogramTimelinePanelChart({
         </svg>
       )}
       {hover ? <AltChartTooltip hover={hover} width={width} height={height} /> : null}
+      </div>
       <label className="histogram-frame-control">
         <span>Frame {boundedIndex + 1}/{frames.length}</span>
         <input
@@ -850,20 +867,6 @@ export function WorkspacePanelCard({
     !linePanel ? [] :
     smoothSeries(settings.groupAverage ? averageGroupedSeries(groupedSeries) : groupedSeries, settings.smoothing)
   ), [groupedSeries, linePanel, settings.groupAverage, settings.smoothing]);
-  const fullDomain = useMemo(() => (
-    linePanel ? chartDomain(preparedSeries, settings.xMode, panel.metricKey) : null
-  ), [linePanel, panel.metricKey, preparedSeries, settings.xMode]);
-  const rangeSeries = useMemo(() => (
-    !linePanel ? [] :
-    normalizeSeries(preparedSeries, panelChartWidth, panelChartHeight, panelChartPadding, settings.xMode, panel.metricKey)
-  ), [linePanel, panel.metricKey, panelChartHeight, panelChartPadding, panelChartWidth, preparedSeries, settings.xMode]);
-  const normalized = useMemo(() => (
-    !linePanel ? [] :
-    normalizeSeries(preparedSeries, panelChartWidth, panelChartHeight, panelChartPadding, settings.xMode, panel.metricKey, panelZoomRange)
-  ), [linePanel, panel.metricKey, panelChartHeight, panelChartPadding, panelChartWidth, panelZoomRange, preparedSeries, settings.xMode]);
-  const domain = useMemo(() => (
-    linePanel ? chartDomain(preparedSeries, settings.xMode, panel.metricKey, panelZoomRange) : null
-  ), [linePanel, panel.metricKey, panelZoomRange, preparedSeries, settings.xMode]);
   useEffect(() => {
     setPanelHover(null);
     setPanelZoomRange(null);
@@ -872,20 +875,6 @@ export function WorkspacePanelCard({
     if (hoverFrameRef.current !== null) window.cancelAnimationFrame(hoverFrameRef.current);
     resizeCleanupRef.current();
   }, []);
-  function handlePanelChartMove(event: MouseEvent<SVGSVGElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, panelChartWidth, panelChartHeight, {
-      preserveAspectRatio: isFullscreenPanel ? "meet" : "none",
-    });
-    pendingHoverRef.current = { x: point.x, y: point.y };
-    if (hoverFrameRef.current !== null) return;
-    hoverFrameRef.current = window.requestAnimationFrame(() => {
-      hoverFrameRef.current = null;
-      const pending = pendingHoverRef.current;
-      if (!pending) return;
-      setPanelHover(nearestPoint(normalized, pending.x, pending.y, 28) as HoverPoint);
-    });
-  }
   function clearPanelHover() {
     pendingHoverRef.current = null;
     if (hoverFrameRef.current !== null) {
@@ -1058,24 +1047,17 @@ export function WorkspacePanelCard({
       ) : (
         linePanel ? (
           <MetricChart
-            domain={domain}
             emptyMessage={panelRuns.length ? "No logged series for this metric in the current run set." : undefined}
             exportFilenameBase={`instantml-${panel.metricKey}`}
-            fillFrame={!isFullscreenPanel}
-            fullDomain={fullDomain}
             height={panelChartHeight}
-            hover={panelHover}
             metricKey={panel.metricKey}
-            normalizedSeries={normalized}
-            onMove={handlePanelChartMove}
             onPointHover={setPanelHover}
             onLeave={clearPanelHover}
             onZoomRangeChange={setPanelZoomRange}
             padding={panelChartPadding}
-            rangeSeries={rangeSeries}
+            series={preparedSeries}
             smoothing={settings.smoothing}
             onSmoothingChange={onSmoothingChange}
-            width={panelChartWidth}
             xMode={settings.xMode}
             zoomRange={panelZoomRange}
           />
