@@ -5,14 +5,20 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, LayoutGrid, Table2, X } from "lucide-react";
 
 import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
+import { MetricCard } from "../ui/metric-card";
 import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
+import { ProjectsOverview } from "./projects-overview";
 import { RunsCommandbar } from "./runs-commandbar";
 import { RunsTable } from "./runs-table";
 import { RunsWorkspace } from "./runs-workspace";
 import { WorkspacePanelCard } from "./workspace-panel-card";
+import { formatMetricValue } from "../../../src/charts.js";
 import { fieldLabel } from "../../../src/dashboard-panels.js";
-import type { HistogramTimelineState, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
+import { shouldShowProjectsOverview } from "../../../src/projects-overview.js";
+import { formatNumber, metricGoalLabel } from "../../../src/state.js";
+import { metricTitle } from "../../dashboard-models";
+import type { HistogramTimelineState, Overview, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 
@@ -78,6 +84,7 @@ type Props = {
   onSelectAllMatching: () => void;
   onClearSelection: () => void;
   onSelectAllVisible: () => void;
+  onSelectProject: (project: string) => void;
   onSetAddPanelSection: (sectionId: string) => void;
   onSwitchOrganization: (orgId: string) => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
@@ -98,6 +105,7 @@ type Props = {
   orgMemberships: OrgMembershipSummary[];
   orgName: string;
   orgSwitchBusy: boolean;
+  overview: Overview;
   pageEnd: number;
   pageSize: number;
   pageStart: number;
@@ -179,6 +187,7 @@ export function RunsTabPane({
   onSelectAllMatching,
   onClearSelection,
   onSelectAllVisible,
+  onSelectProject,
   onSetAddPanelSection,
   onSwitchOrganization,
   onTableColumns,
@@ -188,6 +197,7 @@ export function RunsTabPane({
   orgMemberships,
   orgName,
   orgSwitchBusy,
+  overview,
   pageEnd,
   pageSize,
   pageStart,
@@ -226,6 +236,12 @@ export function RunsTabPane({
     localStorage.setItem("instantml:next:runs-view", view);
   }
   const showEmptyCallout = initialLoadDone && !dashboardLoading && summaryTotal === 0 && projects.length === 0 && !project && !query && !status;
+  // Audit 3.1: with no project scope, land on the explicit project overview
+  // instead of a cross-project workspace. "Browse all runs" opts back into the
+  // mixed view for this visit; picking a project re-arms the overview.
+  const [browseAllRuns, setBrowseAllRuns] = useState(false);
+  const showProjectsOverview = initialLoadDone
+    && shouldShowProjectsOverview({ browseAllRuns, project, projects, query, status });
   const nonCurrentMemberships = orgMemberships.filter((m) => !m.is_current);
   // The sticky run rail and panel toolbar sit directly below the sticky filter
   // bar, offset by --runs-filter-sticky-height. That filter wraps to different
@@ -287,6 +303,27 @@ export function RunsTabPane({
         emphasis="in flight"
         lede={`${project || "All projects"} · ${metricKey}`}
       />
+      {showProjectsOverview ? (
+        <ProjectsOverview
+          metricKey={metricKey}
+          onBrowseAllRuns={() => setBrowseAllRuns(true)}
+          onSelectProject={(name) => {
+            setBrowseAllRuns(false);
+            onSelectProject(name);
+          }}
+          projects={projects}
+          totalRuns={summaryTotal}
+        />
+      ) : (
+      <>
+      {/* AL2: the Run health side cards promoted to the workspace header,
+          scoped to the active project/status/search filters like the charts. */}
+      <div className="runs-health-cards" role="group" aria-label="Run health summary">
+        <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
+        <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
+        <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
+        <MetricCard label={`${metricGoalLabel(metricKey)} ${metricTitle(metricKey)}`} value={formatMetricValue(overview.best_eval_return)} tone="good" />
+      </div>
       {showEmptyCallout ? (
         <>
           {nonCurrentMemberships.length ? (
@@ -428,6 +465,8 @@ export function RunsTabPane({
         workspaceRuns={sortedRuns}
         workspaceSeries={workspaceSeries}
       />
+      )}
+      </>
       )}
       {editingPanelContext ? (
         <PanelEditDrawer

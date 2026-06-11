@@ -454,6 +454,9 @@ export function LandingPage() {
                 Start free
                 <IconArrow />
               </Link>
+              {/* A2: demo story entry — routes to sign-in with the shared
+                  read-only demo action spotlighted. */}
+              <Link href="/signin?intent=demo" className="landing-cta-ghost">Try the live demo</Link>
               <Link href="/docs" className="landing-cta-ghost">Read docs</Link>
             </div>
 

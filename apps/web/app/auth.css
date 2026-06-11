@@ -338,3 +338,14 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
 @media (prefers-reduced-motion:reduce){
   .iml-auth *,.iml-landing *{animation:none!important;transition:none!important}
 }
+
+/* A2: spotlight the shared-demo action when arriving via the landing demo link. */
+.iml-btn--demo-spotlight {
+  border-color: var(--accent, #1fb877);
+  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.18);
+}
+
+.iml-demo-hint {
+  margin: 0 0 2px;
+  text-align: center;
+}

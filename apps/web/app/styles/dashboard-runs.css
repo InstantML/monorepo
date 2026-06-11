@@ -583,6 +583,13 @@
   border-top-color: transparent;
 }
 
+/* R6 cross-highlight: lit when the matching chart series is hovered. */
+.workspace-run-row.is-highlighted {
+  border-color: var(--line);
+  background: #f0f7f4;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 .workspace-run-tags {
   display: flex;
   align-items: center;
@@ -997,4 +1004,125 @@
 
 .workspace-mode-select .select-trigger {
   width: 128px;
+}
+
+/* All-projects overview (audit 3.1): explicit project cards when no project
+   scope is active, replacing the mixed cross-project workspace. */
+.projects-overview {
+  display: grid;
+  gap: 14px;
+  padding: 4px 2px 24px;
+}
+
+.projects-overview-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.projects-overview-head h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.projects-overview-lede {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.projects-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 12px;
+}
+
+.project-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.project-card:hover,
+.project-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 10px 26px rgba(23, 33, 43, 0.1);
+  transform: translateY(-1px);
+}
+
+.project-card-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--ink, #1d2733);
+  word-break: break-word;
+}
+
+.project-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.project-card-stat b {
+  color: var(--ink, #1d2733);
+  font-weight: 700;
+}
+
+.project-card-stat.is-active b {
+  color: var(--green, #1a7f4e);
+}
+
+.project-card-stat.is-failed b {
+  color: var(--red, #b3372f);
+}
+
+.project-card-best {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.project-card-best b {
+  color: var(--ink, #1d2733);
+}
+
+.project-card-activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.projects-overview-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* AL2: Run health cards promoted to the Runs workspace header. */
+.runs-health-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.runs-health-cards .metric-card {
+  min-width: 0;
 }

@@ -31,7 +31,6 @@ import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
 import { ImportsTabPane } from "./imports/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
-import { CheckpointsTabPane } from "./checkpoints/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { SettingsTabPane } from "./settings/tab-pane";
@@ -45,7 +44,6 @@ import {
   buildApiRows,
   buildDatasetRows,
   buildMetricCatalogRows,
-  buildCheckpointRows,
   buildRunMetricRows,
   buildRunTimelineRows,
   buildAutomaticWorkspace,
@@ -188,7 +186,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts", "checkpoints"]);
+const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
 
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
@@ -866,7 +864,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
-  const checkpointRows = useMemo(() => buildCheckpointRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
@@ -2021,7 +2018,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "checkpoints" || activeTab === "artifacts";
+      const shouldLoad = activeTab === "detail" || activeTab === "artifacts";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         setArtifactsRunId("");
@@ -3745,6 +3742,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 setSelectedRunIds([]);
               }}
               onSelectAllVisible={selectAllVisibleRuns}
+              onSelectProject={changeProject}
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
@@ -3754,6 +3752,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               orgMemberships={orgMemberships}
               orgName={sessionPayload?.organization?.name ?? ""}
               orgSwitchBusy={orgSwitchBusy}
+              overview={overview}
               pageEnd={pageEnd}
               pageSize={pageSize}
               pageStart={pageStart}
@@ -3971,12 +3970,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               project={project}
               visibleArtifacts={visibleArtifacts}
             />
-          ) : null}
-        </section>
-
-        <section className={`tab-pane ${activeTab === "checkpoints" ? "active" : ""}`} aria-label="Checkpoints">
-          {activeTab === "checkpoints" ? (
-            <CheckpointsTabPane checkpointRows={checkpointRows} primaryRun={primaryRun} />
           ) : null}
         </section>
 

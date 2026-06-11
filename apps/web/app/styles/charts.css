@@ -852,6 +852,107 @@ small {
   opacity: 0.45;
 }
 
+.chart-log-toggle {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.chart-log-toggle.active {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(37, 99, 235, 0.12));
+  color: var(--accent);
+}
+
+.chart-y-range {
+  position: relative;
+}
+
+.chart-y-range > summary {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chart-y-range > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chart-y-range[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chart-y-range-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  /* Dropdown layer (tray 60 < dropdowns 80 < modals 120). */
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: 180px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px rgba(23, 33, 43, 0.16);
+}
+
+.chart-y-range-field {
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-y-range-field input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink, #344251);
+  font-size: 13px;
+}
+
+.chart-y-range-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.chart-y-range-hint {
+  color: #7a4d12;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .chart-smoothing-control {
   display: inline-flex;
   align-items: center;
@@ -1010,6 +1111,18 @@ small {
 
 .legend-chip:hover {
   background: var(--chart-grid);
+}
+
+/* R6 cross-highlight: when a series is isolated (legend, rail, or in-plot
+   hover) the matching chip pops and the rest recede. */
+.chart-legend.has-active .legend-chip:not(.legend-chip-active):not(.legend-overflow) {
+  opacity: 0.55;
+}
+
+.legend-chip.legend-chip-active {
+  border-color: var(--line);
+  background: var(--chart-grid);
+  font-weight: 700;
 }
 
 .legend-chip.legend-overflow {

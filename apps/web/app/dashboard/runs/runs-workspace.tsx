@@ -217,6 +217,9 @@ export function RunsWorkspace({
     "[data-add-panel-trigger='true']",
   );
   const [draggedPanel, setDraggedPanel] = useState<DraggedWorkspacePanel | null>(null);
+  // R6 cross-highlight: hovering a rail run isolates its series in every line
+  // panel; hovering a chart series lights up the matching rail run.
+  const [highlightRunId, setHighlightRunId] = useState<string | null>(null);
   const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
   const [addHistogramObjectKey, setAddHistogramObjectKey] = useState("");
   const [bulkPromptEnabled, setBulkPromptEnabled] = useState(false);
@@ -431,8 +434,10 @@ export function RunsWorkspace({
             const runColor = chartColor(stableChartIndex(run.id || run.name, index));
             return (
               <div
-                className={`workspace-run-row ${selected ? "selected" : ""}`}
+                className={`workspace-run-row ${selected ? "selected" : ""}${run.id === highlightRunId ? " is-highlighted" : ""}`}
                 key={run.id}
+                onMouseEnter={() => setHighlightRunId(run.id)}
+                onMouseLeave={() => setHighlightRunId((current) => (current === run.id ? null : current))}
               >
                 <button
                   aria-label={compareLabel}
@@ -541,6 +546,8 @@ export function RunsWorkspace({
             return (
               <WorkspaceSectionView
                 key={section.id}
+                highlightRunId={highlightRunId}
+                onHighlightRun={setHighlightRunId}
                 onDuplicatePanel={onDuplicatePanel}
                 onEditPanel={onEditPanel}
                 onFullscreenPanel={onFullscreenPanel}

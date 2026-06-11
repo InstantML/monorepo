@@ -9,7 +9,6 @@ import type {
   Artifact,
   DatasetRow,
   MetricCatalogRow,
-  CheckpointRow,
   ReportRow,
   RunMetricRow,
   RunSummary,
@@ -792,20 +791,6 @@ export function runRailTooltip(run: RunSummary) {
   const note = runNoteText(run);
   if (note) lines.push(`Note: ${note}`);
   return lines.join("\n");
-}
-
-export function buildCheckpointRows(run: RunSummary | null, artifacts: Artifact[]): CheckpointRow[] {
-  if (!run) return [];
-  return artifacts
-    .filter((artifact) => artifact.type === "checkpoint")
-    .sort((left, right) => (left.step ?? -1) - (right.step ?? -1))
-    .map((artifact) => ({
-      id: artifact.id,
-      name: artifact.name,
-      uri: artifact.uri,
-      step: artifact.step === null ? "no step" : `step ${artifact.step}`,
-      evalReturn: compactValue(artifact.metadata.eval_return ?? "-"),
-    }));
 }
 
 export function buildReportRows(savedViews: Array<string | { label: string; value: string }>): ReportRow[] {

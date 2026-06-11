@@ -3,6 +3,7 @@
 import { Activity, Box, ChevronDown, ChevronUp, Copy, Download, FileText, Link2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { ArtifactTextPreview } from "./artifact-text-preview";
 import { groupArtifactsByName } from "../../../src/evidence.js";
 import { artifactHasStoredBytes, formatBytes, safeArtifactMediaKind, safeArtifactUri } from "../../dashboard-models";
 import type { Artifact } from "../../dashboard-types";
@@ -90,6 +91,7 @@ function ArtifactRow({
         </span>
         <small title={artifact.uri}>{safeArtifactUri(artifact.uri)}</small>
         <ArtifactBrowserPreview artifact={artifact} />
+        <ArtifactTextPreview artifact={artifact} />
       </div>
       <span>{artifact.step === null ? "no step" : `step ${artifact.step}`}</span>
       <span>{formatBytes(artifact.size_bytes)}</span>

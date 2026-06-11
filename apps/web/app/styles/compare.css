@@ -1696,3 +1696,59 @@ button.compare-row-head.active {
  * Use the same amber semantic as the rows-mode config diff dot — never the
  * success green, which would read as an improvement. */
 .cmp-redesign .compare-cell.changed{background:var(--warm-soft);color:var(--amber);font-weight:600}
+
+/* AR4: bounded csv/json/text artifact preview. */
+.artifact-text-preview-block {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-top: 6px;
+}
+
+.artifact-text-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.artifact-text-preview-toggle:hover {
+  color: var(--ink, #344251);
+  border-color: var(--accent);
+}
+
+.artifact-text-preview {
+  width: 100%;
+  max-width: 720px;
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--chart-card-bg, var(--surface));
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--ink, #344251);
+}
+
+.artifact-text-preview.is-loading,
+.artifact-text-preview.is-error {
+  font-family: inherit;
+  color: var(--muted);
+  white-space: normal;
+}
+
+.artifact-text-preview-note {
+  color: var(--muted);
+  font-size: 11.5px;
+}

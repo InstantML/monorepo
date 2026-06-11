@@ -5,7 +5,7 @@ import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, G
 
 import { buildCheckpointResumeCode, checkpointStep, defaultForkRunName } from "../../../src/checkpoints.js";
 import { durationLabel, formatNumber, isInternalInstantMlMetric, metricGoal, metricGoalLabel, preferredMetricKey, statusTone, uploadHealthForRun } from "../../../src/state.js";
-import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
+import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, safeArtifactUri, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
 import { useFocusTrap } from "../ui/use-focus-trap";
@@ -162,7 +162,12 @@ function CheckpointList({
             <article className="checkpoint-row" key={artifact.id}>
               <div className="checkpoint-main">
                 <strong title={artifact.name}>{artifact.name}</strong>
-                <small>{artifact.step === null ? "no step" : `step ${artifact.step}`} · {formatBytes(artifact.size_bytes)}</small>
+                <small>
+                  {artifact.step === null ? "no step" : `step ${artifact.step}`} · {formatBytes(artifact.size_bytes)}
+                  {artifact.metadata?.eval_return !== undefined ? ` · eval ${compactValue(artifact.metadata.eval_return)}` : ""}
+                </small>
+                {/* CK2: lineage URI lives here now that the Checkpoints tab merged in. */}
+                <small className="checkpoint-uri" title={artifact.uri}>{safeArtifactUri(artifact.uri)}</small>
               </div>
               <div className="checkpoint-actions">
                 {canDownload ? (

@@ -2,7 +2,6 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
-  Box,
   Code2,
   Database,
   FileBarChart,
@@ -42,7 +41,6 @@ export const navGroups = [
       { id: "alerts", label: "Run health", icon: AlertTriangle },
       { id: "datasets", label: "Datasets", icon: Database },
       { id: "imports", label: "Imports", icon: UploadCloud },
-      { id: "checkpoints", label: "Checkpoints", icon: Box },
     ],
   },
   {

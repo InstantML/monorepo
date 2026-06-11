@@ -725,12 +725,14 @@ function AltChartTooltip({ height, hover, width }: { height: number; hover: AltC
 
 export function WorkspacePanelCard({
   className = "",
+  highlightRunId = null,
   onDragEnd,
   onDragStart,
   onDropBefore,
   onDuplicate,
   onEdit,
   onFullscreen,
+  onHighlightRun,
   onPointerMoveStart,
   onRemove,
   onResize,
@@ -745,12 +747,16 @@ export function WorkspacePanelCard({
   workspaceSeries,
 }: {
   className?: string;
+  /** R6 cross-highlight from the runs rail; line panels isolate this series. */
+  highlightRunId?: string | null;
   onDragEnd?: () => void;
   onDragStart?: (event: DragEvent<HTMLElement>) => void;
   onDropBefore?: (event: DragEvent<HTMLElement>) => void;
   onDuplicate?: () => void;
   onEdit?: () => void;
   onFullscreen?: () => void;
+  /** Reports the hovered series so the rail can highlight the matching run. */
+  onHighlightRun?: (runId: string | null) => void;
   onPointerMoveStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   onRemove?: () => void;
   onResize?: (layout: WorkspacePanelLayout) => void;
@@ -1050,9 +1056,16 @@ export function WorkspacePanelCard({
             emptyMessage={panelRuns.length ? "No logged series for this metric in the current run set." : undefined}
             exportFilenameBase={`instantml-${panel.metricKey}`}
             height={panelChartHeight}
+            highlightRunId={highlightRunId}
             metricKey={panel.metricKey}
-            onPointHover={setPanelHover}
-            onLeave={clearPanelHover}
+            onPointHover={(point) => {
+              setPanelHover(point);
+              onHighlightRun?.(point?.runId ?? null);
+            }}
+            onLeave={() => {
+              clearPanelHover();
+              onHighlightRun?.(null);
+            }}
             onZoomRangeChange={setPanelZoomRange}
             padding={panelChartPadding}
             series={preparedSeries}
@@ -1125,9 +1138,11 @@ export function WorkspacePanelCard({
 }
 
 export function WorkspaceSectionView({
+  highlightRunId = null,
   onDuplicatePanel,
   onEditPanel,
   onFullscreenPanel,
+  onHighlightRun,
   onPanelDragEnd,
   onPanelDragStart,
   onPanelDrop,
@@ -1145,9 +1160,11 @@ export function WorkspaceSectionView({
   workspacePanelRuns,
   workspaceSeries,
 }: {
+  highlightRunId?: string | null;
   onDuplicatePanel: (sectionId: string, panelId: string) => void;
   onEditPanel: (sectionId: string, panelId: string) => void;
   onFullscreenPanel: (sectionId: string, panelId: string) => void;
+  onHighlightRun?: (runId: string | null) => void;
   onPanelDragEnd: () => void;
   onPanelDragStart: (event: DragEvent<HTMLElement>, sectionId: string, panelId: string) => void;
   onPanelDrop: (event: DragEvent<HTMLElement>, targetSectionId: string, targetIndex: number) => void;
@@ -1208,6 +1225,8 @@ export function WorkspaceSectionView({
             return (
               <WorkspacePanelCard
                 key={panel.id}
+                highlightRunId={highlightRunId}
+                onHighlightRun={onHighlightRun}
                 onDragEnd={onPanelDragEnd}
                 onDragStart={(event) => onPanelDragStart(event, section.id, panel.id)}
                 onDropBefore={(event) => onPanelDrop(event, section.id, panelIndex)}

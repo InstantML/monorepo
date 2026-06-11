@@ -109,3 +109,68 @@ function objectItem(object) {
     searchText: `${key} ${kind} ${JSON.stringify(object?.metadata ?? {})}`.toLowerCase(),
   };
 }
+
+// AR4: artifact text previews. Conservative extension/mime detection — only
+// formats that render usefully as monospace text. Media kinds win (an
+// image/audio/video preview is richer than bytes).
+const TEXT_PREVIEW_EXTENSIONS = {
+  csv: "csv",
+  tsv: "csv",
+  json: "json",
+  jsonl: "json",
+  txt: "text",
+  md: "text",
+  log: "text",
+  yaml: "text",
+  yml: "text",
+};
+
+/**
+ * @param {{ name?: string, uri?: string, mime_type?: string | null, metadata?: Record<string, any> | null }} [artifact]
+ * @returns {"csv" | "json" | "text" | ""}
+ */
+export function artifactTextPreviewKind(artifact = {}) {
+  const mime = String(artifact.mime_type ?? artifact.metadata?.mime_type ?? artifact.metadata?.content_type ?? "").toLowerCase();
+  if (mime.includes("csv")) return "csv";
+  if (mime.includes("json")) return "json";
+  if (mime.startsWith("text/")) return "text";
+  const name = `${artifact.name ?? ""} ${artifact.uri ?? ""}`.toLowerCase();
+  const match = name.match(/\.([a-z0-9]+)(?:$|[?#\s])/g);
+  for (const token of match ?? []) {
+    const ext = token.replace(/^\./, "").replace(/[?#\s]+$/, "");
+    if (TEXT_PREVIEW_EXTENSIONS[ext]) return TEXT_PREVIEW_EXTENSIONS[ext];
+  }
+  return "";
+}
+
+/**
+ * Bound a fetched text blob for inline display. Returns the clipped text plus
+ * whether anything was cut, so the UI can say "showing the first N lines".
+ * @param {string} text
+ * @param {{ maxLines?: number, maxChars?: number }} [limits]
+ */
+export function truncateTextPreview(text, { maxLines = 40, maxChars = 16_384 } = {}) {
+  const raw = String(text ?? "");
+  let clipped = raw.length > maxChars ? raw.slice(0, maxChars) : raw;
+  let truncated = raw.length > maxChars;
+  const lines = clipped.split("\n");
+  if (lines.length > maxLines) {
+    clipped = lines.slice(0, maxLines).join("\n");
+    truncated = true;
+  }
+  return { text: clipped, truncated };
+}
+
+/**
+ * Pretty-print a complete JSON document for preview. Returns null when the
+ * payload is not valid standalone JSON (e.g. jsonl or a truncated read) — the
+ * caller falls back to the raw text.
+ * @param {string} raw
+ */
+export function formatJsonPreview(raw) {
+  try {
+    return JSON.stringify(JSON.parse(String(raw ?? "")), null, 2);
+  } catch {
+    return null;
+  }
+}

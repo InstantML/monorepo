@@ -27,14 +27,18 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 - Metric charts with catalog, selected-run leaderboard, hover details, summaries, grouping, smoothing, and pinned panels.
 - Selected-run data export from the Runs command bar plus opt-in plotted-data
   CSV and chart-image downloads on Metrics and Runs workspace line charts.
-- Artifact collections/detail/lineage workspace plus the legacy raw artifact browser.
+- Artifact collections/detail/lineage workspace plus the legacy raw artifact browser, with bounded inline csv/json/text previews (first 16 KB streamed over the existing download route).
 - Rollout gallery.
-- Checkpoint timeline.
+- Checkpoint timeline merged into Run Detail (lineage URI + eval return on each checkpoint row; `/dashboard/checkpoints` and `/dashboard/models` canonicalize to `/dashboard/detail`).
 - Imports and integrations workspace for adoption: copy-ready W&B/Neptune/TensorBoard/MLflow CLI commands, Import v2 dry-run status, schema mapping, polling job visibility, warning previews, commit/cancel actions, dual-logging guidance, and framework adapter snippets.
 
 Current navigation, workspace, and comparison controls:
 
-- Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Run Detail`, `Compare`, `Insights`, `Alerts` (shown as `Run health`), `Datasets`, `Imports`, `Artifacts`, `Checkpoints`, `Reports`, `Settings`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room. The rail groups tabs as Analyze / Workspace / More / Admin; routes and tab ids are unchanged by the grouping.
+- Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Run Detail`, `Compare`, `Insights`, `Alerts` (shown as `Run health`), `Datasets`, `Imports`, `Artifacts`, `Reports`, `Settings`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room. The rail groups tabs as Analyze / Workspace / More / Admin. The former `Checkpoints` tab merged into Run Detail; `/dashboard/checkpoints` and `/dashboard/models` stay routable as aliases of `/dashboard/detail`.
+- With no project selected, Runs lands on an explicit "All projects" overview: one card per project (run count, active/failed, best metric, latest activity) that scopes the project filter on click, plus a "Browse all runs" escape hatch into the cross-project workspace. Per-project stat fetches are capped at 16 projects and the cap is disclosed.
+- Every metric line chart carries per-panel y-axis controls: a `Log` pill (log10 scale, positive values only — hidden point counts are disclosed, and an all-non-positive window keeps the controls mounted with an explanatory empty state) and a `Y auto/min–max` popover for manual y-ranges (one-sided entries fall back to the data bound; out-of-range data clips to the plot rect). The mini range overview and SVG export share the same scale.
+- Cross-highlighting on the Runs workspace: hovering a run in the rail isolates its series in every line panel; hovering a chart series or legend chip lights the matching rail row and legend chip.
+- Run health summary cards (failed/active/metric points/best metric) sit at the top of the Runs workspace, scoped to the active project/status/search filters.
 - Imports at `/dashboard/imports` is CLI-first. It does not ask users to paste third-party credentials into the browser. The tab renders source-specific import/sync commands, a sample dry-run action against the Import v2 job API, source-to-InstantML schema mapping, privacy posture, polling recent import jobs, warning previews, dry-run commit/cancel controls, W&B dual-logging guidance, and polished HF/Lightning/Keras adapter snippets. Browser upload remains limited to canonical chunk demonstrations and should not become the primary path for large source exports.
 - Copyable import commands are dry-run-first and shell-quote workspace, project,
   path, entity, and source-project values before rendering. TensorBoard

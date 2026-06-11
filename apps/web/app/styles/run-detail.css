@@ -1006,3 +1006,13 @@ pre {
   color: #0c6570;
   font-weight: 700;
 }
+
+/* CK2: lineage URI shown inline now that the Checkpoints tab merged in. */
+.checkpoint-main .checkpoint-uri {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}

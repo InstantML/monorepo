@@ -4,7 +4,7 @@ import { FileText, ImageDown, RefreshCw } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
-import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, svgPointFromClient } from "../../../src/charts.js";
+import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
 import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
@@ -134,9 +134,9 @@ function MiniRange({
   const padX = 12;
   const padY = 8;
   const xSpan = (domain.maxX - domain.minX) || 1;
-  const ySpan = (domain.maxY - domain.minY) || 1;
   const miniX = (value: number) => padX + ((value - domain.minX) / xSpan) * (miniWidth - padX * 2);
-  const miniY = (value: number) => miniHeight - padY - ((value - domain.minY) / ySpan) * (miniHeight - padY * 2);
+  // Same y scale (incl. log10) as the main plot so the overview matches it.
+  const miniY = yMapper(domain, miniHeight, padY);
   const activeRange = sanitizeRange(draftRange ?? zoomRange, domain);
   const activeMinX = activeRange ? miniX(activeRange.min) : 0;
   const activeMaxX = activeRange ? miniX(activeRange.max) : 0;
@@ -260,6 +260,7 @@ export function MetricChart({
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
   exportFilenameBase,
   height = chartHeight,
+  highlightRunId = null,
   metricKey,
   onPointHover,
   onLeave,
@@ -268,6 +269,7 @@ export function MetricChart({
   padding = chartPadding,
   series,
   showRange = true,
+  showYAxisControls = true,
   smoothing,
   xMode,
   zoomRange = null,
@@ -276,6 +278,8 @@ export function MetricChart({
   exportFilenameBase?: string;
   /** Frame height in CSS px; the width always tracks the container. */
   height?: number;
+  /** External cross-highlight (e.g. hovering a run in the rail or table). */
+  highlightRunId?: string | null;
   metricKey: string;
   onPointHover?: (point: HoverPoint) => void;
   onLeave?: () => void;
@@ -285,6 +289,8 @@ export function MetricChart({
   /** Display series — smoothing already applied by the owner. */
   series: any[];
   showRange?: boolean;
+  /** Per-panel log toggle + manual y-range; on by default everywhere. */
+  showYAxisControls?: boolean;
   smoothing?: number;
   xMode: string;
   zoomRange?: ChartZoomRange;
@@ -297,13 +303,22 @@ export function MetricChart({
   // Clamp padding so tiny panels keep a usable plot area.
   const pad = Math.min(padding, Math.max(24, Math.min(width, frameHeight) / 4));
 
+  // Per-panel y-axis settings (P0-9): log10 toggle + manual range. State is
+  // chart-local so every panel gets the control without owner plumbing.
+  const [yScale, setYScale] = useState<"linear" | "log">("linear");
+  const [yRange, setYRange] = useState<{ min: number; max: number } | null>(null);
+  const [yMinDraft, setYMinDraft] = useState("");
+  const [yMaxDraft, setYMaxDraft] = useState("");
+  const yRangeDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  const yAxisOptions = useMemo(() => ({ scale: yScale, range: yRange }), [yRange, yScale]);
+
   const normalizedSeries: any[] = useMemo(
-    () => normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, zoomRange),
-    [frameHeight, metricKey, pad, series, width, xMode, zoomRange],
+    () => normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, zoomRange, yAxisOptions),
+    [frameHeight, metricKey, pad, series, width, xMode, yAxisOptions, zoomRange],
   );
   const rangeNormalizedSeries: any[] = useMemo(
-    () => (showRange ? normalizeSeries(series, width, frameHeight, pad, xMode, metricKey) : normalizedSeries),
-    [frameHeight, metricKey, normalizedSeries, pad, series, showRange, width, xMode],
+    () => (showRange ? normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, null, yAxisOptions) : normalizedSeries),
+    [frameHeight, metricKey, normalizedSeries, pad, series, showRange, width, xMode, yAxisOptions],
   );
   const domain = normalizedSeries.find((item) => item.domain)?.domain ?? null;
   const fullDomain = rangeNormalizedSeries.find((item) => item.domain)?.domain ?? domain;
@@ -329,7 +344,12 @@ export function MetricChart({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [tooltipPlacement, setTooltipPlacement] = useState<TooltipPlacement | null>(null);
-  const hoverIndex = hover ? normalizedSeries.findIndex((item) => item.id === hover.runId) : -1;
+  // R6 cross-highlight: legend-chip hover and the external rail/table hover
+  // isolate a series exactly like an in-plot hover, minus the tooltip (which
+  // needs a real point under the cursor).
+  const [legendHoverId, setLegendHoverId] = useState<string | null>(null);
+  const activeRunId = hover?.runId ?? legendHoverId ?? highlightRunId ?? null;
+  const hoverIndex = activeRunId ? normalizedSeries.findIndex((item) => item.id === activeRunId) : -1;
   const activeSeries = hoverIndex >= 0 ? normalizedSeries[hoverIndex] : null;
   const drawFocusOverlay = Boolean(activeSeries && (denseChart || seriesCount > 8));
 
@@ -363,6 +383,15 @@ export function MetricChart({
     context.clearRect(0, 0, width, frameHeight);
     context.lineCap = "round";
     context.lineJoin = "round";
+    // A manual y-range can put data outside the plot window; clip it like the
+    // SVG path does.
+    const clipToPlot = Boolean(yRange);
+    if (clipToPlot) {
+      context.save();
+      context.beginPath();
+      context.rect(pad, pad, width - pad * 2, frameHeight - pad * 2);
+      context.clip();
+    }
     const baseAlpha = normalizedSeries.length >= 1000 ? 0.16 : normalizedSeries.length >= 500 ? 0.2 : 0.28;
     const baseWidth = normalizedSeries.length >= 1000 ? 0.75 : 0.95;
     const strokePoints = (points: any[], key: "y" | "ySmoothed") => {
@@ -407,9 +436,10 @@ export function MetricChart({
         strokePoints(points, "y");
       }
     });
+    if (clipToPlot) context.restore();
     context.setLineDash([]);
     context.globalAlpha = 1;
-  }, [denseChart, frameHeight, normalizedSeries, styleIndexes, useLineStyles, width]);
+  }, [denseChart, frameHeight, normalizedSeries, pad, styleIndexes, useLineStyles, width, yRange]);
 
   const exportBlockedReason = useMemo(
     () => (exportFilenameBase ? chartExportBlockedReason(normalizedSeries) : ""),
@@ -421,8 +451,10 @@ export function MetricChart({
   const smoothingControlId = `${chartInstanceId}-chart-smoothing`;
   const showSmoothing = typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
-  const showActions = Boolean(exportFilenameBase) || showSmoothing;
+  const showActions = Boolean(exportFilenameBase) || showSmoothing || showYAxisControls;
   const displaySmoothing = smoothingValue;
+  const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
   const hoverRows = hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, xMode, useLineStyles, hover.runId) : [];
   const hiddenHoverRows = hover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
@@ -492,65 +524,128 @@ export function MetricChart({
     ? { left: `${tooltipPlacement.left}px`, top: `${tooltipPlacement.top}px` }
     : { left: 0, top: 0, visibility: "hidden" };
 
-  if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
-    return <div className="chart-area" onMouseLeave={handleLeave}><div className="empty">{emptyMessage}</div></div>;
-  }
-  const xTicks = axisTicks(domain.minX, domain.maxX, Math.max(3, Math.min(8, Math.round(width / 140))));
-  const yTicks = axisTicks(domain.minY, domain.maxY, Math.max(3, Math.min(7, Math.round(frameHeight / 70))));
-  // Use the real domain span (never clamp to 1) so gridlines + tick labels line
-  // up with the data on tiny-magnitude charts. The `|| 1` is just a
-  // divide-by-zero guard.
-  const xSpan = (domain.maxX - domain.minX) || 1;
-  const ySpan = (domain.maxY - domain.minY) || 1;
-  const xPos = (value: number) => pad + ((value - domain.minX) / xSpan) * (width - pad * 2);
-  const yPos = (value: number) => frameHeight - pad - ((value - domain.minY) / ySpan) * (frameHeight - pad * 2);
-  const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
-  const legendSeries = normalizedSeries.slice(0, legendLimit);
-  const hiddenLegendSeries = normalizedSeries.slice(legendSeries.length);
-  const hiddenLegendSample = hiddenLegendSeries.slice(0, 6).map((item) => item.identifier ?? item.name);
-  const hiddenLegendTitle = hiddenLegendSeries.length
-    ? `${hiddenLegendSeries.length} additional plotted series${hiddenLegendSample.length ? `: ${hiddenLegendSample.join(", ")}${hiddenLegendSeries.length > hiddenLegendSample.length ? ", ..." : ""}` : ""}`
-    : "";
-  const hoverClassFor = (item: any) => hover ? (item.id === hover.runId ? (drawFocusOverlay ? " series-muted" : " series-active") : " series-muted") : "";
-
-  function downloadChartCsv() {
-    if (exportBlockedReason) return;
-    downloadTextFile(`${exportFileBase}.csv`, chartSeriesToCsv({ metricKey, series: normalizedSeries, xMode }), "text/csv;charset=utf-8");
+  function toggleYScale() {
+    const next = yScale === "log" ? "linear" : "log";
+    // A manual floor at or below zero can't survive the switch to log.
+    if (next === "log" && yRange && yRange.min <= 0) setYRange(null);
+    setYScale(next);
   }
 
-  function downloadChartSvg() {
-    if (exportBlockedReason) return;
-    downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height: frameHeight, padding: pad, xMode }), "image/svg+xml;charset=utf-8");
+  // One-sided entries fall back to the current domain bound, so "cap the top
+  // at 1" doesn't require typing the floor too.
+  function draftYRange() {
+    const min = yMinDraft.trim() === "" ? (domain ? domain.minY : Number.NaN) : Number(yMinDraft);
+    const max = yMaxDraft.trim() === "" ? (domain ? domain.maxY : Number.NaN) : Number(yMaxDraft);
+    return sanitizeYAxisRange({ min, max }, yScale);
   }
 
-  return (
-    <div
-      ref={chartAreaRef}
-      className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
-      onMouseLeave={handleLeave}
-    >
-      {showActions ? (
-        <div className="chart-export-actions" aria-label="Chart actions">
-          {showSmoothing ? (
-            <label className="chart-smoothing-control" htmlFor={smoothingControlId} title={`Line smoothing (EMA): ${displaySmoothing ? displaySmoothing : "off"}`}>
-              <span className="chart-smoothing-label">Smooth</span>
-              <input
-                aria-label={`Line smoothing for ${metricKey}`}
-                aria-valuetext={displaySmoothing ? String(displaySmoothing) : "off"}
-                className="chart-smoothing-slider"
-                id={smoothingControlId}
-                max={90}
-                min={0}
-                onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
-                onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
-                step={10}
-                type="range"
-                value={displaySmoothing}
-              />
-            </label>
-          ) : null}
-          {exportFilenameBase ? (
-          <>
+  function applyYRangeDraft() {
+    const next = draftYRange();
+    if (!next) return;
+    setYRange(next);
+    if (yRangeDetailsRef.current) yRangeDetailsRef.current.open = false;
+  }
+
+  function clearYRange() {
+    setYRange(null);
+    setYMinDraft("");
+    setYMaxDraft("");
+    if (yRangeDetailsRef.current) yRangeDetailsRef.current.open = false;
+  }
+
+  const yDraftDirty = yMinDraft.trim() !== "" || yMaxDraft.trim() !== "";
+  const yDraftValid = !yDraftDirty || Boolean(draftYRange());
+  const yRangeKeyDown = (event: { key: string; preventDefault: () => void }) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyYRangeDraft();
+    }
+  };
+
+  const actionsRow = showActions ? (
+    <div className="chart-export-actions" aria-label="Chart actions">
+      {showYAxisControls ? (
+        <>
+          <button
+            aria-pressed={yScale === "log"}
+            className={`chart-log-toggle${yScale === "log" ? " active" : ""}`}
+            onClick={toggleYScale}
+            title={yScale === "log"
+              ? `Logarithmic y-axis${hiddenLogPoints ? ` — ${hiddenLogPoints} non-positive points hidden` : ""}. Click for linear.`
+              : "Switch to a logarithmic y-axis (plots positive values only)"}
+            type="button"
+          >
+            Log
+          </button>
+          <details
+            className="chart-y-range"
+            onToggle={(event) => {
+              if ((event.currentTarget as HTMLDetailsElement).open && yRange) {
+                setYMinDraft(String(yRange.min));
+                setYMaxDraft(String(yRange.max));
+              }
+            }}
+            ref={yRangeDetailsRef}
+          >
+            <summary aria-label={`Y-axis range for ${metricKey}`} title="Set a manual y-axis range">
+              Y {yRange ? `${formatAxisTick(yRange.min)}–${formatAxisTick(yRange.max)}` : "auto"}
+            </summary>
+            <div className="chart-y-range-pop">
+              <label className="chart-y-range-field">
+                <span>Min</span>
+                <input
+                  aria-label="Manual y-axis minimum"
+                  onChange={(event) => setYMinDraft(event.currentTarget.value)}
+                  onKeyDown={yRangeKeyDown}
+                  placeholder={domain ? formatAxisTick(domain.minY) : "min"}
+                  step="any"
+                  type="number"
+                  value={yMinDraft}
+                />
+              </label>
+              <label className="chart-y-range-field">
+                <span>Max</span>
+                <input
+                  aria-label="Manual y-axis maximum"
+                  onChange={(event) => setYMaxDraft(event.currentTarget.value)}
+                  onKeyDown={yRangeKeyDown}
+                  placeholder={domain ? formatAxisTick(domain.maxY) : "max"}
+                  step="any"
+                  type="number"
+                  value={yMaxDraft}
+                />
+              </label>
+              <div className="chart-y-range-actions">
+                <button className="secondary compact-button" disabled={!yDraftDirty || !yDraftValid} onClick={applyYRangeDraft} type="button">Apply</button>
+                <button className="secondary compact-button" onClick={clearYRange} type="button">Auto</button>
+              </div>
+              {yDraftDirty && !yDraftValid ? (
+                <small className="chart-y-range-hint">{yScale === "log" ? "Log scale needs 0 < min < max." : "Needs min < max."}</small>
+              ) : null}
+            </div>
+          </details>
+        </>
+      ) : null}
+      {showSmoothing ? (
+        <label className="chart-smoothing-control" htmlFor={smoothingControlId} title={`Line smoothing (EMA): ${displaySmoothing ? displaySmoothing : "off"}`}>
+          <span className="chart-smoothing-label">Smooth</span>
+          <input
+            aria-label={`Line smoothing for ${metricKey}`}
+            aria-valuetext={displaySmoothing ? String(displaySmoothing) : "off"}
+            className="chart-smoothing-slider"
+            id={smoothingControlId}
+            max={90}
+            min={0}
+            onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+            onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+            step={10}
+            type="range"
+            value={displaySmoothing}
+          />
+        </label>
+      ) : null}
+      {exportFilenameBase ? (
+        <>
           <button
             aria-label={`Download ${metricKey} plotted data CSV`}
             aria-describedby={exportBlockedReason ? exportHelpId : undefined}
@@ -574,15 +669,75 @@ export function MetricChart({
             <ImageDown size={14} />
           </button>
           {exportBlockedReason ? <span className="chart-export-helper" id={exportHelpId}>{exportBlockedReason}</span> : null}
-          </>
-          ) : null}
-        </div>
+        </>
       ) : null}
-      <div className="chart-legend">
+    </div>
+  ) : null;
+
+  if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
+    // Log scale can legitimately blank a chart whose data is all <= 0 — keep
+    // the actions row mounted so the user can flip the axis back.
+    const logHidEverything = yScale === "log" && series?.some((item: any) => item?.points?.length);
+    return (
+      <div className={`chart-area${showActions ? " chart-area-exportable" : ""}`} onMouseLeave={handleLeave}>
+        {actionsRow}
+        <div className="empty">
+          {logHidEverything
+            ? "Log scale plots positive values only and this window has none above zero. Switch the y-axis back to linear."
+            : emptyMessage}
+        </div>
+      </div>
+    );
+  }
+  const xTicks = axisTicks(domain.minX, domain.maxX, Math.max(3, Math.min(8, Math.round(width / 140))));
+  const yTickCount = Math.max(3, Math.min(7, Math.round(frameHeight / 70)));
+  const yTicks = domain.yScale === "log"
+    ? logAxisTicks(domain.minY, domain.maxY, yTickCount)
+    : axisTicks(domain.minY, domain.maxY, yTickCount);
+  // Use the real domain span (never clamp to 1) so gridlines + tick labels line
+  // up with the data on tiny-magnitude charts. The `|| 1` is just a
+  // divide-by-zero guard. yMapper shares the exact scale (linear or log10)
+  // that normalizeSeries used for the paths.
+  const xSpan = (domain.maxX - domain.minX) || 1;
+  const xPos = (value: number) => pad + ((value - domain.minX) / xSpan) * (width - pad * 2);
+  const yPos = yMapper(domain, frameHeight, pad);
+  const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
+  const legendSeries = normalizedSeries.slice(0, legendLimit);
+  const hiddenLegendSeries = normalizedSeries.slice(legendSeries.length);
+  const hiddenLegendSample = hiddenLegendSeries.slice(0, 6).map((item) => item.identifier ?? item.name);
+  const hiddenLegendTitle = hiddenLegendSeries.length
+    ? `${hiddenLegendSeries.length} additional plotted series${hiddenLegendSample.length ? `: ${hiddenLegendSample.join(", ")}${hiddenLegendSeries.length > hiddenLegendSample.length ? ", ..." : ""}` : ""}`
+    : "";
+  const hoverClassFor = (item: any) => activeRunId ? (item.id === activeRunId ? (drawFocusOverlay ? " series-muted" : " series-active") : " series-muted") : "";
+
+  function downloadChartCsv() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.csv`, chartSeriesToCsv({ metricKey, series: normalizedSeries, xMode }), "text/csv;charset=utf-8");
+  }
+
+  function downloadChartSvg() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height: frameHeight, padding: pad, xMode }), "image/svg+xml;charset=utf-8");
+  }
+
+  return (
+    <div
+      ref={chartAreaRef}
+      className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
+      onMouseLeave={handleLeave}
+    >
+      {actionsRow}
+      <div className={`chart-legend${activeRunId ? " has-active" : ""}`}>
         {legendSeries.map((item, index) => {
           const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
           return (
-            <span className="legend-chip" key={item.id} title={item.identifier ?? item.name}><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> {item.identifier ?? item.name}</span>
+            <span
+              className={`legend-chip${item.id === activeRunId ? " legend-chip-active" : ""}`}
+              key={item.id}
+              onMouseEnter={() => setLegendHoverId(item.id)}
+              onMouseLeave={() => setLegendHoverId(null)}
+              title={item.identifier ?? item.name}
+            ><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> {item.identifier ?? item.name}</span>
           );
         })}
         {hiddenLegendSeries.length ? (
@@ -597,6 +752,13 @@ export function MetricChart({
       <div ref={chartFrameRef} className={`metric-chart-frame${denseChart ? " dense" : ""}${activeSeries ? " is-hovering-series" : ""}`} style={chartFrameStyle} onMouseLeave={handleLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${frameHeight}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={handleMove} onMouseLeave={handleLeave}>
+          {yRange ? (
+            <defs>
+              <clipPath id={plotClipId}>
+                <rect x={pad} y={pad} width={Math.max(0, width - pad * 2)} height={Math.max(0, frameHeight - pad * 2)} />
+              </clipPath>
+            </defs>
+          ) : null}
           {yTicks.map((tick) => (
             <g key={`y-${tick}`}>
               <line className="grid-line" x1={pad} x2={width - pad} y1={yPos(tick)} y2={yPos(tick)} />
@@ -613,6 +775,10 @@ export function MetricChart({
           <line className="axis" x1={pad} x2={pad} y1={pad} y2={frameHeight - pad} />
           <text className="axis-label axis-label-x" x={width - pad} y={frameHeight - 6} textAnchor="end">{xMode === "time" ? "Time" : "Step"}</text>
           {hover ? <line className="hover-guide" x1={hover.point.x} x2={hover.point.x} y1={pad} y2={frameHeight - pad} /> : null}
+          {/* A manual y-range can leave data outside the plot window; clip the
+              series (and hover ring) to the plot rect so lines don't overdraw
+              the axis gutters. */}
+          <g clipPath={yRange ? `url(#${plotClipId})` : undefined}>
           {!denseChart ? normalizedSeries.map((item, index) => {
             const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
             return (
@@ -673,6 +839,7 @@ export function MetricChart({
           {hover ? (
             <circle className="hover-ring" cx={hover.point.x} cy={hover.point.displayY ?? hover.point.y} r={8} />
           ) : null}
+          </g>
         </svg>
       </div>
       {hover ? (

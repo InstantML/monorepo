@@ -50,9 +50,18 @@ test("nav groups demote adoption tabs under More without changing ids", () => {
   const configSrc = read("app/dashboard-config.tsx");
   assert.match(configSrc, /id: "more"/);
   assert.match(configSrc, /id: "alerts", label: "Run health"/);
-  for (const id of ["runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "checkpoints", "settings", "api"]) {
+  for (const id of ["runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "settings", "api"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
+  // CK2: the Checkpoints tab merged into Run Detail; its nav slot is gone but
+  // old /dashboard/checkpoints (and /dashboard/models) links canonicalize.
+  assert.doesNotMatch(configSrc, /id: "checkpoints"/);
+  const routesSrc = read("src/routes.js");
+  assert.match(routesSrc, /\["checkpoints", "detail"\]/);
+  assert.match(routesSrc, /\["models", "detail"\]/);
+  const runDetailSrc = read("app/dashboard/detail/run-detail.tsx");
+  assert.match(runDetailSrc, /checkpoint-uri/);
+  assert.match(runDetailSrc, /eval_return/);
 });
 
 // R1 — the runs table is mounted behind a panels/table view toggle.
@@ -78,7 +87,6 @@ test("serif flourishes are limited to the runs workspace header", () => {
     "app/dashboard/alerts/tab-pane.tsx",
     "app/dashboard/api/tab-pane.tsx",
     "app/dashboard/artifacts/tab-pane.tsx",
-    "app/dashboard/checkpoints/tab-pane.tsx",
     "app/dashboard/compare/tab-pane.tsx",
     "app/dashboard/datasets/tab-pane.tsx",
     "app/dashboard/distributed/tab-pane.tsx",
@@ -121,4 +129,23 @@ test("distributed visuals avoid red/green-only and signed z coloring", () => {
   assert.match(src, /z-mag/);
   const css = read("app/styles/research.css");
   assert.match(css, /var\(--blue\), var\(--surface-2\), var\(--amber\)/);
+});
+
+// AL2 — overview health cards promoted to the Runs workspace header.
+test("runs workspace header shows the run health cards", () => {
+  const paneSrc = read("app/dashboard/runs/tab-pane.tsx");
+  assert.match(paneSrc, /runs-health-cards/);
+  assert.match(paneSrc, /label="Failed runs"/);
+  assert.match(paneSrc, /overview\.active_runs/);
+  assert.match(read("app/styles/dashboard-runs.css"), /\.runs-health-cards/);
+});
+
+// A2 — landing demo entry routes to the spotlighted shared-demo action.
+test("landing exposes a live-demo entry that spotlights the shared demo", () => {
+  const landing = read("components/landing/LandingPage.tsx");
+  assert.match(landing, /\/signin\?intent=demo/);
+  const auth = read("app/auth-flow.tsx");
+  assert.match(auth, /get\("intent"\) === "demo"/);
+  assert.match(auth, /iml-btn--demo-spotlight/);
+  assert.match(read("app/auth.css"), /\.iml-btn--demo-spotlight/);
 });

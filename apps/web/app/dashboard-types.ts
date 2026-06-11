@@ -223,7 +223,6 @@ export type TabId =
   | "imports"
   | "insights"
   | "artifacts"
-  | "checkpoints"
   | "reports"
   | "settings"
   | "api";
@@ -244,14 +243,6 @@ export type DatasetRow = {
   runs: number;
   seeds: string[];
   best: number | null;
-};
-
-export type CheckpointRow = {
-  id: string;
-  name: string;
-  uri: string;
-  step: string;
-  evalReturn: string;
 };
 
 export type ReportRow = {
