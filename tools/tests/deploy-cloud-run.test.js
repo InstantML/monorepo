@@ -277,7 +277,7 @@ test("deploy helper keeps BYOC egress independent of legacy ClickHouse Cloud all
   assert.doesNotMatch(byocEgressBlock, /INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST/);
 });
 
-test("deploy helper keeps public router control paths and backend timeout complete", () => {
+test("deploy helper keeps public router split paths and backend timeout complete", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
   for (const path of [
@@ -288,13 +288,17 @@ test("deploy helper keeps public router control paths and backend timeout comple
     "/api/users/*",
     "/api/orgs/*",
     "/api/workspace-views/*",
-    "/api/reports",
-    "/api/reports/*",
   ]) {
     assert.match(source, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }
-  assert.match(source, /path: "\/api\/reports"/, "public router smoke should verify the reports collection route");
-  assert.match(source, /path: "\/api\/reports\/panels"/, "public router smoke should verify report subroutes");
+  assert.doesNotMatch(
+    source,
+    /- \/api\/reports\s+- \/api\/reports\/\*\s+service: \$\{controlBackend\}/,
+    "reports should not be pinned to the control backend",
+  );
+  assert.match(source, /Report routes use data plane/, "URL map tests should route reports through the data backend");
+  assert.match(source, /label: "data reports route"/, "public router smoke should verify the reports collection route");
+  assert.match(source, /label: "data reports panels route"/, "public router smoke should verify report subroutes");
   assert.match(source, /response\.status === 401/, "protected control route smoke checks should accept auth failures, not route misses");
   assert.match(source, /function backendServiceTimeout/);
   assert.match(source, /--timeout", backendServiceTimeout\(\)/);
