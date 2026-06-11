@@ -207,6 +207,13 @@ test("deploy helper keeps public routing HTTPS-only", () => {
   assert.doesNotMatch(source, /--ports", "80/);
 });
 
+test("deploy helper routes admin overview through the public control backend", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /- \/api\/admin\n\s+- \/api\/admin\/\*/);
+  assert.match(source, /path: \/api\/admin\/overview\n\s+service: \$\{controlBackend\}/);
+});
+
 test("deploy helper scopes provider secrets to the service planes that need them", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 

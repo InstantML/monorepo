@@ -1504,6 +1504,8 @@ pathMatchers:
   defaultService: ${dataBackend}
   pathRules:
   - paths:
+    - /api/admin
+    - /api/admin/*
     - /api/auth
     - /api/auth/*
     - /api/invitations
@@ -1524,6 +1526,10 @@ tests:
 - description: Auth routes use control plane
   host: instantml.local
   path: /api/auth/config
+  service: ${controlBackend}
+- description: Admin routes use control plane
+  host: instantml.local
+  path: /api/admin/overview
   service: ${controlBackend}
 - description: Billing routes use control plane
   host: instantml.local
