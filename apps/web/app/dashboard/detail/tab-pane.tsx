@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { RunWorkspace, type RunWorkspaceTabId } from "../components/run-workspace";
 import type { Artifact, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, RunMetricRow, RunSummary, RunTimelineRow } from "../../dashboard-types";
@@ -16,16 +16,12 @@ type Props = {
   loggedObjects: LoggedObject[];
   objectRowsById: Record<number, LoggedObjectRow[]>;
   onChartLeave: () => void;
-  onChartMove: (event: MouseEvent<SVGSVGElement>) => void;
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onForkCheckpoint?: (artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) => Promise<void>;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
-  primaryDomain: any;
-  primaryFullDomain: any;
-  primaryNormalizedSeries: MetricSeries[];
-  primaryRangeSeries: MetricSeries[];
+  primarySeries: MetricSeries[];
   primaryChartZoomRange: ChartZoomRange;
   run: RunSummary | null;
   runMetricRows: RunMetricRow[];
@@ -43,16 +39,12 @@ export function DetailTabPane({
   loggedObjects,
   objectRowsById,
   onChartLeave,
-  onChartMove,
   onChartPointHover,
   onChartZoomRangeChange,
   onForkCheckpoint,
   onRunMetadataSave,
   onWorkspaceTabChange,
-  primaryDomain,
-  primaryFullDomain,
-  primaryNormalizedSeries,
-  primaryRangeSeries,
+  primarySeries,
   primaryChartZoomRange,
   run,
   runMetricRows,
@@ -68,11 +60,7 @@ export function DetailTabPane({
         activeMetricKey=""
         api={api}
         artifacts={visibleArtifacts}
-        chartDomain={primaryDomain}
-        chartFullDomain={primaryFullDomain}
-        chartHover={hover}
-        chartNormalizedSeries={primaryNormalizedSeries}
-        chartRangeSeries={primaryRangeSeries}
+        chartSeries={primarySeries}
         chartZoomRange={primaryChartZoomRange}
         dataControls={dataControls}
         elementId="run-detail"
@@ -81,7 +69,6 @@ export function DetailTabPane({
         metricRows={runMetricRows}
         objectRowsById={objectRowsById}
         onChartLeave={onChartLeave}
-        onChartMove={onChartMove}
         onChartPointHover={onChartPointHover}
         onChartZoomRangeChange={onChartZoomRangeChange}
         onForkCheckpoint={onForkCheckpoint}

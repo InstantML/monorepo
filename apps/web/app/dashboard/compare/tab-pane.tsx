@@ -114,7 +114,7 @@ export function CompareTabPane({
         <header className="analysis-header compare-analysis-header">
           <div className="analysis-title-block">
             <span className="analysis-eyebrow eyebrow--accent">Compare</span>
-            <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs <span className="serif-em">side by side</span></h2>
+            <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs side by side</h2>
             <p>{metricTitle(metricKey)} · {metricGoalLabel(metricKey)} objective · sort any column</p>
           </div>
           <div className="analysis-stat-strip">

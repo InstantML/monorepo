@@ -1,9 +1,12 @@
 /**
  * @param {{ min: number, max: number } | null} [xRange]
+ * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
-export function normalizeSeries(series, width, height, padding = 28, xKey = "step", metricKey = "", xRange = null) {
+export function normalizeSeries(series, width, height, padding = 28, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
   const points = series.flatMap((item) => item.points);
   if (points.length === 0) return [];
+  const yScale = yAxis?.scale === "log" ? "log" : "linear";
+  const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
   // Iterative extent (no intermediate xValues array, no Math.min(...spread) —
   // the spread form is both slower and overflows the call stack past ~100k pts).
   const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
@@ -14,52 +17,57 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
   const rawMinStep = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
   const rawMaxStep = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
   const { min: minStep, max: maxStep } = stepDomain(rawMinStep, rawMaxStep);
-  const yDomain = valueDomain(domainPoints, metricKey);
+  const yDomain = valueDomain(domainPoints, metricKey, yScale, yRange);
   const minValue = yDomain.minY;
   const maxValue = yDomain.maxY;
   // Spans are guaranteed positive by stepDomain/valueDomain, so we never clamp
   // to 1 here — clamping was what squished tiny-magnitude metrics to the floor.
   const stepSpan = maxStep - minStep;
-  const valueSpan = maxValue - minValue;
   const innerW = width - padding * 2;
-  const innerH = height - padding * 2;
-  const mapY = (value) => height - padding - ((value - minValue) / valueSpan) * innerH;
-  const domain = { minX: minStep, maxX: maxStep, minY: minValue, maxY: maxValue };
+  const domain = { minX: minStep, maxX: maxStep, minY: minValue, maxY: maxValue, yScale, yRangeManual: Boolean(yRange) };
+  const mapY = yMapper(domain, height, padding);
   return series.map((item) => {
     const filtered = range ? item.points.filter((point) => pointInRange(point, xKey, range)) : item.points;
+    // Log scale can only place positive values; non-positive points drop from
+    // the plot (counted so the UI can say so) while `points` keeps the raw set.
+    const plottable = yScale === "log" ? filtered.filter((point) => Number(point.value) > 0) : filtered;
     const smoothed = Boolean(item.smoothed);
     // Single pass builds normalizedPoints + both path strings, and computes
     // xValue once per point (it parses a Date in time mode — calling it twice
     // doubled that cost on every render).
-    const normalizedPoints = new Array(filtered.length);
+    const normalizedPoints = new Array(plottable.length);
     let path = "";
     let smoothPath = "";
-    for (let i = 0; i < filtered.length; i += 1) {
-      const point = filtered[i];
+    for (let i = 0; i < plottable.length; i += 1) {
+      const point = plottable[i];
       const xv = xValue(point, xKey);
       const x = padding + ((xv - minStep) / stepSpan) * innerW;
       const y = mapY(point.value);
-      const ySmoothed = smoothed && Number.isFinite(point.smoothedValue) ? mapY(point.smoothedValue) : undefined;
+      const smoothable = smoothed && Number.isFinite(point.smoothedValue) && (yScale !== "log" || point.smoothedValue > 0);
+      const ySmoothed = smoothable ? mapY(point.smoothedValue) : undefined;
       normalizedPoints[i] = { ...point, x, y, ySmoothed, displayY: ySmoothed ?? y, xValue: xv };
       const xs = x.toFixed(2);
       path += `${i ? " " : ""}${xs},${y.toFixed(2)}`;
       if (smoothed) smoothPath += `${i ? " " : ""}${xs},${(ySmoothed ?? y).toFixed(2)}`;
     }
-    return { ...item, points: filtered, path, smoothPath, normalizedPoints, domain };
+    return { ...item, points: filtered, path, smoothPath, normalizedPoints, domain, hiddenNonPositive: filtered.length - plottable.length };
   });
 }
 
 /**
  * @param {{ min: number, max: number } | null} [xRange]
+ * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
-export function chartDomain(series, xKey = "step", metricKey = "", xRange = null) {
+export function chartDomain(series, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
   const points = series.flatMap((item) => item.points);
   if (points.length === 0) return null;
+  const yScale = yAxis?.scale === "log" ? "log" : "linear";
+  const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
   const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
   const range = boundedXRange(xRange, fullMinX, fullMaxX);
   const visiblePoints = range ? points.filter((point) => pointInRange(point, xKey, range)) : points;
   const visibleExtent = range && visiblePoints.length > 1 ? xExtent(visiblePoints, xKey) : null;
-  const yDomain = valueDomain(visiblePoints.length ? visiblePoints : points, metricKey);
+  const yDomain = valueDomain(visiblePoints.length ? visiblePoints : points, metricKey, yScale, yRange);
   const rawMinX = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
   const rawMaxX = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
   const xDomain = stepDomain(rawMinX, rawMaxX);
@@ -68,7 +76,77 @@ export function chartDomain(series, xKey = "step", metricKey = "", xRange = null
     maxX: xDomain.max,
     minY: yDomain.minY,
     maxY: yDomain.maxY,
+    yScale,
   };
+}
+
+/**
+ * Validate a manual y-range. Returns null (meaning "use the data domain") for
+ * anything unusable: non-numeric bounds, an empty window, or a non-positive
+ * floor on a log scale.
+ * @param {{ min: number, max: number } | null | undefined} range
+ * @param {"linear" | "log"} [yScale]
+ */
+export function sanitizeYAxisRange(range, yScale = "linear") {
+  if (!range) return null;
+  const min = Number(range.min);
+  const max = Number(range.max);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return null;
+  if (yScale === "log" && min <= 0) return null;
+  return { min, max };
+}
+
+/**
+ * Value→pixel mapper for the y axis, shared by series normalization, axis
+ * gridlines, the mini range overview, and SVG export so all four stay on the
+ * exact same scale (linear or log10).
+ * @param {{ minY: number, maxY: number, yScale?: string } | null} domain
+ */
+export function yMapper(domain, height, padding) {
+  const innerH = height - padding * 2;
+  if (domain?.yScale === "log") {
+    const logMin = Math.log10(domain.minY);
+    const logSpan = (Math.log10(domain.maxY) - logMin) || 1;
+    return (value) => height - padding - ((Math.log10(value) - logMin) / logSpan) * innerH;
+  }
+  const minY = domain?.minY ?? 0;
+  const span = ((domain?.maxY ?? 1) - minY) || 1;
+  return (value) => height - padding - ((value - minY) / span) * innerH;
+}
+
+// Log-axis ticks: 1-2-5 mantissas across the covered decades, thinned to ~count
+// so a 6-decade loss curve labels 1e-4 / 1e-2 / 1 rather than 30 cramped ticks.
+// Sub-decade windows (e.g. 3..8) fall back to the linear nice-tick family,
+// which is correct there — within one decade a log axis is locally linear-ish
+// and 1-2-5 candidates may not exist inside the window at all.
+export function logAxisTicks(min, max, count = 5) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) return [];
+  if (min === max) return [min];
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  const decades = Math.log10(hi / lo);
+  const mantissas = decades > Math.max(2, count) ? [1] : [1, 2, 5];
+  const candidates = [];
+  for (let exp = Math.floor(Math.log10(lo)); exp <= Math.ceil(Math.log10(hi)); exp += 1) {
+    for (const mantissa of mantissas) {
+      const value = Number((mantissa * Math.pow(10, exp)).toPrecision(12));
+      if (value >= lo * (1 - 1e-9) && value <= hi * (1 + 1e-9)) candidates.push(value);
+    }
+  }
+  if (candidates.length < 2) {
+    return axisTicks(lo, hi, count).filter((tick) => tick > 0);
+  }
+  const stride = Math.max(1, Math.ceil(candidates.length / Math.max(2, count)));
+  const ticks = [];
+  for (let index = 0; index < candidates.length; index += stride) ticks.push(candidates[index]);
+  // End on the top candidate by replacing (not appending) the final stride
+  // tick, so spacing stays even instead of cramming two ticks at the top.
+  const last = candidates[candidates.length - 1];
+  if (ticks[ticks.length - 1] !== last) {
+    if (ticks.length > 1) ticks[ticks.length - 1] = last;
+    else ticks.push(last);
+  }
+  return ticks;
 }
 
 // "Nice" axis ticks: round the tick step to the 1-2-5 family so labels land on
@@ -293,16 +371,30 @@ function distanceToSegment(x, y, x1, y1, x2, y2) {
   return { distance: Math.hypot(x - px, y - py), t };
 }
 
-function valueDomain(points, metricKey = "") {
+function valueDomain(points, metricKey = "", yScale = "linear", yRange = null) {
+  // A manual range IS the domain; data outside it gets clipped by the chart.
+  if (yRange) return { minY: yRange.min, maxY: yRange.max };
   let minY = Infinity;
   let maxY = -Infinity;
   for (const point of points) {
     const value = Number(point.value);
     if (!Number.isFinite(value)) continue;
+    if (yScale === "log" && value <= 0) continue;
     if (value < minY) minY = value;
     if (value > maxY) maxY = value;
   }
-  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) return { minY: 0, maxY: 1 };
+  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    // No usable values (e.g. log scale over all-negative data) still needs a
+    // drawable window so the axes render under the empty-state message.
+    return yScale === "log" ? { minY: 0.1, maxY: 1 } : { minY: 0, maxY: 1 };
+  }
+  if (yScale === "log") {
+    // Log axes span the positive data exactly; a degenerate single value opens
+    // a symmetric window around it (clamped so values near MAX_VALUE don't
+    // overflow the top bound to Infinity).
+    if (minY === maxY) return { minY: minY / 2, maxY: Math.min(maxY * 2, Number.MAX_VALUE) };
+    return { minY, maxY };
+  }
   if (usesUnitDomain(metricKey, minY, maxY)) {
     // Bounded metrics (accuracy/rate/…) keep a 0 baseline, but the top fits the
     // data plus a little headroom instead of always pinning to 1 — otherwise a

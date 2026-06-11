@@ -9,7 +9,6 @@ import type {
   Artifact,
   DatasetRow,
   MetricCatalogRow,
-  CheckpointRow,
   ReportRow,
   RunMetricRow,
   RunSummary,
@@ -690,7 +689,43 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       });
     }
   }
-  return rows.slice(0, 20);
+  return dedupeAlertRows(rows).slice(0, 20);
+}
+
+// Identical per-run warnings (every seed run "has no checkpoints") train users
+// to ignore the page. Collapse same-kind warnings into one grouped row; only
+// failures and active runs stay individual because each is actionable.
+export function dedupeAlertRows(rows: AlertRow[]): AlertRow[] {
+  const collapsibleKinds = new Map<string, { rows: AlertRow[]; title: (count: number) => string }>([
+    ["checkpoint", { rows: [], title: (count) => `${count} runs have no checkpoints` }],
+    ["metric", { rows: [], title: (count) => `${count} runs are missing the selected metric` }],
+  ]);
+  const result: AlertRow[] = [];
+  for (const row of rows) {
+    const kind = row.id.split(":")[1] ?? "";
+    const bucket = collapsibleKinds.get(kind);
+    if (bucket) bucket.rows.push(row);
+    else result.push(row);
+  }
+  for (const [kind, bucket] of collapsibleKinds) {
+    if (bucket.rows.length <= 1) {
+      result.push(...bucket.rows);
+      continue;
+    }
+    // Titles are "<run name> has no checkpoints" / "<run name> is missing …";
+    // strip the known suffix so run names containing spaces survive intact.
+    const names = bucket.rows.map((row) => row.title.replace(/ has no checkpoints$| is missing .*$/, ""));
+    const sample = names.slice(0, 3).join(", ");
+    result.push({
+      id: `grouped:${kind}`,
+      severity: "warning",
+      tone: "live",
+      title: bucket.title(bucket.rows.length),
+      detail: `${sample}${names.length > 3 ? ` and ${names.length - 3} more` : ""}`,
+      label: "warning",
+    });
+  }
+  return result;
 }
 
 export function buildDatasetRows(runs: RunSummary[], metricKey: string): DatasetRow[] {
@@ -756,20 +791,6 @@ export function runRailTooltip(run: RunSummary) {
   const note = runNoteText(run);
   if (note) lines.push(`Note: ${note}`);
   return lines.join("\n");
-}
-
-export function buildCheckpointRows(run: RunSummary | null, artifacts: Artifact[]): CheckpointRow[] {
-  if (!run) return [];
-  return artifacts
-    .filter((artifact) => artifact.type === "checkpoint")
-    .sort((left, right) => (left.step ?? -1) - (right.step ?? -1))
-    .map((artifact) => ({
-      id: artifact.id,
-      name: artifact.name,
-      uri: artifact.uri,
-      step: artifact.step === null ? "no step" : `step ${artifact.step}`,
-      evalReturn: compactValue(artifact.metadata.eval_return ?? "-"),
-    }));
 }
 
 export function buildReportRows(savedViews: Array<string | { label: string; value: string }>): ReportRow[] {

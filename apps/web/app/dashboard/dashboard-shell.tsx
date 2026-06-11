@@ -10,7 +10,7 @@ import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest }
 import { downloadBlob, filenameFromContentDisposition, safeExportFilename } from "../../src/chart-export.js";
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
-import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
+import { averageGroupedSeries, chartSummary, smoothSeries } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
@@ -22,6 +22,7 @@ import { ArtifactsTabPane } from "./artifacts/tab-pane";
 import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
+import { SelectionTray } from "./chrome/selection-tray";
 import { DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { DatasetsTabPane } from "./datasets/tab-pane";
@@ -30,7 +31,6 @@ import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
 import { ImportsTabPane } from "./imports/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
-import { CheckpointsTabPane } from "./checkpoints/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { SettingsTabPane } from "./settings/tab-pane";
@@ -44,7 +44,6 @@ import {
   buildApiRows,
   buildDatasetRows,
   buildMetricCatalogRows,
-  buildCheckpointRows,
   buildRunMetricRows,
   buildRunTimelineRows,
   buildAutomaticWorkspace,
@@ -52,9 +51,6 @@ import {
   COMPARE_ARTIFACT_LIMIT,
   COMPARE_RUN_LIMIT,
   DEFAULT_METRIC_KEY,
-  chartHeight,
-  chartPadding,
-  chartWidth,
   defaultTableColumns,
   metricTitle,
   sanitizePanelLayout,
@@ -187,7 +183,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts", "checkpoints"]);
+const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
 
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
@@ -826,10 +822,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return smoothSeries(grouped, smoothing);
   }, [groupAverage, seriesWithGroups, smoothing]);
 
-  const fullDomain = useMemo(() => chartDomain(displaySeries, xMode, metricKey), [displaySeries, metricKey, xMode]);
-  const rangeSeries = useMemo(() => normalizeSeries(displaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey), [displaySeries, metricKey, xMode]);
-  const normalizedSeries = useMemo(() => normalizeSeries(displaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
-  const domain = useMemo(() => chartDomain(displaySeries, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
   const chartSummaries = useMemo(() => chartSummary(displaySeries), [displaySeries]);
   const metricCatalogSelectionIds = useMemo(
     () => (selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id)),
@@ -842,10 +834,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const found = seriesWithGroups.find((item) => item.id === primaryRun?.id);
     return found ? smoothSeries([found], smoothing) : [];
   }, [primaryRun?.id, seriesWithGroups, smoothing]);
-  const primaryFullDomain = useMemo(() => chartDomain(primaryDisplaySeries, xMode, metricKey), [metricKey, primaryDisplaySeries, xMode]);
-  const primaryRangeSeries = useMemo(() => normalizeSeries(primaryDisplaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey), [metricKey, primaryDisplaySeries, xMode]);
-  const primaryNormalizedSeries = useMemo(() => normalizeSeries(primaryDisplaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey, primaryChartZoomRange), [metricKey, primaryChartZoomRange, primaryDisplaySeries, xMode]);
-  const primaryDomain = useMemo(() => chartDomain(primaryDisplaySeries, xMode, metricKey, primaryChartZoomRange), [metricKey, primaryChartZoomRange, primaryDisplaySeries, xMode]);
   const pinnedChartPanels = useMemo(() => (
     pinnedMetrics
       .filter((metric) => metric && metric !== metricKey)
@@ -864,20 +852,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return {
           metric,
           series: preparedSeries,
-          normalizedSeries: normalizeSeries(preparedSeries, chartWidth, chartHeight, chartPadding, xMode, metric, zoomRange),
-          domain: chartDomain(preparedSeries, xMode, metric, zoomRange),
-          fullDomain: chartDomain(preparedSeries, xMode, metric),
-          rangeSeries: normalizeSeries(preparedSeries, chartWidth, chartHeight, chartPadding, xMode, metric),
           summaries: chartSummary(preparedSeries),
           zoomRange,
         };
       })
-  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns, xMode]);
+  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns]);
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
-  const checkpointRows = useMemo(() => buildCheckpointRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
@@ -1100,6 +1083,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     { id: "escape", group: "General", label: "Close top overlay", shortcut: "Esc", enabled: true },
     { id: "undo-workspace", group: "Workspace", label: "Undo workspace change", shortcut: `${modifierLabel}+Z`, enabled: workspaceUndoStack.length > 0 },
     { id: "redo-workspace", group: "Workspace", label: "Redo workspace change", shortcut: `${modifierLabel}+Shift+Z`, enabled: workspaceRedoStack.length > 0 },
+    { id: "tab-jump", group: "Navigation", label: "Jump to tab (rail order)", shortcut: "1-9", enabled: true, description: "1 opens Runs, 2 Metrics, and so on down the sidebar." },
     { id: "runs-rail", group: "Navigation", label: runsRailCollapsed ? "Restore Runs selector" : "Collapse Runs selector", shortcut: `${modifierLabel}+.`, enabled: activeTab === "runs" },
     { id: "focus-workspace", group: "Navigation", label: "Focus Runs selector or workspace", shortcut: `${modifierLabel}+J`, enabled: activeTab === "runs" },
     { id: "fullscreen-prev", group: "Panels", label: "Previous fullscreen panel", shortcut: "Left Arrow", enabled: Boolean(fullscreenPanelContext && fullscreenPanelIndex > 0) },
@@ -2031,7 +2015,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "checkpoints" || activeTab === "artifacts";
+      const shouldLoad = activeTab === "detail" || activeTab === "artifacts";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         setArtifactsRunId("");
@@ -2612,6 +2596,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage("API key management is available to workspace admins.");
       return;
     }
+    // Irreversible for any SDK still using the key — always confirm.
+    if (!window.confirm("Revoke this API key? SDK clients using it stop authenticating immediately. This cannot be undone.")) return;
     setAdminBusy(true);
     setApiAdminTone("status");
     setApiAdminMessage("Revoking API key...");
@@ -3538,25 +3524,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }, 0);
   }
 
-  function handleChartMove(event: MouseEvent<SVGSVGElement>) {
-    handleChartMoveFor(event, normalizedSeries, metricKey);
-  }
-
-  function handleChartMoveFor(event: MouseEvent<SVGSVGElement>, chartSeries: any[], chartMetricKey: string) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, chartWidth, chartHeight);
-    pendingHoverRef.current = { chartMetricKey, chartSeries, x: point.x, y: point.y };
-    if (hoverFrameRef.current !== null) return;
-    hoverFrameRef.current = window.requestAnimationFrame(() => {
-      hoverFrameRef.current = null;
-      const pending = pendingHoverRef.current;
-      if (!pending) return;
-      const nextHover = nearestPoint(pending.chartSeries, pending.x, pending.y, 10000) as HoverPoint;
-      setHover(nextHover);
-      if (nextHover) setHoverMetricKey(pending.chartMetricKey);
-    });
-  }
-
   globalKeyHandlerRef.current = (event: globalThis.KeyboardEvent) => {
     if (event.key === "Escape" && dismissTopOverlay()) {
       event.preventDefault();
@@ -3598,6 +3565,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } else if (matchesShortcut(event, "focus-workspace", platform)) {
       event.preventDefault();
       focusWorkspaceRegion();
+    } else if (/^[1-9]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey && !fullscreenPanelRef) {
+      // Number keys jump between nav tabs (1 = Runs … in rail order).
+      const target = tabs[Number(event.key) - 1];
+      if (target) {
+        event.preventDefault();
+        selectTab(target.id);
+      }
     }
   };
 
@@ -3651,9 +3625,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onSelectTab={selectTab}
         onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
+        onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onSortBy={changeRunSort}
         onStatus={changeStatus}
         onViewName={setViewName}
+        theme={theme}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
         orgSwitchError={orgSwitchError}
@@ -3705,6 +3681,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "runs" ? (
             <RunsTabPane
               addPanelSectionId={addPanelSectionId}
+              primaryRunId={primaryRun?.id ?? ""}
               allMetricOptions={allMetricOptions}
               availableWorkspaceMetrics={availableWorkspaceMetrics}
               columnMetricFilter={columnMetricFilter}
@@ -3762,6 +3739,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 setSelectedRunIds([]);
               }}
               onSelectAllVisible={selectAllVisibleRuns}
+              onSelectProject={changeProject}
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
@@ -3771,6 +3749,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               orgMemberships={orgMemberships}
               orgName={sessionPayload?.organization?.name ?? ""}
               orgSwitchBusy={orgSwitchBusy}
+              overview={overview}
               pageEnd={pageEnd}
               pageSize={pageSize}
               pageStart={pageStart}
@@ -3807,8 +3786,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               activeMetricCatalogRow={activeMetricCatalogRow}
               chartSummaries={chartSummaries}
               chartZoomRange={chartZoomRange}
-              domain={domain}
-              fullDomain={fullDomain}
               groupAverage={groupAverage}
               groupBy={groupBy}
               hover={hover}
@@ -3818,14 +3795,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               metricFilterValid={metricFilterValid}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
-              normalizedSeries={normalizedSeries}
               onGroupAverage={setGroupAverage}
               onGroupBy={setGroupBy}
               onMetricFilter={setMetricFilter}
               onMetricKey={changeMetricKey}
               onChartLeave={() => setHover(null)}
-              onChartMove={handleChartMove}
-              onChartMoveFor={handleChartMoveFor}
               onPinnedMetric={togglePinnedMetric}
               onPointHoverChange={(point, key) => { setHoverMetricKey(key); setHover(point); }}
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
@@ -3836,8 +3810,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onZoomRangeChange={setChartZoomRange}
               pinnedChartPanels={pinnedChartPanels}
               pinnedMetrics={pinnedMetrics}
-              rangeSeries={rangeSeries}
               selectedRuns={metricSeriesRuns}
+              series={displaySeries}
               smoothing={smoothing}
               sortedRuns={sortedRuns}
               visibleMetricCatalogRows={visibleMetricCatalogRows}
@@ -3850,6 +3824,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "distributed" ? (
             <DistributedTabPane
               api={api}
+              availableRuns={sortedRuns}
+              onSelectRun={setPrimaryRunId}
               primaryRun={primaryRun}
             />
           ) : null}
@@ -3881,16 +3857,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               loggedObjects={loggedObjects}
               objectRowsById={objectRowsById}
               onChartLeave={() => setHover(null)}
-              onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
-              primaryDomain={primaryDomain}
-              primaryFullDomain={primaryFullDomain}
-              primaryNormalizedSeries={primaryNormalizedSeries}
-              primaryRangeSeries={primaryRangeSeries}
+              primarySeries={primaryDisplaySeries}
               primaryChartZoomRange={primaryChartZoomRange}
               run={primaryRun}
               runMetricRows={runMetricRows}
@@ -3963,7 +3935,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
         <section className={`tab-pane ${activeTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {activeTab === "datasets" ? (
-            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} projectCount={projects.length} runsInView={sortedRuns.length} />
+            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} projectCount={project ? 1 : projects.length} runsInView={sortedRuns.length} />
           ) : null}
         </section>
 
@@ -3998,12 +3970,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "checkpoints" ? "active" : ""}`} aria-label="Checkpoints">
-          {activeTab === "checkpoints" ? (
-            <CheckpointsTabPane checkpointRows={checkpointRows} primaryRun={primaryRun} />
-          ) : null}
-        </section>
-
         <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
           {activeTab === "reports" ? <ReportsTabPane canEditReports={canEditReports} /> : null}
         </section>
@@ -4011,6 +3977,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
           {activeTab === "settings" ? (
             <SettingsTabPane
+              accountUser={sessionPayload?.user ?? null}
               activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
               activePlan={activePlan}
               activeUsageWarnings={activeUsageOrg?.warnings ?? []}
@@ -4046,11 +4013,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onXMode={setXMode}
               orgName={sessionPayload?.organization?.name ?? ""}
               orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
-              project={project}
               reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
               seats={seats}
-              selectedRunCount={selectedRunIds.length}
-              status={status}
               storagePercent={storagePercent}
               storageUsed={storageUsed}
               storageLimit={storageLimit}
@@ -4090,6 +4054,22 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
       </section>
+      <SelectionTray
+        count={selectedRunIds.length}
+        exportDisabled={selectedRunExportDisabled}
+        exportTitle={selectedRunExportTitle}
+        onClear={() => {
+          // Mark the default as initialized so the page auto-select doesn't
+          // immediately refill the selection the user just cleared.
+          defaultSelectionInitializedRef.current = true;
+          selectionUrlSyncRef.current = true;
+          setSelectedRunIds([]);
+          selectionAnchorRunIdRef.current = "";
+        }}
+        onCompare={() => selectTab("compare")}
+        onExport={exportSelectedRunsCsv}
+        sampleNames={selectedRuns.slice(0, 3).map((run) => run.name)}
+      />
       {quickSearchOpen ? (
         <QuickSearchModal
           activeIndex={quickSearchActiveIndex}

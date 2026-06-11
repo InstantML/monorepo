@@ -240,6 +240,12 @@
   border-top-color: transparent;
 }
 
+:root[data-theme="dark"] .workspace-run-row.is-highlighted {
+  border-color: var(--line);
+  background: #0d1524;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 :root[data-theme="dark"] .workspace-eye span {
   background: var(--surface);
 }
@@ -1255,4 +1261,8 @@
   .segment-button {
     min-height: 38px;
   }
+}
+
+:root[data-theme="dark"] .chart-y-range-hint {
+  color: #e0b07a;
 }

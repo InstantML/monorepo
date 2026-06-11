@@ -12,6 +12,7 @@ import type { TabId } from "../../dashboard-types";
 const navGroupLabels: Record<(typeof navGroups)[number]["id"], string> = {
   admin: "Admin",
   core: "Analyze",
+  more: "More",
   workspace: "Workspace",
 };
 

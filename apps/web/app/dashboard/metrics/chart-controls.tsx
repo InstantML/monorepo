@@ -28,9 +28,10 @@ export function ChartControls(props: {
   const idPrefix = props.idPrefix ?? "";
   return (
     <div className="panel-controls metrics-chart-controls">
-      <label className={`control metric-filter-control ${props.metricFilterValid ? "" : "invalid"}`}>
+      <label className={`control metric-filter-control ${props.metricFilterValid ? "" : "invalid"}`} title="Filter the metric catalog. Supports regular expressions (e.g. train/.*) and falls back to substring match.">
         Metric filter
-        <input aria-label="Metric filter" id={`${idPrefix}metric-filter`} type="search" value={props.metricFilter} onChange={(event) => props.onMetricFilter(event.target.value)} placeholder="train/.*" />
+        <input aria-label="Metric filter (regex or substring)" id={`${idPrefix}metric-filter`} type="search" value={props.metricFilter} onChange={(event) => props.onMetricFilter(event.target.value)} placeholder="train/.*" />
+        {props.metricFilterValid ? null : <small className="control-hint">Invalid regex — matching as plain text.</small>}
       </label>
       <CustomSelect
         disabled={!props.metricOptions.length}
@@ -84,7 +85,7 @@ export function ChartControls(props: {
         value={props.identifierMode}
       />
       <label className="control metrics-smoothing-control">
-        <span>Smooth {props.smoothing}</span>
+        <span title="Exponential moving average; raw series stays visible as a faded line">Smooth (EMA) {props.smoothing ? props.smoothing : "off"}</span>
         <input
           aria-label="Smoothing"
           id={`${idPrefix}smoothing`}

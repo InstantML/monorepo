@@ -63,12 +63,14 @@ type ReducerMode = "central" | "mean" | "weighted" | "median" | "bounds";
 
 type Props = {
   api: { get: (path: string, options?: Record<string, unknown>) => Promise<any> };
+  availableRuns?: RunSummary[];
   embedded?: boolean;
+  onSelectRun?: (runId: string) => void;
   primaryRun: RunSummary | null;
   onMeta?: (meta: { worldSize: number; rankKeys: number }) => void;
 };
 
-export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }: Props) {
+export function DistributedTabPane({ api, availableRuns = [], embedded = false, onSelectRun, primaryRun, onMeta }: Props) {
   const [summary, setSummary] = useState<RankSummary | null>(null);
   const [rankKey, setRankKey] = useState("");
   const [error, setError] = useState("");
@@ -140,10 +142,21 @@ export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }
         <header className="analysis-header">
           <div className="analysis-title-block">
             <span className="analysis-eyebrow eyebrow--accent">Distributed</span>
-            <h2>Rank <span className="serif-em">reducers</span></h2>
+            <h2>Rank reducers</h2>
             <p>{primaryRun ? `${primaryRun.name} · selected run` : "No run selected"}</p>
           </div>
-          <div className="analysis-controls">{keySelect}</div>
+          <div className="analysis-controls">
+            {onSelectRun && availableRuns.length ? (
+              <CustomSelect
+                id="distributed-run"
+                label="Run"
+                onChange={(value) => { if (value) onSelectRun(value); }}
+                options={availableRuns.map((run) => ({ value: run.id, label: run.name }))}
+                value={primaryRun?.id ?? ""}
+              />
+            ) : null}
+            {keySelect}
+          </div>
         </header>
       )}
 
@@ -379,7 +392,9 @@ function HeatmapPanel({ heatmap, truncated }: { heatmap: RankHeatmapPoint[]; tru
               const cell = grid.lookup.get(`${rank}:${step}`);
               if (!cell) return <i key={`${rank}-${step}`} style={{ background: "var(--surface-3)", opacity: 0.5 }} title={`r${rank} step ${step}: no data`} />;
               const intensity = Math.min(1, Math.abs(cell.delta_from_mean) / grid.maxDelta);
-              const color = cell.delta_from_mean >= 0 ? "var(--coral)" : "var(--series-2)";
+              // Blue/orange diverging ramp (colorblind-safe) with opacity as the
+              // magnitude channel; exact values stay one hover away via title.
+              const color = cell.delta_from_mean >= 0 ? "var(--amber)" : "var(--blue)";
               return <i key={`${rank}-${step}`} style={{ background: color, opacity: 0.16 + intensity * 0.8 }} title={`r${rank} step ${step}: ${formatNumber(cell.value, 4)} (${signed(cell.delta_from_mean, 4)})`} />;
             }))}
           </div>
@@ -419,7 +434,8 @@ function OutlierPanel({ outliers, truncated, worldSize }: { outliers: RankOutlie
             <span>r{item.rank}</span>
             <span>step {formatNumber(item.step, 0)}</span>
             <strong>{formatNumber(item.value, 4)}</strong>
-            <span className={item.z_score >= 0 ? "pos" : "neg"}>{signed(item.z_score, 2)}z</span>
+            {/* Deviation direction isn't inherently good or bad — emphasize magnitude, not sign. */}
+            <span className="z-mag" style={{ opacity: 0.55 + Math.min(0.45, Math.abs(item.z_score) / 6) }}>{signed(item.z_score, 2)}z</span>
           </div>
         ))}
         {!shown.length ? <div className="empty compact-empty">No outlier ranks detected.</div> : null}

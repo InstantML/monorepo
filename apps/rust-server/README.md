@@ -242,6 +242,7 @@ Environment variables:
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: HTTP timeout. Default: `30`.
 - `INSTANTML_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
 - `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warning logs. Default: `1000`.
+- `INSTANTML_SHARE_TOKEN_TTL_DAYS`: report share-link lifetime in days from the moment the token is rotated/minted; expired tokens 404 like unknown tokens. `0` disables expiry. Tokens persisted before issuance tracking stay valid until rotated. Default: `30`.
 - `INSTANTML_DEV_AUTH_ENABLED`: enables the local Google-style auth endpoint when `INSTANTML_AUTH_MODE=local`. Loopback local binds enable it by default.
 - `CLERK_SECRET_KEY`: Clerk Backend API secret used to verify hosted browser sessions and fetch user profiles.
 - `INSTANTML_MANAGED_CLERK_ENABLED`: enables hosted Clerk auth. Defaults to enabled when `CLERK_SECRET_KEY` is present and `INSTANTML_AUTH_MODE=api-key`.

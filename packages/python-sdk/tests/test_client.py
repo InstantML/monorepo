@@ -33,6 +33,7 @@ from instantml.client import (
     _coerce_numeric_values,
     _collect_system_metrics,
     _environment_metadata,
+    _finish_drain_seconds,
     _git_metadata,
     _normalize_source_tracking,
     _source_metadata,
@@ -2279,6 +2280,84 @@ def test_async_finish_does_not_close_queue_when_producer_writer_is_alive(monkeyp
         run.finish(timeout=0.01)
 
     assert closed == []
+
+
+def test_finish_drain_seconds_defaults_when_env_unset_or_blank(monkeypatch):
+    monkeypatch.delenv("INSTANTML_FINISH_DRAIN_SECONDS", raising=False)
+    assert _finish_drain_seconds(10.0) == 10.0
+    monkeypatch.setenv("INSTANTML_FINISH_DRAIN_SECONDS", "   ")
+    assert _finish_drain_seconds(10.0) == 10.0
+
+
+def test_finish_drain_seconds_parses_env_override(monkeypatch):
+    monkeypatch.setenv("INSTANTML_FINISH_DRAIN_SECONDS", "2.5")
+    assert _finish_drain_seconds(10.0) == 2.5
+    monkeypatch.setenv("INSTANTML_FINISH_DRAIN_SECONDS", "-3")
+    assert _finish_drain_seconds(10.0) == 0.0
+
+
+def test_finish_drain_seconds_warns_and_keeps_default_on_invalid_env(monkeypatch):
+    monkeypatch.setenv("INSTANTML_FINISH_DRAIN_SECONDS", "fast")
+    with pytest.warns(RuntimeWarning, match="invalid INSTANTML_FINISH_DRAIN_SECONDS"):
+        assert _finish_drain_seconds(10.0) == 10.0
+
+
+def test_async_finish_uses_env_drain_budget_when_no_explicit_timeout(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+    monkeypatch.setenv("INSTANTML_FINISH_DRAIN_SECONDS", "0.125")
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 10.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    waits = []
+    monkeypatch.setattr(run, "_submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(run, "_force_async_buffer_flush", lambda timeout=None: True)
+    monkeypatch.setattr(run, "wait_for_processing", lambda timeout=None: waits.append(timeout) or True)
+
+    run.finish()
+
+    assert waits == [0.125]
+
+
+def test_async_finish_timeout_warning_reports_queued_rows_and_recovery_command(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FakeClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    queue = run._require_async_queue()
+    queue.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1}, idempotency_key="event-1")
+    queue.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 2.0}, "step": 2}, idempotency_key="event-2")
+    monkeypatch.setattr(run, "_submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(run, "_force_async_buffer_flush", lambda timeout=None: True)
+    monkeypatch.setattr(run, "wait_for_processing", lambda timeout=None: False)
+
+    with pytest.warns(RuntimeWarning, match="did not finish before the finish\\(\\) drain timeout") as captured:
+        run.finish(timeout=0.01)
+
+    messages = [str(warning.message) for warning in captured if "drain timeout" in str(warning.message)]
+    assert len(messages) == 1
+    assert "2 queued row(s)" in messages[0]
+    assert f"instantml-uploader --queue-dir {tmp_path}" in messages[0]
+    assert "INSTANTML_FINISH_DRAIN_SECONDS" in messages[0]
 
 
 def test_async_wait_fails_on_repository_drops(monkeypatch, tmp_path):

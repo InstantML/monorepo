@@ -2,7 +2,6 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
-  Box,
   Code2,
   Database,
   FileBarChart,
@@ -29,13 +28,19 @@ export const navGroups = [
   {
     id: "workspace",
     items: [
-      { id: "alerts", label: "Alerts", icon: AlertTriangle },
       { id: "insights", label: "Insights", icon: Telescope },
+      { id: "artifacts", label: "Artifacts", icon: Package },
+      { id: "reports", label: "Reports", icon: FileBarChart },
+    ],
+  },
+  // Adoption and health surfaces users visit occasionally, grouped below the
+  // daily-loop tabs so the rail leads with analysis. Ids and routes unchanged.
+  {
+    id: "more",
+    items: [
+      { id: "alerts", label: "Run health", icon: AlertTriangle },
       { id: "datasets", label: "Datasets", icon: Database },
       { id: "imports", label: "Imports", icon: UploadCloud },
-      { id: "artifacts", label: "Artifacts", icon: Package },
-      { id: "checkpoints", label: "Checkpoints", icon: Box },
-      { id: "reports", label: "Reports", icon: FileBarChart },
     ],
   },
   {

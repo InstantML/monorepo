@@ -67,6 +67,7 @@ function planDisplayName(value?: string) {
 }
 
 type Props = {
+  accountUser: { display_name?: string | null; primary_email?: string | null } | null;
   activeLimitIncludedSeats: number;
   activePlan: string;
   activeUsageWarnings: UsageWarning[];
@@ -102,11 +103,8 @@ type Props = {
   onXMode: (mode: string) => void;
   orgName: string;
   orgPlanTier: string;
-  project: string;
   reservedSeatCount: number;
   seats: SeatRow[];
-  selectedRunCount: number;
-  status: string;
   storagePercent: number;
   storageUsed: number;
   storageLimit: number;
@@ -119,6 +117,7 @@ type Props = {
 };
 
 export function SettingsTabPane({
+  accountUser,
   activeLimitIncludedSeats,
   activePlan,
   activeUsageWarnings,
@@ -154,11 +153,8 @@ export function SettingsTabPane({
   onXMode,
   orgName,
   orgPlanTier,
-  project,
   reservedSeatCount,
   seats,
-  selectedRunCount,
-  status,
   storagePercent,
   storageUsed,
   storageLimit,
@@ -235,7 +231,7 @@ export function SettingsTabPane({
         : "Cancel the active paid subscription at period end";
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace" />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace settings" />
       <div className="tab-grid settings-grid">
         <section className="panel">
           <div className="panel-head">
@@ -387,12 +383,16 @@ export function SettingsTabPane({
         <section className="panel">
           <div className="panel-head"><h2><Settings size={15} /> Workspace</h2></div>
           <div className="panel-body settings-list">
+            {/* Transient filter/selection state is visible in the filter bar
+             * itself; echoing it here read as debug output (audit ST1). */}
             <SettingRow label="Organization" value={orgName || "Workspace"} />
             <SettingRow label="Plan tier" value={orgPlanTier || "free"} />
-            <SettingRow label="Project filter" value={project || "All projects"} />
-            <SettingRow label="Status filter" value={status || "All statuses"} />
-            <SettingRow label="Selected runs" value={formatNumber(selectedRunCount, 0)} />
-            <SettingRow label="API route mode" value="Same-origin proxy" />
+            {accountUser ? (
+              <>
+                <SettingRow label="Signed in as" value={accountUser.display_name || accountUser.primary_email || "-"} />
+                {accountUser.display_name && accountUser.primary_email ? <SettingRow label="Email" value={accountUser.primary_email} /> : null}
+              </>
+            ) : null}
           </div>
         </section>
         <section className="panel">

@@ -45,7 +45,9 @@ export function ImportsTabPane({ api, project }: Props) {
   const activeSource = sources.find((item) => item.id === source) ?? sources[0];
   const cliCommand = useMemo(() => {
     const target = shellQuote(project || "my-project");
-    if (source === "wandb") return `instantml import wandb --project ${target} --entity my-team --source-project old-project --dry-run`;
+    // <your-entity>/<source-project> are explicit placeholders so a verbatim
+    // paste fails loudly instead of importing from someone else's namespace.
+    if (source === "wandb") return `instantml import wandb --project ${target} --entity <your-entity> --source-project <source-project> --dry-run`;
     if (source === "neptune") return `instantml import neptune --project ${target} --input ./neptune-export/data --files-path ./neptune-export/files --source-project ${shellQuote("workspace/project")} --dry-run`;
     if (source === "tensorboard") return `instantml sync tensorboard ./runs --project ${target} --dry-run`;
     return `instantml import mlflow --project ${target} --input mlflow-export.json --source-project ${shellQuote("mlflow-export")} --dry-run`;

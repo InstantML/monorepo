@@ -188,6 +188,12 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showSessionRecovery, setShowSessionRecovery] = useState(false);
+  // A2: landing "Try the live demo" link arrives with ?intent=demo — spotlight
+  // the shared-demo action so the path stays one obvious click.
+  const [demoIntent, setDemoIntent] = useState(false);
+  useEffect(() => {
+    setDemoIntent(new URLSearchParams(window.location.search).get("intent") === "demo");
+  }, []);
   const [byocStatus, setByocStatus] = useState<ClickHouseConnectionStatus | null>(null);
   const [byocValidation, setByocValidation] = useState<ClickHouseConnectionValidation | null>(null);
   const [byocForm, setByocForm] = useState<ByocForm>({
@@ -927,10 +933,18 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
                   </div>
                 ) : null}
 
+                {demoIntent && authReady && !config.dev_auth_enabled ? (
+                  <p className="iml-hint iml-demo-hint" role="status">
+                    The shared demo isn&apos;t available on this deployment yet — create a free workspace instead.
+                  </p>
+                ) : null}
                 {authReady && config.dev_auth_enabled ? (
                   <form className="iml-actions" onSubmit={submitAuth} aria-label="Local development sign in">
                     {managedClerkReady ? <p className="iml-hint" style={{ textAlign: "center" }}>— or use the local development flow —</p> : null}
-                    <button className="iml-btn iml-btn--outline iml-btn--lg iml-btn--block" disabled={busy} onClick={submitSharedDemo} type="button">
+                    {demoIntent ? (
+                      <p className="iml-hint iml-demo-hint">The shared demo is read-only sample data — no account or SDK key needed.</p>
+                    ) : null}
+                    <button className={`iml-btn iml-btn--outline iml-btn--lg iml-btn--block${demoIntent ? " iml-btn--demo-spotlight" : ""}`} disabled={busy} onClick={submitSharedDemo} type="button">
                       <UserPlus size={15} /> Continue as shared demo <ArrowRight className="iml-arrow" size={15} />
                     </button>
                     <div className="iml-field">

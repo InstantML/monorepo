@@ -63,10 +63,16 @@ export function ApiTabPane({
           </div>
           <div className="panel-body admin-stack">
             {canManageOrg ? (
-              <div className="admin-form-row">
-                <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} placeholder="Dashboard SDK key" value={apiKeyName} />
-                <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
-              </div>
+              <>
+                <div className="admin-form-row">
+                  <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} placeholder="Dashboard SDK key" value={apiKeyName} />
+                  <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
+                </div>
+                {/* AP3: key-management guidance with a docs path, not just a form. */}
+                <p className="admin-hint">
+                  Keys are shown once at creation and sent as <code>Authorization: Bearer</code>. Name keys per machine or pipeline so revoking one doesn&apos;t break the rest — see the <a href="/docs/quickstart">quickstart</a> and <a href="/docs/api">API reference</a>.
+                </p>
+              </>
             ) : (
               <p className="empty">API-key management is available to workspace owners and admins.</p>
             )}

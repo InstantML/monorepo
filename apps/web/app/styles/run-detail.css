@@ -41,6 +41,61 @@
   color: var(--text);
 }
 
+.detail-section-note {
+  margin-left: 8px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.detail-link-button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.detail-link-button:hover {
+  text-decoration: underline;
+}
+
+/* Teaching empty state for reproducibility metadata. */
+.repro-empty {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed var(--line);
+  border-radius: var(--control-radius);
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.repro-empty p {
+  margin: 0;
+}
+
+.repro-empty code {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 8px 10px;
+  font-size: 11.5px;
+}
+
+/* Timeline values must never clip mid-date: let the value column wrap. */
+.run-timeline-row {
+  min-width: 0;
+}
+
+.run-timeline-row strong,
+.run-timeline-row small {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 /* Honest data-state banner: shown only when a run's upload health indicates
  * missing or stalled metric rows. */
 .run-data-banner {
@@ -950,4 +1005,14 @@ pre {
   background: #eef9fb;
   color: #0c6570;
   font-weight: 700;
+}
+
+/* CK2: lineage URI shown inline now that the Checkpoints tab merged in. */
+.checkpoint-main .checkpoint-uri {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
 }

@@ -11,13 +11,7 @@
   justify-self: center;
   align-self: start;
   width: var(--fullscreen-chart-width, min(100%, 1120px));
-  height: auto;
-  aspect-ratio: 920 / 430;
-}
-
-.fullscreen-panel-card .axis-label,
-.fullscreen-panel-card .tick-label {
-  font-size: 10.5px;
+  height: min(56vh, 520px);
 }
 
 .fullscreen-panel-card .chart-range-row {
@@ -830,6 +824,13 @@ small {
    * when the smoothing pill joins the csv/svg buttons on a narrow grid panel. */
   flex-wrap: wrap;
   max-width: calc(100% - 24px);
+  /* When the row wraps over the plot, the container itself must not swallow
+   * chart pointer events — only the actual controls do. */
+  pointer-events: none;
+}
+
+.chart-export-actions > * {
+  pointer-events: auto;
 }
 
 @media (max-width: 900px) {
@@ -848,7 +849,7 @@ small {
   height: 28px;
   border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--ink, #344251);
+  color: var(--text);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
 }
 
@@ -856,6 +857,107 @@ small {
 .chart-export-button[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.chart-log-toggle {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.chart-log-toggle.active {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(37, 99, 235, 0.12));
+  color: var(--accent);
+}
+
+.chart-y-range {
+  position: relative;
+}
+
+.chart-y-range > summary {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chart-y-range > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chart-y-range[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chart-y-range-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  /* Dropdown layer (tray 60 < dropdowns 80 < modals 120). */
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: 180px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px rgba(23, 33, 43, 0.16);
+}
+
+.chart-y-range-field {
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-y-range-field input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.chart-y-range-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.chart-y-range-hint {
+  color: #7a4d12;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .chart-smoothing-control {
@@ -867,7 +969,7 @@ small {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--ink, #344251);
+  color: var(--text);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
   cursor: pointer;
 }
@@ -908,6 +1010,14 @@ small {
 
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-smoothing-slider {
   width: 60px;
+}
+
+/* A manual range widens the Y pill ("Y 1.2e-4–3.4e-1"); cap it in tight grid
+   cards so the toolbar wraps less. The full label remains in the title. */
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-y-range > summary {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chart-export-helper {
@@ -988,9 +1098,6 @@ small {
   overflow: hidden;
 }
 
-.metric-panel .metric-chart {
-  aspect-ratio: 560 / 360;
-}
 
 .chart-legend {
   display: grid;
@@ -1009,7 +1116,7 @@ small {
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
   background: transparent;
-  color: var(--ink, #344251);
+  color: var(--text);
   font-size: 12px;
   padding: 3px 6px;
   text-overflow: ellipsis;
@@ -1019,6 +1126,18 @@ small {
 
 .legend-chip:hover {
   background: var(--chart-grid);
+}
+
+/* R6 cross-highlight: when a series is isolated (legend, rail, or in-plot
+   hover) the matching chip pops and the rest recede. */
+.chart-legend.has-active .legend-chip:not(.legend-chip-active):not(.legend-overflow) {
+  opacity: 0.55;
+}
+
+.legend-chip.legend-chip-active {
+  border-color: var(--line);
+  background: var(--chart-grid);
+  font-weight: 700;
 }
 
 .legend-chip.legend-overflow {
@@ -1060,14 +1179,16 @@ small {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 560 / 360;
 }
 
+/* The chart renders at its measured CSS-pixel size (viewBox == frame size),
+ * so text and strokes never scale with the container. The frame owns the
+ * height; width always tracks the layout. */
 .metric-chart-frame {
   position: relative;
   width: 100%;
+  height: var(--chart-frame-height, 360px);
   overflow: visible;
-  aspect-ratio: 560 / 360;
 }
 
 .metric-chart-frame .metric-chart {
@@ -1075,7 +1196,6 @@ small {
   z-index: 2;
   width: 100%;
   height: 100%;
-  aspect-ratio: auto;
   overflow: hidden;
 }
 
@@ -1085,9 +1205,6 @@ small {
   z-index: 1;
   width: 100%;
   height: 100%;
-  /* Stretch like the overlay SVG's preserveAspectRatio="none" mapping so
-   * dense canvas lines stay pixel-aligned with axes in resized panels. */
-  object-fit: fill;
   pointer-events: none;
 }
 
@@ -1143,6 +1260,9 @@ small {
   /* Opacity scales down with series count (set per-chart in MetricChart) so a
    * dense run set reads as a translucent band rather than an opaque slab. */
   opacity: var(--series-stroke-opacity, 0.92);
+  /* Cross-highlight muting eases instead of hard-flipping, so sweeping the
+   * rail doesn't strobe every panel. */
+  transition: opacity 120ms ease;
 }
 
 .series.line-style-1 {

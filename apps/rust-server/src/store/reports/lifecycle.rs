@@ -32,6 +32,7 @@ pub async fn create_report(
         updated_at: now,
         author_user_id: user_id,
         share_token: None,
+        share_token_issued_at: None,
         visibility,
         deleted_at: None,
     };
@@ -138,6 +139,8 @@ pub async fn rotate_share_token(
     );
     let row = ReportRow {
         share_token: Some(token),
+        // S6: stamp issuance so the token can expire (see share_token_active).
+        share_token_issued_at: Some(Utc::now()),
         updated_at: Utc::now(),
         ..existing
     };
