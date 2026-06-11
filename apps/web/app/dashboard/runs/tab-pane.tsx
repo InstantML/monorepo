@@ -268,12 +268,7 @@ export function RunsTabPane({
 
   return (
     <>
-      <PageHead
-        eyebrow="Workspace"
-        title="Runs"
-        emphasis="in flight"
-        lede={`${project || "All projects"} · ${metricKey}`}
-      />
+      <PageHead eyebrow="Workspace" title="Runs" />
       {showEmptyCallout ? (
         <>
           {nonCurrentMemberships.length ? (
