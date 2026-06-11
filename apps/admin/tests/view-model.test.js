@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_ADMIN_ALLOWED_EMAILS,
+  DEFAULT_CLERK_DOMAIN,
   adminAllowedEmailLabel,
+  adminClerkDomain,
   canLoadClerkForRequest,
   hostnameFromRequest,
   isAdminEmailAllowed,
@@ -69,6 +71,13 @@ test("admin allowlist defaults to the temporary InstantML operator email", () =>
   assert.equal(adminAllowedEmailLabel(["a@example.com", "b@example.com"]), "2 configured emails");
 });
 
+test("admin Clerk domain defaults to the InstantML production root domain", () => {
+  assert.equal(DEFAULT_CLERK_DOMAIN, "instantml.ai");
+  assert.equal(adminClerkDomain(""), "instantml.ai");
+  assert.equal(adminClerkDomain("instantml.ai"), "instantml.ai");
+  assert.equal(adminClerkDomain("https://clerk.instantml.ai/v1/client"), "instantml.ai");
+});
+
 test("admin Clerk loading blocks production keys on local HTTP", () => {
   assert.equal(hostnameFromRequest("admin.instantml.ai:3001"), "admin.instantml.ai");
   assert.equal(isInstantMlHost("admin.instantml.ai"), true);
@@ -100,11 +109,15 @@ test("admin CSP allows the production Clerk custom domain", () => {
   assert.match(source, /worker-src 'self' blob:/);
 });
 
-test("admin Clerk proxy serves Frontend API requests on the custom domain", () => {
-  const source = fs.readFileSync(path.join(adminRoot, "proxy.ts"), "utf8");
-  assert.match(source, /frontendApiProxy/);
-  assert.match(source, /enabled:\s*true/);
-  assert.match(source, /\/__clerk\/\(\.\*\)/);
+test("admin Clerk config uses the production custom domain instead of the proxy", () => {
+  const layoutSource = fs.readFileSync(path.join(adminRoot, "app", "layout.tsx"), "utf8");
+  const proxySource = fs.readFileSync(path.join(adminRoot, "proxy.ts"), "utf8");
+
+  assert.match(layoutSource, /domain={clerkDomain}/);
+  assert.match(proxySource, /domain:\s*adminClerkDomain\(\)/);
+  assert.doesNotMatch(layoutSource, /proxyUrl/);
+  assert.doesNotMatch(proxySource, /frontendApiProxy/);
+  assert.doesNotMatch(proxySource, /\/__clerk\/\(\.\*\)/);
 });
 
 test("admin API fetch carries request-id instrumentation without logging secrets", () => {
