@@ -62,6 +62,7 @@
     "rust:test": "cargo test --manifest-path apps/rust-server/Cargo.toml",
     "rust:migrate": "cargo run --manifest-path apps/rust-server/Cargo.toml -- migrate",
     "rust:serve": "cargo run --manifest-path apps/rust-server/Cargo.toml -- serve",
+    "rust:capacity-plan": "cargo run --quiet --manifest-path apps/rust-server/Cargo.toml -- capacity-plan",
     "web:dev": "cd apps/web && ../../node_modules/.bin/next dev --port 3000",
     "web:build": "cd apps/web && ../../node_modules/.bin/next build",
     "web:start": "cd apps/web && ../../node_modules/.bin/next start --port 3000",

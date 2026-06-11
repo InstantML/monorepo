@@ -237,7 +237,7 @@ export function SettingsTabPane({
         : "Cancel the active paid subscription at period end";
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace settings" lede={`${activePlan} · usage · seats`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace settings" />
       <div className="tab-grid settings-grid">
         <section className="panel">
           <div className="panel-head">

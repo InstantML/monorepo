@@ -40,6 +40,7 @@ test("Next API rewrites allow explicit staging split bases for hosted frontend s
     INSTANTML_API_ALLOWED_ORIGINS: `${controlBase},${dataBase}`,
   });
   assertRewriteDestinations(rewrites.filter((rewrite) => rewrite.source.startsWith("/api/auth")), controlBase);
+  assertRewriteDestinations(rewrites.filter((rewrite) => rewrite.source.startsWith("/api/reports")), dataBase);
   assertRewriteDestinations(rewrites.filter((rewrite) => rewrite.source === "/api/:path*" || rewrite.source === "/projects"), dataBase);
 });
 

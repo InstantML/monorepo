@@ -486,11 +486,7 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
 
   return (
     <>
-      <PageHead
-        eyebrow="Workspace"
-        title="Reports"
-        lede="Block-based documents · live PanelGrids · shareable recaps"
-      />
+      <PageHead eyebrow="Workspace" title="Reports" />
       {error ? <div className="report-error" role="alert">{error}</div> : null}
       {mode.kind === "list" ? (
         <ReportsListPane

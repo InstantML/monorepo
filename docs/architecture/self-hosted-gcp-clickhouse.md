@@ -211,14 +211,23 @@ The current self-hosted GCP ClickHouse path lowers pilot cost and removes the
 ClickHouse Cloud dependency for InstantML-owned hosted storage, but it also
 puts backup and capacity responsibility on InstantML operators.
 
-Required operating follow-ups:
+Required Phase 0 operating gates are tracked in
+`docs/ops/backend-phase-0-capacity.md`. Before adding another data cell,
+raising instance counts, or onboarding durability-sensitive customers:
 
+- Run `npm --silent run rust:capacity-plan` with the Cloud SQL tier's
+  connection limit and record the sanitized JSON output.
 - Schedule regular ClickHouse backups or disk snapshots to durable Google Cloud
-  storage.
-- Add disk, memory, CPU, and table-size monitoring for the VM.
+  storage, including named retention, RPO/RTO, IAM/encryption owner, and backup
+  age alerting.
+- Restore into an isolated VM/database and validate row counts, selected
+  dashboard queries, and artifact metadata-to-R2 object presence.
+- Add disk, memory, CPU, query-latency, insert-failure, backup-age, and
+  table-size monitoring for the VM.
 - Add a budget alert and Artifact Registry image cleanup policy for the GCP
   project.
-- Keep an operator runbook for restore tests and VM replacement.
+- Keep an operator runbook for restore tests, VM replacement, and
+  capacity-impacting deploys.
 - Revisit high-availability before onboarding customers that require stronger
   uptime guarantees.
 

@@ -81,8 +81,9 @@ test("compare artifact strip groups versions by name", () => {
   assert.match(src, /cmp-table-shell/);
 });
 
-// V2 — the italic-serif flourish stays on the Runs workspace header only.
-test("serif flourishes are limited to the runs workspace header", () => {
+// V2 — superseded by main's header simplification (#189): the serif flourish
+// is gone from every dashboard page header, including Runs.
+test("dashboard page headers carry no serif flourish", () => {
   const flourishFiles = [
     "app/dashboard/alerts/tab-pane.tsx",
     "app/dashboard/api/tab-pane.tsx",
@@ -93,13 +94,13 @@ test("serif flourishes are limited to the runs workspace header", () => {
     "app/dashboard/insights/tab-pane.tsx",
     "app/dashboard/metrics/tab-pane.tsx",
     "app/dashboard/reports/reports-tab-pane.tsx",
+    "app/dashboard/runs/tab-pane.tsx",
     "app/dashboard/settings/tab-pane.tsx",
   ];
   for (const file of flourishFiles) {
     const src = read(file);
     assert.doesNotMatch(src, /serif-em|emphasis=/, `${file} must not use the serif flourish`);
   }
-  assert.match(read("app/dashboard/runs/tab-pane.tsx"), /emphasis/);
 });
 
 // ST1 — settings no longer echoes transient filter/selection state.

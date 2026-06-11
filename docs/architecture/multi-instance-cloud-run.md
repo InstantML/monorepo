@@ -371,7 +371,7 @@ customer/provider endpoints.
    - data `/api/auth/config` reports `data`
    - router `https://<api-domain>/api/auth/config` reports `control`
    - router `https://<api-domain>/api/workspace-views` returns `401`, not `404`
-   - router `https://<api-domain>/api/reports` returns `401`, not `404`
+   - router `https://<api-domain>/api/reports` routes to data and returns `401`, not `404`
    - router `https://<api-domain>/openapi.json` reports `data`
    - both `/readyz` endpoints are healthy
    - hosted login creates/reuses the expected org and tenant route

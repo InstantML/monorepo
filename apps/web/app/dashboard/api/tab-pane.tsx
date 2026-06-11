@@ -52,10 +52,9 @@ export function ApiTabPane({
 }: Props) {
   const visibleApiKeys = canManageOrg ? apiKeys : [];
   const visibleNewApiKey = canManageOrg ? newApiKey : "";
-  const activeKeyCount = visibleApiKeys.filter((key) => !key.revoked_at).length;
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API keys" lede={`${activeKeyCount} active · documented REST routes`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API" />
       <div className="tab-grid two-col api-tab-grid">
         <section className="panel">
           <div className="panel-head">

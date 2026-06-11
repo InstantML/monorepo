@@ -103,6 +103,10 @@ fetching only:
 - Production Clerk keys are usable only on HTTPS hosts under the configured
   production domain. The admin app therefore renders setup guidance instead of
   a sign-in button when a `pk_live_` key is used on plain localhost.
+- The admin app sets Clerk's production root domain to `instantml.ai` so browser
+  scripts and Frontend API calls use the configured custom Clerk host
+  `clerk.instantml.ai`. It does not use the `/__clerk` Frontend API proxy for
+  the production custom-domain deployment.
 - The app remains separate from `apps/web`; the public landing page and product
   navigation do not link to it.
 

@@ -23,6 +23,9 @@ pub struct ControlDb {
     pool: PgPool,
 }
 
+pub const DEFAULT_CONTROL_DB_MAX_CONNECTIONS: u32 = 10;
+pub const CONTROL_DB_MAX_CONNECTIONS_ENV: &str = "CONTROL_DB_MAX_CONNECTIONS";
+
 impl ControlDb {
     /// Connect to the control-plane Postgres using `DATABASE_URL`.
     ///
@@ -34,7 +37,7 @@ impl ControlDb {
         };
         let options = pg_connect_options(url)?;
         let pool = PgPoolOptions::new()
-            .max_connections(pool_max_connections())
+            .max_connections(control_db_max_connections_from_env()?)
             .acquire_timeout(Duration::from_secs(10))
             .connect_with(options)
             .await
@@ -126,12 +129,29 @@ fn host_query_param(database_url: &str) -> Option<String> {
 /// instances against one database, so keep per-instance connections modest and
 /// let Cloud SQL's connection limit bound the total. Override with
 /// `CONTROL_DB_MAX_CONNECTIONS`.
-fn pool_max_connections() -> u32 {
-    std::env::var("CONTROL_DB_MAX_CONNECTIONS")
-        .ok()
-        .and_then(|raw| raw.parse().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(10)
+pub fn control_db_max_connections_from_env() -> AppResult<u32> {
+    control_db_max_connections_from_lookup(|key| std::env::var(key).ok())
+}
+
+pub fn control_db_max_connections_from_lookup<F>(lookup: F) -> AppResult<u32>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let Some(raw) = lookup(CONTROL_DB_MAX_CONNECTIONS_ENV) else {
+        return Ok(DEFAULT_CONTROL_DB_MAX_CONNECTIONS);
+    };
+    parse_positive_u32(CONTROL_DB_MAX_CONNECTIONS_ENV, &raw)
+}
+
+fn parse_positive_u32(key: &str, raw: &str) -> AppResult<u32> {
+    let value = raw
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| AppError::config(format!("{key} must be an unsigned integer")))?;
+    if value == 0 {
+        return Err(AppError::config(format!("{key} must be greater than zero")));
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -161,5 +181,29 @@ mod tests {
         assert_eq!(opts.get_host(), "db.example.com");
         assert_eq!(opts.get_port(), 5432);
         assert!(opts.get_socket().is_none());
+    }
+
+    #[test]
+    fn parses_control_db_max_connections() {
+        assert_eq!(
+            control_db_max_connections_from_lookup(|_| None).expect("default should parse"),
+            DEFAULT_CONTROL_DB_MAX_CONNECTIONS
+        );
+        assert_eq!(
+            control_db_max_connections_from_lookup(|_| Some(" 6 ".to_string()))
+                .expect("explicit value should parse"),
+            6
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_control_db_max_connections() {
+        let err = control_db_max_connections_from_lookup(|_| Some("0".to_string()))
+            .expect_err("zero pool size should fail");
+        assert!(err.message().contains("greater than zero"));
+
+        let err = control_db_max_connections_from_lookup(|_| Some("nope".to_string()))
+            .expect_err("invalid pool size should fail");
+        assert!(err.message().contains("unsigned integer"));
     }
 }

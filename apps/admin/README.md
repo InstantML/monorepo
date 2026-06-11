@@ -95,6 +95,7 @@ Configure production environment variables on that Vercel project:
 
 ```text
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+NEXT_PUBLIC_CLERK_DOMAIN
 CLERK_SECRET_KEY
 INSTANTML_ADMIN_ALLOWED_EMAILS
 INSTANTML_ADMIN_API_BASE
@@ -102,7 +103,9 @@ INSTANTML_ADMIN_BOOTSTRAP_TOKEN
 ```
 
 Set `INSTANTML_ADMIN_ALLOWED_EMAILS=instantml.ai@gmail.com` for the current
-first slice and add the custom domain `admin.instantml.ai`.
+first slice and add the custom domain `admin.instantml.ai`. Set
+`NEXT_PUBLIC_CLERK_DOMAIN=instantml.ai`, or rely on the app default, so Clerk
+loads the production Frontend API at `clerk.instantml.ai`.
 
 ## Testing Commands
 
@@ -139,10 +142,10 @@ Admin access is two-layered:
 - The Next server must have `INSTANTML_ADMIN_BOOTSTRAP_TOKEN` or
   `INSTANTML_BOOTSTRAP_TOKEN` so it can call the Rust admin API. This token is
   never sent to client components or browser routes.
-- `proxy.ts` enables Clerk's Frontend API proxy for `__clerk` requests. Keep
-  the `/__clerk/(.*)` matcher when changing middleware so production custom
-  domains can load Clerk browser scripts instead of falling through to a Next
-  404 page.
+- `proxy.ts` sets Clerk's production root domain to `instantml.ai` so Vercel
+  auto-proxying stays disabled and Clerk browser traffic goes directly to the
+  configured custom Frontend API host, `clerk.instantml.ai`. Do not re-enable
+  the `/__clerk` Frontend API proxy for this production custom-domain setup.
 
 This is a temporary first slice. Do not expose the app publicly without an
 additional edge gate such as Cloudflare Access or IAP, and do not add broader
@@ -160,7 +163,8 @@ complex route state.
 - `app/page.tsx`: server entry point and setup/error state.
 - `app/access-panel.tsx`: Clerk sign-in and deny/setup states for the hidden
   admin URL.
-- `proxy.ts`: Clerk request proxy required for server-side admin viewer checks.
+- `proxy.ts`: Clerk middleware with the custom-domain configuration required
+  for server-side admin viewer checks.
 - `vercel.json`: app-local Vercel settings for the separate admin project.
 - `src/admin-auth.mjs`: temporary admin email allowlist helpers.
 - `src/admin-data.ts`: server-only overview fetch using the bootstrap token.
