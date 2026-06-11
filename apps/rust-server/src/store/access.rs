@@ -163,6 +163,27 @@ pub(super) fn session_payload_from_data(
     })
 }
 
+pub(super) fn session_payload_from_rows(
+    session: UserSessionRow,
+    user: UserRow,
+    organization: OrganizationRow,
+    membership: MembershipRow,
+    memberships: Vec<MembershipRow>,
+    provisioning: Option<ProvisioningStatusPayload>,
+) -> AuthSessionPayload {
+    AuthSessionPayload {
+        authenticated: true,
+        session,
+        user,
+        account_type: organization.account_type.clone(),
+        organization,
+        membership,
+        memberships,
+        provisioning,
+        billing_checkout: None,
+    }
+}
+
 pub(super) fn membership_row(
     org_id: Uuid,
     user_id: Uuid,

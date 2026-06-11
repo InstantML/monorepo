@@ -71,8 +71,8 @@ in ClickHouse until a future compaction design exists.
 
 Owner: `apps/rust-server/src/control_db.rs` and
 `apps/rust-server/migrations/0001_init_control_plane.sql` plus the additive
-`0002_data_cells.sql` and `0003_data_cell_writer_leases.sql` scaling
-migrations.
+`0002_data_cells.sql`, `0003_data_cell_writer_leases.sql`, and
+`0004_org_migrations.sql` scaling migrations.
 
 Purpose: hosted account, auth, organization, API-key, invitation, billing, and
 tenant-route state that must be visible to control and data services.
@@ -87,12 +87,14 @@ users, identities, organizations, memberships, org_invitations,
 email_deliveries, sessions, service_accounts, api_keys, data_cells,
 data_cell_writer_leases, tenant_routes, tenant_route_events, dashboard_preferences, workspace_views, billing_accounts,
 billing_checkout_intents, billing_change_intents, billing_subscriptions,
-billing_events, billing_usage_reports
+billing_events, billing_usage_reports, org_migrations, org_migration_events
 ```
 
 Keep the migration SQL as the authoritative column/index reference. The Rust
-store keeps a read projection loaded from Postgres so existing route handlers
-can stay on the same in-process lookup path.
+store keeps a read projection loaded from Postgres for broad listings and local
+compatibility, while hosted request-critical API-key, session, membership,
+organization, service-account, billing-account, route, and initial tenant-load
+checks use narrow Postgres point reads.
 
 `data_cells` is the operator/heartbeat-maintained registry for hosted
 data-plane cells. A current-cell Rust process can auto-register a conservative
@@ -105,6 +107,10 @@ checks current-cell status, capacity, health, and backup freshness for managed
 hosted routes, writes the route, and appends a `tenant_route_events` audit row.
 Customer-owned ClickHouse routes keep their BYOC route and are not stamped into
 managed data cells.
+`org_migrations` and `org_migration_events` model the Phase 5A operator
+migration safety workflow. They support planning, source-route write blocking,
+source restore, and failure recording only; ClickHouse copy, target cutover,
+rollback window, and completion remain deferred.
 
 ### Control Record Kinds
 
@@ -539,7 +545,8 @@ ids match the routed org before adding the record to the in-process projection.
 | `api_usage_monthly` | `<org_id>:<YYYY-MM>:<class>:<instance_id>:<minute>` | API request rollup JSON | Bounded monthly request-usage rollup with an absolute count for one org/class/instance/minute. Replay keeps the largest count for a matching entity. |
 
 In local/non-hosted mode, the control-plane record kinds can also appear in this
-table because the combined service has no separate User Data table.
+table because the combined local service has no separate Postgres control
+tables.
 
 ### `ProjectRow`
 

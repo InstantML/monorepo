@@ -47,6 +47,8 @@ pub(super) fn is_control_kind(kind: &str) -> bool {
     )
 }
 pub(super) const TENANT_ROUTE_READY: &str = "ready";
+pub(super) const TENANT_ROUTE_WRITE_BLOCKED: &str = "write_blocked";
+pub(super) const ORG_MIGRATION_RETRY_AFTER_SECONDS: u64 = 30;
 const TENANT_ROUTE_PROVISIONING: &str = "provisioning";
 const TENANT_ROUTE_FAILED: &str = "failed";
 const CUSTOMER_CLICKHOUSE_PROVISIONER: &str = "customer-clickhouse";
@@ -115,19 +117,13 @@ impl Store {
         if self.tenant_loaded.lock().await.contains(&org_id) {
             return Ok(());
         }
-        let (org, route) = {
-            let data = self.data.lock().await;
-            (
-                data.organizations.get(&org_id).cloned(),
-                data.tenant_routes.get(&org_id).cloned(),
-            )
-        };
+        let (org, route) = self.tenant_load_records(org_id).await?;
         if let Some(org) = org.as_ref() {
             require_org_storage_ready(org)?;
         }
         let route = route.ok_or_else(|| tenant_unavailable("tenant route is not provisioned"))?;
 
-        if route.status != TENANT_ROUTE_READY {
+        if !tenant_route_allows_reads(&route) {
             return Err(tenant_unavailable(
                 route
                     .error
@@ -156,6 +152,31 @@ impl Store {
         let mut clock = self.record_clock_micros.lock().await;
         *clock = (*clock).max(stats.latest_record_micros);
         Ok(())
+    }
+
+    pub(super) async fn tenant_load_records(
+        &self,
+        org_id: Uuid,
+    ) -> AppResult<(Option<OrganizationRow>, Option<TenantRouteRecord>)> {
+        let Some(control_db) = self.control_db.as_ref() else {
+            let data = self.data.lock().await;
+            return Ok((
+                data.organizations.get(&org_id).cloned(),
+                data.tenant_routes.get(&org_id).cloned(),
+            ));
+        };
+        let org = control_db.get_org(org_id).await?;
+        let route = control_db.get_tenant_route(org_id).await?;
+        {
+            let mut data = self.data.lock().await;
+            if let Some(org) = org.as_ref() {
+                data.insert_org(org.clone());
+            }
+            if let Some(route) = route.as_ref() {
+                data.insert_tenant_route(route.clone());
+            }
+        }
+        Ok((org, route))
     }
 
     pub(super) async fn metric_store_for_org(&self, org_id: Uuid) -> AppResult<MetricStore> {
@@ -272,6 +293,9 @@ impl Store {
         if let Some(route) = existing_route {
             if route.status == TENANT_ROUTE_READY {
                 return Ok(route);
+            }
+            if route.status == TENANT_ROUTE_WRITE_BLOCKED {
+                return Err(org_migration_in_progress());
             }
             if let Some(resumed) = self.try_resume_tenant_route(&route).await? {
                 return Ok(resumed);
@@ -1017,6 +1041,26 @@ impl Store {
         }
         Ok(org)
     }
+}
+
+pub(super) fn tenant_route_allows_reads(route: &TenantRouteRecord) -> bool {
+    matches!(
+        route.status.as_str(),
+        TENANT_ROUTE_READY | TENANT_ROUTE_WRITE_BLOCKED
+    )
+}
+
+pub(super) fn tenant_route_allows_writes(route: &TenantRouteRecord) -> bool {
+    route.status == TENANT_ROUTE_READY
+}
+
+pub(super) fn org_migration_in_progress() -> AppError {
+    AppError::with_retry_after(
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        "org_migration_in_progress",
+        "organization migration is blocking writes",
+        ORG_MIGRATION_RETRY_AFTER_SECONDS,
+    )
 }
 
 async fn customer_connection_from_input(
@@ -2087,6 +2131,32 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.code(), Some("unsafe_clickhouse_host"));
+    }
+
+    #[tokio::test]
+    async fn ensure_tenant_route_does_not_resume_write_blocked_cloud_route() {
+        let org_id = Uuid::new_v4();
+        let org = test_org(
+            org_id,
+            "blocked-cloud-route",
+            "business",
+            "dedicated",
+            STORAGE_CHOICE_HOSTED,
+        );
+        let mut route = test_route(org_id, "cloud-service", "default");
+        route.status = TENANT_ROUTE_WRITE_BLOCKED.to_string();
+        route.service_id = Some("service-123".to_string());
+        route.password_secret_ref = Some("clickhouse-cloud:service:service-123".to_string());
+        route.password_ciphertext = Some("secret".to_string());
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        data.insert_tenant_route(route);
+        let store = test_hosted_store(data, false);
+
+        let error = store.ensure_tenant_route(&org).await.unwrap_err();
+
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.code(), Some("org_migration_in_progress"));
     }
 
     #[test]

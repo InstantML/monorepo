@@ -14,6 +14,7 @@ pub struct AppError {
     code: Option<&'static str>,
     field: Option<&'static str>,
     position: Option<usize>,
+    retry_after_secs: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -35,6 +36,7 @@ impl AppError {
             code: None,
             field: None,
             position: None,
+            retry_after_secs: None,
         }
     }
 
@@ -45,6 +47,7 @@ impl AppError {
             code: Some(code),
             field: None,
             position: None,
+            retry_after_secs: None,
         }
     }
 
@@ -61,6 +64,23 @@ impl AppError {
             code: Some(code),
             field: Some(field),
             position,
+            retry_after_secs: None,
+        }
+    }
+
+    pub fn with_retry_after(
+        status: StatusCode,
+        code: &'static str,
+        message: impl Into<String>,
+        retry_after_secs: u64,
+    ) -> Self {
+        Self {
+            status,
+            message: message.into(),
+            code: Some(code),
+            field: None,
+            position: None,
+            retry_after_secs: Some(retry_after_secs),
         }
     }
 
@@ -173,6 +193,10 @@ impl AppError {
     pub fn position(&self) -> Option<usize> {
         self.position
     }
+
+    pub fn retry_after_secs(&self) -> Option<u64> {
+        self.retry_after_secs
+    }
 }
 
 impl IntoResponse for AppError {
@@ -194,7 +218,7 @@ impl IntoResponse for AppError {
         } else {
             &self.message
         };
-        (
+        let mut response = (
             self.status,
             Json(ErrorBody {
                 error: public_error,
@@ -203,7 +227,15 @@ impl IntoResponse for AppError {
                 position: self.position,
             }),
         )
-            .into_response()
+            .into_response();
+        if let Some(seconds) = self.retry_after_secs {
+            if let Ok(value) = axum::http::HeaderValue::from_str(&seconds.to_string()) {
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, value);
+            }
+        }
+        response
     }
 }
 
@@ -256,5 +288,23 @@ mod tests {
         assert_eq!(error.safe_code(), "internal_server_error");
         assert_eq!(error.safe_summary(), "server_error");
         assert!(!error.retryable());
+    }
+
+    #[test]
+    fn retry_after_errors_emit_retry_header() {
+        let error = AppError::with_retry_after(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "org_migration_in_progress",
+            "organization migration is blocking writes",
+            30,
+        );
+
+        assert_eq!(error.retry_after_secs(), Some(30));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers().get(axum::http::header::RETRY_AFTER),
+            Some(&axum::http::HeaderValue::from_static("30"))
+        );
     }
 }

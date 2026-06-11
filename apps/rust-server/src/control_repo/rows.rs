@@ -10,8 +10,9 @@ use uuid::Uuid;
 use crate::domain::{
     BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
     BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
-    EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow, PublicApiKeyRow,
-    ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow, WorkspaceViewRow,
+    EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrgMigrationEventRow, OrgMigrationRow,
+    OrganizationRow, PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow,
+    UserSessionRow, WorkspaceViewRow,
 };
 use crate::{domain::DataCellWriterLeaseRow, store::TenantRouteRecord};
 
@@ -202,6 +203,89 @@ impl From<IdentityRowDb> for LoadedIdentity {
         }
     }
 }
+
+#[derive(FromRow)]
+pub(super) struct OrgMigrationRowDb {
+    id: Uuid,
+    org_id: Uuid,
+    source_cell_id: String,
+    target_cell_id: String,
+    source_route_version: i64,
+    target_route_version: Option<i64>,
+    state: String,
+    requested_by: String,
+    transition_actor: String,
+    customer_notice: Option<String>,
+    legacy_client_approved: bool,
+    retry_after_seconds: i32,
+    copy_evidence: Value,
+    validation_evidence: Value,
+    restored_route_version: Option<i64>,
+    started_at: Option<DateTime<Utc>>,
+    updated_at: DateTime<Utc>,
+    completed_at: Option<DateTime<Utc>>,
+    failed_at: Option<DateTime<Utc>>,
+    error: Option<String>,
+}
+
+impl From<OrgMigrationRowDb> for OrgMigrationRow {
+    fn from(row: OrgMigrationRowDb) -> Self {
+        OrgMigrationRow {
+            id: row.id,
+            org_id: row.org_id,
+            source_cell_id: row.source_cell_id,
+            target_cell_id: row.target_cell_id,
+            source_route_version: row.source_route_version,
+            target_route_version: row.target_route_version,
+            state: row.state,
+            requested_by: row.requested_by,
+            transition_actor: row.transition_actor,
+            customer_notice: row.customer_notice,
+            legacy_client_approved: row.legacy_client_approved,
+            retry_after_seconds: row.retry_after_seconds,
+            copy_evidence: row.copy_evidence,
+            validation_evidence: row.validation_evidence,
+            restored_route_version: row.restored_route_version,
+            started_at: row.started_at,
+            updated_at: row.updated_at,
+            completed_at: row.completed_at,
+            failed_at: row.failed_at,
+            error: row.error,
+        }
+    }
+}
+
+#[derive(FromRow)]
+pub(super) struct OrgMigrationEventRowDb {
+    id: Uuid,
+    migration_id: Uuid,
+    org_id: Uuid,
+    from_state: Option<String>,
+    to_state: String,
+    actor: String,
+    reason: Option<String>,
+    route_version: Option<i64>,
+    details: Value,
+    created_at: DateTime<Utc>,
+}
+
+impl From<OrgMigrationEventRowDb> for OrgMigrationEventRow {
+    fn from(row: OrgMigrationEventRowDb) -> Self {
+        OrgMigrationEventRow {
+            id: row.id,
+            migration_id: row.migration_id,
+            org_id: row.org_id,
+            from_state: row.from_state,
+            to_state: row.to_state,
+            actor: row.actor,
+            reason: row.reason,
+            route_version: row.route_version,
+            details: row.details,
+            created_at: row.created_at,
+        }
+    }
+}
+
 #[derive(FromRow)]
 pub(super) struct OrgInvitationRowDb {
     id: Uuid,

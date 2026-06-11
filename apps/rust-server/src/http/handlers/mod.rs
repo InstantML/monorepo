@@ -14,7 +14,10 @@ pub mod routing;
 pub mod runs;
 pub mod usage;
 
-pub(super) use admin::{admin_data_cells, admin_overview};
+pub(super) use admin::{
+    admin_data_cells, admin_org_migrations, admin_overview, create_admin_org_migration,
+    fail_admin_org_migration, restore_admin_org_migration, write_block_admin_org_migration,
+};
 pub(super) use artifacts::{
     abort_artifact_upload, artifact_version_lineage, complete_artifact_upload, create_artifact,
     create_artifact_input_edge, delete_artifact_alias, delete_artifact_version, download_artifact,
@@ -172,6 +175,14 @@ mod tests {
             ServicePlaneRole::Data
         ));
         assert!(openapi_path_available_for_plane(
+            "/api/admin/org-migrations",
+            ServicePlaneRole::Control
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/admin/org-migrations",
+            ServicePlaneRole::Data
+        ));
+        assert!(openapi_path_available_for_plane(
             "/api/routing/current",
             ServicePlaneRole::Control
         ));
@@ -232,6 +243,10 @@ mod tests {
             "/api/invitations/accept",
             "/api/admin/overview",
             "/api/admin/data-cells",
+            "/api/admin/org-migrations",
+            "/api/admin/org-migrations/{migration_id}/write-block",
+            "/api/admin/org-migrations/{migration_id}/restore",
+            "/api/admin/org-migrations/{migration_id}/fail",
             "/api/routing/current",
             // billing
             "/api/billing/status",

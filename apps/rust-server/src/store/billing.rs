@@ -7,11 +7,29 @@ pub async fn ensure_billing_write_allowed(
     org_id: Uuid,
     action: &str,
 ) -> AppResult<()> {
-    let data = store.data.lock().await;
-    let Some(account) = data.billing_accounts.get(&org_id) else {
-        if data
-            .organizations
-            .get(&org_id)
+    let (org, account) = if let Some(control_db) = store.control_db() {
+        let org = control_db.get_org(org_id).await?;
+        let account = control_db.get_billing_account(org_id).await?;
+        {
+            let mut data = store.data.lock().await;
+            if let Some(org) = org.as_ref() {
+                data.insert_org(org.clone());
+            }
+            if let Some(account) = account.as_ref() {
+                data.insert_billing_account(account.clone());
+            }
+        }
+        (org, account)
+    } else {
+        let data = store.data.lock().await;
+        (
+            data.organizations.get(&org_id).cloned(),
+            data.billing_accounts.get(&org_id).cloned(),
+        )
+    };
+    let Some(account) = account else {
+        if org
+            .as_ref()
             .is_some_and(is_user_billing_managed_paid_workspace)
         {
             return Err(AppError::with_code(

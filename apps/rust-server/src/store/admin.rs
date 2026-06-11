@@ -1,12 +1,15 @@
 use super::*;
+use axum::http;
 use std::collections::{BTreeMap, HashSet};
 use url::Url;
 
 use crate::domain::{
     AdminApiKeySummary, AdminBillingSummary, AdminDataCellRouteCounts, AdminDataCellSummary,
-    AdminDataCellsResponse, AdminOrgCounts, AdminOrganizationSummary, AdminOverviewQuerySummary,
-    AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem, AdminStorageSummary,
-    AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership, AdminUserSummary, DataCellRow,
+    AdminDataCellsResponse, AdminOrgCounts, AdminOrgMigrationsResponse, AdminOrganizationSummary,
+    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem,
+    AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
+    AdminUserSummary, CreateOrgMigrationRequest, DataCellRow, OrgMigrationRow,
+    OrgMigrationTransitionRequest,
 };
 
 pub const ADMIN_OVERVIEW_DEFAULT_LIMIT: usize = 100;
@@ -29,6 +32,116 @@ pub async fn admin_overview(
 pub async fn admin_data_cells(store: &Store) -> AppResult<AdminDataCellsResponse> {
     let data = store.data.lock().await;
     Ok(build_admin_data_cells(&data, Utc::now()))
+}
+
+pub async fn admin_org_migrations(store: &Store) -> AppResult<AdminOrgMigrationsResponse> {
+    let control_db = store
+        .control_db()
+        .ok_or_else(|| AppError::config("org migrations require the Postgres control plane"))?;
+    Ok(AdminOrgMigrationsResponse {
+        schema_version: 1,
+        generated_at: Utc::now(),
+        migrations: control_db.list_org_migrations().await?,
+    })
+}
+
+pub async fn create_admin_org_migration(
+    store: &Store,
+    input: CreateOrgMigrationRequest,
+) -> AppResult<OrgMigrationRow> {
+    require_legacy_client_migration_approval(store, &input)?;
+    let control_db = store
+        .control_db()
+        .ok_or_else(|| AppError::config("org migrations require the Postgres control plane"))?;
+    control_db
+        .create_org_migration(
+            input.org_id,
+            &input.target_cell_id,
+            &input.requested_by,
+            input.customer_notice.as_deref(),
+            input.legacy_client_approved,
+        )
+        .await
+}
+
+pub async fn write_block_admin_org_migration(
+    store: &Store,
+    migration_id: Uuid,
+    input: OrgMigrationTransitionRequest,
+) -> AppResult<OrgMigrationRow> {
+    let control_db = store
+        .control_db()
+        .ok_or_else(|| AppError::config("org migrations require the Postgres control plane"))?;
+    let migration = control_db
+        .write_block_org_migration(migration_id, &input.actor, input.reason.as_deref())
+        .await?;
+    refresh_cached_tenant_route(store, migration.org_id).await?;
+    Ok(migration)
+}
+
+pub async fn restore_admin_org_migration(
+    store: &Store,
+    migration_id: Uuid,
+    input: OrgMigrationTransitionRequest,
+) -> AppResult<OrgMigrationRow> {
+    let control_db = store
+        .control_db()
+        .ok_or_else(|| AppError::config("org migrations require the Postgres control plane"))?;
+    let migration = control_db
+        .restore_org_migration(migration_id, &input.actor, input.reason.as_deref())
+        .await?;
+    refresh_cached_tenant_route(store, migration.org_id).await?;
+    Ok(migration)
+}
+
+pub async fn fail_admin_org_migration(
+    store: &Store,
+    migration_id: Uuid,
+    input: OrgMigrationTransitionRequest,
+) -> AppResult<OrgMigrationRow> {
+    let control_db = store
+        .control_db()
+        .ok_or_else(|| AppError::config("org migrations require the Postgres control plane"))?;
+    let error = input
+        .error
+        .as_deref()
+        .or(input.reason.as_deref())
+        .ok_or_else(|| AppError::validation("error is required"))?;
+    control_db
+        .fail_org_migration(migration_id, &input.actor, error)
+        .await
+}
+
+fn require_legacy_client_migration_approval(
+    store: &Store,
+    input: &CreateOrgMigrationRequest,
+) -> AppResult<()> {
+    if input.legacy_client_approved {
+        return Ok(());
+    }
+    if store
+        .cell_routing
+        .default_data_cell_id
+        .as_deref()
+        .is_some_and(|default_cell_id| default_cell_id == input.target_cell_id.trim())
+    {
+        return Ok(());
+    }
+    Err(AppError::with_code(
+        http::StatusCode::BAD_REQUEST,
+        "legacy_client_approval_required",
+        "moving an org away from the default compatibility cell requires explicit legacy-client approval",
+    ))
+}
+
+async fn refresh_cached_tenant_route(store: &Store, org_id: Uuid) -> AppResult<()> {
+    let Some(control_db) = store.control_db() else {
+        return Ok(());
+    };
+    if let Some(route) = control_db.get_tenant_route(org_id).await? {
+        store.data.lock().await.insert_tenant_route(route);
+    }
+    Ok(())
 }
 
 fn build_admin_data_cells(data: &StoreData, now: DateTime<Utc>) -> AdminDataCellsResponse {

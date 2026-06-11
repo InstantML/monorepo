@@ -19,6 +19,13 @@ pub(super) fn effective_api_key_scopes(data: &StoreData, record: &ApiKeyRecord) 
     record.row.scopes.clone()
 }
 
+fn effective_api_key_scopes_for_org(org: &OrganizationRow, record: &ApiKeyRecord) -> Vec<String> {
+    if is_shared_demo_org(org) {
+        return demo_api_key_scopes();
+    }
+    record.row.scopes.clone()
+}
+
 /// Mint a fresh `sdk:ingest`-scoped onboarding API key for a newly created org.
 /// Returns `None` (and logs) on failure rather than aborting the signup.
 pub(super) async fn mint_onboarding_api_key(
@@ -106,16 +113,23 @@ async fn create_api_key_inner(
         .as_deref()
         .map(|value| validate_timestamp(Some(value)))
         .transpose()?;
-    let data = store.data.lock().await;
-    if !data.organizations.contains_key(&org_id) {
-        return Err(AppError::not_found("organization not found"));
-    }
-    let org = data
-        .organizations
-        .get(&org_id)
-        .cloned()
-        .ok_or_else(|| AppError::not_found("organization not found"))?;
-    drop(data);
+    let org = if let Some(control_db) = store.control_db() {
+        let org = control_db
+            .get_org(org_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        store.data.lock().await.insert_org(org.clone());
+        org
+    } else {
+        let data = store.data.lock().await;
+        if !data.organizations.contains_key(&org_id) {
+            return Err(AppError::not_found("organization not found"));
+        }
+        data.organizations
+            .get(&org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("organization not found"))?
+    };
     ensure_billing_write_allowed(store, org_id, "create API keys").await?;
     require_org_storage_ready(&org)?;
     store.ensure_tenant_route(&org).await?;
@@ -211,7 +225,17 @@ pub async fn revoke_api_key(
     org_id: Uuid,
     api_key_id: Uuid,
 ) -> AppResult<PublicApiKeyRow> {
-    let mut record = {
+    let mut record = if let Some(control_db) = store.control_db() {
+        let key = control_db
+            .get_api_key(api_key_id)
+            .await?
+            .filter(|key| key.row.org_id == org_id)
+            .ok_or_else(|| AppError::not_found("api key not found"))?;
+        ApiKeyRecord {
+            row: key.row,
+            key_hash: key.key_hash,
+        }
+    } else {
         let data = store.data.lock().await;
         data.api_keys
             .get(&api_key_id)
@@ -233,7 +257,13 @@ pub async fn disable_service_account(
     org_id: Uuid,
     service_account_id: Uuid,
 ) -> AppResult<ServiceAccountRow> {
-    let mut row = {
+    let mut row = if let Some(control_db) = store.control_db() {
+        control_db
+            .get_service_account(service_account_id)
+            .await?
+            .filter(|account| account.org_id == org_id)
+            .ok_or_else(|| AppError::not_found("service account not found"))?
+    } else {
         let data = store.data.lock().await;
         data.service_accounts
             .get(&service_account_id)
@@ -252,6 +282,48 @@ pub async fn disable_service_account(
 
 pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthContext> {
     let key_hash = hash_secret(token);
+    if let Some(control_db) = store.control_db() {
+        let auth = control_db
+            .api_key_auth_by_hash(&key_hash)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("invalid API key"))?;
+        let record = ApiKeyRecord {
+            row: auth.key.row,
+            key_hash: auth.key.key_hash,
+        };
+        if record.row.revoked_at.is_some()
+            || record
+                .row
+                .expires_at
+                .map(|expires| expires <= Utc::now())
+                .unwrap_or(false)
+        {
+            return Err(AppError::unauthorized("invalid API key"));
+        }
+        if auth.service_account.disabled_at.is_some() {
+            return Err(AppError::unauthorized("invalid API key"));
+        }
+        if auth.service_account.org_id != record.row.org_id
+            || auth.organization.id != record.row.org_id
+        {
+            return Err(AppError::unauthorized("invalid API key"));
+        }
+        let scopes = effective_api_key_scopes_for_org(&auth.organization, &record);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_org(auth.organization);
+            data.service_accounts
+                .insert(auth.service_account.id, auth.service_account);
+            data.insert_api_key(record.clone());
+        }
+        return Ok(AuthContext {
+            org_id: record.row.org_id,
+            api_key_id: record.row.id,
+            service_account_id: record.row.service_account_id,
+            project_id: record.row.project_id,
+            scopes,
+        });
+    }
     let data = store.data.lock().await;
     let key_id = data
         .api_keys_by_hash
@@ -294,6 +366,16 @@ pub async fn require_org_admin(
     user_id: Uuid,
     org_id: Uuid,
 ) -> AppResult<MembershipRow> {
+    if let Some(control_db) = store.control_db() {
+        return control_db
+            .membership_for(org_id, user_id)
+            .await?
+            .filter(|membership| {
+                membership.status == "active"
+                    && matches!(membership.role.as_str(), "owner" | "admin")
+            })
+            .ok_or_else(|| AppError::forbidden("organization admin role required"));
+    }
     let data = store.data.lock().await;
     require_admin_in_data(&data, user_id, org_id)
 }
