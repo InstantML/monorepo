@@ -20,6 +20,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/org-migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_org_migrations"];
+        put?: never;
+        post: operations["create_admin_org_migration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/org-migrations/{migration_id}/fail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["fail_admin_org_migration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/org-migrations/{migration_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restore_admin_org_migration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/org-migrations/{migration_id}/write-block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["write_block_admin_org_migration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/overview": {
         parameters: {
             query?: never;
@@ -1708,6 +1772,13 @@ export interface components {
             runs?: number | null;
             service_accounts: number;
         };
+        AdminOrgMigrationsResponse: {
+            /** Format: date-time */
+            generated_at: string;
+            migrations: components["schemas"]["OrgMigrationRow"][];
+            /** Format: int32 */
+            schema_version: number;
+        };
         AdminOrganizationSummary: {
             account_type: string;
             billing?: null | components["schemas"]["AdminBillingSummary"];
@@ -2589,6 +2660,14 @@ export interface components {
             summary?: Record<string, never> | null;
             value?: Record<string, never> | null;
         };
+        CreateOrgMigrationRequest: {
+            customer_notice?: string | null;
+            legacy_client_approved?: boolean;
+            /** Format: uuid */
+            org_id: string;
+            requested_by: string;
+            target_cell_id: string;
+        };
         CreateOrganizationRequest: {
             name?: string | null;
             /** Format: uuid */
@@ -2979,6 +3058,63 @@ export interface components {
         };
         OrgMembershipsEnvelope: {
             memberships: components["schemas"]["OrganizationMembershipSummary"][];
+        };
+        OrgMigrationEnvelope: {
+            migration: components["schemas"]["OrgMigrationRow"];
+        };
+        OrgMigrationEventRow: {
+            actor: string;
+            /** Format: date-time */
+            created_at: string;
+            details: Record<string, never>;
+            from_state?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            migration_id: string;
+            /** Format: uuid */
+            org_id: string;
+            reason?: string | null;
+            /** Format: int64 */
+            route_version?: number | null;
+            to_state: string;
+        };
+        OrgMigrationRow: {
+            /** Format: date-time */
+            completed_at?: string | null;
+            copy_evidence: Record<string, never>;
+            customer_notice?: string | null;
+            error?: string | null;
+            /** Format: date-time */
+            failed_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            legacy_client_approved: boolean;
+            /** Format: uuid */
+            org_id: string;
+            requested_by: string;
+            /** Format: int64 */
+            restored_route_version?: number | null;
+            /** Format: int32 */
+            retry_after_seconds: number;
+            source_cell_id: string;
+            /** Format: int64 */
+            source_route_version: number;
+            /** Format: date-time */
+            started_at?: string | null;
+            state: string;
+            target_cell_id: string;
+            /** Format: int64 */
+            target_route_version?: number | null;
+            transition_actor: string;
+            /** Format: date-time */
+            updated_at: string;
+            validation_evidence: Record<string, never>;
+        };
+        OrgMigrationTransitionRequest: {
+            actor: string;
+            error?: string | null;
+            reason?: string | null;
         };
         OrganizationEnvelope: {
             organization: components["schemas"]["OrganizationRow"];
@@ -3663,6 +3799,266 @@ export interface operations {
             };
             /** @description Bootstrap token required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    admin_org_migrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator org migration records */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrgMigrationsResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_admin_org_migration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrgMigrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Planned org migration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgMigrationEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Active migration or route conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    fail_admin_org_migration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Migration UUID */
+                migration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrgMigrationTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Failed org migration record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgMigrationEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Migration not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restore_admin_org_migration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Migration UUID */
+                migration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrgMigrationTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Restored source route for org migration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgMigrationEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Migration not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Route or transition conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    write_block_admin_org_migration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Migration UUID */
+                migration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrgMigrationTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Write-blocked org migration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgMigrationEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Migration not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Route or transition conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

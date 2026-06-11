@@ -835,6 +835,71 @@ pub struct DataCellWriterLeaseRow {
     pub expires_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+pub struct OrgMigrationRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub source_cell_id: String,
+    pub target_cell_id: String,
+    pub source_route_version: i64,
+    pub target_route_version: Option<i64>,
+    pub state: String,
+    pub requested_by: String,
+    pub transition_actor: String,
+    pub customer_notice: Option<String>,
+    pub legacy_client_approved: bool,
+    pub retry_after_seconds: i32,
+    #[schema(value_type = Object)]
+    pub copy_evidence: Value,
+    #[schema(value_type = Object)]
+    pub validation_evidence: Value,
+    pub restored_route_version: Option<i64>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub failed_at: Option<DateTime<Utc>>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+pub struct OrgMigrationEventRow {
+    pub id: Uuid,
+    pub migration_id: Uuid,
+    pub org_id: Uuid,
+    pub from_state: Option<String>,
+    pub to_state: String,
+    pub actor: String,
+    pub reason: Option<String>,
+    pub route_version: Option<i64>,
+    #[schema(value_type = Object)]
+    pub details: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateOrgMigrationRequest {
+    pub org_id: Uuid,
+    pub target_cell_id: String,
+    pub requested_by: String,
+    pub customer_notice: Option<String>,
+    #[serde(default)]
+    pub legacy_client_approved: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct OrgMigrationTransitionRequest {
+    pub actor: String,
+    pub reason: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct AdminOrgMigrationsResponse {
+    pub schema_version: i32,
+    pub generated_at: DateTime<Utc>,
+    pub migrations: Vec<OrgMigrationRow>,
+}
+
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct RouteDiscoveryResponse {
     pub org_id: Uuid,

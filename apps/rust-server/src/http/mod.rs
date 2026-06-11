@@ -29,33 +29,35 @@ pub mod openapi;
 pub(crate) mod rate_limit;
 
 use handlers::{
-    abort_artifact_upload, accept_invitation, admin_data_cells, admin_overview,
-    append_import_chunk, artifact_version_lineage, auth_clerk, auth_config, auth_dev_google,
-    auth_logout, auth_session, auth_switch_organization, billing_add_seat, billing_cancel,
-    billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
+    abort_artifact_upload, accept_invitation, admin_data_cells, admin_org_migrations,
+    admin_overview, append_import_chunk, artifact_version_lineage, auth_clerk, auth_config,
+    auth_dev_google, auth_logout, auth_session, auth_switch_organization, billing_add_seat,
+    billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
     billing_report_storage_overage, billing_report_usage_overage, billing_status, billing_webhook,
-    cancel_import_job, commit_import_job, complete_artifact_upload, create_api_key,
-    create_artifact, create_artifact_input_edge, create_attributes, create_current_user_org,
-    create_customer_clickhouse_connection, create_import_job, create_invitation, create_object,
-    create_org, create_project, create_report, create_run, create_user, create_workspace_view,
-    current_route, customer_clickhouse_connection_status, delete_artifact_alias,
-    delete_artifact_version, delete_report, device_code_confirm, device_code_poll,
-    device_code_start, disable_service_account, download_artifact, download_artifact_entry,
-    export_data, export_report_markdown, fork_run, get_artifact_collection, get_artifact_version,
-    get_dashboard_preferences, get_import_job, get_metrics, get_report, get_report_by_share_token,
-    get_run, get_run_lineage, get_workspace_view, health, import_mlflow, import_neptune,
-    import_wandb, initiate_artifact_upload, list_api_keys, list_artifact_collection_versions,
+    cancel_import_job, commit_import_job, complete_artifact_upload, create_admin_org_migration,
+    create_api_key, create_artifact, create_artifact_input_edge, create_attributes,
+    create_current_user_org, create_customer_clickhouse_connection, create_import_job,
+    create_invitation, create_object, create_org, create_project, create_report, create_run,
+    create_user, create_workspace_view, current_route, customer_clickhouse_connection_status,
+    delete_artifact_alias, delete_artifact_version, delete_report, device_code_confirm,
+    device_code_poll, device_code_start, disable_service_account, download_artifact,
+    download_artifact_entry, export_data, export_report_markdown, fail_admin_org_migration,
+    fork_run, get_artifact_collection, get_artifact_version, get_dashboard_preferences,
+    get_import_job, get_metrics, get_report, get_report_by_share_token, get_run, get_run_lineage,
+    get_workspace_view, health, import_mlflow, import_neptune, import_wandb,
+    initiate_artifact_upload, list_api_keys, list_artifact_collection_versions,
     list_artifact_collections, list_artifact_manifest, list_artifacts, list_attributes,
     list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
     list_org_memberships, list_org_panels, list_orgs, list_projects, list_reports, list_runs,
     list_seats, list_users, list_workspace_views, log_console_logs, log_metrics, log_rank_metrics,
     metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
     preview_invitation, rank_metrics_summary, readyz, renew_artifact_upload, resend_invitation,
-    reserve_seat, reset_demo, resolve_artifact_version, revoke_api_key, revoke_invitation,
-    rotate_customer_clickhouse_credentials, rotate_report_share_token, run_artifact_edges,
-    runs_summary, set_artifact_alias, side_by_side, update_artifact_retention,
-    update_dashboard_preferences, update_report, update_run, update_workspace_view,
-    upload_artifact, usage_export, usage_summary, validate_customer_clickhouse_connection,
+    reserve_seat, reset_demo, resolve_artifact_version, restore_admin_org_migration,
+    revoke_api_key, revoke_invitation, rotate_customer_clickhouse_credentials,
+    rotate_report_share_token, run_artifact_edges, runs_summary, set_artifact_alias, side_by_side,
+    update_artifact_retention, update_dashboard_preferences, update_report, update_run,
+    update_workspace_view, upload_artifact, usage_export, usage_summary,
+    validate_customer_clickhouse_connection, write_block_admin_org_migration,
 };
 
 const SESSION_COOKIE: &str = "instantml_session";
@@ -155,6 +157,22 @@ fn control_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/admin/overview", get(admin_overview))
         .route("/api/admin/data-cells", get(admin_data_cells))
+        .route(
+            "/api/admin/org-migrations",
+            get(admin_org_migrations).post(create_admin_org_migration),
+        )
+        .route(
+            "/api/admin/org-migrations/:migration_id/write-block",
+            post(write_block_admin_org_migration),
+        )
+        .route(
+            "/api/admin/org-migrations/:migration_id/restore",
+            post(restore_admin_org_migration),
+        )
+        .route(
+            "/api/admin/org-migrations/:migration_id/fail",
+            post(fail_admin_org_migration),
+        )
         .route("/api/routing/current", get(current_route))
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))

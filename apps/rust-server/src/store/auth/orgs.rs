@@ -548,6 +548,121 @@ pub async fn switch_session_organization(
     target_org_id: Uuid,
 ) -> AppResult<CreatedAuthSession> {
     let token_hash = hash_secret(token);
+    if let Some(control_db) = store.control_db() {
+        let auth = control_db
+            .session_auth_by_hash(&token_hash)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("invalid session"))?;
+        if auth.session.row.revoked_at.is_some() || auth.session.row.expires_at <= Utc::now() {
+            return Err(AppError::unauthorized("invalid session"));
+        }
+        let target_org = control_db
+            .get_org(target_org_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        let target_membership = control_db
+            .membership_for(target_org_id, auth.user.id)
+            .await?
+            .filter(|membership| membership.status == "active")
+            .ok_or_else(|| AppError::forbidden("no active membership in target organization"))?;
+        if auth.session.row.org_id == target_org_id {
+            let mut row = auth.session.row;
+            row.last_seen_at = Some(Utc::now());
+            let provisioning = {
+                let mut data = store.data.lock().await;
+                data.insert_user(auth.user.clone());
+                data.insert_org(target_org.clone());
+                for membership in &auth.memberships {
+                    data.insert_membership(membership.clone());
+                }
+                data.insert_session(SessionRecord {
+                    row: row.clone(),
+                    token_hash: auth.session.token_hash,
+                });
+                data.tenant_routes
+                    .get(&target_org_id)
+                    .map(|route| ProvisioningStatusPayload {
+                        status: route.status.clone(),
+                        mode: route.provisioner.clone(),
+                        service_id: route.service_id.clone(),
+                    })
+            };
+            return Ok(CreatedAuthSession {
+                token: token.to_string(),
+                payload: session_payload_from_rows(
+                    row,
+                    auth.user,
+                    target_org,
+                    target_membership,
+                    auth.memberships,
+                    provisioning,
+                ),
+                onboarding_api_key: None,
+                auto_provisioned: false,
+            });
+        }
+
+        let (new_session, new_token) = new_session(auth.user.id, target_org_id);
+        let mut revoked = auth.session.clone();
+        revoked.row.revoked_at = Some(Utc::now());
+        revoked.row.last_seen_at = Some(Utc::now());
+        let revoked_record = SessionRecord {
+            row: revoked.row.clone(),
+            token_hash: revoked.token_hash.clone(),
+        };
+        store
+            .persist_locked(
+                "session",
+                target_org_id,
+                &new_session.row.id.to_string(),
+                &new_session,
+            )
+            .await?;
+        store
+            .persist_locked(
+                "session",
+                revoked.row.org_id,
+                &revoked.row.id.to_string(),
+                &revoked_record,
+            )
+            .await?;
+        let memberships = control_db
+            .memberships_for_user(auth.user.id)
+            .await?
+            .into_iter()
+            .filter(|membership| membership.status == "active")
+            .collect::<Vec<_>>();
+        let provisioning = {
+            let mut data = store.data.lock().await;
+            data.insert_user(auth.user.clone());
+            data.insert_org(target_org.clone());
+            for membership in &memberships {
+                data.insert_membership(membership.clone());
+            }
+            data.insert_session(new_session.clone());
+            data.insert_session(revoked_record);
+            data.tenant_routes
+                .get(&target_org_id)
+                .map(|route| ProvisioningStatusPayload {
+                    status: route.status.clone(),
+                    mode: route.provisioner.clone(),
+                    service_id: route.service_id.clone(),
+                })
+        };
+        return Ok(CreatedAuthSession {
+            token: new_token,
+            payload: session_payload_from_rows(
+                new_session.row,
+                auth.user,
+                target_org,
+                target_membership,
+                memberships,
+                provisioning,
+            ),
+            onboarding_api_key: None,
+            auto_provisioned: false,
+        });
+    }
     let session = {
         let data = store.data.lock().await;
         let session_id = data

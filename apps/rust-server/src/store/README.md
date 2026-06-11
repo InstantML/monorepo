@@ -1,6 +1,6 @@
 # Store Module
 
-The store module owns the Rust API's ClickHouse-backed operational index and the storage-facing service logic used by HTTP handlers. In hosted ClickHouse mode, the module splits persistence between the InstantML User Data control table and each org's tenant ClickHouse data plane. Multi-instance hosting is still gated by `docs/design/2026-05-16-multi-instance-control-data-plane.md`: this module now has deterministic full replay helpers, tenant-scoped replay validation, and a full User Data refresh path used by `INSTANTML_SERVICE_PLANE=data` before auth, but it does not provide shared-cell multi-writer freshness, atomic metric/log idempotency, or distributed write uniqueness yet.
+The store module owns the Rust API's storage-facing service logic used by HTTP handlers. Local compatibility mode uses a ClickHouse-backed operational index. Hosted mode splits persistence between Postgres control-plane tables and each org's tenant ClickHouse data plane. Multi-instance hosting is still gated by `docs/design/2026-05-16-multi-instance-control-data-plane.md` and `docs/design/2026-06-10-backend-cluster-scaling-plan.md`: this module now has deterministic tenant replay helpers, tenant-scoped replay validation, Postgres point reads for request-critical auth/session/org/billing/route/tenant-load checks, and a Postgres projection refresh path, but it does not provide shared-cell multi-writer freshness, atomic metric/log idempotency, or distributed write uniqueness yet.
 
 ## Module Map
 
@@ -9,9 +9,9 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
   heartbeat, tenant replay validation, local org bootstrap, durable append
   helper, readiness checks, and public re-exports. Route movement events stay
   in Postgres audit tables and are not loaded on every projection refresh.
-- `admin.rs`: read-only operator overview projection for users, orgs, storage
-  posture, billing state, public API-key metadata, data-cell registry summaries,
-  and risk queues.
+- `admin.rs`: operator overview projection for users, orgs, storage posture,
+  billing state, public API-key metadata, data-cell registry summaries, risk
+  queues, and bootstrap-token org migration controls.
 - `auth.rs`: users, organizations-as-workspaces, memberships, sessions, browser-session workspace creation/switching, service accounts, API keys, and admin checks.
 - `billing.rs`: Stripe billing projections, Checkout intent fulfillment, Customer Portal responses, webhook event idempotency, and payment-state write gates.
 - `console_logs.rs`: bounded stdout/stderr validation, idempotent log writes, cursor encoding, and log read response shaping.
@@ -51,6 +51,11 @@ npm run test:hosted-clickhouse
 ```
 
 Pure helper behavior should get unit tests close to the module that owns it. Behavior that depends on ClickHouse, HTTP auth, SDK compatibility, hosted tenant routing, or the Next dashboard should be covered by the shared contract, SDK, hosted ClickHouse, and UI smokes. The hosted ClickHouse smoke starts separate `control` and `data` service-plane processes to verify control-record refresh and tenant replay across process boundaries.
+
+Postgres-backed store tests use `#[sqlx::test]` and require `DATABASE_URL`.
+They cover cross-instance API-key/session visibility, org switching, billing
+write gates, tenant-load hydration, authoritative route reads, writer leases,
+and org migration write-block/restore semantics.
 
 Run-search parser/evaluator tests live beside the run store. Keep route-level
 search behavior aligned across `/runs`, `/api/overview`, `/api/runs/summary`,

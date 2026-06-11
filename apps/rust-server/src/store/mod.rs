@@ -523,12 +523,15 @@ impl Store {
         ctx: &RequestContext,
         request: DataCellRouteRequest,
     ) -> AppResult<()> {
-        let Some(current_cell_id) = self.cell_routing.current_data_cell_id.as_deref() else {
-            return Ok(());
-        };
         if !self.hosted_clickhouse_enabled() {
             return Ok(());
         }
+        let Some(current_cell_id) = self.cell_routing.current_data_cell_id.as_deref() else {
+            if request.write {
+                self.validate_hosted_tenant_write_route(ctx.org_id).await?;
+            }
+            return Ok(());
+        };
         let is_public_cell_host = self.request_targets_current_public_cell(request.host.as_deref());
         if is_public_cell_host && !request.api_key_authenticated {
             return Err(AppError::unauthorized(
@@ -553,6 +556,7 @@ impl Store {
                     cell.as_ref(),
                     request.route_version,
                     requires_route_version,
+                    request.write,
                 )?;
                 let mut data = self.data.lock().await;
                 data.insert_tenant_route(route);
@@ -574,6 +578,7 @@ impl Store {
                     cell,
                     request.route_version,
                     requires_route_version,
+                    request.write,
                 )?;
             }
         } else {
@@ -591,12 +596,27 @@ impl Store {
                 cell,
                 request.route_version,
                 is_public_cell_host,
+                request.write,
             )?;
         }
         if request.write {
             self.ensure_current_writer_lease_ready().await?;
         }
         Ok(())
+    }
+
+    async fn validate_hosted_tenant_write_route(&self, org_id: Uuid) -> AppResult<()> {
+        if let Some((route, _)) = self.authoritative_current_data_cell_route(org_id).await? {
+            self.validate_tenant_route_write_status(&route)?;
+            self.data.lock().await.insert_tenant_route(route);
+            return Ok(());
+        }
+        let data = self.data.lock().await;
+        let route = data
+            .tenant_routes
+            .get(&org_id)
+            .ok_or_else(|| AppError::warehouse_unavailable("tenant route is not provisioned"))?;
+        self.validate_tenant_route_write_status(route)
     }
 
     fn request_targets_current_public_cell(&self, host: Option<&str>) -> bool {
@@ -644,8 +664,9 @@ impl Store {
         cell: Option<&DataCellRow>,
         route_version: Option<i64>,
         require_route_version: bool,
+        write: bool,
     ) -> AppResult<()> {
-        if route.status != tenants::TENANT_ROUTE_READY {
+        if !tenants::tenant_route_allows_reads(route) {
             return Err(AppError::with_code(
                 http::StatusCode::SERVICE_UNAVAILABLE,
                 "tenant_route_not_ready",
@@ -691,6 +712,15 @@ impl Store {
                 "data cell is not available",
             ));
         }
+        if route.status == tenants::TENANT_ROUTE_WRITE_BLOCKED {
+            if write {
+                return Err(tenants::org_migration_in_progress());
+            }
+            return Ok(());
+        }
+        if write {
+            self.validate_tenant_route_write_status(route)?;
+        }
         if require_route_version && route_version.is_none() {
             return Err(tenant_route_changed(
                 "route version header is required for data-cell writes",
@@ -702,6 +732,20 @@ impl Store {
                     "tenant route changed; refresh route discovery",
                 ));
             }
+        }
+        Ok(())
+    }
+
+    fn validate_tenant_route_write_status(&self, route: &TenantRouteRecord) -> AppResult<()> {
+        if route.status == tenants::TENANT_ROUTE_WRITE_BLOCKED {
+            return Err(tenants::org_migration_in_progress());
+        }
+        if !tenants::tenant_route_allows_writes(route) {
+            return Err(AppError::with_code(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "tenant_route_not_ready",
+                "tenant route is not ready for writes",
+            ));
         }
         Ok(())
     }
@@ -2773,6 +2817,256 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn api_key_auth_uses_postgres_point_reads_across_instances(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let store_a = store_with_control_db(control_db.clone());
+        let store_b = store_with_control_db(control_db);
+        let org_id = Uuid::new_v4();
+        store_a
+            .persist_locked(
+                "organization",
+                org_id,
+                &org_id.to_string(),
+                &control_org(org_id, "api-key-point-read"),
+            )
+            .await
+            .unwrap();
+        let service_account = ServiceAccountRow {
+            id: Uuid::new_v4(),
+            org_id,
+            name: "SDK key".to_string(),
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            disabled_at: None,
+        };
+        store_a
+            .persist_locked(
+                "service_account",
+                org_id,
+                &service_account.id.to_string(),
+                &service_account,
+            )
+            .await
+            .unwrap();
+        let secret = generate_api_key();
+        let key = PublicApiKeyRow {
+            id: Uuid::new_v4(),
+            org_id,
+            service_account_id: service_account.id,
+            name: "SDK key".to_string(),
+            key_prefix: secret.chars().take(14).collect(),
+            scopes: vec!["sdk:ingest".to_string()],
+            project_id: Some(Uuid::from_u128(99)),
+            created_at: Utc::now(),
+            expires_at: None,
+            last_used_at: None,
+            revoked_at: None,
+        };
+        store_a
+            .persist_locked(
+                "api_key",
+                org_id,
+                &key.id.to_string(),
+                &ApiKeyRecord {
+                    row: key.clone(),
+                    key_hash: hash_secret(&secret),
+                },
+            )
+            .await
+            .unwrap();
+
+        let auth = authenticate_api_key(&store_b, &secret).await.unwrap();
+        assert_eq!(auth.org_id, org_id);
+        assert_eq!(auth.project_id, Some(Uuid::from_u128(99)));
+        assert_eq!(auth.scopes, vec!["sdk:ingest"]);
+
+        revoke_api_key(&store_a, org_id, key.id).await.unwrap();
+        assert_eq!(
+            authenticate_api_key(&store_b, &secret)
+                .await
+                .unwrap_err()
+                .status(),
+            http::StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[sqlx::test]
+    async fn disabled_service_account_invalidates_key_across_instances(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let store_a = store_with_control_db(control_db.clone());
+        let store_b = store_with_control_db(control_db);
+        let org_id = Uuid::new_v4();
+        store_a
+            .persist_locked(
+                "organization",
+                org_id,
+                &org_id.to_string(),
+                &control_org(org_id, "disabled-service-account"),
+            )
+            .await
+            .unwrap();
+        let service_account = ServiceAccountRow {
+            id: Uuid::new_v4(),
+            org_id,
+            name: "SDK key".to_string(),
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            disabled_at: None,
+        };
+        store_a
+            .persist_locked(
+                "service_account",
+                org_id,
+                &service_account.id.to_string(),
+                &service_account,
+            )
+            .await
+            .unwrap();
+        let secret = generate_api_key();
+        let key = PublicApiKeyRow {
+            id: Uuid::new_v4(),
+            org_id,
+            service_account_id: service_account.id,
+            name: "SDK key".to_string(),
+            key_prefix: secret.chars().take(14).collect(),
+            scopes: vec!["sdk:ingest".to_string()],
+            project_id: None,
+            created_at: Utc::now(),
+            expires_at: None,
+            last_used_at: None,
+            revoked_at: None,
+        };
+        store_a
+            .persist_locked(
+                "api_key",
+                org_id,
+                &key.id.to_string(),
+                &ApiKeyRecord {
+                    row: key,
+                    key_hash: hash_secret(&secret),
+                },
+            )
+            .await
+            .unwrap();
+
+        authenticate_api_key(&store_b, &secret).await.unwrap();
+        disable_service_account(&store_a, org_id, service_account.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            authenticate_api_key(&store_b, &secret)
+                .await
+                .unwrap_err()
+                .status(),
+            http::StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[sqlx::test]
+    async fn session_auth_and_org_switch_use_postgres_point_reads(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let store_a = store_with_control_db(control_db.clone());
+        let store_b = store_with_control_db(control_db);
+        let user = UserRow {
+            id: Uuid::new_v4(),
+            primary_email: "session-point-read@example.com".to_string(),
+            display_name: None,
+            avatar_url: None,
+            created_at: Utc::now(),
+            last_seen_at: None,
+        };
+        let source_org = control_org(Uuid::new_v4(), "source-session-org");
+        let target_org = control_org(Uuid::new_v4(), "target-session-org");
+        let source_membership = membership_row(source_org.id, user.id, "owner", "active");
+        let target_membership = membership_row(target_org.id, user.id, "member", "active");
+        for (kind, org_id, entity_id, value) in [
+            ("user", LOCAL_ORG_ID, user.id.to_string(), json!(user)),
+            (
+                "organization",
+                source_org.id,
+                source_org.id.to_string(),
+                json!(source_org),
+            ),
+            (
+                "organization",
+                target_org.id,
+                target_org.id.to_string(),
+                json!(target_org),
+            ),
+            (
+                "membership",
+                source_membership.org_id,
+                source_membership.id.to_string(),
+                json!(source_membership),
+            ),
+            (
+                "membership",
+                target_membership.org_id,
+                target_membership.id.to_string(),
+                json!(target_membership),
+            ),
+        ] {
+            store_a
+                .persist_locked(kind, org_id, &entity_id, &value)
+                .await
+                .unwrap();
+        }
+        let (session, token) = new_session(user.id, source_org.id);
+        store_a
+            .persist_locked(
+                "session",
+                source_org.id,
+                &session.row.id.to_string(),
+                &session,
+            )
+            .await
+            .unwrap();
+
+        let payload = authenticate_session(&store_b, &token).await.unwrap();
+        assert_eq!(payload.organization.id, source_org.id);
+
+        let switched = switch_session_organization(&store_a, &token, target_org.id)
+            .await
+            .unwrap();
+        assert_eq!(switched.payload.organization.id, target_org.id);
+        assert_eq!(
+            authenticate_session(&store_b, &token)
+                .await
+                .unwrap_err()
+                .status(),
+            http::StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            authenticate_session(&store_b, &switched.token)
+                .await
+                .unwrap()
+                .organization
+                .id,
+            target_org.id
+        );
+
+        let mut revoked_target_membership = target_membership;
+        revoked_target_membership.status = "revoked".to_string();
+        store_a
+            .persist_locked(
+                "membership",
+                revoked_target_membership.org_id,
+                &revoked_target_membership.id.to_string(),
+                &revoked_target_membership,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            authenticate_session(&store_b, &switched.token)
+                .await
+                .unwrap_err()
+                .status(),
+            http::StatusCode::UNAUTHORIZED
+        );
+        revoke_session(&store_a, &switched.token).await.unwrap();
+    }
+
+    #[sqlx::test]
     async fn route_discovery_uses_control_db_point_reads_and_checks_active_writer_lease(
         pool: sqlx::PgPool,
     ) {
@@ -2834,6 +3128,97 @@ mod tests {
         assert_eq!(route.data_api_base, "https://cell-a.api.example.test");
         assert!(store.last_control_refresh.lock().await.is_none());
         assert!(store.data.lock().await.tenant_routes.contains_key(&org_id));
+    }
+
+    #[sqlx::test]
+    async fn tenant_load_records_use_control_db_when_projection_is_empty(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let org_id = Uuid::new_v4();
+        let org = control_org(org_id, "tenant-load-point-read");
+        control_db.upsert_org(&org).await.unwrap();
+        control_db
+            .upsert_data_cell(&control_data_cell(
+                "cell-a",
+                "https://cell-a.api.example.test",
+            ))
+            .await
+            .unwrap();
+        let route = control_tenant_route(org_id, "cell-a", 23);
+        control_db
+            .upsert_tenant_route_with_placement(
+                &route,
+                Some(&TenantRoutePlacement {
+                    environment: "test".to_string(),
+                    cell_id: "cell-a".to_string(),
+                    actor: "test".to_string(),
+                    reason: "tenant_load_refresh".to_string(),
+                }),
+            )
+            .await
+            .unwrap();
+
+        let store = store_with_control_db(control_db);
+
+        let (loaded_org, loaded_route) = store.tenant_load_records(org_id).await.unwrap();
+
+        assert_eq!(loaded_org.unwrap().id, org_id);
+        assert_eq!(loaded_route.unwrap().route_version, 23);
+        let data = store.data.lock().await;
+        assert!(data.organizations.contains_key(&org_id));
+        assert!(data.tenant_routes.contains_key(&org_id));
+    }
+
+    #[sqlx::test]
+    async fn billing_write_gate_uses_postgres_point_reads_across_instances(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let store_a = store_with_control_db(control_db.clone());
+        let store_b = store_with_control_db(control_db);
+        let org_id = Uuid::new_v4();
+        let org = control_org(org_id, "billing-point-read");
+        store_a
+            .persist_locked("organization", org_id, &org_id.to_string(), &org)
+            .await
+            .unwrap();
+        let mut account = BillingAccountProjection {
+            schema_version: 1,
+            org_id,
+            access_state: BILLING_PAID_ACTIVE.to_string(),
+            plan_tier: PLAN_PRO.id.to_string(),
+            effective_plan_tier: PLAN_PRO.id.to_string(),
+            requested_plan_tier: None,
+            paid_extra_seats: 0,
+            stripe_customer_id: Some("cus_test".to_string()),
+            stripe_subscription_id: Some("sub_test".to_string()),
+            subscription_status: Some("active".to_string()),
+            current_period_start: None,
+            current_period_end: None,
+            cancel_at_period_end: false,
+            grace_until: None,
+            pending_intent_id: None,
+            message: None,
+            updated_at: Utc::now(),
+        };
+        store_a
+            .persist_locked("billing_account", org_id, &org_id.to_string(), &account)
+            .await
+            .unwrap();
+
+        ensure_billing_write_allowed(&store_b, org_id, "create runs")
+            .await
+            .unwrap();
+
+        account.access_state = BILLING_READ_ONLY_PAYMENT_REQUIRED.to_string();
+        account.updated_at = Utc::now();
+        store_a
+            .persist_locked("billing_account", org_id, &org_id.to_string(), &account)
+            .await
+            .unwrap();
+        let err = ensure_billing_write_allowed(&store_b, org_id, "create runs")
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.status(), http::StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(err.code(), Some("payment_required"));
     }
 
     #[sqlx::test]
@@ -3278,6 +3663,160 @@ mod tests {
                 .unwrap_err()
                 .status(),
             http::StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn current_data_cell_route_validation_allows_reads_but_blocks_writes_during_migration() {
+        let org_id = Uuid::new_v4();
+        let mut data = routing_data(org_id, "cell-a", 4, "https://cell-a.api.example.com");
+        data.tenant_routes.get_mut(&org_id).unwrap().status =
+            tenants::TENANT_ROUTE_WRITE_BLOCKED.to_string();
+        let store = hosted_routing_store(
+            data,
+            Some("cell-a"),
+            Some("https://cell-a.api.example.com"),
+            true,
+        );
+        *store.current_writer_lease.lock().await = Some(DataCellWriterLeaseRow {
+            cell_id: "cell-a".to_string(),
+            fence_token: 1,
+            holder_instance_id: "holder-1".to_string(),
+            service_name: "instantml-data-cell-a".to_string(),
+            revision: "revision-1".to_string(),
+            acquired_at: Utc::now(),
+            heartbeat_at: Utc::now(),
+            expires_at: Utc::now() + ChronoDuration::minutes(1),
+        });
+        *store.current_writer_lease_deadline.lock().await =
+            Some(Instant::now() + StdDuration::from_secs(30));
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    route_version: Some(4),
+                    host: Some("cell-a.api.example.com".to_string()),
+                    api_key_authenticated: true,
+                    write: false,
+                },
+            )
+            .await
+            .unwrap();
+
+        let error = store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    route_version: Some(4),
+                    host: Some("cell-a.api.example.com".to_string()),
+                    api_key_authenticated: true,
+                    write: true,
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.code(), Some("org_migration_in_progress"));
+        assert_eq!(
+            error.retry_after_secs(),
+            Some(tenants::ORG_MIGRATION_RETRY_AFTER_SECONDS)
+        );
+    }
+
+    #[sqlx::test]
+    async fn hosted_write_validation_blocks_write_blocked_route_without_cell_identity(
+        pool: sqlx::PgPool,
+    ) {
+        let control_db = ControlDb::from_pool(pool);
+        let org_id = Uuid::new_v4();
+        control_db
+            .upsert_org(&control_org(org_id, "no-cell-write-block"))
+            .await
+            .unwrap();
+        control_db
+            .upsert_data_cell(&control_data_cell(
+                "cell-a",
+                "https://cell-a.api.example.test",
+            ))
+            .await
+            .unwrap();
+        control_db
+            .upsert_data_cell(&control_data_cell(
+                "cell-b",
+                "https://cell-b.api.example.test",
+            ))
+            .await
+            .unwrap();
+        control_db
+            .upsert_tenant_route_with_placement(
+                &control_tenant_route(org_id, "cell-a", 7),
+                Some(&TenantRoutePlacement {
+                    environment: "test".to_string(),
+                    cell_id: "cell-a".to_string(),
+                    actor: "test".to_string(),
+                    reason: "current_data_cell".to_string(),
+                }),
+            )
+            .await
+            .unwrap();
+        let migration = control_db
+            .create_org_migration(org_id, "cell-b", "ops@example.com", None, true)
+            .await
+            .unwrap();
+        control_db
+            .write_block_org_migration(migration.id, "ops@example.com", Some("start copy"))
+            .await
+            .unwrap();
+        let mut store = store_with_control_db(control_db);
+        store.hosted_clickhouse = Some(crate::config::HostedClickHouseConfig {
+            tenant_base_url: "http://default:@127.0.0.1:8123/instantml_no_cell_block_test"
+                .to_string(),
+            provisioner: crate::config::ClickHouseProvisioner::Database,
+            allow_stored_tenant_passwords: false,
+            cloud: None,
+            shared_cell_url: None,
+        });
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::new_v4(),
+                service_account_id: Uuid::new_v4(),
+                project_id: None,
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+
+        let error = store
+            .validate_current_data_cell_route(
+                &ctx,
+                DataCellRouteRequest {
+                    write: true,
+                    ..DataCellRouteRequest::default()
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.code(), Some("org_migration_in_progress"));
+        assert_eq!(
+            error.retry_after_secs(),
+            Some(tenants::ORG_MIGRATION_RETRY_AFTER_SECONDS)
         );
     }
 

@@ -656,3 +656,255 @@ async fn stale_cell_health_or_backup_blocks_placement(pool: PgPool) {
     assert!(db.load_tenant_routes().await.unwrap().is_empty());
     assert!(db.load_tenant_route_events().await.unwrap().is_empty());
 }
+
+#[sqlx::test]
+async fn org_migration_write_block_and_restore_are_transactional(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(10)))
+        .await
+        .unwrap();
+    db.upsert_data_cell(&data_cell("standard-us-central1-b", Some(10)))
+        .await
+        .unwrap();
+    let o = org("migrating-org", None);
+    db.upsert_org(&o).await.unwrap();
+    let ready = db
+        .upsert_tenant_route_with_placement(
+            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap();
+
+    let planned = db
+        .create_org_migration(
+            o.id,
+            "standard-us-central1-b",
+            "ops@example.com",
+            Some("scheduled maintenance"),
+            true,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(planned.state, "planned");
+    assert_eq!(planned.source_cell_id, "free-us-central1-a");
+    assert_eq!(planned.target_cell_id, "standard-us-central1-b");
+    assert_eq!(planned.source_route_version, ready.route_version);
+
+    let blocked = db
+        .write_block_org_migration(planned.id, "ops@example.com", Some("start copy"))
+        .await
+        .unwrap();
+    assert_eq!(blocked.state, "write_blocked");
+    let blocked_route = db.get_tenant_route(o.id).await.unwrap().unwrap();
+    assert_eq!(blocked_route.status, "write_blocked");
+    assert_eq!(blocked_route.cell_id.as_deref(), Some("free-us-central1-a"));
+    assert_eq!(blocked_route.route_version, ready.route_version + 1);
+
+    let blocked_again = db
+        .write_block_org_migration(planned.id, "ops@example.com", Some("retry"))
+        .await
+        .unwrap();
+    assert_eq!(blocked_again.state, "write_blocked");
+    assert_eq!(
+        db.get_tenant_route(o.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .route_version,
+        blocked_route.route_version
+    );
+
+    let restored = db
+        .restore_org_migration(planned.id, "ops@example.com", Some("abort rehearsal"))
+        .await
+        .unwrap();
+    assert_eq!(restored.state, "restored");
+    assert_eq!(
+        restored.restored_route_version,
+        Some(blocked_route.route_version + 1)
+    );
+    let restored_route = db.get_tenant_route(o.id).await.unwrap().unwrap();
+    assert_eq!(restored_route.status, "ready");
+    assert_eq!(
+        restored_route.route_version,
+        blocked_route.route_version + 1
+    );
+
+    let route_events = db.load_tenant_route_events().await.unwrap();
+    assert_eq!(
+        route_events
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["current_data_cell", "start copy", "abort rehearsal"]
+    );
+}
+
+#[sqlx::test]
+async fn org_migration_fail_after_write_block_restores_source_route(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(10)))
+        .await
+        .unwrap();
+    db.upsert_data_cell(&data_cell("standard-us-central1-b", Some(10)))
+        .await
+        .unwrap();
+    let o = org("failed-migration-restore", None);
+    db.upsert_org(&o).await.unwrap();
+    db.upsert_tenant_route_with_placement(
+        &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+        Some(&placement("free-us-central1-a")),
+    )
+    .await
+    .unwrap();
+    let planned = db
+        .create_org_migration(
+            o.id,
+            "standard-us-central1-b",
+            "ops@example.com",
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    db.write_block_org_migration(planned.id, "ops@example.com", Some("start copy"))
+        .await
+        .unwrap();
+    let blocked_route = db.get_tenant_route(o.id).await.unwrap().unwrap();
+
+    let failed = db
+        .fail_org_migration(
+            planned.id,
+            "ops@example.com",
+            "copy failed; source route restored",
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(failed.state, "failed");
+    assert_eq!(
+        failed.restored_route_version,
+        Some(blocked_route.route_version + 1)
+    );
+    let restored_route = db.get_tenant_route(o.id).await.unwrap().unwrap();
+    assert_eq!(restored_route.status, "ready");
+    assert_eq!(
+        restored_route.route_version,
+        blocked_route.route_version + 1
+    );
+    db.create_org_migration(
+        o.id,
+        "standard-us-central1-b",
+        "ops@example.com",
+        None,
+        true,
+    )
+    .await
+    .unwrap();
+}
+
+#[sqlx::test]
+async fn org_migration_transitions_reject_write_blocked_route_drift(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(10)))
+        .await
+        .unwrap();
+    db.upsert_data_cell(&data_cell("standard-us-central1-b", Some(10)))
+        .await
+        .unwrap();
+    let o = org("migration-route-drift", None);
+    db.upsert_org(&o).await.unwrap();
+    db.upsert_tenant_route_with_placement(
+        &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+        Some(&placement("free-us-central1-a")),
+    )
+    .await
+    .unwrap();
+    let planned = db
+        .create_org_migration(
+            o.id,
+            "standard-us-central1-b",
+            "ops@example.com",
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    db.write_block_org_migration(planned.id, "ops@example.com", Some("start copy"))
+        .await
+        .unwrap();
+    let mut drifted_route = db.get_tenant_route(o.id).await.unwrap().unwrap();
+    drifted_route.endpoint = "https://free-us-central1-a-drift.example.test".to_string();
+    db.upsert_tenant_route_with_placement(&drifted_route, Some(&placement("free-us-central1-a")))
+        .await
+        .unwrap();
+
+    for err in [
+        db.write_block_org_migration(planned.id, "ops@example.com", Some("retry"))
+            .await
+            .unwrap_err(),
+        db.restore_org_migration(planned.id, "ops@example.com", Some("restore"))
+            .await
+            .unwrap_err(),
+        db.fail_org_migration(planned.id, "ops@example.com", "copy failed")
+            .await
+            .unwrap_err(),
+    ] {
+        assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
+        assert_eq!(err.code(), Some("tenant_route_changed"));
+    }
+    assert_eq!(
+        db.get_org_migration(planned.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "write_blocked"
+    );
+}
+
+#[sqlx::test]
+async fn org_migration_enforces_one_active_migration_per_org(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(10)))
+        .await
+        .unwrap();
+    db.upsert_data_cell(&data_cell("standard-us-central1-b", Some(10)))
+        .await
+        .unwrap();
+    db.upsert_data_cell(&data_cell("standard-us-central1-c", Some(10)))
+        .await
+        .unwrap();
+    let o = org("one-active-migration", None);
+    db.upsert_org(&o).await.unwrap();
+    db.upsert_tenant_route_with_placement(
+        &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+        Some(&placement("free-us-central1-a")),
+    )
+    .await
+    .unwrap();
+
+    db.create_org_migration(
+        o.id,
+        "standard-us-central1-b",
+        "ops@example.com",
+        None,
+        true,
+    )
+    .await
+    .unwrap();
+
+    let err = db
+        .create_org_migration(
+            o.id,
+            "standard-us-central1-c",
+            "ops@example.com",
+            None,
+            true,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
+}

@@ -13,7 +13,8 @@
 //!   * Read-after-write — reads hit the table, not a process-local projection.
 
 use chrono::{Duration as ChronoDuration, Utc};
-use sqlx::{Postgres, Transaction};
+use serde_json::{json, Value};
+use sqlx::{postgres::PgRow, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::{
@@ -21,9 +22,9 @@ use crate::{
     domain::{
         BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
         BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
-        DataCellWriterLeaseRow, EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow,
-        PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow,
-        WorkspaceViewRow,
+        DataCellWriterLeaseRow, EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrgMigrationRow,
+        OrganizationRow, PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow,
+        UserSessionRow, WorkspaceViewRow,
     },
     errors::{AppError, AppResult},
     store::TenantRouteRecord,
@@ -68,6 +69,22 @@ pub struct TenantRoutePlacement {
     pub cell_id: String,
     pub actor: String,
     pub reason: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ApiKeyAuthRecord {
+    pub key: ApiKeyWithHash,
+    pub service_account: ServiceAccountRow,
+    pub organization: OrganizationRow,
+}
+
+#[derive(Clone, Debug)]
+pub struct SessionAuthRecord {
+    pub session: LoadedSession,
+    pub user: UserRow,
+    pub organization: OrganizationRow,
+    pub membership: MembershipRow,
+    pub memberships: Vec<MembershipRow>,
 }
 
 impl ControlDb {
@@ -262,12 +279,282 @@ impl ControlDb {
         .map_err(|err| internal("insert_session", err))?;
         Ok(())
     }
+
+    pub async fn api_key_auth_by_hash(
+        &self,
+        key_hash: &[u8],
+    ) -> AppResult<Option<ApiKeyAuthRecord>> {
+        let row = sqlx::query(
+            "SELECT \
+               ak.id AS key_id, ak.org_id AS key_org_id, ak.service_account_id AS key_service_account_id, \
+               ak.name AS key_name, ak.key_prefix AS key_prefix, ak.key_hash AS key_hash, \
+               ak.scopes AS key_scopes, ak.project_id AS key_project_id, ak.created_at AS key_created_at, \
+               ak.expires_at AS key_expires_at, ak.last_used_at AS key_last_used_at, ak.revoked_at AS key_revoked_at, \
+               sa.id AS service_account_id, sa.org_id AS service_account_org_id, sa.name AS service_account_name, \
+               sa.created_by_user_id AS service_account_created_by_user_id, sa.created_at AS service_account_created_at, \
+               sa.disabled_at AS service_account_disabled_at, \
+               org.id AS org_id, org.slug AS org_slug, org.name AS org_name, org.plan_tier AS org_plan_tier, \
+               org.account_type AS org_account_type, org.seat_limit AS org_seat_limit, \
+               org.created_by_user_id AS org_created_by_user_id, org.created_at AS org_created_at, \
+               org.tenant_routing_tier AS org_tenant_routing_tier, org.storage_choice AS org_storage_choice, \
+               org.storage_state AS org_storage_state \
+             FROM api_keys ak \
+             JOIN service_accounts sa ON sa.id = ak.service_account_id \
+             JOIN organizations org ON org.id = ak.org_id \
+             WHERE ak.key_hash = $1",
+        )
+        .bind(key_hash)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("api_key_auth_by_hash", err))?;
+        row.map(api_key_auth_record_from_row).transpose()
+    }
+
+    pub async fn session_auth_by_hash(
+        &self,
+        token_hash: &[u8],
+    ) -> AppResult<Option<SessionAuthRecord>> {
+        let rows = sqlx::query(
+            "SELECT \
+               s.id AS session_id, s.user_id AS session_user_id, s.org_id AS session_org_id, \
+               s.token_hash AS session_token_hash, s.metadata AS session_metadata, \
+               s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at, \
+               s.expires_at AS session_expires_at, s.revoked_at AS session_revoked_at, \
+               u.id AS user_id, u.primary_email AS user_primary_email, u.display_name AS user_display_name, \
+               u.avatar_url AS user_avatar_url, u.created_at AS user_created_at, u.last_seen_at AS user_last_seen_at, \
+               org.id AS org_id, org.slug AS org_slug, org.name AS org_name, org.plan_tier AS org_plan_tier, \
+               org.account_type AS org_account_type, org.seat_limit AS org_seat_limit, \
+               org.created_by_user_id AS org_created_by_user_id, org.created_at AS org_created_at, \
+               org.tenant_routing_tier AS org_tenant_routing_tier, org.storage_choice AS org_storage_choice, \
+               org.storage_state AS org_storage_state, \
+               current_m.id AS current_membership_id, current_m.org_id AS current_membership_org_id, \
+               current_m.user_id AS current_membership_user_id, current_m.role AS current_membership_role, \
+               current_m.status AS current_membership_status, current_m.created_at AS current_membership_created_at, \
+               all_m.id AS membership_id, all_m.org_id AS membership_org_id, all_m.user_id AS membership_user_id, \
+               all_m.role AS membership_role, all_m.status AS membership_status, all_m.created_at AS membership_created_at \
+             FROM sessions s \
+             JOIN users u ON u.id = s.user_id \
+             JOIN organizations org ON org.id = s.org_id \
+             JOIN memberships current_m ON current_m.org_id = s.org_id \
+               AND current_m.user_id = s.user_id AND current_m.status = 'active' \
+             JOIN memberships all_m ON all_m.user_id = s.user_id AND all_m.status = 'active' \
+             WHERE s.token_hash = $1 \
+             ORDER BY all_m.created_at, all_m.id",
+        )
+        .bind(token_hash)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|err| internal("session_auth_by_hash", err))?;
+        session_auth_record_from_rows(rows)
+    }
 }
 
 const ORG_SELECT_BY_ID: &str =
     "SELECT id, slug, name, plan_tier, account_type, seat_limit, created_by_user_id, \
      created_at, tenant_routing_tier, storage_choice, storage_state \
      FROM organizations WHERE id = $1";
+const ORG_MIGRATION_SELECT: &str =
+    "SELECT id, org_id, source_cell_id, target_cell_id, source_route_version, target_route_version, \
+     state, requested_by, transition_actor, customer_notice, legacy_client_approved, \
+     retry_after_seconds, copy_evidence, validation_evidence, restored_route_version, started_at, \
+     updated_at, completed_at, failed_at, error FROM org_migrations";
+
+fn api_key_auth_record_from_row(row: PgRow) -> AppResult<ApiKeyAuthRecord> {
+    Ok(ApiKeyAuthRecord {
+        key: ApiKeyWithHash {
+            row: PublicApiKeyRow {
+                id: row
+                    .try_get("key_id")
+                    .map_err(|err| internal("map_api_key_auth key_id", err))?,
+                org_id: row
+                    .try_get("key_org_id")
+                    .map_err(|err| internal("map_api_key_auth key_org_id", err))?,
+                service_account_id: row
+                    .try_get("key_service_account_id")
+                    .map_err(|err| internal("map_api_key_auth key_service_account_id", err))?,
+                name: row
+                    .try_get("key_name")
+                    .map_err(|err| internal("map_api_key_auth key_name", err))?,
+                key_prefix: row
+                    .try_get("key_prefix")
+                    .map_err(|err| internal("map_api_key_auth key_prefix", err))?,
+                scopes: row
+                    .try_get("key_scopes")
+                    .map_err(|err| internal("map_api_key_auth key_scopes", err))?,
+                project_id: row
+                    .try_get("key_project_id")
+                    .map_err(|err| internal("map_api_key_auth key_project_id", err))?,
+                created_at: row
+                    .try_get("key_created_at")
+                    .map_err(|err| internal("map_api_key_auth key_created_at", err))?,
+                expires_at: row
+                    .try_get("key_expires_at")
+                    .map_err(|err| internal("map_api_key_auth key_expires_at", err))?,
+                last_used_at: row
+                    .try_get("key_last_used_at")
+                    .map_err(|err| internal("map_api_key_auth key_last_used_at", err))?,
+                revoked_at: row
+                    .try_get("key_revoked_at")
+                    .map_err(|err| internal("map_api_key_auth key_revoked_at", err))?,
+            },
+            key_hash: row
+                .try_get("key_hash")
+                .map_err(|err| internal("map_api_key_auth key_hash", err))?,
+        },
+        service_account: ServiceAccountRow {
+            id: row
+                .try_get("service_account_id")
+                .map_err(|err| internal("map_api_key_auth service_account_id", err))?,
+            org_id: row
+                .try_get("service_account_org_id")
+                .map_err(|err| internal("map_api_key_auth service_account_org_id", err))?,
+            name: row
+                .try_get("service_account_name")
+                .map_err(|err| internal("map_api_key_auth service_account_name", err))?,
+            created_by_user_id: row.try_get("service_account_created_by_user_id").map_err(
+                |err| internal("map_api_key_auth service_account_created_by_user_id", err),
+            )?,
+            created_at: row
+                .try_get("service_account_created_at")
+                .map_err(|err| internal("map_api_key_auth service_account_created_at", err))?,
+            disabled_at: row
+                .try_get("service_account_disabled_at")
+                .map_err(|err| internal("map_api_key_auth service_account_disabled_at", err))?,
+        },
+        organization: organization_from_row(&row, "org_")?,
+    })
+}
+
+fn session_auth_record_from_rows(rows: Vec<PgRow>) -> AppResult<Option<SessionAuthRecord>> {
+    let Some(first) = rows.first() else {
+        return Ok(None);
+    };
+    let session = LoadedSession {
+        row: UserSessionRow {
+            id: first
+                .try_get("session_id")
+                .map_err(|err| internal("map_session_auth session_id", err))?,
+            user_id: first
+                .try_get("session_user_id")
+                .map_err(|err| internal("map_session_auth session_user_id", err))?,
+            org_id: first
+                .try_get("session_org_id")
+                .map_err(|err| internal("map_session_auth session_org_id", err))?,
+            metadata: first
+                .try_get("session_metadata")
+                .map_err(|err| internal("map_session_auth session_metadata", err))?,
+            created_at: first
+                .try_get("session_created_at")
+                .map_err(|err| internal("map_session_auth session_created_at", err))?,
+            last_seen_at: first
+                .try_get("session_last_seen_at")
+                .map_err(|err| internal("map_session_auth session_last_seen_at", err))?,
+            expires_at: first
+                .try_get("session_expires_at")
+                .map_err(|err| internal("map_session_auth session_expires_at", err))?,
+            revoked_at: first
+                .try_get("session_revoked_at")
+                .map_err(|err| internal("map_session_auth session_revoked_at", err))?,
+        },
+        token_hash: first
+            .try_get("session_token_hash")
+            .map_err(|err| internal("map_session_auth session_token_hash", err))?,
+    };
+    let user = UserRow {
+        id: first
+            .try_get("user_id")
+            .map_err(|err| internal("map_session_auth user_id", err))?,
+        primary_email: first
+            .try_get("user_primary_email")
+            .map_err(|err| internal("map_session_auth user_primary_email", err))?,
+        display_name: first
+            .try_get("user_display_name")
+            .map_err(|err| internal("map_session_auth user_display_name", err))?,
+        avatar_url: first
+            .try_get("user_avatar_url")
+            .map_err(|err| internal("map_session_auth user_avatar_url", err))?,
+        created_at: first
+            .try_get("user_created_at")
+            .map_err(|err| internal("map_session_auth user_created_at", err))?,
+        last_seen_at: first
+            .try_get("user_last_seen_at")
+            .map_err(|err| internal("map_session_auth user_last_seen_at", err))?,
+    };
+    let organization = organization_from_row(first, "org_")?;
+    let membership = membership_from_row(first, "current_membership_")?;
+    let memberships = rows
+        .iter()
+        .map(|row| membership_from_row(row, "membership_"))
+        .collect::<AppResult<Vec<_>>>()?;
+    Ok(Some(SessionAuthRecord {
+        session,
+        user,
+        organization,
+        membership,
+        memberships,
+    }))
+}
+
+fn organization_from_row(row: &PgRow, prefix: &str) -> AppResult<OrganizationRow> {
+    Ok(OrganizationRow {
+        id: row
+            .try_get(format!("{prefix}id").as_str())
+            .map_err(|err| internal("map_organization id", err))?,
+        slug: row
+            .try_get(format!("{prefix}slug").as_str())
+            .map_err(|err| internal("map_organization slug", err))?,
+        name: row
+            .try_get(format!("{prefix}name").as_str())
+            .map_err(|err| internal("map_organization name", err))?,
+        plan_tier: row
+            .try_get(format!("{prefix}plan_tier").as_str())
+            .map_err(|err| internal("map_organization plan_tier", err))?,
+        account_type: row
+            .try_get(format!("{prefix}account_type").as_str())
+            .map_err(|err| internal("map_organization account_type", err))?,
+        seat_limit: row
+            .try_get(format!("{prefix}seat_limit").as_str())
+            .map_err(|err| internal("map_organization seat_limit", err))?,
+        created_by_user_id: row
+            .try_get(format!("{prefix}created_by_user_id").as_str())
+            .map_err(|err| internal("map_organization created_by_user_id", err))?,
+        created_at: row
+            .try_get(format!("{prefix}created_at").as_str())
+            .map_err(|err| internal("map_organization created_at", err))?,
+        tenant_routing_tier: row
+            .try_get(format!("{prefix}tenant_routing_tier").as_str())
+            .map_err(|err| internal("map_organization tenant_routing_tier", err))?,
+        storage_choice: row
+            .try_get(format!("{prefix}storage_choice").as_str())
+            .map_err(|err| internal("map_organization storage_choice", err))?,
+        storage_state: row
+            .try_get(format!("{prefix}storage_state").as_str())
+            .map_err(|err| internal("map_organization storage_state", err))?,
+    })
+}
+
+fn membership_from_row(row: &PgRow, prefix: &str) -> AppResult<MembershipRow> {
+    Ok(MembershipRow {
+        id: row
+            .try_get(format!("{prefix}id").as_str())
+            .map_err(|err| internal("map_membership id", err))?,
+        org_id: row
+            .try_get(format!("{prefix}org_id").as_str())
+            .map_err(|err| internal("map_membership org_id", err))?,
+        user_id: row
+            .try_get(format!("{prefix}user_id").as_str())
+            .map_err(|err| internal("map_membership user_id", err))?,
+        role: row
+            .try_get(format!("{prefix}role").as_str())
+            .map_err(|err| internal("map_membership role", err))?,
+        status: row
+            .try_get(format!("{prefix}status").as_str())
+            .map_err(|err| internal("map_membership status", err))?,
+        created_at: row
+            .try_get(format!("{prefix}created_at").as_str())
+            .map_err(|err| internal("map_membership created_at", err))?,
+    })
+}
 
 // --- Transaction-scoped helpers ------------------------------------------
 
@@ -650,6 +937,21 @@ impl ControlDb {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    pub async fn get_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> AppResult<Option<ServiceAccountRow>> {
+        let row = sqlx::query_as::<_, ServiceAccountRowDb>(
+            "SELECT id, org_id, name, created_by_user_id, created_at, disabled_at \
+             FROM service_accounts WHERE id = $1",
+        )
+        .bind(service_account_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("get_service_account", err))?;
+        Ok(row.map(Into::into))
+    }
+
     pub async fn load_api_keys(&self) -> AppResult<Vec<ApiKeyWithHash>> {
         let rows = sqlx::query_as::<_, ApiKeyRowDb>(
             "SELECT id, org_id, service_account_id, name, key_prefix, key_hash, scopes, project_id, \
@@ -661,6 +963,18 @@ impl ControlDb {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    pub async fn get_api_key(&self, api_key_id: Uuid) -> AppResult<Option<ApiKeyWithHash>> {
+        let row = sqlx::query_as::<_, ApiKeyRowDb>(
+            "SELECT id, org_id, service_account_id, name, key_prefix, key_hash, scopes, project_id, \
+             created_at, expires_at, last_used_at, revoked_at FROM api_keys WHERE id = $1",
+        )
+        .bind(api_key_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("get_api_key", err))?;
+        Ok(row.map(Into::into))
+    }
+
     pub async fn load_sessions(&self) -> AppResult<Vec<LoadedSession>> {
         let rows = sqlx::query_as::<_, SessionRowDb>(
             "SELECT id, user_id, org_id, token_hash, metadata, created_at, last_seen_at, \
@@ -670,6 +984,18 @@ impl ControlDb {
         .await
         .map_err(|err| internal("load_sessions", err))?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn session_by_hash(&self, token_hash: &[u8]) -> AppResult<Option<LoadedSession>> {
+        let row = sqlx::query_as::<_, SessionRowDb>(
+            "SELECT id, user_id, org_id, token_hash, metadata, created_at, last_seen_at, \
+             expires_at, revoked_at FROM sessions WHERE token_hash = $1",
+        )
+        .bind(token_hash)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("session_by_hash", err))?;
+        Ok(row.map(Into::into))
     }
 }
 
@@ -1228,6 +1554,342 @@ impl ControlDb {
         .map_err(|err| internal("load_tenant_route_events", err))?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
+
+    pub async fn create_org_migration(
+        &self,
+        org_id: Uuid,
+        target_cell_id: &str,
+        requested_by: &str,
+        customer_notice: Option<&str>,
+        legacy_client_approved: bool,
+    ) -> AppResult<OrgMigrationRow> {
+        let requested_by = validate_operator_actor(requested_by, "requested_by")?;
+        let target_cell_id = validate_cell_id(target_cell_id)?;
+        let mut tx = self
+            .pool()
+            .begin()
+            .await
+            .map_err(|err| internal("create_org_migration begin", err))?;
+        lock_tenant_route_org(&mut tx, org_id).await?;
+        let route = select_tenant_route_for_update(&mut tx, org_id)
+            .await?
+            .ok_or_else(|| AppError::warehouse_unavailable("tenant route is not provisioned"))?;
+        if route.status != "ready" {
+            return Err(AppError::with_code(
+                http::StatusCode::CONFLICT,
+                "tenant_route_locked",
+                "only ready routes can start a migration",
+            ));
+        }
+        let source_cell_id = route.cell_id.clone().ok_or_else(|| {
+            AppError::with_code(
+                http::StatusCode::CONFLICT,
+                "tenant_route_locked",
+                "legacy or BYOC routes without a data cell cannot be migrated by this workflow",
+            )
+        })?;
+        if source_cell_id == target_cell_id {
+            return Err(AppError::validation(
+                "target_cell_id must differ from the source cell",
+            ));
+        }
+        ensure_cell_exists_for_migration(&mut tx, &source_cell_id).await?;
+        ensure_cell_exists_for_migration(&mut tx, &target_cell_id).await?;
+        let now = Utc::now();
+        let row = sqlx::query_as::<_, OrgMigrationRowDb>(&format!(
+            "INSERT INTO org_migrations \
+             (id, org_id, source_cell_id, target_cell_id, source_route_version, state, requested_by, \
+              transition_actor, customer_notice, legacy_client_approved, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, 'planned', $6, $6, $7, $8, $9) \
+             RETURNING {}",
+            org_migration_select_columns()
+        ))
+        .bind(Uuid::new_v4())
+        .bind(org_id)
+        .bind(&source_cell_id)
+        .bind(&target_cell_id)
+        .bind(route.route_version)
+        .bind(&requested_by)
+        .bind(customer_notice)
+        .bind(legacy_client_approved)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|err| map_org_migration_write("active org migration already exists", err))?;
+        let migration = OrgMigrationRow::from(row);
+        insert_org_migration_event_tx(
+            &mut tx,
+            NewOrgMigrationEvent {
+                migration: &migration,
+                from_state: None,
+                to_state: "planned",
+                actor: &requested_by,
+                reason: Some("migration planned"),
+                route_version: None,
+                details: json!({
+                    "source_cell_id": source_cell_id,
+                    "target_cell_id": target_cell_id,
+                    "legacy_client_approved": legacy_client_approved
+                }),
+            },
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|err| internal("create_org_migration commit", err))?;
+        Ok(migration)
+    }
+
+    pub async fn list_org_migrations(&self) -> AppResult<Vec<OrgMigrationRow>> {
+        let rows = sqlx::query_as::<_, OrgMigrationRowDb>(&format!(
+            "{ORG_MIGRATION_SELECT} ORDER BY updated_at DESC, id DESC"
+        ))
+        .fetch_all(self.pool())
+        .await
+        .map_err(|err| internal("list_org_migrations", err))?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn get_org_migration(
+        &self,
+        migration_id: Uuid,
+    ) -> AppResult<Option<OrgMigrationRow>> {
+        let rows = sqlx::query_as::<_, OrgMigrationRowDb>(&format!(
+            "{ORG_MIGRATION_SELECT} WHERE id = $1"
+        ))
+        .bind(migration_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("get_org_migration", err))?;
+        Ok(rows.map(Into::into))
+    }
+
+    pub async fn write_block_org_migration(
+        &self,
+        migration_id: Uuid,
+        actor: &str,
+        reason: Option<&str>,
+    ) -> AppResult<OrgMigrationRow> {
+        let actor = validate_operator_actor(actor, "actor")?;
+        let mut tx = self
+            .pool()
+            .begin()
+            .await
+            .map_err(|err| internal("write_block_org_migration begin", err))?;
+        let org_id = select_org_migration_org_id(&mut tx, migration_id).await?;
+        lock_tenant_route_org(&mut tx, org_id).await?;
+        let migration = select_org_migration_for_update(&mut tx, migration_id).await?;
+        if migration.state == "write_blocked" {
+            let route = select_tenant_route_for_update(&mut tx, migration.org_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::warehouse_unavailable("tenant route is not provisioned")
+                })?;
+            validate_write_blocked_source_route(&migration, &route)?;
+            tx.commit()
+                .await
+                .map_err(|err| internal("write_block_org_migration idempotent commit", err))?;
+            return Ok(migration);
+        }
+        if migration.state != "planned" {
+            return Err(AppError::conflict(
+                "only planned migrations can be write-blocked",
+            ));
+        }
+        let mut route = select_tenant_route_for_update(&mut tx, migration.org_id)
+            .await?
+            .ok_or_else(|| AppError::warehouse_unavailable("tenant route is not provisioned"))?;
+        if route.cell_id.as_deref() != Some(migration.source_cell_id.as_str())
+            || route.route_version != migration.source_route_version
+            || route.status != "ready"
+        {
+            return Err(AppError::with_code(
+                http::StatusCode::CONFLICT,
+                "tenant_route_changed",
+                "tenant route changed; re-plan the migration",
+            ));
+        }
+        let old_status = route.status.clone();
+        route.status = "write_blocked".to_string();
+        route.route_version += 1;
+        route.updated_at = Utc::now();
+        upsert_tenant_route_tx(&mut tx, &route).await?;
+        insert_tenant_route_event_tx(
+            &mut tx,
+            TenantRouteEventRow {
+                id: Uuid::new_v4(),
+                org_id: route.org_id,
+                old_cell_id: Some(migration.source_cell_id.clone()),
+                new_cell_id: Some(migration.source_cell_id.clone()),
+                old_status: Some(old_status),
+                new_status: route.status.clone(),
+                route_version: route.route_version,
+                actor: actor.clone(),
+                reason: reason.unwrap_or("org_migration_write_block").to_string(),
+                created_at: Utc::now(),
+            },
+        )
+        .await?;
+        let updated = update_org_migration_state_tx(
+            &mut tx,
+            migration.id,
+            "write_blocked",
+            &actor,
+            None,
+            None,
+            None,
+        )
+        .await?;
+        insert_org_migration_event_tx(
+            &mut tx,
+            NewOrgMigrationEvent {
+                migration: &updated,
+                from_state: Some("planned"),
+                to_state: "write_blocked",
+                actor: &actor,
+                reason,
+                route_version: Some(route.route_version),
+                details: json!({ "source_route_status": "write_blocked" }),
+            },
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|err| internal("write_block_org_migration commit", err))?;
+        Ok(updated)
+    }
+
+    pub async fn restore_org_migration(
+        &self,
+        migration_id: Uuid,
+        actor: &str,
+        reason: Option<&str>,
+    ) -> AppResult<OrgMigrationRow> {
+        let actor = validate_operator_actor(actor, "actor")?;
+        let mut tx = self
+            .pool()
+            .begin()
+            .await
+            .map_err(|err| internal("restore_org_migration begin", err))?;
+        let org_id = select_org_migration_org_id(&mut tx, migration_id).await?;
+        lock_tenant_route_org(&mut tx, org_id).await?;
+        let migration = select_org_migration_for_update(&mut tx, migration_id).await?;
+        if migration.state == "restored" {
+            tx.commit()
+                .await
+                .map_err(|err| internal("restore_org_migration idempotent commit", err))?;
+            return Ok(migration);
+        }
+        if migration.state != "write_blocked" {
+            return Err(AppError::conflict(
+                "only write-blocked migrations can be restored",
+            ));
+        }
+        let route = restore_write_blocked_source_route_tx(
+            &mut tx,
+            &migration,
+            &actor,
+            reason,
+            "org_migration_restore_source",
+        )
+        .await?;
+        let updated = update_org_migration_state_tx(
+            &mut tx,
+            migration.id,
+            "restored",
+            &actor,
+            None,
+            Some(route.route_version),
+            Some("completed"),
+        )
+        .await?;
+        insert_org_migration_event_tx(
+            &mut tx,
+            NewOrgMigrationEvent {
+                migration: &updated,
+                from_state: Some("write_blocked"),
+                to_state: "restored",
+                actor: &actor,
+                reason,
+                route_version: Some(route.route_version),
+                details: json!({ "source_route_status": "ready" }),
+            },
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|err| internal("restore_org_migration commit", err))?;
+        Ok(updated)
+    }
+
+    pub async fn fail_org_migration(
+        &self,
+        migration_id: Uuid,
+        actor: &str,
+        error: &str,
+    ) -> AppResult<OrgMigrationRow> {
+        let actor = validate_operator_actor(actor, "actor")?;
+        let error = validate_operator_actor(error, "error")?;
+        let mut tx = self
+            .pool()
+            .begin()
+            .await
+            .map_err(|err| internal("fail_org_migration begin", err))?;
+        let org_id = select_org_migration_org_id(&mut tx, migration_id).await?;
+        lock_tenant_route_org(&mut tx, org_id).await?;
+        let migration = select_org_migration_for_update(&mut tx, migration_id).await?;
+        if matches!(migration.state.as_str(), "failed" | "restored" | "complete") {
+            tx.commit()
+                .await
+                .map_err(|err| internal("fail_org_migration idempotent commit", err))?;
+            return Ok(migration);
+        }
+        let previous = migration.state.clone();
+        let restored_route = if previous == "write_blocked" {
+            Some(
+                restore_write_blocked_source_route_tx(
+                    &mut tx,
+                    &migration,
+                    &actor,
+                    Some(&error),
+                    "org_migration_fail_restore_source",
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        let updated = update_org_migration_state_tx(
+            &mut tx,
+            migration.id,
+            "failed",
+            &actor,
+            Some(&error),
+            restored_route.as_ref().map(|route| route.route_version),
+            Some("failed"),
+        )
+        .await?;
+        insert_org_migration_event_tx(
+            &mut tx,
+            NewOrgMigrationEvent {
+                migration: &updated,
+                from_state: Some(previous.as_str()),
+                to_state: "failed",
+                actor: &actor,
+                reason: Some(&error),
+                route_version: restored_route.as_ref().map(|route| route.route_version),
+                details: json!({
+                    "restored_source_route": restored_route.is_some(),
+                    "source_route_status": restored_route.as_ref().map(|route| route.status.as_str()),
+                }),
+            },
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|err| internal("fail_org_migration commit", err))?;
+        Ok(updated)
+    }
 }
 
 async fn select_tenant_route_for_update(
@@ -1249,12 +1911,221 @@ async fn select_tenant_route_for_update(
     Ok(row.map(Into::into))
 }
 
+fn validate_write_blocked_source_route(
+    migration: &OrgMigrationRow,
+    route: &TenantRouteRecord,
+) -> AppResult<()> {
+    if route.cell_id.as_deref() == Some(migration.source_cell_id.as_str())
+        && route.status == "write_blocked"
+        && route.route_version == migration.source_route_version + 1
+    {
+        return Ok(());
+    }
+    Err(AppError::with_code(
+        http::StatusCode::CONFLICT,
+        "tenant_route_changed",
+        "write-blocked source route is no longer current",
+    ))
+}
+
+async fn restore_write_blocked_source_route_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    migration: &OrgMigrationRow,
+    actor: &str,
+    reason: Option<&str>,
+    default_reason: &str,
+) -> AppResult<TenantRouteRecord> {
+    let mut route = select_tenant_route_for_update(tx, migration.org_id)
+        .await?
+        .ok_or_else(|| AppError::warehouse_unavailable("tenant route is not provisioned"))?;
+    validate_write_blocked_source_route(migration, &route)?;
+    let old_status = route.status.clone();
+    route.status = "ready".to_string();
+    route.route_version += 1;
+    route.updated_at = Utc::now();
+    route.error = None;
+    upsert_tenant_route_tx(tx, &route).await?;
+    insert_tenant_route_event_tx(
+        tx,
+        TenantRouteEventRow {
+            id: Uuid::new_v4(),
+            org_id: route.org_id,
+            old_cell_id: Some(migration.source_cell_id.clone()),
+            new_cell_id: Some(migration.source_cell_id.clone()),
+            old_status: Some(old_status),
+            new_status: route.status.clone(),
+            route_version: route.route_version,
+            actor: actor.to_string(),
+            reason: reason.unwrap_or(default_reason).to_string(),
+            created_at: Utc::now(),
+        },
+    )
+    .await?;
+    Ok(route)
+}
+
 async fn lock_tenant_route_org(tx: &mut Transaction<'_, Postgres>, org_id: Uuid) -> AppResult<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))")
         .bind(org_id.to_string())
         .execute(&mut **tx)
         .await
         .map_err(|err| internal("lock_tenant_route_org", err))?;
+    Ok(())
+}
+
+fn org_migration_select_columns() -> &'static str {
+    "id, org_id, source_cell_id, target_cell_id, source_route_version, target_route_version, \
+     state, requested_by, transition_actor, customer_notice, legacy_client_approved, \
+     retry_after_seconds, copy_evidence, validation_evidence, restored_route_version, \
+     started_at, updated_at, completed_at, failed_at, error"
+}
+
+fn validate_operator_actor(value: &str, field: &'static str) -> AppResult<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::validation(format!("{field} is required")));
+    }
+    if trimmed.len() > 256 {
+        return Err(AppError::validation(format!("{field} is too long")));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn validate_cell_id(value: &str) -> AppResult<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::validation("target_cell_id is required"));
+    }
+    if trimmed.len() > 128 {
+        return Err(AppError::validation("target_cell_id is too long"));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn map_org_migration_write(context: &'static str, err: sqlx::Error) -> AppError {
+    if is_unique_violation(&err) {
+        AppError::conflict(context)
+    } else {
+        internal(context, err)
+    }
+}
+
+async fn ensure_cell_exists_for_migration(
+    tx: &mut Transaction<'_, Postgres>,
+    cell_id: &str,
+) -> AppResult<()> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM data_cells WHERE cell_id = $1)",
+    )
+    .bind(cell_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|err| internal("ensure_cell_exists_for_migration", err))?;
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::service_unavailable(format!(
+            "data cell {cell_id} is not registered"
+        )))
+    }
+}
+
+async fn select_org_migration_org_id(
+    tx: &mut Transaction<'_, Postgres>,
+    migration_id: Uuid,
+) -> AppResult<Uuid> {
+    sqlx::query_scalar::<_, Uuid>("SELECT org_id FROM org_migrations WHERE id = $1")
+        .bind(migration_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|err| internal("select_org_migration_org_id", err))?
+        .ok_or_else(|| AppError::not_found("org migration not found"))
+}
+
+async fn select_org_migration_for_update(
+    tx: &mut Transaction<'_, Postgres>,
+    migration_id: Uuid,
+) -> AppResult<OrgMigrationRow> {
+    let row = sqlx::query_as::<_, OrgMigrationRowDb>(&format!(
+        "{ORG_MIGRATION_SELECT} WHERE id = $1 FOR UPDATE"
+    ))
+    .bind(migration_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|err| internal("select_org_migration_for_update", err))?;
+    row.map(Into::into)
+        .ok_or_else(|| AppError::not_found("org migration not found"))
+}
+
+async fn update_org_migration_state_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    migration_id: Uuid,
+    state: &str,
+    actor: &str,
+    error: Option<&str>,
+    restored_route_version: Option<i64>,
+    terminal: Option<&str>,
+) -> AppResult<OrgMigrationRow> {
+    let now = Utc::now();
+    let row = sqlx::query_as::<_, OrgMigrationRowDb>(&format!(
+        "UPDATE org_migrations SET \
+           state = $2, \
+           transition_actor = $3, \
+           error = $4, \
+           restored_route_version = COALESCE($5, restored_route_version), \
+           started_at = CASE WHEN $2 = 'write_blocked' THEN COALESCE(started_at, $6) ELSE started_at END, \
+           completed_at = CASE WHEN $7 = 'completed' THEN $6 ELSE completed_at END, \
+           failed_at = CASE WHEN $7 = 'failed' THEN $6 ELSE failed_at END, \
+           updated_at = $6 \
+         WHERE id = $1 \
+         RETURNING {}",
+        org_migration_select_columns()
+    ))
+    .bind(migration_id)
+    .bind(state)
+    .bind(actor)
+    .bind(error)
+    .bind(restored_route_version)
+    .bind(now)
+    .bind(terminal)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|err| internal("update_org_migration_state", err))?;
+    Ok(row.into())
+}
+
+struct NewOrgMigrationEvent<'a> {
+    migration: &'a OrgMigrationRow,
+    from_state: Option<&'a str>,
+    to_state: &'a str,
+    actor: &'a str,
+    reason: Option<&'a str>,
+    route_version: Option<i64>,
+    details: Value,
+}
+
+async fn insert_org_migration_event_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    event: NewOrgMigrationEvent<'_>,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO org_migration_events \
+         (id, migration_id, org_id, from_state, to_state, actor, reason, route_version, details, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(event.migration.id)
+    .bind(event.migration.org_id)
+    .bind(event.from_state)
+    .bind(event.to_state)
+    .bind(event.actor)
+    .bind(event.reason)
+    .bind(event.route_version)
+    .bind(event.details)
+    .bind(Utc::now())
+    .execute(&mut **tx)
+    .await
+    .map_err(|err| internal("insert_org_migration_event", err))?;
     Ok(())
 }
 
@@ -1697,6 +2568,24 @@ impl ControlDb {
         .await
         .map_err(|err| internal("load_billing_accounts", err))?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn get_billing_account(
+        &self,
+        org_id: Uuid,
+    ) -> AppResult<Option<BillingAccountProjection>> {
+        let row = sqlx::query_as::<_, BillingAccountRowDb>(
+            "SELECT schema_version, org_id, access_state, plan_tier, effective_plan_tier, \
+             requested_plan_tier, paid_extra_seats, stripe_customer_id, stripe_subscription_id, \
+             subscription_status, current_period_start, current_period_end, cancel_at_period_end, \
+             grace_until, pending_intent_id, message, updated_at FROM billing_accounts \
+             WHERE org_id = $1",
+        )
+        .bind(org_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("get_billing_account", err))?;
+        Ok(row.map(Into::into))
     }
 
     pub async fn load_billing_checkout_intents(&self) -> AppResult<Vec<BillingCheckoutIntent>> {

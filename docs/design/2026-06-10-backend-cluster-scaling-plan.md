@@ -97,6 +97,34 @@ Legacy SDKs stay compatible for orgs assigned to the default compatibility data
 cell; operators must not place legacy-dependent orgs on non-default cells until
 the route-aware proxy or a required SDK version gate exists.
 
+The proposed Phase 4/5 implementation slice for the next change, revised after
+fresh review, is intentionally narrower:
+
+- Phase 4A: move request-critical API-key, browser-session, organization,
+  membership, service-account, billing-account, tenant-route, and initial
+  tenant-load reads on the hosted control path to narrow Postgres point
+  queries. The in-memory projection remains for local mode, operator
+  summaries, broad listings, and compatibility while mutations stay
+  write-through through the existing `persist_locked` chokepoint.
+- Phase 4A adds tests with two `Store` instances backed by the same control Postgres
+  database. One instance creates/revokes/switches API keys or sessions; the
+  other instance must observe the result without a rebuild or background
+  projection refresh.
+- Phase 5A: add `org_migrations` as a Postgres-backed operator state machine and
+  expose bootstrap-token-only control endpoints under `/api/admin/org-migrations`.
+  This first migration slice supports `planned`, `write_blocked`, and
+  `failed/restored` transitions so operators can rehearse and safely unwind
+  migration write blocking before any production cutover.
+- Phase 5B remains deferred: operator-attested copy/validation progress, route
+  cutover, rollback-window entry, completion, cleanup, and automated ClickHouse
+  bulk copy. The code in this branch must not mutate `tenant_routes` to the
+  target cell or claim a migration is complete.
+- Extend data-cell route validation so `write_blocked` routes keep source-cell
+  reads available but reject writes with HTTP `503`, code
+  `org_migration_in_progress`, and `Retry-After`.
+- Keep public SDK/UI APIs compatible. Migration endpoints are operator-only,
+  and route discovery continues to return only ready target routes.
+
 ## Current Architecture Findings
 
 - Hosted control-plane truth is now Postgres/Cloud SQL, not the older
@@ -581,15 +609,46 @@ still use process-local projection paths in several places. Close that gap
 before raising the control service above one active instance:
 
 - Move request-critical auth/session/API-key/org/tenant-route reads to direct
-  Postgres queries or a very short TTL cache with read-through invalidation.
+  Postgres queries. Do not add TTL caching in the first slice; revocation and
+  membership changes should have database read-after-write semantics.
 - Keep broad projection loads only for admin/operator views and low-risk
   summaries.
 - Add tests that create, revoke, and switch API keys/sessions through one
   control instance and observe the result through another instance without a
   restart.
 - Re-check the Phase 0 Cloud SQL connection budget with the proposed control
-  instance count and any active data cells before raising max instances.
-- Raise control to autoscaling min 1, max 2 or 3 only after the tests pass.
+  instance count, all active data cells, deploy overlap, operator jobs,
+  migration jobs, background refreshers, and per-plane pool sizes before
+  raising max instances. `capacity-plan` must pass with the exact proposed
+  hosted values; lowering per-instance `CONTROL_DB_MAX_CONNECTIONS` is preferred
+  over silently exceeding the Cloud SQL budget.
+- Raise control to autoscaling min 1, max 2 or 3 only after the tests and
+  capacity preflight pass. This implementation slice should not change
+  production scaling defaults by itself.
+
+Phase 4A direct read contract:
+
+| Request path | Postgres read contract |
+| --- | --- |
+| API-key auth | One hash lookup joined to service account and org, preserving revoked/expired key rejection, disabled service-account rejection, exact stored scopes, project restriction, and demo scope clamping. |
+| Browser session auth | One token-hash lookup joined to user, org, and the active membership for that session's org, preserving revoked/expired session rejection, role changes, membership removal, and demo read-only derivation. |
+| Org admin gates | Point reads for org and membership when a live session or API key needs an admin decision; broad list endpoints may still use the projection. |
+| Org switch | Reads the live source session, target org, and target active membership from Postgres before minting a new target session and revoking the source session. |
+| Route discovery and data write admission | Keep the existing `get_tenant_route`, `get_data_cell`, and writer-lease point reads; route discovery remains API-key-only. |
+
+Hot-path bounds and rollout gates:
+
+- API-key data-plane writes should perform at most one control-plane API-key
+  auth read and, for direct public cell writes, the existing route/cell point
+  reads. If this becomes too expensive, the next design is short-lived
+  cell-scoped tokens, not unbounded projection refreshes.
+- Browser dashboard reads should perform at most one session auth read per
+  request on hosted control paths. Browser direct-to-cell routing remains out
+  of scope.
+- Before production control scale increases, run a staging load test covering
+  route discovery, API-key SDK writes, browser sessions, org switching,
+  API-key revoke/use, and session revoke/use while watching Cloud SQL active
+  connections, pool waits, query latency, and errors.
 
 The control plane should usually scale horizontally before it is sharded.
 Control data is low volume and globally authoritative; premature control-plane
@@ -601,7 +660,12 @@ tenant routing without solving the current data-plane bottleneck.
 Multiple cells are only useful if operators can move orgs when cells fill or
 when customers upgrade.
 
-Add an operator-only migration workflow backed by `org_migrations`:
+Phase 5A adds an operator-only migration-control workflow backed by
+`org_migrations`. It is deliberately a control-plane safety slice: it lets
+operators plan a move, block source writes, observe the blocked state from data
+cells, and restore writes or mark the attempt failed. It does not cut traffic to
+the target cell. Real cutover belongs to Phase 5B after structured copy and
+validation evidence exists.
 
 ```text
 org_migrations
@@ -613,7 +677,11 @@ org_migrations
   target_route_version bigint
   state text not null
   requested_by text not null
+  transition_actor text not null
   customer_notice text
+  copy_evidence jsonb not null default '{}'
+  validation_evidence jsonb not null default '{}'
+  restored_route_version bigint
   started_at timestamptz
   updated_at timestamptz not null
   completed_at timestamptz
@@ -621,43 +689,90 @@ org_migrations
   error text
 ```
 
+Database invariants:
+
+- `source_cell_id` and `target_cell_id` reference `data_cells`.
+- `source_cell_id <> target_cell_id`.
+- `state` is constrained to known values.
+- A partial unique index allows at most one active migration per org while
+  `state` is not terminal.
+- `source_route_version` is compared against the live route during write-block
+  and restore transitions. If the route changed, the operator must re-plan.
+- Every transition inserts a `tenant_route_events` row when it mutates the route
+  and must run in one Postgres transaction with the `org_migrations` update.
+
 Migration states:
 
 | State | Behavior |
 | --- | --- |
 | `planned` | Operator has selected source/target; no traffic change. |
-| `write_blocked` | Source cell rejects new writes with `503` and `code: "org_migration_in_progress"` plus `Retry-After`; reads may continue. |
-| `copying` | Tenant ClickHouse rows are copied to the target; source remains write-blocked. |
-| `validating` | Row counts, min/max timestamps, selected checksums, summary parity, and artifact metadata/object checks run. |
-| `cutover` | Control plane writes the target `tenant_route`, increments `route_version`, and makes source reject wrong-cell writes. |
-| `rollback_window` | Target serves reads/writes; source data is retained read-only for rollback. |
-| `complete` | Rollback window expired and cleanup/retention decisions are recorded. |
-| `failed` | Operator-visible failure; route is either restored to source or left blocked with explicit recovery steps. |
+| `write_blocked` | Source route status is `write_blocked`; source cell rejects new writes with `503`, `code: "org_migration_in_progress"`, and bounded `Retry-After`; source reads may continue. |
+| `failed` | Terminal failure record. If writes had been blocked, the fail transition restores the source route to `ready` in the same transaction. If the source route drifted and cannot be restored safely, the transition returns `tenant_route_changed` and leaves the migration `write_blocked` for operator recovery. |
+| `restored` | Terminal state for a blocked migration that restored the source route to `ready` with a route-version bump. |
+| `copying` | Deferred to Phase 5B: tenant ClickHouse rows are copied to the target; source remains write-blocked. |
+| `validating` | Deferred to Phase 5B: row counts, min/max timestamps, selected checksums, summary parity, and artifact metadata/object checks run. |
+| `cutover` | Deferred to Phase 5B: control plane writes the target `tenant_route`, increments `route_version`, and makes source reject wrong-cell traffic. |
+| `rollback_window` | Deferred to Phase 5B. The rollback semantics must either keep the target read-only or define reverse-delta copy/idempotency reconciliation before target writes are accepted. |
+| `complete` | Deferred to Phase 5B: rollback window expired and cleanup/retention decisions are recorded. |
 
-Migration workflow:
+Phase 5A workflow:
 
 1. Create `org_migrations` in `planned`.
-2. Confirm customer impact policy for the tier.
-3. Mark source route `write_blocked` and wait for SDK route-cache TTL drain.
-4. Create and migrate the target cell/database schema.
-5. Copy tenant `operational_records`, `metric_points`, `rank_metric_points`,
+2. Confirm customer impact policy for the tier and provide a named
+   `requested_by` actor. In hosted production, this should be called only by the
+   hidden admin app or an internal operator surface protected by the bootstrap
+   token plus infrastructure controls such as IAP/Cloud Armor/internal origin.
+3. Mark the source route `write_blocked` in the same transaction that advances
+   the migration. The transaction must lock the route, confirm
+   `source_route_version`, increment `route_version`, and write an audit event.
+4. Data cells allow source reads while the route is `write_blocked`; all writes
+   fail with the migration error. Route discovery must not return a target route
+   while the source route is write-blocked.
+5. Restore source writes by advancing the migration to `restored` and setting
+   the source route back to `ready` with another route-version bump. A fail
+   transition from `write_blocked` restores the source route in the same
+   transaction before marking the migration `failed`; route drift returns
+   `tenant_route_changed` and leaves the migration blocked for operator
+   recovery.
+
+Deferred Phase 5B workflow:
+
+1. Create and migrate the target cell/database schema.
+2. Copy tenant `operational_records`, `metric_points`, `rank_metric_points`,
    and `console_log_lines` for that `org_id`.
-6. Copy or intentionally quiesce idempotency records so retries cannot land on
+3. Copy or intentionally quiesce idempotency records so retries cannot land on
    both cells with different outcomes.
-7. Let `metric_series` rebuild from the materialized view on the target instead
+4. Let `metric_series` rebuild from the materialized view on the target instead
    of copying aggregate state blindly.
-8. Validate row counts, min/max timestamps, selected run checksums, summary
-   query parity, and R2 artifact metadata-to-object presence for active
-   artifacts. Artifact bytes stay in R2; route migration only changes metadata
-   placement unless a separate artifact-storage migration is designed.
-9. Write the target `tenant_route` with incremented `route_version` in the same
-   transaction that records `cutover`.
-10. Keep the old route read-only for a rollback window.
-11. Delete old data only after retention, backup, and customer-support checks
-   pass.
+5. Validate row counts, min/max timestamps, selected run checksums, summary
+   query parity, R2 artifact metadata-to-object presence for active artifacts,
+   target schema version, and idempotency posture. Evidence must be structured
+   on the migration record using snapshots/query ids, row counts, checksums, and
+   validation failure summaries; raw ClickHouse credentials, secret refs, object
+   keys, and customer payload text must not be returned by public APIs.
+6. Write the target `tenant_route` with incremented `route_version` in the same
+   transaction that records `cutover`, guarded by the expected source route
+   version.
+7. Keep old data only according to retention, backup, and customer-support
+   checks. If rollback after target writes is required, design reverse-delta
+   copy and durable idempotency reconciliation first.
 
 This workflow also handles Free shared cell to Pro/Premium dedicated placement.
 Do not promise automatic upgrades to dedicated storage until this exists.
+
+Route-status behavior:
+
+| Route status | Route discovery | Source-cell reads | Source-cell writes |
+| --- | --- | --- | --- |
+| `ready` | Returns the current ready cell for API-key callers. | Allowed on the assigned cell. | Allowed on the assigned cell if the writer lease is valid. |
+| `write_blocked` | Unavailable; SDKs should keep/backoff existing route state instead of treating it as stale-route cutover. | Allowed on the source cell. | Rejected with `503`, `code: "org_migration_in_progress"`, and a bounded `Retry-After`. |
+| `provisioning` / `failed` / other | Unavailable. | Rejected unless a later design names a read-only recovery state. | Rejected. |
+
+Legacy-client guard:
+
+- Migration creation must reject moving orgs to a non-default data cell unless a
+  route-aware compatibility proxy exists, a minimum SDK version gate exists, or
+  the operator records explicit customer approval in the migration record.
 
 Customer impact:
 
@@ -818,9 +933,11 @@ First future route-discovery endpoint:
 GET /api/routing/current
 ```
 
-Authenticated by browser session or API key. Returns the active org's
-`cell_id`, `route_version`, and safe `data_api_base`. It never returns
-ClickHouse endpoints, usernames, password references, or storage keys.
+Authenticated by API key only in the accepted Phase 2/3 and Phase 4/5A slices.
+Browser sessions must receive `401` until a separate CSRF/CORS/cell-session
+token design exists. The endpoint returns the API key's active org `cell_id`,
+`route_version`, and safe `data_api_base`. It never returns ClickHouse
+endpoints, usernames, password references, or storage keys.
 
 Data-cell requests include:
 
@@ -895,9 +1012,14 @@ Deferred complexity:
 - Control Postgres unavailable: control routes fail and data-plane auth refresh
   degrades to last-known-good only for a bounded period. New route discovery and
   org switching fail closed.
-- ClickHouse migration copy fails: keep source route active/read-write unless
-  the migration already acquired a write lease; if so, release the lease and
-  restore normal writes after validation.
+- Migration write-block restore fails because the source route drifted: leave
+  the migration `write_blocked`, return `tenant_route_changed`, alert on
+  write-block duration, and avoid pretending the route is healthy until an
+  operator performs a guarded recovery.
+- ClickHouse migration copy or validation fails in deferred Phase 5B: restore
+  the source route to `ready` with a route-version bump if writes had been
+  blocked, or keep it `write_blocked` with customer-visible recovery guidance.
+  Do not cut over to a target route without structured copy/validation evidence.
 - Free shared-cell org leak: any missing `org_id` predicate can leak data.
   Keep cross-org tests and consider ClickHouse row policies before increasing
   shared-cell density.
@@ -909,17 +1031,27 @@ Deferred complexity:
 - Unit tests for cell placement and route-version comparison.
 - Postgres migration tests for `data_cells` and extended `tenant_routes`.
 - Two-process writer-lease test proving only one data writer can mutate a cell.
-- API tests for `GET /api/routing/current` through browser session and API key.
+- API tests for `GET /api/routing/current` through API key plus an explicit
+  browser-session `401` regression.
+- Two-Store hosted control tests for API-key creation/revocation, service
+  account disablement, scope/project restrictions, session creation/revocation,
+  org switching, membership removal, role changes, expired sessions, and demo
+  read-only behavior without projection rebuild.
 - Multi-process smoke with one control service and two data services, verifying
   org A writes to cell A and org B writes to cell B.
 - Wrong-cell and stale-route tests for direct data-cell requests.
+- Write-blocked route tests proving source-cell reads continue, representative
+  writes return `503 org_migration_in_progress` with bounded `Retry-After`, and
+  restored routes bump the route version.
 - SDK smoke proving route discovery, cached data-cell writes, and refresh after
   `tenant_route_changed`.
 - Cross-org shared-cell isolation regression for every metric/read path used by
   Free cells.
-- Migration dry-run test copying a small org between cells and validating row
-  counts, summary parity, route-version cutover, and R2 artifact metadata/object
-  presence.
+- Phase 5A migration tests for schema constraints, one active migration per org,
+  guarded `planned -> write_blocked -> restored`, failed restore recovery text,
+  and operator endpoint idempotency. Phase 5B later adds copy/cutover tests for
+  row counts, summary parity, route-version cutover, and R2 artifact
+  metadata/object presence.
 - Hosted benchmark updates covering route discovery, default data-cell writes,
   and dashboard read p95s.
 
@@ -1181,6 +1313,69 @@ Fresh reviewer 10: Final compatibility and deploy-readiness validation
   Request-long writer fencing remains a later hardening item for import and
   other long-running mutation workflows.
 
+Fresh reviewer 11: Phase 4/5 operations and performance review
+
+- Finding: Direct Postgres reads could turn every request into unbounded Cloud
+  SQL QPS; control scaling lacked a hard capacity-plan gate; migration records
+  were too thin for incidents; rollback after target writes was unsafe; and
+  informal operator copy attestation was too weak for production cutover.
+- Risk: Control scaling could exhaust Cloud SQL, migrations could leave an org
+  blocked without enough evidence to recover, and rollback could lose accepted
+  target writes.
+- Recommended edit: Define query-count bounds, staging load-test gates, and
+  explicit `capacity-plan` requirements; add migration events/evidence fields;
+  defer rollback/cutover until reverse-delta or read-only target semantics are
+  designed; treat the first migration slice as control-plane/write-block only.
+- Decision: Accepted. Phase 4A now specifies direct point-read contracts,
+  per-route hot-path bounds, and a hard capacity preflight before control
+  scaling. Phase 5A is narrowed to planning, write blocking, restore/failure,
+  and structured records; copy, cutover, rollback window, completion, and
+  cleanup are deferred to Phase 5B.
+
+Fresh reviewer 12: Phase 4/5 security and compatibility review
+
+- Finding: The doc still contradicted itself about browser-session route
+  discovery; auth freshness tests were too narrow; bootstrap-only migration
+  endpoints lacked named operator boundaries; `write_blocked` behavior and
+  `Retry-After` were underspecified; public cell labels could leak placement
+  details; and legacy clients could be moved away from compatibility cells.
+- Risk: Browser cookies could be sent to cell hosts before CSRF/CORS rules
+  exist, direct reads could drop existing auth invariants, powerful migration
+  operations could become anonymous bootstrap-token actions, and legacy SDKs
+  could stop writing after a migration.
+- Recommended edit: Make route discovery API-key-only throughout the doc; add
+  the direct-read invariant matrix; require hidden admin/internal operator
+  controls and transition audit; specify read/write/discovery behavior for
+  `write_blocked`; require bounded `Retry-After`; and add a legacy-client
+  migration guard.
+- Decision: Accepted. The API contract and tests now require API-key-only route
+  discovery with browser-session `401`; Phase 4A includes the auth invariant
+  matrix; Phase 5A names operator boundary expectations, route-status behavior,
+  bounded retry semantics, and legacy-client safeguards.
+
+Fresh reviewer 13: Phase 4/5 distributed correctness review
+
+- Finding: The initial slice was too broad; current route loading rejected
+  non-ready routes before read/write policy; `org_migrations` lacked database
+  invariants and guarded transitions; direct reads needed exact contracts and
+  query limits; cutover preconditions were too weak; copy-failure wording
+  conflicted with write-block-first flow; and route-discovery docs still drifted
+  toward browser direct-cell auth.
+- Risk: A single PR could mix unrelated correctness domains, source reads could
+  fail during write-block windows, two migrations could race for one org, route
+  cutover could happen without enough proof, and failure recovery could be
+  ambiguous.
+- Recommended edit: Split Phase 4A, Phase 5A, and Phase 5B; add
+  `route_allows_reads`/`route_allows_writes` semantics; enforce active-migration
+  uniqueness, state checks, source/target FK checks, and transactional
+  transitions; stage target route information in migrations until cutover; and
+  rewrite failure recovery in terms of restoring `ready` or staying blocked
+  with recovery steps.
+- Decision: Accepted. The revised implementation slice is Phase 4A plus Phase
+  5A. Phase 5B is explicitly deferred until structured copy/validation,
+  cutover, rollback, idempotency reconciliation, and cleanup receive a separate
+  accepted design.
+
 ## Coverage Exceptions
 
 None for the Phase 0 preflight/runbook slice or the Phase 2/3 route-discovery
@@ -1190,5 +1385,8 @@ slice.
 
 Phase 0 Cloud SQL capacity preflight and operator runbook, Phase 1 cell
 registry, and the Phase 2/3 route-discovery slice are accepted and implemented.
-Phase 4 and later phases remain draft until their review notes are resolved and
-a narrow implementation slice is accepted.
+The revised Phase 4A direct-control-read slice and Phase 5A
+migration-control/write-block slice are the candidate implementation for this
+branch pending final fresh review. Phase 5B copy, cutover, rollback window,
+completion, cleanup, and automated ClickHouse copy remain draft until they
+receive a separate accepted design.

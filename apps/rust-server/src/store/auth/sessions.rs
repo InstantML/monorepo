@@ -553,6 +553,44 @@ async fn ensure_shared_demo_billing_account(store: &Store, org: &OrganizationRow
 
 pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthSessionPayload> {
     let token_hash = hash_secret(token);
+    if let Some(control_db) = store.control_db() {
+        let auth = control_db
+            .session_auth_by_hash(&token_hash)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("invalid session"))?;
+        if auth.session.row.revoked_at.is_some() || auth.session.row.expires_at <= Utc::now() {
+            return Err(AppError::unauthorized("invalid session"));
+        }
+        let mut row = auth.session.row;
+        row.last_seen_at = Some(Utc::now());
+        let provisioning = {
+            let mut data = store.data.lock().await;
+            data.insert_user(auth.user.clone());
+            data.insert_org(auth.organization.clone());
+            for membership in &auth.memberships {
+                data.insert_membership(membership.clone());
+            }
+            data.insert_session(SessionRecord {
+                row: row.clone(),
+                token_hash: auth.session.token_hash,
+            });
+            data.tenant_routes
+                .get(&row.org_id)
+                .map(|route| ProvisioningStatusPayload {
+                    status: route.status.clone(),
+                    mode: route.provisioner.clone(),
+                    service_id: route.service_id.clone(),
+                })
+        };
+        return Ok(session_payload_from_rows(
+            row,
+            auth.user,
+            auth.organization,
+            auth.membership,
+            auth.memberships,
+            provisioning,
+        ));
+    }
     let data = store.data.lock().await;
     let session_id = data
         .sessions_by_hash
@@ -574,6 +612,27 @@ pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthS
 
 pub async fn revoke_session(store: &Store, token: &str) -> AppResult<()> {
     let token_hash = hash_secret(token);
+    if let Some(control_db) = store.control_db() {
+        let Some(mut session) = control_db.session_by_hash(&token_hash).await? else {
+            return Ok(());
+        };
+        session.row.revoked_at = Some(Utc::now());
+        let record = SessionRecord {
+            row: session.row.clone(),
+            token_hash: session.token_hash.clone(),
+        };
+        store
+            .persist_locked(
+                "session",
+                session.row.org_id,
+                &session.row.id.to_string(),
+                &record,
+            )
+            .await?;
+        let mut data = store.data.lock().await;
+        data.insert_session(record);
+        return Ok(());
+    }
     let Some(mut session) = ({
         let data = store.data.lock().await;
         let Some(session_id) = data.sessions_by_hash.get(&token_hash).copied() else {

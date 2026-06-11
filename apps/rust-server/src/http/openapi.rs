@@ -35,14 +35,15 @@ use uuid::Uuid;
 
 use crate::domain::{
     AbortArtifactUploadRequest, AdminApiKeySummary, AdminBillingSummary, AdminDataCellRouteCounts,
-    AdminDataCellSummary, AdminDataCellsResponse, AdminOrgCounts, AdminOrganizationSummary,
-    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem,
-    AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
-    AdminUserSummary, ArtifactAliasRow, ArtifactCollectionInput, ArtifactCollectionRow,
-    ArtifactEdgeRow, ArtifactManifestEntriesRecord, ArtifactManifestEntryRow, ArtifactUploadFile,
-    ArtifactUploadSessionRow, ArtifactVersionRow, AttributeInput, AttributeRow, AuthSessionPayload,
-    BillingAccountProjection, BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo,
-    BillingCheckoutIntent, BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
+    AdminDataCellSummary, AdminDataCellsResponse, AdminOrgCounts, AdminOrgMigrationsResponse,
+    AdminOrganizationSummary, AdminOverviewQuerySummary, AdminOverviewResponse,
+    AdminOverviewTotals, AdminRiskItem, AdminStorageSummary, AdminUsageGauge, AdminUserIdentity,
+    AdminUserOrgMembership, AdminUserSummary, ArtifactAliasRow, ArtifactCollectionInput,
+    ArtifactCollectionRow, ArtifactEdgeRow, ArtifactManifestEntriesRecord,
+    ArtifactManifestEntryRow, ArtifactUploadFile, ArtifactUploadSessionRow, ArtifactVersionRow,
+    AttributeInput, AttributeRow, AuthSessionPayload, BillingAccountProjection,
+    BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo, BillingCheckoutIntent,
+    BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
     BillingPlanChangeRequest, BillingPortalRequest, BillingSeatChangeRequest,
     BillingSubscriptionRecord, BillingUsageReportRecord, ClerkAuthRequest,
     ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
@@ -51,22 +52,22 @@ use crate::domain::{
     CompleteArtifactUploadRequest, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
     CreateArtifactInputEdgeRequest, CreateArtifactRequest, CreateAttributesRequest,
     CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest, CreateInvitationRequest,
-    CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
-    CreateRunForkRequest, CreateRunRequest, CreateUserRequest,
-    CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DeleteArtifactAliasRequest,
-    DeleteArtifactVersionRequest, DevGoogleAuthRequest, DeviceCodeClientInfo,
-    DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
+    CreateObjectRequest, CreateOrgMigrationRequest, CreateOrganizationRequest,
+    CreateProjectRequest, CreateReportRequest, CreateRunForkRequest, CreateRunRequest,
+    CreateUserRequest, CurrentUserOrganizationCreateResponse, DashboardPreferenceRow,
+    DeleteArtifactAliasRequest, DeleteArtifactVersionRequest, DevGoogleAuthRequest,
+    DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
     InitialInvitationCreateResult, InitialOrganizationInvitation, InitiateArtifactUploadRequest,
     InvitationPreviewPayload, InvitationTokenRequest, LogMetricsRequest, LogRankMetricsRequest,
-    MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
-    OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
-    ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactCollectionRow,
-    PublicArtifactManifestEntryRow, PublicArtifactRow, PublicArtifactVersionRow,
-    PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
-    RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
-    RenewArtifactUploadRequest, ReportRow, ReportSummary, ReserveSeatRequest,
-    RouteDiscoveryResponse, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
-    ServiceAccountRow, SetArtifactAliasRequest, SwitchOrganizationRequest,
+    MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey, OrgMigrationEventRow,
+    OrgMigrationRow, OrgMigrationTransitionRequest, OrganizationMembershipSummary,
+    OrganizationRoleCapabilities, OrganizationRow, ProjectRow, ProvisioningStatusPayload,
+    PublicApiKeyRow, PublicArtifactCollectionRow, PublicArtifactManifestEntryRow,
+    PublicArtifactRow, PublicArtifactVersionRow, PublicInvitationRow, RankCoveragePoint,
+    RankHeatmapPoint, RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse,
+    RankOutlierPoint, RankReducerPoint, RenewArtifactUploadRequest, ReportRow, ReportSummary,
+    ReserveSeatRequest, RouteDiscoveryResponse, RunRow, SaveWorkspaceViewRequest, SeatRow,
+    SeatUserRow, ServiceAccountRow, SetArtifactAliasRequest, SwitchOrganizationRequest,
     UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest, UpdateReportRequest,
     UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
     VersionedArtifactManifestEntryInput, VersionedArtifactManifestInput, WorkspaceViewRow,
@@ -343,6 +344,11 @@ pub struct ApiKeyEnvelope {
 #[derive(Serialize, ToSchema)]
 pub struct ServiceAccountEnvelope {
     pub service_account: ServiceAccountRow,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct OrgMigrationEnvelope {
+    pub migration: OrgMigrationRow,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -783,6 +789,11 @@ impl Modify for SecurityAddon {
         // admin
         crate::http::handlers::admin::admin_overview,
         crate::http::handlers::admin::admin_data_cells,
+        crate::http::handlers::admin::admin_org_migrations,
+        crate::http::handlers::admin::create_admin_org_migration,
+        crate::http::handlers::admin::write_block_admin_org_migration,
+        crate::http::handlers::admin::restore_admin_org_migration,
+        crate::http::handlers::admin::fail_admin_org_migration,
         // routing
         crate::http::handlers::routing::current_route,
         // orgs / users
@@ -899,6 +910,7 @@ impl Modify for SecurityAddon {
         ApiKeyCreatedEnvelope,
         ApiKeyEnvelope,
         ServiceAccountEnvelope,
+        OrgMigrationEnvelope,
         OrganizationEnvelope,
         OrganizationsEnvelope,
         OrgMembershipsEnvelope,
@@ -966,8 +978,13 @@ impl Modify for SecurityAddon {
         AdminDataCellsResponse,
         AdminDataCellSummary,
         AdminDataCellRouteCounts,
+        AdminOrgMigrationsResponse,
         AdminBillingSummary,
         // domain
+        CreateOrgMigrationRequest,
+        OrgMigrationTransitionRequest,
+        OrgMigrationRow,
+        OrgMigrationEventRow,
         PublicArtifactRow,
         PublicArtifactCollectionRow,
         PublicArtifactVersionRow,

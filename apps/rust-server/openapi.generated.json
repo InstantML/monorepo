@@ -44,6 +44,352 @@
         ]
       }
     },
+    "/api/admin/org-migrations": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_org_migrations",
+        "responses": {
+          "200": {
+            "description": "Operator org migration records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrgMigrationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "create_admin_org_migration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrgMigrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Planned org migration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMigrationEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active migration or route conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
+    "/api/admin/org-migrations/{migration_id}/fail": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "fail_admin_org_migration",
+        "parameters": [
+          {
+            "name": "migration_id",
+            "in": "path",
+            "description": "Migration UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgMigrationTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Failed org migration record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMigrationEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Migration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
+    "/api/admin/org-migrations/{migration_id}/restore": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "restore_admin_org_migration",
+        "parameters": [
+          {
+            "name": "migration_id",
+            "in": "path",
+            "description": "Migration UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgMigrationTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Restored source route for org migration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMigrationEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Migration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Route or transition conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
+    "/api/admin/org-migrations/{migration_id}/write-block": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "write_block_admin_org_migration",
+        "parameters": [
+          {
+            "name": "migration_id",
+            "in": "path",
+            "description": "Migration UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgMigrationTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Write-blocked org migration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMigrationEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Migration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Route or transition conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
     "/api/admin/overview": {
       "get": {
         "tags": [
@@ -7906,6 +8252,30 @@
           }
         }
       },
+      "AdminOrgMigrationsResponse": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "generated_at",
+          "migrations"
+        ],
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "migrations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgMigrationRow"
+            }
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "AdminOrganizationSummary": {
         "type": "object",
         "required": [
@@ -11313,6 +11683,35 @@
           }
         }
       },
+      "CreateOrgMigrationRequest": {
+        "type": "object",
+        "required": [
+          "org_id",
+          "target_cell_id",
+          "requested_by"
+        ],
+        "properties": {
+          "customer_notice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legacy_client_approved": {
+            "type": "boolean"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requested_by": {
+            "type": "string"
+          },
+          "target_cell_id": {
+            "type": "string"
+          }
+        }
+      },
       "CreateOrganizationRequest": {
         "type": "object",
         "properties": {
@@ -12795,6 +13194,209 @@
             "items": {
               "$ref": "#/components/schemas/OrganizationMembershipSummary"
             }
+          }
+        }
+      },
+      "OrgMigrationEnvelope": {
+        "type": "object",
+        "required": [
+          "migration"
+        ],
+        "properties": {
+          "migration": {
+            "$ref": "#/components/schemas/OrgMigrationRow"
+          }
+        }
+      },
+      "OrgMigrationEventRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "migration_id",
+          "org_id",
+          "to_state",
+          "actor",
+          "details",
+          "created_at"
+        ],
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "details": {
+            "type": "object"
+          },
+          "from_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "migration_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "route_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "to_state": {
+            "type": "string"
+          }
+        }
+      },
+      "OrgMigrationRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "source_cell_id",
+          "target_cell_id",
+          "source_route_version",
+          "state",
+          "requested_by",
+          "transition_actor",
+          "legacy_client_approved",
+          "retry_after_seconds",
+          "copy_evidence",
+          "validation_evidence",
+          "updated_at"
+        ],
+        "properties": {
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "copy_evidence": {
+            "type": "object"
+          },
+          "customer_notice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "legacy_client_approved": {
+            "type": "boolean"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requested_by": {
+            "type": "string"
+          },
+          "restored_route_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "retry_after_seconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "source_cell_id": {
+            "type": "string"
+          },
+          "source_route_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "state": {
+            "type": "string"
+          },
+          "target_cell_id": {
+            "type": "string"
+          },
+          "target_route_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "transition_actor": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validation_evidence": {
+            "type": "object"
+          }
+        }
+      },
+      "OrgMigrationTransitionRequest": {
+        "type": "object",
+        "required": [
+          "actor"
+        ],
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
