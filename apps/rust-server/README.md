@@ -1,12 +1,12 @@
 # Rust Server
 
-This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, tenant routes, dashboard preferences, and saved workspace views, then stores tenant-owned runs and metrics in the org's routed ClickHouse database. Production and staging currently use InstantML-owned self-hosted ClickHouse on Google Cloud for this hosted path. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
+This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, tenant routes, dashboard preferences, and saved workspace views, then stores tenant-owned runs, reports, and metrics in the org's routed ClickHouse database. Production and staging currently use InstantML-owned self-hosted ClickHouse on Google Cloud for this hosted path. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Purpose
 
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, raw artifacts, versioned artifact collections/manifests/aliases/lineage edges/upload sessions, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
-- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
+- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/reports/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
 - Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric and API-request usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, apply plan-aware short-window API rate limits, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready. Browser sessions can also create additional organization workspaces through `POST /api/orgs/current-user`; the bootstrap `POST /api/orgs` route remains operator/admin-only.
 - Support Premium customer-owned GCP ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
@@ -202,8 +202,8 @@ send token-backed invites after checkout activates the workspace.
 Logical control/data-plane division is available before deployment:
 
 - `INSTANTML_SERVICE_PLANE=combined` is the default and exposes the current full route set from one Rust process.
-- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, invitation, billing, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
-- `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, metrics, logs, attributes, objects, artifacts, export, usage, imports, demo reset, and customer-owned ClickHouse validation/setup. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
+- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, invitation, billing, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/report/metric product data routes.
+- `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, reports, metrics, logs, attributes, objects, artifacts, export, usage, imports, demo reset, and customer-owned ClickHouse validation/setup. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
 
 The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
 
@@ -417,6 +417,10 @@ browser sessions may save views, viewers may read preferences/views, and shared
 demo sessions remain read-only. Local compatibility mode keeps the same route
 shapes without requiring a hosted browser session.
 
+Report routes are tenant product-data routes in hosted split mode. The Next
+proxy sends `/api/reports` to the data plane so creation and auto-save write
+to the org's routed tenant ClickHouse store, alongside projects and runs.
+
 Console logs are stored in tenant ClickHouse through `console_log_lines`.
 `POST /api/runs/:run_id/logs` requires `sdk:ingest`, accepts client-supplied
 stdout/stderr line batches of up to 50 lines with idempotency keys, and
@@ -550,6 +554,7 @@ Coverage exception (multi-writer):
 - `src/store/artifact_versions.rs`: versioned artifact collections, manifests, upload-session commit flow, aliases, retention/delete state, manifest downloads, and run/artifact lineage edges.
 - `src/store/imports.rs`: Neptune, W&B, MLflow, and TensorBoard import normalization plus Import v2 job/chunk state, canonical chunk validation, redaction, provenance, and commit logic.
 - `src/store/export.rs`: side-by-side comparison and bounded JSON export.
+- `src/store/reports/`: tenant-scoped persisted report documents, block validation, share tokens, panel inventory, and Markdown export.
 - `src/store/usage.rs`: usage summaries, UTC calendar-month metric periods, daily snapshots, and worker cleanup helpers.
 - `src/store/demo.rs`: demo project reset and synthetic data generation.
 - `src/store/access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
