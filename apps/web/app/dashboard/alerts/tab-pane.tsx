@@ -18,7 +18,7 @@ type Props = {
 export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Props) {
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Alerts" emphasis="worth watching" lede={`${alertRows.length} active · run health`} />
+      <PageHead eyebrow="Workspace" title="Alerts" />
       <div className="tab-grid two-col">
         <section className="panel">
           <div className="panel-head">
