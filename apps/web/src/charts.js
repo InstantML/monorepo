@@ -33,8 +33,8 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
     const positive = yScale === "log" ? filtered.filter((point) => Number(point.value) > 0) : filtered;
     // Points arrive in step order; wall-clock timestamps from concurrent runs
     // interleave, so time mode must re-sort or the path sweeps back and forth.
-    // Decorate-sort-undecorate: xValue parses a Date in time mode, so compute
-    // it once per point instead of twice per comparison.
+    // Decorate-sort-undecorate keeps the comparator cheap (one Date parse per
+    // point here; the render loop below re-derives xValue as it always has).
     const plottable = xKey === "time"
       ? positive
           .map((point) => [xValue(point, xKey), point])

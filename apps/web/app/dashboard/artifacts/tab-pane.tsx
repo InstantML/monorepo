@@ -492,7 +492,9 @@ export function ArtifactsTabPane({
         <div className="analysis-stat"><span>Rollouts</span><strong>{formatNumber(artifactTotals.rollout, 0)}</strong></div>
         <div className="analysis-stat"><span>Inspected run</span><strong>{primaryRun?.name ?? "-"}</strong></div>
       </div>
-      {collectionsCollapsed && !hasRawArtifacts ? (
+      {/* Hold the empty state until the legacy fetch settles — otherwise it
+          flashes "No artifacts yet" while raw artifacts are still loading. */}
+      {collectionsCollapsed && !hasRawArtifacts && !legacyLoading ? (
         <section className="panel artifact-empty-panel">
           <div className="panel-body artifact-empty-state">
             <Package size={22} aria-hidden />

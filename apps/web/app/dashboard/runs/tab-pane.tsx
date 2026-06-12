@@ -101,7 +101,6 @@ type Props = {
   orgMemberships: OrgMembershipSummary[];
   orgName: string;
   orgSwitchBusy: boolean;
-  overview: Overview;
   pageEnd: number;
   pageSize: number;
   pageStart: number;
@@ -193,7 +192,6 @@ export function RunsTabPane({
   orgMemberships,
   orgName,
   orgSwitchBusy,
-  overview,
   pageEnd,
   pageSize,
   pageStart,

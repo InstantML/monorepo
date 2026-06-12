@@ -97,8 +97,14 @@ export function MetricsTabPane({
           <span className="analysis-eyebrow eyebrow--accent">Metrics</span>
           <h2>{metricTitle(metricKey)} over time</h2>
           <p>
+            {/* Denominator matches the RUNS PLOTTED stat; runs without this
+                metric are called out instead of silently shrinking the count. */}
             {activeMetricCatalogRow
-              ? `${activeMetricCatalogRow.selectedCount}/${activeMetricCatalogRow.runCount} selected runs · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points · ${metricGoalLabel(metricKey)} objective`
+              ? `${chartSummaries.length} runs plotted${
+                  chartSummaries.length > activeMetricCatalogRow.selectedCount
+                    ? ` · ${chartSummaries.length - activeMetricCatalogRow.selectedCount} without data`
+                    : ""
+                } · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points · ${metricGoalLabel(metricKey)} objective`
               : `${selectedRuns.length || sortedRuns.length} runs in scope · ${metricGoalLabel(metricKey)} objective`}
           </p>
         </div>
