@@ -132,13 +132,15 @@ test("distributed visuals avoid red/green-only and signed z coloring", () => {
   assert.match(css, /var\(--blue\), var\(--surface-2\), var\(--amber\)/);
 });
 
-// AL2 — overview health cards promoted to the Runs workspace header.
-test("runs workspace header shows the run health cards", () => {
+// AL2 (reverted 2026-06): the health cards were removed from the Runs header —
+// they duplicated the Run health tab and pushed the run list below the fold.
+// The cards (and their stats) remain on the Run health tab.
+test("runs workspace header no longer duplicates the run health cards", () => {
   const paneSrc = read("app/dashboard/runs/tab-pane.tsx");
-  assert.match(paneSrc, /runs-health-cards/);
-  assert.match(paneSrc, /label="Failed runs"/);
-  assert.match(paneSrc, /overview\.active_runs/);
-  assert.match(read("app/styles/dashboard-runs.css"), /\.runs-health-cards/);
+  assert.doesNotMatch(paneSrc, /runs-health-cards/);
+  const alertsSrc = read("app/dashboard/alerts/tab-pane.tsx");
+  assert.match(alertsSrc, /label="Failed runs"/);
+  assert.match(alertsSrc, /overview\.active_runs/);
 });
 
 // A2 — landing demo entry routes to the spotlighted shared-demo action.
