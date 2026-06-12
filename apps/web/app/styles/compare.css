@@ -201,7 +201,7 @@ button.compare-row-head.active {
 }
 
 .compare-metric-cell.primary {
-  box-shadow: inset 2px 0 0 rgba(31, 184, 119, 0.46);
+  box-shadow: inset 2px 0 0 rgba(43, 224, 130, 0.46);
 }
 
 .compare-signal-cell small,
@@ -320,7 +320,7 @@ button.compare-row-head.active {
   display: block;
   min-width: 0;
   overflow: hidden;
-  color: #11202b;
+  color: #141712;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -388,7 +388,7 @@ button.compare-row-head.active {
 }
 
 .compact-head {
-  background: #fbfcfd;
+  background: #fdfdfb;
   color: var(--muted);
   font-size: 12px;
   font-weight: 750;
@@ -479,7 +479,7 @@ button.compare-row-head.active {
 
 .browser-row > span,
 .timeline-row > span:not(.timeline-dot) {
-  color: #344251;
+  color: #3a3f33;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -560,7 +560,7 @@ button.compare-row-head.active {
 .api-row code {
   min-width: 0;
   overflow: hidden;
-  color: #1f2f3f;
+  color: #22261d;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -581,7 +581,7 @@ button.compare-row-head.active {
   border-width: 1px;
   border-radius: var(--control-radius);
   background: #fff;
-  color: #344251;
+  color: #3a3f33;
   padding: 5px 8px;
   font-size: 12px;
   font-weight: 700;
@@ -589,9 +589,9 @@ button.compare-row-head.active {
 }
 
 .copy-button:hover {
-  border-color: #b9c5d0;
-  background: #f7f9fb;
-  color: #1f2f3f;
+  border-color: #c8ccbc;
+  background: #f6f7f3;
+  color: #22261d;
 }
 
 .copy-button.unavailable,
@@ -1645,7 +1645,7 @@ button.compare-row-head.active {
 .cmp-cell.num{align-items:flex-end;text-align:right;font-variant-numeric:tabular-nums}
 .cmp-row:hover .cmp-cell{background:var(--surface-hover)}
 .cmp-row.reference .cmp-cell{background:var(--surface-selected)}
-.cmp-row.reference:hover .cmp-cell{background:#143027}
+.cmp-row.reference:hover .cmp-cell{background:var(--surface-tint)}
 
 /* sticky identity column */
 .cmp-identity{

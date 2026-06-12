@@ -492,6 +492,19 @@ export function ArtifactsTabPane({
         <div className="analysis-stat"><span>Rollouts</span><strong>{formatNumber(artifactTotals.rollout, 0)}</strong></div>
         <div className="analysis-stat"><span>Inspected run</span><strong>{primaryRun?.name ?? "-"}</strong></div>
       </div>
+      {collectionsCollapsed && !hasRawArtifacts ? (
+        <section className="panel artifact-empty-panel">
+          <div className="panel-body artifact-empty-state">
+            <Package size={22} aria-hidden />
+            <strong>No artifacts yet</strong>
+            <span>
+              Checkpoints, rollouts, and files logged from the SDK will appear here
+              {versionedUnsupported ? " — this backend serves raw run artifacts only" : ""}.
+            </span>
+            <code>run.log_artifact(&quot;policy/step-1000&quot;, path=&quot;ckpt.pt&quot;)</code>
+          </div>
+        </section>
+      ) : (
       <div className="artifact-workspace">
         {collectionsCollapsed ? (
           <section className="panel artifact-catalog-panel artifact-note-panel">
@@ -628,6 +641,7 @@ export function ArtifactsTabPane({
           </div>
         </details>
       </div>
+      )}
     </>
   );
 }

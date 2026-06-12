@@ -119,10 +119,14 @@ export function metricNamespace(metricKey: string) {
   return metricKey.includes("/") ? metricKey.split("/")[0] : "custom";
 }
 
+const METRIC_ACRONYMS = new Set(["kl", "lr", "rl", "gpu", "cpu", "sdk", "api", "ppo", "dpo", "sft", "ema"]);
+
 export function metricTitle(metricKey: string) {
   return shortMetricName(metricKey)
     .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
+    .split(" ")
+    .map((word) => (METRIC_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.replace(/^\w/, (c) => c.toUpperCase())))
+    .join(" ");
 }
 
 export function workspaceStorageKey(project: string, scope = "") {
@@ -516,7 +520,8 @@ export function buildRunTimelineRows(run: RunSummary | null, artifacts: Artifact
       id: "best-metric",
       label: `Best ${shortMetricName(metricKey)}`,
       detail: `step ${compactValue(metric.best_step ?? "-")}`,
-      value: compactValue(metric.max ?? "-"),
+      // Same precision as the KPI strip and summary table — one number, one format.
+      value: typeof metric.max === "number" ? formatNumber(metric.max, 3) : "-",
       tone: "good",
     });
   }
@@ -672,7 +677,7 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       rows.push({
         id: `${run.id}:checkpoint`,
         severity: "warning",
-        tone: "live",
+        tone: "warn",
         title: `${run.name} has no checkpoints`,
         detail: "Checkpoint lineage is unavailable for this run.",
         label: "warning",
@@ -682,7 +687,7 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       rows.push({
         id: `${run.id}:metric`,
         severity: "warning",
-        tone: "live",
+        tone: "warn",
         title: `${run.name} is missing ${metricKey}`,
         detail: "The selected metric is not present in latest summaries.",
         label: "warning",
@@ -719,7 +724,7 @@ export function dedupeAlertRows(rows: AlertRow[]): AlertRow[] {
     result.push({
       id: `grouped:${kind}`,
       severity: "warning",
-      tone: "live",
+      tone: "warn",
       title: bucket.title(bucket.rows.length),
       detail: `${sample}${names.length > 3 ? ` and ${names.length - 3} more` : ""}`,
       label: "warning",

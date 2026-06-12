@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, GitFork, Server, Star, Tag, X } from "lucide-react";
 
 import { buildCheckpointResumeCode, checkpointStep, defaultForkRunName } from "../../../src/checkpoints.js";
-import { durationLabel, formatNumber, isInternalInstantMlMetric, metricGoal, metricGoalLabel, preferredMetricKey, statusTone, uploadHealthForRun } from "../../../src/state.js";
+import { durationLabel, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, metricGoalLabel, preferredMetricKey, statusTone, uploadHealthForRun } from "../../../src/state.js";
 import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, safeArtifactUri, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
@@ -76,9 +76,9 @@ function RunMetricTable({ rows }: { rows: RunMetricRow[] }) {
       {rows.slice(0, 12).map((row) => (
         <div className="metric-summary-row" key={row.key}>
           <strong title={row.key}>{shortMetricName(row.key)}</strong>
-          <span data-label="Latest">{formatNumber(row.latest, 3)}</span>
-          <span data-label="Best" title={`${metricGoalLabel(row.key)} (goal ${metricGoal(row.key) === "minimize" ? "↓" : "↑"})`}>{formatNumber(metricGoal(row.key) === "minimize" ? row.min : row.max, 3)}</span>
-          <span data-label="Mean">{formatNumber(row.mean, 3)}</span>
+          <span data-label="Latest">{formatMetricValue(row.latest, 3)}</span>
+          <span data-label="Best" title={`${metricGoalLabel(row.key)} (goal ${metricGoal(row.key) === "minimize" ? "↓" : "↑"})`}>{formatMetricValue(metricGoal(row.key) === "minimize" ? row.min : row.max, 3)}</span>
+          <span data-label="Mean">{formatMetricValue(row.mean, 3)}</span>
           <span data-label="Step">{formatNumber(row.bestStep, 0)}</span>
         </div>
       ))}

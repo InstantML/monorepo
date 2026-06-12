@@ -23,6 +23,7 @@
  *   mobile.css          — mobile redesign (≤720px)
  *   landing-system.css  — landing visual system + @keyframes animations
  *   docs.css            — first-party /docs documentation route
+ *   instrument.css      — Instrument design-language signature layer (last)
  *
  * See docs/design/2026-05-18-globals-css-audit.md for the refactor plan.
  * ────────────────────────────────────────────────────────────────────────── */
@@ -45,3 +46,4 @@
 @import "./styles/pricing.css";
 @import "./styles/docs.css";
 @import "./styles/reports.css";
+@import "./styles/instrument.css";

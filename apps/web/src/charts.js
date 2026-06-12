@@ -30,7 +30,17 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
     const filtered = range ? item.points.filter((point) => pointInRange(point, xKey, range)) : item.points;
     // Log scale can only place positive values; non-positive points drop from
     // the plot (counted so the UI can say so) while `points` keeps the raw set.
-    const plottable = yScale === "log" ? filtered.filter((point) => Number(point.value) > 0) : filtered;
+    const positive = yScale === "log" ? filtered.filter((point) => Number(point.value) > 0) : filtered;
+    // Points arrive in step order; wall-clock timestamps from concurrent runs
+    // interleave, so time mode must re-sort or the path sweeps back and forth.
+    // Decorate-sort-undecorate: xValue parses a Date in time mode, so compute
+    // it once per point instead of twice per comparison.
+    const plottable = xKey === "time"
+      ? positive
+          .map((point) => [xValue(point, xKey), point])
+          .sort((left, right) => left[0] - right[0])
+          .map((pair) => pair[1])
+      : positive;
     const smoothed = Boolean(item.smoothed);
     // Single pass builds normalizedPoints + both path strings, and computes
     // xValue once per point (it parses a Date in time mode — calling it twice

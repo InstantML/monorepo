@@ -317,7 +317,7 @@ export function RunsTabPane({
           noise before the first run exists. */}
       {!showEmptyCallout ? (
         <div className="runs-health-cards" role="group" aria-label="Run health summary">
-          <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
+          <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "neutral"} />
           <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
           <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
           <MetricCard
@@ -415,6 +415,7 @@ export function RunsTabPane({
             metricKey={metricKey}
             onClearFilters={onClearFilters}
             onInspectRun={onInspectRun}
+            onOpenRun={onOpenRun}
             onToggleRun={(runId) => onToggleRun(runId)}
             pinnedMetrics={pinnedMetrics}
             primaryRunId={primaryRunId}

@@ -3385,7 +3385,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function setWorkspaceMode(mode: "automatic" | "manual") {
-    commitWorkspace(() => mode === "automatic" ? buildAutomaticWorkspace(allMetricOptions, project) : buildManualWorkspace(project), `Workspace switched to ${mode} mode. Undo available.`);
+    commitWorkspace(
+      (current) => {
+        if (mode === "automatic") return buildAutomaticWorkspace(allMetricOptions, project);
+        // Manual mode seeds from whatever is on the board right now — switching
+        // modes must never present an empty board (reads as data loss).
+        const seeded = buildManualWorkspace(project);
+        const hasPanels = current.sections?.some((section) => section.panels.length);
+        return hasPanels ? { ...seeded, sections: current.sections } : seeded;
+      },
+      `Workspace switched to ${mode} mode. Undo available.`,
+    );
     setAddPanelSectionId("");
   }
 
@@ -3594,7 +3604,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           <p className="eyebrow">Session</p>
           <h1>Sign in required</h1>
           <p>{dashboardAuthMessage}</p>
-          <Link className="button-link" href={`/signin?next=${encodeURIComponent("/dashboard/runs")}`}>Open sign in</Link>
+          <SignInLink />
         </section>
       </main>
     );
@@ -4232,4 +4242,18 @@ async function runWithConcurrency(tasks: Array<() => Promise<void>>, concurrency
     }
   });
   await Promise.all(workers);
+}
+
+function SignInLink() {
+  // The real destination (current path + query) is only known in the browser;
+  // resolve it after mount so server and client render the same initial href.
+  const [next, setNext] = useState("/dashboard/runs");
+  useEffect(() => {
+    setNext(`${window.location.pathname}${window.location.search}`);
+  }, []);
+  return (
+    <Link className="button-link" href={`/signin?next=${encodeURIComponent(next)}`}>
+      Open sign in
+    </Link>
+  );
 }

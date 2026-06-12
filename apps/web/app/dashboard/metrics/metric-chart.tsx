@@ -355,8 +355,9 @@ export function MetricChart({
   // isolate one line on hover — so fade each line as the count grows, and dim
   // the non-hovered lines harder when the band is busy.
   const seriesCount = normalizedSeries.length;
-  const seriesStrokeOpacity = seriesCount > 60 ? 0.5 : seriesCount > 24 ? 0.68 : seriesCount > 8 ? 0.85 : 0.92;
-  const seriesMutedOpacity = seriesCount > 60 ? 0.07 : seriesCount > 24 ? 0.1 : seriesCount > 8 ? 0.16 : 0.24;
+  const seriesStrokeOpacity =
+    seriesCount > 60 ? 0.45 : seriesCount > 24 ? 0.6 : seriesCount > 8 ? 0.72 : seriesCount > 4 ? 0.82 : 0.92;
+  const seriesMutedOpacity = seriesCount > 60 ? 0.06 : seriesCount > 24 ? 0.09 : seriesCount > 8 ? 0.13 : 0.2;
   const seriesHoverCanvasOpacity = seriesCount > 60 ? 0.38 : seriesCount > 24 ? 0.48 : 0.58;
   const chartFrameStyle = {
     "--chart-frame-height": `${height}px`,

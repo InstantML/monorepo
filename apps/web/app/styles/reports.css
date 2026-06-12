@@ -13,7 +13,7 @@
   border: 1px solid rgba(239, 68, 68, 0.4);
   border-radius: 8px;
   background: rgba(239, 68, 68, 0.08);
-  color: #ef4444;
+  color: #e04848;
   font-size: 13px;
   font-weight: 540;
   margin-bottom: 12px;
@@ -87,7 +87,7 @@ a.report-pane__action:hover {
 }
 
 .report-pane__action--danger {
-  color: #ef4444;
+  color: #e04848;
 }
 
 .report-pane__action--danger:hover {
@@ -109,7 +109,7 @@ a.report-pane__action:hover {
 .report-pane__share code {
   font-family: var(--f-mono);
   font-size: 12px;
-  background: rgba(31, 184, 119, 0.12);
+  background: rgba(43, 224, 130, 0.12);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -447,7 +447,7 @@ a.report-pane__action:hover {
 }
 
 .report-editor__control--danger:hover:not(:disabled) {
-  color: #ef4444;
+  color: #e04848;
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.4);
 }
@@ -1308,7 +1308,7 @@ a.report-pane__action:hover {
 }
 
 .panel-chart--error {
-  color: var(--warm, #dc5b55);
+  color: var(--warm, #d9544a);
 }
 
 .panel-chart--scalar {
@@ -1339,7 +1339,7 @@ a.report-pane__action:hover {
   height: auto;
 }
 
-.series-bar.series-0 { fill: #2f80ed; }
+.series-bar.series-0 { fill: #3b82e0; }
 .series-bar.series-1 { fill: #12a67a; }
 .series-bar.series-2 { fill: #d65f74; }
 .series-bar.series-3 { fill: #e0a33f; }
@@ -1378,7 +1378,7 @@ a.report-pane__action:hover {
 
 .runset-table__search:focus {
   outline: none;
-  border-color: var(--accent, #5d89dd);
+  border-color: var(--accent, #3b82e0);
 }
 
 .runset-table__menus {
@@ -1443,7 +1443,7 @@ a.report-pane__action:hover {
 }
 
 .runset-table__status--error {
-  color: var(--warm, #dc5b55);
+  color: var(--warm, #d9544a);
 }
 
 .runset-table__scroll {
@@ -1555,7 +1555,7 @@ a.report-pane__action:hover {
 }
 
 .runset-table__color-swatch--active {
-  outline: 2px solid var(--accent, #5d89dd);
+  outline: 2px solid var(--accent, #3b82e0);
   outline-offset: 1px;
 }
 
@@ -1591,7 +1591,7 @@ a.report-pane__action:hover {
 
 .runset-table__pill--running {
   background: rgba(93, 137, 221, 0.15);
-  color: #2c6dd2;
+  color: #3b82e0;
   border-color: rgba(93, 137, 221, 0.3);
 }
 
@@ -1791,7 +1791,7 @@ a.report-pane__action:hover {
 }
 
 .add-panel-modal__cell:hover:not(:disabled) {
-  border-color: var(--accent, #5d89dd);
+  border-color: var(--accent, #3b82e0);
   background: var(--accent-soft, var(--surface));
 }
 
@@ -1824,7 +1824,7 @@ a.report-pane__action:hover {
 }
 
 .add-panel-modal__empty--error {
-  color: var(--warm, #dc5b55);
+  color: var(--warm, #d9544a);
 }
 
 .add-panel-modal__inventory {
@@ -1850,7 +1850,7 @@ a.report-pane__action:hover {
 }
 
 .add-panel-modal__inventory-row:hover {
-  border-color: var(--accent, #5d89dd);
+  border-color: var(--accent, #3b82e0);
   background: var(--accent-soft, var(--surface));
 }
 
@@ -1999,12 +1999,12 @@ a.report-pane__icon-button:focus-visible {
 }
 
 .report-pane__icon-button--danger {
-  color: #ef4444;
+  color: #e04848;
 }
 
 .report-pane__icon-button--danger:hover {
   background: rgba(239, 68, 68, 0.08);
-  color: #ef4444;
+  color: #e04848;
 }
 
 /*
@@ -2075,7 +2075,7 @@ a.report-pane__icon-button:focus-visible {
 .report-auto-save-pill--error {
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.4);
-  color: #ef4444;
+  color: #e04848;
   font-weight: 700;
 }
 
@@ -2160,7 +2160,7 @@ a.report-pane__icon-button:focus-visible {
 }
 
 .report-block-handle-zone--drag .report-block-drop-indicator {
-  background: rgba(31, 184, 119, 0.16);
+  background: rgba(43, 224, 130, 0.16);
 }
 
 .report-block-handle-zone--drop .report-block-drop-indicator {
@@ -2346,7 +2346,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--paragraph:focus {
   background: var(--bg-soft);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 /* Tighten the block-list rhythm */
@@ -2506,7 +2506,7 @@ a.report-pane__icon-button:focus-visible {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 .add-panel-modal__combo {
@@ -2542,7 +2542,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   border-color: var(--accent-line);
   background: var(--surface);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 .add-panel-modal__combo-list {
@@ -2686,7 +2686,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   background: var(--bg-soft);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 .report-block__textarea--paragraph::placeholder {
@@ -2715,7 +2715,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--markdown:focus {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 /* Code: same surface as the rendered <pre>. The language pill floats over
@@ -2761,7 +2761,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--code:focus {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 /* Inline select for code language / heading level / callout variant.
@@ -2815,7 +2815,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   background: rgba(255, 255, 255, 0.4);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 .report-block__textarea--callout::placeholder {
@@ -2882,7 +2882,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   background: var(--bg-soft);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 .report-block__inline-input::placeholder {
@@ -2931,7 +2931,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--inline-prompt:focus {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.08);
 }
 
 /* Read-only surface — used by the public share page. We share the same
@@ -3030,13 +3030,13 @@ a.report-pane__icon-button:focus-visible {
   padding: 13px 14px;
   border-radius: 8px;
   background:
-    linear-gradient(90deg, rgba(31, 184, 119, 0.07), transparent 28%),
+    linear-gradient(90deg, rgba(43, 224, 130, 0.07), transparent 28%),
     var(--surface);
 }
 
 .report-list__row:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 28px rgba(23, 26, 20, 0.08);
 }
 
 .report-list__title-text {
@@ -3056,7 +3056,7 @@ a.report-pane__icon-button:focus-visible {
 .report-list__pill {
   background: rgba(66, 133, 244, 0.1);
   border-color: rgba(66, 133, 244, 0.28);
-  color: #2563eb;
+  color: #3b82e0;
 }
 
 .report-list__empty,
@@ -3100,7 +3100,7 @@ a.report-pane__icon-button:focus-visible {
   padding: 7px 10px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 32px rgba(23, 26, 20, 0.08);
   backdrop-filter: blur(14px);
 }
 
@@ -3121,7 +3121,7 @@ a.report-pane__icon-button {
   width: 100%;
   border-radius: 8px;
   background:
-    linear-gradient(90deg, rgba(66, 133, 244, 0.1), rgba(31, 184, 119, 0.08)),
+    linear-gradient(90deg, rgba(66, 133, 244, 0.1), rgba(43, 224, 130, 0.08)),
     var(--surface);
 }
 
@@ -3143,7 +3143,7 @@ a.report-pane__icon-button {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.08);
 }
 
 .report-editor--loading {
@@ -3299,7 +3299,7 @@ a.report-pane__icon-button {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.16);
 }
 
 :root[data-theme="dark"] .report-visibility-select .select-menu {
@@ -3342,7 +3342,7 @@ a.report-pane__icon-button {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 24px rgba(23, 26, 20, 0.08);
 }
 
 .report-editor__block-kind {
@@ -3360,7 +3360,7 @@ a.report-pane__icon-button {
   width: 22px;
   height: 22px;
   background: var(--surface);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 16px rgba(23, 26, 20, 0.08);
 }
 
 .report-block__textarea--paragraph {
@@ -3388,7 +3388,7 @@ a.report-pane__icon-button {
 .block-picker {
   width: 320px;
   border-radius: 8px;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 18px 40px rgba(23, 26, 20, 0.14);
 }
 
 .block-picker__search {

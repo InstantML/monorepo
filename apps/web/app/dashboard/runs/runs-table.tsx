@@ -19,6 +19,7 @@ export function RunsTable({
   metricKey,
   onClearFilters,
   onInspectRun,
+  onOpenRun,
   onToggleRun,
   pinnedMetrics,
   primaryRunId,
@@ -29,6 +30,7 @@ export function RunsTable({
   metricKey: string;
   onClearFilters: () => void;
   onInspectRun: (runId: string) => void;
+  onOpenRun: (runId: string) => void;
   onToggleRun: (runId: string) => void;
   pinnedMetrics: string[];
   primaryRunId: string;
@@ -71,7 +73,7 @@ export function RunsTable({
                 </td>
                 <td className="col-run">
                   <div className="run-name">
-                    <button className="run-name-button" aria-label={`Inspect ${run.name}`} onClick={() => onInspectRun(run.id)} type="button">
+                    <button className="run-name-button" aria-label={`Open ${run.name}`} onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }} type="button">
                       <Star size={13} /> {run.name}
                     </button>
                     <small>{run.project} · {runConfigSummary(run)}</small>

@@ -32,7 +32,7 @@ export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Pro
         <section className="panel">
           <div className="panel-head"><h2><ShieldCheck size={15} /> Run Health</h2></div>
           <div className="panel-body insight-stack">
-            <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
+            <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "neutral"} />
             <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
             <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
             <MetricCard label={`${metricGoalLabel(metricKey)} ${metricTitle(metricKey)}`} value={formatMetricValue(overview.best_eval_return)} tone="good" />

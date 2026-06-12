@@ -227,7 +227,7 @@ export type TabId =
   | "settings"
   | "api";
 
-export type Tone = "good" | "bad" | "live" | "neutral";
+export type Tone = "good" | "bad" | "live" | "neutral" | "warn";
 
 export type AlertRow = {
   id: string;

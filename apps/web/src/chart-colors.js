@@ -1,16 +1,19 @@
+// Instrument series order (signal green first — "the run you care about"),
+// mid-lightness so every color holds on both the dark graphite canvas and
+// white exports. See docs/design/reimagine/DESIGN-SYSTEM.md §2.5.
 export const CHART_PALETTE = [
-  "#8a5ccf",
-  "#2e8b57",
-  "#2a7fbd",
-  "#c26300",
-  "#d04a3a",
-  "#168a96",
-  "#c04c98",
-  "#7e8500",
-  "#9a6658",
-  "#2d9655",
-  "#ad7600",
-  "#737373",
+  "#15a35d",
+  "#3b82e0",
+  "#bd8113",
+  "#c44fb2",
+  "#7a5fe0",
+  "#1b9c8f",
+  "#e06a38",
+  "#8f9a1f",
+  "#d6447e",
+  "#3f9ec9",
+  "#6f7d8c",
+  "#7d8472",
 ];
 
 export function chartColor(index = 0) {
