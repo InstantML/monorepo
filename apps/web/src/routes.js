@@ -24,6 +24,10 @@ const DASHBOARD_TAB_ALIASES = new Map([
   // download/resume/fork and the lineage rows). Old links keep working.
   ["models", "detail"],
   ["checkpoints", "detail"],
+  // The Alerts tab is labelled "Run Health" in the rail, so the friendly slug
+  // a user would guess from that label resolves to the same page.
+  ["run-health", "alerts"],
+  ["health", "alerts"],
 ]);
 const SAFE_NEXT_PREFIXES = ["/dashboard", "/onboarding"];
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;

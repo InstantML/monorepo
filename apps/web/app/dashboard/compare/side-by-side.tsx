@@ -698,7 +698,9 @@ export function SideBySide({
   const anyArtifacts = visibleRuns.some((run) => artifactTotalForRun(run) > 0 || (artifactsByRun[run.id]?.length ?? 0) > 0);
   const columns: CompareColumn[] = [
     ...metricTableKeys.map((key): MetricColumn => ({ kind: "metric", key: `metric:${key}`, metricKey: key, goal: metricGoal(key) })),
-    { kind: "status", key: "status" },
+    // Status lives in the sticky identity column (always visible while scrolling
+    // wide metric tables), so it deliberately has no standalone column here —
+    // a second Status column just printed every run's status twice.
     { kind: "duration", key: "duration" },
     ...(anyArtifacts ? [{ kind: "artifacts", key: "artifacts" } as AttrColumn] : []),
     ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),

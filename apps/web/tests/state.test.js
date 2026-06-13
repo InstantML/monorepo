@@ -1133,6 +1133,10 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabFromPath("/dashboard/advanced?x=1"), "runs");
   assert.equal(tabFromPath("/dashboard/models?x=1"), "detail");
   assert.equal(tabFromPath("/dashboard/checkpoints?x=1"), "detail");
+  // The Alerts tab is labelled "Run Health"; the friendly slug resolves to it.
+  assert.equal(tabFromPath("/dashboard/run-health?x=1"), "alerts");
+  assert.equal(tabFromPath("/dashboard/health"), "alerts");
+  assert.equal(tabToPath("run-health"), "/dashboard/alerts");
   assert.equal(tabFromPath("/dashboard/integrations?x=1"), "runs");
   assert.equal(tabFromPath("/dashboard/imports?x=1"), "imports");
   assert.equal(tabFromPath("/dashboard/compare?x=1"), "compare");
