@@ -407,7 +407,7 @@ export function RunEvidenceExplorer({
       </aside>
       <div className="evidence-preview">
         {selected ? <EvidencePreview item={selected} rowsByObjectId={rowsByObjectId} run={run} /> : (
-          <div className="empty">No evidence logged for {run.name}.</div>
+          <div className="empty">No artifacts logged for {run.name} yet.</div>
         )}
       </div>
     </section>

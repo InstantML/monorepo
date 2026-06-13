@@ -361,7 +361,7 @@ export function RunsTable({
                 <tr className="group-row" key={`group-${group.key}`}>
                   <td colSpan={visibleColumnCount}>
                     <b>{group.key}</b> · {group.runs.length} {group.runs.length === 1 ? "run" : "runs"}
-                    {groupBest !== null ? <> · best {formatNumber(groupBest, 1)}</> : null}
+                    {groupBest !== null ? <> · best {groupBest.toFixed(1)}</> : null}
                   </td>
                 </tr>,
                 ...group.runs.map(renderRunRow),
@@ -382,29 +382,35 @@ export function RunsTable({
       </div>
 
       <div className="runs-tablefoot">
-        <span className="mlabel">Page {currentPage.toLocaleString("en-US")} / {totalPages.toLocaleString("en-US")}</span>
-        <div className="runs-tablefoot-pager">
-          <button
-            aria-label="Previous page"
-            className="parity-btn parity-btn--icon"
-            disabled={paginationBusy || !hasPreviousPage}
-            onClick={onPreviousPage}
-            type="button"
-          >
-            ‹
-          </button>
-          <span className="parity-btn parity-btn--icon is-current" aria-current="page">{currentPage.toLocaleString("en-US")}</span>
-          <button
-            aria-label="Next page"
-            className="parity-btn parity-btn--icon"
-            disabled={paginationBusy || !hasNextPage}
-            onClick={onNextPage}
-            type="button"
-          >
-            ›
-          </button>
-        </div>
-        <span className="mlabel">36 px rows</span>
+        <span className="mlabel">
+          {totalPages > 1
+            ? `Page ${currentPage.toLocaleString("en-US")} / ${totalPages.toLocaleString("en-US")}`
+            : `${filteredRuns.length.toLocaleString("en-US")} ${filteredRuns.length === 1 ? "run" : "runs"}`}
+        </span>
+        {totalPages > 1 ? (
+          <div className="runs-tablefoot-pager">
+            <button
+              aria-label="Previous page"
+              className="parity-btn parity-btn--icon"
+              disabled={paginationBusy || !hasPreviousPage}
+              onClick={onPreviousPage}
+              type="button"
+            >
+              ‹
+            </button>
+            <span className="parity-btn parity-btn--icon is-current" aria-current="page">{currentPage.toLocaleString("en-US")}</span>
+            <button
+              aria-label="Next page"
+              className="parity-btn parity-btn--icon"
+              disabled={paginationBusy || !hasNextPage}
+              onClick={onNextPage}
+              type="button"
+            >
+              ›
+            </button>
+          </div>
+        ) : null}
+        <span className="mlabel">Row height 36px</span>
       </div>
     </div>
   );

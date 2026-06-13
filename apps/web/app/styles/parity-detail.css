@@ -189,16 +189,41 @@
 }
 .pd-logline--empty { color: var(--muted); }
 
-/* ── Source rows (sticky side info) ── */
-.pd-source-rows { display: grid; }
-.pd-source-rows > div {
+/* ── Source rows (sticky side info) — one clean borderless list, like CONFIG.
+ *    Neutralize the legacy .detail-row box so rows don't double their hairlines. */
+.pd-source-rows { display: grid; padding: 0; }
+.pd-source-rows .detail-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 9px 12px; border-bottom: 1px solid var(--line);
+  margin: 0; padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
   font: 500 12px/1.3 var(--font-mono);
 }
-.pd-source-rows > div:last-child { border-bottom: 0; }
-.pd-source-rows .pd-mlabel { color: var(--muted); }
-.pd-source-rows strong { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.pd-source-rows .detail-row:last-child { border-bottom: 0; }
+.pd-source-rows .detail-row > span { color: var(--muted); }
+.pd-source-rows .detail-value { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* ── Raw configuration disclosure ── */
+.pd-rawdetail > summary {
+  font: 500 11px/1.3 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.pd-rawdetail pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  color: var(--text-2);
+  font: 500 11.5px/1.7 var(--font-mono);
+  overflow-x: auto;
+}
 
 /* ── Chips, dots, tags ── */
 .pd-chip {

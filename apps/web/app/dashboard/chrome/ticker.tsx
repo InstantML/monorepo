@@ -95,21 +95,22 @@ function TickerRunChip({
   const delta = sparkValues && sparkValues.length >= 2
     ? sparkValues[sparkValues.length - 1] - sparkValues[sparkValues.length - 2]
     : null;
+  // Always surface the tracked metric (return), with a trend arrow when the
+  // direction is known; fall back to loss only when the run has no return.
+  const headline = ret !== null ? { value: ret, digits: 1 } : loss !== null ? { value: loss, digits: 3 } : null;
   let value;
-  if (ret !== null && delta !== null && delta > 0) {
-    value = <span className="delta-up">▲ {ret.toFixed(1)}</span>;
-  } else if (ret !== null && delta !== null && delta < 0) {
-    value = <span className="delta-down">▼ {ret.toFixed(1)}</span>;
-  } else if (loss !== null) {
-    value = <span className="tick-flat">— {loss.toFixed(3)}</span>;
-  } else if (ret !== null) {
-    value = <span className="tick-flat">— {ret.toFixed(1)}</span>;
+  if (headline && delta !== null && delta > 0) {
+    value = <span className="delta-up">▲ {headline.value.toFixed(headline.digits)}</span>;
+  } else if (headline && delta !== null && delta < 0) {
+    value = <span className="delta-down">▼ {headline.value.toFixed(headline.digits)}</span>;
+  } else if (headline) {
+    value = <span className="tick-flat">— {headline.value.toFixed(headline.digits)}</span>;
   } else {
     value = <span className="tick-flat">—</span>;
   }
   return (
     <span className="tick-run" title={run.name}>
-      <b>{tickerShortRunName(run.name)}</b>
+      <b>{run.name}</b>
       {sparkValues && sparkValues.length >= 2 ? (
         <span className="tick-spark"><MiniSpark values={sparkValues} /></span>
       ) : null}

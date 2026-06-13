@@ -422,6 +422,82 @@ button:disabled,
   font-size: 11.5px;
 }
 
+/* 33 — Runs table toolbar: separate the row count from the segmented control. */
+.runs-tablebar-count { margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--line); }
+
+/* 34 — Account/workspace menu (rail variant) opens to the right of the rail
+ *      foot, clamped inside the viewport (was clipping off the left edge). */
+.account-workspace--rail .account-workspace-menu {
+  left: 0;
+  right: auto;
+  max-width: calc(100vw - 24px);
+}
+
+/* 35 — Run-detail KPI cells share a min height so sub-lines don't stagger. */
+.pd-kpi { min-height: 78px; }
+
+/* 36 — Config telemetry summary grid divides evenly (was 5 + 1 orphan). */
+.run-config-telemetry,
+.pd-telemetry-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* 37 — Insights scatter/cluster panels: headroom so rotated Y-axis titles
+ *      aren't clipped at the panel top. */
+.insights-scatter svg,
+.insights-cluster svg,
+.rank-heatmap svg { overflow: visible; }
+.insights-panel .panel-body { padding-top: 16px; }
+
+/* 38 — Billing actions: one primary CTA, the rest secondary, on one row that
+ *      wraps gracefully instead of orphaning Cancel. */
+.billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.billing-actions .primary-button { order: 0; }
+.billing-actions .primary-button ~ .primary-button {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.billing-actions .billing-cancel { margin-left: auto; }
+
+/* 39 — Settings amber limit callouts get breathing room. */
+.settings-grid .warn-callout,
+.usage-warning,
+.plan-limit-callout { line-height: 1.5; }
+
+/* 40 — Distributed rank controls sit with the panel, not floating detached. */
+.rank-band-area .analysis-controls,
+.analysis-header .analysis-controls { gap: 8px; }
+
+/* 31 — Rail hover is a quiet surface raise, distinct from the green active
+ *      state (hover was rendering identical to active). */
+.tab-button:hover:not(.active),
+:root[data-theme="dark"] .tab-button:hover:not(.active) {
+  border-color: transparent;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.tab-button:hover:not(.active) svg,
+:root[data-theme="dark"] .tab-button:hover:not(.active) svg {
+  color: var(--text-2);
+}
+
+/* 32 — Chart scale/Y-auto toggles take the system 6px radius (were pills). */
+.chart-log-toggle,
+.chart-yauto-toggle,
+.chart-y-toggle {
+  border-radius: var(--radius-sm) !important;
+}
+.chart-log-toggle.active,
+.chart-yauto-toggle.active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 /* 30 — Visual-bug nitpick pass: design-system discipline.
  *      green stays reserved for live/best; informational state is blue/neutral. */
 
