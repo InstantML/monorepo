@@ -501,11 +501,8 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
     <>
       <PageHead eyebrow="Workspace" title="Reports" />
       {error ? <div className="report-error" role="alert">{error}</div> : null}
-      {unsupported ? (
-        <div className="status-strip" aria-live="polite">
-          Reports aren&apos;t available on this backend yet.
-        </div>
-      ) : null}
+      {/* The unsupported state is conveyed by the empty-state card below (which
+          is unsupported-aware) — no separate banner, to avoid duplicate copy. */}
       {mode.kind === "list" ? (
         <ReportsListPane
           summaries={summaries}

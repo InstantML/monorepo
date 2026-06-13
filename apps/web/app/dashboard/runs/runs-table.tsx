@@ -318,22 +318,8 @@ export function RunsTable({
         </span>
       </div>
 
-      {selectedRunIds.length ? (
-        <div className="runs-selbar" role="toolbar" aria-label="Run selection actions">
-          <b>{selectedRunIds.length.toLocaleString("en-US")} selected</b>
-          <span className="runs-selbar-sep" aria-hidden="true">·</span>
-          <button className="parity-btn parity-btn--primary" onClick={() => navigateToTab("/dashboard/compare")} type="button">
-            Compare
-          </button>
-          <button className="parity-btn" onClick={() => navigateToTab("/dashboard/metrics")} type="button">
-            Overlay in Metrics
-          </button>
-          <button className="parity-btn parity-btn--ghost" onClick={onClearSelection} type="button">
-            Clear
-          </button>
-        </div>
-      ) : null}
-
+      {/* Selection actions live in the global SelectionTray (bottom), which
+          works across both Panels and Table views without reflowing the table. */}
       <div className="runs-dtable-scroll">
         <table className="runs-dtable">
           <thead>

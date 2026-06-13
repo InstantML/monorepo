@@ -442,15 +442,18 @@ button:disabled,
 .pd-kpi-delta.down,
 .pd-kpi-delta.flat { color: var(--muted); }
 
-/* Datasets table: uppercase-mono heads + right-aligned numerics, like every
- * other Instrument data table. */
-.tab-grid .panel-head h2,
-.dataset-table th,
-.datasets-table th {
-  font-family: var(--font-mono);
+/* Compact tables (datasets etc.): uppercase-mono heads on a tokenized
+ * surface, like every other Instrument data table. */
+.compact-head {
+  background: var(--surface-soft);
 }
-.datasets-table td.num,
-.datasets-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.compact-head span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
 
 /* Legacy panel heads were Archivo prose; bring them to the uppercase-mono
  * micro-label convention used across the refactor. Scoped to dashboard panels. */
