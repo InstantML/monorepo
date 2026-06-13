@@ -270,6 +270,7 @@ export function MetricChart({
   padding = chartPadding,
   series,
   showExportActions = true,
+  showLegend = true,
   showRange = true,
   showYAxisControls = true,
   smoothing,
@@ -295,6 +296,8 @@ export function MetricChart({
   series: any[];
   /** Hide the in-chart actions row when the owner renders its own controls. */
   showExportActions?: boolean;
+  /** Hide the built-in legend when the owner renders its own (e.g. Overview). */
+  showLegend?: boolean;
   showRange?: boolean;
   /** Per-panel log toggle + manual y-range; on by default everywhere. */
   showYAxisControls?: boolean;
@@ -806,6 +809,7 @@ export function MetricChart({
       onMouseLeave={handleLeave}
     >
       {actionsRow}
+      {showLegend ? (
       <div className={`chart-legend${activeRunId ? " has-active" : ""}`}>
         {legendSeries.map((item, index) => {
           const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
@@ -836,6 +840,7 @@ export function MetricChart({
           </span>
         ) : null}
       </div>
+      ) : null}
       <div ref={chartFrameRef} className={`metric-chart-frame${denseChart ? " dense" : ""}${activeSeries ? " is-hovering-series" : ""}`} style={chartFrameStyle} onMouseLeave={handleLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${frameHeight}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={handleMove} onMouseLeave={handleLeave}>

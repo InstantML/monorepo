@@ -189,6 +189,15 @@ const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing",
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
 const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
 
+const EMPTY_OVERVIEW: Overview = { total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 };
+// The Overview cockpit lives at a static route segment while every other tab is
+// served by the catch-all, so crossing between them remounts the whole shell
+// and resets overview state to zero — the telemetry ticker would flash
+// "LIVE 0 / PTS 0" until the next load resolves. Cache the last real overview at
+// module scope (per browser tab, cleared on full reload) so a remount restores
+// the previous numbers instead of flashing placeholders.
+let lastKnownOverview: Overview | null = null;
+
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
   if (activeValue && options.includes(activeValue) && !capped.includes(activeValue)) return [activeValue, ...capped.slice(0, Math.max(0, limit - 1))];
@@ -610,7 +619,16 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const [pageNavigationPending, setPageNavigationPending] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
   const [summary, setSummary] = useState<Summary>({ runs: [], metric_keys: [], total: 0 });
-  const [overview, setOverview] = useState<Overview>({ total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 });
+  const [overview, setOverviewState] = useState<Overview>(() => lastKnownOverview ?? EMPTY_OVERVIEW);
+  // Persist every real overview to the module cache so a shell remount (Overview
+  // route ⇄ catch-all tabs) restores the last numbers instead of flashing zero.
+  const setOverview = useCallback((value: Overview | ((current: Overview) => Overview)) => {
+    setOverviewState((current) => {
+      const next = typeof value === "function" ? (value as (c: Overview) => Overview)(current) : value;
+      lastKnownOverview = next;
+      return next;
+    });
+  }, []);
   // Seed selection from ?runs=… so compare links survive reloads and can be
   // shared. The default auto-select skips when the URL provided a selection.
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>(() =>
@@ -710,13 +728,22 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   // Overview cockpit (chart, table). Real data only — no synthetic runs.
   const runningRuns = useMemo(() => sortedRuns.filter((run) => run.status === "running"), [sortedRuns]);
   // Ticker sparklines: downsample each running run's loaded series for the
-  // active metric to ~24 points. Runs without loaded series simply get no spark.
+  // active metric to ~24 points. The series feeding the ticker depends on the
+  // active tab — `series` is loaded on Metrics/Overview/Detail, while the Runs
+  // tab loads `workspaceSeries` keyed by metric. Both store one MetricSeries per
+  // run with `id === run.id`, so we look the run up by id across whichever
+  // source is populated. Runs with no loaded series simply get no spark.
   const tickerSparkValues = useMemo<Record<string, number[]>>(() => {
+    const byRun = new Map<string, MetricSeries>();
+    for (const item of workspaceSeries[metricKey] ?? []) {
+      if (!byRun.has(item.id)) byRun.set(item.id, item);
+    }
+    for (const item of series) {
+      if (!byRun.has(item.id)) byRun.set(item.id, item);
+    }
     const out: Record<string, number[]> = {};
     for (const run of runningRuns) {
-      const series = workspaceSeries[run.id]?.find((item) => item.group === metricKey || item.name === metricKey)
-        ?? workspaceSeries[run.id]?.[0];
-      const points = series?.points ?? [];
+      const points = byRun.get(run.id)?.points ?? [];
       if (points.length < 2) continue;
       const stride = Math.max(1, Math.floor(points.length / 24));
       const values: number[] = [];
@@ -727,7 +754,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       if (values.length >= 2) out[run.id] = values;
     }
     return out;
-  }, [metricKey, runningRuns, workspaceSeries]);
+  }, [metricKey, runningRuns, series, workspaceSeries]);
   const selectedRuns = useMemo(() => {
     const directory = runDirectoryRef.current;
     return selectedRunIds
@@ -1087,8 +1114,23 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     [editingFieldCatalogMaxRuns, workspacePanelRuns],
   );
   const workspaceFetchRuns = useMemo(() => {
-    if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
-    return sortedRuns.slice(0, maxWorkspacePanelRuns);
+    // Always fetch the visible page's runs so the Runs-table Trend column keeps
+    // its sparklines no matter what is selected — and so toggling a *visible*
+    // row never changes this set (which would otherwise clear workspaceSeries
+    // and collapse every Trend cell mid-reload). Union in any off-page selected
+    // runs so the workspace line panels (which filter series by run id) still
+    // plot selections that aren't on the current page.
+    const pageRuns = sortedRuns.slice(0, maxWorkspacePanelRuns);
+    if (!selectedRuns.length) return pageRuns;
+    const seen = new Set(pageRuns.map((run) => run.id));
+    const merged = pageRuns.slice();
+    for (const run of selectedRuns) {
+      if (seen.has(run.id)) continue;
+      seen.add(run.id);
+      merged.push(run);
+      if (merged.length >= MAX_SELECTED_RUNS) break;
+    }
+    return merged.slice(0, MAX_SELECTED_RUNS);
   }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
   const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
   const hasLiveWorkspaceRun = useMemo(() => workspaceFetchRuns.some((run) => run.status === "running"), [workspaceFetchRuns]);

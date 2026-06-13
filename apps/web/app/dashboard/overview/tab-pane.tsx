@@ -155,6 +155,7 @@ export function OverviewTabPane({
               height={224}
               metricKey={metricKey}
               series={chartSeries}
+              showLegend={false}
               showRange={false}
               showYAxisControls={false}
               xMode="step"
